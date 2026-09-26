@@ -370,6 +370,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const route = useRoute()
   const dimensions = useTerminalDimensions()
   const renderer = useRenderer()
+  let lastClick = { time: 0, x: -1, y: -1 }
   const dialog = useDialog()
   const local = useLocal()
   const kv = useKV()
@@ -1093,6 +1094,18 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       flexDirection="column"
       backgroundColor={theme.background}
       onMouseDown={(evt) => {
+        if (evt.button === MouseButton.LEFT) {
+          const now = Date.now()
+          const doubleClick =
+            now - lastClick.time < 400 && Math.abs(evt.x - lastClick.x) <= 1 && Math.abs(evt.y - lastClick.y) <= 1
+          lastClick = { time: now, x: evt.x, y: evt.y }
+          if (doubleClick && Selection.selectWordAt(renderer, evt.target, evt.x, evt.y)) {
+            lastClick = { time: 0, x: -1, y: -1 }
+            evt.preventDefault()
+            evt.stopPropagation()
+            return
+          }
+        }
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
         if (evt.button !== MouseButton.RIGHT) return
 

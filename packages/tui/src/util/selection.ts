@@ -1,3 +1,4 @@
+import type { CliRenderer, Renderable } from "@opentui/core"
 import type { ClipboardService } from "../context/clipboard"
 
 type Toast = {
@@ -14,6 +15,54 @@ type Renderer = {
   getSelection: () => { getSelectedText: () => string; selectedRenderables: FocusableSelectionTarget[] } | null
   clearSelection: () => void
   currentFocusedRenderable?: FocusableSelectionTarget | null
+}
+
+type TextSelectable = Renderable & { selectable?: boolean }
+
+function resolveTextSelectable(target: Renderable | null): TextSelectable | undefined {
+  let node: Renderable | null | undefined = target
+  while (node) {
+    const candidate = node as TextSelectable
+    if (candidate.selectable && typeof candidate.x === "number" && typeof candidate.width === "number") return candidate
+    node = node.parent
+  }
+  return undefined
+}
+
+function isWordChar(char: string | undefined) {
+  return char !== undefined && /[\p{L}\p{N}_]/u.test(char)
+}
+
+function wordRange(text: string, index: number) {
+  if (text.length === 0) return undefined
+  const i = Math.max(0, Math.min(index, text.length - 1))
+  if (!isWordChar(text[i])) return undefined
+  let start = i
+  while (start > 0 && isWordChar(text[start - 1])) start--
+  let end = i + 1
+  while (end < text.length && isWordChar(text[end])) end++
+  return { start, end }
+}
+
+// Double-click word selection. opentui has no word-selection primitive, so we
+// read the clicked visual row through the renderer selection, expand to word
+// boundaries in cell space, then set the selection to that range. The existing
+// copy-on-select path (mouse up) then copies the word.
+export function selectWordAt(renderer: CliRenderer, target: Renderable | null, x: number, y: number): boolean {
+  const node = resolveTextSelectable(target)
+  if (!node || node.width <= 0) return false
+
+  renderer.startSelection(node, node.x, y)
+  renderer.updateSelection(node, node.x + node.width, y)
+  const row = renderer.getSelection()?.getSelectedText()
+  if (!row) return false
+
+  const range = wordRange(row, x - node.x)
+  if (!range) return false
+
+  renderer.startSelection(node, node.x + range.start, y)
+  renderer.updateSelection(node, node.x + range.end, y)
+  return true
 }
 
 type SelectionKeyEvent = {
