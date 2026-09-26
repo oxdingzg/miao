@@ -291,6 +291,8 @@ export interface Interface {
 interface State {
   current: string | undefined
   root: Git.Base | undefined
+  // Coalesces identical concurrent diff requests; entries are removed on completion.
+  inflight: Map<string, Effect.Effect<FileDiff[]>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/Vcs") {}
@@ -305,7 +307,7 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Vcs.state")(function* (ctx) {
         if (ctx.project.vcs !== "git") {
-          return { current: undefined, root: undefined }
+          return { current: undefined, root: undefined, inflight: new Map<string, Effect.Effect<FileDiff[]>>() }
         }
 
         const get = Effect.fnUntraced(function* () {
@@ -314,7 +316,7 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
         const [current, root] = yield* Effect.all([git.branch(ctx.directory), git.defaultBranch(ctx.directory)], {
           concurrency: 2,
         })
-        const value = { current, root }
+        const value = { current, root, inflight: new Map<string, Effect.Effect<FileDiff[]>>() }
 
         const unsubscribe = yield* events.listen((event) => {
           if (event.type !== Watcher.Event.Updated.type || event.location?.directory !== ctx.directory)
@@ -374,15 +376,25 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
         const value = yield* InstanceState.get(state)
         const ctx = yield* InstanceState.context
         if (ctx.project.vcs !== "git") return []
-        if (mode === "git") {
-          return yield* track(git, ctx.directory, (yield* git.hasHead(ctx.directory)) ? "HEAD" : undefined, options)
-        }
+        const key = `${mode}:${options?.context ?? ""}`
+        const existing = value.inflight.get(key)
+        if (existing) return yield* existing
+        const compute = Effect.gen(function* () {
+          if (mode === "git") {
+            return yield* track(git, ctx.directory, (yield* git.hasHead(ctx.directory)) ? "HEAD" : undefined, options)
+          }
 
-        if (!value.root) return []
-        if (value.current && value.current === value.root.name) return []
-        const ref = yield* git.mergeBase(ctx.directory, value.root.ref)
-        if (!ref) return []
-        return yield* diffAgainstRef(git, ctx.directory, ref, options)
+          if (!value.root) return []
+          if (value.current && value.current === value.root.name) return []
+          const ref = yield* git.mergeBase(ctx.directory, value.root.ref)
+          if (!ref) return []
+          return yield* diffAgainstRef(git, ctx.directory, ref, options)
+        })
+        const shared = yield* Effect.cached(
+          compute.pipe(Effect.ensuring(Effect.sync(() => value.inflight.delete(key)))),
+        )
+        value.inflight.set(key, shared)
+        return yield* shared
       }),
       diffRaw: Effect.fn("Vcs.diffRaw")(function* () {
         const ctx = yield* InstanceState.context
