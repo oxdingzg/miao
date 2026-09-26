@@ -1686,14 +1686,39 @@ function ReasoningHeader(props: {
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessage }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+  const content = createMemo(() => props.part.text.trim())
+  // Re-parsing the whole accumulated Markdown on every token delta is O(n^2)
+  // across a stream. Leading+trailing throttle bounds parsing to ~20/s while
+  // still rendering the final text.
+  const [rendered, setRendered] = createSignal(content())
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let pending: string | undefined
+  createEffect(() => {
+    const value = content()
+    if (timer === undefined) {
+      setRendered(value)
+      timer = setTimeout(() => {
+        timer = undefined
+        if (pending !== undefined) {
+          setRendered(pending)
+          pending = undefined
+        }
+      }, 50)
+      return
+    }
+    pending = value
+  })
+  onCleanup(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
   return (
-    <Show when={props.part.text.trim()}>
+    <Show when={rendered()}>
       <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
         <markdown
           syntaxStyle={syntax()}
           streaming={true}
           internalBlockMode="top-level"
-          content={props.part.text.trim()}
+          content={rendered()}
           tableOptions={{ style: "grid" }}
           conceal={ctx.conceal()}
           fg={theme.markdownText}
