@@ -70,6 +70,9 @@ function parse(tip: string): TipPart[] {
 
 const NO_MODELS_TIP = "Run {highlight}/connect{/highlight} to add an AI provider and start coding"
 const NO_MODELS_PARTS = parse(NO_MODELS_TIP)
+const FREE_MODELS_TIP =
+  "Free models are included — type to start, or {highlight}/connect{/highlight} for more providers"
+const FREE_MODELS_PARTS = parse(FREE_MODELS_TIP)
 
 function shortcutText(value: string) {
   return `{highlight}${value}{/highlight}`
@@ -94,7 +97,7 @@ function configShortcut(api: TuiPluginApi, command: string): TipShortcut {
       .join(", ")
 }
 
-export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
+export function Tips(props: { api: TuiPluginApi; connected?: boolean; hasModels?: boolean }) {
   const theme = useTheme().theme
   const tipOffset = Math.random()
   const shortcuts: Shortcuts = {
@@ -133,19 +136,19 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
     themeList: useCommandShortcut("theme.switch"),
   }
   const tip = createMemo(() => {
-    if (props.connected === false) return NO_MODELS_TIP
+    if (props.connected === false) return props.hasModels === false ? NO_MODELS_TIP : FREE_MODELS_TIP
     const tips = [...TIPS, process.platform !== "win32" ? TERMINAL_SUSPEND_TIP : INPUT_UNDO_TIP].flatMap((item) => {
       const value = typeof item === "string" ? item : item(shortcuts)
       return value ? [value] : []
     })
     return tips[Math.floor(tipOffset * tips.length)] ?? NO_MODELS_TIP
-  }, NO_MODELS_TIP)
+  }, FREE_MODELS_TIP)
   // Solid can expose a memo's initial value while a pure computation is pending.
   const parts = createMemo(() => {
     const value = tip()
     if (typeof value === "string") return parse(value)
-    return NO_MODELS_PARTS
-  }, NO_MODELS_PARTS)
+    return FREE_MODELS_PARTS
+  }, FREE_MODELS_PARTS)
 
   return (
     <box flexDirection="row" maxWidth="100%">

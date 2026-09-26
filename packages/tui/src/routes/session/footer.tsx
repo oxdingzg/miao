@@ -2,7 +2,7 @@ import { createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
 import { useDirectory } from "../../context/directory"
-import { useConnected } from "../../component/use-connected"
+import { useHasModels } from "../../component/use-connected"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 
@@ -18,7 +18,7 @@ export function Footer() {
     return sync.data.permission[route.data.sessionID] ?? []
   })
   const directory = useDirectory()
-  const connected = useConnected()
+  const hasModels = useHasModels()
 
   const [store, setStore] = createStore({
     welcome: false,
@@ -29,7 +29,7 @@ export function Footer() {
     const timeouts: ReturnType<typeof setTimeout>[] = []
 
     function tick() {
-      if (connected()) return
+      if (hasModels()) return
       if (!store.welcome) {
         setStore("welcome", true)
         timeouts.push(setTimeout(() => tick(), 5000))
@@ -59,7 +59,7 @@ export function Footer() {
               Get started <span style={{ fg: theme.textMuted }}>/connect</span>
             </text>
           </Match>
-          <Match when={connected()}>
+          <Match when={hasModels()}>
             <Show when={permissions().length > 0}>
               <text fg={theme.warning}>
                 <span style={{ fg: theme.warning }}>△</span> {permissions().length} Permission

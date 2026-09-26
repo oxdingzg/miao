@@ -10,3 +10,8 @@ export function useConnected() {
     ),
   )
 }
+
+export function useHasModels() {
+  const sync = useSync()
+  return createMemo(() => sync.data.provider.some((provider) => Object.keys(provider.models).length > 0))
+}

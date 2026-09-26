@@ -6,7 +6,13 @@ import { useBindings } from "../../keymap"
 
 const id = "internal:home-tips"
 
-function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connected: boolean }) {
+function View(props: {
+  api: TuiPluginApi
+  hidden: boolean
+  show: boolean
+  connected: boolean
+  hasModels: boolean
+}) {
   useBindings(() => ({
     commands: [
       {
@@ -26,7 +32,7 @@ function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connec
   return (
     <box width="100%" maxWidth={75} alignItems="center" paddingTop={3} flexShrink={1}>
       <Show when={props.show}>
-        <Tips api={props.api} connected={props.connected} />
+        <Tips api={props.api} connected={props.connected} hasModels={props.hasModels} />
       </Show>
     </box>
   )
@@ -44,8 +50,11 @@ const tui: TuiPlugin = async (api) => {
             (item) => item.id !== "opencode" || Object.values(item.models).some((model) => model.cost?.input !== 0),
           ),
         )
+        const hasModels = createMemo(() => api.state.provider.some((item) => Object.keys(item.models).length > 0))
         const show = createMemo(() => (!first() || !connected()) && !hidden())
-        return <View api={api} hidden={hidden()} show={show()} connected={connected()} />
+        return (
+          <View api={api} hidden={hidden()} show={show()} connected={connected()} hasModels={hasModels()} />
+        )
       },
     },
   })
