@@ -10,6 +10,7 @@ import { SessionV1 } from "../v1/session"
 import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
+import { SessionHistory } from "./history"
 import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
 import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
@@ -492,6 +493,7 @@ const layer = Layer.effectDiscard(
         const cache = cacheFor(db)
         cache.assistantByID.clear()
         cache.latestAssistant.delete(event.data.sessionID)
+        SessionHistory.invalidate(db)
         yield* db
           .delete(SessionInputTable)
           .where(

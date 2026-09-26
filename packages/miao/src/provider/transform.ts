@@ -1572,7 +1572,26 @@ function sanitizeOpenAISchema(value: unknown): unknown {
   return result
 }
 
+// `schema` is pure for a given model and input schema. Built-in tools reuse the
+// same cached JSON schema object across provider turns, so memoizing by
+// (model, schema identity) avoids re-sanitizing every tool on every turn.
+const schemaMemo = new Map<string, WeakMap<JSONSchema7, JSONSchema7>>()
+
 export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 {
+  const key = `${model.providerID}/${model.api.id}`
+  let bySchema = schemaMemo.get(key)
+  if (!bySchema) {
+    bySchema = new WeakMap()
+    schemaMemo.set(key, bySchema)
+  }
+  const cached = bySchema.get(schema)
+  if (cached) return cached
+  const result = applySchema(model, schema)
+  bySchema.set(schema, result)
+  return result
+}
+
+function applySchema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 {
   /*
   if (["openai", "azure"].includes(providerID)) {
     if (schema.type === "object" && schema.properties) {

@@ -21,11 +21,39 @@ export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService
     .pipe(Effect.orDie)
 })
 
+type CachedEntries = {
+  readonly baselineSeq: number | undefined
+  readonly compactionSeq: number | undefined
+  readonly maxSeq: number
+  readonly entries: ReadonlyArray<{ readonly seq: number; readonly message: SessionMessage.Message }>
+}
+
+// A Session's projected history only grows between compaction (which changes
+// the baseline/compaction cutoff) and revert (which deletes rows). Caching the
+// decoded rows lets each provider turn decode only newly appended messages
+// instead of the whole transcript. The projector is the sole writer of
+// `session_message`, so it also owns invalidation.
+const caches = new WeakMap<object, Map<string, CachedEntries>>()
+
+function cacheFor(db: object) {
+  let map = caches.get(db)
+  if (!map) {
+    map = new Map()
+    caches.set(db, map)
+  }
+  return map
+}
+
+export function invalidate(db: object) {
+  caches.get(db)?.clear()
+}
+
 const messageRows = Effect.fnUntraced(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
   compaction: { readonly seq: number } | undefined,
   baselineSeq?: number,
+  afterSeq?: number,
 ) {
   const rows = yield* db
     .select()
@@ -33,6 +61,7 @@ const messageRows = Effect.fnUntraced(function* (
     .where(
       and(
         eq(SessionMessageTable.session_id, sessionID),
+        afterSeq === undefined ? undefined : gt(SessionMessageTable.seq, afterSeq),
         compaction
           ? or(
               gte(SessionMessageTable.seq, compaction.seq),
@@ -63,6 +92,41 @@ const decodeMessageRow = (row: typeof SessionMessageTable.$inferSelect) =>
     ),
   )
 
+const decodeRows = (rows: ReadonlyArray<typeof SessionMessageTable.$inferSelect>) =>
+  Effect.forEach(rows, (row) => decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))))
+
+const loadEntries = Effect.fnUntraced(function* (
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+  compaction: { readonly seq: number } | undefined,
+  baselineSeq: number | undefined,
+) {
+  const map = cacheFor(db)
+  const compactionSeq = compaction?.seq
+  const cached = map.get(sessionID)
+  if (cached && cached.baselineSeq === baselineSeq && cached.compactionSeq === compactionSeq) {
+    const rows = yield* messageRows(db, sessionID, compaction, baselineSeq, cached.maxSeq)
+    if (rows.length === 0) return cached.entries
+    const entries = [...cached.entries, ...(yield* decodeRows(rows))]
+    map.set(sessionID, {
+      baselineSeq,
+      compactionSeq,
+      maxSeq: rows.at(-1)?.seq ?? cached.maxSeq,
+      entries,
+    })
+    return entries
+  }
+  const rows = yield* messageRows(db, sessionID, compaction, baselineSeq)
+  const entries = yield* decodeRows(rows)
+  map.set(sessionID, {
+    baselineSeq,
+    compactionSeq,
+    maxSeq: rows.at(-1)?.seq ?? -1,
+    entries,
+  })
+  return entries
+})
+
 export const load = Effect.fn("SessionHistory.load")(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
   const [epoch, compaction] = yield* Effect.all(
     [
@@ -76,7 +140,7 @@ export const load = Effect.fn("SessionHistory.load")(function* (db: DatabaseServ
     ],
     { concurrency: "unbounded" },
   )
-  return yield* Effect.forEach(yield* messageRows(db, sessionID, compaction, epoch?.baselineSeq), decodeMessageRow)
+  return (yield* loadEntries(db, sessionID, compaction, epoch?.baselineSeq)).map((entry) => entry.message)
 })
 
 export const loadForRunner = Effect.fn("SessionHistory.loadForRunner")(function* (
@@ -84,7 +148,9 @@ export const loadForRunner = Effect.fn("SessionHistory.loadForRunner")(function*
   sessionID: SessionSchema.ID,
   baselineSeq: number,
 ) {
-  return (yield* entriesForRunner(db, sessionID, baselineSeq)).map((entry) => entry.message)
+  return (yield* loadEntries(db, sessionID, yield* latestCompaction(db, sessionID), baselineSeq)).map(
+    (entry) => entry.message,
+  )
 })
 
 export const entriesForRunner = Effect.fn("SessionHistory.entriesForRunner")(function* (
@@ -92,10 +158,7 @@ export const entriesForRunner = Effect.fn("SessionHistory.entriesForRunner")(fun
   sessionID: SessionSchema.ID,
   baselineSeq: number,
 ) {
-  const rows = yield* messageRows(db, sessionID, yield* latestCompaction(db, sessionID), baselineSeq)
-  return yield* Effect.forEach(rows, (row) =>
-    decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
-  )
+  return yield* loadEntries(db, sessionID, yield* latestCompaction(db, sessionID), baselineSeq)
 })
 
 export * as SessionHistory from "./history"
