@@ -413,7 +413,7 @@ Theme install behavior:
 - If the theme name already exists, install is skipped unless plugin metadata state is `updated`.
 - On `updated`, host skips rewrite when tracked `mtime`/`size` is unchanged.
 - When a theme already exists and state is not `updated`, host can still persist theme metadata when destination already exists.
-- Local plugins persist installed themes under the local `.opencode/themes` area near the plugin config source.
+- Local plugins persist installed themes under the local `.miao/themes` area near the plugin config source.
 - Global plugins persist installed themes under the global `themes` dir.
 - Invalid or unreadable theme files are ignored.
 
@@ -538,7 +538,7 @@ The plugin manager is exposed as a command with title `Plugins` and value `plugi
 
 ## Current in-repo examples
 
-- Local smoke plugin: `.opencode/plugins/tui-smoke.tsx`
-- Local vim plugin: `.opencode/plugins/tui-vim.tsx`
-- Local smoke config: `.opencode/tui.json`
-- Local smoke theme: `.opencode/plugins/smoke-theme.json`
+- Local smoke plugin: `.miao/plugins/tui-smoke.tsx`
+- Local vim plugin: `.miao/plugins/tui-vim.tsx`
+- Local smoke config: `.miao/tui.json`
+- Local smoke theme: `.miao/plugins/smoke-theme.json`

@@ -7,14 +7,30 @@ import { unique } from "remeda"
 import * as Effect from "effect/Effect"
 import { FSUtil } from "@miao/core/fs-util"
 
+// Configuration has lived under `.miao/` since the rebrand. `.opencode/` is
+// still discovered so a project set up before the rename keeps working, and
+// `.miao/` wins when a project has both.
+export const DIRECTORY_NAMES = [".miao", ".opencode"] as const
+// The config file inside a config directory, by the same rule.
+export const FILE_NAMES = ["miao", "opencode"] as const
+
+export function isConfigDirectory(dir: string) {
+  return DIRECTORY_NAMES.some((name) => dir.endsWith(name))
+}
+
+export function configFilesIn(dir: string) {
+  return FILE_NAMES.map((name) => [path.join(dir, `${name}.json`), path.join(dir, `${name}.jsonc`)]).flat()
+}
+
 export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
-  name: string,
+  name: string | readonly string[],
   directory: string,
   worktree?: string,
 ) {
   const afs = yield* FSUtil.Service
+  const names = typeof name === "string" ? [name] : name
   return (yield* afs.up({
-    targets: [`${name}.jsonc`, `${name}.json`],
+    targets: names.flatMap((name) => [`${name}.jsonc`, `${name}.json`]),
     start: directory,
     stop: worktree,
   })).toReversed()
@@ -26,13 +42,13 @@ export const directories = Effect.fn("ConfigPaths.directories")(function* (direc
     Global.Path.config,
     ...(!Flag.MIAO_DISABLE_PROJECT_CONFIG
       ? yield* afs.up({
-          targets: [".opencode"],
+          targets: [...DIRECTORY_NAMES],
           start: directory,
           stop: worktree,
         })
       : []),
     ...(yield* afs.up({
-      targets: [".opencode"],
+      targets: [...DIRECTORY_NAMES],
       start: Global.Path.home,
       stop: Global.Path.home,
     })),

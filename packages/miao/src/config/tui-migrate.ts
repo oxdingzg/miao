@@ -114,10 +114,12 @@ async function backupAndStripLegacy(file: string, source: string) {
 
 async function opencodeFiles(input: { directories: string[]; cwd: string }) {
   const files = [
+    ...ConfigPaths.fileInDirectory(Global.Path.config, "miao"),
     ...ConfigPaths.fileInDirectory(Global.Path.config, "opencode"),
-    ...(await Filesystem.findUp(["opencode.json", "opencode.jsonc"], input.cwd, undefined, { rootFirst: true })),
+    ...(await Filesystem.findUp(["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"], input.cwd, undefined, { rootFirst: true })),
   ]
   for (const dir of unique(input.directories)) {
+    files.push(...ConfigPaths.fileInDirectory(dir, "miao"))
     files.push(...ConfigPaths.fileInDirectory(dir, "opencode"))
   }
   if (Flag.MIAO_CONFIG) files.push(Flag.MIAO_CONFIG)
