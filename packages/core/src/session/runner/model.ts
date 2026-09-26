@@ -3,6 +3,7 @@ export * as SessionRunnerModel from "./model"
 import { makeLocationNode } from "../../effect/app-node"
 import { type Model } from "@opencode-ai/llm"
 import * as AnthropicMessages from "@opencode-ai/llm/protocols/anthropic-messages"
+import * as Gemini from "@opencode-ai/llm/protocols/gemini"
 import * as OpenAICompatibleChat from "@opencode-ai/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@opencode-ai/llm/protocols/openai-responses"
 import { Auth, type AnyRoute } from "@opencode-ai/llm/route"
@@ -128,6 +129,22 @@ const withVariant = (
 const apiName = (model: ModelV2.Info) =>
   model.api.type === "aisdk" ? `${model.api.type}:${model.api.package}` : model.api.type
 
+// Providers whose models.dev entry has no `api` URL but are OpenAI-compatible.
+const COMPATIBLE_BASE_URLS: Record<string, string> = {
+  "@ai-sdk/xai": "https://api.x.ai/v1",
+  "@ai-sdk/groq": "https://api.groq.com/openai/v1",
+  "@ai-sdk/togetherai": "https://api.together.xyz/v1",
+  "@ai-sdk/cerebras": "https://api.cerebras.ai/v1",
+  "@ai-sdk/deepinfra": "https://api.deepinfra.com/v1/openai",
+  "@ai-sdk/mistral": "https://api.mistral.ai/v1",
+  "@ai-sdk/perplexity": "https://api.perplexity.ai",
+  "@ai-sdk/gateway": "https://ai-gateway.vercel.sh/v1",
+  "venice-ai-sdk-provider": "https://api.venice.ai/api/v1",
+}
+
+const unsupported = (model: ModelV2.Info) =>
+  new UnsupportedApiError({ providerID: model.providerID, modelID: model.id, api: apiName(model) })
+
 export const fromCatalogModel = (
   model: ModelV2.Info,
   credential?: Credential.Value,
@@ -139,44 +156,57 @@ export const fromCatalogModel = (
           Object.assign(draft.request.body, credential.metadata)
         })
   const key = apiKey(resolved, credential)
-  if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai") {
+  if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
+  const bearer = key === undefined ? Auth.none : Auth.bearer(key)
+  if (resolved.api.package === "@ai-sdk/openai") {
     return Effect.succeed(
-      withDefaults(resolved, OpenAIResponses.route)
-        .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
-        .model({ id: resolved.api.id }),
+      withDefaults(resolved, OpenAIResponses.route).with({ auth: bearer }).model({ id: resolved.api.id }),
     )
   }
-  if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/anthropic") {
+  if (resolved.api.package === "@ai-sdk/anthropic") {
     return Effect.succeed(
       withDefaults(resolved, AnthropicMessages.route)
         .with({ auth: key === undefined ? Auth.none : Auth.header("x-api-key", key) })
         .model({ id: resolved.api.id }),
     )
   }
-  if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai-compatible" && resolved.api.url) {
+  if (resolved.api.package === "@ai-sdk/google") {
     return Effect.succeed(
-      withDefaults(resolved, OpenAICompatibleChat.route)
-        .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
+      withDefaults(resolved, Gemini.route)
+        .with({ auth: key === undefined ? Auth.none : Auth.header("x-goog-api-key", key) })
         .model({ id: resolved.api.id }),
     )
   }
-  return Effect.fail(
-    new UnsupportedApiError({
-      providerID: resolved.providerID,
-      modelID: resolved.id,
-      api: apiName(resolved),
-    }),
-  )
+  if (resolved.api.package === "@ai-sdk/openai-compatible" && resolved.api.url) {
+    return Effect.succeed(
+      withDefaults(resolved, OpenAICompatibleChat.route).with({ auth: bearer }).model({ id: resolved.api.id }),
+    )
+  }
+  const baseURL = resolved.api.url ?? COMPATIBLE_BASE_URLS[resolved.api.package]
+  if (baseURL) {
+    return Effect.succeed(
+      withDefaults(resolved, OpenAICompatibleChat.route)
+        .with({ endpoint: { baseURL }, auth: bearer })
+        .model({ id: resolved.api.id }),
+    )
+  }
+  return Effect.fail(unsupported(resolved))
 }
 
 export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, credential?: Credential.Value) =>
   withVariant(model, session.model?.variant).pipe(Effect.flatMap((model) => fromCatalogModel(model, credential)))
 
-export const supported = (model: ModelV2.Info) =>
-  model.api.type === "aisdk" &&
-  (model.api.package === "@ai-sdk/openai" ||
+export const supported = (model: ModelV2.Info) => {
+  if (model.api.type !== "aisdk") return false
+  if (
+    model.api.package === "@ai-sdk/openai" ||
     model.api.package === "@ai-sdk/anthropic" ||
-    (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined))
+    model.api.package === "@ai-sdk/google"
+  ) {
+    return true
+  }
+  return model.api.url !== undefined || COMPATIBLE_BASE_URLS[model.api.package] !== undefined
+}
 
 /** Resolves models from the catalog belonging to the current Location runtime. */
 export const locationLayer = Layer.effect(
