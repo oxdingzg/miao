@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode",
+  "name": "miao",
   "description": "Janus — same results, faster and cheaper. Entry-level AI coding tool based on opencode.",
   "private": true,
   "type": "module",
