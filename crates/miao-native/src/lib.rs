@@ -3,6 +3,7 @@
 //! generation. The native side performs pure functions only: no file IO, no
 //! Effect, no session state.
 
+use memchr::memmem;
 use napi_derive::napi;
 use regex::Regex;
 use similar::{ChangeTag, TextDiff};
@@ -73,7 +74,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
     prev[b.len()]
 }
 
-fn trim_diff_span(lines: &[&str], start_line: usize, end_line: usize) -> String {
+fn slice_span(content: &str, lines: &[&str], start_line: usize, end_line: usize) -> String {
     let mut match_start = 0usize;
     for line in &lines[..start_line] {
         match_start += line.len() + 1;
@@ -85,8 +86,7 @@ fn trim_diff_span(lines: &[&str], start_line: usize, end_line: usize) -> String 
             match_end += 1;
         }
     }
-    let joined = lines.join("\n");
-    joined[match_start..match_end].to_string()
+    content[match_start..match_end].to_string()
 }
 
 fn simple(_content: &str, find: &str) -> Vec<String> {
@@ -102,14 +102,15 @@ fn line_trimmed(content: &str, find: &str) -> Vec<String> {
     if search.is_empty() || search.len() > original.len() {
         return Vec::new();
     }
+    let search_trimmed: Vec<&str> = search.iter().map(|line| line.trim()).collect();
     let mut out = Vec::new();
     for i in 0..=(original.len() - search.len()) {
-        let matches = search
+        let matches = search_trimmed
             .iter()
             .enumerate()
-            .all(|(j, needle)| original[i + j].trim() == needle.trim());
+            .all(|(j, needle)| original[i + j].trim() == *needle);
         if matches {
-            out.push(trim_diff_span(&original, i, i + search.len() - 1));
+            out.push(slice_span(content, &original, i, i + search.len() - 1));
         }
     }
     out
@@ -178,7 +179,7 @@ fn block_anchor(content: &str, find: &str) -> Vec<String> {
     if candidates.len() == 1 {
         let (start_line, end_line) = candidates[0];
         if similarity_of(start_line, end_line) >= SINGLE_CANDIDATE_SIMILARITY_THRESHOLD {
-            return vec![trim_diff_span(&original, start_line, end_line)];
+            return vec![slice_span(content, &original, start_line, end_line)];
         }
         return Vec::new();
     }
@@ -194,7 +195,7 @@ fn block_anchor(content: &str, find: &str) -> Vec<String> {
     }
     if max_similarity >= MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD {
         if let Some((start_line, end_line)) = best {
-            return vec![trim_diff_span(&original, start_line, end_line)];
+            return vec![slice_span(content, &original, start_line, end_line)];
         }
     }
     Vec::new()
@@ -425,7 +426,7 @@ pub fn replace(content: &str, old_string: &str, new_string: &str, replace_all: b
     let mut not_found = true;
     for replacer in REPLACERS {
         for search in replacer(content, old_string) {
-            let Some(index) = content.find(&search) else {
+            let Some(index) = memmem::find(content.as_bytes(), search.as_bytes()) else {
                 continue;
             };
             not_found = false;
@@ -435,8 +436,10 @@ pub fn replace(content: &str, old_string: &str, new_string: &str, replace_all: b
             if replace_all {
                 return Ok(content.replace(&search, new_string));
             }
-            let last_index = content.rfind(&search).unwrap_or(index);
-            if index != last_index {
+            // `index` is already the leftmost occurrence, so uniqueness is just
+            // "no further occurrence after index". Searching from index + 1
+            // preserves JS lastIndexOf semantics for self-overlapping patterns.
+            if memmem::find(&content.as_bytes()[index + 1..], search.as_bytes()).is_some() {
                 continue;
             }
             let mut out = String::with_capacity(content.len() + new_string.len());
@@ -492,6 +495,17 @@ pub struct ApplyEditResult {
 pub struct DiffStats {
     pub additions: u32,
     pub deletions: u32,
+}
+
+#[napi(js_name = "replaceOnly")]
+pub fn replace_only(
+    content: String,
+    old_string: String,
+    new_string: String,
+    replace_all: Option<bool>,
+) -> napi::Result<String> {
+    replace(&content, &old_string, &new_string, replace_all.unwrap_or(false))
+        .map_err(|error| napi::Error::from_reason(error.message()))
 }
 
 #[napi(js_name = "applyEdit")]

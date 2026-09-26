@@ -31,25 +31,36 @@ break the normal `packages/miao` suite.
 ## API
 
 ```ts
+replaceOnly(content, oldString, newString, replaceAll?) -> string
 applyEdit(content, oldString, newString, replaceAll?) -> { content, additions, deletions }
 diffStats(before, after) -> { additions, deletions }
 unifiedPatch(before, after, filePath) -> string
 ```
 
-`applyEdit` throws the same error messages as the TS `replace()`.
+`replaceOnly` throws the same error messages as the TS `replace()`; `applyEdit` is `replaceOnly`
+plus diff statistics.
 
 ## PoC results (measured, same machine, release)
 
 - Parity: 12 Rust unit tests + 18 JS parity tests (including a 400-case fuzz corpus and
-  exact string match for `unifiedPatch` against jsdiff) all pass.
-- Diff stats and unified patch are byte-identical to jsdiff for the sampled cases.
-- Timing:
-  - typical edit on a 12k-line file: parity (TS `replace` + `diffLines` ~2.9 ms vs native `applyEdit` ~2.8 ms)
-  - fuzzy indent on a 12k-line file: native slightly slower (~4.0 ms vs ~3.0 ms), dominated by the stats pass
-  - pathologic block-anchor with 1800-char lines: native ~10.6 ms vs TS ~30 ms (~2.8x)
+  byte-identical `unifiedPatch` against jsdiff) all pass.
+- Matching only, 12k-line file:
+  - exact: native `replaceOnly` ~0.16 ms vs TS `replace` ~0.23 ms (1.4x)
+  - fuzzy indent: native `replaceOnly` ~0.41 ms vs TS `replace` ~0.82 ms (2.0x)
+- Full pipeline (match + diff stats): native `applyEdit` ~1.9-2.2 ms vs TS `replace` + `diffLines`
+  ~2.0-2.6 ms. The diff pass dominates (`similar` is about the same as jsdiff).
+- Pathologic block-anchor with 1800-char lines: native ~10 ms vs TS ~21-30 ms (~2-3x).
 
-Conclusion: the port is behaviourally correct; the gain is on pathologic inputs, not on the
-typical case. The next decision should be driven by a memory measurement, not by latency.
+The first version of the port was **slower** than TS on the typical case. The cause was not the
+language, and not the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms):
+
+- `str::find`/`str::rfind` (std two-way) were slower than the JS engines' SIMD `indexOf`
+  (0.38 ms / 0.45 ms vs ~0.05 ms for memchr).
+- `slice_span` rebuilt the whole file with `lines.join("\n")` just to slice one small block.
+
+Fixes: `memchr::memmem` for substring search, a forward uniqueness check from `index + 1` instead
+of `rfind`, and slicing the original content directly. Matching is now faster than TS on every case
+measured.
 
 ## Status
 

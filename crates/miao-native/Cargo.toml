@@ -12,6 +12,7 @@ napi = { version = "2", default-features = false, features = ["napi6"] }
 napi-derive = "2"
 similar = "2"
 regex = "1"
+memchr = "2"
 
 [build-dependencies]
 napi-build = "2"

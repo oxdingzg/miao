@@ -104,13 +104,18 @@ Rust `strsim` Levenshtein at the same size: **3.1 ms**, about 12x faster than th
 
 **Acceptance**: the existing miao/core edit/apply_patch tests stay green; on 12k/150k-line samples the diff is no worse and peak memory drops; the long-line case costs no more than today.
 
-**PoC result (implemented)**
+**PoC result (implemented, with one optimization pass)**
 
-The code is in `crates/miao-native/`: `src/lib.rs` ports the nine replacers, `replace()`, `diffStats`, and `unifiedPatch`, exposed via napi-rs; `bun run build.ts` produces `miao-native.node`.
+The code is in `crates/miao-native/`: `src/lib.rs` ports the nine replacers, `replace()`, `diffStats`, and `unifiedPatch`, exposed via napi-rs; `bun run build.ts` produces `miao-native.node`. Pure functions, no IO or Effect.
 
 - Parity: 12 Rust unit tests + 18 JS parity tests pass, including a 400-case fuzz corpus; `unifiedPatch` matches jsdiff byte for byte.
-- Timing: a typical 12k-line edit is at parity (~2.8 ms); fuzzy indent is slightly slower (~4.0 ms vs ~3.0 ms, dragged by the stats diff); the pathologic long-line case is ~10.6 ms vs ~30 ms (~2.8x).
-- Conclusion: the port is behaviourally correct, and the gain is on pathologic inputs, not the typical path. The next step is a memory measurement, not latency. It is not wired into production; `tool/edit.ts` still uses TS and jsdiff.
+- Matching (12k-line file): exact native ~0.16 ms vs TS ~0.23 ms (1.4x); fuzzy indent ~0.41 ms vs ~0.82 ms (2.0x).
+- Full pipeline (match + diff stats): native ~1.9-2.2 ms vs TS ~2.0-2.6 ms, dominated by the diff (`similar` is about the same as jsdiff).
+- Pathologic long lines: ~10 ms vs ~21-30 ms (2-3x).
+
+**One optimization pass worth recording**: the first version was slower than TS on the typical case. The cause was neither the language nor the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms); it was `str::find`/`str::rfind` (std two-way) being slower than the JS engines' SIMD `indexOf` (0.38 / 0.45 ms vs ~0.05 ms), plus `slice_span` rebuilding the whole file with `lines.join("\n")` just to slice one block. After switching to `memchr::memmem`, replacing `rfind` with a forward uniqueness check from `index + 1`, and slicing the original content directly, native is faster than TS on every measured case.
+
+Conclusion: behaviour is correct and, after optimization, the typical and pathologic paths both lead; but the full pipeline is dominated by the diff, so the end-to-end gain is still limited. Not wired into production; `tool/edit.ts` still uses TS and jsdiff.
 
 ### Step 2: decide based on metrics
 

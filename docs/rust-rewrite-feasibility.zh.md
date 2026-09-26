@@ -104,13 +104,18 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 
 **验收**：miao/core 现有 edit/apply_patch 测试全绿；在 12k/150k 行样本上 diff 不劣化且峰值内存下降；长行用例耗时不高于当前。
 
-**PoC 结果（已实现）**
+**PoC 结果（已实现，含一次优化迭代）**
 
-代码在 `crates/miao-native/`：`src/lib.rs` 移植了 9 个 replacer、`replace()`、`diffStats`、`unifiedPatch`，用 napi-rs 暴露；`bun run build.ts` 产出 `miao-native.node`。
+代码在 `crates/miao-native/`：`src/lib.rs` 移植了 9 个 replacer、`replace()`、`diffStats`、`unifiedPatch`，用 napi-rs 暴露；`bun run build.ts` 产出 `miao-native.node`。纯函数，不碰 IO / Effect。
 
 - 一致性：12 个 Rust 单测 + 18 个 JS 对比测试全过，含 400 例随机语料；`unifiedPatch` 与 jsdiff 逐字节一致。
-- 实测：典型 12k 行文件与 TS 持平（约 2.8 ms）；模糊缩进反而略慢（约 4.0 ms vs 约 3.0 ms，被统计 diff 拖累）；病态超长行约 10.6 ms vs 约 30 ms（约 2.8x）。
-- 结论：移植在行为上正确，收益落在病态输入，不在典型路径。下一步应先测内存，而不是延迟。目前未接入生产，`tool/edit.ts` 仍走 TS 与 jsdiff。
+- 匹配（12k 行）：exact native 约 0.16 ms vs TS 约 0.23 ms（1.4x）；模糊缩进约 0.41 ms vs 约 0.82 ms（2.0x）。
+- 全流程（匹配 + diff 统计）：native 约 1.9–2.2 ms vs TS 约 2.0–2.6 ms，被 diff 主导（`similar` 约等于 jsdiff）。
+- 病态超长行：约 10 ms vs 约 21–30 ms（2–3x）。
+
+**一次优化迭代值得记下来**：第一版 native 在典型场景反而比 TS 慢。原因不是语言，也不是 NAPI 边界（597 KB 字符串 echo 只要约 0.08 ms），而是 `str::find`/`str::rfind`（std two-way）比 JS 引擎的 SIMD `indexOf` 慢（0.38 / 0.45 ms vs 约 0.05 ms），且 `slice_span` 为了切一小段块把整个文件 `join` 了一遍。改用 `memchr::memmem` 搜索、用从 `index + 1` 向前的唯一性检查替代 `rfind`、直接对原内容切片后，所有场景 native 都快于 TS。
+
+结论：行为正确，优化后典型与病态路径都领先；但全流程被 diff 主导，端到端收益仍有限。未接入生产，`tool/edit.ts` 仍走 TS 与 jsdiff。
 
 ### 第二步：看指标再决定
 
