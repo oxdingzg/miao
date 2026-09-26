@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@miao/core/effect/layer-node"
 import * as Socket from "effect/unstable/socket/Socket"
 
 export const SERVER_CLOSING_EVENT = () => new Socket.CloseEvent(1001, "server closing")

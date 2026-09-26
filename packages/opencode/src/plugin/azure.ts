@@ -1,5 +1,5 @@
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { which } from "@opencode-ai/core/util/which"
+import { InstallationVersion } from "@miao/core/installation/version"
+import { which } from "@miao/core/util/which"
 import type { Hooks } from "@opencode-ai/plugin"
 import { Schema } from "effect"
 import { OAUTH_DUMMY_KEY } from "../auth"

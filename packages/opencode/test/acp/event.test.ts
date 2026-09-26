@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { AgentSideConnection } from "@agentclientprotocol/sdk"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@miao/core/effect/layer-node"
 import type { Event, Message, OpencodeClient, Part, SessionMessageResponse, ToolPart } from "@opencode-ai/sdk/v2"
 import { Effect, ManagedRuntime } from "effect"
 import { ACPEvent } from "@/acp/event"

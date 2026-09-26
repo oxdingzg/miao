@@ -6,9 +6,9 @@ import {
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN,
   SessionReviewV2,
   SessionReviewV2Sidebar,
-} from "@opencode-ai/session-ui/v2/session-review-v2"
-import { SessionReviewFilePreviewV2 } from "@opencode-ai/session-ui/v2/session-review-file-preview-v2"
-import { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
+} from "@miao/session-ui/v2/session-review-v2"
+import { SessionReviewFilePreviewV2 } from "@miao/session-ui/v2/session-review-file-preview-v2"
+import { DiffChanges } from "@miao/ui/v2/diff-changes-v2"
 import type {
   SessionReviewComment,
   SessionReviewCommentActions,
@@ -17,7 +17,7 @@ import type {
   SessionReviewDiffStyle,
   SessionReviewFocus,
   SessionReviewLineComment,
-} from "@opencode-ai/session-ui/session-review"
+} from "@miao/session-ui/session-review"
 import FileTreeV2 from "@/components/file-tree-v2"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"

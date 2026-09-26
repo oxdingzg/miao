@@ -1,8 +1,8 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
-import { ModelStatRepo } from "@opencode-ai/stats-core/domain/model"
-import { R2Sql } from "@opencode-ai/stats-core/r2-sql"
-import { layer as statsLayer } from "@opencode-ai/stats-core/runtime"
-import { syncStats } from "@opencode-ai/stats-core/stat-sync"
+import { ModelStatRepo } from "@miao/stats-core/domain/model"
+import { R2Sql } from "@miao/stats-core/r2-sql"
+import { layer as statsLayer } from "@miao/stats-core/runtime"
+import { syncStats } from "@miao/stats-core/stat-sync"
 import { Cause, Duration, Effect, Layer, Schedule } from "effect"
 
 const SYNC_INTERVAL = "1 hour"

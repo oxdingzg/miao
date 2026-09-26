@@ -1,6 +1,6 @@
 # CodeMode Design and Status
 
-This is the living design and status document for `@opencode-ai/codemode` and its existing V2 OpenCode adapter.
+This is the living design and status document for `@miao/codemode` and its existing V2 OpenCode adapter.
 It records current behavior, intentional boundaries, durable rationale, and material remaining work.
 
 Completed implementation history, branch names, test counts, and closed findings belong in git, not here. Remove

@@ -1,8 +1,8 @@
 import { useFile } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Collapsible } from "@miao/ui/collapsible"
+import { FileIcon } from "@miao/ui/file-icon"
+import { Icon } from "@miao/ui/icon"
 import {
   createEffect,
   createMemo,

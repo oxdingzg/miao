@@ -29,8 +29,8 @@ import {
   type SetSessionModeRequest,
   type SetSessionModeResponse,
 } from "@agentclientprotocol/sdk"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { InstallationVersion } from "@miao/core/installation/version"
+import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import type { AssistantMessage, Message, OpencodeClient, Session, SessionMessageResponse } from "@opencode-ai/sdk/v2"
 import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import * as ACPError from "./error"
@@ -41,8 +41,8 @@ import { ACPEvent } from "./event"
 import { ACPSession } from "./session"
 import { UsageService } from "./usage"
 import { ACPProfile } from "./profile"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@miao/core/provider"
+import { ModelV2 } from "@miao/core/model"
 import { Provider } from "@/provider/provider"
 import type { Command } from "@/command"
 

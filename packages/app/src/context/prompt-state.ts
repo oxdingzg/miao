@@ -1,4 +1,4 @@
-import { checksum } from "@opencode-ai/core/util/encode"
+import { checksum } from "@miao/core/util/encode"
 import type { FilePartSource } from "@opencode-ai/sdk/v2/client"
 import { batch, createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"

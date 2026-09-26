@@ -13,7 +13,7 @@ import type {
   AgentPart,
 } from "@opencode-ai/sdk/v2"
 import { DataProvider } from "../context/data"
-import { FileComponentProvider } from "@opencode-ai/ui/context/file"
+import { FileComponentProvider } from "@miao/ui/context/file"
 import { SessionTurn } from "./session-turn"
 
 // ---------------------------------------------------------------------------

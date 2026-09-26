@@ -1,5 +1,5 @@
-import { Binary } from "@opencode-ai/core/util/binary"
-import { retry } from "@opencode-ai/core/util/retry"
+import { Binary } from "@miao/core/util/binary"
+import { retry } from "@miao/core/util/retry"
 import type { OpenCodeEvent, SessionApi, SessionMessageInfo } from "@opencode-ai/client/promise"
 import type {
   Message,

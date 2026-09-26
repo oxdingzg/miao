@@ -1,5 +1,5 @@
-import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import type { PermissionV1 } from "@miao/core/v1/permission"
+import { FSUtil } from "@miao/core/fs-util"
 // CLI entry point for `opencode run` and `opencode --mini`.
 //
 // Handles three modes:

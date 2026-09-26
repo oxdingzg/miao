@@ -1,5 +1,5 @@
-import { Model } from "@opencode-ai/schema/model"
-import { Location } from "@opencode-ai/schema/location"
+import { Model } from "@miao/schema/model"
+import { Location } from "@miao/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { ServiceUnavailableError } from "../errors"

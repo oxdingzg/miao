@@ -1,11 +1,11 @@
 import { expect } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@miao/core/effect/layer-node"
 import { Effect, Layer, Option } from "effect"
 import { sql } from "drizzle-orm"
 
 import { AccountRepo } from "../../src/account/repo"
 import { AccessToken, AccountID, OrgID, RefreshToken } from "../../src/account/schema"
-import { Database } from "@opencode-ai/core/database/database"
+import { Database } from "@miao/core/database/database"
 import { testEffect } from "../lib/effect"
 
 const truncate = Layer.effectDiscard(

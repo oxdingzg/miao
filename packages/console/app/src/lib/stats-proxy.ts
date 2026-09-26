@@ -1,5 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server"
-import { Resource, waitUntil } from "@opencode-ai/console-resource"
+import { Resource, waitUntil } from "@miao/console-resource"
 import { LOCALE_HEADER, cookie, localeFromRequest, route, tag } from "~/lib/language"
 
 const dataPath = "/data"

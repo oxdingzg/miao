@@ -15,8 +15,8 @@ import {
   toDefinitions,
   type JsonSchema,
   type LLMEvent,
-} from "@opencode-ai/llm"
-import type { LLMClientShape } from "@opencode-ai/llm/route"
+} from "@miao/llm"
+import type { LLMClientShape } from "@miao/llm/route"
 import { LLMNative } from "./native-request"
 
 export type RuntimeStatus =
@@ -47,7 +47,7 @@ export function status(input: Pick<StreamInput, "model" | "provider" | "auth">):
   return statusWithFetch(input, providerFetch(input))
 }
 
-// Catalog packages the native request adapter can lower into a `@opencode-ai/llm`
+// Catalog packages the native request adapter can lower into a `@miao/llm`
 // route. Bedrock is intentionally excluded: it needs SigV4 credentials, not the
 // API-key path this gate threads through.
 const NATIVE_PACKAGES = new Set([
@@ -90,7 +90,7 @@ export function stream(input: StreamInput): StreamResult {
   const current = statusWithFetch(input, fetch)
   if (current.type === "unsupported") return current
 
-  // Integration point with @opencode-ai/llm: native-request lowers session data
+  // Integration point with @miao/llm: native-request lowers session data
   // into an LLMRequest, then LLMClient handles route selection and transport.
   //
   // ProviderTransform.providerOptions builds AI-SDK-shaped options for the
@@ -185,7 +185,7 @@ export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput
     Object.entries(tools).map(([name, item]) => [
       name,
       // Tool execution remains opencode-owned. The native runtime only adapts
-      // the @opencode-ai/llm tool call back into the AI SDK Tool.execute shape.
+      // the @miao/llm tool call back into the AI SDK Tool.execute shape.
       NativeTool.make({
         description: item.description ?? "",
         jsonSchema: nativeSchema(item.inputSchema),

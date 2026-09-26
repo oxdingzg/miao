@@ -1,7 +1,7 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
+import { LayerNode } from "@miao/core/effect/layer-node"
+import { httpClient } from "@miao/core/effect/app-node-platform"
 import { Cache, Clock, Duration, Effect, Layer, Option, Schema, SchemaGetter, Context } from "effect"
-import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import { serviceUse } from "@miao/core/effect/service-use"
 import {
   FetchHttpClient,
   HttpClient,

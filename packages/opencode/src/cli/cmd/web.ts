@@ -2,8 +2,8 @@ import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { openUrl } from "@opencode-ai/core/open"
+import { Flag } from "@miao/core/flag/flag"
+import { openUrl } from "@miao/core/open"
 import { networkInterfaces } from "os"
 
 function getNetworkIPs() {

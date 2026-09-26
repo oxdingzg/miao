@@ -8,7 +8,7 @@ import type { Auth, Provider } from "@opencode-ai/sdk/v2"
 import { OAUTH_DUMMY_KEY } from "../../src/auth"
 import { AzureAuthPlugin, createAzureAuthHooks } from "../../src/plugin/azure"
 import { Process } from "../../src/util/process"
-import { which } from "@opencode-ai/core/util/which"
+import { which } from "@miao/core/util/which"
 
 const resourceName = process.env.AZURE_RESOURCE_NAME
 const originalPath = process.env.PATH

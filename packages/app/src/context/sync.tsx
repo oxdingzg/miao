@@ -1,4 +1,4 @@
-import { Binary } from "@opencode-ai/core/util/binary"
+import { Binary } from "@miao/core/util/binary"
 import { createMemo } from "solid-js"
 import { useServerSync } from "./server-sync"
 import { useSDK } from "./sdk"

@@ -13,22 +13,22 @@
       "outputs": [],
       "passThroughEnv": ["*"]
     },
-    "@opencode-ai/core#test": {
+    "@miao/core#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/function#test": {
+    "@miao/function#test": {
       "outputs": []
     },
-    "@opencode-ai/app#test": {
+    "@miao/app#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/ui#test": {
+    "@miao/ui#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/session-ui#test": {
+    "@miao/session-ui#test": {
       "dependsOn": ["^build"],
       "outputs": []
     }

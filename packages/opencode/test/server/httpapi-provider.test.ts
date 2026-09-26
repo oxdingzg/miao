@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { LayerNode } from "@miao/core/effect/layer-node"
+import { FSUtil } from "@miao/core/fs-util"
 import { Effect, Layer } from "effect"
 import path from "path"
 import { resetDatabase } from "../fixture/db"

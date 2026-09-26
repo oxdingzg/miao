@@ -1,4 +1,4 @@
-import type { SessionV1 } from "@opencode-ai/core/v1/session"
+import type { SessionV1 } from "@miao/core/v1/session"
 
 export { parseGitHubRemote } from "@/util/repository"
 

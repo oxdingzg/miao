@@ -1,4 +1,4 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@miao/core/effect/layer-node"
 import type {
   Hooks,
   PluginInput,
@@ -11,7 +11,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk"
 import { ServerAuth } from "@/server/auth"
 import { CodexAuthPlugin } from "./openai/codex"
 import { Session } from "@/session/session"
-import { NamedError } from "@opencode-ai/core/util/error"
+import { NamedError } from "@miao/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
 import { ModalPlugin } from "./modal/modal"
 import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
@@ -32,7 +32,7 @@ import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { InstallationChannel } from "@miao/core/installation/version"
 
 type State = {
   hooks: Hooks[]
@@ -73,8 +73,10 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
       }),
     CopilotAuthPlugin,
     ModalPlugin,
-    GitlabAuthPlugin,
-    PoeAuthPlugin,
+    // These npm plugins ship their own @opencode-ai/plugin + @opencode-ai/sdk type
+    // copies, so their Plugin type is structurally identical but nominally distinct.
+    GitlabAuthPlugin as unknown as PluginInstance,
+    PoeAuthPlugin as unknown as PluginInstance,
     CloudflareWorkersAuthPlugin,
     CloudflareAIGatewayAuthPlugin,
     AzureAuthPlugin,

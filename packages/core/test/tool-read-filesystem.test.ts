@@ -1,10 +1,10 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect, FileSystem } from "effect"
-import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { FSUtil } from "@opencode-ai/core/fs-util"
-import { ReadToolFileSystem } from "@opencode-ai/core/tool/read-filesystem"
+import { LayerNodePlatform } from "@miao/core/effect/app-node-platform"
+import { LayerNode } from "@miao/core/effect/layer-node"
+import { FSUtil } from "@miao/core/fs-util"
+import { ReadToolFileSystem } from "@miao/core/tool/read-filesystem"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([FSUtil.node, LayerNodePlatform.filesystem])))

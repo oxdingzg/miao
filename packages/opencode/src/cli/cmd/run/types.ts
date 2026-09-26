@@ -12,7 +12,7 @@
 //       → footer.ts queues commits and patches the footer view
 //         → OpenTUI split-footer renderer writes to terminal
 import type { OpencodeClient, PermissionRequest, QuestionRequest, ToolPart } from "@opencode-ai/sdk/v2"
-import type { TuiConfig } from "@opencode-ai/tui/config"
+import type { TuiConfig } from "@miao/tui/config"
 
 export type RunFilePart = {
   type: "file"
