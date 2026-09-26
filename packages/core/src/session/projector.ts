@@ -108,8 +108,29 @@ function applyUsage(
     .pipe(Effect.orDie)
 }
 
+type RunCache = {
+  readonly assistantByID: Map<SessionMessage.ID, SessionMessage.Assistant>
+  readonly latestAssistant: Map<string, SessionMessage.Assistant | undefined>
+}
+
+// The projector is the only writer of `session_message` in this process, so it
+// can mirror the assistants it appends/updates and skip the per-event `SELECT`
+// plus full-message schema decode. A WeakMap keeps separate databases (for
+// example across tests) from sharing cache state.
+const runCaches = new WeakMap<object, RunCache>()
+function cacheFor(db: object): RunCache {
+  let cache = runCaches.get(db)
+  if (!cache) {
+    cache = { assistantByID: new Map(), latestAssistant: new Map() }
+    runCaches.set(db, cache)
+  }
+  return cache
+}
+
 function run(db: DatabaseService, event: SessionEvent.Event) {
   return Effect.gen(function* () {
+    const cache = cacheFor(db)
+    const sessionID = event.data.sessionID
     const decodeRow = (row: typeof SessionMessageTable.$inferSelect) =>
       decodeMessage({ ...row.data, id: row.id, type: row.type })
     const updateMessage = (message: SessionMessage.Message) => {
@@ -128,11 +149,15 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
         .run()
         .pipe(Effect.orDie)
     }
-    const appendMessage = (message: SessionMessage.Message) => insertMessage(db, event, message)
+    const appendMessageDb = (message: SessionMessage.Message) => insertMessage(db, event, message)
     const adapter: SessionMessageUpdater.Adapter = {
       getCurrentAssistant() {
         return Effect.gen(function* () {
           // A newer turn supersedes stale incomplete rows; never resume an older assistant projection.
+          if (cache.latestAssistant.has(sessionID)) {
+            const cached = cache.latestAssistant.get(sessionID)
+            return cached && !cached.time.completed ? cached : undefined
+          }
           const row = yield* db
             .select()
             .from(SessionMessageTable)
@@ -143,13 +168,23 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
             .limit(1)
             .get()
             .pipe(Effect.orDie)
-          if (!row) return
+          if (!row) {
+            cache.latestAssistant.set(sessionID, undefined)
+            return undefined
+          }
           const message = decodeRow(row)
-          return message.type === "assistant" && !message.time.completed ? message : undefined
+          if (message.type !== "assistant") {
+            cache.latestAssistant.set(sessionID, undefined)
+            return undefined
+          }
+          cache.latestAssistant.set(sessionID, message)
+          return message.time.completed ? undefined : message
         })
       },
       getAssistant(messageID) {
         return Effect.gen(function* () {
+          const cached = cache.assistantByID.get(messageID)
+          if (cached) return cached
           const row = yield* db
             .select()
             .from(SessionMessageTable)
@@ -164,26 +199,49 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
             .pipe(Effect.orDie)
           if (!row) return
           const message = decodeRow(row)
+          if (message.type === "assistant") cache.assistantByID.set(messageID, message)
           return message.type === "assistant" ? message : undefined
         })
       },
       getCurrentShell(callID) {
         return Effect.gen(function* () {
-          const rows = yield* db
+          const row = yield* db
             .select()
             .from(SessionMessageTable)
-            .where(and(eq(SessionMessageTable.session_id, event.data.sessionID), eq(SessionMessageTable.type, "shell")))
+            .where(
+              and(
+                eq(SessionMessageTable.session_id, event.data.sessionID),
+                eq(SessionMessageTable.type, "shell"),
+                sql`json_extract(${SessionMessageTable.data}, '$.callID') = ${callID}`,
+              ),
+            )
             .orderBy(desc(SessionMessageTable.seq))
-            .all()
+            .limit(1)
+            .get()
             .pipe(Effect.orDie)
-          return rows
-            .map(decodeRow)
-            .find((message): message is SessionMessage.Shell => message.type === "shell" && message.callID === callID)
+          if (!row) return
+          const message = decodeRow(row)
+          return message.type === "shell" ? message : undefined
         })
       },
-      updateAssistant: updateMessage,
+      updateAssistant(assistant) {
+        return Effect.gen(function* () {
+          yield* updateMessage(assistant)
+          cache.assistantByID.set(assistant.id, assistant)
+          if (!cache.latestAssistant.has(sessionID) || cache.latestAssistant.get(sessionID)?.id === assistant.id)
+            cache.latestAssistant.set(sessionID, assistant)
+        })
+      },
       updateShell: updateMessage,
-      appendMessage,
+      appendMessage(message) {
+        return Effect.gen(function* () {
+          yield* appendMessageDb(message)
+          if (message.type === "assistant") {
+            cache.assistantByID.set(message.id, message)
+            cache.latestAssistant.set(sessionID, message)
+          }
+        })
+      },
     }
     yield* SessionMessageUpdater.update(adapter, event)
   })
@@ -431,6 +489,9 @@ const layer = Layer.effectDiscard(
           )
           .run()
           .pipe(Effect.orDie)
+        const cache = cacheFor(db)
+        cache.assistantByID.clear()
+        cache.latestAssistant.delete(event.data.sessionID)
         yield* db
           .delete(SessionInputTable)
           .where(

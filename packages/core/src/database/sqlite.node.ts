@@ -1,4 +1,4 @@
-import { DatabaseSync, type SQLInputValue } from "node:sqlite"
+import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite"
 import { drizzle } from "drizzle-orm/node-sqlite"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -53,9 +53,25 @@ const make = (options: Config) =>
       ? Statement.defaultTransforms(options.transformResultNames).array
       : undefined
 
+    // Reuse compiled statements per SQL text. node:sqlite's `prepare` compiles
+    // on every call, and the session issues the same statements repeatedly.
+    // The connection is serialized by a semaphore, so the per-fiber read-bigint
+    // setting can safely be reapplied before each execution.
+    const statements = new Map<string, StatementSync>()
+    const valueStatements = new Map<string, StatementSync>()
+    const prepare = (query: string, values = false) => {
+      const cache = values ? valueStatements : statements
+      let statement = cache.get(query)
+      if (!statement) {
+        statement = native.prepare(query)
+        cache.set(query, statement)
+      }
+      return statement
+    }
+
     const run = (query: string, params: ReadonlyArray<unknown> = []) =>
       Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
-        const statement = native.prepare(query)
+        const statement = prepare(query)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
         try {
           return Effect.succeed(statement.all(...(params as SQLInputValue[])) as Array<Record<string, unknown>>)
@@ -70,7 +86,7 @@ const make = (options: Config) =>
 
     const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
       Effect.withFiber<ReadonlyArray<ReadonlyArray<unknown>>, SqlError>((fiber) => {
-        const statement = native.prepare(query)
+        const statement = prepare(query, true)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
         statement.setReturnArrays(true)
         try {
