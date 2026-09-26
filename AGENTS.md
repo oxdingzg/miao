@@ -148,6 +148,26 @@ const table = sqliteTable("session", {
 
 - Always run `bun typecheck` from package directories (e.g., `packages/miao`), never `tsc` directly.
 
+## Local install workflow
+
+Keep daily use on a compiled binary and validate edits in a separate entry point so a
+work-in-progress change can never break the tool you rely on.
+
+- `miao` is the stable command: a compiled binary installed via `./script/install-local.sh`.
+  It builds the current platform (`--single`), smoke-tests `--version`, installs a
+  versioned binary under `~/.local/share/miao/bin`, and atomically repoints
+  `~/.local/bin/miao`. The previous install is kept at
+  `~/.local/share/miao/bin/miao.prev` for one-step rollback.
+- `miao-dev` runs from source for fast iteration. It is the only entry point that
+  reflects uncommitted edits.
+- State is already isolated by channel: source runs as `local` (DB `miao-local.db`),
+  the binary as `main` (DB `miao-main.db`). `auth.json`, config, and snapshots are
+  shared, so credentials carry over.
+- Validate before promoting: `bun typecheck` + targeted `bun test` in the changed
+  packages, then a TUI smoke test (`miao-dev`, confirm the prompt renders). Promote
+  with `./script/install-local.sh` only after that.
+- Roll back with `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao`.
+
 ## V2 Session Core
 
 - Keep durable prompt admission separate from model execution. `SessionV2.prompt(...)` admits one durable `session_input` row before scheduling advisory `SessionExecution.wake(sessionID)` unless `resume: false` requests admit-only behavior. The serialized runner promotes admitted inputs into visible user messages at safe boundaries.
