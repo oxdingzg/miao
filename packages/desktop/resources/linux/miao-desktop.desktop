@@ -1,10 +1,10 @@
 [Desktop Entry]
-Name=OpenCode
-Exec=/opt/OpenCode/ai.opencode.desktop %U
+Name=Miao
+Exec=/opt/Miao/ai.miao.desktop %U
 Terminal=false
 Type=Application
-Icon=ai.opencode.desktop
-StartupWMClass=ai.opencode.desktop
+Icon=ai.miao.desktop
+StartupWMClass=ai.miao.desktop
 NoDisplay=true
 Comment=Open source AI coding agent
 Categories=Development;

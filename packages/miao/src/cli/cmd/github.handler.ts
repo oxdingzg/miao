@@ -1085,9 +1085,9 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
         .join("")
       if (type === "schedule" || type === "dispatch") {
         const hex = crypto.randomUUID().slice(0, 6)
-        return `opencode/${type}-${hex}-${timestamp}`
+        return `miao/${type}-${hex}-${timestamp}`
       }
-      return `opencode/${type}${issueId}-${timestamp}`
+      return `miao/${type}${issueId}-${timestamp}`
     }
 
     async function pushToNewBranch(summary: string, branch: string, commit: boolean, isSchedule: boolean) {

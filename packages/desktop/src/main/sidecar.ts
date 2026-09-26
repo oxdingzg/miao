@@ -54,7 +54,7 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Server } = await import("virtual:opencode-server")
+    const { Server } = await import("virtual:miao-server")
 
     listener = await Server.listen({
       port: command.port,

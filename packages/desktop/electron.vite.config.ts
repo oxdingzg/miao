@@ -55,21 +55,21 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     },
     plugins: [
       {
-        name: "opencode:node-pty-narrower",
+        name: "miao:node-pty-narrower",
         enforce: "pre",
         resolveId(s) {
           if (s === "@lydell/node-pty") return nodePtyPkg
         },
       },
       {
-        name: "opencode:virtual-server-module",
+        name: "miao:virtual-server-module",
         enforce: "pre",
         resolveId(id) {
-          if (id === "virtual:opencode-server") return this.resolve(`${MIAO_SERVER_DIST}/node.js`)
+          if (id === "virtual:miao-server") return this.resolve(`${MIAO_SERVER_DIST}/node.js`)
         },
       },
       {
-        name: "opencode:copy-server-assets",
+        name: "miao:copy-server-assets",
         async writeBundle() {
           for (const l of await fs.readdir(MIAO_SERVER_DIST)) {
             if (!l.endsWith(".wasm")) continue

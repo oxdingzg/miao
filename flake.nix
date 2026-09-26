@@ -39,11 +39,11 @@
             };
           in
           rec {
-            opencode = final.callPackage ./nix/opencode.nix {
+            miao = final.callPackage ./nix/miao.nix {
               inherit node_modules;
             };
-            opencode-desktop = final.callPackage ./nix/desktop.nix {
-              inherit opencode;
+            miao-desktop = final.callPackage ./nix/desktop.nix {
+              inherit miao;
             };
           };
       };
@@ -56,12 +56,12 @@
           };
         in
         rec {
-          default = opencode;
-          opencode = pkgs.callPackage ./nix/opencode.nix {
+          default = miao;
+          miao = pkgs.callPackage ./nix/miao.nix {
             inherit node_modules;
           };
-          opencode-desktop = pkgs.callPackage ./nix/desktop.nix {
-            inherit opencode;
+          miao-desktop = pkgs.callPackage ./nix/desktop.nix {
+            inherit miao;
           };
           # Updater derivation with fakeHash - build fails and reveals correct hash
           node_modules_updater = node_modules.override {

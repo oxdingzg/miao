@@ -65,7 +65,7 @@ export function createAzureAuthHooks(
             headers.delete("api-key")
             headers.delete("x-api-key")
             headers.set("authorization", `Bearer ${await token(scopeForRequest(input))}`)
-            headers.set("User-Agent", `opencode/${InstallationVersion}`)
+            headers.set("User-Agent", `miao/${InstallationVersion}`)
             return request(input, { ...init, headers })
           },
         }

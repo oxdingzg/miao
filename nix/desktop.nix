@@ -10,14 +10,14 @@
   autoPatchelfHook,
   copyDesktopItems,
   makeDesktopItem,
-  opencode,
+  miao,
 }:
 let
   electron = electron_41;
 in
 stdenv.mkDerivation (finalAttrs: {
-  pname = "opencode-desktop";
-  inherit (opencode)
+  pname = "miao-desktop";
+  inherit (miao)
     version
     src
     node_modules
@@ -46,14 +46,14 @@ stdenv.mkDerivation (finalAttrs: {
   desktopItems = lib.optional stdenv.hostPlatform.isLinux (makeDesktopItem {
     name = "ai.opencode.desktop";
     desktopName = "OpenCode";
-    exec = "opencode-desktop %U";
+    exec = "miao-desktop %U";
     icon = "ai.opencode.desktop";
     # Electron 41 derives X11 WM_CLASS from app.name.
     startupWMClass = "OpenCode";
     categories = [ "Development" ];
   });
 
-  env = opencode.env // {
+  env = miao.env // {
     ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
   };
 
@@ -71,7 +71,7 @@ stdenv.mkDerivation (finalAttrs: {
       FILES=(src/main/windows.ts)
       for file in "''${FILES[@]}"; do
         substituteInPlace $BASE_PATH/$file \
-          --replace-fail "process.resourcesPath" "'$out/opt/opencode-desktop/resources'"
+          --replace-fail "process.resourcesPath" "'$out/opt/miao-desktop/resources'"
       done
     '';
 
@@ -124,7 +124,7 @@ stdenv.mkDerivation (finalAttrs: {
     makeWrapper ${lib.getExe electron} $out/bin/opencode-desktop \
      --inherit-argv0 \
      --set ELECTRON_FORCE_IS_PACKAGED 1 \
-     --add-flags $out/opt/opencode-desktop/resources/app.asar \
+     --add-flags $out/opt/miao-desktop/resources/app.asar \
      --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations --enable-wayland-ime=true}}"
   ''
   + ''
@@ -137,7 +137,7 @@ stdenv.mkDerivation (finalAttrs: {
 
   meta = {
     description = "OpenCode Desktop App";
-    mainProgram = "opencode-desktop";
+    mainProgram = "miao-desktop";
     inherit (opencode.meta) homepage license platforms;
   };
 })

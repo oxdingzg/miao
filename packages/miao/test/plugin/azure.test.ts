@@ -275,6 +275,6 @@ describe("plugin.azure", () => {
     expect(requests[0].get("api-key")).toBeNull()
     expect(requests[0].get("x-keep")).toBe("yes")
     expect(requests[2].get("x-api-key")).toBeNull()
-    expect(requests.every((headers) => headers.get("user-agent")?.startsWith("opencode/"))).toBe(true)
+    expect(requests.every((headers) => headers.get("user-agent")?.startsWith("miao/"))).toBe(true)
   })
 })

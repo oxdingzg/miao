@@ -575,7 +575,7 @@ it.effect("rejects native project permissions even with inherited V1 rules", () 
           data: {
             path: expect.stringContaining(path.join("project", "opencode.json")),
             issues: [
-              { path: ["permissions"], message: expect.stringContaining('Use V1 "permission" rules or run opencode2') },
+              { path: ["permissions"], message: expect.stringContaining('Use V1 "permission" rules or run miao') },
               { path: ["agents", "reviewer", "permissions"], message: expect.stringContaining("not supported") },
             ],
           },

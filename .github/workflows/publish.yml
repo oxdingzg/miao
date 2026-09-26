@@ -99,19 +99,19 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-cli
+          name: miao-cli
           path: |
-            packages/miao/dist/opencode-darwin*
-            packages/miao/dist/opencode-linux*
+            packages/miao/dist/miao-darwin*
+            packages/miao/dist/miao-linux*
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-cli-windows
-          path: packages/miao/dist/opencode-windows*
+          name: miao-cli-windows
+          path: packages/miao/dist/miao-windows*
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-preview-cli
+          name: miao-preview-cli
           path: packages/cli/dist/cli-*
 
     outputs:
@@ -135,7 +135,7 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: opencode-cli-windows
+          name: miao-cli-windows
           path: packages/miao/dist
 
       - name: Setup git committer
@@ -158,9 +158,9 @@ jobs:
           signing-account-name: ${{ env.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ env.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE }}
           files: |
-            ${{ github.workspace }}\packages\miao\dist\opencode-windows-arm64\bin\opencode.exe
-            ${{ github.workspace }}\packages\miao\dist\opencode-windows-x64\bin\opencode.exe
-            ${{ github.workspace }}\packages\miao\dist\opencode-windows-x64-baseline\bin\opencode.exe
+            ${{ github.workspace }}\packages\miao\dist\miao-windows-arm64\bin\miao.exe
+            ${{ github.workspace }}\packages\miao\dist\miao-windows-x64\bin\miao.exe
+            ${{ github.workspace }}\packages\miao\dist\miao-windows-x64-baseline\bin\miao.exe
           exclude-environment-credential: true
           exclude-workload-identity-credential: true
           exclude-managed-identity-credential: true
@@ -176,9 +176,9 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "${{ github.workspace }}\packages\miao\dist\opencode-windows-arm64\bin\opencode.exe",
-            "${{ github.workspace }}\packages\miao\dist\opencode-windows-x64\bin\opencode.exe",
-            "${{ github.workspace }}\packages\miao\dist\opencode-windows-x64-baseline\bin\opencode.exe"
+            "${{ github.workspace }}\packages\miao\dist\miao-windows-arm64\bin\miao.exe",
+            "${{ github.workspace }}\packages\miao\dist\miao-windows-x64\bin\miao.exe",
+            "${{ github.workspace }}\packages\miao\dist\miao-windows-x64-baseline\bin\miao.exe"
           )
 
           foreach ($file in $files) {
@@ -192,9 +192,9 @@ jobs:
         working-directory: packages/miao/dist
         shell: pwsh
         run: |
-          Compress-Archive -Path "opencode-windows-arm64\bin\*" -DestinationPath "opencode-windows-arm64.zip" -Force
-          Compress-Archive -Path "opencode-windows-x64\bin\*" -DestinationPath "opencode-windows-x64.zip" -Force
-          Compress-Archive -Path "opencode-windows-x64-baseline\bin\*" -DestinationPath "opencode-windows-x64-baseline.zip" -Force
+          Compress-Archive -Path "miao-windows-arm64\bin\*" -DestinationPath "miao-windows-arm64.zip" -Force
+          Compress-Archive -Path "miao-windows-x64\bin\*" -DestinationPath "miao-windows-x64.zip" -Force
+          Compress-Archive -Path "miao-windows-x64-baseline\bin\*" -DestinationPath "miao-windows-x64-baseline.zip" -Force
 
       - name: Upload signed Windows CLI release assets
         if: needs.version.outputs.release != ''
@@ -203,19 +203,19 @@ jobs:
           GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
           gh release upload "v${{ needs.version.outputs.version }}" `
-            "${{ github.workspace }}\packages\miao\dist\opencode-windows-arm64.zip" `
-            "${{ github.workspace }}\packages\miao\dist\opencode-windows-x64.zip" `
-            "${{ github.workspace }}\packages\miao\dist\opencode-windows-x64-baseline.zip" `
+            "${{ github.workspace }}\packages\miao\dist\miao-windows-arm64.zip" `
+            "${{ github.workspace }}\packages\miao\dist\miao-windows-x64.zip" `
+            "${{ github.workspace }}\packages\miao\dist\miao-windows-x64-baseline.zip" `
             --clobber `
             --repo "${{ needs.version.outputs.repo }}"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-cli-signed-windows
+          name: miao-cli-signed-windows
           path: |
-            packages/miao/dist/opencode-windows-arm64
-            packages/miao/dist/opencode-windows-x64
-            packages/miao/dist/opencode-windows-x64-baseline
+            packages/miao/dist/miao-windows-arm64
+            packages/miao/dist/miao-windows-x64
+            packages/miao/dist/miao-windows-x64-baseline
 
   build-electron:
     needs:
@@ -381,7 +381,7 @@ jobs:
           $files = @()
           $files += Get-ChildItem "${{ github.workspace }}\packages\desktop\dist\*.exe" | Select-Object -ExpandProperty FullName
           $files += Get-ChildItem "${{ github.workspace }}\packages\desktop\dist\*unpacked\*.exe" | Select-Object -ExpandProperty FullName
-          $files += Get-ChildItem "${{ github.workspace }}\packages\desktop\dist\*unpacked\resources\opencode-cli.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+          $files += Get-ChildItem "${{ github.workspace }}\packages\desktop\dist\*unpacked\resources\miao-cli.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
 
           foreach ($file in $files | Select-Object -Unique) {
             $sig = Get-AuthenticodeSignature $file
@@ -434,22 +434,22 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: opencode-cli
+          name: miao-cli
           path: packages/miao/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: opencode-cli-windows
+          name: miao-cli-windows
           path: packages/miao/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: opencode-cli-signed-windows
+          name: miao-cli-signed-windows
           path: packages/miao/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: opencode-preview-cli
+          name: miao-preview-cli
           path: packages/cli/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

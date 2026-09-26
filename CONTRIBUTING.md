@@ -64,7 +64,7 @@ To compile a standalone executable:
 Then run it with:
 
 ```bash
-./packages/miao/dist/opencode-<platform>/bin/opencode
+./packages/miao/dist/miao-<platform>/bin/miao
 ```
 
 Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).

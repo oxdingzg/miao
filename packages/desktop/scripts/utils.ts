@@ -71,12 +71,12 @@ export function getCurrentCli(target = RUST_TARGET ?? nativeTarget()) {
 
 export async function downloadCliToResources() {
   const cli = getCurrentCli()
-  const directory = await mkdtemp(join(tmpdir(), "opencode-cli-"))
-  const dest = windowsify("resources/opencode-cli")
+  const directory = await mkdtemp(join(tmpdir(), "miao-cli-"))
+  const dest = windowsify("resources/miao-cli")
   try {
     await $`bun install --no-save --cwd ${directory} ${`${cli.package}@${CLI_VERSION}`} ${`--os=${cli.os}`} ${`--cpu=${cli.cpu}`}`
     await copyFile(
-      join(directory, "node_modules", cli.package, "bin", cli.os === "win32" ? "opencode2.exe" : "opencode2"),
+      join(directory, "node_modules", cli.package, "bin", cli.os === "win32" ? "miao.exe" : "miao"),
       dest,
     )
   } finally {
