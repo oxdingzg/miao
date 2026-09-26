@@ -157,10 +157,10 @@ const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.MIAO_MODELS_URL || "https://models.miao.dtee.top"
+    const source = Flag.MIAO_MODELS_URL || "https://models.opencode.ai"
     const filepath = path.join(
       Global.Path.cache,
-      source === "https://models.miao.dtee.top" ? "models.json" : `models-${Hash.fast(source)}.json`,
+      source === "https://models.opencode.ai" ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.minutes(5)
     const lockKey = `models-dev:${filepath}`
@@ -199,6 +199,13 @@ const layer = Layer.effect(
       typeof MIAO_MODELS_DEV === "undefined" ? undefined : MIAO_MODELS_DEV,
     )
 
+    // A catalog snapshot can ship next to the executable (see script/build.ts).
+    // It is the offline default when no user cache exists, and can be refreshed
+    // independently of the compiled-in snapshot.
+    const loadShipped = fs.readJson(path.join(path.dirname(process.execPath), "models.json")).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    )
+
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
       const text = yield* fetchApi()
       const tempfile = `${filepath}.${process.pid}.${Date.now()}.tmp`
@@ -217,6 +224,8 @@ const layer = Layer.effect(
     const populate = Effect.gen(function* () {
       const fromDisk = yield* loadFromDisk
       if (fromDisk) return fromDisk
+      const shipped = yield* loadShipped
+      if (shipped) return shipped as Record<string, Provider>
       const snapshot = yield* loadSnapshot
       if (snapshot) return snapshot
       if (Flag.MIAO_DISABLE_MODELS_FETCH) return {}

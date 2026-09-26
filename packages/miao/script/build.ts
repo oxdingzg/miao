@@ -201,6 +201,12 @@ for (const item of targets) {
     },
   })
 
+  // Ship the catalog next to the binary so a fresh install works offline; the
+  // runtime reads it before falling back to a network fetch.
+  if (generated.modelsData) {
+    await Bun.write(`dist/${name}/bin/models.json`, generated.modelsData)
+  }
+
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = `dist/${name}/bin/miao`
