@@ -47,13 +47,13 @@ Les sources de configuration sont chargées dans cet ordre (les sources ultérie
 2. **Configuration globale** (`~/.config/miao/miao.json`) - préférences utilisateur
 3. **Configuration personnalisée** (`MIAO_CONFIG` env var) - remplacements personnalisés
 4. **Configuration du projet** (`miao.json` dans le projet) - paramètres spécifiques au projet
-5. **Répertoires `.opencode`** - agents, commandes, plugins
+5. **Répertoires `.miao`** - agents, commandes, plugins
 6. **Configuration en ligne** (`MIAO_CONFIG_CONTENT` env var) - remplacements d'exécution
 
 Cela signifie que les configurations de projet peuvent remplacer les valeurs par défaut globales, et que les configurations globales peuvent remplacer les valeurs par défaut de l'organisation distante.
 
 :::note
-Les répertoires `.opencode` et `~/.config/opencode` utilisent des **noms au pluriel** pour les sous-répertoires : `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` et `themes/`. Les noms singuliers (par exemple, `agent/`) sont également pris en charge pour une compatibilité ascendante.
+Les répertoires `.miao` et `~/.config/opencode` utilisent des **noms au pluriel** pour les sous-répertoires : `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` et `themes/`. Les noms singuliers (par exemple, `agent/`) sont également pris en charge pour une compatibilité ascendante.
 :::
 
 ---
@@ -135,14 +135,14 @@ La configuration personnalisée est chargée entre les configurations globales e
 
 ### Répertoire personnalisé
 
-Spécifiez un répertoire de configuration personnalisé à l'aide de `MIAO_CONFIG_DIR` variable d'environnement. Ce répertoire sera recherché pour les agents, les commandes, modes et plugins tout comme le répertoire standard `.opencode`, et devrait suivre la même structure.
+Spécifiez un répertoire de configuration personnalisé à l'aide de `MIAO_CONFIG_DIR` variable d'environnement. Ce répertoire sera recherché pour les agents, les commandes, modes et plugins tout comme le répertoire standard `.miao`, et devrait suivre la même structure.
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-Le répertoire personnalisé est chargé après les répertoires de configuration globale et `.opencode`, il **peut donc remplacer** leurs paramètres.
+Le répertoire personnalisé est chargé après les répertoires de configuration globale et `.miao`, il **peut donc remplacer** leurs paramètres.
 
 ---
 

@@ -54,7 +54,7 @@ export interface Interface {
   readonly normalize: (input: SessionV1.FilePart) => Effect.Effect<SessionV1.FilePart, Error>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Image") {}
+export class Service extends Context.Service<Service, Interface>()("@miao/Image") {}
 
 const layer = Layer.effect(
   Service,

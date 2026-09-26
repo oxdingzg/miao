@@ -46,13 +46,13 @@ config source는 다음 순서로 로드됩니다(나중 source가 앞선 source
 2. **Global config**(`~/.config/miao/miao.json`) - 사용자 기본 설정
 3. **Custom config**(`MIAO_CONFIG` env var) - custom override
 4. **Project config**(프로젝트의 `miao.json`) - 프로젝트별 설정
-5. **`.opencode` directories** - agents, commands, plugins
+5. **`.miao` directories** - agents, commands, plugins
 6. **Inline config**(`MIAO_CONFIG_CONTENT` env var) - 런타임 override
 
 즉, 프로젝트 config는 전역 기본값을 override할 수 있고, 전역 config는 조직의 Remote 기본값을 override할 수 있습니다.
 
 :::note
-`.opencode` 및 `~/.config/opencode` 디렉토리는 하위 디렉토리에 **복수형 이름**을 사용합니다: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/`, `themes/`. 단수형 이름(예: `agent/`)도 하위 호환성을 위해 지원합니다.
+`.miao` 및 `~/.config/opencode` 디렉토리는 하위 디렉토리에 **복수형 이름**을 사용합니다: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/`, `themes/`. 단수형 이름(예: `agent/`)도 하위 호환성을 위해 지원합니다.
 :::
 
 ---
@@ -134,14 +134,14 @@ Custom config는 우선순위상 전역 config와 프로젝트 config 사이에�
 
 ### Custom directory
 
-`MIAO_CONFIG_DIR` 환경 변수로 custom config 디렉토리를 지정할 수 있습니다. 이 디렉토리는 표준 `.opencode` 디렉토리와 동일하게 agents, commands, modes, plugins를 검색하며, 동일한 구조를 따라야 합니다.
+`MIAO_CONFIG_DIR` 환경 변수로 custom config 디렉토리를 지정할 수 있습니다. 이 디렉토리는 표준 `.miao` 디렉토리와 동일하게 agents, commands, modes, plugins를 검색하며, 동일한 구조를 따라야 합니다.
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-custom 디렉토리는 전역 config와 `.opencode` 디렉토리 뒤에 로드되므로 해당 설정을 **override할 수 있습니다**.
+custom 디렉토리는 전역 config와 `.miao` 디렉토리 뒤에 로드되므로 해당 설정을 **override할 수 있습니다**.
 
 ---
 

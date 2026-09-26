@@ -139,7 +139,7 @@ test("fatal startup errors set a nonzero exit after scoped cleanup", async () =>
           name: "ConfigRemoteAuthError",
           data: {
             url: "https://example.com",
-            remote: "https://config.example.com/opencode.json",
+            remote: "https://config.example.com/miao.json",
           },
         },
         { status: 400 },

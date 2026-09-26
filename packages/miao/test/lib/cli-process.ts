@@ -8,7 +8,7 @@
 // Configuration flows through opencode's built-in test affordances:
 //   - MIAO_CONFIG_CONTENT      : provider config inline, no files to find
 //   - MIAO_TEST_HOME           : pins os.homedir() → tmpdir
-//   - MIAO_DISABLE_PROJECT_CONFIG : skip walking up for opencode.json
+//   - MIAO_DISABLE_PROJECT_CONFIG : skip walking up for miao.json
 //   - MIAO_PURE                : skip external plugin discovery + install
 //   - MIAO_DISABLE_AUTOUPDATE / AUTOCOMPACT / MODELS_FETCH : no background work
 // Plus HOME / XDG_* pointing at the tmpdir for belt-and-suspenders isolation.

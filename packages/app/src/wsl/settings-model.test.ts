@@ -191,7 +191,7 @@ describe("WSL server settings presentation", () => {
         opencodeChecks: {
           Debian: {
             distro: "Debian",
-            resolvedPath: "/home/me/.opencode/bin/opencode",
+            resolvedPath: "/home/me/.miao/bin/opencode",
             version: null,
             expectedVersion: "1.2.3",
             matchesDesktop: null,

@@ -186,7 +186,7 @@ npm plugins can declare a version compatibility range in `package.json` using th
 
 - The value is a semver range checked against the running OpenCode version.
 - If the range is not satisfied, the plugin is skipped with a warning and a session error.
-- If `engines.opencode` is absent, no check is performed (backward compatible).
+- If `engines.miao` is absent, no check is performed (backward compatible).
 - File plugins are never checked; only npm package plugins are validated.
 
 - Install flow is shared by CLI and TUI in `src/plugin/install.ts`.
@@ -195,8 +195,8 @@ npm plugins can declare a version compatibility range in `package.json` using th
 - Alias: `opencode plug <module>`.
 - `-g` / `--global` writes into the global config dir.
 - Local installs resolve target dir inside `patchPluginConfig`.
-- For local scope, path is `<worktree>/.opencode` only when VCS is git and `worktree !== "/"`; otherwise `<directory>/.opencode`.
-- Root-worktree fallback (`worktree === "/"` uses `<directory>/.opencode`) is covered by regression tests.
+- For local scope, path is `<worktree>/.miao` only when VCS is git and `worktree !== "/"`; otherwise `<directory>/.miao`.
+- Root-worktree fallback (`worktree === "/"` uses `<directory>/.miao`) is covered by regression tests.
 - `patchPluginConfig` applies all detected targets (`server` and/or `tui`) in one call.
 - `patchPluginConfig` returns structured result unions (`ok`, `code`, fields by error kind) instead of custom thrown errors.
 - `patchPluginConfig` serializes per-target config writes with `Flock.acquire(...)`.
@@ -213,7 +213,7 @@ npm plugins can declare a version compatibility range in `package.json` using th
 - There is no uninstall, list, or update CLI command for external plugins.
 - Local file plugins are configured directly in `tui.json`.
 
-When `plugin` entries exist in a writable `.opencode` dir or `MIAO_CONFIG_DIR`, OpenCode installs `@opencode-ai/plugin` into that dir and writes:
+When `plugin` entries exist in a writable `.miao` dir or `MIAO_CONFIG_DIR`, OpenCode installs `@opencode-ai/plugin` into that dir and writes:
 
 - `package.json`
 - `bun.lock`

@@ -86,7 +86,7 @@ Or you can set it up manually.
 - `prompt`: Optional custom prompt to override the default behavior. Use this to customize how Miao processes requests.
 - `mentions`: Comma-separated list of trigger phrases, case-insensitive. Defaults to `/opencode,/oc`.
 - `variant`: Model variant for provider-specific reasoning effort, for example `high`, `max`, or `minimal`.
-- `oidc_base_url`: Base URL for the OIDC token exchange API. Only needed when running a custom GitHub App install. Defaults to `https://api.opencode.ai`.
+- `oidc_base_url`: Base URL for the OIDC token exchange API. Only needed when running a custom GitHub App install. Defaults to `https://api.miao.dtee.top`.
 - `use_github_token`: Set to `true` to use a caller-provided `GITHUB_TOKEN` instead of exchanging an OIDC token for an Miao App installation token. Defaults to `false`.
 
   Use this mode to run without installing the Miao GitHub App. Pass the token through `env` and grant the permissions required by your workflow:

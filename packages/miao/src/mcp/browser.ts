@@ -6,7 +6,7 @@ export interface Interface {
   readonly open: (url: string) => Effect.Effect<void, Error>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/McpBrowser") {}
+export class Service extends Context.Service<Service, Interface>()("@miao/McpBrowser") {}
 
 const layer = Layer.succeed(
   Service,

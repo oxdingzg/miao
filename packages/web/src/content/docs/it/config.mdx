@@ -46,13 +46,13 @@ Le sorgenti di configurazione vengono caricate in questo ordine (le successive s
 2. **Config globale** (`~/.config/miao/miao.json`) - preferenze utente
 3. **Config personalizzata** (variabile d'ambiente `MIAO_CONFIG`) - sovrascritture personalizzate
 4. **Config di progetto** (`miao.json` nel progetto) - impostazioni specifiche del progetto
-5. **Directory `.opencode`** - agenti, comandi, plugin
+5. **Directory `.miao`** - agenti, comandi, plugin
 6. **Config inline** (variabile d'ambiente `MIAO_CONFIG_CONTENT`) - sovrascritture a runtime
 
 Questo significa che la configurazione di progetto puo sovrascrivere i default globali, e la configurazione globale puo sovrascrivere i default remoti dell'organizzazione.
 
 :::note
-Le directory `.opencode` e `~/.config/opencode` usano **nomi al plurale** per le sottodirectory: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` e `themes/`. I nomi al singolare (ad es. `agent/`) sono supportati per retrocompatibilita.
+Le directory `.miao` e `~/.config/opencode` usano **nomi al plurale** per le sottodirectory: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` e `themes/`. I nomi al singolare (ad es. `agent/`) sono supportati per retrocompatibilita.
 :::
 
 ---
@@ -134,14 +134,14 @@ La configurazione personalizzata viene caricata tra quella globale e quella di p
 
 ### Directory personalizzata
 
-Specifica una directory di configurazione personalizzata usando la variabile d'ambiente `MIAO_CONFIG_DIR`. Questa directory verra usata per cercare agenti, comandi, modalita e plugin proprio come la directory standard `.opencode` e dovrebbe seguire la stessa struttura.
+Specifica una directory di configurazione personalizzata usando la variabile d'ambiente `MIAO_CONFIG_DIR`. Questa directory verra usata per cercare agenti, comandi, modalita e plugin proprio come la directory standard `.miao` e dovrebbe seguire la stessa struttura.
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-La directory personalizzata viene caricata dopo la configurazione globale e le directory `.opencode`, quindi **puo sovrascrivere** le loro impostazioni.
+La directory personalizzata viene caricata dopo la configurazione globale e le directory `.miao`, quindi **puo sovrascrivere** le loro impostazioni.
 
 ---
 

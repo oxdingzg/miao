@@ -275,7 +275,7 @@ export default function Enterprise() {
               </li>
               <li>
                 <Faq question={i18n.t("enterprise.faq.q5")}>
-                  {i18n.t("enterprise.faq.a5.before")} <a href="https://trust.opencode.ai">trust.opencode.ai</a>{" "}
+                  {i18n.t("enterprise.faq.a5.before")} <a href="https://trust.miao.dtee.top">trust.miao.dtee.top</a>{" "}
                   {i18n.t("enterprise.faq.a5.after")}
                 </Faq>
               </li>

@@ -13,7 +13,7 @@ const enabledByExperimental = (name: string) =>
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
   )
 
-export class Service extends ConfigService.Service<Service>()("@opencode/RuntimeFlags", {
+export class Service extends ConfigService.Service<Service>()("@miao/RuntimeFlags", {
   autoShare: bool("MIAO_AUTO_SHARE"),
   pure: bool("MIAO_PURE"),
   disableDefaultPlugins: bool("MIAO_DISABLE_DEFAULT_PLUGINS"),

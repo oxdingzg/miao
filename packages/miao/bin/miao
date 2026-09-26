@@ -49,7 +49,7 @@ const scriptPath = fs.realpathSync(__filename)
 const scriptDir = path.dirname(scriptPath)
 
 //
-const cached = path.join(scriptDir, ".opencode")
+const cached = path.join(scriptDir, ".miao")
 
 const platformMap = {
   darwin: "darwin",

@@ -24,10 +24,10 @@ const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const MIAO_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
 
-// Built-in skill that ships with opencode. The model's intuition for what an
-// opencode.json should look like is often wrong, and opencode hard-fails on
+// Built-in skill that ships with miao. The model's intuition for what an
+// miao.json should look like is often wrong, and miao hard-fails on
 // invalid config, so users hit cryptic startup errors. Loading this skill
-// when the model is asked to touch opencode's own config files gives it the
+// when the model is asked to touch miao's own config files gives it the
 // actual schemas instead of guesses.
 const CUSTOMIZE_MIAO_SKILL_NAME = "customize-miao"
 const CUSTOMIZE_MIAO_SKILL_DESCRIPTION =
@@ -245,7 +245,7 @@ const loadSkills = Effect.fnUntraced(function* (
   yield* Effect.logInfo("init", { count: Object.keys(state.skills).length })
 })
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}
+export class Service extends Context.Service<Service, Interface>()("@miao/Skill") {}
 
 const layer = Layer.effect(
   Service,

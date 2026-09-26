@@ -6,7 +6,7 @@ import type { APIEvent } from "@solidjs/start/server"
 // When an MCP server's authorization server supports this, opencode sends this URL as its OAuth client_id
 // instead of registering a new client. The authorization server fetches the document to learn our name and
 // allowed redirect URIs. The client_id field must equal the exact URL the document was fetched from, so it is
-// built from the request origin and stays valid on dev.opencode.ai as well as production.
+// built from the request origin and stays valid on dev.miao.dtee.top as well as production.
 //
 // redirect_uris have no port because opencode binds an ephemeral port per login. RFC 8252 section 7.3 has
 // authorization servers ignore the port when matching loopback redirects for native apps.

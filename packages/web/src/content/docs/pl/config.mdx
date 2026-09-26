@@ -45,13 +45,13 @@ Na przykład, jeśli konfiguracja globalna ustawi `theme: "miao"` i `autoupdate:
 2. **Konfiguracja globalna** (`~/.config/miao/miao.json`) – preferencje użytkownika
 3. **Konfiguracja niestandardowa** (zmienna `MIAO_CONFIG`) — jawne nadpisanie
 4. **Konfiguracja projektu** (`miao.json` w projekcie) - ustawienia specyficzne dla projektu
-5. **Katalogi `.opencode`** - agenci, polecenia, umiejętności
+5. **Katalogi `.miao`** - agenci, polecenia, umiejętności
 6. **Konfiguracja wbudowana** (zmienna `MIAO_CONFIG_CONTENT`) — nadpisanie środowiska uruchomieniowego
 
 Oznacza to, że konfiguracje projektu mogą nadpisywać konfiguracje globalne, a konfiguracje globalne mogą nadpisywać konfiguracje zdalne.
 
 :::note
-W katalogach `.opencode` i `~/.config/opencode` używane są **nazwy w liczbie mnogiej** dla podkatalogów: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` i `themes/`. Nazwy w liczbie pojedynczej (np. `agent/`) są również obsługiwane dla kompatybilności wstecznej.
+W katalogach `.miao` i `~/.config/opencode` używane są **nazwy w liczbie mnogiej** dla podkatalogów: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` i `themes/`. Nazwy w liczbie pojedynczej (np. `agent/`) są również obsługiwane dla kompatybilności wstecznej.
 :::
 
 ---
@@ -133,14 +133,14 @@ Konfiguracja niestandardowa jest ładowana po konfiguracji globalnej i przed kon
 
 ### Niestandardowy katalog
 
-Możesz ustawić niestandardowy katalog konfiguracyjny za pomocą zmiennej środowiskowej `MIAO_CONFIG_DIR`. Katalog ten będzie przeszukiwany pod kątem agentów, poleceń, trybów i wtyczek, tak jak standardowy katalog `.opencode` i powinien zachować tę samą strukturę.
+Możesz ustawić niestandardowy katalog konfiguracyjny za pomocą zmiennej środowiskowej `MIAO_CONFIG_DIR`. Katalog ten będzie przeszukiwany pod kątem agentów, poleceń, trybów i wtyczek, tak jak standardowy katalog `.miao` i powinien zachować tę samą strukturę.
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-Katalog niestandardowy jest ładowany po globalnej konfiguracji i katalogach `.opencode`, więc **może być łączony** z ich zawartością.
+Katalog niestandardowy jest ładowany po globalnej konfiguracji i katalogach `.miao`, więc **może być łączony** z ich zawartością.
 
 ---
 

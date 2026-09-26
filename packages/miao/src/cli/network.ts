@@ -22,7 +22,7 @@ const options = {
   "mdns-domain": {
     type: "string" as const,
     describe: "custom domain name for mDNS service (default: miao.local)",
-    default: "opencode.local",
+    default: "miao.local",
   },
   cors: {
     type: "string" as const,

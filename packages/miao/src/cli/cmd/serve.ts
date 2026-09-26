@@ -17,7 +17,7 @@ export const ServeCommand = effectCmd({
     }
     const opts = yield* resolveNetworkOptions(args)
     const server = yield* Effect.promise(() => Server.listen(opts))
-    console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
+    console.log(`miao server listening on http://${server.hostname}:${server.port}`)
 
     yield* Effect.never
   }),

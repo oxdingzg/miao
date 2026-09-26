@@ -266,7 +266,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (content.includes("# opencode") || content.includes(".opencode/bin")) {
+    if (content.includes("# opencode") || content.includes(".miao/bin")) {
       return file
     }
   }
@@ -291,13 +291,13 @@ async function cleanShellConfig(file: string) {
 
     if (skip) {
       skip = false
-      if ((trimmed.includes(".miao/bin") || trimmed.includes(".opencode/bin")) || trimmed.includes("fish_add_path")) {
+      if ((trimmed.includes(".miao/bin") || trimmed.includes(".miao/bin")) || trimmed.includes("fish_add_path")) {
         continue
       }
     }
 
     if (
-      (trimmed.startsWith("export PATH=") && (trimmed.includes(".miao/bin") || trimmed.includes(".opencode/bin"))) ||
+      (trimmed.startsWith("export PATH=") && (trimmed.includes(".miao/bin") || trimmed.includes(".miao/bin"))) ||
       (trimmed.startsWith("fish_add_path") && (trimmed.includes(".miao") || trimmed.includes(".opencode")))
     ) {
       continue

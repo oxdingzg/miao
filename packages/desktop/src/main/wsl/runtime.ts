@@ -311,7 +311,7 @@ export async function resolveWslOpencode(distro: string, opts?: RunWslOptions) {
   return firstLine(
     (
       await runWslSh(
-        'if [ -x "$HOME/.opencode/bin/opencode" ]; then printf "%s\\n" "$HOME/.opencode/bin/opencode"; fi',
+        'if [ -x "$HOME/.miao/bin/opencode" ]; then printf "%s\\n" "$HOME/.miao/bin/opencode"; fi',
         distro,
         opts,
       )

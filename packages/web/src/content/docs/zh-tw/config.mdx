@@ -46,13 +46,13 @@ Miao 支援 **JSON** 和 **JSONC**（帶註解的 JSON）格式。
 2. **全域設定**（`~/.config/miao/miao.json`）- 使用者偏好
 3. **自訂設定**（`MIAO_CONFIG` 環境變數）- 自訂覆寫
 4. **專案設定**（專案中的 `miao.json`）- 專案特定設定
-5. **`.opencode` 目錄** - 代理、指令、外掛程式
+5. **`.miao` 目錄** - 代理、指令、外掛程式
 6. **內嵌設定**（`MIAO_CONFIG_CONTENT` 環境變數）- 執行時覆寫
 
 這意味著專案設定可以覆寫全域預設值，全域設定可以覆寫遠端組織預設值。
 
 :::note
-`.opencode` 和 `~/.config/opencode` 目錄的子目錄使用**複數名稱**：`agents/`、`commands/`、`modes/`、`plugins/`、`skills/`、`tools/` 和 `themes/`。為了向後相容，也支援單數名稱（例如 `agent/`）。
+`.miao` 和 `~/.config/opencode` 目錄的子目錄使用**複數名稱**：`agents/`、`commands/`、`modes/`、`plugins/`、`skills/`、`tools/` 和 `themes/`。為了向後相容，也支援單數名稱（例如 `agent/`）。
 :::
 
 ---
@@ -130,14 +130,14 @@ miao run "Hello world"
 
 ### 自訂目錄
 
-使用 `MIAO_CONFIG_DIR` 環境變數指定自訂設定目錄。該目錄會像標準 `.opencode` 目錄一樣被搜尋代理、指令、模式和外掛程式，並且應遵循相同的結構。
+使用 `MIAO_CONFIG_DIR` 環境變數指定自訂設定目錄。該目錄會像標準 `.miao` 目錄一樣被搜尋代理、指令、模式和外掛程式，並且應遵循相同的結構。
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-自訂目錄在全域設定和 `.opencode` 目錄之後載入，因此**可以覆寫**它們的設定。
+自訂目錄在全域設定和 `.miao` 目錄之後載入，因此**可以覆寫**它們的設定。
 
 ---
 

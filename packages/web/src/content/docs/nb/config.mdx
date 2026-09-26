@@ -47,13 +47,13 @@ Konfigurasjonskilder lastes inn i denne rekkefølgen (senere kilder overstyrer t
 2. **Global konfigurasjon** (`~/.config/miao/miao.json`) - brukerinnstillinger
 3. **Egendefinert konfigurasjon** (`MIAO_CONFIG` env var) - egendefinerte overstyringer
 4. **Prosjektkonfigurasjon** (`miao.json` i prosjekt) - prosjektspesifikke innstillinger
-5. **`.opencode` kataloger** - agenter, kommandoer, plugins
+5. **`.miao` kataloger** - agenter, kommandoer, plugins
 6. **Inline config** (`MIAO_CONFIG_CONTENT` env var) - kjøretidsoverstyringer
 
 Dette betyr at prosjektkonfigurasjoner kan overstyre globale standardinnstillinger, og globale konfigurasjoner kan overstyre eksterne organisasjonsstandarder.
 
 :::note
-`.opencode` og `~/.config/opencode` katalogene bruker **flertallsnavn** på underkataloger: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` og `themes/`. Enkeltnavn (f.eks. `agent/`) støttes også for bakoverkompatibilitet.
+`.miao` og `~/.config/opencode` katalogene bruker **flertallsnavn** på underkataloger: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` og `themes/`. Enkeltnavn (f.eks. `agent/`) støttes også for bakoverkompatibilitet.
 :::
 
 ---
@@ -133,7 +133,7 @@ Egendefinert konfigurasjon lastes inn mellom globale og prosjektkonfigurasjoner 
 
 Spesifiser en tilpasset konfigurasjonskatalog ved å bruke `MIAO_CONFIG_DIR`
 miljøvariabel. Denne katalogen vil bli søkt etter agenter, kommandoer,
-moduser og plugins akkurat som standard `.opencode` katalog, og bør
+moduser og plugins akkurat som standard `.miao` katalog, og bør
 følge samme struktur.
 
 ```bash
@@ -141,7 +141,7 @@ export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-Den egendefinerte katalogen lastes inn etter den globale konfigurasjonen og `.opencode`-katalogene, slik at den **kan overstyre** innstillingene deres.
+Den egendefinerte katalogen lastes inn etter den globale konfigurasjonen og `.miao`-katalogene, slik at den **kan overstyre** innstillingene deres.
 
 ---
 

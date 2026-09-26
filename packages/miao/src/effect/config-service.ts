@@ -28,10 +28,10 @@ export type ServiceClass<Self, Id extends string, Service> = Context.ServiceClas
  *
  * ```ts
  * class ServerAuthConfig extends ConfigService.Service<ServerAuthConfig>()(
- *   "@opencode/ServerAuthConfig",
+ *   "@miao/ServerAuthConfig",
  *   {
  *     password: Config.string("MIAO_SERVER_PASSWORD").pipe(Config.option),
- *     username: Config.string("MIAO_SERVER_USERNAME").pipe(Config.withDefault("opencode")),
+ *     username: Config.string("MIAO_SERVER_USERNAME").pipe(Config.withDefault("miao")),
  *   },
  * ) {}
  *

@@ -140,7 +140,7 @@ export interface Interface {
   readonly refresh: (force?: boolean) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/ModelsDev") {}
+export class Service extends Context.Service<Service, Interface>()("@miao/ModelsDev") {}
 
 const layer = Layer.effect(
   Service,
@@ -157,10 +157,10 @@ const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.MIAO_MODELS_URL || "https://models.opencode.ai"
+    const source = Flag.MIAO_MODELS_URL || "https://models.miao.dtee.top"
     const filepath = path.join(
       Global.Path.cache,
-      source === "https://models.opencode.ai" ? "models.json" : `models-${Hash.fast(source)}.json`,
+      source === "https://models.miao.dtee.top" ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.minutes(5)
     const lockKey = `models-dev:${filepath}`

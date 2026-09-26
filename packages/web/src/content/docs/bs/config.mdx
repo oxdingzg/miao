@@ -46,13 +46,13 @@ Izvori konfiguracije se učitavaju ovim redoslijedom (kasniji izvori poništavaj
 2. **Globalna konfiguracija** (`~/.config/miao/miao.json`) - korisničke preferencije
 3. **Prilagođena konfiguracija** (`MIAO_CONFIG` env var) - prilagođena preinačenja
 4. **Konfiguracija projekta** (`miao.json` u projektu) - postavke specifične za projekat
-5. **`.opencode` direktoriji** - agenti, komande, dodaci
+5. **`.miao` direktoriji** - agenti, komande, dodaci
 6. **Inline konfiguracija** (`MIAO_CONFIG_CONTENT` env var) - runtime preinačenja
 
 To znači da konfiguracije projekta mogu nadjačati globalne zadane postavke, a globalne konfiguracije mogu nadjačati postavke udaljene organizacije.
 
 :::note
-Direktoriji `.opencode` i `~/.config/opencode` koriste **imena u množini** za poddirektorije: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` i `themes/`. Pojedinačna imena (npr. `agent/`) su također podržana za kompatibilnost unatrag.
+Direktoriji `.miao` i `~/.config/opencode` koriste **imena u množini** za poddirektorije: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` i `themes/`. Pojedinačna imena (npr. `agent/`) su također podržana za kompatibilnost unatrag.
 :::
 
 ---
@@ -134,14 +134,14 @@ Prilagođena konfiguracija se učitava između globalne i projektne konfiguracij
 
 ### Prilagođeni direktorij
 
-Navedite prilagođeni konfiguracijski direktorij koristeći `MIAO_CONFIG_DIR` varijablu okruženja. U ovom direktoriju će se tražiti agenti, komande, modovi i dodaci baš kao standardni `.opencode` direktorij, i trebali bi pratiti istu strukturu.
+Navedite prilagođeni konfiguracijski direktorij koristeći `MIAO_CONFIG_DIR` varijablu okruženja. U ovom direktoriju će se tražiti agenti, komande, modovi i dodaci baš kao standardni `.miao` direktorij, i trebali bi pratiti istu strukturu.
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-Prilagođeni direktorij se učitava nakon direktorija globalne konfiguracije i `.opencode`, tako da **može nadjačati** njihove postavke.
+Prilagođeni direktorij se učitava nakon direktorija globalne konfiguracije i `.miao`, tako da **može nadjačati** njihove postavke.
 
 ---
 

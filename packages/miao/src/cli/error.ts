@@ -64,7 +64,7 @@ export function FormatError(input: unknown): string | undefined {
     return [
       `Model not found: ${stringField(providerModelNotFound, "providerID")}/${stringField(providerModelNotFound, "modelID")}`,
       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
-      `Try: \`opencode models\` to list available models`,
+      `Try: \`miao models\` to list available models`,
       `Or check your config (miao.json) provider/model names`,
     ].join("\n")
   }

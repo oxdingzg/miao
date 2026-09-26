@@ -392,8 +392,8 @@ export const McpLogoutCommand = effectCmd({
 })
 
 async function resolveConfigPath(baseDir: string, global = false) {
-  // Check for existing config files (prefer .jsonc over .json, check .opencode/ subdirectory too)
-  const candidates = [path.join(baseDir, "opencode.json"), path.join(baseDir, "opencode.jsonc")]
+  // Check for existing config files (prefer .jsonc over .json, check .miao/ subdirectory too)
+  const candidates = [path.join(baseDir, "miao.json"), path.join(baseDir, "miao.jsonc")]
 
   if (!global) {
     candidates.push(path.join(baseDir, ".miao", "miao.json"), path.join(baseDir, ".miao", "miao.jsonc"), path.join(baseDir, ".opencode", "opencode.json"), path.join(baseDir, ".opencode", "opencode.jsonc"))
@@ -405,7 +405,7 @@ async function resolveConfigPath(baseDir: string, global = false) {
     }
   }
 
-  // Default to opencode.json if none exist
+  // Default to miao.json if none exist
   return candidates[0]
 }
 

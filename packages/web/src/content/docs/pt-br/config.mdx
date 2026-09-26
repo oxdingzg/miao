@@ -47,13 +47,13 @@ As fontes de configuração são carregadas nesta ordem (fontes posteriores subs
 2. **Configuração global** (`~/.config/miao/miao.json`) - preferências do usuário
 3. **Configuração personalizada** (`MIAO_CONFIG` var de ambiente) - substituições personalizadas
 4. **Configuração do projeto** (`miao.json` no projeto) - configurações específicas do projeto
-5. **Diretórios `.opencode`** - agentes, comandos, plugins
+5. **Diretórios `.miao`** - agentes, comandos, plugins
 6. **Configuração inline** (`MIAO_CONFIG_CONTENT` var de ambiente) - substituições em tempo de execução
 
 Isso significa que as configurações do projeto podem substituir os padrões globais, e as configurações globais podem substituir os padrões organizacionais remotos.
 
 :::note
-Os diretórios `.opencode` e `~/.config/opencode` usam **nomes no plural** para subdiretórios: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/`, e `themes/`. Nomes no singular (por exemplo, `agent/`) também são suportados para compatibilidade retroativa.
+Os diretórios `.miao` e `~/.config/opencode` usam **nomes no plural** para subdiretórios: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/`, e `themes/`. Nomes no singular (por exemplo, `agent/`) também são suportados para compatibilidade retroativa.
 :::
 
 ---
@@ -135,14 +135,14 @@ A configuração personalizada é carregada entre as configurações globais e d
 
 ### Diretório personalizado
 
-Especifique um diretório de configuração personalizado usando a variável de ambiente `MIAO_CONFIG_DIR`. Este diretório será pesquisado por agentes, comandos, modos e plugins, assim como o diretório padrão `.opencode`, e deve seguir a mesma estrutura.
+Especifique um diretório de configuração personalizado usando a variável de ambiente `MIAO_CONFIG_DIR`. Este diretório será pesquisado por agentes, comandos, modos e plugins, assim como o diretório padrão `.miao`, e deve seguir a mesma estrutura.
 
 ```bash
 export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-O diretório personalizado é carregado após a configuração global e os diretórios `.opencode`, então ele **pode substituir** suas configurações.
+O diretório personalizado é carregado após a configuração global e os diretórios `.miao`, então ele **pode substituir** suas configurações.
 
 ---
 

@@ -304,9 +304,9 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.wsl.error.installDistro": "Failed to install distro: {{distro}}",
   "desktop.wsl.error.installOpencode": "Miao installation failed",
   "desktop.wsl.error.alreadyAdded": "{{distro}} is already added",
-  "desktop.wsl.error.opencodeMissing": "miao is not installed in this distro",
-  "desktop.wsl.error.opencodeCannotRun": "miao is installed but could not run",
-  "desktop.wsl.error.opencodeNotInstalled": "Miao is not installed in {{distro}}",
+  "desktop.wsl.error.miaoMissing": "miao is not installed in this distro",
+  "desktop.wsl.error.miaoCannotRun": "miao is installed but could not run",
+  "desktop.wsl.error.miaoNotInstalled": "Miao is not installed in {{distro}}",
   "desktop.wsl.error.updateVersion":
     "Miao update finished but {{distro}} still reports {{installed}}; expected {{expected}}",
   "desktop.wsl.error.noVersion": "no version",

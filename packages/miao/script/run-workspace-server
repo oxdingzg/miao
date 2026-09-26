@@ -5,7 +5,7 @@
 // debugger easier
 //
 // *Important*: make sure you add the debug workspace plugin first.
-// In `.opencode/opencode.jsonc` in the root of this project add:
+// In `.miao/miao.jsonc` in the root of this project add:
 //
 // "plugin": ["../packages/miao/src/control-plane/dev/debug-workspace-plugin.ts"]
 //

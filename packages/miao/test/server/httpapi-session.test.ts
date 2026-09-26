@@ -866,7 +866,7 @@ describe("session HttpApi", () => {
 
         const query = new URLSearchParams({
           scope: "project",
-          path: "packages/miao/src",
+          path: "packages/opencode/src",
           directory: currentDir,
         })
         const headers = { "x-opencode-directory": test.directory }

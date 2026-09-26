@@ -173,7 +173,7 @@ function addServerDistroStatus(input: {
     return
   }
   if (check.matchesDesktop === false) return { label: { key: "wsl.onboarding.updateOpencode" }, tone: "warning" }
-  if (!check.resolvedPath) return { label: { key: "wsl.onboarding.distroStatus.opencodeMissing" }, tone: "warning" }
+  if (!check.resolvedPath) return { label: { key: "wsl.onboarding.distroStatus.miaoMissing" }, tone: "warning" }
   if (check.error) return { label: { key: "wsl.onboarding.installOpencode" }, tone: "warning" }
   return { label: { key: "wsl.onboarding.distroStatus.ready" }, tone: "success" }
 }

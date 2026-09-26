@@ -46,13 +46,13 @@ Konfigurationsquellen werden in dieser Reihenfolge geladen (spätere Quellen üb
 2. **Globale Konfiguration** (`~/.config/miao/miao.json`) – Benutzereinstellungen
 3. **Benutzerdefinierte Konfiguration** (`MIAO_CONFIG` env var) – benutzerdefinierte Überschreibungen
 4. **Projektkonfiguration** (`miao.json` im Projekt) – projektspezifische Einstellungen
-5. **`.opencode` Verzeichnisse** – Agenten, Befehle, Plugins
+5. **`.miao` Verzeichnisse** – Agenten, Befehle, Plugins
 6. **Inline-Konfiguration** (`MIAO_CONFIG_CONTENT` env var) – Laufzeitüberschreibungen
 
 Dies bedeutet, dass Projektkonfigurationen globale Standardeinstellungen überschreiben können und globale Konfigurationen Remote-Organisationsstandards überschreiben können.
 
 :::note
-Die Verzeichnisse `.opencode` und `~/.config/opencode` verwenden **Pluralnamen** für Unterverzeichnisse: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` und `themes/`. Aus Gründen der Abwärtskompatibilität werden auch einzelne Namen (z. B. `agent/`) unterstützt.
+Die Verzeichnisse `.miao` und `~/.config/opencode` verwenden **Pluralnamen** für Unterverzeichnisse: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/` und `themes/`. Aus Gründen der Abwärtskompatibilität werden auch einzelne Namen (z. B. `agent/`) unterstützt.
 :::
 
 ---
@@ -132,7 +132,7 @@ Die benutzerdefinierte Konfiguration wird in der Rangfolge zwischen globalen und
 
 Geben Sie mit `MIAO_CONFIG_DIR` ein benutzerdefiniertes Konfigurationsverzeichnis an.
 Umgebungsvariable. Dieses Verzeichnis wird nach Agenten, Befehlen,
-Modi und Plugins genau wie das Standardverzeichnis `.opencode` und sollten
+Modi und Plugins genau wie das Standardverzeichnis `.miao` und sollten
 folgen der gleichen Struktur.
 
 ```bash
@@ -140,7 +140,7 @@ export MIAO_CONFIG_DIR=/path/to/my/config-directory
 miao run "Hello world"
 ```
 
-Das benutzerdefinierte Verzeichnis wird nach den Verzeichnissen global config und `.opencode` geladen, sodass es deren Einstellungen **überschreiben** kann.
+Das benutzerdefinierte Verzeichnis wird nach den Verzeichnissen global config und `.miao` geladen, sodass es deren Einstellungen **überschreiben** kann.
 
 ---
 
