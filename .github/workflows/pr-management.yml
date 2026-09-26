@@ -20,27 +20,29 @@ jobs:
         id: team-check
         run: |
           LOGIN="${{ github.event.pull_request.user.login }}"
-          if [ "$LOGIN" = "opencode-agent[bot]" ] || grep -qxF "$LOGIN" .github/TEAM_MEMBERS; then
+          ASSOCIATION="${{ github.event.pull_request.author_association }}"
+          if [ "$ASSOCIATION" = "OWNER" ] || [ "$ASSOCIATION" = "MEMBER" ]; then
             echo "is_team=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping: $LOGIN is a team member or bot"
+            echo "Running: $LOGIN is an organization member"
           else
             echo "is_team=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: $LOGIN is not an organization member"
           fi
 
       - name: Setup Bun
-        if: steps.team-check.outputs.is_team != 'true'
+        if: steps.team-check.outputs.is_team == 'true'
         uses: ./.github/actions/setup-bun
 
       - name: Install dependencies
-        if: steps.team-check.outputs.is_team != 'true'
+        if: steps.team-check.outputs.is_team == 'true'
         run: bun install
 
       - name: Install opencode
-        if: steps.team-check.outputs.is_team != 'true'
+        if: steps.team-check.outputs.is_team == 'true'
         run: curl -fsSL https://opencode.ai/install | bash
 
       - name: Build prompt
-        if: steps.team-check.outputs.is_team != 'true'
+        if: steps.team-check.outputs.is_team == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -57,7 +59,7 @@ jobs:
           } > pr_info.txt
 
       - name: Check for duplicate PRs
-        if: steps.team-check.outputs.is_team != 'true'
+        if: steps.team-check.outputs.is_team == 'true'
         env:
           MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

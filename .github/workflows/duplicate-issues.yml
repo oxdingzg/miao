@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Check exempt issue author
+      - name: Check allowed issue author
         id: author
         run: |
           LOGIN="${{ github.event.issue.user.login }}"
@@ -27,10 +27,10 @@ jobs:
              [ "$ASSOCIATION" = "OWNER" ] ||
              [ "$ASSOCIATION" = "MEMBER" ] ||
              grep -qxiF "$LOGIN" .github/TEAM_MEMBERS; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping issue automation for exempt author: $LOGIN ($ASSOCIATION)"
-          else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping issue automation for non-team author: $LOGIN ($ASSOCIATION)"
           fi
 
       - uses: ./.github/actions/setup-bun
@@ -151,7 +151,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Check exempt issue author
+      - name: Check allowed issue author
         id: author
         run: |
           LOGIN="${{ github.event.issue.user.login }}"
@@ -161,10 +161,10 @@ jobs:
              [ "$ASSOCIATION" = "OWNER" ] ||
              [ "$ASSOCIATION" = "MEMBER" ] ||
              grep -qxiF "$LOGIN" .github/TEAM_MEMBERS; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping issue automation for exempt author: $LOGIN ($ASSOCIATION)"
-          else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping issue automation for non-team author: $LOGIN ($ASSOCIATION)"
           fi
 
       - uses: ./.github/actions/setup-bun
