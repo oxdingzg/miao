@@ -38,8 +38,8 @@ type TuiAttentionHost = TuiAttention & {
   dispose(): void
 }
 
-const DEFAULT_TITLE = "opencode"
-const DEFAULT_PACK_ID = "opencode.default"
+const DEFAULT_TITLE = "miao"
+const DEFAULT_PACK_ID = "miao.default"
 const KV_SOUND_PACK = "attention_sound_pack"
 const TITLE_LIMIT = 80
 const MESSAGE_LIMIT = 240

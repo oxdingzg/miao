@@ -21,7 +21,7 @@ export const LEADER_TOKEN = "leader"
 export const MIAO_BASE_MODE = "base"
 export const COMMAND_PALETTE_COMMAND = "command.palette.show"
 
-const MIAO_MODE_KEY = "opencode.mode"
+const MIAO_MODE_KEY = "miao.mode"
 
 export const OpencodeKeymapProvider = KeymapProvider
 export const useOpencodeKeymap = useKeymap
