@@ -9,11 +9,12 @@ on:
 jobs:
   miao:
     if: |
-      contains(github.event.comment.body, ' /oc') ||
+      (contains(github.event.comment.body, ' /oc') ||
       startsWith(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, ' /miao') ||
-      startsWith(github.event.comment.body, '/miao')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+      startsWith(github.event.comment.body, '/miao')) &&
+      contains(fromJson('["OWNER","MEMBER"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
@@ -29,6 +30,6 @@ jobs:
         uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # latest
         env:
           MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
-          MIAO_PERMISSION: '{"bash": "deny"}'
+          MIAO_PERMISSION: '{"bash": "deny", "webfetch": "deny"}'
         with:
           model: opencode/claude-opus-4-5
