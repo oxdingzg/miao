@@ -387,7 +387,7 @@ describe("session.llm-native.request", () => {
     ).toThrow("Native LLM request adapter does not support provider package unknown-provider")
   })
 
-  test("only enables native runtime for supported OpenAI API-key models", () => {
+  test("enables native runtime for supported catalog packages with API keys", () => {
     expect(LLMNativeRuntime.status({ model: baseModel, provider: providerInfo, auth: undefined })).toMatchObject({
       type: "supported",
       apiKey: "test-openai-key",
@@ -418,11 +418,11 @@ describe("session.llm-native.request", () => {
     })
     expect(
       LLMNativeRuntime.status({
-        model: { ...baseModel, providerID: ProviderV2.ID.make("google") },
-        provider: { ...providerInfo, id: ProviderV2.ID.make("google") },
+        model: { ...baseModel, api: { ...baseModel.api, npm: "@ai-sdk/cohere" } },
+        provider: providerInfo,
         auth: undefined,
       }),
-    ).toEqual({ type: "unsupported", reason: "provider is not openai, opencode, or anthropic" })
+    ).toEqual({ type: "unsupported", reason: "provider package @ai-sdk/cohere is not supported natively" })
     expect(
       LLMNativeRuntime.status({
         model: baseModel,
@@ -440,11 +440,19 @@ describe("session.llm-native.request", () => {
 
     expect(
       LLMNativeRuntime.status({
-        model: { ...baseModel, api: { ...baseModel.api, npm: "@ai-sdk/google" } },
+        model: { ...baseModel, api: { ...baseModel.api, npm: "@ai-sdk/google", url: "" } },
         provider: providerInfo,
         auth: undefined,
       }),
-    ).toEqual({ type: "unsupported", reason: "provider package is not OpenAI, OpenAI-compatible, or Anthropic" })
+    ).toMatchObject({ type: "supported", apiKey: "test-openai-key" })
+
+    expect(
+      LLMNativeRuntime.status({
+        model: { ...baseModel, api: { ...baseModel.api, npm: "@ai-sdk/azure", url: "" } },
+        provider: providerInfo,
+        auth: undefined,
+      }),
+    ).toEqual({ type: "unsupported", reason: "Azure native requests require a base URL" })
 
     expect(
       LLMNativeRuntime.status({

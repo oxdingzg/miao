@@ -86,5 +86,5 @@ Safety boundary:
 
 - AI SDK remains the default.
 - `OPENCODE_EXPERIMENTAL_NATIVE_LLM=true` or the umbrella `OPENCODE_EXPERIMENTAL=true` opts in. Native is not a global replacement.
-- Native execution currently supports OpenAI, opencode-managed OpenAI-compatible, and Anthropic API-key paths backed by `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, or `@ai-sdk/anthropic` catalog entries.
+- Native execution supports API-key paths for catalog entries backed by `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/azure`, and `@openrouter/ai-sdk-provider`. Bedrock (SigV4) and templated/resource-derived URLs still fall back to AI SDK.
 - Unsupported providers, OpenAI OAuth, and missing API-key cases fall back to AI SDK.

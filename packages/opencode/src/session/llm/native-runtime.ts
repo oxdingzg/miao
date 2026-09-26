@@ -47,16 +47,25 @@ export function status(input: Pick<StreamInput, "model" | "provider" | "auth">):
   return statusWithFetch(input, providerFetch(input))
 }
 
+// Catalog packages the native request adapter can lower into a `@opencode-ai/llm`
+// route. Bedrock is intentionally excluded: it needs SigV4 credentials, not the
+// API-key path this gate threads through.
+const NATIVE_PACKAGES = new Set([
+  "@ai-sdk/openai",
+  "@ai-sdk/openai-compatible",
+  "@ai-sdk/anthropic",
+  "@ai-sdk/google",
+  "@ai-sdk/azure",
+  "@openrouter/ai-sdk-provider",
+])
+
 function statusWithFetch(
   input: Pick<StreamInput, "model" | "provider" | "auth">,
   fetch: typeof globalThis.fetch | undefined,
 ): RuntimeStatus {
-  const providerID = input.model.providerID
-  if (providerID !== "openai" && providerID !== "anthropic" && !providerID.startsWith("opencode"))
-    return { type: "unsupported", reason: "provider is not openai, opencode, or anthropic" }
   const npm = input.model.api.npm
-  if (npm !== "@ai-sdk/openai" && npm !== "@ai-sdk/openai-compatible" && npm !== "@ai-sdk/anthropic")
-    return { type: "unsupported", reason: "provider package is not OpenAI, OpenAI-compatible, or Anthropic" }
+  if (!NATIVE_PACKAGES.has(npm))
+    return { type: "unsupported", reason: `provider package ${npm} is not supported natively` }
   if (input.auth?.type === "oauth" && !(input.provider.id === "openai" && fetch)) {
     return { type: "unsupported", reason: "OAuth auth requires a provider fetch override" }
   }
@@ -64,11 +73,16 @@ function statusWithFetch(
   const apiKey = typeof input.provider.options.apiKey === "string" ? input.provider.options.apiKey : input.provider.key
   if (!apiKey) return { type: "unsupported", reason: "API key is not configured" }
 
-  return {
-    type: "supported",
-    apiKey,
-    baseURL: typeof input.provider.options.baseURL === "string" ? input.provider.options.baseURL : undefined,
-  }
+  const baseURL = typeof input.provider.options.baseURL === "string" ? input.provider.options.baseURL : undefined
+  const url = baseURL || input.model.api.url || undefined
+  // Compatible providers sometimes ship templated URLs (e.g. `${ACCOUNT_ID}`);
+  // opencode expands those for the AI SDK path only, so keep native on a fallback.
+  if (url?.includes("${"))
+    return { type: "unsupported", reason: "provider base URL requires runtime substitution" }
+  if (npm === "@ai-sdk/azure" && url === undefined)
+    return { type: "unsupported", reason: "Azure native requests require a base URL" }
+
+  return { type: "supported", apiKey, baseURL }
 }
 
 export function stream(input: StreamInput): StreamResult {
