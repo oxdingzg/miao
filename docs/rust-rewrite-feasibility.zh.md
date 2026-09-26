@@ -104,6 +104,14 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 
 **验收**：miao/core 现有 edit/apply_patch 测试全绿；在 12k/150k 行样本上 diff 不劣化且峰值内存下降；长行用例耗时不高于当前。
 
+**PoC 结果（已实现）**
+
+代码在 `crates/miao-native/`：`src/lib.rs` 移植了 9 个 replacer、`replace()`、`diffStats`、`unifiedPatch`，用 napi-rs 暴露；`bun run build.ts` 产出 `miao-native.node`。
+
+- 一致性：12 个 Rust 单测 + 18 个 JS 对比测试全过，含 400 例随机语料；`unifiedPatch` 与 jsdiff 逐字节一致。
+- 实测：典型 12k 行文件与 TS 持平（约 2.8 ms）；模糊缩进反而略慢（约 4.0 ms vs 约 3.0 ms，被统计 diff 拖累）；病态超长行约 10.6 ms vs 约 30 ms（约 2.8x）。
+- 结论：移植在行为上正确，收益落在病态输入，不在典型路径。下一步应先测内存，而不是延迟。目前未接入生产，`tool/edit.ts` 仍走 TS 与 jsdiff。
+
 ### 第二步：看指标再决定
 
 - SQLite 会话存储/迁移/检索（有收益，但数据模型绑在 Effect-Schema/Drizzle 上，风险高，先做只读索引而不是替换存储层）

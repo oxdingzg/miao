@@ -104,6 +104,14 @@ Rust `strsim` Levenshtein at the same size: **3.1 ms**, about 12x faster than th
 
 **Acceptance**: the existing miao/core edit/apply_patch tests stay green; on 12k/150k-line samples the diff is no worse and peak memory drops; the long-line case costs no more than today.
 
+**PoC result (implemented)**
+
+The code is in `crates/miao-native/`: `src/lib.rs` ports the nine replacers, `replace()`, `diffStats`, and `unifiedPatch`, exposed via napi-rs; `bun run build.ts` produces `miao-native.node`.
+
+- Parity: 12 Rust unit tests + 18 JS parity tests pass, including a 400-case fuzz corpus; `unifiedPatch` matches jsdiff byte for byte.
+- Timing: a typical 12k-line edit is at parity (~2.8 ms); fuzzy indent is slightly slower (~4.0 ms vs ~3.0 ms, dragged by the stats diff); the pathologic long-line case is ~10.6 ms vs ~30 ms (~2.8x).
+- Conclusion: the port is behaviourally correct, and the gain is on pathologic inputs, not the typical path. The next step is a memory measurement, not latency. It is not wired into production; `tool/edit.ts` still uses TS and jsdiff.
+
 ### Step 2: decide based on metrics
 
 - SQLite session storage/migrations/retrieval (real benefit, but the data model is bound to Effect-Schema/Drizzle; start with a read-only index instead of replacing the storage layer)
