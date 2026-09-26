@@ -5,5 +5,5 @@ await $`bun run install-electron`
 
 await $`bun ./scripts/copy-icons.ts ${process.env.MIAO_CHANNEL ?? "dev"}`
 
-await $`cd ../opencode && bun script/build-node.ts`
+await $`cd ../miao && bun script/build-node.ts`
 await downloadCliToResources()

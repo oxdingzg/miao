@@ -30,7 +30,7 @@ bun install
 bun run dev
 ```
 
-Run `bun typecheck` from a package directory (for example `packages/opencode`) before submitting changes.
+Run `bun typecheck` from a package directory (for example `packages/miao`) before submitting changes.
 
 ## License
 

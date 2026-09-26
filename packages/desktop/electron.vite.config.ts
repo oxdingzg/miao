@@ -3,7 +3,7 @@ import { defineConfig } from "electron-vite"
 import appPlugin from "@miao/app/vite"
 import * as fs from "node:fs/promises"
 
-const MIAO_SERVER_DIST = "../opencode/dist/node"
+const MIAO_SERVER_DIST = "../miao/dist/node"
 
 const channel = (() => {
   const raw = process.env.MIAO_CHANNEL

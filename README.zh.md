@@ -30,7 +30,7 @@ bun install
 bun run dev
 ```
 
-提交改动前，请在包目录（例如 `packages/opencode`）内运行 `bun typecheck`。
+提交改动前，请在包目录（例如 `packages/miao`）内运行 `bun typecheck`。
 
 ## 许可证
 
