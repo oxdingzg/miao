@@ -162,7 +162,7 @@ const layer = Layer.effect(
       Global.Path.cache,
       source === "https://models.opencode.ai" ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
-    const ttl = Duration.minutes(5)
+    const ttl = Duration.hours(12)
     const lockKey = `models-dev:${filepath}`
 
     const fresh = Effect.fnUntraced(function* () {
