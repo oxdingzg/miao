@@ -3,6 +3,7 @@ import { createRequire } from "module"
 import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { replace } from "../../src/tool/edit"
+import { deriveNewContentsFromChunks, type UpdateFileChunk } from "../../src/patch"
 
 const require = createRequire(import.meta.url)
 const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")
@@ -16,6 +17,20 @@ type Native = {
   ): { content: string; additions: number; deletions: number }
   diffStats(before: string, after: string): { additions: number; deletions: number }
   unifiedPatch(before: string, after: string, filePath: string): string
+  deriveNewContents(
+    chunks: Array<{ oldLines: string[]; newLines: string[]; changeContext?: string; isEndOfFile?: boolean }>,
+    filePath: string,
+    originalText: string,
+  ): { content: string; unifiedDiff: string; bom: boolean }
+}
+
+function toNativeChunks(chunks: UpdateFileChunk[]) {
+  return chunks.map((chunk) => ({
+    oldLines: chunk.old_lines,
+    newLines: chunk.new_lines,
+    changeContext: chunk.change_context,
+    isEndOfFile: chunk.is_end_of_file,
+  }))
 }
 
 const native: Native | undefined = (() => {
@@ -28,7 +43,7 @@ const native: Native | undefined = (() => {
 
 type Case = { name: string; content: string; oldString: string; newString: string; replaceAll?: boolean }
 
-function outcome(run: () => string) {
+function outcome<T>(run: () => T) {
   try {
     return { ok: true as const, value: run() }
   } catch (error) {
@@ -175,6 +190,52 @@ withNative("native edit parity", () => {
       expect(native!.unifiedPatch(before, after, "f.txt")).toBe(createTwoFilesPatch("f.txt", "f.txt", before, after))
     }
   })
+})
+
+withNative("native patch parity", () => {
+  type PatchCase = { name: string; content: string; chunks: UpdateFileChunk[] }
+
+  const cases: PatchCase[] = [
+    { name: "exact replace", content: "a\nb\nc\nd\n", chunks: [{ old_lines: ["b"], new_lines: ["B"] }] },
+    { name: "insert lines", content: "a\nb\n", chunks: [{ old_lines: [], new_lines: ["x", "y"] }] },
+    {
+      name: "trim match",
+      content: "a\n  b  \nc\n",
+      chunks: [{ old_lines: ["b"], new_lines: ["B"] }],
+    },
+    {
+      name: "unicode normalize",
+      content: 'const x = "a"\n',
+      chunks: [{ old_lines: ["const x = \u201ca\u201d"], new_lines: ["const x = 1"] }],
+    },
+    {
+      name: "end of file anchor",
+      content: "a\nb\nc\nd\n",
+      chunks: [{ old_lines: ["c", "d"], new_lines: ["C", "D"], is_end_of_file: true }],
+    },
+    {
+      name: "context seek",
+      content: "header\nbody\nfooter\n",
+      chunks: [{ old_lines: ["body"], new_lines: ["BODY"], change_context: "header" }],
+    },
+    { name: "bom preserved", content: "\uFEFFa\nb\n", chunks: [{ old_lines: ["b"], new_lines: ["B"] }] },
+    {
+      name: "missing lines",
+      content: "a\nb\n",
+      chunks: [{ old_lines: ["missing"], new_lines: ["x"] }],
+    },
+  ]
+
+  for (const testCase of cases) {
+    test(`matches TS deriveNewContentsFromChunks: ${testCase.name}`, () => {
+      const expected = outcome(() => {
+        const result = deriveNewContentsFromChunks("f.txt", testCase.chunks, testCase.content)
+        return { content: result.content, unifiedDiff: result.unified_diff, bom: result.bom }
+      })
+      const actual = outcome(() => native!.deriveNewContents(toNativeChunks(testCase.chunks), "f.txt", testCase.content))
+      expect(actual).toEqual(expected)
+    })
+  }
 })
 
 function mulberry32(seed: number) {

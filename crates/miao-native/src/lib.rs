@@ -539,6 +539,244 @@ pub fn unified_patch(before: String, after: String, file_path: String) -> String
     build_unified_patch(&before, &after, &file_path)
 }
 
+#[napi(object)]
+pub struct PatchChunk {
+    pub old_lines: Vec<String>,
+    pub new_lines: Vec<String>,
+    pub change_context: Option<String>,
+    pub is_end_of_file: Option<bool>,
+}
+
+#[napi(object)]
+#[derive(Debug)]
+pub struct DeriveResult {
+    pub content: String,
+    pub unified_diff: String,
+    pub bom: bool,
+}
+
+fn split_bom(text: &str) -> (bool, &str) {
+    match text.strip_prefix('\u{feff}') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    }
+}
+
+fn normalize_unicode(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}' => out.push('\''),
+            '\u{201c}' | '\u{201d}' | '\u{201e}' | '\u{201f}' => out.push('"'),
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}' => out.push('-'),
+            '\u{2026}' => out.push_str("..."),
+            '\u{00a0}' => out.push(' '),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn try_match<F: Fn(&str, &str) -> bool>(
+    lines: &[&str],
+    pattern: &[&str],
+    start: usize,
+    eof: bool,
+    compare: F,
+) -> i64 {
+    if eof && lines.len() >= pattern.len() {
+        let from_end = lines.len() - pattern.len();
+        if from_end >= start && pattern.iter().enumerate().all(|(j, p)| compare(lines[from_end + j], p)) {
+            return from_end as i64;
+        }
+    }
+    if pattern.len() > lines.len() {
+        return -1;
+    }
+    for i in start..=(lines.len() - pattern.len()) {
+        if pattern.iter().enumerate().all(|(j, p)| compare(lines[i + j], p)) {
+            return i as i64;
+        }
+    }
+    -1
+}
+
+fn seek_sequence(lines: &[&str], pattern: &[&str], start: usize, eof: bool) -> i64 {
+    if pattern.is_empty() {
+        return -1;
+    }
+    let exact = try_match(lines, pattern, start, eof, |a, b| a == b);
+    if exact != -1 {
+        return exact;
+    }
+    let rstrip = try_match(lines, pattern, start, eof, |a, b| a.trim_end() == b.trim_end());
+    if rstrip != -1 {
+        return rstrip;
+    }
+    let trim = try_match(lines, pattern, start, eof, |a, b| a.trim() == b.trim());
+    if trim != -1 {
+        return trim;
+    }
+    try_match(lines, pattern, start, eof, |a, b| {
+        normalize_unicode(a.trim()) == normalize_unicode(b.trim())
+    })
+}
+
+struct Replacement {
+    start: usize,
+    len: usize,
+    lines: Vec<String>,
+}
+
+fn compute_replacements(
+    original: &[String],
+    file_path: &str,
+    chunks: &[PatchChunk],
+) -> Result<Vec<Replacement>, String> {
+    let refs: Vec<&str> = original.iter().map(String::as_str).collect();
+    let mut replacements = Vec::new();
+    let mut line_index = 0usize;
+
+    for chunk in chunks {
+        if let Some(context) = &chunk.change_context {
+            let ctx = [context.as_str()];
+            let index = seek_sequence(&refs, &ctx, line_index, false);
+            if index == -1 {
+                return Err(format!("Failed to find context '{context}' in {file_path}"));
+            }
+            line_index = index as usize + 1;
+        }
+
+        if chunk.old_lines.is_empty() {
+            let insertion = if !original.is_empty() && original[original.len() - 1].is_empty() {
+                original.len() - 1
+            } else {
+                original.len()
+            };
+            replacements.push(Replacement {
+                start: insertion,
+                len: 0,
+                lines: chunk.new_lines.clone(),
+            });
+            continue;
+        }
+
+        let mut pattern: Vec<&str> = chunk.old_lines.iter().map(String::as_str).collect();
+        let mut new_slice = chunk.new_lines.clone();
+        let eof = chunk.is_end_of_file.unwrap_or(false);
+        let mut found = seek_sequence(&refs, &pattern, line_index, eof);
+
+        if found == -1 && !pattern.is_empty() && pattern[pattern.len() - 1].is_empty() {
+            pattern.pop();
+            if !new_slice.is_empty() && new_slice[new_slice.len() - 1].is_empty() {
+                new_slice.pop();
+            }
+            found = seek_sequence(&refs, &pattern, line_index, eof);
+        }
+
+        if found == -1 {
+            return Err(format!(
+                "Failed to find expected lines in {file_path}:\n{}",
+                chunk.old_lines.join("\n")
+            ));
+        }
+
+        replacements.push(Replacement {
+            start: found as usize,
+            len: pattern.len(),
+            lines: new_slice,
+        });
+        line_index = found as usize + pattern.len();
+    }
+
+    replacements.sort_by_key(|replacement| replacement.start);
+    Ok(replacements)
+}
+
+fn apply_replacements_into(original: &[String], replacements: &[Replacement], out: &mut String) {
+    let mut cursor = 0usize;
+    for replacement in replacements {
+        for line in &original[cursor..replacement.start] {
+            out.push_str(line);
+            out.push('\n');
+        }
+        for line in &replacement.lines {
+            out.push_str(line);
+            out.push('\n');
+        }
+        cursor = replacement.start + replacement.len;
+    }
+    for line in &original[cursor..] {
+        out.push_str(line);
+        out.push('\n');
+    }
+}
+
+fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
+    let old_lines: Vec<&str> = old_content.split('\n').collect();
+    let new_lines: Vec<&str> = new_content.split('\n').collect();
+    let mut diff = String::from("@@ -1 +1 @@\n");
+    let max_len = std::cmp::max(old_lines.len(), new_lines.len());
+    let mut has_changes = false;
+    for index in 0..max_len {
+        let old_line = old_lines.get(index).copied().unwrap_or("");
+        let new_line = new_lines.get(index).copied().unwrap_or("");
+        if old_line != new_line {
+            if !old_line.is_empty() {
+                diff.push('-');
+                diff.push_str(old_line);
+                diff.push('\n');
+            }
+            if !new_line.is_empty() {
+                diff.push('+');
+                diff.push_str(new_line);
+                diff.push('\n');
+            }
+            has_changes = true;
+        } else if !old_line.is_empty() {
+            diff.push(' ');
+            diff.push_str(old_line);
+            diff.push('\n');
+        }
+    }
+    if has_changes {
+        diff
+    } else {
+        String::new()
+    }
+}
+
+fn derive_new_contents(chunks: &[PatchChunk], file_path: &str, original_text: &str) -> Result<DeriveResult, String> {
+    let (original_bom, text) = split_bom(original_text);
+    let mut original_lines: Vec<String> = text.split('\n').map(|line| line.to_string()).collect();
+    if original_lines.last().map(String::is_empty).unwrap_or(false) {
+        original_lines.pop();
+    }
+
+    let replacements = compute_replacements(&original_lines, file_path, chunks)?;
+
+    let mut joined = String::with_capacity(text.len() + 64);
+    apply_replacements_into(&original_lines, &replacements, &mut joined);
+
+    let (next_bom, new_content) = split_bom(&joined);
+    let unified_diff = generate_unified_diff(text, new_content);
+
+    Ok(DeriveResult {
+        content: new_content.to_string(),
+        unified_diff,
+        bom: original_bom || next_bom,
+    })
+}
+
+#[napi(js_name = "deriveNewContents")]
+pub fn derive_new_contents_napi(
+    chunks: Vec<PatchChunk>,
+    file_path: String,
+    original_text: String,
+) -> napi::Result<DeriveResult> {
+    derive_new_contents(&chunks, &file_path, &original_text).map_err(napi::Error::from_reason)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,5 +864,45 @@ mod tests {
     fn diff_stats_count_lines() {
         let (additions, deletions) = compute_stats("line1\nline2\nline3", "line1\nnew line a\nnew line b\nline3");
         assert_eq!((additions, deletions), (2, 1));
+    }
+
+    fn chunk(old: &[&str], new: &[&str]) -> PatchChunk {
+        PatchChunk {
+            old_lines: old.iter().map(|line| line.to_string()).collect(),
+            new_lines: new.iter().map(|line| line.to_string()).collect(),
+            change_context: None,
+            is_end_of_file: None,
+        }
+    }
+
+    #[test]
+    fn derive_replaces_exact_lines() {
+        let result = derive_new_contents(&[chunk(&["line2"], &["CHANGED"])], "f.txt", "line1\nline2\nline3\n").unwrap();
+        assert_eq!(result.content, "line1\nCHANGED\nline3\n");
+    }
+
+    #[test]
+    fn derive_inserts_when_old_lines_empty() {
+        let result = derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\nline2\n").unwrap();
+        assert_eq!(result.content, "line1\nline2\ninserted\n");
+    }
+
+    #[test]
+    fn derive_matches_with_trimmed_whitespace() {
+        let result = derive_new_contents(&[chunk(&["  line2  "], &["CHANGED"])], "f.txt", "line1\nline2\nline3\n").unwrap();
+        assert_eq!(result.content, "line1\nCHANGED\nline3\n");
+    }
+
+    #[test]
+    fn derive_matches_normalized_unicode() {
+        let result =
+            derive_new_contents(&[chunk(&["const x = \u{201c}a\u{201d}"], &["const x = 1"])], "f.txt", "const x = \"a\"\n").unwrap();
+        assert_eq!(result.content, "const x = 1\n");
+    }
+
+    #[test]
+    fn derive_reports_missing_lines() {
+        let result = derive_new_contents(&[chunk(&["missing"], &["x"])], "f.txt", "line1\nline2\n");
+        assert_eq!(result.unwrap_err(), "Failed to find expected lines in f.txt:\nmissing");
     }
 }

@@ -112,8 +112,9 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 - 匹配（12k 行）：exact native 约 0.16 ms vs TS 约 0.23 ms（1.4x）；模糊缩进约 0.41 ms vs 约 0.82 ms（2.0x）。
 - 全流程（匹配 + diff 统计）：native 约 1.9–2.2 ms vs TS 约 2.0–2.6 ms，被 diff 主导（`similar` 约等于 jsdiff）。
 - 病态超长行：约 10 ms vs 约 21–30 ms（2–3x）。
+- `apply_patch` 的 `deriveNewContents`（20k 行文件、命中点靠后，触发 4 轮 seek）：exact 持平（约 1.8 ms）；trim 轮 native 约 2.3 ms vs TS 约 3.6 ms（1.6x）；unicode 归一化轮约 5.7 ms vs 约 13.5 ms（2.4x）。
 
-**一次优化迭代值得记下来**：第一版 native 在典型场景反而比 TS 慢。原因不是语言，也不是 NAPI 边界（597 KB 字符串 echo 只要约 0.08 ms），而是 `str::find`/`str::rfind`（std two-way）比 JS 引擎的 SIMD `indexOf` 慢（0.38 / 0.45 ms vs 约 0.05 ms），且 `slice_span` 为了切一小段块把整个文件 `join` 了一遍。改用 `memchr::memmem` 搜索、用从 `index + 1` 向前的唯一性检查替代 `rfind`、直接对原内容切片后，所有场景 native 都快于 TS。
+**一次优化迭代值得记下来**：第一版 native 在典型场景反而比 TS 慢。原因不是语言，也不是 NAPI 边界（597 KB 字符串 echo 只要约 0.08 ms），而是 `str::find`/`str::rfind`（std two-way）比 JS 引擎的 SIMD `indexOf` 慢（0.38 / 0.45 ms vs 约 0.05 ms），且 `slice_span` 为了切一小段块把整个文件 `join` 了一遍。改用 `memchr::memmem` 搜索、用从 `index + 1` 向前的唯一性检查替代 `rfind`、直接对原内容切片后，所有场景 native 都快于 TS。`deriveNewContents` 也做了同类处理：不再 `to_vec()` 克隆整个行数组，不再每行 `format!` 分配临时字符串，改为直接拼接输出。
 
 结论：行为正确，优化后典型与病态路径都领先；但全流程被 diff 主导，端到端收益仍有限。未接入生产，`tool/edit.ts` 仍走 TS 与 jsdiff。
 

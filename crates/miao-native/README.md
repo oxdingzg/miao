@@ -35,10 +35,12 @@ replaceOnly(content, oldString, newString, replaceAll?) -> string
 applyEdit(content, oldString, newString, replaceAll?) -> { content, additions, deletions }
 diffStats(before, after) -> { additions, deletions }
 unifiedPatch(before, after, filePath) -> string
+deriveNewContents(chunks, filePath, originalText) -> { content, unifiedDiff, bom }
 ```
 
 `replaceOnly` throws the same error messages as the TS `replace()`; `applyEdit` is `replaceOnly`
-plus diff statistics.
+plus diff statistics. `deriveNewContents` ports `deriveNewContentsFromChunks` from
+`packages/miao/src/patch/index.ts` (the `apply_patch` chunk-application pass).
 
 ## PoC results (measured, same machine, release)
 
@@ -50,6 +52,10 @@ plus diff statistics.
 - Full pipeline (match + diff stats): native `applyEdit` ~1.9-2.2 ms vs TS `replace` + `diffLines`
   ~2.0-2.6 ms. The diff pass dominates (`similar` is about the same as jsdiff).
 - Pathologic block-anchor with 1800-char lines: native ~10 ms vs TS ~21-30 ms (~2-3x).
+- `apply_patch` `deriveNewContents` on a 20k-line file (match near the end, so the 4-pass seek runs):
+  - exact: parity (~1.8 ms each)
+  - trim pass: native ~2.3 ms vs TS ~3.6 ms (1.6x)
+  - unicode-normalize pass: native ~5.7 ms vs TS ~13.5 ms (2.4x)
 
 The first version of the port was **slower** than TS on the typical case. The cause was not the
 language, and not the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms):
