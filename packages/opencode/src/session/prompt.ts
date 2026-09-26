@@ -629,7 +629,21 @@ const layer = Layer.effect(
         .findMessage(sessionID, (m) => m.info.role === "user" && !!m.info.model)
         .pipe(Effect.orDie)
       if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
-      return yield* provider.defaultModel().pipe(Effect.orDie)
+      return yield* provider.defaultModel().pipe(
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            if (Provider.NoProvidersError.isInstance(error) || Provider.NoModelsError.isInstance(error)) {
+              yield* events.publish(Session.Event.Error, {
+                sessionID,
+                error: new NamedError.Unknown({
+                  message: "No AI provider is configured. Run /connect to add one, or set a `model` in your config.",
+                }).toObject(),
+              })
+            }
+            return yield* Effect.die(error)
+          }),
+        ),
+      )
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
