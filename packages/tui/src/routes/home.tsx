@@ -9,6 +9,7 @@ import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { usePluginRuntime } from "../plugin/runtime"
 import { useEditorContext } from "../context/editor"
+import { useKV } from "../context/kv"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../config"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
@@ -28,6 +29,7 @@ export function Home() {
   const args = useArgs()
   const local = useLocal()
   const editor = useEditorContext()
+  const kv = useKV()
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
   const promptMaxWidth = createMemo(() => {
@@ -74,7 +76,7 @@ export function Home() {
         <box height={4} minHeight={0} flexShrink={1} />
         <box flexShrink={0}>
           <pluginRuntime.Slot name="home_logo" mode="replace">
-            <Logo />
+            <Logo idle={kv.get("animations_enabled", true)} />
           </pluginRuntime.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
