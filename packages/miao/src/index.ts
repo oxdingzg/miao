@@ -1,34 +1,11 @@
 import "@miao/core/flag/legacy-env"
-import yargs from "yargs"
+import yargs, { type CommandModule } from "yargs"
 import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
-import { GenerateCommand } from "./cli/cmd/generate"
-import { ConsoleCommand } from "./cli/cmd/account"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { UpgradeCommand } from "./cli/cmd/upgrade"
-import { UninstallCommand } from "./cli/cmd/uninstall"
-import { ModelsCommand } from "./cli/cmd/models"
 import { UI } from "./cli/ui"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
-import { ExportCommand } from "./cli/cmd/export"
-import { ImportCommand } from "./cli/cmd/import"
-import { AttachCommand } from "./cli/cmd/attach"
-import { TuiThreadCommand } from "./cli/cmd/tui"
-import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { PrCommand } from "./cli/cmd/pr"
-import { SessionCommand } from "./cli/cmd/session"
-import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
-import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
 
 const args = hideBin(process.argv)
@@ -43,81 +20,127 @@ function show(out: string) {
   process.stderr.write(out)
 }
 
-const cli = yargs(args)
-  .parserConfiguration({ "populate--": true })
-  .scriptName("miao")
-  .wrap(100)
-  .help("help", "show help")
-  .alias("help", "h")
-  .version("version", "show version number", InstallationVersion)
-  .alias("version", "v")
-  .option("print-logs", {
-    describe: "print logs to stderr",
-    type: "boolean",
-  })
-  .option("log-level", {
-    describe: "log level",
-    type: "string",
-    choices: ["DEBUG", "INFO", "WARN", "ERROR"],
-  })
-  .option("pure", {
-    describe: "run without external plugins",
-    type: "boolean",
-  })
-  .middleware(async (opts) => {
-    if (opts.printLogs) process.env.MIAO_PRINT_LOGS = "1"
-    if (opts.logLevel) process.env.MIAO_LOG_LEVEL = opts.logLevel
-    if (opts.pure) {
-      process.env.MIAO_PURE = "1"
+// Concrete command modules carry heterogeneous yargs handler argument types, so
+// the loader erases to unknown and registration re-asserts the yargs boundary.
+type CommandLoader = () => Promise<unknown>
+
+// Command modules load on demand. A process that runs a single command should
+// not evaluate the dependency graph of all of them, and `--version` / `--help`
+// should evaluate none. The full set loads only for global help or an
+// unrecognized command, where yargs needs every command to report correctly.
+const commandLoaders: Array<[string, CommandLoader]> = [
+  ["acp", () => import("./cli/cmd/acp").then((m) => m.AcpCommand)],
+  ["mcp", () => import("./cli/cmd/mcp").then((m) => m.McpCommand)],
+  ["attach", () => import("./cli/cmd/attach").then((m) => m.AttachCommand)],
+  ["run", () => import("./cli/cmd/run").then((m) => m.RunCommand)],
+  ["generate", () => import("./cli/cmd/generate").then((m) => m.GenerateCommand)],
+  ["debug", () => import("./cli/cmd/debug").then((m) => m.DebugCommand)],
+  ["console", () => import("./cli/cmd/account").then((m) => m.ConsoleCommand)],
+  ["providers", () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand)],
+  ["agent", () => import("./cli/cmd/agent").then((m) => m.AgentCommand)],
+  ["upgrade", () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand)],
+  ["uninstall", () => import("./cli/cmd/uninstall").then((m) => m.UninstallCommand)],
+  ["serve", () => import("./cli/cmd/serve").then((m) => m.ServeCommand)],
+  ["web", () => import("./cli/cmd/web").then((m) => m.WebCommand)],
+  ["models", () => import("./cli/cmd/models").then((m) => m.ModelsCommand)],
+  ["stats", () => import("./cli/cmd/stats").then((m) => m.StatsCommand)],
+  ["export", () => import("./cli/cmd/export").then((m) => m.ExportCommand)],
+  ["import", () => import("./cli/cmd/import").then((m) => m.ImportCommand)],
+  ["github", () => import("./cli/cmd/github").then((m) => m.GithubCommand)],
+  ["pr", () => import("./cli/cmd/pr").then((m) => m.PrCommand)],
+  ["session", () => import("./cli/cmd/session").then((m) => m.SessionCommand)],
+  ["plugin", () => import("./cli/cmd/plug").then((m) => m.PluginCommand)],
+  ["db", () => import("./cli/cmd/db").then((m) => m.DbCommand)],
+]
+const defaultCommand: CommandLoader = () => import("./cli/cmd/tui").then((m) => m.TuiThreadCommand)
+
+async function buildCli(selection: "all" | "default" | readonly string[]) {
+  const cli = yargs(args)
+    .parserConfiguration({ "populate--": true })
+    .scriptName("miao")
+    .wrap(100)
+    .help("help", "show help")
+    .alias("help", "h")
+    .version("version", "show version number", InstallationVersion)
+    .alias("version", "v")
+    .option("print-logs", {
+      describe: "print logs to stderr",
+      type: "boolean",
+    })
+    .option("log-level", {
+      describe: "log level",
+      type: "string",
+      choices: ["DEBUG", "INFO", "WARN", "ERROR"],
+    })
+    .option("pure", {
+      describe: "run without external plugins",
+      type: "boolean",
+    })
+    .middleware(async (opts) => {
+      if (opts.printLogs) process.env.MIAO_PRINT_LOGS = "1"
+      if (opts.logLevel) process.env.MIAO_LOG_LEVEL = opts.logLevel
+      if (opts.pure) {
+        process.env.MIAO_PURE = "1"
+      }
+
+      Heap.start()
+
+      process.env.AGENT = "1"
+      process.env.MIAO = "1"
+      process.env.MIAO_PID = String(process.pid)
+    })
+    .usage("")
+    .completion("completion", "generate shell completion script")
+
+  const register = async (loader: CommandLoader) =>
+    cli.command((await loader()) as CommandModule<any, any>)
+
+  if (selection === "all") {
+    for (const [, load] of commandLoaders) await register(load)
+    await register(defaultCommand)
+  } else if (selection === "default") {
+    await register(defaultCommand)
+  } else {
+    for (const name of selection) {
+      const entry = commandLoaders.find(([candidate]) => candidate === name)
+      if (entry) await register(entry[1])
     }
+  }
 
-    Heap.start()
-
-    process.env.AGENT = "1"
-    process.env.MIAO = "1"
-    process.env.MIAO_PID = String(process.pid)
-  })
-  .usage("")
-  .completion("completion", "generate shell completion script")
-  .command(AcpCommand)
-  .command(McpCommand)
-  .command(TuiThreadCommand)
-  .command(AttachCommand)
-  .command(RunCommand)
-  .command(GenerateCommand)
-  .command(DebugCommand)
-  .command(ConsoleCommand)
-  .command(ProvidersCommand)
-  .command(AgentCommand)
-  .command(UpgradeCommand)
-  .command(UninstallCommand)
-  .command(ServeCommand)
-  .command(WebCommand)
-  .command(ModelsCommand)
-  .command(StatsCommand)
-  .command(ExportCommand)
-  .command(ImportCommand)
-  .command(GithubCommand)
-  .command(PrCommand)
-  .command(SessionCommand)
-  .command(PluginCommand)
-  .command(DbCommand)
-  .fail((msg, err) => {
-    if (
-      msg?.startsWith("Unknown argument") ||
-      msg?.startsWith("Not enough non-option arguments") ||
-      msg?.startsWith("Invalid values:")
-    ) {
+  return cli
+    .fail((msg, err) => {
+      if (
+        msg?.startsWith("Unknown argument") ||
+        msg?.startsWith("Not enough non-option arguments") ||
+        msg?.startsWith("Invalid values:")
+      ) {
+        if (err) throw err
+        cli.showHelp(show)
+      }
       if (err) throw err
-      cli.showHelp(show)
-    }
-    if (err) throw err
-    process.exit(1)
-  })
-  .strict()
+      process.exit(1)
+    })
+    .strict()
+}
+
+const positional = args.find((arg) => !arg.startsWith("-"))
+const wantsHelp = args.includes("-h") || args.includes("--help")
+const wantsVersion = args.includes("-v") || args.includes("--version")
+const known = positional !== undefined && commandLoaders.some(([name]) => name === positional)
+const selection: "all" | "default" | readonly string[] =
+  positional !== undefined
+    ? known
+      ? [positional]
+      : "all"
+    : wantsVersion
+      ? []
+      : wantsHelp
+        ? "all"
+        : "default"
 
 try {
-  if (args.includes("-h") || args.includes("--help")) {
+  const cli = await buildCli(selection)
+  if (wantsHelp) {
     await cli.parse(args, (err: Error | undefined, _argv: unknown, out: string) => {
       if (err) throw err
       if (!out) return

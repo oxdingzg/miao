@@ -1,40 +1,45 @@
 import { Global } from "@miao/core/global"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { Flag } from "@miao/core/flag/flag"
+import type { CommandModule } from "yargs"
 import os from "os"
 import { Duration, Effect } from "effect"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"
-import { ConfigCommand } from "./config"
-import { FileCommand } from "./file"
-import { LSPCommand } from "./lsp"
-import { RipgrepCommand } from "./ripgrep"
-import { ScrapCommand } from "./scrap"
-import { SkillCommand } from "./skill"
-import { SnapshotCommand } from "./snapshot"
-import { AgentCommand } from "./agent"
-import { StartupCommand } from "./startup"
-import { V2Command } from "./v2"
+
+type Loader = () => Promise<unknown>
+
+// Debug subcommands pull in heavy graphs (LSP, location services, catalog,
+// snapshot). Register only the requested one so `miao debug startup` does not
+// evaluate all of them; global help still needs the full set.
+const subcommands: Array<[string, Loader]> = [
+  ["config", () => import("./config").then((m) => m.ConfigCommand)],
+  ["lsp", () => import("./lsp").then((m) => m.LSPCommand)],
+  ["rg", () => import("./ripgrep").then((m) => m.RipgrepCommand)],
+  ["file", () => import("./file").then((m) => m.FileCommand)],
+  ["scrap", () => import("./scrap").then((m) => m.ScrapCommand)],
+  ["skill", () => import("./skill").then((m) => m.SkillCommand)],
+  ["snapshot", () => import("./snapshot").then((m) => m.SnapshotCommand)],
+  ["startup", () => import("./startup").then((m) => m.StartupCommand)],
+  ["agent", () => import("./agent").then((m) => m.AgentCommand)],
+  ["v2", () => import("./v2").then((m) => m.V2Command)],
+]
+
+const argv = process.argv.slice(2)
+const debugAt = argv.indexOf("debug")
+const requested = debugAt >= 0 ? argv.slice(debugAt + 1).find((arg) => !arg.startsWith("-")) : undefined
+const globalHelp = argv.includes("-h") || argv.includes("--help")
+const selected =
+  globalHelp || requested === undefined ? subcommands : subcommands.filter(([name]) => name === requested)
+const loaded = await Promise.all(selected.map(async ([, load]) => (await load()) as CommandModule<any, any>))
 
 export const DebugCommand = cmd({
   command: "debug",
   describe: "debugging and troubleshooting tools",
-  builder: (yargs) =>
-    yargs
-      .command(ConfigCommand)
-      .command(LSPCommand)
-      .command(RipgrepCommand)
-      .command(FileCommand)
-      .command(ScrapCommand)
-      .command(SkillCommand)
-      .command(SnapshotCommand)
-      .command(StartupCommand)
-      .command(AgentCommand)
-      .command(V2Command)
-      .command(InfoCommand)
-      .command(PathsCommand)
-      .command(WaitCommand)
-      .demandCommand(),
+  builder: (yargs) => {
+    const withCommands = loaded.reduce((acc, command) => acc.command(command), yargs)
+    return withCommands.command(InfoCommand).command(PathsCommand).command(WaitCommand).demandCommand()
+  },
   async handler() {},
 })
 

@@ -10,10 +10,7 @@ import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli
 import { Filesystem } from "@/util/filesystem"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import type { EventSource } from "@miao/tui/context/sdk"
-import { writeHeapSnapshot } from "v8"
-import { ServerAuth } from "@/server/auth"
 import { validateSession } from "../tui/validate-session"
-import { win32InstallCtrlCGuard } from "@miao/tui/terminal-win32"
 
 declare global {
   const MIAO_WORKER_PATH: string
@@ -186,7 +183,8 @@ export const TuiThreadCommand = cmd({
       return
     }
 
-    const unguard = win32InstallCtrlCGuard()
+    const unguard =
+      process.platform === "win32" ? (await import("@miao/tui/terminal-win32")).win32InstallCtrlCGuard() : undefined
     try {
       const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
@@ -233,7 +231,7 @@ export const TuiThreadCommand = cmd({
       const network = resolveNetworkOptionsNoConfig(args)
       const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
 
-      const headers = external ? ServerAuth.headers() : undefined
+      const headers = external ? (await import("@/server/auth")).ServerAuth.headers() : undefined
 
       const transport = external
         ? {
@@ -274,6 +272,7 @@ export const TuiThreadCommand = cmd({
           run({
             url: transport.url,
             async onSnapshot() {
+              const { writeHeapSnapshot } = await import("node:v8")
               const tui = writeHeapSnapshot("tui.heapsnapshot")
               const server = await client.call("snapshot", undefined)
               return [tui, server]

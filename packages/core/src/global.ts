@@ -1,5 +1,5 @@
 import path from "path"
-import fs from "fs/promises"
+import fs from "fs"
 import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
@@ -14,33 +14,52 @@ const config = path.join(xdgConfig!, app)
 const state = path.join(xdgState!, app)
 const tmp = path.join(os.tmpdir(), app)
 
+// Global state directories are created lazily on first access instead of at
+// module evaluation time. A top-level `await` here blocked every process start
+// (including `--version` / `--help`) on seven synchronous mkdir calls.
+const ensured = new Set<string>()
+
+function ensure(dir: string) {
+  if (!ensured.has(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+    ensured.add(dir)
+  }
+  return dir
+}
+
 const paths = {
   get home() {
     return process.env.MIAO_TEST_HOME ?? os.homedir()
   },
-  data,
-  bin: path.join(cache, "bin"),
-  log: path.join(data, "log"),
-  repos: path.join(data, "repos"),
-  cache,
-  config,
-  state,
-  tmp,
+  get data() {
+    return ensure(data)
+  },
+  get bin() {
+    return ensure(path.join(cache, "bin"))
+  },
+  get log() {
+    return ensure(path.join(data, "log"))
+  },
+  get repos() {
+    return ensure(path.join(data, "repos"))
+  },
+  get cache() {
+    return ensure(cache)
+  },
+  get config() {
+    return ensure(config)
+  },
+  get state() {
+    return ensure(state)
+  },
+  get tmp() {
+    return ensure(tmp)
+  },
 }
 
 export const Path = paths
 
 Flock.setGlobal({ state })
-
-await Promise.all([
-  fs.mkdir(Path.data, { recursive: true }),
-  fs.mkdir(Path.config, { recursive: true }),
-  fs.mkdir(Path.state, { recursive: true }),
-  fs.mkdir(Path.tmp, { recursive: true }),
-  fs.mkdir(Path.log, { recursive: true }),
-  fs.mkdir(Path.bin, { recursive: true }),
-  fs.mkdir(Path.repos, { recursive: true }),
-])
 
 export class Service extends Context.Service<Service, Interface>()("@miao/Global") {}
 
