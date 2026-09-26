@@ -39,6 +39,11 @@ cp "${SRC}" "${TARGET}"
 chmod +x "${TARGET}"
 ln -sfn "${TARGET}" "${LINK}"
 
+# Keep the three newest versioned installs; miao.prev is preserved for rollback.
+ls -1t "${BIN_DIR}"/miao-* 2>/dev/null | tail -n +4 | while read -r stale; do
+  rm -f "${stale}"
+done
+
 echo "==> installed"
 echo "    ${LINK} -> $(readlink "${LINK}" 2>/dev/null || echo "${TARGET}")"
 echo "    rollback: ln -sfn \"${BIN_DIR}/miao.prev\" \"${LINK}\""
