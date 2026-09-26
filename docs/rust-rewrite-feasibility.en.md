@@ -64,6 +64,46 @@ Ordered by priority, where the criterion is net benefit (performance/memory plus
 
 What these four share: no dependency on Effect, the AI SDK, or the UI; they can stand alone as a library and be tested independently.
 
+### Step 1 first pick: rework the edit/diff pipeline (current vs Rust)
+
+Of the four modules I start with this one, not because it is the fastest, but because it satisfies all of: it runs on every edit, it is pure logic that touches no IO or Effect, the existing tests can verify equivalence, and it is the smallest surface.
+
+**Current implementation**
+
+- Matching: `replace()` in `packages/miao/src/tool/edit.ts` runs nine replacers in sequence (Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence). `BlockAnchor` measures similarity with a full-matrix Levenshtein.
+- Diff generation: `diffLines` and `createTwoFilesPatch` from `diff` (jsdiff 8.0.2), called repeatedly in `miao/src/tool/{edit,apply_patch}.ts`, `core/src/tool/{edit,apply-patch}.ts`, `snapshot/index.ts`, and `project/vcs.ts`.
+- A single edit calls `createTwoFilesPatch` several times: once before formatting, once after, and again on the core side.
+
+**Measurements (same machine, release/optimized; synthetic samples)**
+
+Diff generation, 200 changes:
+
+| Lines | Current jsdiff | Rust `similar` | Speedup |
+|---|---|---|---|
+| 12k | 16.3 / 18.6 ms | 4.5 / 3.9 ms | ~3.5–4.7x |
+| 60k | 24.3 / 27.3 ms | 15.7 / 12.4 ms | ~1.5–2.2x |
+| 150k | 40.1 / 48.2 ms | 33.2 / 32.8 ms | ~1.2–1.5x |
+
+Edit matching (12k-line file) and Levenshtein:
+
+| Case | Current |
+|---|---|
+| Exact match | 0.24 ms |
+| Fuzzy match (indent / whitespace) | 0.77–0.88 ms |
+| Levenshtein on a long line (1900 chars) | 36.8 ms (full matrix) / 12.7 ms (rolling row) |
+
+Rust `strsim` Levenshtein at the same size: **3.1 ms**, about 12x faster than the full matrix and 4x faster than the rolling row.
+
+**My conclusion**
+
+- Edit matching on a typical small file is already sub-millisecond, so Rust brings no perceptible gain here. Do not count on this.
+- The real wins are two: **large-file diff (3–5x)**, and **flattening the 36 ms Levenshtein cliff on pathological inputs (long lines / minified files) by ~12x**.
+- One more thing not in the numbers: jsdiff allocates a JS object and string per change, which is steady memory pressure and GC in long sessions; the Rust side is O(N) bytes. That contributes more reliably to the "lower resident memory" goal.
+
+**Interface**: expose via napi-rs `applyEdit(content, oldString, newString, replaceAll) -> { content, additions, deletions } | error` and `diffLines / unifiedPatch(before, after) -> { patch, additions, deletions }`, keeping the current return shape. The native side does pure functions only; it touches no file IO and no Effect.
+
+**Acceptance**: the existing miao/core edit/apply_patch tests stay green; on 12k/150k-line samples the diff is no worse and peak memory drops; the long-line case costs no more than today.
+
 ### Step 2: decide based on metrics
 
 - SQLite session storage/migrations/retrieval (real benefit, but the data model is bound to Effect-Schema/Drizzle; start with a read-only index instead of replacing the storage layer)

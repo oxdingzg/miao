@@ -64,6 +64,46 @@
 
 这四块的共同点：不依赖 Effect、不依赖 AI SDK、不依赖 UI，可以独立成库，也能单独测试。
 
+### 第一步首选：改造 edit/diff 管线（当前实现 vs Rust）
+
+四个模块里我先做这个，理由不是它最快，而是它同时满足：每次编辑都会走到、纯逻辑不碰 IO/Effect、有现成测试可做等价验证、代码量最小。
+
+**当前实现**
+
+- 匹配：`packages/miao/src/tool/edit.ts` 的 `replace()`，依次跑 9 个 replacer（Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence）。`BlockAnchor` 用全矩阵 Levenshtein 算相似度。
+- 生成 diff：`diff`（jsdiff 8.0.2）的 `diffLines` 与 `createTwoFilesPatch`，在 `miao/src/tool/{edit,apply_patch}.ts`、`core/src/tool/{edit,apply-patch}.ts`、`snapshot/index.ts`、`project/vcs.ts` 里反复调用。
+- 一次编辑里 `createTwoFilesPatch` 会被调用多次：格式化前后各一次，core 侧还有一次。
+
+**实测（同一台机器，release / 优化；合成样本）**
+
+diff 生成，200 处改动：
+
+| 文件行数 | 当前 jsdiff | Rust `similar` | 倍率 |
+|---|---|---|---|
+| 12k | 16.3 / 18.6 ms | 4.5 / 3.9 ms | ~3.5–4.7x |
+| 60k | 24.3 / 27.3 ms | 15.7 / 12.4 ms | ~1.5–2.2x |
+| 150k | 40.1 / 48.2 ms | 33.2 / 32.8 ms | ~1.2–1.5x |
+
+edit 匹配（12k 行文件）与 Levenshtein：
+
+| 场景 | 当前 |
+|---|---|
+| 精确匹配 | 0.24 ms |
+| 模糊匹配（缩进 / 空白） | 0.77–0.88 ms |
+| Levenshtein 长行（1900 字符） | 36.8 ms（全矩阵）/ 12.7 ms（滚动数组） |
+
+Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相对滚动数组约 4x。
+
+**我的结论**
+
+- 典型小文件的 edit 匹配本来就是亚毫秒，Rust 不会带来可感知提升，这条不要指望。
+- 真正的收益在两处：**大文件 diff（3–5x）**，以及**病态输入（超长行 / 压缩文件）下把 36 ms 的 Levenshtein 悬崖削平（约 12x）**。
+- 还有一条不在数字里：jsdiff 每个变更都建 JS 对象和字符串，长会话里是持续的内存压力和 GC；Rust 侧是 O(N) 字节。这项对“降常驻内存”的目标贡献更稳定。
+
+**接口**：用 napi-rs 暴露 `applyEdit(content, oldString, newString, replaceAll) -> { content, additions, deletions } | error`，以及 `diffLines / unifiedPatch(before, after) -> { patch, additions, deletions }`，保持与现有返回结构一致。原生侧只做纯函数，不碰文件 IO 和 Effect。
+
+**验收**：miao/core 现有 edit/apply_patch 测试全绿；在 12k/150k 行样本上 diff 不劣化且峰值内存下降；长行用例耗时不高于当前。
+
 ### 第二步：看指标再决定
 
 - SQLite 会话存储/迁移/检索（有收益，但数据模型绑在 Effect-Schema/Drizzle 上，风险高，先做只读索引而不是替换存储层）
