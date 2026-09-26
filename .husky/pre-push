@@ -17,4 +17,10 @@ if (process.versions.bun !== expectedBunVersion) {
   console.warn(`Warning: Bun version ${process.versions.bun} differs from expected ${expectedBunVersion}`);
 }
 '
+if command -v gitleaks >/dev/null 2>&1; then
+  # Scan only commits not yet on any remote so existing history is not re-checked.
+  gitleaks git --redact --no-banner --exit-code 1 --log-opts="--branches --not --remotes" .
+else
+  echo "gitleaks not found, skipping secret scan"
+fi
 bun typecheck
