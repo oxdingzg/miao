@@ -221,13 +221,23 @@ const layer = Layer.effect(
       if (snapshot) return snapshot
       if (Flag.MIAO_DISABLE_MODELS_FETCH) return {}
       // Flock is cross-process: concurrent opencode CLIs can race on this cache file.
-      const text = yield* Effect.scoped(
-        Effect.gen(function* () {
-          yield* Flock.effect(lockKey)
-          return yield* fetchAndWrite()
-        }),
+      // A failed fetch must not take down provider listing; fall back to an empty
+      // catalog and let the periodic background refresh retry later.
+      return yield* Effect.gen(function* () {
+        const text = yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* Flock.effect(lockKey)
+            return yield* fetchAndWrite()
+          }),
+        )
+        return JSON.parse(text) as Record<string, Provider>
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("unable to load models.dev catalog; continuing without it", { cause }).pipe(
+            Effect.as({} as Record<string, Provider>),
+          ),
+        ),
       )
-      return JSON.parse(text) as Record<string, Provider>
     }).pipe(Effect.withSpan("ModelsDev.populate"), Effect.orDie)
 
     const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)
