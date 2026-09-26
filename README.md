@@ -1,18 +1,18 @@
 <p align="center">
   <strong>Janus</strong>
 </p>
-<p align="center">The fastest, most model-agnostic entry point to AI coding.</p>
+<p align="center">Same results, faster and cheaper.</p>
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh.md">简体中文</a>
 </p>
 
 ---
 
-Janus is an entry-level AI coding tool built on top of [opencode](https://github.com/anomalyco/opencode). It is designed around three goals:
+Janus is an entry-level AI coding tool built on top of [opencode](https://github.com/anomalyco/opencode). Its goal is simple: **complete the same tasks as other AI coding agents in less time and at lower cost.** It is designed around three priorities:
 
-- **Fastest response** — minimal startup and first-token latency, so the entry point feels instant.
-- **Broadest model support** — one interface that adapts to as many models and providers as possible.
-- **Entry-level** — a low-friction gateway into AI coding, with sensible defaults out of the box.
+- **Faster** — minimal startup, first-token and per-turn latency.
+- **Broader** — one interface that adapts to as many models and providers as possible.
+- **Cheaper** — less time and fewer tokens for the same result.
 
 > [!NOTE]
 > Janus is currently a private, pre-release project. It is not open source yet.
