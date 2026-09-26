@@ -1001,6 +1001,8 @@ export async function init(input: {
   }
 
   dir = cwd
+  // Yield once so the TUI shell can paint before plugin discovery/loading runs.
+  await new Promise((resolve) => setTimeout(resolve, 0))
   loaded = load({ ...input, runtime: input.runtime ?? createPluginRuntime() })
   return loaded
 }
