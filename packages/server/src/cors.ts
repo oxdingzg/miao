@@ -1,6 +1,8 @@
 import { Context } from "effect"
 
-const opencodeOrigin = /^https:\/\/([a-z0-9-]+\.)*opencode\.ai$/
+// opencode.ai is kept alongside miao.dtee.top: the hosted web app on either
+// domain talks to a local server, and both must pass the origin check.
+const trustedOrigin = /^https:\/\/([a-z0-9-]+\.)*(opencode\.ai|miao\.dtee\.top)$/
 
 export type CorsOptions = { readonly cors?: ReadonlyArray<string> }
 
@@ -15,7 +17,7 @@ export function isAllowedCorsOrigin(input: string | undefined, opts?: CorsOption
   if (input.startsWith("oc://renderer")) return true
   if (input === "tauri://localhost" || input === "http://tauri.localhost" || input === "https://tauri.localhost")
     return true
-  if (opencodeOrigin.test(input)) return true
+  if (trustedOrigin.test(input)) return true
   return opts?.cors?.includes(input) ?? false
 }
 
