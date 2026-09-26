@@ -17,7 +17,7 @@ Janus is an entry-level AI coding tool built on top of [opencode](https://github
 > [!NOTE]
 > Janus is currently a private, pre-release project. It is not open source yet.
 
-## Built on opencode
+## Built on miao
 
 Janus is a derivative work based on [opencode](https://github.com/anomalyco/opencode), which is licensed under the MIT License. Janus is not built by, endorsed by, or affiliated with the OpenCode team.
 

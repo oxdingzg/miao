@@ -17,9 +17,9 @@ Janus 是一个基于 [opencode](https://github.com/anomalyco/opencode) 构建�
 > [!NOTE]
 > Janus 目前是私有、预发布项目，尚未开源。
 
-## 基于 opencode
+## 基于 miao
 
-Janus 是基于 [opencode](https://github.com/anomalyco/opencode) 的衍生作品，opencode 采用 MIT 许可证。Janus 并非由 OpenCode 团队开发，也未获得其背书，双方不存在隶属关系。
+Janus 是基于 [opencode](https://github.com/anomalyco/opencode) 的衍生作品，miao 采用 MIT 许可证。Janus 并非由 OpenCode 团队开发，也未获得其背书，双方不存在隶属关系。
 
 ## 开发
 
