@@ -44,6 +44,8 @@ import { formatDuration } from "../../util/format"
 import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
+import { DialogProviderSwitch } from "../dialog-provider-switch"
+import { DialogModel } from "../dialog-model"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
@@ -211,7 +213,24 @@ export function Prompt(props: PromptProps) {
   const move = usePromptMove({ projectID: project.project, sessionID: () => props.sessionID })
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
+  const [footerHover, setFooterHover] = createSignal<"agent" | "model" | "provider" | null>(null)
   const hasRightContent = createMemo(() => Boolean(props.right))
+
+  function openAgentList() {
+    keymap.dispatchCommand("agent.list")
+  }
+
+  function openModelList() {
+    dialog.replace(() => <DialogModel providerID={local.model.current()?.providerID} />)
+  }
+
+  function openProviderList() {
+    if (sync.data.provider.length === 0) {
+      dialog.replace(() => <DialogProviderConnect />)
+      return
+    }
+    dialog.replace(() => <DialogProviderSwitch />)
+  }
 
   function promptModelWarning() {
     toast.show({
@@ -1446,22 +1465,52 @@ export function Prompt(props: PromptProps) {
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
                     <>
-                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
-                      </text>
+                      <box
+                        flexShrink={0}
+                        onMouseOver={() => setFooterHover("agent")}
+                        onMouseOut={() => setFooterHover(null)}
+                        onMouseUp={openAgentList}
+                      >
+                        <text fg={fadeColor(footerHover() === "agent" ? theme.text : highlight(), agentMetaAlpha())}>
+                          {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                        </text>
+                      </box>
                       <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
                         <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>
                       </Show>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                          <text
+                          <box
                             flexShrink={0}
-                            fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
+                            onMouseOver={() => setFooterHover("model")}
+                            onMouseOut={() => setFooterHover(null)}
+                            onMouseUp={openModelList}
                           >
-                            {local.model.parsed().model}
-                          </text>
-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+                            <text
+                              flexShrink={0}
+                              fg={fadeColor(
+                                footerHover() === "model" ? theme.text : leader() ? theme.textMuted : theme.text,
+                                modelMetaAlpha(),
+                              )}
+                            >
+                              {local.model.parsed().model}
+                            </text>
+                          </box>
+                          <box
+                            onMouseOver={() => setFooterHover("provider")}
+                            onMouseOut={() => setFooterHover(null)}
+                            onMouseUp={openProviderList}
+                          >
+                            <text
+                              fg={fadeColor(
+                                footerHover() === "provider" ? theme.text : theme.textMuted,
+                                modelMetaAlpha(),
+                              )}
+                            >
+                              {currentProviderLabel()}
+                            </text>
+                          </box>
                           <Show when={showVariant()}>
                             <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
                             <text>
