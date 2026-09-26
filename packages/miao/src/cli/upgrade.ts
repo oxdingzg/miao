@@ -8,6 +8,9 @@ import { GlobalBus } from "@/bus/global"
 export async function upgrade() {
   const config = await AppRuntime.runPromise(Config.Service.use((cfg) => cfg.getGlobal()))
   if (config.autoupdate === false || Flag.MIAO_DISABLE_AUTOUPDATE) return
+  // Preview/dev builds use `0.0.1-<channel>-<timestamp>` versions that cannot be
+  // compared against release versions; never notify or self-upgrade them.
+  if (Installation.isPreview()) return
   const method = await Installation.method()
   const latest = await Installation.latest(method).catch(() => {})
   if (!latest) return
