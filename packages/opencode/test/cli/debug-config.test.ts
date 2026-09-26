@@ -26,7 +26,7 @@ describe("debug config redaction", () => {
   cliIt.live("always masks resolved credentials", ({ opencode }) =>
     Effect.gen(function* () {
       const content = JSON.stringify({ provider: config.provider })
-      const env = { OPENCODE_CONFIG_CONTENT: content }
+      const env = { MIAO_CONFIG_CONTENT: content }
       const result = yield* opencode.spawn(["debug", "config"], { env })
       opencode.expectExit(result, 0, "debug config")
       expect(JSON.parse(result.stdout).provider.example.options).toMatchObject({

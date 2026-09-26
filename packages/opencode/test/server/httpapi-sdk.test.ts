@@ -39,8 +39,8 @@ const appLayer = AppNodeBuilder.build(
 const it = testEffect(Layer.mergeAll(appLayer, httpApiLayer))
 
 const original = {
-  OPENCODE_SERVER_PASSWORD: Flag.OPENCODE_SERVER_PASSWORD,
-  OPENCODE_SERVER_USERNAME: Flag.OPENCODE_SERVER_USERNAME,
+  MIAO_SERVER_PASSWORD: Flag.MIAO_SERVER_PASSWORD,
+  MIAO_SERVER_USERNAME: Flag.MIAO_SERVER_USERNAME,
 }
 
 type ServerPath = "default" | "raw"
@@ -88,8 +88,8 @@ function serverFetch(
   return HttpServer.HttpServer.use((server) =>
     Effect.sync(() => {
       void serverPath
-      Flag.OPENCODE_SERVER_PASSWORD = input?.password
-      Flag.OPENCODE_SERVER_USERNAME = input?.username
+      Flag.MIAO_SERVER_PASSWORD = input?.password
+      Flag.MIAO_SERVER_USERNAME = input?.username
       const baseUrl = HttpServer.formatAddress(server.address)
       return Object.assign(
         async (request: RequestInfo | URL, init?: RequestInit) => {
@@ -328,8 +328,8 @@ function seedMessage(directory: string, sessionID: string) {
 }
 
 afterEach(async () => {
-  Flag.OPENCODE_SERVER_PASSWORD = original.OPENCODE_SERVER_PASSWORD
-  Flag.OPENCODE_SERVER_USERNAME = original.OPENCODE_SERVER_USERNAME
+  Flag.MIAO_SERVER_PASSWORD = original.MIAO_SERVER_PASSWORD
+  Flag.MIAO_SERVER_USERNAME = original.MIAO_SERVER_USERNAME
   await disposeAllInstances()
   await resetDatabase()
 })

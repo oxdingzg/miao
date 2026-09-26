@@ -104,7 +104,7 @@ ACP เป็นมาตรฐานเปิดสำหรับการส�
 }
 ```
 
-หากคุณต้องการส่งผ่าน environment variables (เช่น `OPENCODE_API_KEY`) คุณต้องระบุใน `env`:
+หากคุณต้องการส่งผ่าน environment variables (เช่น `MIAO_API_KEY`) คุณต้องระบุใน `env`:
 
 ```lua {6-8}
 {
@@ -113,7 +113,7 @@ ACP เป็นมาตรฐานเปิดสำหรับการส�
       command = "opencode",
       args = { "acp" },
       env = {
-        OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY")
+        MIAO_API_KEY = os.getenv("MIAO_API_KEY")
       }
     }
   }
@@ -141,7 +141,7 @@ require("codecompanion").setup({
 
 คุณสามารถใช้ CodeCompanion เพื่อใช้ opencode เป็น ACP agent สำหรับแชท
 
-หากคุณต้องส่ง environment variables (เช่น `OPENCODE_API_KEY`) โปรดดู [Configuring Adapters: Environment Variables](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) ในเอกสารของ CodeCompanion.nvim สำหรับรายละเอียดทั้งหมด
+หากคุณต้องส่ง environment variables (เช่น `MIAO_API_KEY`) โปรดดู [Configuring Adapters: Environment Variables](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) ในเอกสารของ CodeCompanion.nvim สำหรับรายละเอียดทั้งหมด
 
 ## การรองรับ
 

@@ -79,7 +79,7 @@ const recordOpenAIOAuth = (() => {
 })()
 
 function decodeRecordOpenAIOAuth() {
-  const value = process.env.OPENCODE_RECORD_OPENAI_AUTH
+  const value = process.env.MIAO_RECORD_OPENAI_AUTH
   if (!value) return undefined
   try {
     const auth = Option.getOrUndefined(decodeAuth(JSON.parse(value)))
@@ -120,7 +120,7 @@ const RECORDED_SCENARIOS = [
     cassette: "session/native-openai-tool-loop",
     protocol: "openai-responses",
     tags: ["opencode", "native", "tool-loop"],
-    canRecord: () => Boolean(envValue("OPENCODE_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY")),
+    canRecord: () => Boolean(envValue("MIAO_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY")),
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.openai,
@@ -130,7 +130,7 @@ const RECORDED_SCENARIOS = [
         api: "https://api.openai.com/v1",
         model,
         options: {
-          apiKey: envValue("OPENCODE_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY") ?? "fixture-openai-key",
+          apiKey: envValue("MIAO_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY") ?? "fixture-openai-key",
           baseURL: "https://api.openai.com/v1",
         },
       }),
@@ -166,18 +166,18 @@ const RECORDED_SCENARIOS = [
     cassette: "session/native-zen-tool-loop",
     protocol: "openai-responses",
     tags: ["opencode", "zen", "native", "tool-loop"],
-    canRecord: () => Boolean(process.env.OPENCODE_RECORD_CONSOLE_TOKEN && process.env.OPENCODE_RECORD_ZEN_ORG_ID),
+    canRecord: () => Boolean(process.env.MIAO_RECORD_CONSOLE_TOKEN && process.env.MIAO_RECORD_ZEN_ORG_ID),
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.opencode,
         name: "OpenCode Zen",
-        env: ["OPENCODE_CONSOLE_TOKEN"],
+        env: ["MIAO_CONSOLE_TOKEN"],
         npm: "@ai-sdk/openai-compatible",
-        api: zenURL(process.env.OPENCODE_RECORD_ZEN_CONNECTION ?? "fixture"),
+        api: zenURL(process.env.MIAO_RECORD_ZEN_CONNECTION ?? "fixture"),
         model,
         options: {
-          apiKey: process.env.OPENCODE_RECORD_CONSOLE_TOKEN ?? "fixture-console-token",
-          headers: { "x-org-id": process.env.OPENCODE_RECORD_ZEN_ORG_ID ?? "fixture-org" },
+          apiKey: process.env.MIAO_RECORD_CONSOLE_TOKEN ?? "fixture-console-token",
+          headers: { "x-org-id": process.env.MIAO_RECORD_ZEN_ORG_ID ?? "fixture-org" },
         },
       }),
   },
@@ -189,7 +189,7 @@ const RECORDED_SCENARIOS = [
     cassette: "session/native-anthropic-tool-loop",
     protocol: "anthropic-messages",
     tags: ["opencode", "native", "tool-loop"],
-    canRecord: () => Boolean(envValue("OPENCODE_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
+    canRecord: () => Boolean(envValue("MIAO_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.anthropic,
@@ -199,7 +199,7 @@ const RECORDED_SCENARIOS = [
         api: "https://api.anthropic.com/v1",
         model,
         options: {
-          apiKey: envValue("OPENCODE_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY") ?? "fixture-anthropic-key",
+          apiKey: envValue("MIAO_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY") ?? "fixture-anthropic-key",
           baseURL: "https://api.anthropic.com/v1",
         },
       }),
@@ -208,7 +208,7 @@ const RECORDED_SCENARIOS = [
 
 const shouldRecord = process.env.RECORD === "true"
 const selectedScenarios = new Set(
-  (envValue("OPENCODE_RECORDED_SCENARIO", "RECORDED_PROVIDER") ?? "")
+  (envValue("MIAO_RECORDED_SCENARIO", "RECORDED_PROVIDER") ?? "")
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean),
@@ -228,7 +228,7 @@ const canRun = (scenario: RecordedScenario) =>
 
 const recordError = (scenario: RecordedScenario) =>
   scenario.id === "openai-oauth"
-    ? "Set OPENCODE_RECORD_OPENAI_AUTH to an OAuth auth JSON object in the recording environment."
+    ? "Set MIAO_RECORD_OPENAI_AUTH to an OAuth auth JSON object in the recording environment."
     : `Missing recording credentials for ${scenario.name}.`
 
 const redactRecordedBody = (body: string) =>

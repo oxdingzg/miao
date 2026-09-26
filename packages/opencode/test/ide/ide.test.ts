@@ -62,20 +62,20 @@ describe("ide", () => {
     expect(Ide.ide()).toBe("unknown")
   })
 
-  test("should recognize vscode-insiders OPENCODE_CALLER", () => {
-    process.env["OPENCODE_CALLER"] = "vscode-insiders"
+  test("should recognize vscode-insiders MIAO_CALLER", () => {
+    process.env["MIAO_CALLER"] = "vscode-insiders"
 
     expect(Ide.alreadyInstalled()).toBe(true)
   })
 
-  test("should recognize vscode OPENCODE_CALLER", () => {
-    process.env["OPENCODE_CALLER"] = "vscode"
+  test("should recognize vscode MIAO_CALLER", () => {
+    process.env["MIAO_CALLER"] = "vscode"
 
     expect(Ide.alreadyInstalled()).toBe(true)
   })
 
-  test("should return false for unknown OPENCODE_CALLER", () => {
-    process.env["OPENCODE_CALLER"] = "unknown"
+  test("should return false for unknown MIAO_CALLER", () => {
+    process.env["MIAO_CALLER"] = "unknown"
 
     expect(Ide.alreadyInstalled()).toBe(false)
   })

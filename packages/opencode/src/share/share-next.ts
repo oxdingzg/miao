@@ -20,7 +20,7 @@ import { ProviderV2 } from "@miao/core/provider"
 import { ModelV2 } from "@miao/core/model"
 import { EventV2 } from "@miao/core/event"
 
-const disabled = process.env["OPENCODE_DISABLE_SHARE"] === "true" || process.env["OPENCODE_DISABLE_SHARE"] === "1"
+const disabled = process.env["MIAO_DISABLE_SHARE"] === "true" || process.env["MIAO_DISABLE_SHARE"] === "1"
 
 export type Api = {
   create: string

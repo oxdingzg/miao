@@ -43,9 +43,9 @@ jobs:
       - name: Check duplicates and compliance
         if: steps.author.outputs.skip != 'true'
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENCODE_PERMISSION: |
+          MIAO_PERMISSION: |
             {
               "bash": {
                 "*": "deny",
@@ -177,9 +177,9 @@ jobs:
       - name: Recheck compliance
         if: steps.author.outputs.skip != 'true'
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENCODE_PERMISSION: |
+          MIAO_PERMISSION: |
             {
               "bash": {
                 "*": "deny",

@@ -33,8 +33,8 @@ jobs:
       - name: Setup git committer
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+          opencode-app-id: ${{ vars.MIAO_APP_ID }}
+          opencode-app-secret: ${{ secrets.MIAO_APP_SECRET }}
 
       - name: Refresh snapshot
         run: bun packages/core/script/update-models-snapshot.ts

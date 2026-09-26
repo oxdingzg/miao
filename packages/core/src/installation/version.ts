@@ -1,8 +1,8 @@
 declare global {
-  const OPENCODE_VERSION: string
-  const OPENCODE_CHANNEL: string
+  const MIAO_VERSION: string
+  const MIAO_CHANNEL: string
 }
 
-export const InstallationVersion = typeof OPENCODE_VERSION === "string" ? OPENCODE_VERSION : "local"
-export const InstallationChannel = typeof OPENCODE_CHANNEL === "string" ? OPENCODE_CHANNEL : "local"
+export const InstallationVersion = typeof MIAO_VERSION === "string" ? MIAO_VERSION : "local"
+export const InstallationChannel = typeof MIAO_CHANNEL === "string" ? MIAO_CHANNEL : "local"
 export const InstallationLocal = InstallationChannel === "local"
