@@ -238,7 +238,7 @@ describe("ModelsDev Service", () => {
 
   it.live("refresh(false) skips fetch when on-disk file is fresh", () =>
     Effect.gen(function* () {
-      // Fresh: mtime within the 5-minute TTL.
+      // Fresh: mtime within the 12-hour TTL.
       yield* writeCache(fixture, Date.now() - 1000)
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
       yield* provided(
@@ -252,8 +252,8 @@ describe("ModelsDev Service", () => {
 
   it.live("refresh(false) fetches when on-disk file is stale", () =>
     Effect.gen(function* () {
-      // Stale: mtime 10 minutes ago, beyond the 5-minute TTL.
-      yield* writeCache(fixture, Date.now() - 10 * 60 * 1000)
+      // Stale: mtime 13 hours ago, beyond the 12-hour TTL.
+      yield* writeCache(fixture, Date.now() - 13 * 60 * 60 * 1000)
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
       const after = yield* provided(
         state,
