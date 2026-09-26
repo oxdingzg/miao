@@ -1,17 +1,17 @@
 ---
 title: Zen
-description: Wyselekcjonowana lista modeli dostarczonych przez OpenCode.
+description: Wyselekcjonowana lista modeli dostarczonych przez Miao.
 ---
 
 import config from "../../../../config.mjs"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Zen to lista przetestowanych i zweryfikowanych modeli udostępniana przez zespół OpenCode.
+OpenCode Zen to lista przetestowanych i zweryfikowanych modeli udostępniana przez zespół Miao.
 
-Zen działa jak każdy inny dostawca w OpenCode. Logujesz się do OpenCode Zen i otrzymujesz
+Zen działa jak każdy inny dostawca w Miao. Logujesz się do OpenCode Zen i otrzymujesz
 swój klucz API. To **całkowicie opcjonalne** i nie musisz z tego korzystać, aby używać
-OpenCode.
+Miao.
 
 ---
 
@@ -22,7 +22,7 @@ agenci kodujący. Dodatkowo większość dostawców jest skonfigurowana bardzo r
 więc otrzymujesz bardzo różną wydajność i jakość.
 
 :::tip
-Przetestowaliśmy wybraną grupę modeli i dostawców, którzy dobrze współpracują z OpenCode.
+Przetestowaliśmy wybraną grupę modeli i dostawców, którzy dobrze współpracują z Miao.
 :::
 
 Jeśli więc używasz modelu przez coś takiego jak OpenRouter, nigdy nie masz
@@ -43,7 +43,7 @@ OpenCode Zen to brama AI, która daje dostęp do tych modeli.
 
 ## Jak to działa
 
-OpenCode Zen działa jak każdy inny dostawca w OpenCode.
+OpenCode Zen działa jak każdy inny dostawca w Miao.
 
 1. Logujesz się do **<a href={console}>OpenCode Zen</a>**, dodajesz dane
    rozliczeniowe i kopiujesz swój klucz API.
@@ -141,7 +141,7 @@ Możesz też uzyskać dostęp do naszych modeli przez poniższe endpointy API.
 | Nemotron 3.5 Lightning Free     | nemotron-3.5-lightning-free     | `https://opencode.ai/zen/v1/chat/completions`             | `@ai-sdk/openai-compatible` |
 | Muse Spark 1.3 Contributor Free | muse-spark-1.3-contributor-free | `https://opencode.ai/zen/v1/responses`                    | `@ai-sdk/openai`            |
 
-[ID modelu](/docs/config/#models) w Twojej konfiguracji OpenCode używa formatu
+[ID modelu](/docs/config/#models) w Twojej konfiguracji Miao używa formatu
 `opencode/<model-id>`. Na przykład dla GPT 5.5 użyjesz w konfiguracji
 `opencode/gpt-5.5`.
 
@@ -313,7 +313,7 @@ Obsługujemy model pay-as-you-go. Poniżej znajdują się ceny **za 1M tokenów*
 
 **DeepSeek V4 Flash Vision Exp:** Obrazy są przeliczane na tokeny na podstawie ich wymiarów i rozliczane jako tokeny wejściowe razem z tokenami tekstowymi. [Dowiedz się więcej](https://api-docs.deepseek.com/quick_start/pricing/).
 
-W historii użycia możesz zauważyć [niedrogie modele](/docs/config/#models), takie jak Haiku, Nano lub Flash. OpenCode używa tych modeli do generowania tytułów sesji.
+W historii użycia możesz zauważyć [niedrogie modele](/docs/config/#models), takie jak Haiku, Nano lub Flash. Miao używa tych modeli do generowania tytułów sesji.
 
 :::note
 Opłaty za karty kredytowe są przenoszone po kosztach (4.4% + $0.30 per transaction); nie naliczamy nic ponad to.
@@ -321,15 +321,15 @@ Opłaty za karty kredytowe są przenoszone po kosztach (4.4% + $0.30 per transac
 
 Darmowe modele:
 
-- MiMo-V2.6-Flash Free jest dostępny w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- MiMo-V2.5 Free jest dostępny w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- Ling 3.0 Flash Fin Free jest dostępny w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- Nemotron 3 Ultra Free jest dostępny w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- Nemotron 3.5 Lightning Free jest dostępny w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- Big Pickle to stealth model, który jest darmowy w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- Space Bunny Free to stealth model, który jest darmowy w OpenCode przez ograniczony czas. Dostawca stosuje zasadę zerowego przechowywania i nie używa twoich danych do trenowania modeli.
-- Muse Spark 1.3 Contributor Free jest dostępny w OpenCode przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
-- Jev 1.13 Free jest dostępny w OpenCode przez ograniczony czas.
+- MiMo-V2.6-Flash Free jest dostępny w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- MiMo-V2.5 Free jest dostępny w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- Ling 3.0 Flash Fin Free jest dostępny w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- Nemotron 3 Ultra Free jest dostępny w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- Nemotron 3.5 Lightning Free jest dostępny w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- Big Pickle to stealth model, który jest darmowy w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- Space Bunny Free to stealth model, który jest darmowy w Miao przez ograniczony czas. Dostawca stosuje zasadę zerowego przechowywania i nie używa twoich danych do trenowania modeli.
+- Muse Spark 1.3 Contributor Free jest dostępny w Miao przez ograniczony czas. Zespół wykorzystuje ten czas do zbierania opinii i ulepszania modelu.
+- Jev 1.13 Free jest dostępny w Miao przez ograniczony czas.
 
 <a href={email}>Skontaktuj się z nami</a>, jeśli masz pytania.
 
@@ -446,4 +446,4 @@ Stworzyliśmy OpenCode Zen, aby:
 1. **Benchmarkować** najlepsze modele/dostawców dla agentów kodujących.
 2. Mieć dostęp do opcji o **najwyższej jakości** i nie obniżać wydajności ani nie kierować ruchu do tańszych dostawców.
 3. Przekazywać wszelkie **obniżki cen**, sprzedając po kosztach; jedyna marża pokrywa nasze opłaty za przetwarzanie.
-4. Nie tworzyć **lock-in**, pozwalając używać tego z dowolnym innym agentem kodującym. I zawsze pozwalać Ci używać w OpenCode także dowolnego innego dostawcy.
+4. Nie tworzyć **lock-in**, pozwalając używać tego z dowolnym innym agentem kodującym. I zawsze pozwalać Ci używać w Miao także dowolnego innego dostawcy.

@@ -1,33 +1,33 @@
 ---
 title: GitLab
-description: GitLab sorunlarında ve birleştirme isteklerinde opencode'u kullanın.
+description: GitLab sorunlarında ve birleştirme isteklerinde miao'u kullanın.
 ---
 
-opencode, GitLab CI/CD işlem hattınız veya GitLab Duo aracılığıyla GitLab iş akışınızla bütünleşir.
+miao, GitLab CI/CD işlem hattınız veya GitLab Duo aracılığıyla GitLab iş akışınızla bütünleşir.
 
-Her iki durumda da opencode, GitLab çalıştırıcılarınızda çalışacaktır.
+Her iki durumda da miao, GitLab çalıştırıcılarınızda çalışacaktır.
 
 ---
 
 ## GitLab CI
 
-opencode normal bir GitLab işlem hattında çalışır. Bunu bir [CI component](https://docs.gitlab.com/ee/ci/components/) olarak bir işlem hattına oluşturabilirsiniz.
+miao normal bir GitLab işlem hattında çalışır. Bunu bir [CI component](https://docs.gitlab.com/ee/ci/components/) olarak bir işlem hattına oluşturabilirsiniz.
 
-Burada opencode için topluluk tarafından oluşturulan bir CI/CD bileşeni kullanıyoruz — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+Burada miao için topluluk tarafından oluşturulan bir CI/CD bileşeni kullanıyoruz — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Özellikler
 
-- **İş başına özel işlemleri kullanın**: opencode parçalarının kullanıma veya devre dışı bırakmak için opencode'u özel bir yapılandırma dizini ile yapılandırın; örneğin `./config/#custom-directory`.
-- **Minimum kurulum**: CI bileşeni opencode'u arka planda kurar; yalnızca opencode yapılandırmasını ve ilk istemi oluşturmanız gerekir.
+- **İş başına özel işlemleri kullanın**: miao parçalarının kullanıma veya devre dışı bırakmak için miao'u özel bir yapılandırma dizini ile yapılandırın; örneğin `./config/#custom-directory`.
+- **Minimum kurulum**: CI bileşeni miao'u arka planda kurar; yalnızca miao yapılandırmasını ve ilk istemi oluşturmanız gerekir.
 - **Esnek**: CI bileşeni, davranışını özelleştirmek için çeşitli girişleri destekler
 
 ---
 
 ### Kurulum
 
-1. opencode kimlik doğrulamanızı JSON **Ayarlar** > **CI/CD** > **Değişkenler** altında Dosya türü CI ortam değişkenleri olarak saklayın. Bunları "Maskeli ve gizli" olarak işaretlediğinizden emin olun.
+1. miao kimlik doğrulamanızı JSON **Ayarlar** > **CI/CD** > **Değişkenler** altında Dosya türü CI ortam değişkenleri olarak saklayın. Bunları "Maskeli ve gizli" olarak işaretlediğinizden emin olun.
 2. Aşağıdakileri `.gitlab-ci.yml` dosyanıza ekleyin.
 
    ```yaml title=".gitlab-ci.yml"
@@ -35,7 +35,7 @@ Burada opencode için topluluk tarafından oluşturulan bir CI/CD bileşeni kull
      - component: $CI_SERVER_FQDN/nagyv/gitlab-opencode/opencode@2
        inputs:
          config_dir: ${CI_PROJECT_DIR}/opencode-config
-         auth_json: $MIAO_AUTH_JSON # The variable name for your OpenCode authentication JSON
+         auth_json: $MIAO_AUTH_JSON # The variable name for your Miao authentication JSON
          command: optional-custom-command
          message: "Your prompt here"
    ```
@@ -46,23 +46,23 @@ Daha fazla girdi ve bu bileşene yönelik kullanım durumları için [check out 
 
 ## GitLab Duo
 
-opencode, GitLab iş akışınızla bütünleşir.
-Bir yorumda `@opencode`'dan bahsedin; opencode, GitLab CI işlem hattınızdaki görevleri yürütecektir.
+miao, GitLab iş akışınızla bütünleşir.
+Bir yorumda `@opencode`'dan bahsedin; miao, GitLab CI işlem hattınızdaki görevleri yürütecektir.
 
 ---
 
 ### Özellikler
 
-- **Sorunları önceliklendirin**: opencode'dan bir sorunu araştırıp size açıklamasını isteyin.
-- **Düzelt ve uygula**: opencode'dan bir sorunu düzeltmesini veya bir özelliği uygulamasını isteyin.
+- **Sorunları önceliklendirin**: miao'dan bir sorunu araştırıp size açıklamasını isteyin.
+- **Düzelt ve uygula**: miao'dan bir sorunu düzeltmesini veya bir özelliği uygulamasını isteyin.
   Yeni bir dal oluşturacak ve değişikliklerle birlikte bir birleştirme isteği oluşturacaktır.
-- **Güvenli**: opencode, GitLab çalıştırıcılarınızda çalışır.
+- **Güvenli**: miao, GitLab çalıştırıcılarınızda çalışır.
 
 ---
 
 ### Yapılandırma
 
-opencode, GitLab CI/CD işlem hattınızda çalışır; bunu ayarlamak için ihtiyacınız olacaklar:
+miao, GitLab CI/CD işlem hattınızda çalışır; bunu ayarlamak için ihtiyacınız olacaklar:
 
 :::tip
 Güncel talimatlar için [**GitLab docs**](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/)'a göz atın.
@@ -82,7 +82,7 @@ Güncel talimatlar için [**GitLab docs**](https://docs.gitlab.com/user/duo_agen
     ```yaml
     image: node:22-slim
     commands:
-      - echo "Installing opencode"
+      - echo "Installing miao"
       - npm install --global opencode-ai
       - echo "Installing glab"
       - export GITLAB_TOKEN=$GITLAB_TOKEN_OPENCODE
@@ -91,10 +91,10 @@ Güncel talimatlar için [**GitLab docs**](https://docs.gitlab.com/user/duo_agen
       - apt-get install --yes glab
       - echo "Configuring glab"
       - echo $GITLAB_HOST
-      - echo "Creating OpenCode auth configuration"
-      - mkdir --parents ~/.local/share/opencode
+      - echo "Creating Miao auth configuration"
+      - mkdir --parents ~/.local/share/miao
       - |
-        cat > ~/.local/share/opencode/auth.json << EOF
+        cat > ~/.local/share/miao/auth.json << EOF
         {
           "anthropic": {
             "type": "api",
@@ -103,13 +103,13 @@ Güncel talimatlar için [**GitLab docs**](https://docs.gitlab.com/user/duo_agen
         }
         EOF
       - echo "Configuring git"
-      - git config --global user.email "opencode@gitlab.com"
-      - git config --global user.name "OpenCode"
+      - git config --global user.email "miao@gitlab.com"
+      - git config --global user.name "Miao"
       - echo "Testing glab"
       - glab issue list
-      - echo "Running OpenCode"
+      - echo "Running Miao"
       - |
-        opencode run "
+        miao run "
         You are an AI assistant helping with GitLab operations.
 
         Context: $AI_FLOW_CONTEXT
@@ -158,7 +158,7 @@ Ayrıntılı talimatlar için [GitLab CLI agents docs](https://docs.gitlab.com/u
 
 ### Örnekler
 
-GitLab'da opencode'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabilirsiniz.
+GitLab'da miao'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabilirsiniz.
 
 :::tip
 `@opencode`'dan farklı bir tetikleyici ifade kullanacak şekilde yapılandırabilirsiniz.
@@ -172,7 +172,7 @@ GitLab'da opencode'u nasıl kullanabileceğinize dair bazı örnekleri burada bu
   @opencode explain this issue
   ```
 
-  opencode konuyu okuyacak ve net bir açıklama ile yanıt verecektir.
+  miao konuyu okuyacak ve net bir açıklama ile yanıt verecektir.
 
 - **Bir sorunu düzeltme**
 
@@ -182,7 +182,7 @@ GitLab'da opencode'u nasıl kullanabileceğinize dair bazı örnekleri burada bu
   @opencode fix this
   ```
 
-  opencode yeni bir dal oluşturacak, değişiklikleri uygulayacak ve değişiklikleri içeren bir birleştirme isteği açacaktır.
+  miao yeni bir dal oluşturacak, değişiklikleri uygulayacak ve değişiklikleri içeren bir birleştirme isteği açacaktır.
 
 - **Birleştirme isteklerini inceleme**
 
@@ -192,4 +192,4 @@ GitLab'da opencode'u nasıl kullanabileceğinize dair bazı örnekleri burada bu
   @opencode review this merge request
   ```
 
-  opencode, birleştirme isteğini inceleyecek ve geri bildirim sağlayacaktır.
+  miao, birleştirme isteğini inceleyecek ve geri bildirim sağlayacaktır.

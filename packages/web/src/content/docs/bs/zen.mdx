@@ -1,17 +1,17 @@
 ---
 title: Zen
-description: Kurirana lista modela koje nudi OpenCode.
+description: Kurirana lista modela koje nudi Miao.
 ---
 
 import config from "../../../../config.mjs"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Zen je lista testiranih i provjerenih modela koje pruža OpenCode tim.
+OpenCode Zen je lista testiranih i provjerenih modela koje pruža Miao tim.
 
-Zen radi kao i svaki drugi provajder u OpenCode. Prijavite se na OpenCode Zen i
+Zen radi kao i svaki drugi provajder u Miao. Prijavite se na OpenCode Zen i
 preuzmete svoj API ključ. To je **potpuno opcionalno** i ne morate ga koristiti
-da biste koristili OpenCode.
+da biste koristili Miao.
 
 ---
 
@@ -22,7 +22,7 @@ coding agent. Osim toga, većina provajdera je konfigurisana veoma različito, p
 zbog toga dobijate veoma različite performanse i kvalitet.
 
 :::tip
-Testirali smo odabranu grupu modela i provajdera koji dobro rade s OpenCode.
+Testirali smo odabranu grupu modela i provajdera koji dobro rade s Miao.
 :::
 
 Zato, ako model koristite preko nečega poput OpenRouter, nikada ne možete biti
@@ -43,7 +43,7 @@ OpenCode Zen je AI gateway koji vam daje pristup tim modelima.
 
 ## Kako radi
 
-OpenCode Zen radi kao i svaki drugi provajder u OpenCode.
+OpenCode Zen radi kao i svaki drugi provajder u Miao.
 
 1. Prijavite se na **<a href={console}>OpenCode Zen</a>**, dodajte podatke za
    naplatu i kopirajte svoj API ključ.
@@ -141,7 +141,7 @@ Našim modelima možete pristupiti i preko sljedećih API endpointa.
 | Nemotron 3.5 Lightning Free     | nemotron-3.5-lightning-free     | `https://opencode.ai/zen/v1/chat/completions`             | `@ai-sdk/openai-compatible` |
 | Muse Spark 1.3 Contributor Free | muse-spark-1.3-contributor-free | `https://opencode.ai/zen/v1/responses`                    | `@ai-sdk/openai`            |
 
-[model id](/docs/config/#models) u vašoj OpenCode konfiguraciji koristi format
+[model id](/docs/config/#models) u vašoj Miao konfiguraciji koristi format
 `opencode/<model-id>`. Na primjer, za GPT 5.5 u konfiguraciji biste
 koristili `opencode/gpt-5.5`.
 
@@ -313,7 +313,7 @@ Podržavamo pay-as-you-go model. Ispod su cijene **po 1M tokena**.
 
 **DeepSeek V4 Flash Vision Exp:** Slike se pretvaraju u tokene na osnovu svojih dimenzija i naplaćuju kao ulazni tokeni zajedno s tekstualnim tokenima. [Saznajte više](https://api-docs.deepseek.com/quick_start/pricing/).
 
-U historiji korištenja možete primijetiti [jeftinije modele](/docs/config/#models), kao što su Haiku, Nano ili Flash. OpenCode koristi ove modele za generisanje naslova sesija.
+U historiji korištenja možete primijetiti [jeftinije modele](/docs/config/#models), kao što su Haiku, Nano ili Flash. Miao koristi ove modele za generisanje naslova sesija.
 
 :::note
 Naknade za kreditne kartice prosljeđujemo po stvarnom trošku (4.4% + $0.30 po transakciji); ne naplaćujemo ništa preko toga.
@@ -321,15 +321,15 @@ Naknade za kreditne kartice prosljeđujemo po stvarnom trošku (4.4% + $0.30 po 
 
 Besplatni modeli:
 
-- MiMo-V2.6-Flash Free je dostupan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- MiMo-V2.5 Free je dostupan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- Ling 3.0 Flash Fin Free je dostupan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- Nemotron 3 Ultra Free je dostupan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- Nemotron 3.5 Lightning Free je dostupan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- Big Pickle je stealth model koji je besplatan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- Space Bunny Free je stealth model koji je besplatan na OpenCode ograničeno vrijeme. Pružalac usluge slijedi politiku nultog zadržavanja i ne koristi vaše podatke za treniranje modela.
-- Muse Spark 1.3 Contributor Free je dostupan na OpenCode ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
-- Jev 1.13 Free je dostupan na OpenCode ograničeno vrijeme.
+- MiMo-V2.6-Flash Free je dostupan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- MiMo-V2.5 Free je dostupan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- Ling 3.0 Flash Fin Free je dostupan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- Nemotron 3 Ultra Free je dostupan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- Nemotron 3.5 Lightning Free je dostupan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- Big Pickle je stealth model koji je besplatan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- Space Bunny Free je stealth model koji je besplatan na Miao ograničeno vrijeme. Pružalac usluge slijedi politiku nultog zadržavanja i ne koristi vaše podatke za treniranje modela.
+- Muse Spark 1.3 Contributor Free je dostupan na Miao ograničeno vrijeme. Tim koristi ovo vrijeme da prikupi povratne informacije i poboljša model.
+- Jev 1.13 Free je dostupan na Miao ograničeno vrijeme.
 
 <a href={email}>Kontaktirajte nas</a> ako imate bilo kakvih pitanja.
 
@@ -452,4 +452,4 @@ OpenCode Zen smo napravili da:
 1. **Benchmarkiramo** najbolje modele/provajdere za coding agente.
 2. Imamo pristup opcijama **najvišeg kvaliteta** bez snižavanja performansi ili preusmjeravanja na jeftinije provajdere.
 3. Prenesemo sva **sniženja cijena** prodajom po stvarnom trošku; tako da je jedini markup pokrivanje naših processing naknada.
-4. Obezbijedimo **bez lock-ina** time što vam omogućavamo da ga koristite s bilo kojim drugim coding agentom. I da vam uvijek omogućimo da koristite bilo koji drugi provajder i u OpenCode.
+4. Obezbijedimo **bez lock-ina** time što vam omogućavamo da ga koristite s bilo kojim drugim coding agentom. I da vam uvijek omogućimo da koristite bilo koji drugi provajder i u Miao.

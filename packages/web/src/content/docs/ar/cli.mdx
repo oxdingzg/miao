@@ -1,30 +1,30 @@
 ---
 title: CLI
-description: أوامر وخيارات CLI في OpenCode.
+description: أوامر وخيارات CLI في Miao.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-يبدأ CLI الخاص بـ OpenCode افتراضيا واجهة [TUI](/docs/tui) عند تشغيله بدون أي معاملات.
+يبدأ CLI الخاص بـ Miao افتراضيا واجهة [TUI](/docs/tui) عند تشغيله بدون أي معاملات.
 
 ```bash
-opencode
+miao
 ```
 
-كما يدعم أيضا أوامر موثقة في هذه الصفحة، ما يتيح لك التفاعل مع OpenCode برمجيا.
+كما يدعم أيضا أوامر موثقة في هذه الصفحة، ما يتيح لك التفاعل مع Miao برمجيا.
 
 ```bash
-opencode run "Explain how closures work in JavaScript"
+miao run "Explain how closures work in JavaScript"
 ```
 
 ---
 
 ### tui
 
-بدء واجهة المستخدم terminal (TUI) الخاصة بـ OpenCode.
+بدء واجهة المستخدم terminal (TUI) الخاصة بـ Miao.
 
 ```bash
-opencode [project]
+miao [project]
 ```
 
 #### الخيارات
@@ -44,36 +44,36 @@ opencode [project]
 
 ## الأوامر
 
-يتضمن CLI الخاص بـ OpenCode أيضا الأوامر التالية.
+يتضمن CLI الخاص بـ Miao أيضا الأوامر التالية.
 
 ---
 
 ### agent
 
-إدارة وكلاء OpenCode.
+إدارة وكلاء Miao.
 
 ```bash
-opencode agent [command]
+miao agent [command]
 ```
 
 ---
 
 ### attach
 
-إرفاق terminal بخادم الواجهة الخلفية لـ OpenCode قيد التشغيل بالفعل، والذي تم تشغيله عبر الأمرين `serve` أو `web`.
+إرفاق terminal بخادم الواجهة الخلفية لـ Miao قيد التشغيل بالفعل، والذي تم تشغيله عبر الأمرين `serve` أو `web`.
 
 ```bash
-opencode attach [url]
+miao attach [url]
 ```
 
-يتيح ذلك استخدام واجهة TUI مع واجهة خلفية لـ OpenCode تعمل عن بعد. على سبيل المثال:
+يتيح ذلك استخدام واجهة TUI مع واجهة خلفية لـ Miao تعمل عن بعد. على سبيل المثال:
 
 ```bash
 # ابدأ خادم الواجهة الخلفية للوصول عبر الويب/الجوال
-opencode web --port 4096 --hostname 0.0.0.0
+miao web --port 4096 --hostname 0.0.0.0
 
 # في محطة طرفية (terminal) أخرى، اربط TUI بالواجهة الخلفية قيد التشغيل
-opencode attach http://10.20.30.40:4096
+miao attach http://10.20.30.40:4096
 ```
 
 #### الرايات
@@ -85,7 +85,7 @@ opencode attach http://10.20.30.40:4096
 | <nobr><code>{"--session"}</code></nobr>  | `-s`    | معرّف الجلسة للمتابعة                                                             |
 | <nobr><code>{"--fork"}</code></nobr>     |         | تفريع الجلسة عند المتابعة (استخدمه مع `--continue` أو `--session`)                |
 | <nobr><code>{"--password"}</code></nobr> | `-p`    | كلمة مرور المصادقة الأساسية (الافتراضي `MIAO_SERVER_PASSWORD`)                |
-| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `MIAO_SERVER_USERNAME` أو `opencode`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `MIAO_SERVER_USERNAME` أو `miao`) |
 
 ---
 
@@ -94,7 +94,7 @@ opencode attach http://10.20.30.40:4096
 إنشاء وكيل جديد بإعدادات مخصصة.
 
 ```bash
-opencode agent create
+miao agent create
 ```
 
 سيرشدك هذا الأمر خلال إنشاء وكيل جديد مع موجه نظام مخصص وإعدادات الأدوات.
@@ -106,7 +106,7 @@ opencode agent create
 عرض جميع الوكلاء المتاحين.
 
 ```bash
-opencode agent list
+miao agent list
 ```
 
 ---
@@ -116,20 +116,20 @@ opencode agent list
 أمر لإدارة بيانات الاعتماد وتسجيل الدخول لمزودي الخدمة.
 
 ```bash
-opencode auth [command]
+miao auth [command]
 ```
 
 ---
 
 #### login
 
-يعتمد OpenCode على قائمة المزودين في [Models.dev](https://models.dev)، لذا يمكنك استخدام `opencode auth login` لتهيئة مفاتيح API لأي مزود ترغب باستخدامه. يتم حفظ ذلك في `~/.local/share/opencode/auth.json`.
+يعتمد Miao على قائمة المزودين في [Models.dev](https://models.dev)، لذا يمكنك استخدام `miao auth login` لتهيئة مفاتيح API لأي مزود ترغب باستخدامه. يتم حفظ ذلك في `~/.local/share/miao/auth.json`.
 
 ```bash
-opencode auth login
+miao auth login
 ```
 
-عند تشغيل OpenCode يقوم بتحميل المزودين من ملف بيانات الاعتماد، وكذلك أي مفاتيح معرّفة في متغيرات البيئة لديك أو في ملف `.env` ضمن مشروعك.
+عند تشغيل Miao يقوم بتحميل المزودين من ملف بيانات الاعتماد، وكذلك أي مفاتيح معرّفة في متغيرات البيئة لديك أو في ملف `.env` ضمن مشروعك.
 
 ---
 
@@ -138,13 +138,13 @@ opencode auth login
 يسرد جميع المزودين الذين تم توثيقهم كما هم محفوظون في ملف بيانات الاعتماد.
 
 ```bash
-opencode auth list
+miao auth list
 ```
 
 أو النسخة المختصرة.
 
 ```bash
-opencode auth ls
+miao auth ls
 ```
 
 ---
@@ -154,7 +154,7 @@ opencode auth ls
 يسجلك خارج مزود عبر حذفه من ملف بيانات الاعتماد.
 
 ```bash
-opencode auth logout
+miao auth logout
 ```
 
 ---
@@ -164,7 +164,7 @@ opencode auth logout
 إدارة وكيل GitHub لأتمتة المستودع.
 
 ```bash
-opencode github [command]
+miao github [command]
 ```
 
 ---
@@ -174,7 +174,7 @@ opencode github [command]
 تثبيت وكيل GitHub في مستودعك.
 
 ```bash
-opencode github install
+miao github install
 ```
 
 يقوم ذلك بإعداد سير عمل GitHub Actions اللازم ويرشدك خلال عملية التهيئة. [اعرف المزيد](/docs/github).
@@ -186,7 +186,7 @@ opencode github install
 تشغيل وكيل GitHub. يُستخدم هذا عادة ضمن GitHub Actions.
 
 ```bash
-opencode github run
+miao github run
 ```
 
 ##### الرايات
@@ -203,7 +203,7 @@ opencode github run
 إدارة خوادم Model Context Protocol.
 
 ```bash
-opencode mcp [command]
+miao mcp [command]
 ```
 
 ---
@@ -213,7 +213,7 @@ opencode mcp [command]
 إضافة خادم MCP إلى تهيئتك.
 
 ```bash
-opencode mcp add
+miao mcp add
 ```
 
 سيرشدك هذا الأمر خلال إضافة خادم MCP محلي أو بعيد.
@@ -225,13 +225,13 @@ opencode mcp add
 عرض جميع خوادم MCP المُهيأة وحالة اتصالها.
 
 ```bash
-opencode mcp list
+miao mcp list
 ```
 
 أو استخدم النسخة المختصرة.
 
 ```bash
-opencode mcp ls
+miao mcp ls
 ```
 
 ---
@@ -241,7 +241,7 @@ opencode mcp ls
 إجراء المصادقة مع خادم MCP يدعم OAuth.
 
 ```bash
-opencode mcp auth [name]
+miao mcp auth [name]
 ```
 
 إذا لم تُحدِّد اسم خادم، فسيُطلب منك الاختيار من الخوادم المتاحة الداعمة لـ OAuth.
@@ -249,13 +249,13 @@ opencode mcp auth [name]
 يمكنك أيضا عرض الخوادم الداعمة لـ OAuth وحالة المصادقة الخاصة بها.
 
 ```bash
-opencode mcp auth list
+miao mcp auth list
 ```
 
 أو استخدم النسخة المختصرة.
 
 ```bash
-opencode mcp auth ls
+miao mcp auth ls
 ```
 
 ---
@@ -265,7 +265,7 @@ opencode mcp auth ls
 إزالة بيانات اعتماد OAuth لخادم MCP.
 
 ```bash
-opencode mcp logout [name]
+miao mcp logout [name]
 ```
 
 ---
@@ -275,7 +275,7 @@ opencode mcp logout [name]
 تشخيص مشاكل اتصال OAuth لخادم MCP.
 
 ```bash
-opencode mcp debug <name>
+miao mcp debug <name>
 ```
 
 ---
@@ -285,7 +285,7 @@ opencode mcp debug <name>
 عرض جميع النماذج المتاحة من المزودين المُهيأين.
 
 ```bash
-opencode models [provider]
+miao models [provider]
 ```
 
 يعرض هذا الأمر جميع النماذج المتاحة عبر المزودين المُهيأين لديك بصيغة `provider/model`.
@@ -295,7 +295,7 @@ opencode models [provider]
 يمكنك اختياريا تمرير معرّف مزود لتصفية النماذج حسب ذلك المزود.
 
 ```bash
-opencode models anthropic
+miao models anthropic
 ```
 
 #### الرايات
@@ -305,36 +305,36 @@ opencode models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | تحديث ذاكرة التخزين المؤقت للنماذج من models.dev              |
 | <nobr><code>{"--verbose"}</code></nobr> | استخدام مخرجات أكثر تفصيلا للنماذج (تشمل بيانات مثل التكاليف) |
 
-استخدم الراية `--refresh` لتحديث قائمة النماذج المخزنة مؤقتا. يفيد ذلك عند إضافة نماذج جديدة إلى مزود وتريد رؤيتها في OpenCode.
+استخدم الراية `--refresh` لتحديث قائمة النماذج المخزنة مؤقتا. يفيد ذلك عند إضافة نماذج جديدة إلى مزود وتريد رؤيتها في Miao.
 
 ```bash
-opencode models --refresh
+miao models --refresh
 ```
 
 ---
 
 ### run
 
-تشغيل opencode في وضع غير تفاعلي عبر تمرير موجه مباشرة.
+تشغيل miao في وضع غير تفاعلي عبر تمرير موجه مباشرة.
 
 ```bash
-opencode run [message..]
+miao run [message..]
 ```
 
 هذا مفيد للبرمجة النصية والأتمتة، أو عندما تريد إجابة سريعة دون تشغيل واجهة TUI كاملة. على سبيل المثال.
 
-```bash "opencode run"
-opencode run Explain the use of context in Go
+```bash "miao run"
+miao run Explain the use of context in Go
 ```
 
-يمكنك أيضا الإرفاق بمثيل `opencode serve` قيد التشغيل لتجنّب زمن الإقلاع البارد لخوادم MCP في كل تشغيل:
+يمكنك أيضا الإرفاق بمثيل `miao serve` قيد التشغيل لتجنّب زمن الإقلاع البارد لخوادم MCP في كل تشغيل:
 
 ```bash
 # ابدأ خادمًا بلا واجهة في محطة طرفية واحدة
-opencode serve
+miao serve
 
 # في محطة طرفية أخرى، شغّل الأوامر التي ترتبط به
-opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
+miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 ```
 
 #### الرايات
@@ -351,9 +351,9 @@ opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`    | ملف/ملفات لإرفاقها بالرسالة                                                       |
 | <nobr><code>{"--format"}</code></nobr>   |         | التنسيق: default (منسق) أو json (أحداث JSON خام)                                  |
 | <nobr><code>{"--title"}</code></nobr>    |         | عنوان للجلسة (يستخدم موجهًا مقتطعًا إن لم تُحدَّد قيمة)                           |
-| <nobr><code>{"--attach"}</code></nobr>   |         | الإرفاق بخادم opencode قيد التشغيل (مثل http://localhost:4096)                    |
+| <nobr><code>{"--attach"}</code></nobr>   |         | الإرفاق بخادم miao قيد التشغيل (مثل http://localhost:4096)                    |
 | <nobr><code>{"--password"}</code></nobr> | `-p`    | كلمة مرور المصادقة الأساسية (الافتراضي `MIAO_SERVER_PASSWORD`)                |
-| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `MIAO_SERVER_USERNAME` أو `opencode`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `MIAO_SERVER_USERNAME` أو `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |         | دليل التشغيل، أو المسار على الخادم البعيد عند الإرفاق                             |
 | <nobr><code>{"--variant"}</code></nobr>  |         | متغير النموذج (جهد الاستدلال الخاص بالمزود)                                       |
 | <nobr><code>{"--thinking"}</code></nobr> |         | عرض كتل التفكير                                                                   |
@@ -363,13 +363,13 @@ opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-بدء خادم OpenCode بدون واجهة للوصول عبر API. راجع [توثيق الخادم](/docs/server) لواجهة HTTP الكاملة.
+بدء خادم Miao بدون واجهة للوصول عبر API. راجع [توثيق الخادم](/docs/server) لواجهة HTTP الكاملة.
 
 ```bash
-opencode serve
+miao serve
 ```
 
-يشغّل هذا خادم HTTP يوفّر وصولا عبر API لوظائف opencode دون واجهة TUI. اضبط `MIAO_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `opencode`).
+يشغّل هذا خادم HTTP يوفّر وصولا عبر API لوظائف miao دون واجهة TUI. اضبط `MIAO_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `miao`).
 
 #### الرايات
 
@@ -384,20 +384,20 @@ opencode serve
 
 ### session
 
-إدارة جلسات OpenCode.
+إدارة جلسات Miao.
 
 ```bash
-opencode session [command]
+miao session [command]
 ```
 
 ---
 
 #### list
 
-عرض جميع جلسات OpenCode.
+عرض جميع جلسات Miao.
 
 ```bash
-opencode session list
+miao session list
 ```
 
 ##### الرايات
@@ -411,10 +411,10 @@ opencode session list
 
 ### stats
 
-عرض إحصاءات استخدام الرموز والتكلفة لجلسات OpenCode لديك.
+عرض إحصاءات استخدام الرموز والتكلفة لجلسات Miao لديك.
 
 ```bash
-opencode stats
+miao stats
 ```
 
 #### الرايات
@@ -433,7 +433,7 @@ opencode stats
 تصدير بيانات الجلسة بصيغة JSON.
 
 ```bash
-opencode export [sessionID]
+miao export [sessionID]
 ```
 
 إذا لم تُقدّم معرّف جلسة، فسيُطلب منك الاختيار من الجلسات المتاحة.
@@ -442,30 +442,30 @@ opencode export [sessionID]
 
 ### import
 
-استيراد بيانات الجلسة من ملف JSON أو رابط مشاركة OpenCode.
+استيراد بيانات الجلسة من ملف JSON أو رابط مشاركة Miao.
 
 ```bash
-opencode import <file>
+miao import <file>
 ```
 
-يمكنك الاستيراد من ملف محلي أو من رابط مشاركة OpenCode.
+يمكنك الاستيراد من ملف محلي أو من رابط مشاركة Miao.
 
 ```bash
-opencode import session.json
-opencode import https://opncd.ai/s/abc123
+miao import session.json
+miao import https://opncd.ai/s/abc123
 ```
 
 ---
 
 ### web
 
-بدء خادم OpenCode بدون واجهة مع واجهة ويب.
+بدء خادم Miao بدون واجهة مع واجهة ويب.
 
 ```bash
-opencode web
+miao web
 ```
 
-يشغّل هذا خادم HTTP ويفتح متصفح ويب للوصول إلى OpenCode عبر واجهة ويب. اضبط `MIAO_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `opencode`).
+يشغّل هذا خادم HTTP ويفتح متصفح ويب للوصول إلى Miao عبر واجهة ويب. اضبط `MIAO_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `miao`).
 
 #### الرايات
 
@@ -483,7 +483,7 @@ opencode web
 بدء خادم ACP (Agent Client Protocol).
 
 ```bash
-opencode acp
+miao acp
 ```
 
 يشغّل هذا الأمر خادم ACP يتواصل عبر stdin/stdout باستخدام nd-JSON.
@@ -500,10 +500,10 @@ opencode acp
 
 ### uninstall
 
-إلغاء تثبيت OpenCode وإزالة جميع الملفات ذات الصلة.
+إلغاء تثبيت Miao وإزالة جميع الملفات ذات الصلة.
 
 ```bash
-opencode uninstall
+miao uninstall
 ```
 
 #### الرايات
@@ -519,22 +519,22 @@ opencode uninstall
 
 ### upgrade
 
-تحديث opencode إلى أحدث إصدار أو إلى إصدار محدد.
+تحديث miao إلى أحدث إصدار أو إلى إصدار محدد.
 
 ```bash
-opencode upgrade [target]
+miao upgrade [target]
 ```
 
 للترقية إلى أحدث إصدار.
 
 ```bash
-opencode upgrade
+miao upgrade
 ```
 
 للترقية إلى إصدار محدد.
 
 ```bash
-opencode upgrade v0.1.48
+miao upgrade v0.1.48
 ```
 
 #### الرايات
@@ -547,7 +547,7 @@ opencode upgrade v0.1.48
 
 ## الخيارات العامة
 
-يدعم سطر أوامر opencode الخيارات العامة التالية.
+يدعم سطر أوامر miao الخيارات العامة التالية.
 
 | الراية                                     | المختصر | الوصف                                  |
 | ------------------------------------------ | ------- | -------------------------------------- |
@@ -560,7 +560,7 @@ opencode upgrade v0.1.48
 
 ## متغيرات البيئة
 
-يمكن تهيئة OpenCode باستخدام متغيرات البيئة.
+يمكن تهيئة Miao باستخدام متغيرات البيئة.
 
 | المتغير                               | النوع   | الوصف                                                     |
 | ------------------------------------- | ------- | --------------------------------------------------------- |
@@ -585,7 +585,7 @@ opencode upgrade v0.1.48
 | `MIAO_CLIENT`                     | string  | معرّف العميل (الافتراضي `cli`)                            |
 | `MIAO_ENABLE_EXA`                 | boolean | تفعيل أدوات بحث الويب من Exa                              |
 | `MIAO_SERVER_PASSWORD`            | string  | تفعيل المصادقة الأساسية لخادمي `serve`/`web`              |
-| `MIAO_SERVER_USERNAME`            | string  | تجاوز اسم مستخدم المصادقة الأساسية (الافتراضي `opencode`) |
+| `MIAO_SERVER_USERNAME`            | string  | تجاوز اسم مستخدم المصادقة الأساسية (الافتراضي `miao`) |
 | `MIAO_MODELS_URL`                 | string  | رابط مخصص لجلب تهيئة النماذج                              |
 
 ---

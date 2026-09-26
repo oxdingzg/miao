@@ -1,7 +1,11 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode acp --help 1`] = `
-"opencode acp
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao acp --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao acp
 
 start ACP (Agent Client Protocol) server
 
@@ -15,36 +19,46 @@ Options:
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
                                                                           [boolean] [default: false]
-      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
+      --mdns-domain  custom domain name for mDNS service (default: miao.local)
                                                                 [string] [default: "opencode.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
-      --cwd          working directory [string] [default: "<HOME>"]"
+      --cwd          working directory [string] [default: "<HOME>"]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp --help 1`] = `
-"opencode mcp
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao mcp --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao mcp
 
 manage MCP (Model Context Protocol) servers
 
 Commands:
-  opencode mcp add [name]     add an MCP server
-  opencode mcp list           list MCP servers and their status                        [aliases: ls]
-  opencode mcp auth [name]    authenticate with an OAuth-enabled MCP server
-  opencode mcp logout [name]  remove OAuth credentials for an MCP server
-  opencode mcp debug <name>   debug OAuth connection for an MCP server
+  miao mcp add [name]     add an MCP server
+  miao mcp list           list MCP servers and their status                            [aliases: ls]
+  miao mcp auth [name]    authenticate with an OAuth-enabled MCP server
+  miao mcp logout [name]  remove OAuth credentials for an MCP server
+  miao mcp debug <name>   debug OAuth connection for an MCP server
 
 Options:
   -h, --help        show help                                                              [boolean]
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode attach --help 1`] = `
-"opencode attach <url>
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao attach --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-attach to a running opencode server
+miao attach <url>
+
+attach to a running miao server
 
 Positionals:
   url  http://localhost:4096                                                     [string] [required]
@@ -59,18 +73,22 @@ Options:
   -c, --continue      continue the last session                                            [boolean]
   -s, --session       session id to continue                                                [string]
       --fork          fork the session when continuing (use with --continue or --session)  [boolean]
-  -p, --password      basic auth password (defaults to MIAO_SERVER_PASSWORD)            [string]
-  -u, --username      basic auth username (defaults to MIAO_SERVER_USERNAME or 'opencode')
-                                                                                            [string]
+  -p, --password      basic auth password (defaults to MIAO_SERVER_PASSWORD)                [string]
+  -u, --username      basic auth username (defaults to MIAO_SERVER_USERNAME or 'miao')      [string]
       --mini          start the minimal interactive interface             [boolean] [default: false]
       --no-replay     disable mini session history replay on resume and after resize       [boolean]
-      --replay-limit  cap visible mini replay to the newest N messages                      [number]"
+      --replay-limit  cap visible mini replay to the newest N messages                      [number]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode run --help 1`] = `
-"opencode run [message..]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao run --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-run opencode with a message
+miao run [message..]
+
+run miao with a message
 
 Positionals:
   message  message to send                                                     [array] [default: []]
@@ -92,10 +110,9 @@ Options:
                                           [string] [choices: "default", "json"] [default: "default"]
   -f, --file         file(s) to attach to message                                            [array]
       --title        title for the session (uses truncated prompt if no value provided)     [string]
-      --attach       attach to a running opencode server (e.g., http://localhost:4096)      [string]
-  -p, --password     basic auth password (defaults to MIAO_SERVER_PASSWORD)             [string]
-  -u, --username     basic auth username (defaults to MIAO_SERVER_USERNAME or 'opencode')
-                                                                                            [string]
+      --attach       attach to a running miao server (e.g., http://localhost:4096)          [string]
+  -p, --password     basic auth password (defaults to MIAO_SERVER_PASSWORD)                 [string]
+  -u, --username     basic auth username (defaults to MIAO_SERVER_USERNAME or 'miao')       [string]
       --dir          directory to run in, path on remote server if attaching                [string]
       --port         port for the local server (defaults to random port if no value provided)
                                                                                             [number]
@@ -104,76 +121,96 @@ Options:
       --thinking     show thinking blocks                                                  [boolean]
   -i, --interactive  run in direct interactive split-footer mode          [boolean] [default: false]
       --auto         auto-approve permissions that are not explicitly denied (dangerous!)
-                                                                          [boolean] [default: false]"
+                                                                          [boolean] [default: false]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode debug --help 1`] = `
-"opencode debug
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao debug --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao debug
 
 debugging and troubleshooting tools
 
 Commands:
-  opencode debug config        show resolved configuration
-  opencode debug lsp           LSP debugging utilities
-  opencode debug rg            ripgrep debugging utilities
-  opencode debug file          file system debugging utilities
-  opencode debug scrap         list all known projects
-  opencode debug skill         list all available skills
-  opencode debug snapshot      snapshot debugging utilities
-  opencode debug startup       print startup timing
-  opencode debug agent <name>  show agent configuration details
-  opencode debug v2            debug v2 catalog and built-in plugins
-  opencode debug info          show debug information
-  opencode debug paths         show global paths (data, config, cache, state)
-  opencode debug wait          wait indefinitely (for debugging)
+  miao debug config        show resolved configuration
+  miao debug lsp           LSP debugging utilities
+  miao debug rg            ripgrep debugging utilities
+  miao debug file          file system debugging utilities
+  miao debug scrap         list all known projects
+  miao debug skill         list all available skills
+  miao debug snapshot      snapshot debugging utilities
+  miao debug startup       print startup timing
+  miao debug agent <name>  show agent configuration details
+  miao debug v2            debug v2 catalog and built-in plugins
+  miao debug info          show debug information
+  miao debug paths         show global paths (data, config, cache, state)
+  miao debug wait          wait indefinitely (for debugging)
 
 Options:
   -h, --help        show help                                                              [boolean]
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers --help 1`] = `
-"opencode providers
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao providers --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao providers
 
 manage AI providers and credentials
 
 Commands:
-  opencode providers list               list providers and credentials                 [aliases: ls]
-  opencode providers login [url]        log in to a provider
-  opencode providers logout [provider]  log out from a configured provider
+  miao providers list               list providers and credentials                     [aliases: ls]
+  miao providers login [url]        log in to a provider
+  miao providers logout [provider]  log out from a configured provider
 
 Options:
   -h, --help        show help                                                              [boolean]
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent --help 1`] = `
-"opencode agent
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao agent --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao agent
 
 manage agents
 
 Commands:
-  opencode agent create  create a new agent
-  opencode agent list    list all available agents
+  miao agent create  create a new agent
+  miao agent list    list all available agents
 
 Options:
   -h, --help        show help                                                              [boolean]
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode upgrade --help 1`] = `
-"opencode upgrade [target]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao upgrade --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-upgrade opencode to the latest or a specific version
+miao upgrade [target]
+
+upgrade miao to the latest or a specific version
 
 Positionals:
   target  version to upgrade to, for ex '0.1.48' or 'v0.1.48'                               [string]
@@ -185,13 +222,18 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
   -m, --method      installation method to use
-                          [string] [choices: "curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"]"
+                          [string] [choices: "curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode uninstall --help 1`] = `
-"opencode uninstall
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao uninstall --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-uninstall opencode and remove all related files
+miao uninstall
+
+uninstall miao and remove all related files
 
 Options:
   -h, --help         show help                                                             [boolean]
@@ -202,13 +244,18 @@ Options:
   -c, --keep-config  keep configuration files                             [boolean] [default: false]
   -d, --keep-data    keep session data and snapshots                      [boolean] [default: false]
       --dry-run      show what would be removed without removing          [boolean] [default: false]
-  -f, --force        skip confirmation prompts                            [boolean] [default: false]"
+  -f, --force        skip confirmation prompts                            [boolean] [default: false]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode serve --help 1`] = `
-"opencode serve
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao serve --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-starts a headless opencode server
+miao serve
+
+starts a headless miao server
 
 Options:
   -h, --help         show help                                                             [boolean]
@@ -220,15 +267,20 @@ Options:
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
                                                                           [boolean] [default: false]
-      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
+      --mdns-domain  custom domain name for mDNS service (default: miao.local)
                                                                 [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
+      --cors         additional domains to allow for CORS                      [array] [default: []]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode web --help 1`] = `
-"opencode web
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao web --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-start opencode server and open web interface
+miao web
+
+start miao server and open web interface
 
 Options:
   -h, --help         show help                                                             [boolean]
@@ -240,13 +292,18 @@ Options:
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
                                                                           [boolean] [default: false]
-      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
+      --mdns-domain  custom domain name for mDNS service (default: miao.local)
                                                                 [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
+      --cors         additional domains to allow for CORS                      [array] [default: []]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode models --help 1`] = `
-"opencode models [provider]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao models --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao models [provider]
 
 list all available models
 
@@ -260,11 +317,16 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
       --verbose     use more verbose model output (includes metadata like costs)           [boolean]
-      --refresh     refresh the models cache from models.dev                               [boolean]"
+      --refresh     refresh the models cache from models.dev                               [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode stats --help 1`] = `
-"opencode stats
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao stats --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao stats
 
 show token usage and cost statistics
 
@@ -278,11 +340,16 @@ Options:
       --tools       number of tools to show (default: all)                                  [number]
       --models      show model statistics (default: hidden). Pass a number to show top N, otherwise
                     shows all
-      --project     filter by project (default: all projects, empty string: current project)[string]"
+      --project     filter by project (default: all projects, empty string: current project)[string]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode export --help 1`] = `
-"opencode export [sessionID]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao export --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao export [sessionID]
 
 export session data as JSON
 
@@ -295,11 +362,16 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
-      --sanitize    redact sensitive transcript and file data                              [boolean]"
+      --sanitize    redact sensitive transcript and file data                              [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode import --help 1`] = `
-"opencode import <file>
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao import --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao import <file>
 
 import session data from JSON file or URL
 
@@ -311,30 +383,40 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github --help 1`] = `
-"opencode github
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao github --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao github
 
 manage GitHub agent
 
 Commands:
-  opencode github install  install the GitHub agent
-  opencode github run      run the GitHub agent
+  miao github install  install the GitHub agent
+  miao github run      run the GitHub agent
 
 Options:
   -h, --help        show help                                                              [boolean]
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode pr --help 1`] = `
-"opencode pr <number>
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao pr --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
 
-fetch and checkout a GitHub PR branch, then run opencode
+miao pr <number>
+
+fetch and checkout a GitHub PR branch, then run miao
 
 Positionals:
   number  PR number to checkout                                                  [number] [required]
@@ -344,28 +426,38 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session --help 1`] = `
-"opencode session
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao session --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao session
 
 manage sessions
 
 Commands:
-  opencode session list                list sessions
-  opencode session delete <sessionID>  delete a session
+  miao session list                list sessions
+  miao session delete <sessionID>  delete a session
 
 Options:
   -h, --help        show help                                                              [boolean]
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode plugin --help 1`] = `
-"opencode plugin <module>
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao plugin --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao plugin <module>
 
 install plugin and update config
 
@@ -379,17 +471,22 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
   -g, --global      install in global config                              [boolean] [default: false]
-  -f, --force       replace existing plugin version                       [boolean] [default: false]"
+  -f, --force       replace existing plugin version                       [boolean] [default: false]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db --help 1`] = `
-"opencode db
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao db --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao db
 
 database tools
 
 Commands:
-  opencode db [query]     open an interactive sqlite3 shell or run a query                 [default]
-  opencode db path        print the database path
+  miao db [query]     open an interactive sqlite3 shell or run a query                     [default]
+  miao db path        print the database path
 
 Positionals:
   query  SQL query to execute                                                               [string]
@@ -400,11 +497,16 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
-      --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]"
+      --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp list --help 1`] = `
-"opencode mcp list
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao mcp list --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao mcp list
 
 list MCP servers and their status
 
@@ -413,11 +515,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp add --help 1`] = `
-"opencode mcp add [name]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao mcp add --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao mcp add [name]
 
 add an MCP server
 
@@ -432,16 +539,21 @@ Options:
       --pure        run without external plugins                                           [boolean]
       --url         URL for a remote MCP server                                             [string]
       --env         environment variable for a local MCP server (KEY=VALUE)                  [array]
-      --header      HTTP header for a remote MCP server (KEY=VALUE)                          [array]"
+      --header      HTTP header for a remote MCP server (KEY=VALUE)                          [array]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp auth --help 1`] = `
-"opencode mcp auth [name]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao mcp auth --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao mcp auth [name]
 
 authenticate with an OAuth-enabled MCP server
 
 Commands:
-  opencode mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
+  miao mcp auth list  list OAuth-capable MCP servers and their auth status             [aliases: ls]
 
 Positionals:
   name  name of the MCP server                                                              [string]
@@ -451,11 +563,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp logout --help 1`] = `
-"opencode mcp logout [name]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao mcp logout --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao mcp logout [name]
 
 remove OAuth credentials for an MCP server
 
@@ -467,11 +584,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers list --help 1`] = `
-"opencode providers list
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao providers list --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao providers list
 
 list providers and credentials
 
@@ -480,16 +602,21 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers login --help 1`] = `
-"opencode providers login [url]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao providers login --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao providers login [url]
 
 log in to a provider
 
 Positionals:
-  url  opencode auth provider                                                               [string]
+  url  miao auth provider                                                                   [string]
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -498,11 +625,16 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
   -p, --provider    provider id or name to log in to (skips provider selection)             [string]
-  -m, --method      login method label (skips method selection)                             [string]"
+  -m, --method      login method label (skips method selection)                             [string]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers logout --help 1`] = `
-"opencode providers logout [provider]
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao providers logout --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao providers logout [provider]
 
 log out from a configured provider
 
@@ -514,11 +646,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent create --help 1`] = `
-"opencode agent create
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao agent create --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao agent create
 
 create a new agent
 
@@ -534,11 +671,16 @@ Options:
       --permissions, --tools  comma-separated list of permissions to allow (default: all).
                               Available: "bash, read, edit, glob, grep, webfetch, task, todowrite,
                               websearch, lsp, skill"                                        [string]
-  -m, --model                 model to use in the format of provider/model                  [string]"
+  -m, --model                 model to use in the format of provider/model                  [string]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent list --help 1`] = `
-"opencode agent list
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao agent list --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao agent list
 
 list all available agents
 
@@ -547,11 +689,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session list --help 1`] = `
-"opencode session list
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao session list --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao session list
 
 list sessions
 
@@ -562,11 +709,16 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
   -n, --max-count   limit to N most recent sessions                                         [number]
-      --format      output format             [string] [choices: "table", "json"] [default: "table"]"
+      --format      output format             [string] [choices: "table", "json"] [default: "table"]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session delete --help 1`] = `
-"opencode session delete <sessionID>
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao session delete --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao session delete <sessionID>
 
 delete a session
 
@@ -578,11 +730,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github install --help 1`] = `
-"opencode github install
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao github install --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao github install
 
 install the GitHub agent
 
@@ -591,11 +748,16 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github run --help 1`] = `
-"opencode github run
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao github run --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao github run
 
 run the GitHub agent
 
@@ -606,11 +768,16 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
       --event       GitHub mock event to run the agent for                                  [string]
-      --token       GitHub personal access token (github_pat_********)                      [string]"
+      --token       GitHub personal access token (github_pat_********)                      [string]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db path --help 1`] = `
-"opencode db path
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao db path --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao db path
 
 print the database path
 
@@ -619,5 +786,6 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+"
 `;

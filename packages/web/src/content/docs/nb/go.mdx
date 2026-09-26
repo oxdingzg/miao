@@ -9,9 +9,9 @@ export const email = `mailto:${config.email}`
 
 OpenCode Go er et lavkostnadsabonnement til **$10/måned** som gir deg pålitelig tilgang til populære åpne kodemodeller.
 
-Go fungerer som enhver annen leverandør i OpenCode. Du abonnerer på OpenCode Go og
+Go fungerer som enhver annen leverandør i Miao. Du abonnerer på OpenCode Go og
 får din API-nøkkel. Det er **helt valgfritt**, og du trenger ikke å bruke det for å
-bruke OpenCode.
+bruke Miao.
 
 Det er først og fremst utviklet for internasjonale brukere og gir stabil global tilgang.
 
@@ -27,7 +27,7 @@ Imidlertid kan det være vanskelig å få pålitelig tilgang med lav forsinkelse
 varierer i kvalitet og tilgjengelighet.
 
 :::tip
-Vi testet en utvalgt gruppe modeller og leverandører som fungerer godt med OpenCode.
+Vi testet en utvalgt gruppe modeller og leverandører som fungerer godt med Miao.
 :::
 
 For å fikse dette, gjorde vi et par ting:
@@ -45,7 +45,7 @@ OpenCode Go gir deg tilgang til disse modellene for **$10/måned**.
 
 ## Hvordan det fungerer
 
-OpenCode Go fungerer som enhver annen leverandør i OpenCode.
+OpenCode Go fungerer som enhver annen leverandør i Miao.
 
 1. Du logger inn på **<a href={console}>OpenCode Zen</a>**, abonnerer på Go, og
    kopierer din API-nøkkel.
@@ -98,7 +98,7 @@ Listen over modeller kan endres etter hvert som vi tester og legger til nye.
 
 ## Hvor kan jeg bruke det?
 
-OpenCode Go er utviklet for [OpenCode](https://opencode.ai) og andre kodeagenter
+OpenCode Go er utviklet for [Miao](https://opencode.ai) og andre kodeagenter
 som sender lignende typer forespørsler. Trafikken overvåkes for misbruk som
 forringer opplevelsen for andre brukere.
 
@@ -112,18 +112,18 @@ Klienten din skal:
 
 ### Validerte klienter
 
-I tillegg til OpenCode er følgende klienter validert for å fungere riktig
+I tillegg til Miao er følgende klienter validert for å fungere riktig
 med OpenCode Go. Vi garanterer imidlertid ikke at de vil fortsette å fungere i fremtiden.
 
 | Klient            | Sesjonsstøtte                                                                                                                                                                                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Hermes**        | Bygg som inneholder [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864), sender headeren i primære og sekundære OpenCode-forespørsler. Rettelsen ble slått sammen etter v0.21.0; den versjonen inneholder den ikke alene.           |
+| **Hermes**        | Bygg som inneholder [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864), sender headeren i primære og sekundære Miao-forespørsler. Rettelsen ble slått sammen etter v0.21.0; den versjonen inneholder den ikke alene.           |
 | **Claude Code**   | Go gjenkjenner den innebygde sesjonsheaderen. En wrapper for en egendefinert header er ikke nødvendig.                                                                                                                                                 |
 | **Codex**         | Go gjenkjenner den innebygde sesjonsheaderen. Noen versjoner og proxyoppsett utelater den fortsatt; behold sesjonsheaderen når forespørsler videresendes.                                                                                              |
 | **ZCode**         | Go gjenkjenner den innebygde sesjonsheaderen. Vår [forespørsel om `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) er fortsatt åpen, men det er ikke lenger nødvendig å sende akkurat denne headeren.                             |
-| **Pi**            | Gjeldende bygg sender sesjonsinformasjon for OpenCode. Oppdater eldre installasjoner.                                                                                                                                                                  |
+| **Pi**            | Gjeldende bygg sender sesjonsinformasjon for Miao. Oppdater eldre installasjoner.                                                                                                                                                                  |
 | **jcode**         | Oppdater til **v0.81.6 eller nyere**, som inneholder [rettelsen for sesjonsheaderen](https://github.com/1jehuang/jcode/issues/1167).                                                                                                                   |
-| **Kilo Code CLI** | Bygg som inneholder [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752), gjenoppretter OpenCode-sesjonsheadere. Denne rettelsen dekker CLI-en, ikke VS Code-utvidelsen. Se [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
+| **Kilo Code CLI** | Bygg som inneholder [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752), gjenoppretter Miao-sesjonsheadere. Denne rettelsen dekker CLI-en, ikke VS Code-utvidelsen. Se [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
 
 ### Kjente problematiske klienter
 
@@ -342,7 +342,7 @@ Du kan også få tilgang til Go-modeller gjennom følgende API-endepunkter.
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-[Modell-ID-en](/docs/config/#models) i din OpenCode-konfigurasjon
+[Modell-ID-en](/docs/config/#models) i din Miao-konfigurasjon
 bruker formatet `opencode-go/<model-id>`. For eksempel, for Kimi K3, vil du
 bruke `opencode-go/kimi-k3` i konfigurasjonen din.
 
@@ -410,4 +410,4 @@ Vi opprettet OpenCode Go for å:
 1. Gjøre AI-koding **tilgjengelig** for flere mennesker med et lavkostnadsabonnement.
 2. Gi **pålitelig** tilgang til de beste åpne kodemodellene.
 3. Kuratere modeller som er **testet og ytelsesmålt** for bruk av kodeagenter.
-4. Ha **ingen innelåsing** ved å la deg bruke en hvilken som helst annen leverandør med OpenCode også.
+4. Ha **ingen innelåsing** ved å la deg bruke en hvilken som helst annen leverandør med Miao også.

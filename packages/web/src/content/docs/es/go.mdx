@@ -9,9 +9,9 @@ export const email = `mailto:${config.email}`
 
 OpenCode Go es una suscripción de bajo costo de **$10/mes** que te brinda acceso confiable a modelos abiertos de programación populares.
 
-Go funciona como cualquier otro proveedor en OpenCode. Te suscribes a OpenCode Go y
+Go funciona como cualquier otro proveedor en Miao. Te suscribes a OpenCode Go y
 obtienes tu API key. Es **completamente opcional** y no necesitas usarlo para
-usar OpenCode.
+usar Miao.
 
 Está diseñado principalmente para usuarios internacionales y ofrece un acceso global estable.
 
@@ -27,7 +27,7 @@ Sin embargo, obtener un acceso confiable y de baja latencia a ellos puede ser di
 varían en calidad y disponibilidad.
 
 :::tip
-Probamos un grupo selecto de modelos y proveedores que funcionan bien con OpenCode.
+Probamos un grupo selecto de modelos y proveedores que funcionan bien con Miao.
 :::
 
 Para solucionar esto, hicimos un par de cosas:
@@ -45,7 +45,7 @@ OpenCode Go te da acceso a estos modelos por **$10/mes**.
 
 ## Cómo funciona
 
-OpenCode Go funciona como cualquier otro proveedor en OpenCode.
+OpenCode Go funciona como cualquier otro proveedor en Miao.
 
 1. Inicias sesión en **<a href={console}>OpenCode Zen</a>**, te suscribes a Go y
    copias tu API key.
@@ -98,7 +98,7 @@ La lista de modelos puede cambiar a medida que probamos y agregamos otros nuevos
 
 ## ¿Dónde puedo usarlo?
 
-OpenCode Go está diseñado para [OpenCode](https://opencode.ai) y otros agentes de programación
+OpenCode Go está diseñado para [Miao](https://opencode.ai) y otros agentes de programación
 que generan tipos de peticiones similares. El tráfico se supervisa para detectar abusos que
 perjudiquen la experiencia de otros usuarios.
 
@@ -112,18 +112,18 @@ Tu cliente debe:
 
 ### Clientes validados
 
-Además de OpenCode, se ha validado que los siguientes clientes funcionan correctamente
+Además de Miao, se ha validado que los siguientes clientes funcionan correctamente
 con OpenCode Go. Sin embargo, no garantizamos que sigan funcionando en el futuro.
 
 | Cliente           | Compatibilidad con sesiones                                                                                                                                                                                                                                                              |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | Las compilaciones que incluyen el [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) envían el encabezado en las peticiones principales y auxiliares de OpenCode. La corrección se fusionó después de v0.21.0; esa versión por sí sola no la incluye.                |
+| **Hermes**        | Las compilaciones que incluyen el [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) envían el encabezado en las peticiones principales y auxiliares de Miao. La corrección se fusionó después de v0.21.0; esa versión por sí sola no la incluye.                |
 | **Claude Code**   | Go reconoce su encabezado de sesión nativo. No se necesita ningún wrapper para encabezados personalizados.                                                                                                                                                                               |
 | **Codex**         | Go reconoce su encabezado de sesión nativo. Algunas versiones y configuraciones de proxy aún lo omiten; conserva el encabezado de sesión al reenviar peticiones.                                                                                                                         |
 | **ZCode**         | Go reconoce su encabezado de sesión nativo. Nuestra [solicitud de `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) sigue abierta, pero ya no es necesario enviar ese encabezado específico.                                                                         |
-| **Pi**            | Las compilaciones actuales envían información de sesión para OpenCode. Actualiza las instalaciones antiguas.                                                                                                                                                                             |
+| **Pi**            | Las compilaciones actuales envían información de sesión para Miao. Actualiza las instalaciones antiguas.                                                                                                                                                                             |
 | **jcode**         | Actualiza a la versión **v0.81.6 o posterior**, que incluye la [corrección del encabezado de sesión](https://github.com/1jehuang/jcode/issues/1167).                                                                                                                                     |
-| **Kilo Code CLI** | Las compilaciones que incluyen el [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) restauran los encabezados de sesión de OpenCode. Esta corrección cubre la CLI, no la extensión de VS Code. Consulta el [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
+| **Kilo Code CLI** | Las compilaciones que incluyen el [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) restauran los encabezados de sesión de Miao. Esta corrección cubre la CLI, no la extensión de VS Code. Consulta el [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
 
 ### Clientes con problemas conocidos
 
@@ -342,7 +342,7 @@ También puedes acceder a los modelos de Go a través de los siguientes endpoint
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-El [ID del modelo](/docs/config/#models) en tu configuración de OpenCode
+El [ID del modelo](/docs/config/#models) en tu configuración de Miao
 usa el formato `opencode-go/<model-id>`. Por ejemplo, para Kimi K3, usarías
 `opencode-go/kimi-k3` en tu configuración.
 
@@ -410,4 +410,4 @@ Creamos OpenCode Go para:
 1. Hacer que la programación con IA sea **accesible** para más personas con una suscripción de bajo costo.
 2. Proporcionar un acceso **confiable** a los mejores modelos abiertos de programación.
 3. Seleccionar modelos que estén **probados y evaluados** para su uso en agentes de programación.
-4. Evitar la **dependencia (lock-in)** al permitirte usar también cualquier otro proveedor con OpenCode.
+4. Evitar la **dependencia (lock-in)** al permitirte usar también cualquier otro proveedor con Miao.

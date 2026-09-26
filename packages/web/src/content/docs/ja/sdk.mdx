@@ -1,13 +1,13 @@
 ---
 title: SDK
-description: OpenCode サーバー用の型安全な JS クライアント。
+description: Miao サーバー用の型安全な JS クライアント。
 ---
 
 import config from "../../../../config.mjs"
 export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
 
-OpenCode JS/TS SDK は、サーバーと対話するための型安全なクライアントを提供します。
-これを使用して、統合を構築し、OpenCode をプログラムで制御します。
+Miao JS/TS SDK は、サーバーと対話するための型安全なクライアントを提供します。
+これを使用して、統合を構築し、Miao をプログラムで制御します。
 
 [サーバーの仕組みについての詳細](/docs/server) をご覧ください。たとえば、コミュニティによって構築された [projects](/docs/ecosystem#projects) をチェックしてください。
 
@@ -25,7 +25,7 @@ npm install @opencode-ai/sdk
 
 ## クライアントの作成
 
-OpenCode のインスタンスを作成します。
+Miao のインスタンスを作成します。
 
 ```javascript
 import { createOpencode } from "@opencode-ai/sdk"
@@ -49,12 +49,12 @@ const { client } = await createOpencode()
 
 ## 設定
 
-設定オブジェクトを渡して動作をカスタマイズできます。インスタンスは引き続き `opencode.json` を取得しますが、設定をインラインでオーバーライドまたは追加することができます。
+設定オブジェクトを渡して動作をカスタマイズできます。インスタンスは引き続き `miao.json` を取得しますが、設定をインラインでオーバーライドまたは追加することができます。
 
 ```javascript
 import { createOpencode } from "@opencode-ai/sdk"
 
-const opencode = await createOpencode({
+const miao = await createOpencode({
   hostname: "127.0.0.1",
   port: 4096,
   config: {
@@ -62,14 +62,14 @@ const opencode = await createOpencode({
   },
 })
 
-console.log(`Server running at ${opencode.server.url}`)
+console.log(`Server running at ${miao.server.url}`)
 
-opencode.server.close()
+miao.server.close()
 ```
 
 ## クライアントのみ
 
-すでに実行中の OpenCode のインスタンスがある場合は、それに接続するためのクライアントインスタンスを作成できます。
+すでに実行中の Miao のインスタンスがある場合は、それに接続するためのクライアントインスタンスを作成できます。
 
 ```javascript
 import { createOpencodeClient } from "@opencode-ai/sdk"
@@ -376,7 +376,7 @@ await client.session.prompt({
 ```javascript
 // Search and read files
 const textResults = await client.find.text({
-  query: { pattern: "function.*opencode" },
+  query: { pattern: "function.*miao" },
 })
 
 const files = await client.find.files({
