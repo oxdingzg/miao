@@ -10,7 +10,7 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
 ### R1. Packaging and distribution (current platform solved / cross-platform pending) (High)
 - Evidence: `packages/miao/script/build.ts` uses `bun build --compile` to produce a **single-file** binary; native dependencies (`@ff-labs/fff-bun`, etc.) are embedded from node_modules.
 - Current state: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified: the compiled binary prints `addon: loaded`). `packages/miao` references it statically through `@miao/native` and falls back to TS when absent.
-- Remaining: a multi-platform release needs the addon **built per target** (`--single` on the host platform already works); `miao-run` is a second executable and still needs its own handling (extract at runtime or ship alongside).
+- Remaining: a multi-platform release needs the addon **built per target** (`--single` on the host platform already works; `packages/miao/script/build.ts` now builds the host addon and hides it for non-host targets so a wrong-platform `.node` is not embedded). `miao-run` is now discovered from `MIAO_RUN` or next to the executable (`resolveMiaoRun()`); when absent the sandbox is unavailable and callers fall back. A release still needs to ship `miao-run` alongside the binary.
 - Mitigation: the release pipeline runs `packages/native/build.ts` for each target before packaging.
 
 ### R2. CI is currently passing falsely (High)

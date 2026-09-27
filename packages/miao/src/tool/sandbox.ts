@@ -5,8 +5,27 @@
  * Not wired into the live bash tool yet. The intended wiring is: the bash tool
  * executes through `runSandboxed` and passes its permission prompt as `ask`.
  */
+import { existsSync } from "fs"
 import os from "os"
 import path from "path"
+
+/**
+ * Locate the `miao-run` binary: `MIAO_RUN` first, then next to the running
+ * executable. A released binary must ship `miao-run` alongside it (or set
+ * `MIAO_RUN`); until then the sandbox is simply unavailable and callers fall back.
+ */
+export function resolveMiaoRun(): string | undefined {
+  const fromEnv = process.env.MIAO_RUN
+  if (fromEnv && existsSync(fromEnv)) return fromEnv
+  const sibling = path.join(path.dirname(process.execPath), process.platform === "win32" ? "miao-run.exe" : "miao-run")
+  if (existsSync(sibling)) return sibling
+  return undefined
+}
+
+/** Whether process-level sandboxing can run on this host. */
+export function sandboxAvailable(): boolean {
+  return process.platform === "darwin" && resolveMiaoRun() !== undefined
+}
 
 export interface SandboxRunInput {
   /** Path to the `miao-run` binary. */

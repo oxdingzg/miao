@@ -9,7 +9,7 @@
 ### R1. 打包与分发（当前平台已解决 / 跨平台待办）（高）
 - 证据：`packages/miao/script/build.ts` 用 `bun build --compile` 产出**单文件**二进制，原生依赖（`@ff-labs/fff-bun` 等）从 node_modules 内嵌。
 - 现状：已新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测：编译后的二进制输出 `addon: loaded`）。`packages/miao` 经 `@miao/native` 静态引用，缺失时回退 TS。
-- 剩余：多平台 release 需要**按 target 构建对应的 addon**（`--single`、当前平台已可用）；`miao-run` 是第二个可执行文件，仍需单独处理（运行时释放或并排分发）。
+- 剩余：多平台 release 需要**按 target 构建对应的 addon**（`--single`、当前平台已可用；`packages/miao/script/build.ts` 已会为宿主构建 addon，并对非宿主 target 自动隐藏以免内嵌错平台产物）。`miao-run` 已支持从 `MIAO_RUN` 或可执行文件同目录发现（`resolveMiaoRun()`），缺失时沙箱不可用并回退；正式发布需把它随二进制一起分发。
 - 缓解：release 流水线对每个 target 先跑 `packages/native/build.ts` 再打包。
 
 ### R2. CI 现在是假绿（高）

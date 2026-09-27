@@ -7,7 +7,7 @@ import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { nativeEditActive, replace, replaceTs } from "../../src/tool/edit"
 import { deriveNewContentsFromChunks, deriveNewContentsFromChunksTs, type UpdateFileChunk } from "../../src/patch"
-import { runSandboxed } from "../../src/tool/sandbox"
+import { resolveMiaoRun, runSandboxed, sandboxAvailable } from "../../src/tool/sandbox"
 
 const require = createRequire(import.meta.url)
 const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")
@@ -363,6 +363,19 @@ describeFallback("native dispatchers", () => {
 test("native edit is active when MIAO_NATIVE=1 and the addon is built", () => {
   if (process.env.MIAO_NATIVE !== "1" || !native) return
   expect(nativeEditActive()).toBe(true)
+})
+
+test("resolves miao-run from MIAO_RUN and reports availability", () => {
+  if (!existsSync(miaoRunPath)) return
+  const previous = process.env.MIAO_RUN
+  process.env.MIAO_RUN = miaoRunPath
+  try {
+    expect(resolveMiaoRun()).toBe(miaoRunPath)
+    if (process.platform === "darwin") expect(sandboxAvailable()).toBe(true)
+  } finally {
+    if (previous === undefined) delete process.env.MIAO_RUN
+    else process.env.MIAO_RUN = previous
+  }
 })
 
 function mulberry32(seed: number) {

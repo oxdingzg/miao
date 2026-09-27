@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
+import { existsSync } from "fs"
+import { rename } from "fs/promises"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
@@ -142,6 +144,16 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
+
+// Build the miao-native addon for the host so `@miao/native` can embed it. The
+// addon is optional: if the build fails (no Rust), callers fall back to TS.
+const nativeDir = path.resolve(dir, "../native")
+const nativeAddon = path.join(nativeDir, "src/miao-native.node")
+try {
+  await $`bun run build.ts`.cwd(nativeDir)
+} catch (error) {
+  console.warn("miao-native addon build failed; native paths will fall back to TS", error)
+}
 for (const item of targets) {
   const name = [
     pkg.name,
@@ -159,6 +171,13 @@ for (const item of targets) {
   const workerPath = "./src/cli/tui/worker.ts"
   const treeSitterWorkerPath = "opentui-tree-sitter-worker.js"
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
+
+  // Only embed the addon into a matching-platform binary; hide it otherwise so a
+  // wrong-platform .node is not baked in.
+  const hostMatch = item.os === process.platform && item.arch === process.arch && item.abi === undefined
+  const stash = !hostMatch && existsSync(nativeAddon) ? `${nativeAddon}.stash` : undefined
+  const restore = stash ? () => rename(stash, nativeAddon) : undefined
+  if (stash) await rename(nativeAddon, stash)
 
   await Bun.build({
     conditions: ["bun", "node"],
@@ -199,7 +218,7 @@ for (const item of targets) {
       MIAO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
       ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),
     },
-  })
+  }).finally(() => restore?.())
 
   // Ship the catalog next to the binary so a fresh install works offline; the
   // runtime reads it before falling back to a network fetch.
