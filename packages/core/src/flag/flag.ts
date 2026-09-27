@@ -34,6 +34,7 @@ export const Flag = {
   MIAO_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("MIAO_DISABLE_FFF"),
   MIAO_NATIVE: truthy("MIAO_NATIVE"),
   MIAO_SANDBOX: truthy("MIAO_SANDBOX"),
+  MIAO_PACKAGE_MANAGER_AUTO_UPDATE: truthy("MIAO_PACKAGE_MANAGER_AUTO_UPDATE"),
 
   // Experimental
   MIAO_EXPERIMENTAL_FILEWATCHER: Config.boolean("MIAO_EXPERIMENTAL_FILEWATCHER").pipe(
