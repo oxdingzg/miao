@@ -715,7 +715,8 @@ fn apply_replacements_into(original: &[String], replacements: &[Replacement], ou
 fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
     let old_lines: Vec<&str> = old_content.split('\n').collect();
     let new_lines: Vec<&str> = new_content.split('\n').collect();
-    let mut diff = String::from("@@ -1 +1 @@\n");
+    let mut diff = String::with_capacity(old_content.len() + new_content.len() + 16);
+    diff.push_str("@@ -1 +1 @@\n");
     let max_len = std::cmp::max(old_lines.len(), new_lines.len());
     let mut has_changes = false;
     for index in 0..max_len {
