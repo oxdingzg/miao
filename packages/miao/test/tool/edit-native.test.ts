@@ -5,7 +5,7 @@ import { createRequire } from "module"
 import os from "os"
 import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
-import { replace } from "../../src/tool/edit"
+import { nativeEditActive, replace, replaceTs } from "../../src/tool/edit"
 import { deriveNewContentsFromChunks, type UpdateFileChunk } from "../../src/patch"
 import { runSandboxed } from "../../src/tool/sandbox"
 
@@ -45,6 +45,11 @@ const native: Native | undefined = (() => {
     return undefined
   }
 })()
+
+// CI builds the Rust crate and sets this so the suite cannot silently skip.
+if (process.env.MIAO_NATIVE_REQUIRED === "1" && native === undefined) {
+  throw new Error(`MIAO_NATIVE_REQUIRED=1 but ${nativePath} is missing; build crates/miao-native first`)
+}
 
 type Case = { name: string; content: string; oldString: string; newString: string; replaceAll?: boolean }
 
@@ -114,7 +119,7 @@ withNative("native edit parity", () => {
 
   for (const testCase of cases) {
     test(`matches TS replace: ${testCase.name}`, () => {
-      const expected = outcome(() => replace(testCase.content, testCase.oldString, testCase.newString, testCase.replaceAll ?? false))
+      const expected = outcome(() => replaceTs(testCase.content, testCase.oldString, testCase.newString, testCase.replaceAll ?? false))
       const actual = outcome(() => native!.applyEdit(testCase.content, testCase.oldString, testCase.newString, testCase.replaceAll ?? false).content)
       expect(actual).toEqual(expected)
     })
@@ -151,7 +156,7 @@ withNative("native edit parity", () => {
       const newString = `REPLACED_${iteration}`
       const replaceAll = random() < 0.25
 
-      const expected = outcome(() => replace(content, oldString, newString, replaceAll))
+      const expected = outcome(() => replaceTs(content, oldString, newString, replaceAll))
       const actual = outcome(() => native!.applyEdit(content, oldString, newString, replaceAll).content)
       if (JSON.stringify(actual) !== JSON.stringify(expected)) {
         mismatches++
@@ -283,6 +288,9 @@ withNative("native git parity", () => {
 })
 
 const miaoRunPath = path.join(import.meta.dir, "../../../../crates/miao-native/target/release/miao-run")
+if (process.env.MIAO_NATIVE_REQUIRED === "1" && (process.platform !== "darwin" || !existsSync(miaoRunPath))) {
+  throw new Error(`MIAO_NATIVE_REQUIRED=1 but ${miaoRunPath} is missing; build crates/miao-native first`)
+}
 const withMiaoRun = process.platform === "darwin" && existsSync(miaoRunPath) ? describe : describe.skip
 
 withMiaoRun("native sandbox (miao-run)", () => {
@@ -334,6 +342,22 @@ withMiaoRun("native sandbox (miao-run)", () => {
       rmSync(cache, { recursive: true, force: true })
     }
   })
+})
+
+const describeFallback = process.env.MIAO_NATIVE ? describe.skip : describe
+
+describeFallback("edit replace dispatcher", () => {
+  test("falls back to the TS implementation when MIAO_NATIVE is unset", () => {
+    const content = "line1\nline2\nline3\n"
+    expect(process.env.MIAO_NATIVE).toBeUndefined()
+    expect(replace(content, "line2", "CHANGED")).toBe(replaceTs(content, "line2", "CHANGED"))
+    expect(outcome(() => replace(content, "missing", "x"))).toEqual(outcome(() => replaceTs(content, "missing", "x")))
+  })
+})
+
+test("native edit is active when MIAO_NATIVE=1 and the addon is built", () => {
+  if (process.env.MIAO_NATIVE !== "1" || !native) return
+  expect(nativeEditActive()).toBe(true)
 })
 
 function mulberry32(seed: number) {

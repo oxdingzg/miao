@@ -1,0 +1,65 @@
+name: native
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/miao-native/**"
+      - "packages/miao/src/tool/edit.ts"
+      - "packages/miao/test/tool/edit-native.test.ts"
+      - ".github/workflows/native.yml"
+  pull_request:
+    paths:
+      - "crates/miao-native/**"
+      - "packages/miao/src/tool/edit.ts"
+      - "packages/miao/test/tool/edit-native.test.ts"
+      - ".github/workflows/native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: native
+    runs-on: macos-14
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-native
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Rust tests
+        run: cargo test --release
+        working-directory: crates/miao-native
+
+      - name: Build native addon and sandbox binary
+        run: bun run build.ts
+        working-directory: crates/miao-native
+
+      - name: Native parity (no skipping allowed)
+        run: bun test test/tool/edit-native.test.ts
+        working-directory: packages/miao
+        env:
+          MIAO_NATIVE: "1"
+          MIAO_NATIVE_REQUIRED: "1"

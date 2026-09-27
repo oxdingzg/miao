@@ -4,8 +4,10 @@
 // https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-26-25.ts
 
 import * as path from "path"
+import { createRequire } from "module"
 import { Effect, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
+import { Flag } from "@miao/core/flag/flag"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
@@ -679,7 +681,7 @@ export function trimDiff(diff: string): string {
   return trimmedLines.join("\n")
 }
 
-export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
+export function replaceTs(content: string, oldString: string, newString: string, replaceAll = false): string {
   if (oldString === newString) {
     throw new Error("No changes to apply: oldString and newString are identical.")
   }
@@ -734,4 +736,40 @@ function isDisproportionateMatch(search: string, oldString: string) {
   if (searchLines >= Math.max(oldLines + 3, oldLines * 2)) return true
   if (oldLines === 1) return false
   return search.trim().length > Math.max(oldString.trim().length + 500, oldString.trim().length * 4)
+}
+
+type NativeReplace = (content: string, oldString: string, newString: string, replaceAll?: boolean) => string
+
+let nativeReplace: NativeReplace | undefined
+let nativeResolved = false
+
+function resolveNativeReplace(): NativeReplace | undefined {
+  if (nativeResolved) return nativeReplace
+  nativeResolved = true
+  if (!Flag.MIAO_NATIVE) return (nativeReplace = undefined)
+  try {
+    const require = createRequire(import.meta.url)
+    const module = require(path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")) as {
+      replaceOnly?: NativeReplace
+    }
+    nativeReplace = module.replaceOnly
+  } catch {
+    nativeReplace = undefined
+  }
+  return nativeReplace
+}
+
+/**
+ * Match and replace `oldString`. Uses the native implementation when `MIAO_NATIVE`
+ * is set and the addon is available; otherwise falls back to the TS implementation.
+ */
+export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
+  const native = resolveNativeReplace()
+  if (native) return native(content, oldString, newString, replaceAll)
+  return replaceTs(content, oldString, newString, replaceAll)
+}
+
+/** Whether the native edit implementation is active for this process. */
+export function nativeEditActive(): boolean {
+  return resolveNativeReplace() !== undefined
 }

@@ -32,6 +32,7 @@ export const Flag = {
   MIAO_SERVER_PASSWORD: process.env["MIAO_SERVER_PASSWORD"],
   MIAO_SERVER_USERNAME: process.env["MIAO_SERVER_USERNAME"],
   MIAO_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("MIAO_DISABLE_FFF"),
+  MIAO_NATIVE: truthy("MIAO_NATIVE"),
 
   // Experimental
   MIAO_EXPERIMENTAL_FILEWATCHER: Config.boolean("MIAO_EXPERIMENTAL_FILEWATCHER").pipe(
