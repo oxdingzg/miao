@@ -29,6 +29,7 @@ import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
+import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
@@ -113,11 +114,15 @@ const layer = Layer.effect(
     // compaction). Process-local and best-effort.
     const WARM_WINDOW_MS = 5 * 60_000
     const turns = new Map<string, { at: number; afterCompaction: boolean }>()
-    const readCacheTtl = Effect.fnUntraced(function* () {
+    const readSettings = Effect.fnUntraced(function* () {
       const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
       let ttl: number | undefined
-      for (const entry of documents) if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
-      return ttl
+      let prune = false
+      for (const entry of documents) {
+        if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
+        if (entry.info.compaction?.prune !== undefined) prune = entry.info.compaction.prune
+      }
+      return { ttl, prune }
     })
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -219,11 +224,12 @@ const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, { codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE })
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
-      const cacheTtl = yield* readCacheTtl()
+      const settings = yield* readSettings()
       const prior = turns.get(session.id)
       const expectedRebuild = prior?.afterCompaction === true
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
+      const messages = [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])]
       const request = LLM.request({
         model,
         http: {
@@ -234,11 +240,13 @@ const layer = Layer.effect(
           },
         },
         providerOptions: { openai: { promptCacheKey } },
-        cache: cacheTtl ? { tools: true, system: true, messages: "latest-user-message", ttlSeconds: cacheTtl } : undefined,
+        cache: settings.ttl
+          ? { tools: true, system: true, messages: "latest-user-message", ttlSeconds: settings.ttl }
+          : undefined,
         system: [agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
-        messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
+        messages: settings.prune ? SessionPrune.toolResults(messages) : messages,
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
       })
