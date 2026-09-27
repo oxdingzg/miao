@@ -998,6 +998,52 @@ pub fn git_worktree_changes_async(path: String) -> napi::bindgen_prelude::AsyncT
     napi::bindgen_prelude::AsyncTask::new(GitWorktreeChangesTask { path })
 }
 
+/// Find the merge base of two revisions, matching `git merge-base <a> <b>`.
+fn git_merge_base_impl(path: &str, a: &str, b: &str) -> Result<String, String> {
+    let repo = gix::open(path).map_err(|error| format!("failed to open repository: {error}"))?;
+    let one = repo
+        .rev_parse_single(gix::bstr::BStr::new(a))
+        .map_err(|error| format!("failed to resolve '{a}': {error}"))?
+        .detach();
+    let two = repo
+        .rev_parse_single(gix::bstr::BStr::new(b))
+        .map_err(|error| format!("failed to resolve '{b}': {error}"))?
+        .detach();
+    let base = repo
+        .merge_base(one, two)
+        .map_err(|error| format!("failed to find merge base of '{a}' and '{b}': {error}"))?;
+    Ok(base.to_string())
+}
+
+#[napi(js_name = "gitMergeBase")]
+pub fn git_merge_base(path: String, a: String, b: String) -> napi::Result<String> {
+    git_merge_base_impl(&path, &a, &b).map_err(napi::Error::from_reason)
+}
+
+pub struct GitMergeBaseTask {
+    path: String,
+    a: String,
+    b: String,
+}
+
+impl napi::Task for GitMergeBaseTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        git_merge_base_impl(&self.path, &self.a, &self.b).map_err(napi::Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+#[napi(js_name = "gitMergeBaseAsync")]
+pub fn git_merge_base_async(path: String, a: String, b: String) -> napi::bindgen_prelude::AsyncTask<GitMergeBaseTask> {
+    napi::bindgen_prelude::AsyncTask::new(GitMergeBaseTask { path, a, b })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1189,6 +1235,22 @@ mod tests {
             .collect();
         expected.sort();
         assert_eq!(git_worktree_changes_impl(dir.to_str().unwrap()).unwrap(), expected);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merge_base_matches_git() {
+        let Some(dir) = temp_repo("mergebase") else { return };
+        git(&["checkout", "-qb", "feature"], &dir);
+        std::fs::write(dir.join("feature.txt"), "x\n").unwrap();
+        git(&["add", "-A"], &dir);
+        git(&["commit", "-qm", "feature"], &dir);
+        git(&["checkout", "-q", "-"], &dir);
+        let expected = String::from_utf8(git(&["merge-base", "HEAD", "feature"], &dir).stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(git_merge_base_impl(dir.to_str().unwrap(), "HEAD", "feature").unwrap(), expected);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

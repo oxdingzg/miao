@@ -15,6 +15,8 @@ type Native = {
   gitBlobAsync(path: string, rev: string, file: string): Promise<{ content: string; binary: boolean }>
   gitWorktreeChanges(path: string): string[]
   gitWorktreeChangesAsync(path: string): Promise<string[]>
+  gitMergeBase(path: string, a: string, b: string): string
+  gitMergeBaseAsync(path: string, a: string, b: string): Promise<string>
 }
 
 const native: Native | undefined = (() => {
@@ -127,6 +129,18 @@ withNative("native git parity", () => {
     withRepo(async (dir) => {
       writeFileSync(path.join(dir, "file.txt"), "changed\n")
       expect(await native!.gitWorktreeChangesAsync(dir)).toEqual(native!.gitWorktreeChanges(dir))
+    }),
+  )
+
+  test(
+    "gitMergeBase matches git merge-base",
+    withRepo((dir) => {
+      git(["checkout", "-qb", "feature"], dir)
+      writeFileSync(path.join(dir, "feature.txt"), "x\n")
+      git(["add", "-A"], dir)
+      git(["commit", "-qm", "feature"], dir)
+      git(["checkout", "-q", "-"], dir)
+      expect(native!.gitMergeBase(dir, "HEAD", "feature")).toBe(git(["merge-base", "HEAD", "feature"], dir).trim())
     }),
   )
 
