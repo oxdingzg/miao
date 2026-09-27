@@ -48,12 +48,19 @@ plus diff statistics. `deriveNewContents` ports `deriveNewContentsFromChunks` fr
 `miao-run`:
 
 ```sh
-miao-run --workdir <dir> [--allow-network] [--print-profile] -- <command> [args...]
+miao-run --workdir <dir> [--allow-path <dir>]... [--allow-network] [--compat] [--print-profile] -- <command> [args...]
 ```
 
-Deny-by-default seatbelt profile: reads everywhere and process execution are allowed, writes are
-limited to the given work directories plus temp/dev, and network is denied unless `--allow-network`
-is passed. On non-macOS it runs the command unsandboxed.
+- Strict mode (default): deny-by-default. Reads everywhere and process execution are allowed,
+  writes are limited to the workdirs plus temp/dev, and network is denied unless `--allow-network`.
+- `--allow-path <dir>` adds extra writable directories (tool caches, package managers, etc.) without
+  opening up everything.
+- `--compat`: compatibility-first. Allow default, then deny writes only to credential paths
+  (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.netrc`, `~/.docker/config.json`, `~/.config/gh`) and deny
+  network unless `--allow-network`. Far fewer false denials, weaker isolation.
+- `--print-profile` prints the generated seatbelt profile and exits; the command's stderr names the
+  path a denial blocked, which is the fastest way to find what to allow next.
+- On non-macOS it runs the command unsandboxed.
 
 ## PoC results (measured, same machine, release)
 

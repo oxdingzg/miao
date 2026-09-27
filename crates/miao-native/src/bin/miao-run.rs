@@ -5,16 +5,19 @@
 //! unless `--allow-network` is given, denies all network access.
 //!
 //! Usage:
-//!   miao-run [--workdir <dir>]... [--allow-network] [--print-profile] -- <command> [args...]
+//!   miao-run [--workdir <dir>]... [--allow-path <dir>]... [--allow-network] [--print-profile] -- <command> [args...]
 //!
-//! On non-macOS hosts the command is executed without a sandbox.
+//! `--allow-path` adds extra writable directories beyond the workdirs (for tool caches,
+//! package managers, etc.). On non-macOS hosts the command is executed without a sandbox.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 struct Options {
     workdirs: Vec<PathBuf>,
+    allow_paths: Vec<PathBuf>,
     allow_network: bool,
+    compat: bool,
     print_profile: bool,
     command: Vec<String>,
 }
@@ -22,7 +25,9 @@ struct Options {
 fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut options = Options {
         workdirs: Vec::new(),
+        allow_paths: Vec::new(),
         allow_network: false,
+        compat: false,
         print_profile: false,
         command: Vec::new(),
     };
@@ -33,7 +38,12 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
                 let value = iter.next().ok_or("--workdir requires a path")?;
                 options.workdirs.push(PathBuf::from(value));
             }
+            "--allow-path" => {
+                let value = iter.next().ok_or("--allow-path requires a path")?;
+                options.allow_paths.push(PathBuf::from(value));
+            }
             "--allow-network" => options.allow_network = true,
+            "--compat" => options.compat = true,
             "--print-profile" => options.print_profile = true,
             "--" => {
                 options.command.extend(iter);
@@ -55,7 +65,11 @@ fn canonical(path: &Path) -> PathBuf {
 /// Build a seatbelt profile from scratch. Deny-by-default, then explicitly allow
 /// reads everywhere, process execution, and writes only into the given work
 /// directories and the system temp/dev nodes.
-fn profile(workdirs: &[PathBuf], allow_network: bool) -> String {
+fn profile(workdirs: &[PathBuf], allow_paths: &[PathBuf], allow_network: bool, compat: bool) -> String {
+    if compat {
+        return compat_profile(allow_network);
+    }
+
     let mut profile = String::new();
     profile.push_str("(version 1)\n");
     profile.push_str("(deny default)\n");
@@ -70,12 +84,29 @@ fn profile(workdirs: &[PathBuf], allow_network: bool) -> String {
     profile.push_str("  (subpath \"/tmp\")\n");
     profile.push_str("  (subpath \"/private/var/tmp\")\n");
     profile.push_str("  (subpath \"/dev\")\n");
-    for workdir in workdirs {
-        profile.push_str(&format!("  (subpath \"{}\")\n", canonical(workdir).display()));
+    for path in workdirs.iter().chain(allow_paths) {
+        profile.push_str(&format!("  (subpath \"{}\")\n", canonical(path).display()));
     }
     profile.push_str(")\n");
     if allow_network {
         profile.push_str("(allow network*)\n");
+    }
+    profile
+}
+
+/// Compatibility-first profile: allow everything, then deny writes to a small set
+/// of credential paths and (unless allowed) the network. This trades strict
+/// isolation for far fewer false denials.
+fn compat_profile(allow_network: bool) -> String {
+    let mut profile = String::from("(version 1)\n(allow default)\n(deny file-write*\n");
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        for relative in [".ssh", ".aws", ".gnupg", ".netrc", ".docker/config.json", ".config/gh"] {
+            profile.push_str(&format!("  (subpath \"{}\")\n", home.join(relative).display()));
+        }
+    }
+    profile.push_str(")\n");
+    if !allow_network {
+        profile.push_str("(deny network*)\n");
     }
     profile
 }
@@ -89,7 +120,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let profile = profile(&options.workdirs, options.allow_network);
+    let profile = profile(&options.workdirs, &options.allow_paths, options.allow_network, options.compat);
     if options.print_profile {
         println!("{profile}");
         return ExitCode::SUCCESS;
@@ -126,15 +157,28 @@ mod tests {
 
     #[test]
     fn profile_allows_only_given_workdirs() {
-        let profile = profile(&[PathBuf::from("/tmp")], false);
+        let profile = profile(&[PathBuf::from("/tmp")], &[], false, false);
         assert!(profile.contains("(deny default)"));
         assert!(profile.contains("(subpath \"/tmp\")"));
         assert!(!profile.contains("(allow network*)"));
     }
 
     #[test]
+    fn profile_includes_extra_allow_paths() {
+        let profile = profile(&[], &[PathBuf::from("/tmp")], false, false);
+        assert!(profile.contains("(subpath \"/tmp\")"));
+    }
+
+    #[test]
     fn profile_can_allow_network() {
-        assert!(profile(&[], true).contains("(allow network*)"));
+        assert!(profile(&[], &[], true, false).contains("(allow network*)"));
+    }
+
+    #[test]
+    fn compat_profile_allows_default() {
+        let profile = profile(&[], &[], false, true);
+        assert!(profile.contains("(allow default)"));
+        assert!(profile.contains("(deny network*)"));
     }
 
     #[test]
