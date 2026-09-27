@@ -51,12 +51,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - host: macos-14 # darwin-arm64
+          - host: macos-26 # darwin-arm64
+          - host: macos-26-intel # darwin-x64
           - host: ubuntu-latest # linux-x64
           - host: ubuntu-24.04-arm # linux-arm64
           - host: windows-2025 # windows-x64
-          # darwin-x64 (Intel): add back once a working Intel macOS runner label
-          # is confirmed; `macos-13` no longer schedules.
     runs-on: ${{ matrix.host }}
     defaults:
       run:

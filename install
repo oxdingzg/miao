@@ -2,6 +2,11 @@
 set -euo pipefail
 APP=miao
 
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) EXE=".exe" ;;
+    *) EXE="" ;;
+esac
+
 MUTED='\033[0;2m'
 RED='\033[0;31m'
 ORANGE='\033[38;5;214m'
@@ -340,15 +345,15 @@ download_and_install() {
         unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
     fi
 
-    mv "$tmp_dir/miao" "$INSTALL_DIR"
-    chmod 755 "${INSTALL_DIR}/miao"
+    mv "$tmp_dir/${APP}${EXE}" "$INSTALL_DIR"
+    chmod 755 "${INSTALL_DIR}/${APP}${EXE}"
     rm -rf "$tmp_dir"
 }
 
 install_from_binary() {
     print_message info "\n${MUTED}Installing ${NC}miao ${MUTED}from: ${NC}$binary_path"
-    cp "$binary_path" "${INSTALL_DIR}/miao"
-    chmod 755 "${INSTALL_DIR}/miao"
+    cp "$binary_path" "${INSTALL_DIR}/${APP}${EXE}"
+    chmod 755 "${INSTALL_DIR}/${APP}${EXE}"
 }
 
 if [ -n "$binary_path" ]; then
