@@ -5,5 +5,7 @@ test("formats session continuation summary", () => {
   const epilogue = sessionEpilogue({ title: "A session", sessionID: "ses_123" })
   expect(epilogue).toContain("A session")
   expect(epilogue).toContain("miao -s ses_123")
-  expect(epilogue).toContain("MIAO")
+  // Cat + solid block MIAO wordmark.
+  expect(epilogue).toContain("( o.o )")
+  expect(epilogue).toContain("█   █")
 })
