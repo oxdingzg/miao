@@ -112,12 +112,12 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 - 匹配（12k 行）：exact native 约 0.16 ms vs TS 约 0.23 ms（1.4x）；模糊缩进约 0.41 ms vs 约 0.82 ms（2.0x）。
 - 全流程（匹配 + diff 统计）：native 约 1.9–2.2 ms vs TS 约 2.0–2.6 ms，被 diff 主导（`similar` 约等于 jsdiff）。
 - 病态超长行：约 10 ms vs 约 21–30 ms（2–3x）。
-- `apply_patch` 的 `deriveNewContents`（20k 行文件、命中点靠后，触发 4 轮 seek）：exact 持平（约 1.8 ms）；trim 轮 native 约 2.3 ms vs TS 约 3.6 ms（1.6x）；unicode 归一化轮约 5.7 ms vs 约 13.5 ms（2.4x）。
+- `apply_patch` 的 `deriveNewContents`（20k 行文件、命中点靠后，触发 4 轮 seek）：exact native 约 1.3 ms vs TS 约 1.7 ms（1.3x）；trim 轮约 1.8 ms vs 约 3.5 ms（2.0x）；unicode 归一化轮约 5.2 ms vs 约 13 ms（2.5x）。
 - git 状态（2200 文件、400 处变更）：`gix` 原生 `gitStatus` 进程内约 5.6 ms；snapshot 现在用的 `git diff-files` + `git ls-files` 两个子进程约 13.5 ms（约 2.4x）；`git status --porcelain` 约 8.1 ms（约 1.4x）。
 - 沙箱（macOS seatbelt，`miao-run`）：workdir 内写入放行、外部写入被拒（Operation not permitted）；默认禁网、`--allow-network` 恢复 HTTP 200；普通命令（如 `git status`）照常运行。这是规则式权限做不到的进程级隔离。误杀通过 `--allow-path` 补白名单，或 `--compat`（allow default + 只禁敏感路径和网络）兜底；接入侧用 `--deny-report` 回传被拒路径，`runSandboxed` 询问用户后带 `--allow-path` 重试。
 - search 不单独做：`grep/glob` 已走 `rg` 二进制，fuzzy 走 `@ff-labs/fff-*` 原生库，增量很小。
 
-**一次优化迭代值得记下来**：第一版 native 在典型场景反而比 TS 慢。原因不是语言，也不是 NAPI 边界（597 KB 字符串 echo 只要约 0.08 ms），而是 `str::find`/`str::rfind`（std two-way）比 JS 引擎的 SIMD `indexOf` 慢（0.38 / 0.45 ms vs 约 0.05 ms），且 `slice_span` 为了切一小段块把整个文件 `join` 了一遍。改用 `memchr::memmem` 搜索、用从 `index + 1` 向前的唯一性检查替代 `rfind`、直接对原内容切片后，所有场景 native 都快于 TS。`deriveNewContents` 也做了同类处理：不再 `to_vec()` 克隆整个行数组，不再每行 `format!` 分配临时字符串，改为直接拼接输出。
+**一次优化迭代值得记下来**：第一版 native 在典型场景反而比 TS 慢。原因不是语言，也不是 NAPI 边界（597 KB 字符串 echo 只要约 0.08 ms），而是 `str::find`/`str::rfind`（std two-way）比 JS 引擎的 SIMD `indexOf` 慢（0.38 / 0.45 ms vs 约 0.05 ms），且 `slice_span` 为了切一小段块把整个文件 `join` 了一遍。改用 `memchr::memmem` 搜索、用从 `index + 1` 向前的唯一性检查替代 `rfind`、直接对原内容切片后，所有场景 native 都快于 TS。`deriveNewContents` 也做了同类处理：原始行保持为 `&str`（不再逐行 `String` 分配），替换直接拼进输出，diff buffer 预分配，不再逐行 `format!`。改完后 exact 从“略慢（0.93x）”变成 1.3x，trim 也从 1.5x 提到 2.0x。
 
 结论：行为正确，优化后典型与病态路径都领先；但全流程被 diff 主导，端到端收益仍有限。未接入生产，`tool/edit.ts` 仍走 TS 与 jsdiff。
 

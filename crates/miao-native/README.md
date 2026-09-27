@@ -75,13 +75,13 @@ bash tool yet; the intended wiring is to pass the bash permission prompt as `ask
 
 Edit / patch:
 
-- Matching only, 12k-line file: exact native `replaceOnly` ~0.16 ms vs TS `replace` ~0.23 ms (1.4x);
-  fuzzy indent ~0.41 ms vs ~0.82 ms (2.0x).
+- Matching only, 12k-line file: exact native `replaceOnly` ~0.12 ms vs TS `replace` ~0.21 ms (1.7x);
+  fuzzy indent ~0.39 ms vs ~0.76 ms (1.9x).
 - Full pipeline (match + diff stats): native `applyEdit` ~1.9-2.2 ms vs TS `replace` + `diffLines`
   ~2.0-2.6 ms. The diff pass dominates (`similar` is about the same as jsdiff).
 - Pathologic block-anchor with 1800-char lines: native ~10 ms vs TS ~21-30 ms (~2-3x).
-- `apply_patch` `deriveNewContents` on a 20k-line file: exact at parity (~1.8 ms); trim pass
-  native ~2.3 ms vs TS ~3.6 ms (1.6x); unicode-normalize pass ~5.7 ms vs ~13.5 ms (2.4x).
+- `apply_patch` `deriveNewContents` on a 20k-line file: exact native ~1.3 ms vs TS ~1.7 ms (1.3x);
+  trim pass ~1.8 ms vs ~3.5 ms (2.0x); unicode-normalize pass ~5.2 ms vs ~13 ms (2.5x).
 
 Git (repo with 2200 files, 400 changes):
 
@@ -110,7 +110,9 @@ language, and not the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms
 
 Fixes: `memchr::memmem` for substring search, a forward uniqueness check from `index + 1` instead
 of `rfind`, and slicing the original content directly. `deriveNewContents` got the same treatment:
-no `to_vec()` clone of the whole line vector and no per-line `format!` temporary.
+its original lines are kept as `&str` (no per-line `String` allocation), replacements are pushed
+straight into the output, the unified diff buffer is preallocated, and there is no per-line
+`format!` temporary. After this, every measured case is faster in Rust than in TS.
 
 ## Status
 

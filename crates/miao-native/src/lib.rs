@@ -629,18 +629,18 @@ struct Replacement {
 }
 
 fn compute_replacements(
-    original: &[String],
+    original: &[&str],
     file_path: &str,
     chunks: &[PatchChunk],
 ) -> Result<Vec<Replacement>, String> {
-    let refs: Vec<&str> = original.iter().map(String::as_str).collect();
+    let lines = original;
     let mut replacements = Vec::new();
     let mut line_index = 0usize;
 
     for chunk in chunks {
         if let Some(context) = &chunk.change_context {
             let ctx = [context.as_str()];
-            let index = seek_sequence(&refs, &ctx, line_index, false);
+            let index = seek_sequence(lines, &ctx, line_index, false);
             if index == -1 {
                 return Err(format!("Failed to find context '{context}' in {file_path}"));
             }
@@ -664,14 +664,14 @@ fn compute_replacements(
         let mut pattern: Vec<&str> = chunk.old_lines.iter().map(String::as_str).collect();
         let mut new_slice = chunk.new_lines.clone();
         let eof = chunk.is_end_of_file.unwrap_or(false);
-        let mut found = seek_sequence(&refs, &pattern, line_index, eof);
+        let mut found = seek_sequence(lines, &pattern, line_index, eof);
 
         if found == -1 && !pattern.is_empty() && pattern[pattern.len() - 1].is_empty() {
             pattern.pop();
             if !new_slice.is_empty() && new_slice[new_slice.len() - 1].is_empty() {
                 new_slice.pop();
             }
-            found = seek_sequence(&refs, &pattern, line_index, eof);
+            found = seek_sequence(lines, &pattern, line_index, eof);
         }
 
         if found == -1 {
@@ -693,7 +693,7 @@ fn compute_replacements(
     Ok(replacements)
 }
 
-fn apply_replacements_into(original: &[String], replacements: &[Replacement], out: &mut String) {
+fn apply_replacements_into(original: &[&str], replacements: &[Replacement], out: &mut String) {
     let mut cursor = 0usize;
     for replacement in replacements {
         for line in &original[cursor..replacement.start] {
@@ -749,8 +749,8 @@ fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
 
 fn derive_new_contents(chunks: &[PatchChunk], file_path: &str, original_text: &str) -> Result<DeriveResult, String> {
     let (original_bom, text) = split_bom(original_text);
-    let mut original_lines: Vec<String> = text.split('\n').map(|line| line.to_string()).collect();
-    if original_lines.last().map(String::is_empty).unwrap_or(false) {
+    let mut original_lines: Vec<&str> = text.split('\n').collect();
+    if original_lines.last().map(|line| line.is_empty()).unwrap_or(false) {
         original_lines.pop();
     }
 
