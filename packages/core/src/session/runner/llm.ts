@@ -118,11 +118,13 @@ const layer = Layer.effect(
       const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
       let ttl: number | undefined
       let prune = false
+      let budget: number | undefined
       for (const entry of documents) {
         if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
         if (entry.info.compaction?.prune !== undefined) prune = entry.info.compaction.prune
+        if (entry.info.cost?.budget_usd !== undefined) budget = entry.info.cost.budget_usd
       }
-      return { ttl, prune }
+      return { ttl, prune, budget }
     })
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -446,10 +448,31 @@ const layer = Layer.effect(
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
+      const settings = yield* readSettings()
+      const exceeded = (session: SessionSchema.Info) =>
+        settings.budget !== undefined && session.cost >= settings.budget
+      const initial = yield* getSession(input.sessionID)
+      if (exceeded(initial)) {
+        yield* Effect.logWarning("session.budget-exceeded", {
+          sessionID: input.sessionID,
+          cost: initial.cost,
+          budget: settings.budget,
+        })
+        return
+      }
       yield* failInterruptedTools(input.sessionID)
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {
+        const current = yield* getSession(input.sessionID)
+        if (exceeded(current)) {
+          yield* Effect.logWarning("session.budget-exceeded", {
+            sessionID: input.sessionID,
+            cost: current.cost,
+            budget: settings.budget,
+          })
+          break
+        }
         let needsContinuation = true
         let step = 1
         while (needsContinuation) {

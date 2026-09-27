@@ -15,6 +15,7 @@ import { ConfigAttachments } from "./config/attachments"
 import { ConfigCache } from "./config/cache"
 import { ConfigCompaction } from "./config/compaction"
 import { ConfigCommand } from "./config/command"
+import { ConfigCost } from "./config/cost"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigLSP } from "./config/lsp"
@@ -90,6 +91,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   cache: ConfigCache.Info.pipe(Schema.optional).annotate({
     description: "Prompt cache behavior",
+  }),
+  cost: ConfigCost.Info.pipe(Schema.optional).annotate({
+    description: "Cost guardrails",
   }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
