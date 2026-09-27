@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { createRequire } from "module"
 import os from "os"
 import path from "path"
@@ -17,6 +17,8 @@ type Native = {
   gitWorktreeChangesAsync(path: string): Promise<string[]>
   gitMergeBase(path: string, a: string, b: string): string
   gitMergeBaseAsync(path: string, a: string, b: string): Promise<string>
+  gitDiff(path: string): string
+  gitDiffAsync(path: string): Promise<string>
 }
 
 const native: Native | undefined = (() => {
@@ -49,6 +51,7 @@ function repo(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "miao-git-native-"))
   git(["init", "-q"], dir)
   writeFileSync(path.join(dir, "file.txt"), "hello\nworld\n")
+  writeFileSync(path.join(dir, "gone.txt"), "remove me\n")
   writeFileSync(path.join(dir, "bin.dat"), Buffer.from([0, 1, 2, 255, 254]))
   git(["add", "-A"], dir)
   git(["commit", "-qm", "init"], dir)
@@ -141,6 +144,34 @@ withNative("native git parity", () => {
       git(["commit", "-qm", "feature"], dir)
       git(["checkout", "-q", "-"], dir)
       expect(native!.gitMergeBase(dir, "HEAD", "feature")).toBe(git(["merge-base", "HEAD", "feature"], dir).trim())
+    }),
+  )
+
+  test(
+    "gitDiff round-trips through git apply",
+    withRepo((dir) => {
+      writeFileSync(path.join(dir, "file.txt"), "hello\nCHANGED\n")
+      rmSync(path.join(dir, "gone.txt"))
+
+      const patch = native!.gitDiff(dir)
+      expect(patch).toContain("diff --git a/file.txt b/file.txt")
+      expect(patch).toContain("deleted file mode 100644")
+
+      git(["checkout", "--", "."], dir)
+      const patchFile = path.join(dir, "native.diff")
+      writeFileSync(patchFile, patch)
+      git(["apply", patchFile], dir)
+
+      expect(readFileSync(path.join(dir, "file.txt"), "utf8")).toBe("hello\nCHANGED\n")
+      expect(existsSync(path.join(dir, "gone.txt"))).toBe(false)
+    }),
+  )
+
+  test(
+    "gitDiffAsync matches the sync call",
+    withRepo(async (dir) => {
+      writeFileSync(path.join(dir, "file.txt"), "hello\nASYNC\n")
+      expect(await native!.gitDiffAsync(dir)).toBe(native!.gitDiff(dir))
     }),
   )
 

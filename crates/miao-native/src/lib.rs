@@ -1147,6 +1147,85 @@ pub fn blake3_hex(text: String) -> String {
     blake3::hash(text.as_bytes()).to_hex().to_string()
 }
 
+fn render_patch(file: &str, old: &str, new: &str) -> String {
+    let diff = TextDiff::from_lines(old, new);
+    let (from, to) = if old.is_empty() {
+        ("/dev/null".to_string(), format!("b/{file}"))
+    } else if new.is_empty() {
+        (format!("a/{file}"), "/dev/null".to_string())
+    } else {
+        (format!("a/{file}"), format!("b/{file}"))
+    };
+    let mut out = format!("diff --git a/{file} b/{file}\n");
+    if old.is_empty() {
+        out.push_str("new file mode 100644\n");
+    }
+    if new.is_empty() {
+        out.push_str("deleted file mode 100644\n");
+    }
+    out.push_str(&diff.unified_diff().context_radius(3).header(&from, &to).to_string());
+    out
+}
+
+/// Standard unified-diff text for unstaged tracked changes, applyable with
+/// `git apply`. Rendering, not `git diff` byte parity.
+fn git_diff_impl(path: &str) -> Result<String, String> {
+    let repo = gix::open(path).map_err(|error| format!("failed to open repository: {error}"))?;
+    drop(repo);
+    let root = std::path::Path::new(path);
+    let mut out = String::new();
+    for file in git_worktree_changes_impl(path)? {
+        let old = git_blob_impl(path, "HEAD", &file);
+        let new_bytes = std::fs::read(root.join(&file)).ok();
+        let old_binary = matches!(&old, Ok(blob) if blob.binary);
+        let new_binary = new_bytes.as_deref().map(|bytes| std::str::from_utf8(bytes).is_err()).unwrap_or(false);
+        if old_binary || new_binary {
+            out.push_str(&format!("Binary files a/{file} and b/{file} differ\n"));
+            continue;
+        }
+        let old_text = match &old {
+            Ok(blob) => blob.content.as_str(),
+            Err(_) => "",
+        };
+        let new_text = new_bytes
+            .as_deref()
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+            .unwrap_or_default();
+        if old_text == new_text {
+            continue;
+        }
+        out.push_str(&render_patch(&file, old_text, &new_text));
+    }
+    Ok(out)
+}
+
+#[napi(js_name = "gitDiff")]
+pub fn git_diff(path: String) -> napi::Result<String> {
+    git_diff_impl(&path).map_err(napi::Error::from_reason)
+}
+
+pub struct GitDiffTask {
+    path: String,
+}
+
+impl napi::Task for GitDiffTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        git_diff_impl(&self.path).map_err(napi::Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+#[napi(js_name = "gitDiffAsync")]
+pub fn git_diff_async(path: String) -> napi::bindgen_prelude::AsyncTask<GitDiffTask> {
+    napi::bindgen_prelude::AsyncTask::new(GitDiffTask { path })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1297,7 +1376,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         git(&["init", "-q"], &dir);
         std::fs::write(dir.join("file.txt"), "hello\nworld\n").unwrap();
-        git(&["add", "file.txt"], &dir);
+        std::fs::write(dir.join("gone.txt"), "remove me\n").unwrap();
+        std::fs::write(dir.join("bin.dat"), [0u8, 1, 2, 255, 254]).unwrap();
+        git(&["add", "-A"], &dir);
         git(&["commit", "-qm", "init"], &dir);
         Some(dir)
     }
@@ -1403,5 +1484,29 @@ mod tests {
             blake3_hex(String::new()),
             "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
         );
+    }
+
+    #[test]
+    fn diff_round_trips_through_git_apply() {
+        let Some(dir) = temp_repo("diff") else { return };
+        std::fs::write(dir.join("file.txt"), "hello\nCHANGED\n").unwrap();
+        std::fs::remove_file(dir.join("gone.txt")).unwrap();
+
+        let patch = git_diff_impl(dir.to_str().unwrap()).unwrap();
+        assert!(patch.contains("diff --git a/file.txt b/file.txt"));
+        assert!(patch.contains("deleted file mode 100644"));
+
+        git(&["checkout", "--", "."], &dir);
+        let patch_file = dir.join("native.diff");
+        std::fs::write(&patch_file, &patch).unwrap();
+        let applied = git(&["apply", patch_file.to_str().unwrap()], &dir);
+        assert!(
+            applied.status.success(),
+            "git apply failed: {}",
+            String::from_utf8_lossy(&applied.stderr)
+        );
+        assert_eq!(std::fs::read_to_string(dir.join("file.txt")).unwrap(), "hello\nCHANGED\n");
+        assert!(!dir.join("gone.txt").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
