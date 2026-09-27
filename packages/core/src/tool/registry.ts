@@ -9,6 +9,7 @@ import { SessionSchema } from "../session/schema"
 import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
+import { ToolCodeMode } from "./code-mode"
 import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
@@ -20,8 +21,13 @@ export type ExecuteInput = {
   readonly call: ToolCall
 }
 
+export type MaterializeOptions = {
+  /** Collapse the tool set behind one `execute` tool with a budgeted Code Mode catalog. */
+  readonly codeMode?: boolean
+}
+
 export interface Interface {
-  readonly materialize: (permissions?: PermissionV2.Ruleset) => Effect.Effect<Materialization>
+  readonly materialize: (permissions?: PermissionV2.Ruleset, options?: MaterializeOptions) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
 }
@@ -47,16 +53,11 @@ const registryLayer = Layer.effect(
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
-    const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
-      const registration =
-        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
-      if (!registration)
-        return {
-          result: {
-            type: "error" as const,
-            value: advertised ? `Stale tool call: ${input.call.name}` : `Unknown tool: ${input.call.name}`,
-          },
-        }
+    const settleRegistration = Effect.fn("ToolRegistry.settleRegistration")(function* (
+      input: ExecuteInput,
+      registration: Registration,
+      advertised?: object,
+    ) {
       if (advertised && registration.identity !== advertised)
         return { result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } }
       const pending = yield* settle(registration.tool, input.call, {
@@ -81,6 +82,19 @@ const registryLayer = Layer.effect(
         : { result, output: bounded.output }
     })
 
+    const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
+      const registration =
+        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
+      if (!registration)
+        return {
+          result: {
+            type: "error" as const,
+            value: advertised ? `Stale tool call: ${input.call.name}` : `Unknown tool: ${input.call.name}`,
+          },
+        }
+      return yield* settleRegistration(input, registration, advertised)
+    })
+
     return Service.of({
       register: Effect.fn("ToolRegistry.register")(function* (tools) {
         const entries = Object.entries(tools)
@@ -103,7 +117,7 @@ const registryLayer = Layer.effect(
           }),
         )
       }),
-      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
+      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], options?: MaterializeOptions) {
         const registrations = new Map(applications.entries())
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
@@ -111,13 +125,28 @@ const registryLayer = Layer.effect(
         }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
-        return {
-          definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
+        const definitions = Array.from(registrations, ([name, registration]) => definition(name, registration.tool))
+        const inner: Materialization = {
+          definitions,
           settle: (input) => {
             const registration = registrations.get(input.call.name)
             if (registration) return settleWith(input, registration.identity)
-            return Effect.succeed({ result: { type: "error", value: `Unknown tool: ${input.call.name}` } })
+            return Effect.succeed({ result: { type: "error" as const, value: `Unknown tool: ${input.call.name}` } })
           },
+        }
+        if (!options?.codeMode || definitions.length === 0) return inner
+        const execute = ToolCodeMode.make({
+          definitions,
+          settle: (call, context) => inner.settle({ ...context, call }),
+        })
+        if (whollyDisabled(permission(execute, ToolCodeMode.CODE_MODE_TOOL), permissions)) return inner
+        const executeRegistration: Registration = { identity: {}, tool: execute }
+        return {
+          definitions: [definition(ToolCodeMode.CODE_MODE_TOOL, execute)],
+          settle: (input) =>
+            input.call.name === ToolCodeMode.CODE_MODE_TOOL
+              ? settleRegistration(input, executeRegistration, executeRegistration.identity)
+              : inner.settle(input),
         }
       }),
     })

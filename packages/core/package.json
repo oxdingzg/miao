@@ -91,6 +91,7 @@
     "@npmcli/config": "10.8.1",
     "@miao/effect-drizzle-sqlite": "workspace:*",
     "@miao/effect-sqlite-node": "workspace:*",
+    "@miao/codemode": "workspace:*",
     "@miao/llm": "workspace:*",
     "@miao/schema": "workspace:*",
     "@opencode-ai/plugin": "workspace:*",

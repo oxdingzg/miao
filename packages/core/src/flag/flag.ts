@@ -60,6 +60,9 @@ export const Flag = {
   get MIAO_EXPERIMENTAL_REFERENCES() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_REFERENCES")
   },
+  get MIAO_EXPERIMENTAL_CODE_MODE() {
+    return enabledByExperimental("MIAO_EXPERIMENTAL_CODE_MODE")
+  },
   get MIAO_TUI_CONFIG() {
     return process.env["MIAO_TUI_CONFIG"]
   },

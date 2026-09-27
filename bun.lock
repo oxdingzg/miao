@@ -320,6 +320,7 @@
         "@effect/sql-sqlite-bun": "catalog:",
         "@ff-labs/fff-bun": "0.9.4",
         "@lydell/node-pty": "catalog:",
+        "@miao/codemode": "workspace:*",
         "@miao/effect-drizzle-sqlite": "workspace:*",
         "@miao/effect-sqlite-node": "workspace:*",
         "@miao/llm": "workspace:*",
