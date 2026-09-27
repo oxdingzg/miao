@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { execFileSync, spawnSync } from "child_process"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { createRequire } from "module"
+import os from "os"
 import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { replace } from "../../src/tool/edit"
@@ -22,6 +25,7 @@ type Native = {
     filePath: string,
     originalText: string,
   ): { content: string; unifiedDiff: string; bom: boolean }
+  gitStatus(path: string): Array<{ path: string; status: string }>
 }
 
 function toNativeChunks(chunks: UpdateFileChunk[]) {
@@ -236,6 +240,66 @@ withNative("native patch parity", () => {
       expect(actual).toEqual(expected)
     })
   }
+})
+
+withNative("native git parity", () => {
+  function git(cwd: string, args: string[]) {
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+  }
+
+  test("matches git status for a temp repo", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "miao-native-git-"))
+    try {
+      git(dir, ["init", "-q"])
+      writeFileSync(path.join(dir, "a.txt"), "a\n")
+      writeFileSync(path.join(dir, "keep.txt"), "k\n")
+      git(dir, ["add", "-A"])
+      git(dir, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "init"])
+      writeFileSync(path.join(dir, "a.txt"), "a changed\n")
+      writeFileSync(path.join(dir, "b.txt"), "b\n")
+
+      const nativeEntries = native!.gitStatus(dir).map((entry) => `${entry.status} ${entry.path}`).sort()
+      const porcelain = git(dir, ["status", "--porcelain", "-z"])
+        .split("\0")
+        .filter(Boolean)
+        .map((entry) => {
+          const code = entry.slice(0, 2)
+          const file = entry.slice(3)
+          const status =
+            code.trim() === "??"
+              ? "added"
+              : code.includes("D")
+                ? "deleted"
+                : "modified"
+          return `${status} ${file}`
+        })
+        .sort()
+      expect(nativeEntries).toEqual(porcelain)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+const miaoRunPath = path.join(import.meta.dir, "../../../../crates/miao-native/target/release/miao-run")
+const withMiaoRun = process.platform === "darwin" && existsSync(miaoRunPath) ? describe : describe.skip
+
+withMiaoRun("native sandbox (miao-run)", () => {
+  test("allows writes inside the workdir and denies writes outside", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "miao-sbx-"))
+    try {
+      const inside = spawnSync(miaoRunPath, ["--workdir", dir, "--", "sh", "-c", `echo ok > "${dir}/ok.txt"`])
+      expect(inside.status).toBe(0)
+      expect(existsSync(path.join(dir, "ok.txt"))).toBe(true)
+
+      const escape = path.join(dir, "..", `escape-${process.pid}.txt`)
+      const outside = spawnSync(miaoRunPath, ["--workdir", dir, "--", "sh", "-c", `echo x > "${escape}"`])
+      expect(outside.status).not.toBe(0)
+      expect(existsSync(escape)).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 function mulberry32(seed: number) {

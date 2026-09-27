@@ -777,6 +777,46 @@ pub fn derive_new_contents_napi(
     derive_new_contents(&chunks, &file_path, &original_text).map_err(napi::Error::from_reason)
 }
 
+#[napi(object)]
+pub struct GitEntry {
+    pub path: String,
+    pub status: String,
+}
+
+fn git_status_entries(path: &str) -> Result<Vec<GitEntry>, String> {
+    use gix::status::index_worktree::iter::Summary;
+
+    let repo = gix::open(path).map_err(|error| format!("failed to open repository: {error}"))?;
+    let iter = repo
+        .status(gix::progress::Discard)
+        .map_err(|error| format!("failed to compute status: {error}"))?
+        .into_index_worktree_iter(Vec::<gix::bstr::BString>::new())
+        .map_err(|error| format!("failed to iterate status: {error}"))?;
+
+    let mut entries = Vec::new();
+    for item in iter {
+        let item = item.map_err(|error| format!("failed to read status entry: {error}"))?;
+        let status = match item.summary() {
+            Some(Summary::Modified) | Some(Summary::TypeChange) | Some(Summary::Conflict) => "modified",
+            Some(Summary::Added) => "added",
+            Some(Summary::Removed) => "deleted",
+            Some(Summary::Renamed) => "renamed",
+            Some(Summary::Copied) => "copied",
+            Some(Summary::IntentToAdd) | None => continue,
+        };
+        entries.push(GitEntry {
+            path: item.rela_path().to_string(),
+            status: status.to_string(),
+        });
+    }
+    Ok(entries)
+}
+
+#[napi(js_name = "gitStatus")]
+pub fn git_status(path: String) -> napi::Result<Vec<GitEntry>> {
+    git_status_entries(&path).map_err(napi::Error::from_reason)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

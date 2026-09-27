@@ -1,32 +1,33 @@
 # miao-native (PoC)
 
-Rust port of the pure edit-matching pipeline in `packages/miao/src/tool/edit.ts`,
-plus diff statistics and unified patch generation. This is a proof of concept for
-the plan in `docs/rust-rewrite-feasibility.en.md` / `.zh.md`.
-
-Scope: pure functions only. No file IO, no Effect, no session state.
+Rust PoC for the plan in `docs/rust-rewrite-feasibility.en.md` / `.zh.md`. It covers the pieces
+that are pure computation (edit matching, patch application, diff), one subprocess-free capability
+(git status via `gix`), and one platform capability JS cannot provide (a macOS seatbelt sandbox).
 
 ## Layout
 
-- `src/lib.rs`: port of the nine replacers and `replace()`, `diffStats`, `unifiedPatch`, and Rust unit tests.
+- `src/lib.rs`: nine edit replacers, `replace()`, `diffStats`, `unifiedPatch`, `deriveNewContents`,
+  `gitStatus`, and Rust unit tests.
+- `src/bin/miao-run.rs`: `miao-run`, a macOS seatbelt sandbox wrapper.
 - `build.ts`: builds the cdylib with cargo and copies it to `miao-native.node`.
-- `../../packages/miao/test/tool/edit-native.test.ts`: parity tests against the real TS `replace()` and jsdiff.
+- `../../packages/miao/test/tool/edit-native.test.ts`: parity tests against the TS implementations.
 
 ## Build
 
 ```sh
-bun run build.ts            # cargo build --release + copy artifact to miao-native.node
+bun run build.ts            # cargo build --release + copy cdylib to miao-native.node
+cargo build --release       # also builds target/release/miao-run (the sandbox bin)
 ```
 
 ## Test
 
 ```sh
-cargo test --release        # Rust unit tests (behaviour from packages/miao/test/tool/edit.test.ts)
-bun test test/tool/edit-native.test.ts   # from packages/miao/, parity vs the TS implementation
+cargo test --release        # 17 lib + 4 bin Rust unit tests
+bun test test/tool/edit-native.test.ts   # from packages/miao/, parity vs the TS implementations
 ```
 
-The parity test skips itself when `miao-native.node` has not been built, so it does not
-break the normal `packages/miao` suite.
+Both JS suites skip themselves when the artifact is missing, so they do not break the normal
+`packages/miao` suite.
 
 ## API
 
@@ -36,28 +37,55 @@ applyEdit(content, oldString, newString, replaceAll?) -> { content, additions, d
 diffStats(before, after) -> { additions, deletions }
 unifiedPatch(before, after, filePath) -> string
 deriveNewContents(chunks, filePath, originalText) -> { content, unifiedDiff, bom }
+gitStatus(path) -> Array<{ path, status }>
 ```
 
 `replaceOnly` throws the same error messages as the TS `replace()`; `applyEdit` is `replaceOnly`
 plus diff statistics. `deriveNewContents` ports `deriveNewContentsFromChunks` from
-`packages/miao/src/patch/index.ts` (the `apply_patch` chunk-application pass).
+`packages/miao/src/patch/index.ts`. `gitStatus` uses `gix` and returns worktree-vs-index changes
+(`added` / `modified` / `deleted` / `renamed` / `copied`).
+
+`miao-run`:
+
+```sh
+miao-run --workdir <dir> [--allow-network] [--print-profile] -- <command> [args...]
+```
+
+Deny-by-default seatbelt profile: reads everywhere and process execution are allowed, writes are
+limited to the given work directories plus temp/dev, and network is denied unless `--allow-network`
+is passed. On non-macOS it runs the command unsandboxed.
 
 ## PoC results (measured, same machine, release)
 
-- Parity: 12 Rust unit tests + 18 JS parity tests (including a 400-case fuzz corpus and
-  byte-identical `unifiedPatch` against jsdiff) all pass.
-- Matching only, 12k-line file:
-  - exact: native `replaceOnly` ~0.16 ms vs TS `replace` ~0.23 ms (1.4x)
-  - fuzzy indent: native `replaceOnly` ~0.41 ms vs TS `replace` ~0.82 ms (2.0x)
+Edit / patch:
+
+- Matching only, 12k-line file: exact native `replaceOnly` ~0.16 ms vs TS `replace` ~0.23 ms (1.4x);
+  fuzzy indent ~0.41 ms vs ~0.82 ms (2.0x).
 - Full pipeline (match + diff stats): native `applyEdit` ~1.9-2.2 ms vs TS `replace` + `diffLines`
   ~2.0-2.6 ms. The diff pass dominates (`similar` is about the same as jsdiff).
 - Pathologic block-anchor with 1800-char lines: native ~10 ms vs TS ~21-30 ms (~2-3x).
-- `apply_patch` `deriveNewContents` on a 20k-line file (match near the end, so the 4-pass seek runs):
-  - exact: parity (~1.8 ms each)
-  - trim pass: native ~2.3 ms vs TS ~3.6 ms (1.6x)
-  - unicode-normalize pass: native ~5.7 ms vs TS ~13.5 ms (2.4x)
+- `apply_patch` `deriveNewContents` on a 20k-line file: exact at parity (~1.8 ms); trim pass
+  native ~2.3 ms vs TS ~3.6 ms (1.6x); unicode-normalize pass ~5.7 ms vs ~13.5 ms (2.4x).
 
-The first version of the port was **slower** than TS on the typical case. The cause was not the
+Git (repo with 2200 files, 400 changes):
+
+- native `gitStatus` in-process ~5.6 ms
+- `git diff-files --name-only` + `git ls-files --others --exclude-standard` (what the snapshot
+  module does today, two subprocesses) ~13.5 ms
+- `git status --porcelain` (one subprocess) ~8.1 ms
+
+So `gix` is ~2.4x faster than the two-subprocess snapshot approach and ~1.4x faster than
+`git status`, before accounting for not spawning a process at all.
+
+Sandbox (`macOS 26.5`, `sandbox-exec`):
+
+- write inside `--workdir` works; write outside it is denied ("Operation not permitted")
+- network denied by default (`curl` fails to resolve); `--allow-network` returns HTTP 200
+- a normal command (`git status`) still runs correctly under the sandbox
+
+## Optimization notes
+
+The first version of the edit port was **slower** than TS on the typical case. The cause was not the
 language, and not the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms):
 
 - `str::find`/`str::rfind` (std two-way) were slower than the JS engines' SIMD `indexOf`
@@ -65,10 +93,10 @@ language, and not the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms
 - `slice_span` rebuilt the whole file with `lines.join("\n")` just to slice one small block.
 
 Fixes: `memchr::memmem` for substring search, a forward uniqueness check from `index + 1` instead
-of `rfind`, and slicing the original content directly. Matching is now faster than TS on every case
-measured.
+of `rfind`, and slicing the original content directly. `deriveNewContents` got the same treatment:
+no `to_vec()` clone of the whole line vector and no per-line `format!` temporary.
 
 ## Status
 
-Not wired into production. `packages/miao/src/tool/edit.ts` still uses the TS implementation
-and jsdiff.
+Not wired into production. `packages/miao` still uses the TS implementations, subprocess `git`,
+and rule-based permissions.
