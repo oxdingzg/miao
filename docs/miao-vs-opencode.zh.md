@@ -52,6 +52,8 @@ miao 是 opencode 的 fork。opencode 的 TS 实现就是本仓库改原生模�
 - 性能数字是**纯函数隔离对比**，不含 Effect/IO/LSP/格式化等两侧相同的开销。
 - 沙箱目前仅 macOS；Linux（landlock/seccomp）与 Windows 尚未实现。
 
+把上述 PoC 接入生产的风险（打包分发、CI 假绿、同步阻塞、平台等）见 [rust-integration-risks.zh.md](rust-integration-risks.zh.md)。
+
 ## 四、下一步（进入"已合入"的路径）
 
 1. 把 `edit` / `apply_patch` / `snapshot` 接 native（带 TS 回退），并做 RSS 内存对比。

@@ -40,7 +40,7 @@ Beyond speed:
 - **gix in-process git status**: no subprocess spawn.
 - **Independent versioning and update source** (`oxdingzg/miao`, starting at `0.0.1`).
 
-Status: the native modules and sandbox are proof-of-concept and not wired into production; versioning, update source, and branding are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md).
+Status: the native modules and sandbox are proof-of-concept and not wired into production; versioning, update source, and branding are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
 
 ## Built on opencode
 

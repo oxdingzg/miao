@@ -57,6 +57,8 @@ Sandbox measured on the same machine:
 - Performance numbers are **isolated pure-function comparisons**; they exclude the Effect/IO/LSP/formatting work that is identical on both sides.
 - The sandbox is macOS-only; Linux (landlock/seccomp) and Windows are not implemented yet.
 
+Risks of wiring these PoCs into production (packaging, false-green CI, synchronous blocking, platform gaps) are in [rust-integration-risks.en.md](rust-integration-risks.en.md).
+
 ## 4. Next steps (toward "merged")
 
 1. Wire `edit` / `apply_patch` / `snapshot` to native with a TS fallback, and compare RSS memory.

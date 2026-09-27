@@ -40,7 +40,7 @@ miao 是 opencode 的 fork，因此下表的基线就是 opencode 的 TS 实现�
 - **gix 进程内 git status**：不再起子进程。
 - **独立的版本与更新源**（`oxdingzg/miao`，版本从 `0.0.1` 起）。
 
-状态：原生模块与沙箱是 PoC，尚未接入生产；版本、更新源、品牌已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)。
+状态：原生模块与沙箱是 PoC，尚未接入生产；版本、更新源、品牌已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
 
 ## 基于 opencode
 
