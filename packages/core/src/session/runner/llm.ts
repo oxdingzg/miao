@@ -108,6 +108,17 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const db = (yield* Database.Service).db
+    // Per-session prompt-cache telemetry: when the last provider turn ran and
+    // whether the next one is expected to rebuild the prefix (right after a
+    // compaction). Process-local and best-effort.
+    const WARM_WINDOW_MS = 5 * 60_000
+    const turns = new Map<string, { at: number; afterCompaction: boolean }>()
+    const readCacheTtl = Effect.fnUntraced(function* () {
+      const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
+      let ttl: number | undefined
+      for (const entry of documents) if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
+      return ttl
+    })
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
@@ -208,6 +219,11 @@ const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, { codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE })
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
+      const cacheTtl = yield* readCacheTtl()
+      const prior = turns.get(session.id)
+      const expectedRebuild = prior?.afterCompaction === true
+      const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
+      turns.set(session.id, { at: Date.now(), afterCompaction: false })
       const request = LLM.request({
         model,
         http: {
@@ -218,6 +234,7 @@ const layer = Layer.effect(
           },
         },
         providerOptions: { openai: { promptCacheKey } },
+        cache: cacheTtl ? { tools: true, system: true, messages: "latest-user-message", ttlSeconds: cacheTtl } : undefined,
         system: [agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
@@ -225,8 +242,10 @@ const layer = Layer.effect(
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
       })
-      if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request }))
+      if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request })) {
+        turns.set(session.id, { at: Date.now(), afterCompaction: true })
         return yield* Effect.die(continueAfterCompaction(currentStep))
+      }
       const startSnapshot = yield* snapshots.capture()
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
@@ -302,8 +321,10 @@ const layer = Layer.effect(
             !publisher.hasAssistantStarted() &&
             isContextOverflowFailure(overflowFailure ?? failure) &&
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request })))
-          )
+          ) {
+            turns.set(session.id, { at: Date.now(), afterCompaction: true })
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
+          }
           if (overflowFailure) yield* publish(overflowFailure)
           const llmFailure = failure instanceof LLMError ? failure : undefined
           if (llmFailure && !publisher.hasProviderError()) {
@@ -357,8 +378,11 @@ const layer = Layer.effect(
               model: `${model.provider}/${model.id}`,
               ttftMs:
                 requestStartedAt !== undefined && firstEventAt !== undefined ? firstEventAt - requestStartedAt : undefined,
-              cost: stepSettlement.cost,
+              warm,
+              expectedRebuild,
+              cacheMiss: stepSettlement.tokens.cache.write > 0,
               cacheHitRatio: SessionRunnerMetrics.cacheHitRatio(stepSettlement.tokens),
+              cost: stepSettlement.cost,
               tokens: stepSettlement.tokens,
             })
           }
