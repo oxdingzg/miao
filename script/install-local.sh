@@ -1,15 +1,16 @@
 #!/bin/sh
-# Build the current platform's miao binary and install it as the daily `miao`
-# command, keeping the previous install for one-step rollback.
+# Build the current checkout as a preview binary and install it as
+# `miao-preview`, so it never shadows the release-managed `miao` command.
+# The previous preview install is kept for one-step rollback.
 #
 #   ./script/install-local.sh
 #
-# Rollback:  ln -sfn "$HOME/.local/share/miao/bin/miao.prev" "$HOME/.local/bin/miao"
+# Rollback:  ln -sfn "$HOME/.local/share/miao/bin/miao.prev" "$HOME/.local/bin/miao-preview"
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${HOME}/.local/share/miao/bin"
-LINK="${HOME}/.local/bin/miao"
+LINK="${HOME}/.local/bin/miao-preview"
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"

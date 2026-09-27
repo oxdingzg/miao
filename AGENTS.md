@@ -150,23 +150,30 @@ const table = sqliteTable("session", {
 
 ## Local install workflow
 
-Keep daily use on a compiled binary and validate edits in a separate entry point so a
-work-in-progress change can never break the tool you rely on.
+Keep the release-managed `miao` as the daily command and validate edits in separate
+entry points so a work-in-progress change can never break the tool you rely on.
 
-- `miao` is the stable command: a compiled binary installed via `./script/install-local.sh`.
-  It builds the current platform (`--single`), smoke-tests `--version`, installs a
-  versioned binary under `~/.local/share/miao/bin`, and atomically repoints
-  `~/.local/bin/miao`. The previous install is kept at
-  `~/.local/share/miao/bin/miao.prev` for one-step rollback.
+- `miao` is the stable command: the official release binary, installed from GitHub with
+  `curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash`. It
+  lands at `~/.miao/bin/miao`, runs channel `latest` (DB `miao-latest.db`), and
+  auto-updates from `oxdingzg/miao` releases in the background.
 - `miao-dev` runs from source for fast iteration. It is the only entry point that
-  reflects uncommitted edits.
-- State is already isolated by channel: source runs as `local` (DB `miao-local.db`),
-  the binary as `main` (DB `miao-main.db`). `auth.json`, config, and snapshots are
-  shared, so credentials carry over.
+  reflects uncommitted edits (channel `local`, DB `miao-local.db`).
+- `miao-preview` is a compiled build of the current checkout, installed by
+  `./script/install-local.sh`. It builds the current platform (`--single`), smoke-tests
+  `--version`, installs a versioned binary under `~/.local/share/miao/bin`, and
+  atomically repoints `~/.local/bin/miao-preview`. The channel is the current branch,
+  so it is a preview build that never auto-updates. The previous install is kept at
+  `~/.local/share/miao/bin/miao.prev` for one-step rollback. This never touches the
+  release-managed `~/.miao/bin/miao`.
+- `auth.json`, config, and snapshots are shared across channels, so credentials carry
+  over.
 - Validate before promoting: `bun typecheck` + targeted `bun test` in the changed
-  packages, then a TUI smoke test (`miao-dev`, confirm the prompt renders). Promote
-  with `./script/install-local.sh` only after that.
-- Roll back with `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao`.
+  packages, then a TUI smoke test (`miao-dev`, confirm the prompt renders). Build and
+  smoke-test the release artifact with `./script/install-local.sh` (`miao-preview`)
+  before cutting a release.
+- Roll back the preview build with
+  `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao-preview`.
 
 ## V2 Session Core
 

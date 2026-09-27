@@ -33,7 +33,7 @@
 ## 回滚
 
 - 删除并重做：`gh release delete vX.Y.Z`，重新 dispatch。
-- 本机回滚到上一版本：`ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao`。
+- 本机回滚到上一 preview 构建：`ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao-preview`。
 
 ## 已知限制
 

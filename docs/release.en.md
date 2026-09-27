@@ -33,7 +33,7 @@
 ## Rollback
 
 - Delete and redo: `gh release delete vX.Y.Z`, then dispatch again.
-- Local rollback to the previous build: `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao`.
+- Local rollback to the previous preview build: `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao-preview`.
 
 ## Known limitations
 
