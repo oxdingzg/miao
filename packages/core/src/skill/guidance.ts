@@ -13,49 +13,23 @@ const Summary = Schema.Struct({
 })
 type Summary = typeof Summary.Type
 
-// Every skill name is always listed; full descriptions are included only until
-// this character budget is spent, so the base context does not grow with the
-// number of installed skills.
-const DESCRIPTION_BUDGET = 2_000
-
-export const render = (skills: ReadonlyArray<Summary>) => {
-  if (skills.length === 0)
-    return [
-      "Skills provide specialized instructions and workflows for specific tasks.",
-      "Use the skill tool to load a skill when a task matches its description.",
-      "No skills are currently available.",
-    ].join("\n")
-
-  let budget = DESCRIPTION_BUDGET
-  let omitted = 0
-  const lines: string[] = []
-  for (const skill of skills) {
-    const description = skill.description.trim()
-    if (description.length > 0 && description.length <= budget) {
-      budget -= description.length
-      lines.push(
-        "  <skill>",
-        `    <name>${skill.name}</name>`,
-        `    <description>${description}</description>`,
-        "  </skill>",
-      )
-      continue
-    }
-    omitted += 1
-    lines.push("  <skill>", `    <name>${skill.name}</name>`, "  </skill>")
-  }
-
-  return [
+const render = (skills: ReadonlyArray<Summary>) =>
+  [
     "Skills provide specialized instructions and workflows for specific tasks.",
     "Use the skill tool to load a skill when a task matches its description.",
-    "<available_skills>",
-    ...lines,
-    "</available_skills>",
-    ...(omitted > 0
-      ? [`Descriptions are omitted for ${omitted} skill(s) past the context budget; load one by name to read it.`]
-      : []),
+    ...(skills.length === 0
+      ? ["No skills are currently available."]
+      : [
+          "<available_skills>",
+          ...skills.flatMap((skill) => [
+            "  <skill>",
+            `    <name>${skill.name}</name>`,
+            `    <description>${skill.description}</description>`,
+            "  </skill>",
+          ]),
+          "</available_skills>",
+        ]),
   ].join("\n")
-}
 
 export interface Interface {
   readonly load: (agent: AgentV2.Selection) => Effect.Effect<SystemContext.SystemContext>

@@ -63,6 +63,7 @@ type Settings = {
   readonly auto: boolean
   readonly hotPrefix: boolean
   readonly preciseTokens: boolean
+  readonly summarizeSmall: boolean
   readonly buffer: number
   readonly tokens: number
 }
@@ -141,10 +142,18 @@ const settings = (documents: readonly Config.Entry[]) => {
       auto: current.auto ?? result.auto,
       hotPrefix: current.hot_prefix ?? result.hotPrefix,
       preciseTokens: current.precise_tokens ?? result.preciseTokens,
+      summarizeSmall: current.summarize_small ?? result.summarizeSmall,
       buffer: current.buffer ?? result.buffer,
       tokens: current.keep?.tokens ?? result.tokens,
     }),
-    { auto: true, hotPrefix: false, preciseTokens: false, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
+    {
+      auto: true,
+      hotPrefix: false,
+      preciseTokens: false,
+      summarizeSmall: false,
+      buffer: DEFAULT_BUFFER,
+      tokens: DEFAULT_KEEP_TOKENS,
+    },
   )
 }
 
@@ -253,7 +262,9 @@ export const make = (dependencies: Dependencies) => {
       tools: input.request.tools,
     })
     if (requestTokens + measure(instruction) > context - summaryOutput) return false
-    const summarizeModel = pickSummarizeModel(input, requestTokens + measure(instruction), summaryOutput)
+    const summarizeModel = config.summarizeSmall
+      ? pickSummarizeModel(input, requestTokens + measure(instruction), summaryOutput)
+      : input.model
     const selected = select(input.entries, config.tokens)
     return yield* runSummary({
       sessionID: input.sessionID,
@@ -286,7 +297,9 @@ export const make = (dependencies: Dependencies) => {
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     if (measure(summaryPrompt) > context - summaryOutput) return false
-    const summarizeModel = pickSummarizeModel(input, measure(summaryPrompt), summaryOutput)
+    const summarizeModel = config.summarizeSmall
+      ? pickSummarizeModel(input, measure(summaryPrompt), summaryOutput)
+      : input.model
     return yield* runSummary({
       sessionID: input.sessionID,
       recent: selected.recent,
