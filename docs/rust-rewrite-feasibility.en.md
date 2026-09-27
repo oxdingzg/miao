@@ -132,6 +132,7 @@ Each function ships with Rust unit tests plus a JS parity test; parity is not al
 | Text | `countTokens` (o200k / cl100k) | `gpt-tokenizer` |
 | Text | `sha256Hex` / `blake3Hex` | Node crypto / BLAKE3 known vector |
 | Git | `gitStatus` / `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` (all async variants) | `git status` / `rev-parse` / `show` / `diff --name-only` / `merge-base` |
+| Git | `gitDiff` (standard unified diff) | `git apply` round-trip (byte-equal after applying) — **semantic parity, not byte parity with `git diff`** |
 | Walk | `walkFiles` (`ignore` + `globset`, honors `.gitignore`) | recursive listing + gitignore behavior |
 | Sandbox | `miao-run` (macOS seatbelt) | behavior tests (write allowlist / network denied) |
 

@@ -132,6 +132,7 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 | 文本 | `countTokens`（o200k / cl100k） | `gpt-tokenizer` |
 | 文本 | `sha256Hex` / `blake3Hex` | Node crypto / BLAKE3 已知向量 |
 | Git | `gitStatus` / `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase`（均含 Async） | `git status` / `rev-parse` / `show` / `diff --name-only` / `merge-base` |
+| Git | `gitDiff`（标准 unified diff） | `git apply` 往返（应用后逐字节相等）——**语义 parity，不追求与 `git diff` 字节一致** |
 | 遍历 | `walkFiles`（`ignore`+`globset`，尊重 `.gitignore`） | 递归列目录 + gitignore 行为 |
 | 沙箱 | `miao-run`（macOS seatbelt） | 行为测试（写白名单 / 禁网） |
 
