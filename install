@@ -461,9 +461,11 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
 fi
 
 echo -e ""
-echo -e "${CAT} /\\/\\  ${NC}"
-echo -e "${CAT}( o.o )${NC}   ${M1}M${M2}I${M3}A${M4}O${NC}"
-echo -e "${CAT} > ^ < ${NC}"
+echo -e "          ${M1}█   █${NC}  ${M2}█${NC}  ${M3} ███ ${NC}  ${M4}█████${NC}"
+echo -e "${CAT} /\\/\\  ${NC}   ${M1}██ ██${NC}  ${M2}█${NC}  ${M3}█   █${NC}  ${M4}█   █${NC}"
+echo -e "${CAT}( o.o )${NC}   ${M1}█ █ █${NC}  ${M2}█${NC}  ${M3}█████${NC}  ${M4}█   █${NC}"
+echo -e "${CAT} > ^ < ${NC}   ${M1}█   █${NC}  ${M2}█${NC}  ${M3}█   █${NC}  ${M4}█   █${NC}"
+echo -e "          ${M1}█   █${NC}  ${M2}█${NC}  ${M3}█   █${NC}  ${M4}█████${NC}"
 echo -e ""
 echo -e ""
 echo -e "${ORANGE}Miao${NC}${MUTED} includes free models, to start:${NC}"
