@@ -139,6 +139,10 @@ const selection: "all" | "default" | readonly string[] =
         : "default"
 
 try {
+  if (process.platform === "win32") {
+    const { win32EnableVirtualTerminal } = await import("@miao/tui/terminal-win32")
+    win32EnableVirtualTerminal()
+  }
   const cli = await buildCli(selection)
   if (wantsHelp) {
     await cli.parse(args, (err: Error | undefined, _argv: unknown, out: string) => {

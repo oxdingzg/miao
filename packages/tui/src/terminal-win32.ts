@@ -2,7 +2,10 @@ import { dlopen, ptr } from "bun:ffi"
 import type { ReadStream } from "node:tty"
 
 const STD_INPUT_HANDLE = -10
+const STD_OUTPUT_HANDLE = -11
+const STD_ERROR_HANDLE = -12
 const ENABLE_PROCESSED_INPUT = 0x0001
+const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 
 const kernel = () =>
   dlopen("kernel32.dll", {
@@ -22,6 +25,33 @@ function load() {
   } catch {
     return false
   }
+}
+
+/**
+ * Enable ANSI/VT processing on the console output handles so escape sequences
+ * (colors, cursor moves, mouse tracking) are interpreted instead of printed
+ * literally by legacy Windows consoles.
+ *
+ * Returns `true` when at least one output handle is a console that is now
+ * VT-capable, and `false` when output is redirected or VT is unavailable, so
+ * callers can fall back to plain output. On non-Windows it returns `true`.
+ */
+export function win32EnableVirtualTerminal(): boolean {
+  if (process.platform !== "win32") return true
+  if (!load()) return false
+
+  let console = false
+  const buf = new Uint32Array(1)
+  for (const id of [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]) {
+    const handle = k32!.symbols.GetStdHandle(id)
+    if (k32!.symbols.GetConsoleMode(handle, ptr(buf)) === 0) continue
+    console = true
+    const mode = buf[0]!
+    if ((mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) === 0) {
+      k32!.symbols.SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+    }
+  }
+  return console
 }
 
 /**

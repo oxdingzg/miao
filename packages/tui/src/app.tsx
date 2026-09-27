@@ -83,7 +83,7 @@ import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
 import { createTuiAttention } from "./attention"
 import * as TuiAudio from "./audio"
-import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
+import { win32DisableProcessedInput, win32EnableVirtualTerminal, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 
@@ -188,6 +188,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
+      // Enable ANSI/VT on legacy Windows consoles before the renderer writes.
+      win32EnableVirtualTerminal()
       const renderer = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>

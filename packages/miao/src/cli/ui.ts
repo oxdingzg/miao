@@ -51,6 +51,10 @@ export function logo(pad?: string) {
     return result.join("").trimEnd()
   }
 
+  if (process.env.NO_COLOR) {
+    return wordmark.join(EOL)
+  }
+
   const result: string[] = []
   const reset = "\x1b[0m"
   const left = {
