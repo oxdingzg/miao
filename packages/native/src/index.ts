@@ -42,6 +42,7 @@ export interface NativeModule {
   gitMergeBaseAsync(path: string, a: string, b: string): Promise<string>
   detectLineEnding(text: string): string
   normalizeLineEndings(text: string, eol: string): string
+  countTokens(text: string, encoding?: string): number
 }
 
 function load(): NativeModule | undefined {

@@ -1072,6 +1072,26 @@ pub fn normalize_line_endings(text: String, eol: String) -> String {
     }
 }
 
+fn o200k() -> &'static tiktoken_rs::CoreBPE {
+    static BPE: OnceLock<tiktoken_rs::CoreBPE> = OnceLock::new();
+    BPE.get_or_init(|| tiktoken_rs::o200k_base().expect("o200k_base encoder"))
+}
+
+fn cl100k() -> &'static tiktoken_rs::CoreBPE {
+    static BPE: OnceLock<tiktoken_rs::CoreBPE> = OnceLock::new();
+    BPE.get_or_init(|| tiktoken_rs::cl100k_base().expect("cl100k_base encoder"))
+}
+
+/// Count BPE tokens, matching `gpt-tokenizer` (`o200k_base` by default).
+#[napi(js_name = "countTokens")]
+pub fn count_tokens(text: String, encoding: Option<String>) -> u32 {
+    let bpe = match encoding.as_deref() {
+        Some("cl100k_base") => cl100k(),
+        _ => o200k(),
+    };
+    bpe.encode_with_special_tokens(&text).len() as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1294,5 +1314,12 @@ mod tests {
     fn normalizes_line_endings() {
         assert_eq!(normalize_line_endings("a\r\nb\rc\nd".to_string(), "lf".to_string()), "a\nb\nc\nd");
         assert_eq!(normalize_line_endings("a\nb".to_string(), "crlf".to_string()), "a\r\nb");
+    }
+
+    #[test]
+    fn counts_tokens() {
+        assert_eq!(count_tokens(String::new(), None), 0);
+        assert!(count_tokens("hello world".to_string(), None) >= 2);
+        assert!(count_tokens("hello world".to_string(), Some("cl100k_base".to_string())) >= 2);
     }
 }

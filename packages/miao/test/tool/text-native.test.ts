@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createRequire } from "module"
 import path from "path"
+import { encode as encodeO200k } from "gpt-tokenizer/encoding/o200k_base"
+import { encode as encodeCl100k } from "gpt-tokenizer/encoding/cl100k_base"
 
 const require = createRequire(import.meta.url)
 const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")
@@ -8,6 +10,7 @@ const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/mi
 type Native = {
   detectLineEnding(text: string): string
   normalizeLineEndings(text: string, eol: string): string
+  countTokens(text: string, encoding?: string): number
 }
 
 const native: Native | undefined = (() => {
@@ -46,5 +49,20 @@ withNative("native text parity", () => {
   test("normalizeLineEndings matches the reference", () => {
     for (const text of cases)
       for (const eol of ["lf", "crlf"]) expect(native!.normalizeLineEndings(text, eol)).toBe(normalize(text, eol))
+  })
+
+  test("countTokens matches gpt-tokenizer", () => {
+    const samples = [
+      "hello world",
+      "clean 智能 六院",
+      "function foo() { return 1 }\nconst x = 2",
+      "a".repeat(200),
+      "line1\nline2\tend",
+      "def main():\n    print('hi')",
+    ]
+    for (const text of samples) {
+      expect(native!.countTokens(text)).toBe(encodeO200k(text).length)
+      expect(native!.countTokens(text, "cl100k_base")).toBe(encodeCl100k(text).length)
+    }
   })
 })
