@@ -7,19 +7,11 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
 
 ## 1. Blockers (cannot integrate without solving these)
 
-### R1. Packaging and distribution (High) - the current shape does not work at all
-- Evidence: `packages/miao/script/build.ts` uses `bun build --compile` to produce a **single-file**
-  binary; the dist directory contains only `miao` + `models.json`. Native dependencies
-  (`@parcel/watcher`, `@ff-labs/fff-bun`, opentui) are **embedded from node_modules**, pulled for all
-  platforms beforehand via `bun install --os="*" --cpu="*"`.
-- Today: tests load the cargo artifact via an **absolute path**
-  `require("<repo>/crates/miao-native/miao-native.node")`. That path does not exist inside the compiled
-  binary, and `crates/` is not shipped, so production would fail with `Cannot find module`.
-- `miao-run` is worse: it is a **second executable**, and `--compile` only embeds JS, not it. It must be
-  extracted at runtime or shipped alongside, on all three platforms.
-- Mitigation: ship native as platform subpackages (like `@ff-labs/fff-bun`: `@miao/native-<os>-<arch>`
-  containing the `.node`), imported per platform; do the same for `miao-run` or extract it at runtime.
-  **This is the first step, not cleanup.**
+### R1. Packaging and distribution (current platform solved / cross-platform pending) (High)
+- Evidence: `packages/miao/script/build.ts` uses `bun build --compile` to produce a **single-file** binary; native dependencies (`@ff-labs/fff-bun`, etc.) are embedded from node_modules.
+- Current state: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified: the compiled binary prints `addon: loaded`). `packages/miao` references it statically through `@miao/native` and falls back to TS when absent.
+- Remaining: a multi-platform release needs the addon **built per target** (`--single` on the host platform already works); `miao-run` is a second executable and still needs its own handling (extract at runtime or ship alongside).
+- Mitigation: the release pipeline runs `packages/native/build.ts` for each target before packaging.
 
 ### R2. CI is currently passing falsely (High)
 - Evidence: `packages/miao/test/tool/edit-native.test.ts` uses `withNative = native ? describe : describe.skip`

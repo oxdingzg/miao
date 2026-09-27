@@ -597,6 +597,7 @@
         "@gitlab/opencode-gitlab-auth": "1.3.3",
         "@miao/codemode": "workspace:*",
         "@miao/llm": "workspace:*",
+        "@miao/native": "workspace:*",
         "@miao/protocol": "workspace:*",
         "@miao/schema": "workspace:*",
         "@miao/script": "workspace:*",
@@ -689,6 +690,10 @@
         "vscode-languageserver-types": "3.17.5",
         "why-is-node-running": "3.2.2",
       },
+    },
+    "packages/native": {
+      "name": "@miao/native",
+      "version": "0.0.1",
     },
     "packages/plugin": {
       "name": "@opencode-ai/plugin",
@@ -1854,6 +1859,8 @@
     "@miao/httpapi-codegen": ["@miao/httpapi-codegen@workspace:packages/httpapi-codegen"],
 
     "@miao/llm": ["@miao/llm@workspace:packages/llm"],
+
+    "@miao/native": ["@miao/native@workspace:packages/native"],
 
     "@miao/protocol": ["@miao/protocol@workspace:packages/protocol"],
 

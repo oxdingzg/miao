@@ -6,11 +6,11 @@
 
 ## 一、阻断项（不解决就没法接）
 
-### R1. 打包与分发（高）—— 当前形态直接不可用
-- 证据：`packages/miao/script/build.ts` 用 `bun build --compile` 产出**单文件**二进制，产物目录只有 `miao` + `models.json`；原生依赖（`@parcel/watcher`、`@ff-labs/fff-bun`、opentui）是**从 node_modules 里内嵌**的，靠 build 前 `bun install --os="*" --cpu="*"` 拉全平台包。
-- 现状：测试通过 `require("<repo>/crates/miao-native/miao-native.node")` 用**绝对路径**加载本地 cargo 产物。编译后的二进制里没有这个路径，`crates/` 也不在产物中 → 线上必然 `Cannot find module`。
-- `miao-run` 更麻烦：它是**第二个可执行文件**，`--compile` 只内嵌 JS，不会把它塞进单文件；需要运行时释放到磁盘或与二进制并排分发，三平台都要处理。
-- 缓解：把 native 做成平台子包（仿 `@ff-labs/fff-bun`：`@miao/native-<os>-<arch>`，含对应 `.node`），顶层包按平台 `import`；`miao-run` 同理或改为内嵌后释放。**这是接入的第一步，不是收尾。**
+### R1. 打包与分发（当前平台已解决 / 跨平台待办）（高）
+- 证据：`packages/miao/script/build.ts` 用 `bun build --compile` 产出**单文件**二进制，原生依赖（`@ff-labs/fff-bun` 等）从 node_modules 内嵌。
+- 现状：已新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测：编译后的二进制输出 `addon: loaded`）。`packages/miao` 经 `@miao/native` 静态引用，缺失时回退 TS。
+- 剩余：多平台 release 需要**按 target 构建对应的 addon**（`--single`、当前平台已可用）；`miao-run` 是第二个可执行文件，仍需单独处理（运行时释放或并排分发）。
+- 缓解：release 流水线对每个 target 先跑 `packages/native/build.ts` 再打包。
 
 ### R2. CI 现在是假绿（高）
 - 证据：`packages/miao/test/tool/edit-native.test.ts` 里 `withNative = native ? describe : describe.skip`、`withMiaoRun` 同理，`.node`/`miao-run` 不存在就整体 skip。

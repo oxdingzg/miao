@@ -1,56 +1,18 @@
 /**
- * Loads the `miao-native` addon once, gated by `MIAO_NATIVE`. Returns `undefined`
- * when the flag is off or the addon is not available, so callers can fall back to
- * the TypeScript implementations.
+ * Access to the `miao-native` addon, gated by `MIAO_NATIVE`. When the flag is off
+ * or the addon was not built (dev without Rust), `native()` returns `undefined`
+ * and callers use the TypeScript implementations.
  *
- * The addon path is repo-relative (source/dev). The compiled single-file binary
- * does not ship it yet, so it falls back to TS there; wiring the addon into the
- * compiled binary is tracked as the packaging risk R1 in
- * `docs/rust-integration-risks.en.md`.
+ * The addon is loaded from `@miao/native`, whose literal `require("./miao-native.node")`
+ * lets Bun embed it into the compiled single-file binary. A multi-platform release
+ * still needs the addon built per target. See `docs/rust-integration-risks.en.md`.
  */
-import { createRequire } from "module"
-import path from "path"
 import { Flag } from "@miao/core/flag/flag"
+import { native as addon, type NativeModule } from "@miao/native"
 
-export interface NativePatchChunk {
-  oldLines: string[]
-  newLines: string[]
-  changeContext?: string
-  isEndOfFile?: boolean
-}
-
-export interface NativeDeriveResult {
-  content: string
-  unifiedDiff: string
-  bom: boolean
-}
-
-export interface NativeModule {
-  replaceOnly(content: string, oldString: string, newString: string, replaceAll?: boolean): string
-  applyEdit(
-    content: string,
-    oldString: string,
-    newString: string,
-    replaceAll?: boolean,
-  ): { content: string; additions: number; deletions: number }
-  deriveNewContents(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
-}
-
-let resolved = false
-let cached: NativeModule | undefined
+export type { NativeDeriveResult, NativeModule, NativePatchChunk } from "@miao/native"
 
 export function native(): NativeModule | undefined {
-  if (resolved) return cached
-  resolved = true
-  if (!Flag.MIAO_NATIVE) {
-    cached = undefined
-    return cached
-  }
-  try {
-    const require = createRequire(import.meta.url)
-    cached = require(path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")) as NativeModule
-  } catch {
-    cached = undefined
-  }
-  return cached
+  if (!Flag.MIAO_NATIVE) return undefined
+  return addon
 }

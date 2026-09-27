@@ -86,6 +86,7 @@
     "@openauthjs/openauth": "catalog:",
     "@miao/codemode": "workspace:*",
     "@miao/llm": "workspace:*",
+    "@miao/native": "workspace:*",
     "@opencode-ai/plugin": "workspace:*",
     "@miao/protocol": "workspace:*",
     "@miao/schema": "workspace:*",
