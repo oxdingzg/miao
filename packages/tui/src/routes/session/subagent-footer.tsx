@@ -45,10 +45,16 @@ export function SubagentFooter() {
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session()?.cost ?? 0
+    const native = Currency.native(sync.data.provider, session()?.model?.providerID, session()?.model?.id)
 
     return {
       context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
-      cost: cost > 0 ? Currency.format(cost, kv.get(Currency.KV, Currency.DEFAULT)) : undefined,
+      cost:
+        cost > 0
+          ? native
+            ? Currency.amount(cost, native)
+            : Currency.format(cost, kv.get(Currency.KV, Currency.DEFAULT))
+          : undefined,
     }
   })
 

@@ -101,6 +101,8 @@ export const Plugin = define({
                     },
                   }))
                 }
+                const currency = config.currency ?? item.currency
+                if (currency !== undefined) model.currency = currency
                 if (config.disabled !== undefined) model.enabled = !config.disabled
                 if (config.limit !== undefined) model.limit = { ...model.limit, ...config.limit }
               })

@@ -76,6 +76,7 @@ export const Info = Schema.Struct({
     released: Schema.Finite,
   }),
   cost: Schema.Array(Cost),
+  currency: Schema.String.pipe(optional),
   status: Schema.Literals(["alpha", "beta", "deprecated", "active"]),
   enabled: Schema.Boolean,
   limit: Schema.Struct({

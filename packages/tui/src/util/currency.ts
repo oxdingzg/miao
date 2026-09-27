@@ -30,9 +30,33 @@ export function find(code: string | undefined | null): CurrencyInfo {
   return ALL.find((item) => item.code === code) ?? ALL[0]!
 }
 
+/** Format an amount already denominated in `code`, without conversion. */
+export function amount(value: number, code: string | undefined | null): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: find(code).code }).format(value)
+}
+
+/** Convert a USD amount into `code` using the approximate static rate table. */
 export function format(usd: number, code: string | undefined | null): string {
   const currency = find(code)
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.code }).format(usd * currency.rate)
+  return amount(usd * currency.rate, currency.code)
+}
+
+export type ProviderLike = {
+  readonly id: string
+  readonly models: Readonly<Record<string, unknown>>
+}
+
+/** The model's own billing currency, when a provider declares native prices. */
+export function native(
+  providers: ReadonlyArray<ProviderLike>,
+  providerID: string | undefined,
+  modelID: string | undefined,
+): string | undefined {
+  if (!providerID || !modelID) return undefined
+  const model = providers.find((provider) => provider.id === providerID)?.models[modelID]
+  if (typeof model !== "object" || model === null) return undefined
+  const currency = (model as { currency?: unknown }).currency
+  return typeof currency === "string" ? currency : undefined
 }
 
 export * as Currency from "./currency"

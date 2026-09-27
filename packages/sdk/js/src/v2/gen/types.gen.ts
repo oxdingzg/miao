@@ -4841,6 +4841,7 @@ export type ModelV2Info = {
     released: number
   }
   cost: Array<ModelCost>
+  currency?: string
   status: "alpha" | "beta" | "deprecated" | "active"
   enabled: boolean
   limit: {

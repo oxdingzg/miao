@@ -12,6 +12,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const session = createMemo(() => props.api.state.session.get(props.session_id))
   const cost = createMemo(() => session()?.cost ?? 0)
   const currency = createMemo(() => props.api.kv.get(Currency.KV, Currency.DEFAULT))
+  const nativeCurrency = createMemo(() =>
+    Currency.native(props.api.state.provider, session()?.model?.providerID, session()?.model?.id),
+  )
 
   const state = createMemo(() => {
     const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
@@ -42,7 +45,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
       <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
       <text fg={theme().textMuted}>{state().cacheHit ?? 0}% cached</text>
-      <text fg={theme().textMuted}>{Currency.format(cost(), currency())} spent</text>
+      <text fg={theme().textMuted}>
+        {nativeCurrency() ? Currency.amount(cost(), nativeCurrency()) : Currency.format(cost(), currency())} spent
+      </text>
     </box>
   )
 }

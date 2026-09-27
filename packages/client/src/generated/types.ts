@@ -1980,6 +1980,7 @@ export type ModelsListOutput = {
       readonly output: number
       readonly cache: { readonly read: number; readonly write: number }
     }>
+    readonly currency?: string
     readonly status: "alpha" | "beta" | "deprecated" | "active"
     readonly enabled: boolean
     readonly limit: { readonly context: number; readonly input?: number; readonly output: number }
