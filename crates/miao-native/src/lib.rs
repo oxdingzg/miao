@@ -1092,6 +1092,61 @@ pub fn count_tokens(text: String, encoding: Option<String>) -> u32 {
     bpe.encode_with_special_tokens(&text).len() as u32
 }
 
+#[napi(object)]
+pub struct WalkOptions {
+    pub hidden: Option<bool>,
+    pub gitignore: Option<bool>,
+}
+
+/// List files under `root` as sorted, forward-slash relative paths. Honors
+/// `.gitignore` unless disabled; hidden files are skipped unless requested.
+fn walk_files_impl(root: &str, hidden: bool, gitignore: bool) -> Result<Vec<String>, String> {
+    let mut builder = ignore::WalkBuilder::new(root);
+    builder
+        .hidden(!hidden)
+        .git_ignore(gitignore)
+        .git_global(gitignore)
+        .git_exclude(gitignore)
+        .ignore(gitignore)
+        .parents(gitignore)
+        .follow_links(false);
+
+    let mut paths = Vec::new();
+    for entry in builder.build() {
+        let entry = entry.map_err(|error| format!("failed to walk '{root}': {error}"))?;
+        if !entry.file_type().map(|kind| kind.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(root).unwrap_or(entry.path());
+        paths.push(relative.to_string_lossy().replace('\\', "/"));
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+#[napi(js_name = "walkFiles")]
+pub fn walk_files(root: String, options: Option<WalkOptions>) -> napi::Result<Vec<String>> {
+    let hidden = options.as_ref().and_then(|item| item.hidden).unwrap_or(false);
+    let gitignore = options.as_ref().and_then(|item| item.gitignore).unwrap_or(true);
+    walk_files_impl(&root, hidden, gitignore).map_err(napi::Error::from_reason)
+}
+
+/// SHA-256 of UTF-8 bytes as lowercase hex, matching Node's
+/// `crypto.createHash("sha256")`.
+#[napi(js_name = "sha256Hex")]
+pub fn sha256_hex(text: String) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// BLAKE3 of UTF-8 bytes as lowercase hex, for snapshot content hashing.
+#[napi(js_name = "blake3Hex")]
+pub fn blake3_hex(text: String) -> String {
+    blake3::hash(text.as_bytes()).to_hex().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1321,5 +1376,32 @@ mod tests {
         assert_eq!(count_tokens(String::new(), None), 0);
         assert!(count_tokens("hello world".to_string(), None) >= 2);
         assert!(count_tokens("hello world".to_string(), Some("cl100k_base".to_string())) >= 2);
+    }
+
+    #[test]
+    fn walks_files() {
+        let dir = std::env::temp_dir().join(format!("miao-native-walk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.txt"), "").unwrap();
+        std::fs::write(dir.join("sub/b.txt"), "").unwrap();
+        std::fs::write(dir.join(".hidden"), "").unwrap();
+
+        let root = dir.to_str().unwrap();
+        assert_eq!(walk_files_impl(root, false, false).unwrap(), vec!["a.txt", "sub/b.txt"]);
+        assert!(walk_files_impl(root, true, false).unwrap().contains(&".hidden".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hashes_match_known_vectors() {
+        assert_eq!(
+            sha256_hex(String::new()),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            blake3_hex(String::new()),
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
     }
 }

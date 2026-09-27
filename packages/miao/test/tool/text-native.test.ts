@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createHash } from "crypto"
 import { createRequire } from "module"
 import path from "path"
 import { encode as encodeO200k } from "gpt-tokenizer/encoding/o200k_base"
@@ -11,6 +12,8 @@ type Native = {
   detectLineEnding(text: string): string
   normalizeLineEndings(text: string, eol: string): string
   countTokens(text: string, encoding?: string): number
+  sha256Hex(text: string): string
+  blake3Hex(text: string): string
 }
 
 const native: Native | undefined = (() => {
@@ -64,5 +67,15 @@ withNative("native text parity", () => {
       expect(native!.countTokens(text)).toBe(encodeO200k(text).length)
       expect(native!.countTokens(text, "cl100k_base")).toBe(encodeCl100k(text).length)
     }
+  })
+
+  test("sha256Hex matches Node's crypto", () => {
+    for (const text of ["", "hello", "clean 智能 六院", "a".repeat(1000)]) {
+      expect(native!.sha256Hex(text)).toBe(createHash("sha256").update(text).digest("hex"))
+    }
+  })
+
+  test("blake3Hex matches the known empty vector", () => {
+    expect(native!.blake3Hex("")).toBe("af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
   })
 })

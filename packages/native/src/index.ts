@@ -43,6 +43,9 @@ export interface NativeModule {
   detectLineEnding(text: string): string
   normalizeLineEndings(text: string, eol: string): string
   countTokens(text: string, encoding?: string): number
+  walkFiles(root: string, options?: { hidden?: boolean; gitignore?: boolean }): string[]
+  sha256Hex(text: string): string
+  blake3Hex(text: string): string
 }
 
 function load(): NativeModule | undefined {
