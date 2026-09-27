@@ -1,0 +1,96 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: "Override version (optional)"
+        required: false
+        type: string
+
+concurrency: release-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+      tag: ${{ steps.version.outputs.tag }}
+      repo: ${{ steps.version.outputs.repo }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - id: version
+        run: ./script/version.ts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MIAO_BUMP: ${{ inputs.bump }}
+          MIAO_VERSION: ${{ inputs.version }}
+          GH_REPO: ${{ github.repository }}
+
+  cli:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: macos-14 # darwin-arm64
+          - host: macos-13 # darwin-x64
+          - host: ubuntu-latest # linux-x64
+          - host: ubuntu-24.04-arm # linux-arm64
+          - host: windows-2025 # windows-x64
+    runs-on: ${{ matrix.host }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-native
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build and upload this platform
+        run: ./packages/miao/script/build.ts --single
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ needs.version.outputs.repo }}
+          MIAO_VERSION: ${{ needs.version.outputs.version }}
+          MIAO_RELEASE: ${{ needs.version.outputs.release }}
+
+  publish:
+    needs:
+      - version
+      - cli
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft release
+        run: gh release edit "v${{ needs.version.outputs.version }}" --draft=false --repo "${{ needs.version.outputs.repo }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
