@@ -5,11 +5,13 @@ import { ModelV2 } from "../../model"
 import { SessionEvent } from "../event"
 import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
+import { SessionRunnerCost } from "./cost"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
   readonly agent: string
   readonly model: ModelV2.Ref
+  readonly cost?: ModelV2.Info["cost"]
   readonly snapshot?: string
 }
 
@@ -69,7 +71,9 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   let assistantActive = false
   let assistantFailed = false
   let providerFailed = false
-  let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
+  let stepSettlement:
+    | { readonly finish: string; readonly cost: number; readonly tokens: ReturnType<typeof tokens> }
+    | undefined
 
   const startAssistant = Effect.fnUntraced(function* () {
     if (assistantMessageID !== undefined) return assistantMessageID
@@ -397,7 +401,11 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* flush()
         assistantActive = false
         if (stepSettlement) return yield* Effect.die("Duplicate step finish")
-        stepSettlement = { finish: event.reason, tokens: tokens(event.usage) }
+        stepSettlement = {
+          finish: event.reason,
+          cost: SessionRunnerCost.of(input.cost ?? [], event.usage),
+          tokens: tokens(event.usage),
+        }
         return
       case "finish":
         return

@@ -72,14 +72,28 @@ export type Error =
   | UnsupportedApiError
   | Integration.AuthorizationError
 
+export type Resolved = { readonly model: Model; readonly info: ModelV2.Info }
+
 export interface Interface {
-  readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>
+  readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Resolved, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/SessionRunnerModel") {}
 
-/** Test or embedding seam for supplying a model resolver directly. */
-export const layerWith = (resolve: Interface["resolve"]) => Layer.succeed(Service, Service.of({ resolve }))
+/** Test or embedding seam for supplying a model resolver directly. Cost rates default to none. */
+export const layerWith = (resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>) =>
+  Layer.succeed(
+    Service,
+    Service.of({
+      resolve: (session) =>
+        resolve(session).pipe(
+          Effect.map((model) => ({
+            model,
+            info: ModelV2.Info.empty(ProviderV2.ID.make(model.provider), ModelV2.ID.make(model.id)),
+          })),
+        ),
+    }),
+  )
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -193,8 +207,17 @@ export const fromCatalogModel = (
   return Effect.fail(unsupported(resolved))
 }
 
+export const resolveWithInfo = (
+  session: SessionSchema.Info,
+  model: ModelV2.Info,
+  credential?: Credential.Value,
+): Effect.Effect<Resolved, UnsupportedApiError | VariantUnavailableError> =>
+  withVariant(model, session.model?.variant).pipe(
+    Effect.flatMap((info) => fromCatalogModel(info, credential).pipe(Effect.map((route) => ({ model: route, info })))),
+  )
+
 export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, credential?: Credential.Value) =>
-  withVariant(model, session.model?.variant).pipe(Effect.flatMap((model) => fromCatalogModel(model, credential)))
+  resolveWithInfo(session, model, credential).pipe(Effect.map((resolved) => resolved.model))
 
 export const supported = (model: ModelV2.Info) => {
   if (model.api.type !== "aisdk") return false
@@ -235,7 +258,7 @@ export const locationLayer = Layer.effect(
         const connection = yield* integrations.connection.active(
           provider?.integrationID ?? Integration.ID.make(selected.providerID),
         )
-        return yield* resolve(
+        return yield* resolveWithInfo(
           session,
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,

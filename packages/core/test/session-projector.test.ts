@@ -564,4 +564,83 @@ describe("SessionProjector", () => {
       ])
     }),
   )
+
+  it.effect("aggregates step usage into the session and rolls it back on revert", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(ProjectTable)
+        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: Project.ID.global,
+          slug: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const events = yield* EventV2.Service
+      const usageColumns = {
+        cost: SessionTable.cost,
+        input: SessionTable.tokens_input,
+        output: SessionTable.tokens_output,
+        reasoning: SessionTable.tokens_reasoning,
+        cacheRead: SessionTable.tokens_cache_read,
+        cacheWrite: SessionTable.tokens_cache_write,
+      }
+      const boundary = SessionMessage.ID.make("msg_usage_boundary")
+      yield* events.publish(SessionEvent.Synthetic, { sessionID, messageID: boundary, timestamp: created, text: "start" })
+      const assistantID = SessionMessage.ID.make("msg_usage_assistant")
+      yield* events.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: assistantID,
+        timestamp: created,
+        agent: "build",
+        model,
+      })
+      yield* events.publish(SessionEvent.Step.Ended, {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(1),
+        assistantMessageID: assistantID,
+        finish: "stop",
+        cost: 0.25,
+        tokens: { input: 100, output: 50, reasoning: 10, cache: { read: 1_000, write: 200 } },
+      })
+
+      expect(
+        yield* db
+          .select(usageColumns)
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie),
+      ).toMatchObject({ cost: 0.25, input: 100, output: 50, reasoning: 10, cacheRead: 1_000, cacheWrite: 200 })
+
+      yield* events.publish(SessionEvent.RevertEvent.Staged, {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(2),
+        revert: { messageID: boundary, files: [] },
+      })
+      yield* events.publish(SessionEvent.RevertEvent.Committed, {
+        sessionID,
+        messageID: boundary,
+        timestamp: DateTime.makeUnsafe(3),
+      })
+
+      expect(
+        yield* db
+          .select(usageColumns)
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie),
+      ).toMatchObject({ cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 })
+    }),
+  )
 })
