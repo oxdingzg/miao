@@ -13,6 +13,8 @@ type Native = {
   gitRevParseAsync(path: string, rev: string): Promise<string>
   gitBlob(path: string, rev: string, file: string): { content: string; binary: boolean }
   gitBlobAsync(path: string, rev: string, file: string): Promise<{ content: string; binary: boolean }>
+  gitWorktreeChanges(path: string): string[]
+  gitWorktreeChangesAsync(path: string): Promise<string[]>
 }
 
 const native: Native | undefined = (() => {
@@ -104,6 +106,27 @@ withNative("native git parity", () => {
     "gitBlob errors for a missing path",
     withRepo((dir) => {
       expect(() => native!.gitBlob(dir, "HEAD", "missing.txt")).toThrow()
+    }),
+  )
+
+  test(
+    "gitWorktreeChanges matches git diff --name-only",
+    withRepo((dir) => {
+      writeFileSync(path.join(dir, "file.txt"), "changed\n")
+      writeFileSync(path.join(dir, "untracked.txt"), "new\n")
+      const expected = git(["diff", "--name-only"], dir)
+        .split("\n")
+        .filter(Boolean)
+        .sort()
+      expect(native!.gitWorktreeChanges(dir).toSorted()).toEqual(expected)
+    }),
+  )
+
+  test(
+    "gitWorktreeChangesAsync matches the sync call",
+    withRepo(async (dir) => {
+      writeFileSync(path.join(dir, "file.txt"), "changed\n")
+      expect(await native!.gitWorktreeChangesAsync(dir)).toEqual(native!.gitWorktreeChanges(dir))
     }),
   )
 

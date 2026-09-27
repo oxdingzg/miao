@@ -943,6 +943,61 @@ pub fn git_blob_async(path: String, rev: String, file: String) -> napi::bindgen_
     napi::bindgen_prelude::AsyncTask::new(GitBlobTask { path, rev, file })
 }
 
+/// Paths with unstaged tracked changes, matching `git diff --name-only`
+/// (modified, deleted, renamed, copied, type-changed; untracked excluded).
+fn git_worktree_changes_impl(path: &str) -> Result<Vec<String>, String> {
+    use gix::status::index_worktree::iter::Summary;
+
+    let repo = gix::open(path).map_err(|error| format!("failed to open repository: {error}"))?;
+    let iter = repo
+        .status(gix::progress::Discard)
+        .map_err(|error| format!("failed to compute status: {error}"))?
+        .into_index_worktree_iter(Vec::<gix::bstr::BString>::new())
+        .map_err(|error| format!("failed to iterate status: {error}"))?;
+
+    let mut paths = Vec::new();
+    for item in iter {
+        let item = item.map_err(|error| format!("failed to read status entry: {error}"))?;
+        match item.summary() {
+            Some(Summary::Modified)
+            | Some(Summary::Removed)
+            | Some(Summary::Renamed)
+            | Some(Summary::Copied)
+            | Some(Summary::TypeChange) => paths.push(item.rela_path().to_string()),
+            _ => {}
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+#[napi(js_name = "gitWorktreeChanges")]
+pub fn git_worktree_changes(path: String) -> napi::Result<Vec<String>> {
+    git_worktree_changes_impl(&path).map_err(napi::Error::from_reason)
+}
+
+pub struct GitWorktreeChangesTask {
+    path: String,
+}
+
+impl napi::Task for GitWorktreeChangesTask {
+    type Output = Vec<String>;
+    type JsValue = Vec<String>;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        git_worktree_changes_impl(&self.path).map_err(napi::Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+#[napi(js_name = "gitWorktreeChangesAsync")]
+pub fn git_worktree_changes_async(path: String) -> napi::bindgen_prelude::AsyncTask<GitWorktreeChangesTask> {
+    napi::bindgen_prelude::AsyncTask::new(GitWorktreeChangesTask { path })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1119,5 +1174,21 @@ mod tests {
     #[test]
     fn rev_parse_errors_outside_repository() {
         assert!(git_rev_parse_impl("/", "HEAD").is_err());
+    }
+
+    #[test]
+    fn worktree_changes_match_git_diff() {
+        let Some(dir) = temp_repo("wtchanges") else { return };
+        std::fs::write(dir.join("file.txt"), "changed\n").unwrap();
+        std::fs::write(dir.join("untracked.txt"), "new\n").unwrap();
+        let expected = String::from_utf8(git(&["diff", "--name-only"], &dir).stdout).unwrap();
+        let mut expected: Vec<String> = expected
+            .split('\n')
+            .filter(|line| !line.is_empty())
+            .map(String::from)
+            .collect();
+        expected.sort();
+        assert_eq!(git_worktree_changes_impl(dir.to_str().unwrap()).unwrap(), expected);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

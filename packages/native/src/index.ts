@@ -36,6 +36,8 @@ export interface NativeModule {
   gitRevParseAsync(path: string, rev: string): Promise<string>
   gitBlob(path: string, rev: string, file: string): { content: string; binary: boolean }
   gitBlobAsync(path: string, rev: string, file: string): Promise<{ content: string; binary: boolean }>
+  gitWorktreeChanges(path: string): string[]
+  gitWorktreeChangesAsync(path: string): Promise<string[]>
 }
 
 function load(): NativeModule | undefined {
