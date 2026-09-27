@@ -818,6 +818,30 @@ pub fn git_status(path: String) -> napi::Result<Vec<GitEntry>> {
     git_status_entries(&path).map_err(napi::Error::from_reason)
 }
 
+/// Async variant of [`git_status`] that runs on the libuv threadpool so large
+/// repositories do not block the JS event loop.
+pub struct GitStatusTask {
+    path: String,
+}
+
+impl napi::Task for GitStatusTask {
+    type Output = Vec<GitEntry>;
+    type JsValue = Vec<GitEntry>;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        git_status_entries(&self.path).map_err(napi::Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+#[napi(js_name = "gitStatusAsync")]
+pub fn git_status_async(path: String) -> napi::bindgen_prelude::AsyncTask<GitStatusTask> {
+    napi::bindgen_prelude::AsyncTask::new(GitStatusTask { path })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

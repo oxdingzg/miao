@@ -26,8 +26,7 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
   fibers, and SSE all stop during the call.
 - Magnitude: ~1 ms on a small repo is unnoticeable; 5.6 ms on a large repo; a chromium-scale checkout
   could be tens to hundreds of ms and visibly stall the UI/concurrency.
-- Mitigation: git calls must go through a napi async task / worker, or stay a sidecar process; do not
-  call them synchronously from Effect.
+- Mitigation: git calls must go through a napi async task / worker. `gitStatusAsync` is implemented (napi `AsyncTask`, runs on the libuv threadpool); the sync `gitStatus` is kept only for tests/benchmarks.
 
 ## 2. Correctness
 
@@ -60,9 +59,8 @@ Current parity is mostly ASCII; the following produce **different results**, not
 - Evidence: the snapshot hot path, after the `diff-files`+`ls-files` pair we benchmarked, still runs
   `git add --all` (`snapshot/index.ts:149`) and `write-tree` (`:341`) as subprocesses, and on large
   repos those dominate.
-- Conclusion: `gitStatus` only replaces the listing step (~13 ms to 1-5 ms); **the end-to-end snapshot
-  step gains little** unless add/write-tree are also implemented with gix (complex; gix's index write
-  support is limited).
+- Conclusion: `gitStatus` only replaces the listing step; **the end-to-end snapshot step gains little** unless add/write-tree are also implemented with gix (complex; gix's index write support is limited).
+- Measured (3300 files / 600 changes): listing 18.2 ms to native `gitStatus` 9.4 ms; `git add --all` 6.4 ms; `write-tree` 8.3 ms. The whole step goes ~32.9 ms to ~24.0 ms (~27%), with add/write-tree still ~44%.
 
 ### R8. gix lifecycle and resources (Medium)
 - Every call runs `gix::open` (part of the 5.6 ms). Caching a `Repository` drags in mmap'd packs, fds,

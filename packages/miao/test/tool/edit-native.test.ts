@@ -27,6 +27,7 @@ type Native = {
     originalText: string,
   ): { content: string; unifiedDiff: string; bom: boolean }
   gitStatus(path: string): Array<{ path: string; status: string }>
+  gitStatusAsync(path: string): Promise<Array<{ path: string; status: string }>>
 }
 
 function toNativeChunks(chunks: UpdateFileChunk[]) {
@@ -281,6 +282,24 @@ withNative("native git parity", () => {
         })
         .sort()
       expect(nativeEntries).toEqual(porcelain)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("gitStatusAsync matches gitStatus", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "miao-native-git-async-"))
+    try {
+      git(dir, ["init", "-q"])
+      for (let i = 0; i < 50; i++) writeFileSync(path.join(dir, `f${i}.txt`), `${i}\n`)
+      git(dir, ["add", "-A"])
+      git(dir, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "init"])
+      for (let i = 0; i < 10; i++) writeFileSync(path.join(dir, `f${i}.txt`), "changed\n")
+      writeFileSync(path.join(dir, "new.txt"), "new\n")
+
+      const sync = native!.gitStatus(dir).map((entry) => `${entry.status} ${entry.path}`).sort()
+      const async = (await native!.gitStatusAsync(dir)).map((entry) => `${entry.status} ${entry.path}`).sort()
+      expect(async).toEqual(sync)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

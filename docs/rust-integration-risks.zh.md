@@ -20,7 +20,7 @@
 ### R3. 同步调用阻塞事件循环（高）
 - 证据：`core/git.ts` / `snapshot` 的 git 都是 `ChildProcess`（异步 Effect）；而我们的 `gitStatus` 是**同步 napi 调用**。JS 单线程，同步调用期间 TUI 渲染、其它 session 的 fiber、SSE 都停。
 - 量级：小仓 1ms 无感，大仓 5.6ms，超大仓（chromium 级）可能几十~几百 ms，会明显卡 UI/并发。
-- 缓解：git 类调用必须走 napi async task / worker，或继续用 sidecar 进程；不能直接在 Effect 里同步调。
+- 缓解：git 类调用必须走 napi async task / worker。已实现 `gitStatusAsync`（napi `AsyncTask`，跑在 libuv 线程池），同步版 `gitStatus` 只保留给测试/基准。
 
 ## 二、正确性
 
@@ -43,7 +43,8 @@
 
 ### R7. git 收益被高估（中）
 - 证据：`snapshot` 热路径是 `diff-files`+`ls-files`（我们对比的 2 个调用）**之后还有** `git add --all`（`snapshot/index.ts:149`）和 `write-tree`（:341），这两个仍是子进程，且在大仓上是大头。
-- 结论：`gitStatus` 只替换了列表这一步（约 13ms→1–5ms），**整个 snapshot 步的端到端收益有限**，除非把 add/write-tree 也用 gix 实现（复杂，gix 的 index 写回支持有限）。
+- 结论：`gitStatus` 只替换了列表这一步，**整个 snapshot 步的端到端收益有限**，除非把 add/write-tree 也用 gix 实现（复杂，gix 的 index 写回支持有限）。
+- 实测（3300 文件 / 600 变更）：listing 18.2 ms → native `gitStatus` 9.4 ms；`git add --all` 6.4 ms；`write-tree` 8.3 ms。整步约 32.9 ms → 24.0 ms（约 27%），add/write-tree 仍占约 44%。
 
 ### R8. gix 生命周期与资源（中）
 - 每次调用 `gix::open`（5.6ms 里含 open）。缓存 `Repository` 会牵出 mmap 的 pack、fd、线程池，多 workspace/session 并发下有 fd/内存泄漏与线程安全问题。
