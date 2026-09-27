@@ -5,19 +5,24 @@
 //! unless `--allow-network` is given, denies all network access.
 //!
 //! Usage:
-//!   miao-run [--workdir <dir>]... [--allow-path <dir>]... [--allow-network] [--print-profile] -- <command> [args...]
+//!   miao-run [--workdir <dir>]... [--allow-path <dir>]... [--allow-network] [--compat]
+//!            [--deny-report <file>] [--print-profile] -- <command> [args...]
 //!
 //! `--allow-path` adds extra writable directories beyond the workdirs (for tool caches,
-//! package managers, etc.). On non-macOS hosts the command is executed without a sandbox.
+//! package managers, etc.). `--deny-report` writes the paths a denial blocked to a JSON
+//! file so the caller can prompt the user and retry with more `--allow-path` entries.
+//! On non-macOS hosts the command is executed without a sandbox.
 
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 
 struct Options {
     workdirs: Vec<PathBuf>,
     allow_paths: Vec<PathBuf>,
     allow_network: bool,
     compat: bool,
+    deny_report: Option<PathBuf>,
     print_profile: bool,
     command: Vec<String>,
 }
@@ -28,6 +33,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
         allow_paths: Vec::new(),
         allow_network: false,
         compat: false,
+        deny_report: None,
         print_profile: false,
         command: Vec::new(),
     };
@@ -41,6 +47,10 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
             "--allow-path" => {
                 let value = iter.next().ok_or("--allow-path requires a path")?;
                 options.allow_paths.push(PathBuf::from(value));
+            }
+            "--deny-report" => {
+                let value = iter.next().ok_or("--deny-report requires a path")?;
+                options.deny_report = Some(PathBuf::from(value));
             }
             "--allow-network" => options.allow_network = true,
             "--compat" => options.compat = true,
@@ -111,6 +121,55 @@ fn compat_profile(allow_network: bool) -> String {
     profile
 }
 
+/// Extract the blocked path from a shell error line such as
+/// `sh: /path/to/file: Operation not permitted`.
+fn parse_denied_line(line: &str) -> Option<String> {
+    let marker = "Operation not permitted";
+    let prefix = line[..line.find(marker)?].trim_end();
+    let prefix = prefix.strip_suffix(':')?.trim_end();
+    let path = prefix.split_once(": ").map(|(_, rest)| rest).unwrap_or(prefix).trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn json_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn write_report(path: &Path, denied: &[String], exit_code: i32) {
+    let list = denied
+        .iter()
+        .map(|item| format!("\"{}\"", json_escape(item)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let body = format!("{{\"denied\":[{list}],\"exitCode\":{exit_code}}}");
+    let _ = std::fs::write(path, body);
+}
+
+fn sandbox_invocation(profile: &str, command: &[String]) -> (String, Vec<String>) {
+    if cfg!(target_os = "macos") {
+        let mut args = vec!["-p".to_string(), profile.to_string()];
+        args.extend(command.iter().cloned());
+        ("/usr/bin/sandbox-exec".to_string(), args)
+    } else {
+        (command[0].clone(), command[1..].to_vec())
+    }
+}
+
 fn main() -> ExitCode {
     let options = match parse(std::env::args().skip(1)) {
         Ok(options) => options,
@@ -126,29 +185,30 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if cfg!(target_os = "macos") {
-        let status = Command::new("/usr/bin/sandbox-exec")
-            .arg("-p")
-            .arg(&profile)
-            .args(&options.command)
-            .status();
-        match status {
-            Ok(status) => return ExitCode::from(status.code().unwrap_or(1) as u8),
-            Err(error) => {
-                eprintln!("miao-run: failed to start sandbox-exec: {error}");
-                return ExitCode::from(127);
+    let (program, args) = sandbox_invocation(&profile, &options.command);
+    let mut child = match Command::new(&program).args(&args).stdout(Stdio::inherit()).stderr(Stdio::piped()).spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            eprintln!("miao-run: failed to start {program}: {error}");
+            return ExitCode::from(127);
+        }
+    };
+
+    let mut denied = Vec::new();
+    if let Some(stderr) = child.stderr.take() {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            eprintln!("{line}");
+            if let Some(path) = parse_denied_line(&line) {
+                denied.push(path);
             }
         }
     }
 
-    eprintln!("miao-run: no sandbox backend for this platform; running unsandboxed");
-    match Command::new(&options.command[0]).args(&options.command[1..]).status() {
-        Ok(status) => ExitCode::from(status.code().unwrap_or(1) as u8),
-        Err(error) => {
-            eprintln!("miao-run: failed to start command: {error}");
-            ExitCode::from(127)
-        }
+    let code = child.wait().ok().and_then(|status| status.code()).unwrap_or(1);
+    if let Some(report) = &options.deny_report {
+        write_report(report, &denied, code);
     }
+    ExitCode::from(code as u8)
 }
 
 #[cfg(test)]
@@ -179,6 +239,15 @@ mod tests {
         let profile = profile(&[], &[], false, true);
         assert!(profile.contains("(allow default)"));
         assert!(profile.contains("(deny network*)"));
+    }
+
+    #[test]
+    fn parse_denied_line_extracts_path() {
+        assert_eq!(
+            parse_denied_line("sh: /Users/me/cache/f.txt: Operation not permitted"),
+            Some("/Users/me/cache/f.txt".to_string())
+        );
+        assert_eq!(parse_denied_line("curl: (6) Could not resolve host"), None);
     }
 
     #[test]

@@ -48,7 +48,7 @@ plus diff statistics. `deriveNewContents` ports `deriveNewContentsFromChunks` fr
 `miao-run`:
 
 ```sh
-miao-run --workdir <dir> [--allow-path <dir>]... [--allow-network] [--compat] [--print-profile] -- <command> [args...]
+miao-run --workdir <dir> [--allow-path <dir>]... [--allow-network] [--compat] [--deny-report <file>] [--print-profile] -- <command> [args...]
 ```
 
 - Strict mode (default): deny-by-default. Reads everywhere and process execution are allowed,
@@ -58,9 +58,18 @@ miao-run --workdir <dir> [--allow-path <dir>]... [--allow-network] [--compat] [-
 - `--compat`: compatibility-first. Allow default, then deny writes only to credential paths
   (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.netrc`, `~/.docker/config.json`, `~/.config/gh`) and deny
   network unless `--allow-network`. Far fewer false denials, weaker isolation.
+- `--deny-report <file>` writes `{"denied":[...],"exitCode":n}` so the caller can escalate a denial.
 - `--print-profile` prints the generated seatbelt profile and exits; the command's stderr names the
   path a denial blocked, which is the fastest way to find what to allow next.
 - On non-macOS it runs the command unsandboxed.
+
+### Escalating denials
+
+`packages/miao/src/tool/sandbox.ts` (`runSandboxed`) is the integration seam: it runs the command,
+reads `--deny-report`, calls `ask(denied)` to get the paths the user approves, and retries with more
+`--allow-path` entries (up to `maxAttempts`). An empty approval aborts. It is not wired into the
+bash tool yet; the intended wiring is to pass the bash permission prompt as `ask`.
+
 
 ## PoC results (measured, same machine, release)
 

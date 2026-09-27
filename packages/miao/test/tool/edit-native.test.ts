@@ -7,6 +7,7 @@ import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { replace } from "../../src/tool/edit"
 import { deriveNewContentsFromChunks, type UpdateFileChunk } from "../../src/patch"
+import { runSandboxed } from "../../src/tool/sandbox"
 
 const require = createRequire(import.meta.url)
 const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")
@@ -298,6 +299,39 @@ withMiaoRun("native sandbox (miao-run)", () => {
       expect(existsSync(escape)).toBe(false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  test("escalates denied paths and retries", async () => {
+    const workdir = mkdtempSync(path.join(os.tmpdir(), "miao-sbx-wd-"))
+    const cache = mkdtempSync(path.join(os.tmpdir(), "miao-sbx-cache-"))
+    try {
+      const approvals: string[][] = []
+      const result = await runSandboxed({
+        binary: miaoRunPath,
+        command: ["sh", "-c", `echo x > "${path.join(cache, "f.txt")}"`],
+        workdirs: [workdir],
+        ask: async (denied) => {
+          approvals.push(denied)
+          return [cache]
+        },
+      })
+      expect(result.code).toBe(0)
+      expect(approvals.length).toBe(1)
+      expect(approvals[0]![0]).toContain("f.txt")
+      expect(existsSync(path.join(cache, "f.txt"))).toBe(true)
+
+      const aborted = await runSandboxed({
+        binary: miaoRunPath,
+        command: ["sh", "-c", `echo x > "${path.join(cache, "g.txt")}"`],
+        workdirs: [workdir],
+        ask: async () => [],
+      })
+      expect(aborted.code).not.toBe(0)
+      expect(aborted.denied.length).toBe(1)
+      expect(existsSync(path.join(cache, "g.txt"))).toBe(false)
+    } finally {
+      rmSync(workdir, { recursive: true, force: true })
+      rmSync(cache, { recursive: true, force: true })
     }
   })
 })
