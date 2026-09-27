@@ -170,6 +170,47 @@ fn sandbox_invocation(profile: &str, command: &[String]) -> (String, Vec<String>
     }
 }
 
+/// Apply a Landlock ruleset to the current process. Reads are allowed everywhere;
+/// writes are limited to the work/allow directories plus temp/dev. The restrictions
+/// are inherited by the command we exec.
+///
+/// NOTE: verified to compile for `x86_64-unknown-linux-gnu`; it has not been
+/// executed on a Linux host, and it does not restrict network access (Landlock
+/// ABI v1 has no network rules).
+#[cfg(target_os = "linux")]
+fn apply_linux_restrictions(workdirs: &[PathBuf], allow_paths: &[PathBuf]) -> Result<(), String> {
+    use landlock::{Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr};
+
+    let abi = AccessFs::from_all(landlock::ABI::V1);
+    let read = AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir;
+    let mut ruleset = Ruleset::default()
+        .handle_access(abi)
+        .map_err(|error| error.to_string())?
+        .create()
+        .map_err(|error| error.to_string())?;
+
+    if let Ok(root) = PathFd::new("/") {
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(root, read))
+            .map_err(|error| error.to_string())?;
+    }
+    for dir in ["/tmp", "/private/tmp", "/private/var/tmp", "/dev"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(workdirs.iter().cloned())
+        .chain(allow_paths.iter().cloned())
+    {
+        if let Ok(fd) = PathFd::new(canonical(&dir)) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, abi))
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    ruleset.restrict_self().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let options = match parse(std::env::args().skip(1)) {
         Ok(options) => options,
@@ -184,6 +225,15 @@ fn main() -> ExitCode {
         println!("{profile}");
         return ExitCode::SUCCESS;
     }
+
+    #[cfg(target_os = "linux")]
+    if let Err(error) = apply_linux_restrictions(&options.workdirs, &options.allow_paths) {
+        eprintln!("miao-run: failed to apply landlock: {error}");
+        return ExitCode::from(125);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    eprintln!("miao-run: no sandbox backend for this platform; running unsandboxed");
 
     let (program, args) = sandbox_invocation(&profile, &options.command);
     let mut child = match Command::new(&program).args(&args).stdout(Stdio::inherit()).stderr(Stdio::piped()).spawn() {

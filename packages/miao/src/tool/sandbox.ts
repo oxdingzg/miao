@@ -8,6 +8,7 @@
 import { existsSync } from "fs"
 import os from "os"
 import path from "path"
+import { Flag } from "@miao/core/flag/flag"
 
 /**
  * Locate the `miao-run` binary: `MIAO_RUN` first, then next to the running
@@ -25,6 +26,11 @@ export function resolveMiaoRun(): string | undefined {
 /** Whether process-level sandboxing can run on this host. */
 export function sandboxAvailable(): boolean {
   return process.platform === "darwin" && resolveMiaoRun() !== undefined
+}
+
+/** Whether sandboxing is opted in (`MIAO_SANDBOX`) and possible on this host. */
+export function sandboxEnabled(): boolean {
+  return Flag.MIAO_SANDBOX && sandboxAvailable()
 }
 
 export interface SandboxRunInput {
