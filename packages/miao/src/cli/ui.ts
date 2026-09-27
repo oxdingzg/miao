@@ -1,26 +1,31 @@
 import { EOL } from "os"
 import { Schema } from "effect"
+import { colorEnabled } from "@miao/tui/terminal-win32"
 import { logo as glyphs } from "./logo"
 
 const wordmark = ["  /\\/\\  ", " ( o.o ) ", "  > ^ <  "]
 
 export class CancelledError extends Schema.TaggedErrorClass<CancelledError>()("UICancelledError", {}) {}
 
+const color = colorEnabled()
+
+const sgr = (sequence: string) => (color ? sequence : "")
+
 export const Style = {
-  TEXT_HIGHLIGHT: "\x1b[96m",
-  TEXT_HIGHLIGHT_BOLD: "\x1b[96m\x1b[1m",
-  TEXT_DIM: "\x1b[90m",
-  TEXT_DIM_BOLD: "\x1b[90m\x1b[1m",
-  TEXT_NORMAL: "\x1b[0m",
-  TEXT_NORMAL_BOLD: "\x1b[1m",
-  TEXT_WARNING: "\x1b[93m",
-  TEXT_WARNING_BOLD: "\x1b[93m\x1b[1m",
-  TEXT_DANGER: "\x1b[91m",
-  TEXT_DANGER_BOLD: "\x1b[91m\x1b[1m",
-  TEXT_SUCCESS: "\x1b[92m",
-  TEXT_SUCCESS_BOLD: "\x1b[92m\x1b[1m",
-  TEXT_INFO: "\x1b[94m",
-  TEXT_INFO_BOLD: "\x1b[94m\x1b[1m",
+  TEXT_HIGHLIGHT: sgr("\x1b[96m"),
+  TEXT_HIGHLIGHT_BOLD: sgr("\x1b[96m\x1b[1m"),
+  TEXT_DIM: sgr("\x1b[90m"),
+  TEXT_DIM_BOLD: sgr("\x1b[90m\x1b[1m"),
+  TEXT_NORMAL: sgr("\x1b[0m"),
+  TEXT_NORMAL_BOLD: sgr("\x1b[1m"),
+  TEXT_WARNING: sgr("\x1b[93m"),
+  TEXT_WARNING_BOLD: sgr("\x1b[93m\x1b[1m"),
+  TEXT_DANGER: sgr("\x1b[91m"),
+  TEXT_DANGER_BOLD: sgr("\x1b[91m\x1b[1m"),
+  TEXT_SUCCESS: sgr("\x1b[92m"),
+  TEXT_SUCCESS_BOLD: sgr("\x1b[92m\x1b[1m"),
+  TEXT_INFO: sgr("\x1b[94m"),
+  TEXT_INFO_BOLD: sgr("\x1b[94m\x1b[1m"),
 }
 
 export function println(...message: string[]) {
@@ -41,7 +46,7 @@ export function empty() {
 }
 
 export function logo(pad?: string) {
-  if (!process.stdout.isTTY && !process.stderr.isTTY) {
+  if (!colorEnabled()) {
     const result = []
     for (const row of wordmark) {
       if (pad) result.push(pad)
@@ -49,10 +54,6 @@ export function logo(pad?: string) {
       result.push(EOL)
     }
     return result.join("").trimEnd()
-  }
-
-  if (process.env.NO_COLOR) {
-    return wordmark.join(EOL)
   }
 
   const result: string[] = []

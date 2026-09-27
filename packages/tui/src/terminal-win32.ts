@@ -27,6 +27,8 @@ function load() {
   }
 }
 
+let vtState: boolean | undefined
+
 /**
  * Enable ANSI/VT processing on the console output handles so escape sequences
  * (colors, cursor moves, mouse tracking) are interpreted instead of printed
@@ -37,8 +39,8 @@ function load() {
  * callers can fall back to plain output. On non-Windows it returns `true`.
  */
 export function win32EnableVirtualTerminal(): boolean {
-  if (process.platform !== "win32") return true
-  if (!load()) return false
+  if (process.platform !== "win32") return (vtState = true)
+  if (!load()) return (vtState = false)
 
   let console = false
   const buf = new Uint32Array(1)
@@ -51,7 +53,27 @@ export function win32EnableVirtualTerminal(): boolean {
       k32!.symbols.SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
     }
   }
-  return console
+  return (vtState = console)
+}
+
+/** Whether ANSI/VT output is (now) usable in this process. */
+export function vtSupported(): boolean {
+  if (vtState === undefined) win32EnableVirtualTerminal()
+  return vtState ?? false
+}
+
+/**
+ * Whether colored/ANSI output should be emitted. Honors `NO_COLOR` and
+ * `FORCE_COLOR`, and falls back to plain text when stdout/stderr is not a TTY
+ * or (on Windows) no VT-capable console is available.
+ */
+export function colorEnabled(): boolean {
+  if (process.env.NO_COLOR) return false
+  if (process.env.FORCE_COLOR !== undefined && process.env.FORCE_COLOR !== "" && process.env.FORCE_COLOR !== "0") {
+    return true
+  }
+  if (!process.stdout.isTTY && !process.stderr.isTTY) return false
+  return vtSupported()
 }
 
 /**

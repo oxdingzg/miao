@@ -139,6 +139,16 @@ export const TuiThreadCommand = cmd({
         hidden: true,
       }),
   handler: async (args) => {
+    if (process.platform === "win32") {
+      const { vtSupported } = await import("@miao/tui/terminal-win32")
+      if (!vtSupported()) {
+        UI.error(
+          "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
+        )
+        process.exitCode = 1
+        return
+      }
+    }
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
       process.exitCode = 1

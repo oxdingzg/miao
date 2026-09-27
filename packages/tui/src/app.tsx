@@ -83,7 +83,12 @@ import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
 import { createTuiAttention } from "./attention"
 import * as TuiAudio from "./audio"
-import { win32DisableProcessedInput, win32EnableVirtualTerminal, win32FlushInputBuffer } from "./terminal-win32"
+import {
+  vtSupported,
+  win32DisableProcessedInput,
+  win32EnableVirtualTerminal,
+  win32FlushInputBuffer,
+} from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 
@@ -201,7 +206,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
               useKittyKeyboard: {},
               autoFocus: false,
               openConsoleOnError: false,
-              useMouse: !Flag.MIAO_DISABLE_MOUSE && input.config.mouse,
+              useMouse: !Flag.MIAO_DISABLE_MOUSE && input.config.mouse && vtSupported(),
               consoleOptions: {
                 keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
               },
