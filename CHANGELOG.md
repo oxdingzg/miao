@@ -20,6 +20,10 @@ to add a section here.
 
 - **core**: compaction summaries use the session model by default again; the cheap model is opt-in via `compaction.summarize_small`.
 
+### Internal
+
+- **native (PoC, opt-in, not in production)**: added `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase`, line-ending detection and normalization, BPE token counting (o200k/cl100k), `.gitignore`-aware file walking, and sha256/blake3 hashing. Each ships with Rust unit tests and JS parity tests.
+
 ## [0.0.4] - 2026-09-27
 
 ### Added

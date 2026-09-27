@@ -121,6 +121,28 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 
 结论：行为正确，优化后典型与病态路径都领先；但全流程被 diff 主导，端到端收益仍有限。未接入生产，`tool/edit.ts` 仍走 TS 与 jsdiff。
 
+### 已落地的 native 模块（PoC，全部纯函数，MIAO_NATIVE 门控 + TS 回退）
+
+每个函数都带 Rust 单测 + JS parity 测试，parity 不许跳过（`MIAO_NATIVE_REQUIRED=1`）。
+
+| 分类 | 函数 | parity 对象 |
+|---|---|---|
+| 文本 | `replaceOnly` / `applyEdit` / `diffStats` / `unifiedPatch` / `deriveNewContents` | JS `edit`/`jsdiff`（逐字节） |
+| 文本 | `detectLineEnding` / `normalizeLineEndings` | TS 参考实现 |
+| 文本 | `countTokens`（o200k / cl100k） | `gpt-tokenizer` |
+| 文本 | `sha256Hex` / `blake3Hex` | Node crypto / BLAKE3 已知向量 |
+| Git | `gitStatus` / `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase`（均含 Async） | `git status` / `rev-parse` / `show` / `diff --name-only` / `merge-base` |
+| 遍历 | `walkFiles`（`ignore`+`globset`，尊重 `.gitignore`） | 递归列目录 + gitignore 行为 |
+| 沙箱 | `miao-run`（macOS seatbelt） | 行为测试（写白名单 / 禁网） |
+
+性能：`git rev-parse` native ~0.2–0.5 ms vs 子进程 ~5–9 ms（约 20x）。全部未接入生产。
+
+### 尚未落地的模块与原因
+
+- **#2 沙箱跨平台（Linux landlock/seccomp、Windows）**：`landlock` 依赖已在，但只能在对应平台构建/验证；当前机器是 macOS，无法给出可信测试。留待 Linux/Windows runner。
+- **#3 diff 算法升级（`imara-diff` 替换 `similar`）**：会改变 hunk 边界，破坏与 jsdiff 的逐字节 parity；与"无损"原则冲突，**不做**。
+- **#6 tree-sitter 原生**：新增能力、parity 目标不明确、依赖重，暂缓。
+
 ### 第二步：看指标再决定
 
 - SQLite 会话存储/迁移/检索（有收益，但数据模型绑在 Effect-Schema/Drizzle 上，风险高，先做只读索引而不是替换存储层）

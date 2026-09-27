@@ -121,6 +121,28 @@ The code is in `crates/miao-native/`: `src/lib.rs` ports the nine replacers, `re
 
 Conclusion: behaviour is correct and, after optimization, the typical and pathologic paths both lead; but the full pipeline is dominated by the diff, so the end-to-end gain is still limited. Not wired into production; `tool/edit.ts` still uses TS and jsdiff.
 
+### Native modules landed (PoC; pure functions, `MIAO_NATIVE`-gated with a TS fallback)
+
+Each function ships with Rust unit tests plus a JS parity test; parity is not allowed to skip (`MIAO_NATIVE_REQUIRED=1`).
+
+| Area | Functions | Parity target |
+|---|---|---|
+| Text | `replaceOnly` / `applyEdit` / `diffStats` / `unifiedPatch` / `deriveNewContents` | JS `edit` / `jsdiff` (byte-exact) |
+| Text | `detectLineEnding` / `normalizeLineEndings` | TS reference |
+| Text | `countTokens` (o200k / cl100k) | `gpt-tokenizer` |
+| Text | `sha256Hex` / `blake3Hex` | Node crypto / BLAKE3 known vector |
+| Git | `gitStatus` / `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` (all async variants) | `git status` / `rev-parse` / `show` / `diff --name-only` / `merge-base` |
+| Walk | `walkFiles` (`ignore` + `globset`, honors `.gitignore`) | recursive listing + gitignore behavior |
+| Sandbox | `miao-run` (macOS seatbelt) | behavior tests (write allowlist / network denied) |
+
+Performance: `git rev-parse` native ~0.2-0.5 ms vs subprocess ~5-9 ms (~20x). None of it is wired into production.
+
+### Modules not landed, and why
+
+- **#2 sandbox cross-platform (Linux landlock/seccomp, Windows)**: the `landlock` dependency is present, but it can only be built and verified on the matching platform; the current machine is macOS, so no trustworthy test is possible here. Left to Linux/Windows runners.
+- **#3 diff algorithm upgrade (`imara-diff` over `similar`)**: changes hunk boundaries and breaks byte-exact parity with jsdiff; conflicts with the lossless principle, so **not done**.
+- **#6 native tree-sitter**: new capability with an unclear parity target and heavy dependencies; deferred.
+
 ### Step 2: decide based on metrics
 
 - SQLite session storage/migrations/retrieval (real benefit, but the data model is bound to Effect-Schema/Drizzle; start with a read-only index instead of replacing the storage layer)
