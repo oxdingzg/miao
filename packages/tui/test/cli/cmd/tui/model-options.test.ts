@@ -15,7 +15,7 @@ describe("sortModelOptions", () => {
     expect(sorted.map((model) => model.title)).toEqual(["GPT 5.4", "GPT 5.2", "GPT 5.1"])
   })
 
-  test("orders regular model choices free-first and then newest-first", () => {
+  test("orders regular model choices available-first, then free, then newest-first", () => {
     const sorted = sortModelOptions(
       [
         { title: "GLM 5", releaseDate: "2025-07-28" },
@@ -27,6 +27,6 @@ describe("sortModelOptions", () => {
       false,
     )
 
-    expect(sorted.map((model) => model.title)).toEqual(["Free new", "Free old", "GLM 5.2", "GLM 5.1", "GLM 5"])
+    expect(sorted.map((model) => model.title)).toEqual(["GLM 5.2", "GLM 5.1", "GLM 5", "Free new", "Free old"])
   })
 })

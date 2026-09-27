@@ -190,7 +190,8 @@ export function sortModelOptions<T extends { footer?: string; releaseDate: strin
   if (newestFirst) return sortBy(options, [(option) => option.releaseDate, "desc"], (option) => option.title)
   return sortBy(
     options,
-    (option) => option.footer !== "Free",
+    // Available (configured/paid) providers first; free models last.
+    (option) => option.footer === "Free",
     [(option) => option.releaseDate, "desc"],
     (option) => option.title,
   )
