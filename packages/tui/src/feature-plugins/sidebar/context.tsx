@@ -22,15 +22,18 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       return {
         tokens: 0,
         percent: null,
+        cacheHit: null,
       }
     }
 
     const tokens =
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
+    const cacheTotal = last.tokens.cache.read + last.tokens.cache.write + last.tokens.input
     return {
       tokens,
       percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null,
+      cacheHit: cacheTotal > 0 ? Math.round((last.tokens.cache.read / cacheTotal) * 100) : null,
     }
   })
 
@@ -41,6 +44,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </text>
       <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
       <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
+      <text fg={theme().textMuted}>{state().cacheHit ?? 0}% cached</text>
       <text fg={theme().textMuted}>{money.format(cost())} spent</text>
     </box>
   )

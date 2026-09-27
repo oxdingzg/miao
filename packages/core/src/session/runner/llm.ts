@@ -36,6 +36,7 @@ import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { MAX_STEPS_PROMPT } from "./max-steps"
+import { SessionRunnerMetrics } from "./metrics"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
@@ -238,9 +239,12 @@ const layer = Layer.effect(
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
         withPublication(publisher.publish(event, outputPaths))
       let overflowFailure: ProviderErrorEvent | undefined
+      let requestStartedAt: number | undefined
+      let firstEventAt: number | undefined
       const providerStream = llm.stream(request).pipe(
         Stream.runForEach((event) =>
           Effect.gen(function* () {
+            firstEventAt ??= Date.now()
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
@@ -285,6 +289,7 @@ const layer = Layer.effect(
 
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
+          requestStartedAt = Date.now()
           const stream = yield* restore(providerStream).pipe(Effect.exit)
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
@@ -343,6 +348,15 @@ const layer = Layer.effect(
                 files,
               }),
             )
+            yield* Effect.logInfo("session.turn", {
+              sessionID: session.id,
+              model: `${model.provider}/${model.id}`,
+              ttftMs:
+                requestStartedAt !== undefined && firstEventAt !== undefined ? firstEventAt - requestStartedAt : undefined,
+              cost: stepSettlement.cost,
+              cacheHitRatio: SessionRunnerMetrics.cacheHitRatio(stepSettlement.tokens),
+              tokens: stepSettlement.tokens,
+            })
           }
           if (publisher.hasProviderError())
             yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
