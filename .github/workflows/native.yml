@@ -8,12 +8,14 @@ on:
       - "crates/miao-native/**"
       - "packages/miao/src/tool/edit.ts"
       - "packages/miao/test/tool/edit-native.test.ts"
+      - "packages/miao/test/tool/git-native.test.ts"
       - ".github/workflows/native.yml"
   pull_request:
     paths:
       - "crates/miao-native/**"
       - "packages/miao/src/tool/edit.ts"
       - "packages/miao/test/tool/edit-native.test.ts"
+      - "packages/miao/test/tool/git-native.test.ts"
       - ".github/workflows/native.yml"
   workflow_dispatch:
 
@@ -62,7 +64,7 @@ jobs:
         working-directory: packages/native
 
       - name: Native parity (no skipping allowed)
-        run: bun test test/tool/edit-native.test.ts
+        run: bun test test/tool/edit-native.test.ts test/tool/git-native.test.ts
         working-directory: packages/miao
         env:
           MIAO_NATIVE: "1"

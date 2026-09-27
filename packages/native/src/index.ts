@@ -32,6 +32,10 @@ export interface NativeModule {
   unifiedPatch(before: string, after: string, filePath: string): string
   deriveNewContents(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
   gitStatus(path: string): Array<{ path: string; status: string }>
+  gitRevParse(path: string, rev: string): string
+  gitRevParseAsync(path: string, rev: string): Promise<string>
+  gitBlob(path: string, rev: string, file: string): { content: string; binary: boolean }
+  gitBlobAsync(path: string, rev: string, file: string): Promise<{ content: string; binary: boolean }>
 }
 
 function load(): NativeModule | undefined {

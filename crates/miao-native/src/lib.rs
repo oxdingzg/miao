@@ -842,6 +842,107 @@ pub fn git_status_async(path: String) -> napi::bindgen_prelude::AsyncTask<GitSta
     napi::bindgen_prelude::AsyncTask::new(GitStatusTask { path })
 }
 
+#[napi(object)]
+pub struct GitBlob {
+    pub content: String,
+    pub binary: bool,
+}
+
+/// Resolve a revision to its full object id, matching `git rev-parse <rev>`.
+fn git_rev_parse_impl(path: &str, rev: &str) -> Result<String, String> {
+    let repo = gix::open(path).map_err(|error| format!("failed to open repository: {error}"))?;
+    let id = repo
+        .rev_parse_single(gix::bstr::BStr::new(rev))
+        .map_err(|error| format!("failed to resolve '{rev}': {error}"))?;
+    Ok(id.to_string())
+}
+
+/// Read a file's content at a revision, matching `git show <rev>:<file>`.
+fn git_blob_impl(path: &str, rev: &str, file: &str) -> Result<GitBlob, String> {
+    let repo = gix::open(path).map_err(|error| format!("failed to open repository: {error}"))?;
+    let id = repo
+        .rev_parse_single(gix::bstr::BStr::new(rev))
+        .map_err(|error| format!("failed to resolve '{rev}': {error}"))?;
+    let tree = repo
+        .find_object(id)
+        .map_err(|error| format!("failed to find object: {error}"))?
+        .peel_to_tree()
+        .map_err(|error| format!("failed to peel '{rev}' to a tree: {error}"))?;
+    let entry = tree
+        .lookup_entry_by_path(file)
+        .map_err(|error| format!("failed to look up '{file}': {error}"))?
+        .ok_or_else(|| format!("'{file}' not found at '{rev}'"))?;
+    let object = entry
+        .object()
+        .map_err(|error| format!("failed to read blob for '{file}': {error}"))?;
+    match String::from_utf8(object.data.clone()) {
+        Ok(content) => Ok(GitBlob { content, binary: false }),
+        Err(_) => Ok(GitBlob {
+            content: String::new(),
+            binary: true,
+        }),
+    }
+}
+
+#[napi(js_name = "gitRevParse")]
+pub fn git_rev_parse(path: String, rev: String) -> napi::Result<String> {
+    git_rev_parse_impl(&path, &rev).map_err(napi::Error::from_reason)
+}
+
+/// Async variant that runs on the libuv threadpool so it does not block the JS event loop.
+pub struct GitRevParseTask {
+    path: String,
+    rev: String,
+}
+
+impl napi::Task for GitRevParseTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        git_rev_parse_impl(&self.path, &self.rev).map_err(napi::Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+#[napi(js_name = "gitRevParseAsync")]
+pub fn git_rev_parse_async(path: String, rev: String) -> napi::bindgen_prelude::AsyncTask<GitRevParseTask> {
+    napi::bindgen_prelude::AsyncTask::new(GitRevParseTask { path, rev })
+}
+
+#[napi(js_name = "gitBlob")]
+pub fn git_blob(path: String, rev: String, file: String) -> napi::Result<GitBlob> {
+    git_blob_impl(&path, &rev, &file).map_err(napi::Error::from_reason)
+}
+
+/// Async variant that runs on the libuv threadpool so it does not block the JS event loop.
+pub struct GitBlobTask {
+    path: String,
+    rev: String,
+    file: String,
+}
+
+impl napi::Task for GitBlobTask {
+    type Output = GitBlob;
+    type JsValue = GitBlob;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        git_blob_impl(&self.path, &self.rev, &self.file).map_err(napi::Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+#[napi(js_name = "gitBlobAsync")]
+pub fn git_blob_async(path: String, rev: String, file: String) -> napi::bindgen_prelude::AsyncTask<GitBlobTask> {
+    napi::bindgen_prelude::AsyncTask::new(GitBlobTask { path, rev, file })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -969,5 +1070,54 @@ mod tests {
     fn derive_reports_missing_lines() {
         let result = derive_new_contents(&[chunk(&["missing"], &["x"])], "f.txt", "line1\nline2\n");
         assert_eq!(result.unwrap_err(), "Failed to find expected lines in f.txt:\nmissing");
+    }
+
+    fn git(args: &[&str], cwd: &std::path::Path) -> std::process::Output {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .output()
+            .expect("git available")
+    }
+
+    fn temp_repo(name: &str) -> Option<std::path::PathBuf> {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return None;
+        }
+        let dir = std::env::temp_dir().join(format!("miao-native-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&["init", "-q"], &dir);
+        std::fs::write(dir.join("file.txt"), "hello\nworld\n").unwrap();
+        git(&["add", "file.txt"], &dir);
+        git(&["commit", "-qm", "init"], &dir);
+        Some(dir)
+    }
+
+    #[test]
+    fn rev_parse_matches_git() {
+        let Some(dir) = temp_repo("revparse") else { return };
+        let expected = String::from_utf8(git(&["rev-parse", "HEAD"], &dir).stdout).unwrap().trim().to_string();
+        assert_eq!(git_rev_parse_impl(dir.to_str().unwrap(), "HEAD").unwrap(), expected);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn blob_matches_git_show() {
+        let Some(dir) = temp_repo("blob") else { return };
+        let expected = String::from_utf8(git(&["show", "HEAD:file.txt"], &dir).stdout).unwrap();
+        let blob = git_blob_impl(dir.to_str().unwrap(), "HEAD", "file.txt").unwrap();
+        assert!(!blob.binary);
+        assert_eq!(blob.content, expected);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rev_parse_errors_outside_repository() {
+        assert!(git_rev_parse_impl("/", "HEAD").is_err());
     }
 }
