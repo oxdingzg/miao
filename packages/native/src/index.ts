@@ -40,6 +40,8 @@ export interface NativeModule {
   gitWorktreeChangesAsync(path: string): Promise<string[]>
   gitMergeBase(path: string, a: string, b: string): string
   gitMergeBaseAsync(path: string, a: string, b: string): Promise<string>
+  detectLineEnding(text: string): string
+  normalizeLineEndings(text: string, eol: string): string
 }
 
 function load(): NativeModule | undefined {

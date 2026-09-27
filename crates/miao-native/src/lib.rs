@@ -1044,6 +1044,34 @@ pub fn git_merge_base_async(path: String, a: String, b: String) -> napi::bindgen
     napi::bindgen_prelude::AsyncTask::new(GitMergeBaseTask { path, a, b })
 }
 
+/// Detect the dominant line ending from the first line break, matching the
+/// TypeScript file-read normalization.
+#[napi(js_name = "detectLineEnding")]
+pub fn detect_line_ending(text: String) -> String {
+    let bytes = text.as_bytes();
+    for index in 0..bytes.len() {
+        match bytes[index] {
+            b'\r' => {
+                return if bytes.get(index + 1) == Some(&b'\n') { "crlf" } else { "cr" }.to_string();
+            }
+            b'\n' => return "lf".to_string(),
+            _ => {}
+        }
+    }
+    "none".to_string()
+}
+
+/// Normalize all line endings to `lf` or `crlf`.
+#[napi(js_name = "normalizeLineEndings")]
+pub fn normalize_line_endings(text: String, eol: String) -> String {
+    let lf = text.replace("\r\n", "\n").replace('\r', "\n");
+    if eol == "crlf" {
+        lf.replace('\n', "\r\n")
+    } else {
+        lf
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1252,5 +1280,19 @@ mod tests {
             .to_string();
         assert_eq!(git_merge_base_impl(dir.to_str().unwrap(), "HEAD", "feature").unwrap(), expected);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detects_line_endings() {
+        assert_eq!(detect_line_ending("a\r\nb".to_string()), "crlf");
+        assert_eq!(detect_line_ending("a\nb".to_string()), "lf");
+        assert_eq!(detect_line_ending("a\rb".to_string()), "cr");
+        assert_eq!(detect_line_ending("abc".to_string()), "none");
+    }
+
+    #[test]
+    fn normalizes_line_endings() {
+        assert_eq!(normalize_line_endings("a\r\nb\rc\nd".to_string(), "lf".to_string()), "a\nb\nc\nd");
+        assert_eq!(normalize_line_endings("a\nb".to_string(), "crlf".to_string()), "a\r\nb");
     }
 }
