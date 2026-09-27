@@ -20,6 +20,15 @@
    - `publish`: after all platforms succeed, `gh release edit --draft=false` publishes the release.
 4. **Assets**: `miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`, matching the `install` script and the updater (`Installation.latest` -> `oxdingzg/miao/releases/latest`).
 
+## Changelog
+
+- `CHANGELOG.md` at the repo root is the **browsable version history** (Keep a Changelog format), with a new section per release.
+- GitHub release notes are generated **deterministically** from Conventional Commits by `script/changelog.ts` (no LLM / `opencode` CLI): `feat -> Added`, `fix`/`revert -> Fixed`, `perf -> Performance`, `refactor -> Changed`; `chore`/`ci`/`test`/`docs`/`style`/`build` are skipped.
+- Preview and write:
+  - Preview a range: `bun script/changelog.ts --from <previous> --to HEAD --version <x.y.z> --print`
+  - Write into `CHANGELOG.md`: add `--write`
+  - At release time `script/version.ts` calls it with `--to <sha>` to produce `UPCOMING_CHANGELOG.md`, which becomes the release notes.
+
 ## Pre-release checklist
 
 - [ ] Windows real-machine VT verification: PowerShell 5.1 legacy console / Windows Terminal / pwsh 7 (the logic is only verified on macOS so far).

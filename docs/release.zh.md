@@ -20,6 +20,15 @@
    - `publish`：所有平台成功后执行 `gh release edit --draft=false`，正式发布。
 4. **产物**：`miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`，命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
 
+## 变更日志
+
+- 仓库根 `CHANGELOG.md` 是**可直接查看的版本历史**（Keep a Changelog 格式），每次发布新增一节。
+- GitHub release 的 notes 由 `script/changelog.ts` 从 Conventional Commits **确定性生成**（不再依赖 LLM / `opencode` CLI）：`feat → Added`、`fix`/`revert → Fixed`、`perf → Performance`、`refactor → Changed`，跳过 `chore`/`ci`/`test`/`docs`/`style`/`build`。
+- 预览与写入：
+  - 预览某版本区间：`bun script/changelog.ts --from <上一版本> --to HEAD --version <x.y.z> --print`
+  - 写入 `CHANGELOG.md`：追加 `--write`
+  - 发布时 `script/version.ts` 以 `--to <sha>` 调用它生成 `UPCOMING_CHANGELOG.md`，即 release notes。
+
 ## 发布前检查清单
 
 - [ ] Windows 真机验证 VT：PowerShell 5.1 老控制台 / Windows Terminal / pwsh 7 各跑一次（目前只在 macOS 上验证了逻辑，未上真机）。
