@@ -62,6 +62,7 @@ type Entry = {
 type Settings = {
   readonly auto: boolean
   readonly hotPrefix: boolean
+  readonly preciseTokens: boolean
   readonly buffer: number
   readonly tokens: number
 }
@@ -82,8 +83,6 @@ type Input = {
   readonly summarizeModel?: Model
   readonly request: LLMRequest
 }
-
-const estimate = (value: unknown) => Token.estimate(JSON.stringify(value))
 
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
@@ -141,10 +140,11 @@ const settings = (documents: readonly Config.Entry[]) => {
     (result, current) => ({
       auto: current.auto ?? result.auto,
       hotPrefix: current.hot_prefix ?? result.hotPrefix,
+      preciseTokens: current.precise_tokens ?? result.preciseTokens,
       buffer: current.buffer ?? result.buffer,
       tokens: current.keep?.tokens ?? result.tokens,
     }),
-    { auto: true, hotPrefix: false, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
+    { auto: true, hotPrefix: false, preciseTokens: false, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
   )
 }
 
@@ -195,6 +195,10 @@ export const buildHotPrompt = () =>
 
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
+  // Precise BPE counting is opt-in: it changes threshold behavior, so the
+  // character heuristic stays the default.
+  const measure = (text: string) => (config.preciseTokens ? Token.count(text) : Token.estimate(text))
+  const measureValue = (value: unknown) => measure(JSON.stringify(value))
   const runSummary = Effect.fnUntraced(function* (input: {
     readonly sessionID: SessionSchema.ID
     readonly request: LLMRequest
@@ -243,13 +247,13 @@ export const make = (dependencies: Dependencies) => {
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     const instruction = buildHotPrompt()
-    const requestTokens = estimate({
+    const requestTokens = measureValue({
       system: input.request.system,
       messages: input.request.messages,
       tools: input.request.tools,
     })
-    if (requestTokens + Token.estimate(instruction) > context - summaryOutput) return false
-    const summarizeModel = pickSummarizeModel(input, requestTokens + Token.estimate(instruction), summaryOutput)
+    if (requestTokens + measure(instruction) > context - summaryOutput) return false
+    const summarizeModel = pickSummarizeModel(input, requestTokens + measure(instruction), summaryOutput)
     const selected = select(input.entries, config.tokens)
     return yield* runSummary({
       sessionID: input.sessionID,
@@ -281,8 +285,8 @@ export const make = (dependencies: Dependencies) => {
       context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
-    if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
-    const summarizeModel = pickSummarizeModel(input, Token.estimate(summaryPrompt), summaryOutput)
+    if (measure(summaryPrompt) > context - summaryOutput) return false
+    const summarizeModel = pickSummarizeModel(input, measure(summaryPrompt), summaryOutput)
     return yield* runSummary({
       sessionID: input.sessionID,
       recent: selected.recent,
@@ -303,7 +307,7 @@ export const make = (dependencies: Dependencies) => {
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     if (
-      estimate({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }) <=
+      measureValue({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }) <=
       context - Math.max(output, config.buffer)
     )
       return false
