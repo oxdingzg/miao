@@ -61,6 +61,7 @@ type Entry = {
 
 type Settings = {
   readonly auto: boolean
+  readonly hotPrefix: boolean
   readonly buffer: number
   readonly tokens: number
 }
@@ -87,14 +88,14 @@ const estimate = (value: unknown) => Token.estimate(JSON.stringify(value))
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
 
-// Use the cheap model only when the summary prompt still fits its context;
+// Use the cheap model only when the summary request still fits its context;
 // otherwise the session model is the safe choice.
-export const pickSummarizeModel = (input: { model: Model; summarizeModel?: Model }, prompt: string, output: number) => {
+export const pickSummarizeModel = (input: { model: Model; summarizeModel?: Model }, tokens: number, output: number) => {
   const candidate = input.summarizeModel
   if (!candidate) return input.model
   const context = candidate.route.defaults.limits?.context
   if (context === undefined || context <= 0) return input.model
-  return Token.estimate(prompt) <= context - output ? candidate : input.model
+  return tokens <= context - output ? candidate : input.model
 }
 
 export const serializeToolContent = (content: SessionMessage.ToolStateCompleted["content"]) =>
@@ -139,10 +140,11 @@ const settings = (documents: readonly Config.Entry[]) => {
   return configured.reduce<Settings>(
     (result, current) => ({
       auto: current.auto ?? result.auto,
+      hotPrefix: current.hot_prefix ?? result.hotPrefix,
       buffer: current.buffer ?? result.buffer,
       tokens: current.keep?.tokens ?? result.tokens,
     }),
-    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
+    { auto: true, hotPrefix: false, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
   )
 }
 
@@ -185,22 +187,19 @@ export const buildPrompt = (input: { readonly previousSummary?: string; readonly
   ].join("\n\n")
 }
 
+export const buildHotPrompt = () =>
+  [
+    "Summarize the conversation above so another coding agent can continue the work. The messages above, including any earlier conversation checkpoint, are the source.",
+    SUMMARY_TEMPLATE,
+  ].join("\n\n")
+
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
-  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (input: Input) {
-    const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
-    const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    const selected = select(input.entries, config.tokens)
-    const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
-    if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
-    const summaryPrompt = buildPrompt({
-      previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
-      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
-    })
-    const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
-    if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
-    const summarizeModel = pickSummarizeModel(input, summaryPrompt, summaryOutput)
+  const runSummary = Effect.fnUntraced(function* (input: {
+    readonly sessionID: SessionSchema.ID
+    readonly request: LLMRequest
+    readonly recent: string
+  }) {
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
@@ -212,15 +211,7 @@ export const make = (dependencies: Dependencies) => {
     const chunks: string[] = []
     let failed = false
     const summarized = yield* dependencies.llm
-      .stream(
-        LLM.request({
-          model: summarizeModel,
-          http: input.request.http,
-          messages: [Message.user(summaryPrompt)],
-          tools: [],
-          generation: { maxTokens: summaryOutput },
-        }),
-      )
+      .stream(input.request)
       .pipe(
         Stream.runForEach((event) => {
           if (LLMEvent.is.providerError(event)) failed = true
@@ -238,10 +229,74 @@ export const make = (dependencies: Dependencies) => {
       timestamp: yield* DateTime.now,
       reason: "auto",
       text: summary,
-      recent: selected.recent,
+      recent: input.recent,
     })
     return true
   })
+
+  // Proactive compaction reuses the current request prefix (system, tools, and
+  // conversation), so the provider serves it from the warm prompt cache, and
+  // appends the summary instruction as the final user message.
+  const compactHot = Effect.fn("SessionCompaction.compactHot")(function* (input: Input) {
+    const context = input.model.route.defaults.limits?.context
+    if (context === undefined || context <= 0) return false
+    const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
+    const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
+    const instruction = buildHotPrompt()
+    const requestTokens = estimate({
+      system: input.request.system,
+      messages: input.request.messages,
+      tools: input.request.tools,
+    })
+    if (requestTokens + Token.estimate(instruction) > context - summaryOutput) return false
+    const summarizeModel = pickSummarizeModel(input, requestTokens + Token.estimate(instruction), summaryOutput)
+    const selected = select(input.entries, config.tokens)
+    return yield* runSummary({
+      sessionID: input.sessionID,
+      recent: selected?.recent ?? "",
+      request: LLM.request({
+        model: summarizeModel,
+        http: input.request.http,
+        providerOptions: input.request.providerOptions,
+        system: input.request.system,
+        messages: [...input.request.messages, Message.user(instruction)],
+        tools: input.request.tools,
+        toolChoice: "none",
+        generation: { maxTokens: summaryOutput },
+      }),
+    })
+  })
+
+  // Overflow recovery cannot reuse the prefix (the request already failed to
+  // fit), so it re-embeds a truncated head instead.
+  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (input: Input) {
+    const context = input.model.route.defaults.limits?.context
+    if (context === undefined || context <= 0) return false
+    const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
+    const selected = select(input.entries, config.tokens)
+    const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
+    if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
+    const summaryPrompt = buildPrompt({
+      previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
+      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
+    })
+    const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
+    if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
+    const summarizeModel = pickSummarizeModel(input, Token.estimate(summaryPrompt), summaryOutput)
+    return yield* runSummary({
+      sessionID: input.sessionID,
+      recent: selected.recent,
+      request: LLM.request({
+        model: summarizeModel,
+        http: input.request.http,
+        providerOptions: input.request.providerOptions,
+        messages: [Message.user(summaryPrompt)],
+        tools: [],
+        generation: { maxTokens: summaryOutput },
+      }),
+    })
+  })
+
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
     if (!config.auto) return false
     const context = input.model.route.defaults.limits?.context
@@ -252,8 +307,9 @@ export const make = (dependencies: Dependencies) => {
       context - Math.max(output, config.buffer)
     )
       return false
-    return yield* compactAfterOverflow(input)
+    return yield* (config.hotPrefix ? compactHot(input) : compactAfterOverflow(input))
   })
+
   return {
     compactIfNeeded,
     compactAfterOverflow,

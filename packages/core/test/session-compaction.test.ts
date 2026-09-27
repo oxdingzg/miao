@@ -9,22 +9,28 @@ test("compaction prefers the small model when the prompt fits its context", () =
   const main = model("main", 100_000)
   const small = model("small", 100_000)
 
-  expect(SessionCompaction.pickSummarizeModel({ model: main, summarizeModel: small }, "short", 4_096)).toBe(small)
+  expect(SessionCompaction.pickSummarizeModel({ model: main, summarizeModel: small }, 10, 4_096)).toBe(small)
 })
 
 test("compaction falls back to the session model when the prompt exceeds the small context", () => {
   const main = model("main", 100_000)
   const small = model("small", 1_000)
 
-  expect(SessionCompaction.pickSummarizeModel({ model: main, summarizeModel: small }, "x".repeat(10_000), 4_096)).toBe(
-    main,
-  )
+  expect(SessionCompaction.pickSummarizeModel({ model: main, summarizeModel: small }, 10_000, 4_096)).toBe(main)
 })
 
 test("compaction falls back to the session model without a small model", () => {
   const main = model("main", 100_000)
 
-  expect(SessionCompaction.pickSummarizeModel({ model: main }, "short", 4_096)).toBe(main)
+  expect(SessionCompaction.pickSummarizeModel({ model: main }, 10, 4_096)).toBe(main)
+})
+
+test("hot-prefix prompt summarizes the conversation already in context", () => {
+  const prompt = SessionCompaction.buildHotPrompt()
+
+  expect(prompt).toContain("Summarize the conversation above")
+  expect(prompt).not.toContain("<conversation>")
+  expect(prompt).toContain("## Work State\n### Completed")
 })
 
 test("compaction prompt preserves detailed work state and relevant files", () => {
