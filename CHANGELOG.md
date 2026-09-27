@@ -10,6 +10,16 @@ to add a section here.
 
 ## [Unreleased]
 
+### Added
+
+- **core**: prompt-cache telemetry now reports `warm`, `expectedRebuild`, and `cacheMiss` per turn; `cache.ttl_seconds` can extend the prompt-cache TTL.
+- **core**: opt-in per-session cost budget (`cost.budget_usd`) that warns and stops scheduling further turns once exceeded.
+- **core**: opt-in tool-output pruning (`compaction.prune`) that clears older tool results from provider requests only.
+
+### Changed
+
+- **core**: compaction summaries use the session model by default again; the cheap model is opt-in via `compaction.summarize_small`.
+
 ## [0.0.4] - 2026-09-27
 
 ### Added
