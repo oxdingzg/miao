@@ -12,6 +12,18 @@ RED='\033[0;31m'
 ORANGE='\033[38;5;214m'
 NC='\033[0m' # No Color
 
+# Banner colors: a warm left-to-right gradient for MIAO, coral for the cat.
+# Disabled when stdout is not a TTY or NO_COLOR is set.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    CAT='\033[38;5;210m'
+    M1='\033[38;5;209m'
+    M2='\033[38;5;215m'
+    M3='\033[38;5;221m'
+    M4='\033[38;5;226m'
+else
+    CAT='' M1='' M2='' M3='' M4=''
+fi
+
 usage() {
     cat <<EOF
 Miao Installer
@@ -449,15 +461,15 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
 fi
 
 echo -e ""
-echo -e "${MUTED} /\\/\\  ${NC}  █▀▄▀█ █ █▀▀█ █▀▀█"
-echo -e "${MUTED}( o.o )${NC}  █░█░█ █ █▄▄█ █░░█"
-echo -e "${MUTED} > ^ < ${NC}  ▀░▀░▀ ▀ ▀░░▀ ▀▀▀▀"
+echo -e "${CAT} /\\/\\  ${NC}  ${M1}█▀▄▀█${NC} ${M2}█${NC} ${M3}█▀▀█${NC} ${M4}█▀▀█${NC}"
+echo -e "${CAT}( o.o )${NC}  ${M1}█░█░█${NC} ${M2}█${NC} ${M3}█▄▄█${NC} ${M4}█░░█${NC}"
+echo -e "${CAT} > ^ < ${NC}  ${M1}▀░▀░▀${NC} ${M2}▀${NC} ${M3}▀░░▀${NC} ${M4}▀▀▀▀${NC}"
 echo -e ""
 echo -e ""
-echo -e "${MUTED}Miao includes free models, to start:${NC}"
+echo -e "${ORANGE}Miao${NC}${MUTED} includes free models, to start:${NC}"
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
-echo -e "miao      ${MUTED}# Run command${NC}"
+echo -e "${ORANGE}miao${NC}      ${MUTED}# Run command${NC}"
 echo -e ""
 echo -e "${MUTED}For more information visit ${NC}https://github.com/oxdingzg/miao"
 echo -e ""
