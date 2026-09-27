@@ -5,12 +5,15 @@ import { useTheme } from "../../context/theme"
 import { SplitBorder } from "../../ui/border"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "../../util/locale"
+import { Currency } from "../../util/currency"
+import { useKV } from "../../context/kv"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 
 export function SubagentFooter() {
   const route = useRouteData("session")
   const sync = useSync()
+  const kv = useKV()
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
   const session = createMemo(() => sync.session.get(route.sessionID))
 
@@ -43,14 +46,9 @@ export function SubagentFooter() {
     const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session()?.cost ?? 0
 
-    const money = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    })
-
     return {
       context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
-      cost: cost > 0 ? money.format(cost) : undefined,
+      cost: cost > 0 ? Currency.format(cost, kv.get(Currency.KV, Currency.DEFAULT)) : undefined,
     }
   })
 

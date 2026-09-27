@@ -45,6 +45,7 @@ import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
+import { DialogCurrencyList } from "./component/dialog-currency-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
@@ -778,6 +779,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "themes",
         run: () => {
           dialog.replace(() => <DialogThemeList />)
+        },
+        category: "System",
+      },
+      {
+        name: "currency.switch",
+        title: "Switch currency",
+        slashName: "currency",
+        slashAliases: ["cur"],
+        run: () => {
+          dialog.replace(() => <DialogCurrencyList />)
         },
         category: "System",
       },
