@@ -57,6 +57,10 @@ jobs:
         run: bun run build.ts
         working-directory: crates/miao-native
 
+      - name: Build @miao/native addon
+        run: bun run build.ts
+        working-directory: packages/native
+
       - name: Native parity (no skipping allowed)
         run: bun test test/tool/edit-native.test.ts
         working-directory: packages/miao
