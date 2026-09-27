@@ -76,6 +76,7 @@ export type Resolved = { readonly model: Model; readonly info: ModelV2.Info }
 
 export interface Interface {
   readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Resolved, Error>
+  readonly resolveSmall: (session: SessionSchema.Info) => Effect.Effect<Model | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/SessionRunnerModel") {}
@@ -92,6 +93,7 @@ export const layerWith = (resolve: (session: SessionSchema.Info) => Effect.Effec
             info: ModelV2.Info.empty(ProviderV2.ID.make(model.provider), ModelV2.ID.make(model.id)),
           })),
         ),
+      resolveSmall: () => Effect.succeed(undefined),
     }),
   )
 
@@ -263,6 +265,22 @@ export const locationLayer = Layer.effect(
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
         )
+      }),
+      resolveSmall: Effect.fn("SessionRunnerModel.resolveSmall")(function* (session) {
+        return yield* Effect.gen(function* () {
+          const providerID = session.model?.providerID ?? (yield* catalog.model.default())?.providerID
+          if (!providerID) return undefined
+          const selected = yield* catalog.model.small(providerID)
+          if (!selected || !supported(selected)) return undefined
+          const provider = yield* catalog.provider.get(selected.providerID)
+          const connection = yield* integrations.connection.active(
+            provider?.integrationID ?? Integration.ID.make(selected.providerID),
+          )
+          return yield* fromCatalogModel(
+            selected,
+            connection ? yield* integrations.connection.resolve(connection) : undefined,
+          )
+        }).pipe(Effect.catch(() => Effect.succeed(undefined)))
       }),
     })
   }),

@@ -1,5 +1,31 @@
 import { expect, test } from "bun:test"
+import { OpenAIChat } from "@miao/llm/protocols/openai-chat"
 import { SessionCompaction } from "@miao/core/session/compaction"
+
+const model = (id: string, context: number) =>
+  OpenAIChat.route.with({ limits: { context, output: 4_096 } }).model({ id })
+
+test("compaction prefers the small model when the prompt fits its context", () => {
+  const main = model("main", 100_000)
+  const small = model("small", 100_000)
+
+  expect(SessionCompaction.pickSummarizeModel({ model: main, summarizeModel: small }, "short", 4_096)).toBe(small)
+})
+
+test("compaction falls back to the session model when the prompt exceeds the small context", () => {
+  const main = model("main", 100_000)
+  const small = model("small", 1_000)
+
+  expect(SessionCompaction.pickSummarizeModel({ model: main, summarizeModel: small }, "x".repeat(10_000), 4_096)).toBe(
+    main,
+  )
+})
+
+test("compaction falls back to the session model without a small model", () => {
+  const main = model("main", 100_000)
+
+  expect(SessionCompaction.pickSummarizeModel({ model: main }, "short", 4_096)).toBe(main)
+})
 
 test("compaction prompt preserves detailed work state and relevant files", () => {
   const prompt = SessionCompaction.buildPrompt({ context: ["conversation history"] })

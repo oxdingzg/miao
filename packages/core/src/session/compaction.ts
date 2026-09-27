@@ -77,6 +77,8 @@ type Input = {
   readonly sessionID: SessionSchema.ID
   readonly entries: readonly Entry[]
   readonly model: Model
+  /** Cheap model for summarization; falls back to the session model when absent or too small. */
+  readonly summarizeModel?: Model
   readonly request: LLMRequest
 }
 
@@ -84,6 +86,16 @@ const estimate = (value: unknown) => Token.estimate(JSON.stringify(value))
 
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
+
+// Use the cheap model only when the summary prompt still fits its context;
+// otherwise the session model is the safe choice.
+export const pickSummarizeModel = (input: { model: Model; summarizeModel?: Model }, prompt: string, output: number) => {
+  const candidate = input.summarizeModel
+  if (!candidate) return input.model
+  const context = candidate.route.defaults.limits?.context
+  if (context === undefined || context <= 0) return input.model
+  return Token.estimate(prompt) <= context - output ? candidate : input.model
+}
 
 export const serializeToolContent = (content: SessionMessage.ToolStateCompleted["content"]) =>
   content
@@ -188,6 +200,7 @@ export const make = (dependencies: Dependencies) => {
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
+    const summarizeModel = pickSummarizeModel(input, summaryPrompt, summaryOutput)
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
@@ -201,7 +214,7 @@ export const make = (dependencies: Dependencies) => {
     const summarized = yield* dependencies.llm
       .stream(
         LLM.request({
-          model: input.model,
+          model: summarizeModel,
           http: input.request.http,
           messages: [Message.user(summaryPrompt)],
           tools: [],
