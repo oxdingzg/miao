@@ -6,7 +6,7 @@ import os from "os"
 import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { nativeEditActive, replace, replaceTs } from "../../src/tool/edit"
-import { deriveNewContentsFromChunks, type UpdateFileChunk } from "../../src/patch"
+import { deriveNewContentsFromChunks, deriveNewContentsFromChunksTs, type UpdateFileChunk } from "../../src/patch"
 import { runSandboxed } from "../../src/tool/sandbox"
 
 const require = createRequire(import.meta.url)
@@ -239,7 +239,7 @@ withNative("native patch parity", () => {
   for (const testCase of cases) {
     test(`matches TS deriveNewContentsFromChunks: ${testCase.name}`, () => {
       const expected = outcome(() => {
-        const result = deriveNewContentsFromChunks("f.txt", testCase.chunks, testCase.content)
+        const result = deriveNewContentsFromChunksTs("f.txt", testCase.chunks, testCase.content)
         return { content: result.content, unifiedDiff: result.unified_diff, bom: result.bom }
       })
       const actual = outcome(() => native!.deriveNewContents(toNativeChunks(testCase.chunks), "f.txt", testCase.content))
@@ -346,12 +346,17 @@ withMiaoRun("native sandbox (miao-run)", () => {
 
 const describeFallback = process.env.MIAO_NATIVE ? describe.skip : describe
 
-describeFallback("edit replace dispatcher", () => {
+describeFallback("native dispatchers", () => {
   test("falls back to the TS implementation when MIAO_NATIVE is unset", () => {
-    const content = "line1\nline2\nline3\n"
     expect(process.env.MIAO_NATIVE).toBeUndefined()
+    const content = "line1\nline2\nline3\n"
     expect(replace(content, "line2", "CHANGED")).toBe(replaceTs(content, "line2", "CHANGED"))
     expect(outcome(() => replace(content, "missing", "x"))).toEqual(outcome(() => replaceTs(content, "missing", "x")))
+
+    const chunks: UpdateFileChunk[] = [{ old_lines: ["line2"], new_lines: ["CHANGED"] }]
+    expect(deriveNewContentsFromChunks("f.txt", chunks, content)).toEqual(
+      deriveNewContentsFromChunksTs("f.txt", chunks, content),
+    )
   })
 })
 

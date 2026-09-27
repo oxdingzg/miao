@@ -4,10 +4,9 @@
 // https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-26-25.ts
 
 import * as path from "path"
-import { createRequire } from "module"
 import { Effect, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
-import { Flag } from "@miao/core/flag/flag"
+import { native } from "./native"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
@@ -740,36 +739,17 @@ function isDisproportionateMatch(search: string, oldString: string) {
 
 type NativeReplace = (content: string, oldString: string, newString: string, replaceAll?: boolean) => string
 
-let nativeReplace: NativeReplace | undefined
-let nativeResolved = false
-
-function resolveNativeReplace(): NativeReplace | undefined {
-  if (nativeResolved) return nativeReplace
-  nativeResolved = true
-  if (!Flag.MIAO_NATIVE) return (nativeReplace = undefined)
-  try {
-    const require = createRequire(import.meta.url)
-    const module = require(path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")) as {
-      replaceOnly?: NativeReplace
-    }
-    nativeReplace = module.replaceOnly
-  } catch {
-    nativeReplace = undefined
-  }
-  return nativeReplace
-}
-
 /**
  * Match and replace `oldString`. Uses the native implementation when `MIAO_NATIVE`
  * is set and the addon is available; otherwise falls back to the TS implementation.
  */
 export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
-  const native = resolveNativeReplace()
-  if (native) return native(content, oldString, newString, replaceAll)
+  const nativeReplace = native()?.replaceOnly as NativeReplace | undefined
+  if (nativeReplace) return nativeReplace(content, oldString, newString, replaceAll)
   return replaceTs(content, oldString, newString, replaceAll)
 }
 
 /** Whether the native edit implementation is active for this process. */
 export function nativeEditActive(): boolean {
-  return resolveNativeReplace() !== undefined
+  return native()?.replaceOnly !== undefined
 }

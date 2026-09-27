@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect"
 import * as path from "path"
 import { FSUtil } from "@miao/core/fs-util"
 import * as Bom from "../util/bom"
+import { native } from "../tool/native"
 
 export const PatchSchema = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -304,7 +305,31 @@ interface ApplyPatchFileUpdate {
   bom: boolean
 }
 
+/**
+ * Apply `chunks` to `originalText`. Uses the native implementation when
+ * `MIAO_NATIVE` is set and the addon is available; otherwise the TS implementation.
+ */
 export function deriveNewContentsFromChunks(
+  filePath: string,
+  chunks: UpdateFileChunk[],
+  originalText: string,
+): ApplyPatchFileUpdate {
+  const nativeModule = native()
+  if (!nativeModule) return deriveNewContentsFromChunksTs(filePath, chunks, originalText)
+  const result = nativeModule.deriveNewContents(
+    chunks.map((chunk) => ({
+      oldLines: chunk.old_lines,
+      newLines: chunk.new_lines,
+      changeContext: chunk.change_context,
+      isEndOfFile: chunk.is_end_of_file,
+    })),
+    filePath,
+    originalText,
+  )
+  return { unified_diff: result.unifiedDiff, content: result.content, bom: result.bom }
+}
+
+export function deriveNewContentsFromChunksTs(
   filePath: string,
   chunks: UpdateFileChunk[],
   originalText: string,
