@@ -258,14 +258,24 @@ for (const item of targets) {
 }
 
 if (Script.release) {
+  const archives: string[] = []
   for (const key of Object.keys(binaries)) {
     if (key.includes("linux")) {
       await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
+      archives.push(`./dist/${key}.tar.gz`)
+    } else if (process.platform === "win32") {
+      await $`powershell -NoProfile -Command ${`Compress-Archive -Path dist/${key}/bin/* -DestinationPath dist/${key}.zip -Force`}`
+      archives.push(`./dist/${key}.zip`)
     } else {
       await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
+      archives.push(`./dist/${key}.zip`)
     }
   }
-  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+  // Upload only the archives this platform produced; a `--single` build never
+  // has both `.zip` and `.tar.gz`, and Bun's shell errors on an unmatched glob.
+  if (archives.length) {
+    await $`gh release upload v${Script.version} ${archives} --clobber --repo ${process.env.GH_REPO}`
+  }
 }
 
 export { binaries }
