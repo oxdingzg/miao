@@ -21,26 +21,37 @@ miao 是我个人日常使用的 AI 编程工具，基于 [opencode](https://git
 
 ## 与 opencode 的性能与能力对比
 
-miao 是 opencode 的 fork，因此下表的基线就是 opencode 的 TS 实现，同机实测（release、中位数），越大越好。
+miao 是 opencode 的 fork，因此下表的基线就是本仓库 fork 前 opencode 的 TS 实现，同机实测（release、中位数），越大越好。
 
-| 项目 | opencode（TS） | miao（Rust native） | 提速 |
-|---|---|---|---|
-| edit 精确匹配（12k 行） | 0.21 ms | 0.12 ms | 1.7x |
-| edit 模糊匹配（12k 行） | 0.76 ms | 0.39 ms | 1.9x |
-| edit 匹配 + diff 统计（12k 行） | 2.03 ms | 1.78 ms | 1.14x |
-| apply_patch exact（20k 行） | 1.67 ms | 1.28 ms | 1.3x |
-| apply_patch trim 匹配（20k 行） | 3.47 ms | 1.76 ms | 2.0x |
-| apply_patch unicode 归一化（20k 行） | 13.06 ms | 5.21 ms | 2.5x |
-| git status 小仓（10 文件） | 12.3 ms | 1.0 ms | 11.9x |
-| git status 大仓（2200 文件） | 13.6 ms | 5.8 ms | 2.4x |
+| 项目 | opencode（TS） | miao（Rust native） | 提速 | 状态 |
+|---|---|---|---|---|
+| edit 精确匹配（12k 行） | 0.21 ms | 0.12 ms | **1.7x** | PoC |
+| edit 模糊匹配（12k 行） | 0.76 ms | 0.39 ms | **1.9x** | PoC |
+| edit 匹配 + diff 统计（12k 行） | 2.03 ms | 1.78 ms | 1.14x | PoC |
+| apply_patch exact（20k 行） | 1.67 ms | 1.28 ms | **1.3x** | PoC |
+| apply_patch trim 匹配（20k 行） | 3.47 ms | 1.76 ms | **2.0x** | PoC |
+| apply_patch unicode 归一化（20k 行） | 13.06 ms | 5.21 ms | **2.5x** | PoC |
+| git status 小仓（10 文件） | 12.3 ms | 1.0 ms | **11.9x** | PoC |
+| git status 大仓（2200 文件） | 13.6 ms | 5.8 ms | **2.4x** | PoC |
 
-速度之外：
+- opencode 的 git 状态是子进程模型（10 个文件也要 ~11 ms 的固定开销）；miao 用 `gix` 进程内读取，随文件数增长。
+- 模糊匹配与 unicode 归一化是纯 CPU 路径（2–2.5x）；被整文件 diff/字符串拼接主导的路径两边受同一套 O(n) 成本限制（1.1–1.3x）。
 
-- **内核级沙箱**（macOS seatbelt）：写只限工作目录、默认禁网、被拒路径回传并询问后重试。规则式权限做不到这种强制。
-- **gix 进程内 git status**：不再起子进程。
-- **独立的版本与更新源**（`oxdingzg/miao`，版本从 `0.0.1` 起）。
+速度之外，miao 新增：
 
-状态：原生模块与沙箱是 PoC，尚未接入生产；版本、更新源、品牌已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
+| 能力 | 说明 | 状态 |
+|---|---|---|
+| 内核级沙箱 | macOS seatbelt：写只限工作目录、默认禁网、被拒路径回传并询问后重试。规则式权限做不到这种强制 | PoC |
+| 进程内 git status | `gix`，不再起子进程 | PoC |
+| 独立的版本与更新源 | `oxdingzg/miao`，版本从 `0.0.1` 起，独立发布与自更新 | 已合入 |
+| 品牌 | 退出横幅（猫 + MIAO）、终端标题、install 脚本 | 已合入 |
+| 成本核算 | 按模型费率算每轮成本、会话汇总、revert 时回滚 | 已合入 |
+| 按 provider 本币计价 | 用 provider 官方本币单价（如 DeepSeek 的 CNY），统计与账单一致 | 已合入 |
+| 缓存遥测 | 每轮 TTFT、缓存命中率、warm / expected-rebuild / miss，可配 TTL | 已合入 |
+| 压缩调优（opt-in） | 廉价摘要模型、热前缀复用、BPE 阈值、工具输出裁剪 | opt-in |
+| Code Mode | 工具集收成一个 `execute` 工具 + budgeted catalog | 实验 |
+
+状态：原生模块与沙箱是 PoC，尚未接入生产；版本、更新源、品牌、成本相关已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
 
 ## 基于 opencode
 

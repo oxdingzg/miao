@@ -21,26 +21,37 @@ Where those adjustments tend to land:
 
 ## Performance and capability vs opencode
 
-miao is a fork of opencode, so the baseline below is opencode's TS implementation, measured on the same machine (release, medians). Higher is better.
+miao is a fork of opencode, so the baseline below is opencode's TS implementation as it stood in this repo before the fork, measured on the same machine (release, medians). Higher is better.
 
-| Item | opencode (TS) | miao (Rust native) | Speedup |
-|---|---|---|---|
-| edit exact match (12k lines) | 0.21 ms | 0.12 ms | 1.7x |
-| edit fuzzy match (12k lines) | 0.76 ms | 0.39 ms | 1.9x |
-| edit match + diff stats (12k lines) | 2.03 ms | 1.78 ms | 1.14x |
-| apply_patch exact (20k lines) | 1.67 ms | 1.28 ms | 1.3x |
-| apply_patch trim match (20k lines) | 3.47 ms | 1.76 ms | 2.0x |
-| apply_patch unicode-normalize (20k lines) | 13.06 ms | 5.21 ms | 2.5x |
-| git status, small repo (10 files) | 12.3 ms | 1.0 ms | 11.9x |
-| git status, large repo (2200 files) | 13.6 ms | 5.8 ms | 2.4x |
+| Item | opencode (TS) | miao (Rust native) | Speedup | Status |
+|---|---|---|---|---|
+| edit exact match (12k lines) | 0.21 ms | 0.12 ms | **1.7x** | PoC |
+| edit fuzzy match (12k lines) | 0.76 ms | 0.39 ms | **1.9x** | PoC |
+| edit match + diff stats (12k lines) | 2.03 ms | 1.78 ms | 1.14x | PoC |
+| apply_patch exact (20k lines) | 1.67 ms | 1.28 ms | **1.3x** | PoC |
+| apply_patch trim match (20k lines) | 3.47 ms | 1.76 ms | **2.0x** | PoC |
+| apply_patch unicode-normalize (20k lines) | 13.06 ms | 5.21 ms | **2.5x** | PoC |
+| git status small repo (10 files) | 12.3 ms | 1.0 ms | **11.9x** | PoC |
+| git status large repo (2200 files) | 13.6 ms | 5.8 ms | **2.4x** | PoC |
 
-Beyond speed:
+- opencode reads git status with a subprocess model (~11 ms floor even for 10 files); miao uses `gix` in-process, scaling with file count.
+- Fuzzy matching and unicode normalization are pure CPU paths (2-2.5x); whole-file diff/string assembly is dominated by the same O(n) cost on both sides (1.1-1.3x).
 
-- **Kernel-level sandbox** (macOS seatbelt): writes limited to the workdir, network denied by default, blocked paths reported and retried after a prompt. Rule-based permissions cannot enforce this.
-- **gix in-process git status**: no subprocess spawn.
-- **Independent versioning and update source** (`oxdingzg/miao`, starting at `0.0.1`).
+Beyond speed, miao adds:
 
-Status: the native modules and sandbox are proof-of-concept and not wired into production; versioning, update source, and branding are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
+| Capability | What it does | Status |
+|---|---|---|
+| Kernel-level sandbox | macOS seatbelt: writes limited to the workdir, network denied by default, blocked paths reported and retried after a prompt. Rule-based permissions cannot enforce this | PoC |
+| In-process git status | `gix`, no subprocess spawn | PoC |
+| Independent versioning & update source | `oxdingzg/miao`, versions from `0.0.1`, own releases and auto-update | Merged |
+| Branding | exit banner (cat + MIAO), terminal title, install script | Merged |
+| Cost accounting | per-turn cost from model rates, session totals, revert-aware | Merged |
+| Native-currency cost | price in the provider's own currency (e.g. DeepSeek CNY) so totals match the real bill | Merged |
+| Prompt-cache telemetry | per-turn TTFT and cache hit ratio, warm / expected-rebuild / miss, optional cache TTL | Merged |
+| Compaction tuning (opt-in) | cheap summarize model, hot-prefix reuse, BPE thresholds, tool-output pruning | Opt-in |
+| Code Mode | tool set collapses behind one `execute` tool with a budgeted catalog | Experimental |
+
+Status: the Rust native modules and sandbox are proof-of-concept and not wired into production; versioning, update source, branding, and cost reporting are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
 
 ## Built on opencode
 
