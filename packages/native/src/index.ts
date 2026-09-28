@@ -48,6 +48,12 @@ export interface NativeModule {
   walkFiles(root: string, options?: { hidden?: boolean; gitignore?: boolean }): string[]
   sha256Hex(text: string): string
   blake3Hex(text: string): string
+  shellAnalyze(
+    command: string,
+    dialect: string,
+  ): {
+    commands: Array<{ parts: Array<{ kind: string; text: string }>; tokens: string[]; source: string }>
+  }
 }
 
 function load(): NativeModule | undefined {

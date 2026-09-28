@@ -11,6 +11,7 @@ on:
       - "packages/miao/test/tool/git-native.test.ts"
       - "packages/miao/test/tool/text-native.test.ts"
       - "packages/miao/test/tool/walk-native.test.ts"
+      - "packages/miao/test/tool/shell-native.test.ts"
       - ".github/workflows/native.yml"
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - "packages/miao/test/tool/git-native.test.ts"
       - "packages/miao/test/tool/text-native.test.ts"
       - "packages/miao/test/tool/walk-native.test.ts"
+      - "packages/miao/test/tool/shell-native.test.ts"
       - ".github/workflows/native.yml"
   workflow_dispatch:
 
@@ -68,7 +70,7 @@ jobs:
         working-directory: packages/native
 
       - name: Native parity (no skipping allowed)
-        run: bun test test/tool/edit-native.test.ts test/tool/git-native.test.ts test/tool/text-native.test.ts test/tool/walk-native.test.ts
+        run: bun test test/tool/edit-native.test.ts test/tool/git-native.test.ts test/tool/text-native.test.ts test/tool/walk-native.test.ts test/tool/shell-native.test.ts
         working-directory: packages/miao
         env:
           MIAO_NATIVE: "1"

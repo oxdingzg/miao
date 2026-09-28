@@ -1226,6 +1226,111 @@ pub fn git_diff_async(path: String) -> napi::bindgen_prelude::AsyncTask<GitDiffT
     napi::bindgen_prelude::AsyncTask::new(GitDiffTask { path })
 }
 
+#[napi(object)]
+pub struct ShellPart {
+    pub kind: String,
+    pub text: String,
+}
+
+#[napi(object)]
+pub struct ShellCommand {
+    pub parts: Vec<ShellPart>,
+    pub tokens: Vec<String>,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct ShellAnalysis {
+    pub commands: Vec<ShellCommand>,
+}
+
+fn node_text(node: tree_sitter::Node, bytes: &[u8]) -> String {
+    node.utf8_text(bytes).unwrap_or("").to_string()
+}
+
+fn node_parts(node: tree_sitter::Node, bytes: &[u8]) -> Vec<ShellPart> {
+    let mut out = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let kind = child.kind();
+        if kind == "command_elements" {
+            let mut inner = child.walk();
+            for item in child.children(&mut inner) {
+                let item_kind = item.kind();
+                if item_kind == "command_argument_sep" || item_kind == "redirection" {
+                    continue;
+                }
+                out.push(ShellPart {
+                    kind: item_kind.to_string(),
+                    text: node_text(item, bytes),
+                });
+            }
+            continue;
+        }
+        if !matches!(
+            kind,
+            "command_name" | "command_name_expr" | "word" | "string" | "raw_string" | "concatenation"
+        ) {
+            continue;
+        }
+        out.push(ShellPart {
+            kind: kind.to_string(),
+            text: node_text(child, bytes),
+        });
+    }
+    out
+}
+
+fn node_source(node: tree_sitter::Node, bytes: &[u8]) -> String {
+    let target = match node.parent() {
+        Some(parent) if parent.kind() == "redirected_statement" => parent,
+        _ => node,
+    };
+    node_text(target, bytes).trim().to_string()
+}
+
+fn collect_commands(node: tree_sitter::Node, bytes: &[u8], out: &mut Vec<ShellCommand>) {
+    if node.kind() == "command" {
+        let parts = node_parts(node, bytes);
+        let tokens = parts.iter().map(|part| part.text.clone()).collect();
+        out.push(ShellCommand {
+            parts,
+            tokens,
+            source: node_source(node, bytes),
+        });
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_commands(child, bytes, out);
+    }
+}
+
+fn shell_analyze_impl(command: &str, dialect: &str) -> Result<ShellAnalysis, String> {
+    let language: tree_sitter::Language = if dialect == "powershell" {
+        tree_sitter_powershell::LANGUAGE.into()
+    } else {
+        tree_sitter_bash::LANGUAGE.into()
+    };
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&language)
+        .map_err(|error| format!("failed to set shell language: {error}"))?;
+    let tree = parser
+        .parse(command, None)
+        .ok_or_else(|| "failed to parse shell command".to_string())?;
+    let bytes = command.as_bytes();
+    let mut commands = Vec::new();
+    collect_commands(tree.root_node(), bytes, &mut commands);
+    Ok(ShellAnalysis { commands })
+}
+
+/// Extract every shell command (parts/tokens/source) from a command string,
+/// matching the TypeScript `shell/extract.ts` walk over the wasm parser.
+#[napi(js_name = "shellAnalyze")]
+pub fn shell_analyze(command: String, dialect: String) -> napi::Result<ShellAnalysis> {
+    shell_analyze_impl(&command, &dialect).map_err(napi::Error::from_reason)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1508,5 +1613,24 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("file.txt")).unwrap(), "hello\nCHANGED\n");
         assert!(!dir.join("gone.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn analyzes_bash_commands() {
+        let analysis = shell_analyze_impl("cd /tmp && rm -rf foo/bar && echo hi", "bash").unwrap();
+        let tokens: Vec<Vec<String>> = analysis.commands.iter().map(|item| item.tokens.clone()).collect();
+        assert_eq!(tokens[0], vec!["cd", "/tmp"]);
+        assert!(tokens.iter().any(|item| item.first().map(String::as_str) == Some("rm")));
+        assert!(tokens
+            .iter()
+            .any(|item| item.first().map(String::as_str) == Some("echo") && item.get(1).map(String::as_str) == Some("hi")));
+    }
+
+    #[test]
+    fn widens_redirected_command_source() {
+        let analysis = shell_analyze_impl("echo hi > out.txt", "bash").unwrap();
+        assert_eq!(analysis.commands.len(), 1);
+        assert_eq!(analysis.commands[0].tokens, vec!["echo", "hi"]);
+        assert_eq!(analysis.commands[0].source, "echo hi > out.txt");
     }
 }

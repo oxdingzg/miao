@@ -21,6 +21,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { extract, type Part } from "./shell/extract"
 
 export { Parameters } from "./shell/prompt"
 
@@ -65,11 +66,6 @@ const CMD_FILES = new Set([
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
 
-type Part = {
-  type: string
-  text: string
-}
-
 type Scan = {
   dirs: Set<string>
   patterns: Set<string>
@@ -86,42 +82,6 @@ const resolveWasm = (asset: string) => {
   if (asset.startsWith("/") || /^[a-z]:/i.test(asset)) return asset
   const url = new URL(asset, import.meta.url)
   return fileURLToPath(url)
-}
-
-function parts(node: Node) {
-  const out: Part[] = []
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i)
-    if (!child) continue
-    if (child.type === "command_elements") {
-      for (let j = 0; j < child.childCount; j++) {
-        const item = child.child(j)
-        if (!item || item.type === "command_argument_sep" || item.type === "redirection") continue
-        out.push({ type: item.type, text: item.text })
-      }
-      continue
-    }
-    if (
-      child.type !== "command_name" &&
-      child.type !== "command_name_expr" &&
-      child.type !== "word" &&
-      child.type !== "string" &&
-      child.type !== "raw_string" &&
-      child.type !== "concatenation"
-    ) {
-      continue
-    }
-    out.push({ type: child.type, text: child.text })
-  }
-  return out
-}
-
-function source(node: Node) {
-  return (node.parent?.type === "redirected_statement" ? node.parent.text : node.text).trim()
-}
-
-function commands(node: Node) {
-  return node.descendantsOfType("command").filter((child): child is Node => Boolean(child))
 }
 
 function unquote(text: string) {
@@ -389,9 +349,7 @@ export const ShellTool = Tool.define(
       }
       const shellKind = ShellID.toKind(Shell.name(shell))
 
-      for (const node of commands(root)) {
-        const command = parts(node)
-        const tokens = command.map((item) => item.text)
+      for (const { parts: command, tokens, source } of extract(root)) {
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
 
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
@@ -405,7 +363,7 @@ export const ShellTool = Tool.define(
         }
 
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
-          scan.patterns.add(source(node))
+          scan.patterns.add(source)
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
         }
       }
