@@ -134,15 +134,16 @@ Each function ships with Rust unit tests plus a JS parity test; parity is not al
 | Git | `gitStatus` / `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` (all async variants) | `git status` / `rev-parse` / `show` / `diff --name-only` / `merge-base` |
 | Git | `gitDiff` (standard unified diff) | `git apply` round-trip (byte-equal after applying) — **semantic parity, not byte parity with `git diff`** |
 | Walk | `walkFiles` (`ignore` + `globset`, honors `.gitignore`) | recursive listing + gitignore behavior |
+| Shell | `shellAnalyze` (native tree-sitter, bash/powershell) | TS `shell/extract.ts` wasm walk (parts/tokens/source) |
 | Sandbox | `miao-run` (macOS seatbelt) | behavior tests (write allowlist / network denied) |
 
 Performance: `git rev-parse` native ~0.2-0.5 ms vs subprocess ~5-9 ms (~20x). None of it is wired into production.
 
 ### Modules not landed, and why
 
-- **#2 sandbox cross-platform (Linux landlock/seccomp, Windows)**: the `landlock` dependency is present, but it can only be built and verified on the matching platform; the current machine is macOS, so no trustworthy test is possible here. Left to Linux/Windows runners.
+- **#2 sandbox cross-platform (Linux landlock/seccomp, Windows)**: the `landlock` dependency is present, but it can only be built and verified on the matching platform; it needs a Linux/Windows machine (e.g. dev 3.77) with Rust and the repo checked out, then behavior tests.
 - **#3 diff algorithm upgrade (`imara-diff` over `similar`)**: changes hunk boundaries and breaks byte-exact parity with jsdiff; conflicts with the lossless principle, so **not done**.
-- **#6 native tree-sitter**: new capability with an unclear parity target and heavy dependencies; deferred.
+- **#6 native tree-sitter**: **landed** as `shellAnalyze` (bash/powershell, parity against `shell/extract.ts`). TUI highlighting (`parsers-config.ts`, multi-language wasm) is still out of scope.
 
 ### Step 2: decide based on metrics
 

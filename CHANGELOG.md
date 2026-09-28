@@ -22,7 +22,7 @@ to add a section here.
 
 ### Internal
 
-- **native (PoC, opt-in, not in production)**: added `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` / `gitDiff`, line-ending detection and normalization, BPE token counting (o200k/cl100k), `.gitignore`-aware file walking, and sha256/blake3 hashing. Each ships with Rust unit tests and JS parity tests (`gitDiff` is verified by a `git apply` round-trip).
+- **native (PoC, opt-in, not in production)**: added `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` / `gitDiff`, line-ending detection and normalization, BPE token counting (o200k/cl100k), `.gitignore`-aware file walking, sha256/blake3 hashing, and shell command analysis (bash/powershell via native tree-sitter). Each ships with Rust unit tests and JS parity tests (`gitDiff` is verified by a `git apply` round-trip).
 
 ## [0.0.4] - 2026-09-27
 
