@@ -141,7 +141,7 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 
 ### 尚未落地的模块与原因
 
-- **#2 沙箱跨平台**：**Linux 已落地并验证**（xx01，内核 6.17）：landlock 写白名单 + TCP bind/connect 默认禁，`--allow-network` 放行；集成测试在 Linux CI 跑。**Windows 未做**（需 AppContainer/job object + Windows runner）。
+- **#2 沙箱跨平台**：**Linux 已落地并验证**（xx01，内核 6.17）：landlock 写白名单 + TCP bind/connect 默认禁，`--allow-network` 放行；集成测试在 Linux CI 跑。**Windows 未做**（AppContainer/job object）；实现与验证规格见 [windows-sandbox.zh.md](windows-sandbox.zh.md)。
 - **#3 diff 算法升级（`imara-diff` 替换 `similar`）**：会改变 hunk 边界，破坏与 jsdiff 的逐字节 parity；与"无损"原则冲突，**不做**。
 - **#6 tree-sitter 原生**：**已落地** `shellAnalyze`（bash/powershell，parity 对 `shell/extract.ts`）。TUI 高亮（`parsers-config.ts` 的多语言 wasm）仍不做。
 

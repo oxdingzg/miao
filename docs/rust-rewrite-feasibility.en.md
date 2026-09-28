@@ -141,7 +141,7 @@ Performance: `git rev-parse` native ~0.2-0.5 ms vs subprocess ~5-9 ms (~20x). No
 
 ### Modules not landed, and why
 
-- **#2 sandbox cross-platform**: **Linux landed and verified** (xx01, kernel 6.17): landlock write allowlist + TCP bind/connect denied by default, `--allow-network` permits it; integration tests run in Linux CI. **Windows not done** (needs AppContainer/job object + a Windows runner).
+- **#2 sandbox cross-platform**: **Linux landed and verified** (xx01, kernel 6.17): landlock write allowlist + TCP bind/connect denied by default, `--allow-network` permits it; integration tests run in Linux CI. **Windows not done** (AppContainer/job object); implementation and verification spec in [windows-sandbox.en.md](windows-sandbox.en.md).
 - **#3 diff algorithm upgrade (`imara-diff` over `similar`)**: changes hunk boundaries and breaks byte-exact parity with jsdiff; conflicts with the lossless principle, so **not done**.
 - **#6 native tree-sitter**: **landed** as `shellAnalyze` (bash/powershell, parity against `shell/extract.ts`). TUI highlighting (`parsers-config.ts`, multi-language wasm) is still out of scope.
 
