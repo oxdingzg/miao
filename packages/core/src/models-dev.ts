@@ -1,5 +1,5 @@
 import path from "path"
-import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Ref, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ModelsDev } from "@miao/schema/models-dev"
 import { Global } from "./global"
@@ -165,10 +165,15 @@ const layer = Layer.effect(
     const ttl = Duration.hours(12)
     const lockKey = `models-dev:${filepath}`
 
-    const fresh = Effect.fnUntraced(function* () {
+    const diskMtime = Effect.fnUntraced(function* () {
       const stat = yield* fs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (!stat) return false
-      const mtime = Option.getOrElse(stat.mtime, () => new Date(0)).getTime()
+      if (!stat) return undefined
+      return Option.getOrElse(stat.mtime, () => new Date(0)).getTime()
+    })
+
+    const fresh = Effect.fnUntraced(function* () {
+      const mtime = yield* diskMtime()
+      if (mtime === undefined) return false
       return Date.now() - mtime < Duration.toMillis(ttl)
     })
 
@@ -249,20 +254,57 @@ const layer = Layer.effect(
       )
     }).pipe(Effect.withSpan("ModelsDev.populate"), Effect.orDie)
 
-    const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)
+    // mtime of the on-disk catalog the in-memory cache was loaded from. Lets a
+    // running process notice when another process rewrites the cache file.
+    const loadedMtime = yield* Ref.make<number | undefined>(undefined)
+
+    const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(
+      populate.pipe(
+        Effect.tap(() =>
+          diskMtime().pipe(
+            Effect.flatMap((mtime) => Ref.set(loadedMtime, mtime)),
+            Effect.ignore,
+          ),
+        ),
+      ),
+      Duration.infinity,
+    )
 
     const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
 
+    // Adopt a catalog another process wrote to disk. The disk file can still be
+    // "fresh" (within the TTL) while its contents changed, so freshness alone
+    // must not gate reloading — otherwise newly published models stay invisible
+    // in long-running processes until restart.
+    const adoptDiskChanges = Effect.fnUntraced(function* () {
+      const mtime = yield* diskMtime()
+      if (mtime === undefined) return
+      if ((yield* Ref.get(loadedMtime)) === mtime) return
+      yield* Ref.set(loadedMtime, mtime)
+      yield* invalidate
+      yield* events.publish(Event.Refreshed, {})
+    })
+
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
-      if (!force && (yield* fresh())) return
+      if (!force && (yield* fresh())) {
+        yield* adoptDiskChanges().pipe(Effect.ignore)
+        return
+      }
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Flock.effect(lockKey)
           // Re-check under the lock: another process may have refreshed between
           // our outer check and lock acquisition.
-          if (!force && (yield* fresh())) return
+          if (!force && (yield* fresh())) {
+            yield* adoptDiskChanges().pipe(Effect.ignore)
+            return
+          }
           yield* fetchAndWrite()
           yield* invalidate
+          yield* diskMtime().pipe(
+            Effect.flatMap((mtime) => Ref.set(loadedMtime, mtime)),
+            Effect.ignore,
+          )
           yield* events.publish(Event.Refreshed, {})
         }),
       ).pipe(
@@ -272,8 +314,12 @@ const layer = Layer.effect(
     })
 
     if (!Flag.MIAO_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
-      // Schedule.spaced runs the effect once, then waits between completions.
-      yield* Effect.forkScoped(refresh().pipe(Effect.repeat(Schedule.spaced("60 minutes")), Effect.ignore))
+      // Poll every minute. Network is still only hit when the on-disk cache is
+      // stale; the rest of the time this just adopts changes written by other
+      // processes so catalog updates don't require a restart.
+      yield* Effect.forkScoped(
+        refresh().pipe(Effect.repeat(Schedule.spaced("60 seconds")), Effect.ignore),
+      )
     }
 
     return Service.of({ get, refresh })

@@ -250,6 +250,32 @@ describe("ModelsDev Service", () => {
     }),
   )
 
+  it.live("refresh(false) adopts an on-disk catalog rewrite without fetching", () =>
+    Effect.gen(function* () {
+      const now = Date.now()
+      // Fresh (within the TTL) so no network fetch is warranted, but another
+      // process rewrites the cache file with a newer mtime.
+      yield* writeCache(fixture, now - 1000)
+      const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
+      const result = yield* provided(
+        state,
+        Effect.gen(function* () {
+          const svc = yield* ModelsDev.Service
+          const before = yield* svc.get()
+          yield* writeCache(fixture2, now)
+          yield* svc.refresh(false)
+          const after = yield* svc.get()
+          return { before, after }
+        }),
+      )
+      expect(result.before).toEqual(fixture)
+      expect(result.after).toEqual(fixture2)
+      // Adopting a local rewrite must not hit the network.
+      const final = yield* Ref.get(state)
+      expect(final.calls).toEqual([])
+    }),
+  )
+
   it.live("refresh(false) fetches when on-disk file is stale", () =>
     Effect.gen(function* () {
       // Stale: mtime 13 hours ago, beyond the 12-hour TTL.
