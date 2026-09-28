@@ -135,13 +135,13 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 | Git | `gitDiff`（标准 unified diff） | `git apply` 往返（应用后逐字节相等）——**语义 parity，不追求与 `git diff` 字节一致** |
 | 遍历 | `walkFiles`（`ignore`+`globset`，尊重 `.gitignore`） | 递归列目录 + gitignore 行为 |
 | Shell | `shellAnalyze`（原生 tree-sitter，bash/powershell） | TS `shell/extract.ts` 的 wasm 抽取（parts/tokens/source） |
-| 沙箱 | `miao-run`（macOS seatbelt） | 行为测试（写白名单 / 禁网） |
+| 沙箱 | `miao-run`：macOS seatbelt + Linux landlock（写白名单 + TCP 默认禁） | 行为测试（写白名单 / 禁网） |
 
 性能：`git rev-parse` native ~0.2–0.5 ms vs 子进程 ~5–9 ms（约 20x）。全部未接入生产。
 
 ### 尚未落地的模块与原因
 
-- **#2 沙箱跨平台（Linux landlock/seccomp、Windows）**：`landlock` 依赖已在，但只能在对应平台构建/验证；需要 Linux/Windows 机器（如 dev 3.77）上装 Rust + 检出仓库后跑行为测试。
+- **#2 沙箱跨平台**：**Linux 已落地并验证**（xx01，内核 6.17）：landlock 写白名单 + TCP bind/connect 默认禁，`--allow-network` 放行；集成测试在 Linux CI 跑。**Windows 未做**（需 AppContainer/job object + Windows runner）。
 - **#3 diff 算法升级（`imara-diff` 替换 `similar`）**：会改变 hunk 边界，破坏与 jsdiff 的逐字节 parity；与"无损"原则冲突，**不做**。
 - **#6 tree-sitter 原生**：**已落地** `shellAnalyze`（bash/powershell，parity 对 `shell/extract.ts`）。TUI 高亮（`parsers-config.ts` 的多语言 wasm）仍不做。
 
