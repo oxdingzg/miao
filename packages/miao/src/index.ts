@@ -10,6 +10,16 @@ import { Heap } from "./cli/heap"
 
 const args = hideBin(process.argv)
 
+// A released single-file binary cannot ship a separate `miao-run` executable, so
+// it re-executes itself through this hidden command to run a sandboxed child.
+// Intercept here before yargs so the runner stays cheap and does not load the
+// command graph.
+const sandboxIndex = process.argv.indexOf("__sandbox-run")
+if (sandboxIndex !== -1) {
+  const { sandboxRun } = await import("./tool/sandbox-runner")
+  process.exit(await sandboxRun(process.argv.slice(sandboxIndex + 1)))
+}
+
 function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("opencode ")) {

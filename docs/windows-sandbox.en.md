@@ -2,7 +2,7 @@
 
 **Language:** [English](windows-sandbox.en.md) | [中文](windows-sandbox.zh.md)
 
-Add a Windows backend to `miao-run` so the guarantee matches macOS seatbelt / Linux landlock: a **process-level, kernel-enforced** write allowlist with network denied by default. This file is a handoff spec that can be executed directly.
+Add a Windows backend to `crates/miao-sandbox` so the guarantee matches macOS seatbelt / Linux landlock: a **process-level, kernel-enforced** write allowlist with network denied by default. The backend is shared by `miao-run` (dev/tests) and the released binary's self-exec path, so it is written once. This file is a handoff spec that can be executed directly.
 
 > Development and verification happen on **Windows**; no Linux/mac needed.
 
@@ -19,9 +19,11 @@ Add a Windows backend to `miao-run` so the guarantee matches macOS seatbelt / Li
    ```powershell
    git clone https://github.com/oxdingzg/miao
    ```
-4. **Build and test** (only `miao-run` is needed; no need to build the whole native addon):
+4. **Build and test** (only `miao-run` and `miao-sandbox` are needed; no need to build the whole native addon):
    ```powershell
-   cd miao\crates\miao-native
+   cd miao\crates\miao-sandbox
+   cargo test --release                    # sandbox backend unit tests
+   cd ..\miao-native
    cargo build --release --bin miao-run   # produces target\release\miao-run.exe
    cargo test --release                    # Rust unit tests + Windows integration tests
    ```
@@ -39,10 +41,12 @@ Add a Windows backend to `miao-run` so the guarantee matches macOS seatbelt / Li
 
 ## 2. Current state
 
-- `miao-run` is a sidecar executable (`crates/miao-native/src/bin/miao-run.rs`).
+- Sandbox logic lives in `crates/miao-sandbox`: `profile()` (seatbelt text), `apply_linux_restrictions()` (landlock), `supported()`.
+- Both `miao-run` (`crates/miao-native/src/bin/miao-run.rs`) and the main binary's hidden `__sandbox-run` (`packages/miao/src/tool/sandbox-runner.ts`) call this crate; release self-executes, dev/tests use `miao-run`.
 - macOS: `sandbox-exec -p <seatbelt profile>`.
 - Linux: in-process landlock (write allowlist + TCP bind/connect denied), verified on a real host; integration tests in `crates/miao-native/tests/linux-sandbox.rs`.
 - Windows: **no backend**; it currently hits `#[cfg(not(any(target_os = "macos", target_os = "linux")))]`, prints `no sandbox backend`, and runs **unsandboxed**.
+- Note: AppContainer is applied **when creating the child process**, not by restricting self, so Windows cannot restrict-then-spawn like Linux's `sandboxRestrict`; the addon needs a "spawn inside an AppContainer" entry point (section 5).
 - Existing CLI:
   ```
   miao-run [--workdir <dir>]... [--allow-path <dir>]... [--allow-network] [--compat]
@@ -91,13 +95,13 @@ Add a Windows backend to `miao-run` so the guarantee matches macOS seatbelt / Li
    ] }
    ```
    Exact feature names depend on the chosen `windows` version.
-1. Add `#[cfg(windows)] fn apply_windows_restrictions(workdirs, allow_paths, allow_network) -> Result<JobGuard, String>`.
+1. Add the Windows backend in `crates/miao-sandbox` (for example `#[cfg(windows)] fn apply_windows_restrictions(workdirs, allow_paths, allow_network) -> Result<JobGuard, String>`), and expose it through the addon as a spawn-under-AppContainer entry point.
 2. AppContainer: create profile → derive SID → set ACLs (grant Modify) on each workdir / allow-path.
 3. Launch: build `SECURITY_CAPABILITIES` (with/without the network capability), `CreateProcess` the command.
 4. Job object: create, set `KILL_ON_JOB_CLOSE`, `AssignProcessToJobObject`.
 5. Propagate exit code, collect stderr; handle `--deny-report` per section 4.
 6. Change the `#[cfg(not(any(macos,linux)))]` branch in `main`: Windows goes through the new backend; other platforms keep the "no sandbox" notice.
-7. No TS changes: the sidecar is still called via `resolveMiaoRun()` / `runSandboxed`.
+7. TS side: `resolveSandboxRunner()` / `runSandboxed` pick the runner (`miao-run` or `__sandbox-run`) and call the same CLI, so no format change; the Windows spawn path is invoked by the runner.
 
 ## 6. Verification
 
@@ -151,8 +155,10 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 
 ## 9. Related files
 
-- `crates/miao-native/src/bin/miao-run.rs` (seatbelt / landlock / backend dispatch)
+- `crates/miao-sandbox/src/lib.rs` (seatbelt / landlock / backend dispatch and `supported()`)
+- `crates/miao-native/src/bin/miao-run.rs` (dev/test runner, calls `miao-sandbox`)
 - `crates/miao-native/tests/linux-sandbox.rs` (Linux enforcement tests; template for the Windows version)
-- `packages/miao/src/tool/sandbox.ts` (`resolveMiaoRun` / `runSandboxed` / `sandboxAvailable`)
+- `packages/miao/src/tool/sandbox.ts` (`resolveSandboxRunner` / `runSandboxed` / `sandboxAvailable`)
+- `packages/miao/src/tool/sandbox-runner.ts` (the hidden `__sandbox-run` implementation for release self-exec)
 - `.github/workflows/native.yml` (`native` / `sandbox-linux` jobs; add `sandbox-windows`)
 - `docs/rust-rewrite-feasibility.en.md` (where the sandbox sits in the overall plan)

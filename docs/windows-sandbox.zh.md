@@ -2,7 +2,7 @@
 
 **语言 / Language:** [中文](windows-sandbox.zh.md) | [English](windows-sandbox.en.md)
 
-给 `miao-run` 增加 Windows 后端，使约束与 macOS seatbelt / Linux landlock 对等：**进程级、内核强制**的写白名单与默认禁网。本文件是可直接执行的交接规格。
+给 `crates/miao-sandbox` 增加 Windows 后端，使约束与 macOS seatbelt / Linux landlock 对等：**进程级、内核强制**的写白名单与默认禁网。后端被 `miao-run`（dev/测试）与编译后主二进制自执行路径共用，因此只需要写一次。本文件是可直接执行的交接规格。
 
 > 开发与验证全部在 **Windows** 上进行，不需要 Linux/mac。
 
@@ -19,9 +19,11 @@
    ```powershell
    git clone https://github.com/oxdingzg/miao
    ```
-4. **构建沙箱与测试**（只需要 `miao-run`，不必构建整个原生 addon）：
+4. **构建沙箱与测试**（只需要 `miao-run` 与 `miao-sandbox`，不必构建整个原生 addon）：
    ```powershell
-   cd miao\crates\miao-native
+   cd miao\crates\miao-sandbox
+   cargo test --release                    # 沙箱后端单测
+   cd ..\miao-native
    cargo build --release --bin miao-run   # 产出 target\release\miao-run.exe
    cargo test --release                    # Rust 单测 + Windows 集成测试
    ```
@@ -39,10 +41,12 @@
 
 ## 2. 现状
 
-- `miao-run` 是 sidecar 可执行文件（`crates/miao-native/src/bin/miao-run.rs`）。
+- 沙箱逻辑在 `crates/miao-sandbox`：`profile()`（seatbelt 文本）、`apply_linux_restrictions()`（landlock）、`supported()`。
+- `miao-run`（`crates/miao-native/src/bin/miao-run.rs`）与主二进制的隐藏 `__sandbox-run`（`packages/miao/src/tool/sandbox-runner.ts`）都调用这个 crate；release 走自执行，dev/测试走 `miao-run`。
 - macOS：`sandbox-exec -p <seatbelt profile>`。
 - Linux：进程内 landlock（写白名单 + TCP bind/connect 默认禁），已在真机验证；集成测试见 `crates/miao-native/tests/linux-sandbox.rs`。
 - Windows：**没有后端**，当前走 `#[cfg(not(any(target_os = "macos", target_os = "linux")))]` 分支，打印 `no sandbox backend` 后**直接运行**。
+- 注意：AppContainer 是**创建子进程时**施加的，不是“限制自身”，所以 Windows 不能像 Linux 那样用 `sandboxRestrict` 先限制再 spawn；需要 addon 暴露一个“在 AppContainer 中 spawn”的入口（见第 5 节）。
 - 现有 CLI：
   ```
   miao-run [--workdir <dir>]... [--allow-path <dir>]... [--allow-network] [--compat]
@@ -154,8 +158,10 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 
 ## 9. 相关文件
 
-- `crates/miao-native/src/bin/miao-run.rs`（seatbelt / landlock / 后端分派）
+- `crates/miao-sandbox/src/lib.rs`（seatbelt / landlock / 后端分派与 `supported()`）
+- `crates/miao-native/src/bin/miao-run.rs`（dev/测试用 runner，调用 `miao-sandbox`）
 - `crates/miao-native/tests/linux-sandbox.rs`（Linux 强制集成测试，作为 Windows 版的模板）
-- `packages/miao/src/tool/sandbox.ts`（`resolveMiaoRun` / `runSandboxed` / `sandboxAvailable`）
+- `packages/miao/src/tool/sandbox.ts`（`resolveSandboxRunner` / `runSandboxed` / `sandboxAvailable`）
+- `packages/miao/src/tool/sandbox-runner.ts`（release 自执行的隐藏 `__sandbox-run` 实现）
 - `.github/workflows/native.yml`（`native` / `sandbox-linux` job，新增 `sandbox-windows`）
 - `docs/rust-rewrite-feasibility.zh.md`（沙箱在整体计划中的位置）

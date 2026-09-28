@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "crates/miao-native/**"
+      - "crates/miao-sandbox/**"
       - "packages/miao/src/tool/edit.ts"
       - "packages/miao/test/tool/edit-native.test.ts"
       - "packages/miao/test/tool/git-native.test.ts"
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - "crates/miao-native/**"
+      - "crates/miao-sandbox/**"
       - "packages/miao/src/tool/edit.ts"
       - "packages/miao/test/tool/edit-native.test.ts"
       - "packages/miao/test/tool/git-native.test.ts"
@@ -61,6 +63,10 @@ jobs:
         run: cargo test --release
         working-directory: crates/miao-native
 
+      - name: Sandbox crate tests
+        run: cargo test --release
+        working-directory: crates/miao-sandbox
+
       - name: Build native addon and sandbox binary
         run: bun run build.ts
         working-directory: crates/miao-native
@@ -97,3 +103,7 @@ jobs:
       - name: Rust tests and Landlock enforcement (Linux)
         run: cargo test --release
         working-directory: crates/miao-native
+
+      - name: Sandbox crate tests (Linux)
+        run: cargo test --release
+        working-directory: crates/miao-sandbox

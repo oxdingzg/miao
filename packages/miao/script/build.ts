@@ -214,6 +214,10 @@ for (const item of targets) {
       MIAO_MODELS_DEV: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
       MIAO_WORKER_PATH: workerPath,
+      // Signals a compiled single-file build, so the sandbox runner can
+      // re-execute this binary through the hidden `__sandbox-run` command
+      // instead of shipping a separate `miao-run` executable.
+      MIAO_PACKAGED: "true",
       MIAO_CHANNEL: `'${Script.channel}'`,
       MIAO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
       ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),

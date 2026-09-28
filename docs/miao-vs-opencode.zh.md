@@ -47,7 +47,7 @@ miao 是 opencode 的 fork。opencode 的 TS 实现就是本仓库改原生模�
 ## 三、状态与边界（务必看清）
 
 - **已合入 main**：版本与更新源解耦、品牌 rebrand（横幅 / 终端标题 / install 脚本）。
-- **PoC，未接入生产**：所有 Rust native 模块（`crates/miao-native`）与沙箱（`miao-run`）。生产 `packages/miao` 仍走 TS 实现、子进程 git、规则式权限。
+- **PoC，未接入生产**：所有 Rust native 模块（`crates/miao-native`）与沙箱（`miao-run` / release 自执行 `__sandbox-run`）。生产 `packages/miao` 仍走 TS 实现、子进程 git、规则式权限。
 - 对比对象是**本仓库 fork 前的 TS 实现**（即 opencode 的实现）；不是 opencode 仓库的实时版本。
 - 性能数字是**纯函数隔离对比**，不含 Effect/IO/LSP/格式化等两侧相同的开销。
 - 沙箱目前仅 macOS；Linux（landlock/seccomp）与 Windows 尚未实现。

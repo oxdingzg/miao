@@ -1,0 +1,13 @@
+[package]
+name = "miao-sandbox"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+name = "miao_sandbox"
+
+[dependencies]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"

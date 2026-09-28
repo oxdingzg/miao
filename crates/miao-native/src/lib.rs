@@ -1331,6 +1331,30 @@ pub fn shell_analyze(command: String, dialect: String) -> napi::Result<ShellAnal
     shell_analyze_impl(&command, &dialect).map_err(napi::Error::from_reason)
 }
 
+fn path_bufs(values: Vec<String>) -> Vec<std::path::PathBuf> {
+    values.into_iter().map(std::path::PathBuf::from).collect()
+}
+
+/// Whether the host has a process-sandbox backend (macOS seatbelt or Linux Landlock).
+#[napi(js_name = "sandboxSupported")]
+pub fn sandbox_supported() -> bool {
+    miao_sandbox::supported()
+}
+
+/// Build the macOS seatbelt profile the sandbox runner passes to `sandbox-exec`.
+#[napi(js_name = "sandboxProfile")]
+pub fn sandbox_profile(workdirs: Vec<String>, allow_paths: Vec<String>, allow_network: bool, compat: bool) -> String {
+    miao_sandbox::profile(&path_bufs(workdirs), &path_bufs(allow_paths), allow_network, compat)
+}
+
+/// Apply the platform sandbox to the current process. Linux restricts with
+/// Landlock so spawned children inherit it; other platforms are a no-op.
+#[napi(js_name = "sandboxRestrict")]
+pub fn sandbox_restrict(workdirs: Vec<String>, allow_paths: Vec<String>, allow_network: bool) -> napi::Result<()> {
+    miao_sandbox::apply_linux_restrictions(&path_bufs(workdirs), &path_bufs(allow_paths), allow_network)
+        .map_err(napi::Error::from_reason)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

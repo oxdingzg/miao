@@ -135,7 +135,7 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 | Git | `gitDiff`（标准 unified diff） | `git apply` 往返（应用后逐字节相等）——**语义 parity，不追求与 `git diff` 字节一致** |
 | 遍历 | `walkFiles`（`ignore`+`globset`，尊重 `.gitignore`） | 递归列目录 + gitignore 行为 |
 | Shell | `shellAnalyze`（原生 tree-sitter，bash/powershell） | TS `shell/extract.ts` 的 wasm 抽取（parts/tokens/source） |
-| 沙箱 | `miao-run`：macOS seatbelt + Linux landlock（写白名单 + TCP 默认禁） | 行为测试（写白名单 / 禁网） |
+| 沙箱 | macOS seatbelt + Linux landlock（写白名单 + TCP 默认禁）；runner 为 `miao-run`（dev）或主二进制自执行 `__sandbox-run`（release） | 行为测试（写白名单 / 禁网） |
 
 性能：`git rev-parse` native ~0.2–0.5 ms vs 子进程 ~5–9 ms（约 20x）。全部未接入生产。
 
@@ -161,7 +161,7 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 
 **接口形态**：默认 `napi-rs`（Bun 支持 NAPI），需要窄接口时退到 `bun:ffi` + `cdylib` 的 C ABI，避免 Node ABI 重建。
 
-**沙箱单独走 sidecar**：seccomp/landlock 必须包住子进程，不能包宿主。所以做一个 `miao-run` 小可执行文件，`AppProcess` 改成经它 exec。
+**沙箱必须包住子进程、不能包宿主**：沙箱逻辑放在独立 crate `crates/miao-sandbox`，由 `miao-run`（dev/测试与 `MIAO_RUN` 覆盖）和编译后主二进制的隐藏 `__sandbox-run` **自执行**路径共用；addon 暴露 `sandboxProfile`（macOS）与 `sandboxRestrict`（Linux landlock），因此 release 仍是单文件、无需分发 sidecar。
 
 **crate 选型**（初稿）：
 

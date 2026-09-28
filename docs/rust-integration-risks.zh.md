@@ -6,11 +6,11 @@
 
 ## 一、阻断项（不解决就没法接）
 
-### R1. 打包与分发（当前平台已解决 / 跨平台待办）（高）
+### R1. 打包与分发（已解决）（高）
 - 证据：`packages/miao/script/build.ts` 用 `bun build --compile` 产出**单文件**二进制，原生依赖（`@ff-labs/fff-bun` 等）从 node_modules 内嵌。
-- 现状：已新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测：编译后的二进制输出 `addon: loaded`）。`packages/miao` 经 `@miao/native` 静态引用，缺失时回退 TS。
-- 剩余：多平台 release 需要**按 target 构建对应的 addon**（`--single`、当前平台已可用；`packages/miao/script/build.ts` 已会为宿主构建 addon，并对非宿主 target 自动隐藏以免内嵌错平台产物）。`miao-run` 已支持从 `MIAO_RUN` 或可执行文件同目录发现（`resolveMiaoRun()`），缺失时沙箱不可用并回退；正式发布需把它随二进制一起分发。
-- 缓解：release 流水线对每个 target 先跑 `packages/native/build.ts` 再打包。
+- addon：新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测）。release 用 `--single`，每个平台 runner 先跑 `packages/native/build.ts` 构建**宿主** addon，非宿主 target 自动隐藏，避免把错平台 `.node` 打进包。
+- 沙箱 sidecar：不再需要随包分发独立的 `miao-run`。沙箱逻辑抽到 `crates/miao-sandbox`，由 addon 暴露 `sandboxProfile`（macOS profile）与 `sandboxRestrict`（Linux landlock）；编译后的主二进制通过隐藏命令 `__sandbox-run` **自执行**运行沙箱子进程（`build.ts` 定义 `MIAO_PACKAGED`，`resolveSandboxRunner()` 据此返回 `process.execPath` + `__sandbox-run`）。单文件、每平台天然对应、复用同一签名/公证。`miao-run` 仅保留给 dev/测试与 `MIAO_RUN` 覆盖。
+- 已实测：`miao-preview __sandbox-run --print-profile`、workdir 内写入成功、workdir 外写入被拒并写出 deny-report。
 
 ### R2. CI 现在是假绿（高）
 - 证据：`packages/miao/test/tool/edit-native.test.ts` 里 `withNative = native ? describe : describe.skip`、`withMiaoRun` 同理，`.node`/`miao-run` 不存在就整体 skip。
@@ -53,7 +53,8 @@
 ## 四、沙箱
 
 ### R9. 平台与废弃（高）
-- 仅 macOS，且 `sandbox-exec` 已被 Apple 标记废弃，未来 macOS 可能移除；Linux（landlock/seccomp）/Windows 没后端 → **行为不一致**。
+- 现有后端：macOS seatbelt（`sandbox-exec`）+ Linux landlock（TCP 禁网，ABI v4 BestEffort）；Windows 仍无后端 → **跨平台行为不一致**，且 `sandbox-exec` 已被 Apple 标记废弃、未来 macOS 可能移除。
+- 缓解：Windows 后端（AppContainer + Job object）规格见 [windows-sandbox](windows-sandbox.zh.md)，待实现；`sandboxAvailable()` 在无后端的平台返回 false，调用方回退。
 
 ### R10. 误杀正常流程（高）
 - 默认禁网会直接打断 `npm install`、`git fetch`、以及子命令里的模型调用；deny-by-default 会拦工具链/缓存的写入。
@@ -75,7 +76,7 @@
 
 ## 六、建议的接入顺序与门槛
 
-1. **先解决 R1/R2**：平台子包 + CI 强制 parity（不允许 skip）。否则不要接。
+1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；CI 加 `MIAO_NATIVE_REQUIRED=1` 与 `native`/`sandbox-linux` job，强制构建 + parity 不允许 skip（R2）。
 2. **先接风险最低的**：`edit` 匹配、`apply_patch`（纯函数、同步、结果可完全对比、已有 parity），并保留 feature flag 回退。
 3. **git 后置**：先做 async/worker 封装（R3），并补 snapshot **全链路**（含 add/write-tree）基准；只在能覆盖大头时才接。
 4. **sandbox 作为可选能力**：opt-in、带明确回退，先补 Linux 后端，再谈默认开启；不要用 stderr 解析做 escalation 的唯一依据。
@@ -83,4 +84,4 @@
 
 ## 结论
 
-真正的阻断项是 **R1 打包分发** 和 **R2 CI 假绿**，其次是 **R3 同步阻塞**；沙箱的 **R9/R10** 决定了它短期内只能 opt-in。纯函数部分（edit/apply_patch）风险可控、可先接；git 与沙箱属于“能力和工程成本更高”的部分，收益要按全链路重新测。
+**R1 打包分发**（addon 每平台构建 + 沙箱自执行）与 **R2 CI 假绿** 已解决；**R3 同步阻塞**已有 async 版，接线时强制用 Async 即可。剩下的实质风险是 **R4 字符串语义**、**R5/R6 正确性**（panic/错误类型），以及沙箱的 **R9（平台不一致）/R10（误杀、stderr escalation 不可靠）**——后者决定了沙箱短期内只能 opt-in。纯函数部分（edit/apply_patch）风险可控、可先接；git 与沙箱属于“能力和工程成本更高”的部分，收益要按全链路重新测。

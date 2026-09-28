@@ -135,7 +135,7 @@ Each function ships with Rust unit tests plus a JS parity test; parity is not al
 | Git | `gitDiff` (standard unified diff) | `git apply` round-trip (byte-equal after applying) — **semantic parity, not byte parity with `git diff`** |
 | Walk | `walkFiles` (`ignore` + `globset`, honors `.gitignore`) | recursive listing + gitignore behavior |
 | Shell | `shellAnalyze` (native tree-sitter, bash/powershell) | TS `shell/extract.ts` wasm walk (parts/tokens/source) |
-| Sandbox | `miao-run`: macOS seatbelt + Linux landlock (write allowlist + TCP denied by default) | behavior tests (write allowlist / network denied) |
+| Sandbox | macOS seatbelt + Linux landlock (write allowlist + TCP denied by default); runner is `miao-run` (dev) or the main binary self-executing `__sandbox-run` (release) | behavior tests (write allowlist / network denied) |
 
 Performance: `git rev-parse` native ~0.2-0.5 ms vs subprocess ~5-9 ms (~20x). None of it is wired into production.
 
@@ -161,7 +161,7 @@ The repo already has a clean `Schema → Protocol → Server` layering with Http
 
 **Interface shape**: default to `napi-rs` (Bun supports NAPI); fall back to a narrow `bun:ffi` + `cdylib` C ABI when needed, to avoid Node ABI rebuilds.
 
-**Sandbox as a sidecar**: seccomp/landlock must wrap the child process, not the host. So build a small `miao-run` executable and route `AppProcess` exec through it.
+**Sandbox must wrap the child process, not the host**: the sandbox logic lives in its own crate `crates/miao-sandbox`, shared by `miao-run` (dev/tests and `MIAO_RUN` overrides) and the released binary's hidden `__sandbox-run` **self-exec** path; the addon exposes `sandboxProfile` (macOS) and `sandboxRestrict` (Linux Landlock), so a release stays a single file with no sidecar to ship.
 
 **Crate choices** (draft):
 

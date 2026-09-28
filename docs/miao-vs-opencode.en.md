@@ -52,7 +52,7 @@ Sandbox measured on the same machine:
 ## 3. Status and boundaries (read this)
 
 - **Merged to main**: version/update-source decoupling and branding (banner / terminal title / install script).
-- **PoC, not wired into production**: all Rust native modules (`crates/miao-native`) and the sandbox (`miao-run`). Production `packages/miao` still uses TS, subprocess git, and rule-based permissions.
+- **PoC, not wired into production**: all Rust native modules (`crates/miao-native`) and the sandbox (`miao-run` / release self-exec `__sandbox-run`). Production `packages/miao` still uses TS, subprocess git, and rule-based permissions.
 - The baseline is **the TS implementation in this repo before the fork's native work** (i.e. opencode's implementation), not the live opencode repository.
 - Performance numbers are **isolated pure-function comparisons**; they exclude the Effect/IO/LSP/formatting work that is identical on both sides.
 - The sandbox is macOS-only; Linux (landlock/seccomp) and Windows are not implemented yet.

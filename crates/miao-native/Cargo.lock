@@ -1471,8 +1471,8 @@ dependencies = [
  "blake3",
  "gix",
  "ignore",
- "landlock",
  "memchr",
+ "miao-sandbox",
  "napi",
  "napi-build",
  "napi-derive",
@@ -1483,6 +1483,13 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-powershell",
+]
+
+[[package]]
+name = "miao-sandbox"
+version = "0.0.1"
+dependencies = [
+ "landlock",
 ]
 
 [[package]]

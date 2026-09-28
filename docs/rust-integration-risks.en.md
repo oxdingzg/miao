@@ -7,11 +7,11 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
 
 ## 1. Blockers (cannot integrate without solving these)
 
-### R1. Packaging and distribution (current platform solved / cross-platform pending) (High)
+### R1. Packaging and distribution (solved) (High)
 - Evidence: `packages/miao/script/build.ts` uses `bun build --compile` to produce a **single-file** binary; native dependencies (`@ff-labs/fff-bun`, etc.) are embedded from node_modules.
-- Current state: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified: the compiled binary prints `addon: loaded`). `packages/miao` references it statically through `@miao/native` and falls back to TS when absent.
-- Remaining: a multi-platform release needs the addon **built per target** (`--single` on the host platform already works; `packages/miao/script/build.ts` now builds the host addon and hides it for non-host targets so a wrong-platform `.node` is not embedded). `miao-run` is now discovered from `MIAO_RUN` or next to the executable (`resolveMiaoRun()`); when absent the sandbox is unavailable and callers fall back. A release still needs to ship `miao-run` alongside the binary.
-- Mitigation: the release pipeline runs `packages/native/build.ts` for each target before packaging.
+- Addon: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified). A release uses `--single`, so each platform runner builds the **host** addon (`packages/native/build.ts`) and hides it for non-host targets so a wrong-platform `.node` is not embedded.
+- Sandbox sidecar: no separate `miao-run` needs to ship. The sandbox logic moved to `crates/miao-sandbox`, exposed by the addon as `sandboxProfile` (macOS profile) and `sandboxRestrict` (Linux Landlock); the compiled binary runs sandboxed children by **self-executing** through the hidden `__sandbox-run` command (`build.ts` defines `MIAO_PACKAGED`, and `resolveSandboxRunner()` returns `process.execPath` + `__sandbox-run`). Single file, naturally per-platform, one signature/notarization. `miao-run` stays only for dev/tests and `MIAO_RUN` overrides.
+- Verified: `miao-preview __sandbox-run --print-profile`, a write inside the workdir succeeds, a write outside is denied, and the deny-report is written.
 
 ### R2. CI is currently passing falsely (High)
 - Evidence: `packages/miao/test/tool/edit-native.test.ts` uses `withNative = native ? describe : describe.skip`
@@ -71,8 +71,12 @@ Current parity is mostly ASCII; the following produce **different results**, not
 ## 4. Sandbox
 
 ### R9. Platform and deprecation (High)
-- macOS only, and `sandbox-exec` is deprecated by Apple and may be removed in a future macOS; there is
-  no Linux (landlock/seccomp) or Windows backend, so **behavior is inconsistent**.
+- Backends today: macOS seatbelt (`sandbox-exec`) and Linux Landlock (TCP denied, ABI v4 BestEffort);
+  there is still no Windows backend, so **behavior is inconsistent across platforms**, and
+  `sandbox-exec` is deprecated by Apple and may be removed in a future macOS.
+- Mitigation: the Windows backend (AppContainer + Job object) is specced in
+  [windows-sandbox](windows-sandbox.en.md) and remains to be implemented; `sandboxAvailable()` returns
+  false where there is no backend and callers fall back.
 
 ### R10. Blocking legitimate workflows (High)
 - Network denied by default directly breaks `npm install`, `git fetch`, and any model calls a child
@@ -100,7 +104,9 @@ Current parity is mostly ASCII; the following produce **different results**, not
 
 ## 6. Recommended order and gates
 
-1. **Solve R1/R2 first**: platform subpackages + CI-enforced parity (no skipping). Otherwise do not integrate.
+1. ~~Solve R1/R2 first~~ -> **solved**: per-platform addon build plus sandbox self-exec (R1), and CI
+   with `MIAO_NATIVE_REQUIRED=1` and the `native`/`sandbox-linux` jobs forcing a Rust build and
+   parity with no skipping (R2).
 2. **Integrate the lowest-risk pieces first**: `edit` matching and `apply_patch` (pure, synchronous,
   fully comparable, parity already exists), behind a feature flag with fallback.
 3. **Defer git**: build the async/worker wrapper first (R3) and add a snapshot **full-path** benchmark
@@ -111,7 +117,10 @@ Current parity is mostly ASCII; the following produce **different results**, not
 
 ## Conclusion
 
-The real blockers are **R1 packaging** and **R2 the false-green CI**, followed by **R3 synchronous
-blocking**; for the sandbox, **R9/R10** mean it can only be opt-in short term. The pure-function pieces
-(edit/apply_patch) are manageable and can go first; git and the sandbox carry higher engineering cost
-and their gains must be re-measured end to end.
+**R1 packaging** (per-platform addon build plus sandbox self-exec) and **R2 the false-green CI** are
+solved; **R3 synchronous blocking** already has async variants, and wiring must use Async. The real
+remaining risks are **R4 string semantics**, **R5/R6 correctness** (panic/error types), and the
+sandbox's **R9 (platform inconsistency) / R10 (false denials, unreliable stderr escalation)** — which
+mean the sandbox can only be opt-in short term. The pure-function pieces (edit/apply_patch) are
+manageable and can go first; git and the sandbox carry higher engineering cost and their gains must be
+re-measured end to end.

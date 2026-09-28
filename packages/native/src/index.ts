@@ -54,6 +54,9 @@ export interface NativeModule {
   ): {
     commands: Array<{ parts: Array<{ kind: string; text: string }>; tokens: string[]; source: string }>
   }
+  sandboxSupported(): boolean
+  sandboxProfile(workdirs: string[], allowPaths: string[], allowNetwork: boolean, compat: boolean): string
+  sandboxRestrict(workdirs: string[], allowPaths: string[], allowNetwork: boolean): void
 }
 
 function load(): NativeModule | undefined {

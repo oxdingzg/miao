@@ -1,6 +1,13 @@
 /**
- * PoC integration seam for `miao-run`: run a command under the seatbelt sandbox
- * and, when a denial blocks a path, ask the caller to approve it and retry.
+ * PoC integration seam for process-level sandboxing: run a command under the OS
+ * sandbox and, when a denial blocks a path, ask the caller to approve it and
+ * retry.
+ *
+ * The runner is either a standalone `miao-run` binary (`MIAO_RUN` or a sibling of
+ * the executable, used in dev and as an override) or, in a released single-file
+ * build, the `miao` binary itself re-executed through the hidden `__sandbox-run`
+ * command. Self-exec keeps the release a single signed file instead of shipping
+ * a second platform-specific executable.
  *
  * Not wired into the live bash tool yet. The intended wiring is: the bash tool
  * executes through `runSandboxed` and passes its permission prompt as `ask`.
@@ -8,24 +15,40 @@
 import { existsSync } from "fs"
 import os from "os"
 import path from "path"
+import { native as addon } from "@miao/native"
 import { Flag } from "@miao/core/flag/flag"
 
+declare global {
+  const MIAO_PACKAGED: boolean | undefined
+}
+
+export interface SandboxRunner {
+  program: string
+  /** Arguments inserted before the sandbox arguments (e.g. the hidden command). */
+  prefix: string[]
+}
+
 /**
- * Locate the `miao-run` binary: `MIAO_RUN` first, then next to the running
- * executable. A released binary must ship `miao-run` alongside it (or set
- * `MIAO_RUN`); until then the sandbox is simply unavailable and callers fall back.
+ * Locate a sandbox runner: `MIAO_RUN`, then a `miao-run` binary next to the
+ * executable, then self-exec for a released single-file build whose addon
+ * provides the sandbox backends. Without one the sandbox is unavailable and
+ * callers fall back.
  */
-export function resolveMiaoRun(): string | undefined {
+export function resolveSandboxRunner(): SandboxRunner | undefined {
   const fromEnv = process.env.MIAO_RUN
-  if (fromEnv && existsSync(fromEnv)) return fromEnv
+  if (fromEnv && existsSync(fromEnv)) return { program: fromEnv, prefix: [] }
   const sibling = path.join(path.dirname(process.execPath), process.platform === "win32" ? "miao-run.exe" : "miao-run")
-  if (existsSync(sibling)) return sibling
+  if (existsSync(sibling)) return { program: sibling, prefix: [] }
+  if (typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED && addon?.sandboxSupported()) {
+    return { program: process.execPath, prefix: ["__sandbox-run"] }
+  }
   return undefined
 }
 
 /** Whether process-level sandboxing can run on this host. */
 export function sandboxAvailable(): boolean {
-  return process.platform === "darwin" && resolveMiaoRun() !== undefined
+  if (process.platform !== "darwin" && process.platform !== "linux") return false
+  return resolveSandboxRunner() !== undefined
 }
 
 /** Whether sandboxing is opted in (`MIAO_SANDBOX`) and possible on this host. */
@@ -34,8 +57,8 @@ export function sandboxEnabled(): boolean {
 }
 
 export interface SandboxRunInput {
-  /** Path to the `miao-run` binary. */
-  binary: string
+  /** Override the resolved runner, used by tests. */
+  runner?: SandboxRunner
   command: string[]
   workdirs: string[]
   allowPaths?: string[]
@@ -67,13 +90,15 @@ export function sandboxArgs(
 }
 
 export async function runSandboxed(input: SandboxRunInput): Promise<SandboxRunResult> {
+  const runner = input.runner ?? resolveSandboxRunner()
+  if (!runner) throw new Error("no sandbox runner available")
   const allowPaths = [...(input.allowPaths ?? [])]
   const maxAttempts = input.maxAttempts ?? 3
   let denied: string[] = []
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const reportPath = path.join(os.tmpdir(), `miao-deny-${crypto.randomUUID()}.json`)
-    const process = Bun.spawn([input.binary, ...sandboxArgs(input, allowPaths, reportPath)], {
+    const process = Bun.spawn([runner.program, ...runner.prefix, ...sandboxArgs(input, allowPaths, reportPath)], {
       stdout: "inherit",
       stderr: "inherit",
     })

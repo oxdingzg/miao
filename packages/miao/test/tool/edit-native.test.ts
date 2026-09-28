@@ -7,7 +7,9 @@ import path from "path"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { nativeEditActive, replace, replaceTs } from "../../src/tool/edit"
 import { deriveNewContentsFromChunks, deriveNewContentsFromChunksTs, type UpdateFileChunk } from "../../src/patch"
-import { resolveMiaoRun, runSandboxed, sandboxAvailable } from "../../src/tool/sandbox"
+import { resolveSandboxRunner, runSandboxed, sandboxAvailable } from "../../src/tool/sandbox"
+import { sandboxRun } from "../../src/tool/sandbox-runner"
+import { native as addonNative } from "@miao/native"
 
 const require = createRequire(import.meta.url)
 const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")
@@ -334,7 +336,7 @@ withMiaoRun("native sandbox (miao-run)", () => {
     try {
       const approvals: string[][] = []
       const result = await runSandboxed({
-        binary: miaoRunPath,
+        runner: { program: miaoRunPath, prefix: [] },
         command: ["sh", "-c", `echo x > "${path.join(cache, "f.txt")}"`],
         workdirs: [workdir],
         ask: async (denied) => {
@@ -348,7 +350,7 @@ withMiaoRun("native sandbox (miao-run)", () => {
       expect(existsSync(path.join(cache, "f.txt"))).toBe(true)
 
       const aborted = await runSandboxed({
-        binary: miaoRunPath,
+        runner: { program: miaoRunPath, prefix: [] },
         command: ["sh", "-c", `echo x > "${path.join(cache, "g.txt")}"`],
         workdirs: [workdir],
         ask: async () => [],
@@ -359,6 +361,39 @@ withMiaoRun("native sandbox (miao-run)", () => {
     } finally {
       rmSync(workdir, { recursive: true, force: true })
       rmSync(cache, { recursive: true, force: true })
+    }
+  })
+})
+
+// The hidden `miao __sandbox-run` entry point reuses the same runner the
+// compiled binary self-executes, so exercising it here covers the released path
+// without needing a packaged build.
+const withInlineRunner = process.platform === "darwin" && addonNative !== undefined ? describe : describe.skip
+
+withInlineRunner("sandbox runner in the main binary", () => {
+  test("runs a command inside the workdir", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "miao-sbx-inline-"))
+    try {
+      const code = await sandboxRun(["--workdir", dir, "--", "sh", "-c", `echo ok > "${dir}/ok.txt"`])
+      expect(code).toBe(0)
+      expect(existsSync(path.join(dir, "ok.txt"))).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("writes a deny report for blocked paths", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "miao-sbx-inline-"))
+    const report = path.join(os.tmpdir(), `miao-deny-inline-${process.pid}.json`)
+    try {
+      const escape = path.join(dir, "..", `inline-escape-${process.pid}.txt`)
+      const code = await sandboxRun(["--workdir", dir, "--deny-report", report, "--", "sh", "-c", `echo x > "${escape}"`])
+      expect(code).not.toBe(0)
+      const parsed = (await Bun.file(report).json()) as { denied: string[] }
+      expect(parsed.denied.some((item) => item.includes(`inline-escape-${process.pid}.txt`))).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(report, { force: true })
     }
   })
 })
@@ -389,7 +424,7 @@ test("resolves miao-run from MIAO_RUN and reports availability", () => {
   const previous = process.env.MIAO_RUN
   process.env.MIAO_RUN = miaoRunPath
   try {
-    expect(resolveMiaoRun()).toBe(miaoRunPath)
+    expect(resolveSandboxRunner()).toEqual({ program: miaoRunPath, prefix: [] })
     if (process.platform === "darwin") expect(sandboxAvailable()).toBe(true)
   } finally {
     if (previous === undefined) delete process.env.MIAO_RUN
