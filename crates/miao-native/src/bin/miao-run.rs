@@ -171,23 +171,30 @@ fn sandbox_invocation(profile: &str, command: &[String]) -> (String, Vec<String>
 }
 
 /// Apply a Landlock ruleset to the current process. Reads are allowed everywhere;
-/// writes are limited to the work/allow directories plus temp/dev. The restrictions
-/// are inherited by the command we exec.
+/// writes are limited to the work/allow directories plus temp/dev; TCP bind and
+/// connect are denied unless `--allow-network`. The restrictions are inherited by
+/// the command we exec.
 ///
-/// NOTE: verified to compile for `x86_64-unknown-linux-gnu`; it has not been
-/// executed on a Linux host, and it does not restrict network access (Landlock
-/// ABI v1 has no network rules).
+/// NOTE: Landlock's network rules cover TCP bind/connect only (not UDP/DNS), and
+/// unsupported access rights are dropped on kernels older than ABI v4.
 #[cfg(target_os = "linux")]
-fn apply_linux_restrictions(workdirs: &[PathBuf], allow_paths: &[PathBuf]) -> Result<(), String> {
-    use landlock::{Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr};
+fn apply_linux_restrictions(
+    workdirs: &[PathBuf],
+    allow_paths: &[PathBuf],
+    allow_network: bool,
+) -> Result<(), String> {
+    use landlock::{Access, AccessFs, AccessNet, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr};
 
     let abi = AccessFs::from_all(landlock::ABI::V1);
     let read = AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir;
-    let mut ruleset = Ruleset::default()
-        .handle_access(abi)
-        .map_err(|error| error.to_string())?
-        .create()
-        .map_err(|error| error.to_string())?;
+    let mut builder = Ruleset::default().handle_access(abi).map_err(|error| error.to_string())?;
+    if !allow_network {
+        // BestEffort drops these on a kernel that predates ABI v4, so this is safe.
+        builder = builder
+            .handle_access(AccessNet::from_all(landlock::ABI::V4))
+            .map_err(|error| error.to_string())?;
+    }
+    let mut ruleset = builder.create().map_err(|error| error.to_string())?;
 
     if let Ok(root) = PathFd::new("/") {
         ruleset = ruleset
@@ -227,7 +234,7 @@ fn main() -> ExitCode {
     }
 
     #[cfg(target_os = "linux")]
-    if let Err(error) = apply_linux_restrictions(&options.workdirs, &options.allow_paths) {
+    if let Err(error) = apply_linux_restrictions(&options.workdirs, &options.allow_paths, options.allow_network) {
         eprintln!("miao-run: failed to apply landlock: {error}");
         return ExitCode::from(125);
     }
