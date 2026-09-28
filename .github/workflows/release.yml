@@ -71,7 +71,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/miao-native
+          workspaces: |
+            crates/miao-native
+            crates/miao-sandbox
 
       - name: Install dependencies
         run: bun install

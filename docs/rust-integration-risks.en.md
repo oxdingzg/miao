@@ -81,8 +81,12 @@ Current parity is mostly ASCII; the following produce **different results**, not
 ### R10. Blocking legitimate workflows (High)
 - Network denied by default directly breaks `npm install`, `git fetch`, and any model calls a child
   command makes; deny-by-default blocks toolchain/cache writes.
-- Escalation relies on parsing `Operation not permitted` from stderr: denials inside a program's own
-  syscalls **may omit the path or be silent**, so it misses them and the user sees an unexplained failure.
+- Escalation relies on parsing stderr: macOS seatbelt says `Operation not permitted`, Linux Landlock
+  says `Permission denied` (verified on a real host), and shell prefixes vary
+  (`sh: /path: ...` vs `sh: 1: cannot create /path: ...`). The parser now matches both markers and
+  takes the path from the first `/`, but it stays heuristic: relative paths without `/`, or denials
+  silent inside a program's own syscalls, are missed and the user sees an unexplained failure. It must
+  not be the only escalation signal.
 
 ### R11. Semantic change and product decision (Medium)
 - Sandboxing bash wholesale **stacks** on the existing rule-based permissions, producing a

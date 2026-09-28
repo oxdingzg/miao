@@ -77,17 +77,19 @@ export function parseSandboxArgs(argv: string[]): SandboxRunOptions | { error: s
   return options
 }
 
-/// Extract the blocked path from a shell error line such as
-/// `sh: /path/to/file: Operation not permitted`.
+/// Extract the blocked path from a shell error line. macOS seatbelt reports
+/// `Operation not permitted`; Linux Landlock reports `Permission denied`, and
+/// shell prefixes vary (`sh: /path: ...`, `sh: 1: cannot create /path: ...`),
+/// so take everything from the first `/` up to the marker.
 export function parseDeniedLine(line: string): string | undefined {
-  const marker = "Operation not permitted"
-  const at = line.indexOf(marker)
-  if (at < 0) return undefined
-  let prefix = line.slice(0, at).trimEnd()
-  if (!prefix.endsWith(":")) return undefined
-  prefix = prefix.slice(0, -1).trimEnd()
-  const separator = prefix.indexOf(": ")
-  const path = (separator >= 0 ? prefix.slice(separator + 2) : prefix).trim()
+  const indexes = ["Operation not permitted", "Permission denied"]
+    .map((marker) => line.indexOf(marker))
+    .filter((index) => index >= 0)
+  if (indexes.length === 0) return undefined
+  const at = Math.min(...indexes)
+  const slash = line.slice(0, at).indexOf("/")
+  if (slash < 0) return undefined
+  const path = line.slice(slash, at).replace(/[:\s]+$/, "")
   return path.length > 0 ? path : undefined
 }
 

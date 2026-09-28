@@ -8,7 +8,7 @@ import { createTwoFilesPatch, diffLines } from "diff"
 import { nativeEditActive, replace, replaceTs } from "../../src/tool/edit"
 import { deriveNewContentsFromChunks, deriveNewContentsFromChunksTs, type UpdateFileChunk } from "../../src/patch"
 import { resolveSandboxRunner, runSandboxed, sandboxAvailable } from "../../src/tool/sandbox"
-import { sandboxRun } from "../../src/tool/sandbox-runner"
+import { parseDeniedLine, sandboxRun } from "../../src/tool/sandbox-runner"
 import { native as addonNative } from "@miao/native"
 
 const require = createRequire(import.meta.url)
@@ -363,6 +363,12 @@ withMiaoRun("native sandbox (miao-run)", () => {
       rmSync(cache, { recursive: true, force: true })
     }
   })
+})
+
+test("parses macOS and Linux denial lines", () => {
+  expect(parseDeniedLine("sh: /Users/me/cache/f.txt: Operation not permitted")).toBe("/Users/me/cache/f.txt")
+  expect(parseDeniedLine("sh: 1: cannot create /home/me/cache/f.txt: Permission denied")).toBe("/home/me/cache/f.txt")
+  expect(parseDeniedLine("curl: (6) Could not resolve host")).toBeUndefined()
 })
 
 // The hidden `miao __sandbox-run` entry point reuses the same runner the

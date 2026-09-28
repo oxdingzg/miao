@@ -54,7 +54,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/miao-native
+          workspaces: |
+            crates/miao-native
+            crates/miao-sandbox
 
       - name: Install dependencies
         run: bun install
@@ -98,7 +100,12 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/miao-native
+          workspaces: |
+            crates/miao-native
+            crates/miao-sandbox
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
 
       - name: Rust tests and Landlock enforcement (Linux)
         run: cargo test --release
@@ -107,3 +114,24 @@ jobs:
       - name: Sandbox crate tests (Linux)
         run: cargo test --release
         working-directory: crates/miao-sandbox
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build native addon
+        run: bun run build.ts
+        working-directory: packages/native
+
+      - name: Self-exec sandbox smoke (Landlock)
+        run: |
+          set -euo pipefail
+          D=$(mktemp -d)
+          bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo ok > $D/ok.txt"
+          test -f "$D/ok.txt"
+          if bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo x > $HOME/miao-escape.txt"; then
+            echo "outside write unexpectedly succeeded"
+            exit 1
+          fi
+          test ! -f "$HOME/miao-escape.txt"
+          rm -rf "$D"
+        working-directory: packages/miao

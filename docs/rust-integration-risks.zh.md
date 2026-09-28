@@ -58,7 +58,7 @@
 
 ### R10. 误杀正常流程（高）
 - 默认禁网会直接打断 `npm install`、`git fetch`、以及子命令里的模型调用；deny-by-default 会拦工具链/缓存的写入。
-- escalation 依赖解析 stderr 的 `Operation not permitted`：程序内部 syscall 被拒时**可能不带路径或静默**，会漏判 → 用户看到“莫名其妙失败”。
+- escalation 依赖解析 stderr：macOS seatbelt 报 `Operation not permitted`，Linux landlock 报 `Permission denied`（已实测），且 shell 前缀不一（`sh: /path: …` vs `sh: 1: cannot create /path: …`）。解析器现同时匹配两种字样并从首个 `/` 取路径，但仍是启发式：无 `/` 的相对路径、或程序内部静默拒绝会漏判 → 用户看到“莫名其妙失败”。不能作为唯一 escalation 依据。
 
 ### R11. 语义变化与产品决策（中）
 - 把 bash 整体套沙箱，会和现有规则式权限**叠加**，出现“已批准但又被内核拒”的双重体验；默认开还是 opt-in 是产品决策，不是技术细节。

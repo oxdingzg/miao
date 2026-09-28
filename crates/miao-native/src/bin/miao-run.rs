@@ -68,13 +68,17 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     Ok(options)
 }
 
-/// Extract the blocked path from a shell error line such as
-/// `sh: /path/to/file: Operation not permitted`.
+/// Extract the blocked path from a shell error line. macOS seatbelt reports
+/// `Operation not permitted`; Linux Landlock reports `Permission denied`, and
+/// shell prefixes vary (`sh: /path: ...`, `sh: 1: cannot create /path: ...`),
+/// so take everything from the first `/` up to the marker.
 fn parse_denied_line(line: &str) -> Option<String> {
-    let marker = "Operation not permitted";
-    let prefix = line[..line.find(marker)?].trim_end();
-    let prefix = prefix.strip_suffix(':')?.trim_end();
-    let path = prefix.split_once(": ").map(|(_, rest)| rest).unwrap_or(prefix).trim();
+    let index = ["Operation not permitted", "Permission denied"]
+        .into_iter()
+        .filter_map(|marker| line.find(marker))
+        .min()?;
+    let slash = line[..index].find('/')?;
+    let path = line[slash..index].trim_end_matches(|c: char| c == ':' || c.is_whitespace());
     if path.is_empty() {
         None
     } else {
@@ -176,6 +180,10 @@ mod tests {
         assert_eq!(
             parse_denied_line("sh: /Users/me/cache/f.txt: Operation not permitted"),
             Some("/Users/me/cache/f.txt".to_string())
+        );
+        assert_eq!(
+            parse_denied_line("sh: 1: cannot create /home/me/cache/f.txt: Permission denied"),
+            Some("/home/me/cache/f.txt".to_string())
         );
         assert_eq!(parse_denied_line("curl: (6) Could not resolve host"), None);
     }
