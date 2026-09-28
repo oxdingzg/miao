@@ -49,7 +49,7 @@ miao 是 opencode 的 fork。opencode 的 TS 实现就是本仓库改原生模�
 ## 三、状态与边界（务必看清）
 
 - **已合入 main**：版本与更新源解耦、品牌 rebrand（横幅 / 终端标题 / install 脚本）。
-- **native 模块 PoC、需开启**：`crates/miao-native` 的纯函数模块默认不启用（`MIAO_NATIVE=1`）；生产默认路径仍走 TS 实现、子进程 git、规则式权限。
+- **native 模块 PoC、已接入处默认开启**：`crates/miao-native` 的 edit/patch 纯函数默认启用（`MIAO_NATIVE=0` 回退）；git/text/walk/shell 模块尚未接入，默认路径仍走 TS 实现、子进程 git、规则式权限。
 - **沙箱已接入、需开启**：shell 工具在 `MIAO_SANDBOX=1` 时经沙箱 runner 执行（release 二进制自执行 `__sandbox-run`；macOS seatbelt / Linux landlock）。
 - 对比对象是**本仓库 fork 前的 TS 实现**（即 opencode 的实现）；不是 opencode 仓库的实时版本。
 - 性能数字是**纯函数隔离对比**，不含 Effect/IO/LSP/格式化等两侧相同的开销。

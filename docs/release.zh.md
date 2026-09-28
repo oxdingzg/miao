@@ -34,7 +34,7 @@
 - [ ] Windows 真机验证 VT：PowerShell 5.1 老控制台 / Windows Terminal / pwsh 7 各跑一次（目前只在 macOS 上验证了逻辑，未上真机）。
 - [ ] `curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash` 能装到该 release。
 - [ ] `miao upgrade` 与启动自更新检查指向 `oxdingzg/miao` 且能识别新版本。
-- [ ] 原生路径默认关闭（未设 `MIAO_NATIVE` → 纯 TS），release 不受 native PoC 的未决风险影响。
+- [ ] native 的 edit/patch 路径默认开启：确认各平台构建的 addon 能加载、且 `MIAO_NATIVE=0` 回退纯 TS，release 不受 native PoC 的未决风险影响。
 - [ ] 无凭证/密钥入库；产物里不含 `auth.json`、`.env`。
 - [ ] LICENSE 与归属（基于 opencode，MIT）。
 - [ ] 三处版本一致：git tag、GitHub release、二进制 `miao --version`。

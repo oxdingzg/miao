@@ -7,6 +7,7 @@ export function truthy(key: string) {
 
 const copy = process.env["MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"]
 const fff = process.env["MIAO_DISABLE_FFF"]
+const native = process.env["MIAO_NATIVE"]
 
 function enabledByExperimental(key: string) {
   return process.env[key] === undefined ? truthy("MIAO_EXPERIMENTAL") : truthy(key)
@@ -32,7 +33,7 @@ export const Flag = {
   MIAO_SERVER_PASSWORD: process.env["MIAO_SERVER_PASSWORD"],
   MIAO_SERVER_USERNAME: process.env["MIAO_SERVER_USERNAME"],
   MIAO_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("MIAO_DISABLE_FFF"),
-  MIAO_NATIVE: truthy("MIAO_NATIVE"),
+  MIAO_NATIVE: native === undefined ? true : truthy("MIAO_NATIVE"),
   get MIAO_SANDBOX() {
     return truthy("MIAO_SANDBOX")
   },

@@ -740,8 +740,9 @@ function isDisproportionateMatch(search: string, oldString: string) {
 type NativeReplace = (content: string, oldString: string, newString: string, replaceAll?: boolean) => string
 
 /**
- * Match and replace `oldString`. Uses the native implementation when `MIAO_NATIVE`
- * is set and the addon is available; otherwise falls back to the TS implementation.
+ * Match and replace `oldString`. Uses the native implementation when native is
+ * enabled (default) and the addon is available; otherwise falls back to the TS
+ * implementation.
  */
 export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
   const nativeReplace = native()?.replaceOnly as NativeReplace | undefined

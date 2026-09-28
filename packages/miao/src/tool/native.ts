@@ -1,7 +1,7 @@
 /**
- * Access to the `miao-native` addon, gated by `MIAO_NATIVE`. When the flag is off
- * or the addon was not built (dev without Rust), `native()` returns `undefined`
- * and callers use the TypeScript implementations.
+ * Access to the `miao-native` addon. Native is on by default; set `MIAO_NATIVE=0`
+ * to disable it. When disabled or the addon was not built (dev without Rust),
+ * `native()` returns `undefined` and callers use the TypeScript implementations.
  *
  * The addon is loaded from `@miao/native`, whose literal `require("./miao-native.node")`
  * lets Bun embed it into the compiled single-file binary. A multi-platform release

@@ -306,8 +306,8 @@ interface ApplyPatchFileUpdate {
 }
 
 /**
- * Apply `chunks` to `originalText`. Uses the native implementation when
- * `MIAO_NATIVE` is set and the addon is available; otherwise the TS implementation.
+ * Apply `chunks` to `originalText`. Uses the native implementation when native is
+ * enabled (default) and the addon is available; otherwise the TS implementation.
  */
 export function deriveNewContentsFromChunks(
   filePath: string,

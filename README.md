@@ -51,7 +51,7 @@ Beyond speed, miao adds:
 | Compaction tuning (opt-in) | cheap summarize model, hot-prefix reuse, BPE thresholds, tool-output pruning | Opt-in |
 | Code Mode | tool set collapses behind one `execute` tool with a budgeted catalog | Experimental |
 
-Status: the Rust native modules are opt-in (`MIAO_NATIVE=1`) and not wired into the default paths; the process sandbox is wired opt-in (`MIAO_SANDBOX=1`); versioning, update source, branding, and cost reporting are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
+Status: the Rust native edit/patch paths are on by default (`MIAO_NATIVE=0` falls back to pure TS) and the remaining native modules are not wired into the default paths; the process sandbox is wired opt-in (`MIAO_SANDBOX=1`); versioning, update source, branding, and cost reporting are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
 
 ## Built on opencode
 

@@ -54,7 +54,7 @@ Note: the table is the sandbox backend's (`miao-run` / `__sandbox-run`) default 
 ## 3. Status and boundaries (read this)
 
 - **Merged to main**: version/update-source decoupling and branding (banner / terminal title / install script).
-- **Native modules are a PoC, opt-in**: the pure-function modules in `crates/miao-native` are off by default (`MIAO_NATIVE=1`); the default production paths still use TS, subprocess git, and rule-based permissions.
+- **Native modules are a PoC, on by default where wired**: the edit/patch pure functions in `crates/miao-native` run by default (`MIAO_NATIVE=0` falls back); the git/text/walk/shell modules are still unwired and the default paths use TS, subprocess git, and rule-based permissions.
 - **The sandbox is wired, opt-in**: the shell tool runs through the sandbox runner when `MIAO_SANDBOX=1` (release binary self-execs `__sandbox-run`; macOS seatbelt / Linux Landlock).
 - The baseline is **the TS implementation in this repo before the fork's native work** (i.e. opencode's implementation), not the live opencode repository.
 - Performance numbers are **isolated pure-function comparisons**; they exclude the Effect/IO/LSP/formatting work that is identical on both sides.

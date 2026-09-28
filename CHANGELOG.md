@@ -19,10 +19,11 @@ to add a section here.
 ### Changed
 
 - **core**: compaction summaries use the session model by default again; the cheap model is opt-in via `compaction.summarize_small`.
+- **core**: the native edit/patch paths are on by default; set `MIAO_NATIVE=0` to fall back to the TypeScript implementations.
 
 ### Internal
 
-- **native (PoC, opt-in, not in production)**: added `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` / `gitDiff`, line-ending detection and normalization, BPE token counting (o200k/cl100k), `.gitignore`-aware file walking, sha256/blake3 hashing, shell command analysis (bash/powershell via native tree-sitter), and Linux landlock sandbox enforcement (write allowlist + TCP denied by default). Each ships with Rust unit tests and JS parity tests (`gitDiff` is verified by a `git apply` round-trip).
+- **native (PoC; edit/patch wired on by default, the rest not wired)**: added `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` / `gitDiff`, line-ending detection and normalization, BPE token counting (o200k/cl100k), `.gitignore`-aware file walking, sha256/blake3 hashing, shell command analysis (bash/powershell via native tree-sitter), and Linux landlock sandbox enforcement (write allowlist + TCP denied by default). Each ships with Rust unit tests and JS parity tests (`gitDiff` is verified by a `git apply` round-trip).
 
 ## [0.0.4] - 2026-09-27
 

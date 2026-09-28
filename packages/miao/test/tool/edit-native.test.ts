@@ -404,25 +404,24 @@ withInlineRunner("sandbox runner in the main binary", () => {
   })
 })
 
-const describeFallback = process.env.MIAO_NATIVE ? describe.skip : describe
+const nativeDisabled =
+  process.env.MIAO_NATIVE !== undefined && !["1", "true"].includes(process.env.MIAO_NATIVE.toLowerCase())
 
-describeFallback("native dispatchers", () => {
-  test("falls back to the TS implementation when MIAO_NATIVE is unset", () => {
-    expect(process.env.MIAO_NATIVE).toBeUndefined()
-    const content = "line1\nline2\nline3\n"
-    expect(replace(content, "line2", "CHANGED")).toBe(replaceTs(content, "line2", "CHANGED"))
-    expect(outcome(() => replace(content, "missing", "x"))).toEqual(outcome(() => replaceTs(content, "missing", "x")))
-
-    const chunks: UpdateFileChunk[] = [{ old_lines: ["line2"], new_lines: ["CHANGED"] }]
-    expect(deriveNewContentsFromChunks("f.txt", chunks, content)).toEqual(
-      deriveNewContentsFromChunksTs("f.txt", chunks, content),
-    )
-  })
+test("native edit is active by default when the addon is built", () => {
+  if (!native || nativeDisabled) return
+  expect(nativeEditActive()).toBe(true)
 })
 
-test("native edit is active when MIAO_NATIVE=1 and the addon is built", () => {
-  if (process.env.MIAO_NATIVE !== "1" || !native) return
-  expect(nativeEditActive()).toBe(true)
+test("falls back to the TS implementation when native is off", () => {
+  if (nativeEditActive()) return
+  const content = "line1\nline2\nline3\n"
+  expect(replace(content, "line2", "CHANGED")).toBe(replaceTs(content, "line2", "CHANGED"))
+  expect(outcome(() => replace(content, "missing", "x"))).toEqual(outcome(() => replaceTs(content, "missing", "x")))
+
+  const chunks: UpdateFileChunk[] = [{ old_lines: ["line2"], new_lines: ["CHANGED"] }]
+  expect(deriveNewContentsFromChunks("f.txt", chunks, content)).toEqual(
+    deriveNewContentsFromChunksTs("f.txt", chunks, content),
+  )
 })
 
 test("resolves miao-run from MIAO_RUN and reports availability", () => {

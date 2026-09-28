@@ -51,7 +51,7 @@ miao 是 opencode 的 fork，因此下表的基线就是本仓库 fork 前 openc
 | 压缩调优（opt-in） | 廉价摘要模型、热前缀复用、BPE 阈值、工具输出裁剪 | opt-in |
 | Code Mode | 工具集收成一个 `execute` 工具 + budgeted catalog | 实验 |
 
-状态：原生模块需开启（`MIAO_NATIVE=1`），未接入默认路径；进程沙箱已接入但需开启（`MIAO_SANDBOX=1`）；版本、更新源、品牌、成本相关已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
+状态：native 的 edit/patch 路径默认开启（`MIAO_NATIVE=0` 回退纯 TS），其余原生模块尚未接入默认路径；进程沙箱已接入但需开启（`MIAO_SANDBOX=1`）；版本、更新源、品牌、成本相关已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
 
 ## 基于 opencode
 
