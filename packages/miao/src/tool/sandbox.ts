@@ -9,8 +9,10 @@
  * command. Self-exec keeps the release a single signed file instead of shipping
  * a second platform-specific executable.
  *
- * Not wired into the live bash tool yet. The intended wiring is: the bash tool
- * executes through `runSandboxed` and passes its permission prompt as `ask`.
+ * Wired into the shell tool when `MIAO_SANDBOX` is on: it seeds the allowlist
+ * from the directories the permission flow already approved, runs the command
+ * through the runner, and asks for any path the kernel denies before retrying.
+ * `runSandboxed` is the standalone helper used by tests and manual runs.
  */
 import { existsSync } from "fs"
 import os from "os"

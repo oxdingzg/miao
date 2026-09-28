@@ -29,8 +29,8 @@ miao 是 opencode 的 fork。opencode 的 TS 实现就是本仓库改原生模�
 
 | 能力 | opencode | miao | 状态 |
 |---|---|---|---|
-| 进程级沙箱 | 无。规则式权限，用户批准后进程拥有完整用户权限 | macOS seatbelt 内核级强制：写白名单、默认禁网、被拒路径回传并询问后重试 | PoC |
-| 沙箱可配置 | 无 | `--allow-path` 精确补白名单；`--compat` 兼容模式（只禁凭证路径 + 网络） | PoC |
+| 进程级沙箱 | 无。规则式权限，用户批准后进程拥有完整用户权限 | 需开启（`MIAO_SANDBOX=1`）：macOS seatbelt / Linux landlock 内核级强制写白名单；被拒路径回传并询问后重试。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 禁网） | opt-in |
+| 沙箱可配置 | 无 | `--allow-path` 精确补白名单；`--compat` 兼容模式（只禁凭证路径 + 网络） | opt-in |
 | git 状态读取 | `git` 子进程（`diff-files` + `ls-files`） | `gix` 进程内，无 spawn | PoC |
 | 自更新源 | `anomalyco/opencode`，跟随 upstream 版本号 | `oxdingzg/miao`，版本从 `0.0.1` 起，不跟随 upstream | 已合入 |
 | 品牌 | opencode | miao：退出横幅（猫 + MIAO）、终端标题以 miao 开头、install 脚本 | 已合入 |
@@ -44,18 +44,21 @@ miao 是 opencode 的 fork。opencode 的 TS 实现就是本仓库改原生模�
 | 写工作目录 | 允许 | 允许 |
 | 普通命令（`git status`） | 正常 | 正常 |
 
+注：上表是沙箱后端（`miao-run` / `__sandbox-run`）的默认行为；接入 shell 工具后默认放行网络，只有 `MIAO_SANDBOX_DENY_NETWORK=1` 才按上表禁网。
+
 ## 三、状态与边界（务必看清）
 
 - **已合入 main**：版本与更新源解耦、品牌 rebrand（横幅 / 终端标题 / install 脚本）。
-- **PoC，未接入生产**：所有 Rust native 模块（`crates/miao-native`）与沙箱（`miao-run` / release 自执行 `__sandbox-run`）。生产 `packages/miao` 仍走 TS 实现、子进程 git、规则式权限。
+- **native 模块 PoC、需开启**：`crates/miao-native` 的纯函数模块默认不启用（`MIAO_NATIVE=1`）；生产默认路径仍走 TS 实现、子进程 git、规则式权限。
+- **沙箱已接入、需开启**：shell 工具在 `MIAO_SANDBOX=1` 时经沙箱 runner 执行（release 二进制自执行 `__sandbox-run`；macOS seatbelt / Linux landlock）。
 - 对比对象是**本仓库 fork 前的 TS 实现**（即 opencode 的实现）；不是 opencode 仓库的实时版本。
 - 性能数字是**纯函数隔离对比**，不含 Effect/IO/LSP/格式化等两侧相同的开销。
-- 沙箱目前仅 macOS；Linux（landlock/seccomp）与 Windows 尚未实现。
+- 沙箱后端：macOS 与 Linux 已实现；Windows（AppContainer + Job object）尚未实现。
 
 把上述 PoC 接入生产的风险（打包分发、CI 假绿、同步阻塞、平台等）见 [rust-integration-risks.zh.md](rust-integration-risks.zh.md)。
 
 ## 四、下一步（进入"已合入"的路径）
 
 1. 把 `edit` / `apply_patch` / `snapshot` 接 native（带 TS 回退），并做 RSS 内存对比。
-2. 把 bash 工具经 `runSandboxed` 执行，权限询问作为 `ask`。
-3. 补 Linux landlock/seccomp 后端。
+2. ~~把 bash 工具经 `runSandboxed` 执行~~ 已完成：shell 工具在 `MIAO_SANDBOX=1` 时经沙箱 runner 执行。
+3. ~~补 Linux landlock/seccomp 后端~~ 已完成（landlock + TCP 默认禁）。剩 Windows。

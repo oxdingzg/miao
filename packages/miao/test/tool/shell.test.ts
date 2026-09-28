@@ -3,6 +3,7 @@ import { describe, expect } from "bun:test"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
+import { existsSync, rmSync } from "fs"
 import os from "os"
 import path from "path"
 import { Config } from "@/config/config"
@@ -1194,6 +1195,95 @@ describe("tool.shell truncation", () => {
         expect(lines[0]).toBe("1")
         expect(lines[lineCount - 1]).toBe(String(lineCount))
       }),
+    ),
+  )
+})
+
+const miaoRunPath = path.join(__dirname, "../../../../crates/miao-native/target/release/miao-run")
+const sandboxPlatform = process.platform === "darwin" || process.platform === "linux"
+const hasDenied = (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
+  typeof req.metadata === "object" && req.metadata !== null && "denied" in req.metadata
+
+describe("tool.shell sandbox", () => {
+  if (!sandboxPlatform || !existsSync(miaoRunPath)) return
+
+  const withSandbox = <A, E, R>(self: Effect.Effect<A, E, R>) =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const prevFlag = process.env.MIAO_SANDBOX
+        const prevRun = process.env.MIAO_RUN
+        process.env.MIAO_SANDBOX = "1"
+        process.env.MIAO_RUN = miaoRunPath
+        return { prevFlag, prevRun }
+      }),
+      () => self,
+      ({ prevFlag, prevRun }) =>
+        Effect.sync(() => {
+          if (prevFlag === undefined) delete process.env.MIAO_SANDBOX
+          else process.env.MIAO_SANDBOX = prevFlag
+          if (prevRun === undefined) delete process.env.MIAO_RUN
+          else process.env.MIAO_RUN = prevRun
+        }),
+    )
+
+  it.live("runs a command under the sandbox", () =>
+    withSandbox(
+      runIn(
+        projectRoot,
+        Effect.gen(function* () {
+          const result = yield* run({ command: `echo sandbox_ok` })
+          expect(result.output).toContain("sandbox_ok")
+          expect(result.metadata.exit).toBe(0)
+        }),
+      ),
+    ),
+  )
+
+  it.live("denies an outside write when escalation is refused", () =>
+    withSandbox(
+      runIn(
+        projectRoot,
+        Effect.gen(function* () {
+          const outside = path.join(os.homedir(), `miao-sbx-deny-${process.pid}-${Date.now()}.txt`)
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          const result = yield* run(
+            { command: `sh -c ${squote(`echo x > "${outside}"`)}` },
+            {
+              ...ctx,
+              ask: (req) =>
+                Effect.sync(() => {
+                  requests.push(req)
+                  if (hasDenied(req)) throw new Error("escalation refused")
+                }),
+            },
+          )
+          try {
+            expect(result.metadata.exit).not.toBe(0)
+            expect(existsSync(outside)).toBe(false)
+            expect(requests.some(hasDenied)).toBe(true)
+          } finally {
+            rmSync(outside, { force: true })
+          }
+        }),
+      ),
+    ),
+  )
+
+  it.live("retries with the approved path", () =>
+    withSandbox(
+      runIn(
+        projectRoot,
+        Effect.gen(function* () {
+          const outside = path.join(os.homedir(), `miao-sbx-allow-${process.pid}-${Date.now()}.txt`)
+          try {
+            const result = yield* run({ command: `sh -c ${squote(`echo x > "${outside}"`)}` })
+            expect(result.metadata.exit).toBe(0)
+            expect(existsSync(outside)).toBe(true)
+          } finally {
+            rmSync(outside, { force: true })
+          }
+        }),
+      ),
     ),
   )
 })

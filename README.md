@@ -41,7 +41,7 @@ Beyond speed, miao adds:
 
 | Capability | What it does | Status |
 |---|---|---|
-| Kernel-level sandbox | macOS seatbelt: writes limited to the workdir, network denied by default, blocked paths reported and retried after a prompt. Rule-based permissions cannot enforce this | PoC |
+| Kernel-level sandbox | Opt-in (`MIAO_SANDBOX=1`): macOS seatbelt / Linux Landlock limit writes to the workdir; blocked paths reported and retried after a prompt. Network allowed by default (`MIAO_SANDBOX_DENY_NETWORK=1` denies it). Rule-based permissions cannot enforce this | Opt-in |
 | In-process git status | `gix`, no subprocess spawn | PoC |
 | Independent versioning & update source | `oxdingzg/miao`, versions from `0.0.1`, own releases and auto-update | Merged |
 | Branding | exit banner (cat + MIAO), terminal title, install script | Merged |
@@ -51,7 +51,7 @@ Beyond speed, miao adds:
 | Compaction tuning (opt-in) | cheap summarize model, hot-prefix reuse, BPE thresholds, tool-output pruning | Opt-in |
 | Code Mode | tool set collapses behind one `execute` tool with a budgeted catalog | Experimental |
 
-Status: the Rust native modules and sandbox are proof-of-concept and not wired into production; versioning, update source, branding, and cost reporting are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
+Status: the Rust native modules are opt-in (`MIAO_NATIVE=1`) and not wired into the default paths; the process sandbox is wired opt-in (`MIAO_SANDBOX=1`); versioning, update source, branding, and cost reporting are merged. Full comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integration risks in [docs/rust-integration-risks.en.md](docs/rust-integration-risks.en.md).
 
 ## Built on opencode
 

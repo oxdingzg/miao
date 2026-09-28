@@ -89,9 +89,11 @@ Current parity is mostly ASCII; the following produce **different results**, not
   not be the only escalation signal.
 
 ### R11. Semantic change and product decision (Medium)
-- Sandboxing bash wholesale **stacks** on the existing rule-based permissions, producing a
-  "approved but still denied by the kernel" double experience. Default-on vs opt-in is a product
-  decision, not a detail.
+- Wired as **opt-in** (`MIAO_SANDBOX=1`): the shell tool seeds the sandbox allowlist from the
+  directories the normal permission flow already approved (`scan.dirs`), so "approved but denied by
+  the kernel" is minimized; paths the kernel still denies go through an `external_directory` prompt
+  and retry. Network is allowed by default (`MIAO_SANDBOX_DENY_NETWORK=1` denies it). Default-on vs
+  opt-in **remains a product decision**.
 
 ## 5. Engineering and supply chain
 
@@ -115,8 +117,9 @@ Current parity is mostly ASCII; the following produce **different results**, not
   fully comparable, parity already exists), behind a feature flag with fallback.
 3. **Defer git**: build the async/worker wrapper first (R3) and add a snapshot **full-path** benchmark
    (including add/write-tree); only integrate when it covers the dominant cost.
-4. **Sandbox as an optional capability**: opt-in, with an explicit fallback, Linux backend first, before
-   any default-on; do not rely on stderr parsing as the only escalation signal.
+4. **Sandbox as an optional capability**: now wired opt-in into the shell tool (`MIAO_SANDBOX=1`) with a
+   fallback; the Linux backend is in; default-on is still open. Do not rely on stderr parsing as the
+   only escalation signal.
 5. Every step gates on "existing tests green + new parity not skipped + a memory/RSS baseline".
 
 ## Conclusion

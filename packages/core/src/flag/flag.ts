@@ -33,7 +33,12 @@ export const Flag = {
   MIAO_SERVER_USERNAME: process.env["MIAO_SERVER_USERNAME"],
   MIAO_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("MIAO_DISABLE_FFF"),
   MIAO_NATIVE: truthy("MIAO_NATIVE"),
-  MIAO_SANDBOX: truthy("MIAO_SANDBOX"),
+  get MIAO_SANDBOX() {
+    return truthy("MIAO_SANDBOX")
+  },
+  get MIAO_SANDBOX_DENY_NETWORK() {
+    return truthy("MIAO_SANDBOX_DENY_NETWORK")
+  },
   MIAO_PACKAGE_MANAGER_AUTO_UPDATE: truthy("MIAO_PACKAGE_MANAGER_AUTO_UPDATE"),
 
   // Experimental

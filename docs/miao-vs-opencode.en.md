@@ -34,8 +34,8 @@ Key points:
 
 | Capability | opencode | miao | Status |
 |---|---|---|---|
-| Process-level sandbox | None. Rule-based permissions; once approved the process has full user privileges | macOS seatbelt enforced by the kernel: write allowlist, network denied by default, blocked paths reported and retried after a prompt | PoC |
-| Sandbox configurability | None | `--allow-path` for precise allowlisting; `--compat` mode (deny only credential paths + network) | PoC |
+| Process-level sandbox | None. Rule-based permissions; once approved the process has full user privileges | Opt-in (`MIAO_SANDBOX=1`): macOS seatbelt / Linux Landlock enforce a write allowlist by the kernel; blocked paths reported and retried after a prompt. Network allowed by default (`MIAO_SANDBOX_DENY_NETWORK=1` denies it) | Opt-in |
+| Sandbox configurability | None | `--allow-path` for precise allowlisting; `--compat` mode (deny only credential paths + network) | Opt-in |
 | git status read | `git` subprocess (`diff-files` + `ls-files`) | `gix` in-process, no spawn | PoC |
 | Self-update source | `anomalyco/opencode`, follows upstream versioning | `oxdingzg/miao`, version starts at `0.0.1`, does not follow upstream | Merged |
 | Branding | opencode | miao: exit banner (cat + MIAO), terminal title prefixed with miao, install script | Merged |
@@ -49,18 +49,21 @@ Sandbox measured on the same machine:
 | Write workdir | Allowed | Allowed |
 | Normal command (`git status`) | Works | Works |
 
+Note: the table is the sandbox backend's (`miao-run` / `__sandbox-run`) default behavior; once wired into the shell tool, network is allowed by default, and only `MIAO_SANDBOX_DENY_NETWORK=1` restores the denial above.
+
 ## 3. Status and boundaries (read this)
 
 - **Merged to main**: version/update-source decoupling and branding (banner / terminal title / install script).
-- **PoC, not wired into production**: all Rust native modules (`crates/miao-native`) and the sandbox (`miao-run` / release self-exec `__sandbox-run`). Production `packages/miao` still uses TS, subprocess git, and rule-based permissions.
+- **Native modules are a PoC, opt-in**: the pure-function modules in `crates/miao-native` are off by default (`MIAO_NATIVE=1`); the default production paths still use TS, subprocess git, and rule-based permissions.
+- **The sandbox is wired, opt-in**: the shell tool runs through the sandbox runner when `MIAO_SANDBOX=1` (release binary self-execs `__sandbox-run`; macOS seatbelt / Linux Landlock).
 - The baseline is **the TS implementation in this repo before the fork's native work** (i.e. opencode's implementation), not the live opencode repository.
 - Performance numbers are **isolated pure-function comparisons**; they exclude the Effect/IO/LSP/formatting work that is identical on both sides.
-- The sandbox is macOS-only; Linux (landlock/seccomp) and Windows are not implemented yet.
+- Sandbox backends: macOS and Linux are implemented; Windows (AppContainer + Job object) is not.
 
 Risks of wiring these PoCs into production (packaging, false-green CI, synchronous blocking, platform gaps) are in [rust-integration-risks.en.md](rust-integration-risks.en.md).
 
 ## 4. Next steps (toward "merged")
 
 1. Wire `edit` / `apply_patch` / `snapshot` to native with a TS fallback, and compare RSS memory.
-2. Route the bash tool through `runSandboxed` with the permission prompt as `ask`.
-3. Add the Linux landlock/seccomp backend.
+2. ~~Route the bash tool through the sandbox runner with the permission prompt as `ask`~~ Done: the shell tool runs sandboxed when `MIAO_SANDBOX=1`.
+3. ~~Add the Linux landlock/seccomp backend~~ Done (Landlock with TCP denied); Windows remains.

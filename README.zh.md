@@ -41,7 +41,7 @@ miao 是 opencode 的 fork，因此下表的基线就是本仓库 fork 前 openc
 
 | 能力 | 说明 | 状态 |
 |---|---|---|
-| 内核级沙箱 | macOS seatbelt：写只限工作目录、默认禁网、被拒路径回传并询问后重试。规则式权限做不到这种强制 | PoC |
+| 内核级沙箱 | 需开启（`MIAO_SANDBOX=1`）：macOS seatbelt / Linux landlock 把写限制在工作目录；被拒路径回传并询问后重试。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 才禁网）。规则式权限做不到这种强制 | opt-in |
 | 进程内 git status | `gix`，不再起子进程 | PoC |
 | 独立的版本与更新源 | `oxdingzg/miao`，版本从 `0.0.1` 起，独立发布与自更新 | 已合入 |
 | 品牌 | 退出横幅（猫 + MIAO）、终端标题、install 脚本 | 已合入 |
@@ -51,7 +51,7 @@ miao 是 opencode 的 fork，因此下表的基线就是本仓库 fork 前 openc
 | 压缩调优（opt-in） | 廉价摘要模型、热前缀复用、BPE 阈值、工具输出裁剪 | opt-in |
 | Code Mode | 工具集收成一个 `execute` 工具 + budgeted catalog | 实验 |
 
-状态：原生模块与沙箱是 PoC，尚未接入生产；版本、更新源、品牌、成本相关已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
+状态：原生模块需开启（`MIAO_NATIVE=1`），未接入默认路径；进程沙箱已接入但需开启（`MIAO_SANDBOX=1`）；版本、更新源、品牌、成本相关已合入。完整对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见 [docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
 
 ## 基于 opencode
 

@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Exit, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -22,6 +22,8 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { extract, type Part } from "./shell/extract"
+import { Flag } from "@miao/core/flag/flag"
+import { resolveSandboxRunner, sandboxArgs, sandboxEnabled, type SandboxRunner } from "./sandbox"
 
 export { Parameters } from "./shell/prompt"
 
@@ -295,6 +297,16 @@ const parser = lazy(async () => {
   return { bash, ps }
 })
 
+async function readDenyReport(reportPath: string): Promise<string[]> {
+  try {
+    const parsed = (await Bun.file(reportPath).json()) as { denied?: unknown }
+    if (!Array.isArray(parsed.denied)) return []
+    return parsed.denied.filter((item): item is string => typeof item === "string")
+  } catch {
+    return []
+  }
+}
+
 export const ShellTool = Tool.define(
   ShellID.ToolID,
   Effect.gen(function* () {
@@ -390,6 +402,13 @@ export const ShellTool = Tool.define(
         cwd: string
         env: NodeJS.ProcessEnv
         timeout: number
+        sandbox?: {
+          runner: SandboxRunner
+          workdirs: string[]
+          allowPaths: string[]
+          allowNetwork: boolean
+          reportPath: string
+        }
       },
       ctx: Tool.Context,
     ) {
@@ -439,7 +458,31 @@ export const ShellTool = Tool.define(
       const code: number | null = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+          const handle = yield* spawner.spawn(
+            input.sandbox
+              ? ChildProcess.make(
+                  input.sandbox.runner.program,
+                  [
+                    ...input.sandbox.runner.prefix,
+                    ...sandboxArgs(
+                      {
+                        command: [input.shell, "-c", input.command],
+                        workdirs: input.sandbox.workdirs,
+                        allowNetwork: input.sandbox.allowNetwork,
+                      },
+                      input.sandbox.allowPaths,
+                      input.sandbox.reportPath,
+                    ),
+                  ],
+                  {
+                    cwd: input.cwd,
+                    env: input.env,
+                    stdin: "ignore",
+                    detached: process.platform !== "win32",
+                  },
+                )
+              : cmd(input.shell, input.command, input.cwd, input.env),
+          )
 
           yield* Effect.forkScoped(
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
@@ -575,7 +618,7 @@ export const ShellTool = Tool.define(
               }
               const timeout = params.timeout ?? defaultTimeoutMs
               const ps = Shell.ps(shell)
-              yield* Effect.scoped(
+              const externalDirs = yield* Effect.scoped(
                 Effect.gen(function* () {
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
                     Effect.sync(() => tree.delete()),
@@ -583,19 +626,55 @@ export const ShellTool = Tool.define(
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan, params)
+                  return Array.from(scan.dirs)
                 }),
               )
 
-              return yield* run(
-                {
-                  shell,
-                  command: params.command,
-                  cwd,
-                  env: yield* shellEnv(ctx, cwd),
-                  timeout,
-                },
-                ctx,
-              )
+              const base = {
+                shell,
+                command: params.command,
+                cwd,
+                env: yield* shellEnv(ctx, cwd),
+                timeout,
+              }
+              const runner = sandboxEnabled() ? resolveSandboxRunner() : undefined
+              if (!runner) return yield* run(base, ctx)
+
+              // Run under the OS sandbox, seeded with the directories the normal
+              // permission flow already approved. When the kernel denies a path
+              // the scan missed, ask for it and retry with it allowed.
+              const workdirs = Array.from(new Set([instanceCtx.directory, cwd]))
+              const allowNetwork = !Flag.MIAO_SANDBOX_DENY_NETWORK
+              let allowPaths = externalDirs
+              const maxAttempts = 4
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const reportPath = path.join(os.tmpdir(), `miao-sbx-${crypto.randomUUID()}.json`)
+                const result = yield* run(
+                  { ...base, sandbox: { runner, workdirs, allowPaths, allowNetwork, reportPath } },
+                  ctx,
+                )
+                const denied = yield* Effect.promise(() => readDenyReport(reportPath))
+                yield* Effect.promise(() => Bun.file(reportPath).delete().catch(() => {}))
+                if (denied.length === 0 || (result.metadata.exit ?? 0) === 0 || attempt === maxAttempts) {
+                  return result
+                }
+
+                const directories = Array.from(new Set(denied.map((item) => path.dirname(item))))
+                const patterns = directories.map((dir) =>
+                  process.platform === "win32" ? FSUtil.normalizePathPattern(path.join(dir, "*")) : path.join(dir, "*"),
+                )
+                const approved = yield* Effect.exit(
+                  ctx.ask({
+                    permission: "external_directory",
+                    patterns,
+                    always: patterns,
+                    metadata: { command: params.command, directories, denied },
+                  }),
+                )
+                if (!Exit.isSuccess(approved)) return result
+                allowPaths = [...allowPaths, ...directories]
+              }
+              throw new Error("sandbox attempts exhausted")
             }),
         }
       })

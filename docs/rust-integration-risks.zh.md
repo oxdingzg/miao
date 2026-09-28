@@ -61,7 +61,7 @@
 - escalation 依赖解析 stderr：macOS seatbelt 报 `Operation not permitted`，Linux landlock 报 `Permission denied`（已实测），且 shell 前缀不一（`sh: /path: …` vs `sh: 1: cannot create /path: …`）。解析器现同时匹配两种字样并从首个 `/` 取路径，但仍是启发式：无 `/` 的相对路径、或程序内部静默拒绝会漏判 → 用户看到“莫名其妙失败”。不能作为唯一 escalation 依据。
 
 ### R11. 语义变化与产品决策（中）
-- 把 bash 整体套沙箱，会和现有规则式权限**叠加**，出现“已批准但又被内核拒”的双重体验；默认开还是 opt-in 是产品决策，不是技术细节。
+- 已接入为 **opt-in**（`MIAO_SANDBOX=1`）：shell 工具用正常权限流程已批准的目录（`scan.dirs`）预填沙箱白名单，尽量不出现"已批准但又被内核拒"；被内核拒的路径再走 `external_directory` 追问并重试。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 才禁）。**默认开还是 opt-in 仍是产品决策**。
 
 ## 五、工程与供应链
 
@@ -79,7 +79,7 @@
 1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；CI 加 `MIAO_NATIVE_REQUIRED=1` 与 `native`/`sandbox-linux` job，强制构建 + parity 不允许 skip（R2）。
 2. **先接风险最低的**：`edit` 匹配、`apply_patch`（纯函数、同步、结果可完全对比、已有 parity），并保留 feature flag 回退。
 3. **git 后置**：先做 async/worker 封装（R3），并补 snapshot **全链路**（含 add/write-tree）基准；只在能覆盖大头时才接。
-4. **sandbox 作为可选能力**：opt-in、带明确回退，先补 Linux 后端，再谈默认开启；不要用 stderr 解析做 escalation 的唯一依据。
+4. **sandbox 作为可选能力**：已 opt-in 接入 shell 工具（`MIAO_SANDBOX=1`）并可回退；Linux 后端已补；默认开启仍待定。不要用 stderr 解析做 escalation 的唯一依据。
 5. 每一步都以“现有测试全绿 + 新 parity 不 skip + 内存/RSS 基线”作为验收。
 
 ## 结论
