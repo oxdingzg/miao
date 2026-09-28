@@ -171,8 +171,51 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
   return sdk.responses?.(modelID) ?? sdk.languageModel(modelID)
 }
 
+// Tencent documents these Token Plan model IDs, but models.dev currently lists
+// only Hy3 and Hy4. Keep catalog/user-defined entries authoritative when they
+// catch up. The shared plan key does not reveal which plan the user purchased.
+const TENCENT_TOKEN_PLAN_MODELS = [
+  ["tc-code-latest", "Auto", "auto", false],
+  ["deepseek-v4-flash-202605", "DeepSeek V4 Flash", "deepseek", false],
+  ["deepseek-v4-pro-202606", "DeepSeek V4 Pro", "deepseek", false],
+  ["minimax-m2.7", "MiniMax M2.7", "minimax", false],
+  ["minimax-m3", "MiniMax M3", "minimax", true],
+  ["glm-5", "GLM-5", "glm", false],
+  ["glm-5.1", "GLM-5.1", "glm", false],
+  ["glm-5.2", "GLM-5.2", "glm", false],
+  ["glm-5.3", "GLM-5.3", "glm", false],
+  ["glm-5.3-flash", "GLM-5.3 Flash", "glm", true],
+  ["kimi-k2.7-code", "Kimi K2.7 Code", "kimi", true],
+  ["kimi-k3", "Kimi K3", "kimi", true],
+] as const
+
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
+    "tencent-token-plan": (input) => {
+      const template = input.models["hy3"] ?? input.models["hy4-preview"]
+      if (template) {
+        for (const [id, name, family, image] of TENCENT_TOKEN_PLAN_MODELS) {
+          if (input.models[id]) continue
+          input.models[id] = {
+            ...template,
+            id: ModelV2.ID.make(id),
+            name,
+            family,
+            api: { ...template.api, id },
+            // Conservative fallback until the catalog provides verified limits.
+            limit: { context: 128_000, output: 8_192 },
+            capabilities: {
+              ...template.capabilities,
+              attachment: image,
+              input: { ...template.capabilities.input, image },
+            },
+            variants: {},
+            release_date: "",
+          }
+        }
+      }
+      return Effect.succeed({ autoload: false })
+    },
     anthropic: () =>
       Effect.succeed({
         autoload: false,

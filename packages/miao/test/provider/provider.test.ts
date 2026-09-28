@@ -121,6 +121,22 @@ it.instance("provider loaded from env variable", () =>
   }),
 )
 
+it.instance("Tencent Token Plan includes documented models missing from models.dev without replacing catalog or config models", () =>
+  Effect.gen(function* () {
+    yield* setProcessEnv("TENCENT_TOKEN_PLAN_API_KEY", "test-key")
+    const providers = yield* list
+    const models = providers[ProviderV2.ID.make("tencent-token-plan")].models
+    expect(models["hy3"].limit.context).toBe(256_000)
+    expect(models["tc-code-latest"].api.id).toBe("tc-code-latest")
+    expect(models["deepseek-v4-pro-202606"].api.id).toBe("deepseek-v4-pro-202606")
+    expect(models["glm-5.3-flash"].capabilities.input.image).toBe(true)
+    expect(models["minimax-m2.7"].capabilities.input.image).toBe(false)
+    expect(models["kimi-k3"].limit.context).toBe(128_000)
+    expect(models["glm-5.2"].name).toBe("My GLM")
+  }),
+  { config: { provider: { "tencent-token-plan": { models: { "glm-5.2": { name: "My GLM" } } } } } },
+)
+
 it.instance(
   "provider loaded from config with apiKey option",
   Effect.gen(function* () {
