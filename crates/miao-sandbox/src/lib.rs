@@ -79,7 +79,7 @@ pub fn apply_linux_restrictions(
     allow_paths: &[PathBuf],
     allow_network: bool,
 ) -> Result<(), String> {
-    use landlock::{AccessFs, AccessNet, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr};
+    use landlock::{Access, AccessFs, AccessNet, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr};
 
     let abi = AccessFs::from_all(landlock::ABI::V1);
     let read = AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir;
