@@ -63,6 +63,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   permissions: Permission.Ruleset.pipe(Schema.optional).annotate({
     description: "Ordered tool permission rules applied to agent tool use",
   }),
+  disabled_tools: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
+    description: "Tool names hidden from the model for every agent in this Location",
+  }),
   agents: Schema.Record(Schema.String, ConfigAgent.Info).pipe(Schema.optional).annotate({
     description: "Named built-in agent overrides and custom agent definitions",
   }),

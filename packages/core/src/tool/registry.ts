@@ -26,6 +26,8 @@ export type MaterializeOptions = {
   readonly codeMode?: boolean
   /** Overlay session-scoped registrations owned by this Session on top of location and application scopes. */
   readonly sessionID?: SessionSchema.ID
+  /** Tool names hidden from the model. Filtering happens before ordering so the prefix stays stable. */
+  readonly disabledTools?: ReadonlyArray<string>
 }
 
 export interface Interface {
@@ -167,6 +169,7 @@ const registryLayer = Layer.effect(
           }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+        for (const name of options?.disabledTools ?? []) registrations.delete(name)
         const orderKey = options?.sessionID ?? "@location"
         const ordered = stableToolOrder(advertisedOrder.get(orderKey) ?? [], Array.from(registrations.keys()))
         advertisedOrder.set(orderKey, ordered)

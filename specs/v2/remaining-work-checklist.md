@@ -28,8 +28,8 @@ Definition of Done. Run in `miao-dev` only.
 - [x] Create: `session.create` → `v2.session.create` (`prompt/index.tsx`)
 - [x] Fork: `session.fork` → `v2.session.fork` (`app.tsx`, `routes/session/dialog-fork-from-timeline.tsx`, `dialog-message.tsx`)
 - [x] Compact/revert: `summarize`→`v2.session.compact`, `revert`→`v2.session.revert.stage`, `unrevert`→`v2.session.revert.clear` (`routes/session/index.tsx`, `dialog-message.tsx`)
-- [ ] Permission reply: → `v2.session.permission.reply` (`routes/session/permission.tsx`, `context/sync.tsx`) — **blocked on rendering**: the route reads `sync.data.permission` from V1 events; V2 requests are not surfaced there
-- [ ] Question reply/reject: → `v2.session.question.*` (`routes/session/question.tsx`) — same rendering gap
+- [x] Permission reply: → `v2.session.permission.reply`; V2 requests render via `permission.v2.asked`/`replied` in `context/sync.tsx` (V2 request mapped to the V1 UI shape)
+- [x] Question reply/reject: → `v2.session.question.reply/reject`; V2 requests render via `question.v2.asked`/`replied`/`rejected` in `context/sync.tsx`
 - [x] Reads and writes agree (writes gated on `MIAO_TUI_V2`, the same flag that switches reads)
 - [ ] Verify: driven session writes `session_message`, no `message`/`part` rows (`miao-dev db stats`)
 - [ ] Verify: TUI and app transcripts identical before/after flip
@@ -71,10 +71,10 @@ Definition of Done. Run in `miao-dev` only.
 
 ## 7. Gaps
 ### G2 remainder — lazy/disabled tool definitions
-- [ ] Global `disabledTools` filter at registry resolution (prefix stays stable)
-- [ ] Deferred definitions for mid-session tools (append, never reorder)
-- [ ] Verify byte-identical tool array across turns; toggle appends only
-- [ ] Test + commit + push
+- [x] Global `disabledTools` filter at registry resolution — `materialize({ disabledTools })`, sourced from `disabled_tools` config
+- [x] Deferred definitions for mid-session tools (append, never reorder) — `stableToolOrder`
+- [x] Verify byte-identical tool array across turns; toggle appends only — `tool-registry-order.test.ts`
+- [x] Test + commit + push
 
 ### G3 remainder — subagent liveness
 - [ ] Report summary model/failure; surface dead/killed subagent to parent

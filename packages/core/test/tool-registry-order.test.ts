@@ -60,4 +60,22 @@ describe("ToolRegistry stable definitions", () => {
       expect(third.definitions.map((definition) => definition.name)).toEqual(["echo", "task"])
     }),
   )
+
+  it.effect("filters disabled tools and appends them when re-enabled", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      const sessionID = SessionV2.ID.make("ses_disabled_tools")
+      yield* service.register({ echo, task: tool("task"), glob: tool("glob") })
+
+      const all = yield* service.materialize(undefined, { sessionID })
+      expect(all.definitions.map((definition) => definition.name)).toEqual(["echo", "task", "glob"])
+
+      const withoutTask = yield* service.materialize(undefined, { sessionID, disabledTools: ["task"] })
+      expect(withoutTask.definitions.map((definition) => definition.name)).toEqual(["echo", "glob"])
+
+      // Re-enabling keeps the established prefix and only appends the tool.
+      const reenabled = yield* service.materialize(undefined, { sessionID })
+      expect(reenabled.definitions.map((definition) => definition.name)).toEqual(["echo", "glob", "task"])
+    }),
+  )
 })

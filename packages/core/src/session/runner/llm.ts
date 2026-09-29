@@ -156,17 +156,19 @@ const layer = Layer.effect(
       let prune = false
       let budget: number | undefined
       let loop: { readonly maxIterations: number; readonly continuePrompt: string } | undefined
+      let disabledTools: ReadonlyArray<string> = []
       for (const entry of documents) {
         if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
         if (entry.info.compaction?.prune !== undefined) prune = entry.info.compaction.prune
         if (entry.info.cost?.budget_usd !== undefined) budget = entry.info.cost.budget_usd
+        if (entry.info.disabled_tools !== undefined) disabledTools = entry.info.disabled_tools
         if (entry.info.loop?.enabled === true)
           loop = {
             maxIterations: entry.info.loop.max_iterations ?? DEFAULT_LOOP_MAX_ITERATIONS,
             continuePrompt: entry.info.loop.continue_prompt ?? DEFAULT_LOOP_PROMPT,
           }
       }
-      return { ttl, prune, budget, loop }
+      return { ttl, prune, budget, loop, disabledTools }
     })
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -267,14 +269,15 @@ const layer = Layer.effect(
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
+      const settings = yield* readSettings()
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
             sessionID: session.id,
+            disabledTools: settings.disabledTools,
           })
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
-      const settings = yield* readSettings()
       const prior = turns.get(session.id)
       const expectedRebuild = prior?.afterCompaction === true
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS

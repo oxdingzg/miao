@@ -62,6 +62,9 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
     model's declared input modalities and replaces image files with a text placeholder when the
     model omits `image`; the runner passes `resolved.info.capabilities.input`. Covered by
     `session-runner-message.test.ts`. Remaining G4 work: cancellation settlement, tool progress.
+  - G2 remainder complete: `materialize` accepts `disabledTools` (filtered before ordering) and the
+    runner sources it from the new global `disabled_tools` config; re-enabling appends without
+    reordering the prefix. Covered by `tool-registry-order.test.ts`.
 
 ## 2. Environment
 
@@ -152,17 +155,20 @@ Make reads and writes agree: the session route currently reads `sync` (V1). Eith
 under `MIAO_TUI_V2`, or keep reads on `MIAO_TUI_V2` and gate writes on the same flag.
 
 **A.1 status (2026-09-30).** Landed, gated on `MIAO_TUI_V2`: create, prompt, shell, command,
-interrupt, fork, and compact/revert (`summarize`→`v2.session.compact`, `revert`→
-`v2.session.revert.stage`, `unrevert`→`v2.session.revert.clear`). Payload mapping is
-`promptInputFromParts` in `context/session-v2-write.ts`; the legacy JS SDK was regenerated so
-`v2.session.shell/command/fork` exist (they were missing). Reads already come from V2 under the
-flag (A.0b).
+interrupt, fork, compact/revert (`summarize`→`v2.session.compact`, `revert`→
+`v2.session.revert.stage`, `unrevert`→`v2.session.revert.clear`), and permission/question replies.
+Payload mapping is `promptInputFromParts` in `context/session-v2-write.ts`; the legacy JS SDK was
+regenerated so `v2.session.shell/command/fork` exist (they were missing). Reads already come from
+V2 under the flag (A.0b).
 
-Not yet flipped: permission and question replies. They are blocked on rendering — the route reads
-`sync.data.permission` / `sync.data.question` from V1 events, and V2 requests are not surfaced
-there, so flipping the replies alone would not make the prompts appear. Needs the route to read the
-V2 request lists (or a V2→sync bridge) first. Live end-to-end soak (`miao-dev`, a real provider) is
-still required for the rest.
+V2 permission/question requests now render: `context/sync.tsx` handles `permission.v2.asked` /
+`permission.v2.replied` / `question.v2.asked` / `question.v2.replied` / `question.v2.rejected`,
+mapping the V2 permission request (`action`/`resources`/`save`/`source`) into the V1 UI shape and
+storing the V2 question request (structurally identical) as a `QuestionRequest`. Replies go to
+`v2.session.permission.reply` / `v2.session.question.reply|reject` under the flag.
+
+Still required: live end-to-end soak in `miao-dev` with a real provider (A.2 acceptance), and the
+browser app/desktop/web surfaces (A.3).
 
 ### A.2 Acceptance (from `v1-retirement.md`)
 
