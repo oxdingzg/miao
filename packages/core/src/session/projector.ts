@@ -105,6 +105,31 @@ function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usa
     .pipe(Effect.orDie)
 }
 
+/**
+ * Apply a session's step usage to the session and every ancestor session, so a
+ * parent's `cost`/tokens reflect its subagents. Each descendant step is applied
+ * once per ancestor, which sums the subtree without double counting.
+ */
+const MAX_ANCESTORS = 64
+function applyUsageWithAncestors(db: DatabaseService, sessionID: SessionSchema.ID, value: Usage, sign = 1) {
+  return Effect.gen(function* () {
+    yield* applyUsage(db, sessionID, value, sign)
+    let current = sessionID
+    for (let depth = 0; depth < MAX_ANCESTORS; depth++) {
+      const row = yield* db
+        .select({ parentID: SessionTable.parent_id })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, current))
+        .get()
+        .pipe(Effect.orDie)
+      const parentID = row?.parentID
+      if (!parentID) break
+      yield* applyUsage(db, parentID, value, sign)
+      current = parentID
+    }
+  })
+}
+
 type RunCache = {
   readonly assistantByID: Map<SessionMessage.ID, SessionMessage.Assistant>
   readonly latestAssistant: Map<string, SessionMessage.Assistant | undefined>
@@ -448,7 +473,7 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Step.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Step.Ended, (event) =>
       Effect.gen(function* () {
-        yield* applyUsage(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
+        yield* applyUsageWithAncestors(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
         yield* run(db, event)
       }),
     )
@@ -514,7 +539,7 @@ const layer = Layer.effectDiscard(
         for (const row of removed) {
           const message = decodeMessage({ ...row.data, id: row.id, type: row.type })
           if (message.type === "assistant" && message.cost !== undefined && message.tokens !== undefined)
-            yield* applyUsage(db, event.data.sessionID, { cost: message.cost, tokens: message.tokens }, -1)
+            yield* applyUsageWithAncestors(db, event.data.sessionID, { cost: message.cost, tokens: message.tokens }, -1)
         }
         yield* db
           .delete(SessionMessageTable)

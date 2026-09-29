@@ -643,4 +643,61 @@ describe("SessionProjector", () => {
       ).toMatchObject({ cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 })
     }),
   )
+
+  it.effect("aggregates a subagent's step usage into its parent session", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(ProjectTable)
+        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+        .run()
+        .pipe(Effect.orDie)
+      const childID = SessionV2.ID.make("ses_projector_child")
+      yield* db
+        .insert(SessionTable)
+        .values([
+          {
+            id: sessionID,
+            project_id: Project.ID.global,
+            slug: "parent",
+            directory: "/project",
+            title: "parent",
+            version: "test",
+          },
+          {
+            id: childID,
+            parent_id: sessionID,
+            project_id: Project.ID.global,
+            slug: "child",
+            directory: "/project",
+            title: "child",
+            version: "test",
+          },
+        ])
+        .run()
+        .pipe(Effect.orDie)
+      const events = yield* EventV2.Service
+      const assistantID = SessionMessage.ID.make("msg_child_assistant")
+      yield* events.publish(SessionEvent.Step.Started, {
+        sessionID: childID,
+        assistantMessageID: assistantID,
+        timestamp: created,
+        agent: "build",
+        model,
+      })
+      yield* events.publish(SessionEvent.Step.Ended, {
+        sessionID: childID,
+        timestamp: DateTime.makeUnsafe(1),
+        assistantMessageID: assistantID,
+        finish: "stop",
+        cost: 0.5,
+        tokens: { input: 10, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
+      })
+
+      const costOf = (id: typeof sessionID) =>
+        db.select({ cost: SessionTable.cost }).from(SessionTable).where(eq(SessionTable.id, id)).get().pipe(Effect.orDie)
+      expect(yield* costOf(childID)).toMatchObject({ cost: 0.5 })
+      expect(yield* costOf(sessionID)).toMatchObject({ cost: 0.5 })
+    }),
+  )
 })
