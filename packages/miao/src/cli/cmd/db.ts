@@ -102,14 +102,17 @@ const BackfillCommand = effectCmd({
   command: "backfill",
   describe: "convert legacy V1 session messages into the V2 projection (idempotent)",
   instance: false,
-  handler: Effect.fn("Cli.db.backfill")(function* () {
+  builder: (yargs: Argv) =>
+    yargs.option("dry-run", {
+      type: "boolean",
+      default: false,
+      describe: "report what would be migrated without writing",
+    }),
+  handler: Effect.fn("Cli.db.backfill")(function* (args: { "dry-run": boolean }) {
     const { db } = yield* Database.Service
-    const result = yield* SessionBackfill.backfill(db)
-    console.log(`backfilled ${result.migrated} session(s)`)
-    if (result.mixed.length > 0) {
-      console.warn(`skipped ${result.mixed.length} session(s) with mixed legacy and V2 history:`)
-      for (const id of result.mixed) console.warn(`  ${id}`)
-    }
+    const result = yield* SessionBackfill.backfill(db, { dryRun: args["dry-run"] })
+    const prefix = args["dry-run"] ? "would backfill" : "backfilled"
+    console.log(`${prefix} ${result.migrated} session(s), repaired ${result.repaired} mixed session(s)`)
   }),
 })
 

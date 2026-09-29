@@ -27,10 +27,6 @@ export type HistoryState = "empty" | "legacy" | "projected" | "mixed"
 export interface Interface {
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info | undefined>
   readonly context: (sessionID: SessionSchema.ID) => Effect.Effect<SessionMessage.Message[], MessageDecodeError>
-  readonly runnerContext: (
-    sessionID: SessionSchema.ID,
-    baselineSeq: number,
-  ) => Effect.Effect<SessionMessage.Message[], MessageDecodeError>
   readonly historyState: (sessionID: SessionSchema.ID) => Effect.Effect<HistoryState>
   readonly message: (
     messageID: SessionMessage.ID,
@@ -121,9 +117,6 @@ const layer = Layer.effect(
         // never backfilled must still be visible after a V2 turn appends rows.
         const projectedIDs = new Set(projected.map((message) => message.id))
         return [...mapped.filter((message) => !projectedIDs.has(message.id)), ...projected]
-      }),
-      runnerContext: Effect.fn("SessionStore.runnerContext")(function* (sessionID, baselineSeq) {
-        return yield* SessionHistory.loadForRunner(db, sessionID, baselineSeq)
       }),
       historyState,
       message: Effect.fn("SessionStore.message")(function* (messageID) {

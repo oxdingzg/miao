@@ -96,6 +96,28 @@ type CompactInput = {
   prompt?: Prompt
 }
 
+type MessagesPageInput = {
+  readonly limit?: number
+  readonly order?: "asc" | "desc"
+  readonly cursor?: { readonly id: SessionMessage.ID; readonly direction: "previous" | "next" }
+}
+
+// Legacy messages have no projected sequence. This mirrors the seq-based
+// pagination of `SessionV2.messages` over the ordered legacy list so an
+// un-migrated session reads the same through the API as through `context`.
+const paginateLegacy = (messages: ReadonlyArray<SessionMessage.Message>, input: MessagesPageInput) => {
+  const cursor = input.cursor
+  const direction = cursor?.direction ?? "next"
+  const requestedOrder = input.order ?? "desc"
+  const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder
+  const ordered = order === "asc" ? messages : messages.toReversed()
+  const index = cursor === undefined ? -1 : messages.findIndex((message) => message.id === cursor.id)
+  if (cursor !== undefined && index < 0) return []
+  const offset = cursor === undefined ? 0 : order === "asc" ? index + 1 : messages.length - index
+  const page = ordered.slice(offset, input.limit === undefined ? undefined : offset + input.limit)
+  return direction === "previous" ? page.toReversed() : page
+}
+
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Session.NotFoundError", {
   sessionID: SessionSchema.ID,
 }) {}
@@ -309,6 +331,10 @@ const layer = Layer.effect(
       }),
       messages: Effect.fn("V2Session.messages")(function* (input) {
         yield* result.get(input.sessionID)
+        const state = yield* store.historyState(input.sessionID)
+        // Un-migrated (or stranded) legacy history has no projection to page
+        // over, so read it through the same fallback `context` uses.
+        if (state === "legacy" || state === "mixed") return paginateLegacy(yield* store.context(input.sessionID), input)
         const direction = input.cursor?.direction ?? "next"
         const requestedOrder = input.order ?? "desc"
         const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder

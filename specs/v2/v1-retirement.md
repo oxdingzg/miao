@@ -80,15 +80,29 @@ message/part → `SessionMessage` mapping and must preserve ordering and tool st
 **Option 1 landed (opt-in backfill).** `SessionBackfill.backfill` (core) converts each V1 session's
 `message` / `part` rows into projected `session_message` rows, one transaction per session, and is
 exposed as `miao db backfill` rather than an automatic migration so it never mutates history
-without an explicit command. It is idempotent (skips sessions that already have a projection).
-After a backfill run the read fallback is no longer needed for migrated sessions; V1 tables can
-then be deleted.
+without an explicit command. It is idempotent and also repairs a session that already has a
+projection but still holds stranded legacy messages. Because `session_message.seq` is the EventV2
+aggregate sequence, backfilled legacy rows are written strictly below every existing and future
+sequence (negative when the session has no projection yet) so the next event cannot collide with
+them. `--dry-run` reports the pending counts without writing.
 
-Option 2 landed (read fallback). `SessionStore.context` now falls back to reading the legacy
-`message` / `part` tables and mapping them through `session/v1-read.ts` when a Session has no
-`session_message` rows. This makes old sessions readable through the V2 API without touching data,
-so Stage 3 (read shadow) can proceed. A backfill migration (Option 1) is still required before V1
-can be deleted, because the fallback keeps V1 schema dependencies in V2.
+Option 2 landed (read fallback). `SessionStore.context` and `SessionV2.messages` fall back to the
+legacy `message` / `part` tables (mapped through `session/v1-read.ts`) when a session has no
+`session_message` rows, so an un-migrated session reads the same through either API. Backfill is
+still required before V1 can be deleted, because the fallback keeps V1 schema dependencies in V2.
+
+**Stage 3 guard (landed).** `SessionStore.historyState` classifies a session as
+`empty` / `legacy` / `projected` / `mixed` (`mixed` = a legacy message missing from the
+projection). Every V2 write path — the runner drain plus `prompt`, `shell`, `skill`, `switchAgent`,
+`switchModel`, `command`, `fork`, `compact`, `resume` — refuses a `legacy` or `mixed` session with
+`Session.LegacyNotMigratedError`, surfaced as a 503 telling the user to run `miao db backfill`.
+An old session is therefore never run against an empty projected context, and no new `mixed` state
+can be created. The `miao db backfill` run converts (or repairs) it to `projected`, after which it
+reads and continues normally.
+
+**Stage 4 decision.** Keep the migration explicit: no automatic backfill at startup or upgrade.
+The 503 from the guard is the signal a client should surface to prompt the user to run
+`miao db backfill` once before the cutover.
 
 **Stage 4 — write flip, per surface.** Flip writes to `/api/session/*` and run the V2 engine for
 new sessions, one client surface at a time (TUI first, then app/desktop/web), each gated and

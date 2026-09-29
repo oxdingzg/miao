@@ -12,23 +12,26 @@ import { SessionV1Read } from "./v1-read"
 const encode = Schema.encodeSync(SessionMessage.Message)
 
 export interface Result {
-  /** Number of sessions converted from legacy-only history. */
+  /** Sessions that had no projection and were converted from legacy-only history. */
   readonly migrated: number
-  /**
-   * Sessions that hold both legacy and projected history. Backfill cannot order
-   * these safely, so they are reported instead of silently skipped.
-   */
-  readonly mixed: ReadonlyArray<string>
+  /** Sessions whose stranded legacy messages were appended to an existing projection. */
+  readonly repaired: number
+}
+
+export interface Options {
+  /** Report what would change without writing anything. */
+  readonly dryRun?: boolean
 }
 
 /**
  * One-time, idempotent backfill: converts legacy V1 `message` / `part` rows into
- * projected V2 `session_message` rows for sessions that have no V2 projection
- * yet. Each session is migrated in its own transaction.
+ * projected V2 `session_message` rows. Each session is migrated in its own
+ * transaction. Sessions with no projection are `migrated`; sessions that already
+ * have a projection but still hold legacy messages without one are `repaired`.
  */
-export const backfill = (db: Database.Interface["db"]) =>
+export const backfill = (db: Database.Interface["db"], options: Options = {}) =>
   Effect.gen(function* () {
-    const sessions = yield* db
+    const legacy = yield* db
       .all<{ id: string }>(sql`
         SELECT s.id AS id FROM session s
         WHERE EXISTS (SELECT 1 FROM message m WHERE m.session_id = s.id)
@@ -46,68 +49,92 @@ export const backfill = (db: Database.Interface["db"]) =>
       `)
       .pipe(Effect.orDie)
 
+    if (options.dryRun) return { migrated: legacy.length, repaired: mixed.length }
+
     let migrated = 0
-    for (const row of sessions) {
-      const sessionID = SessionSchema.ID.make(row.id)
-      yield* db
-        .transaction((tx) =>
-          Effect.gen(function* () {
-            const messageRows = yield* tx
-              .select()
-              .from(MessageTable)
-              .where(eq(MessageTable.session_id, sessionID))
-              .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
-              .all()
-              .pipe(Effect.orDie)
-            const partRows = yield* tx
-              .select()
-              .from(PartTable)
-              .where(eq(PartTable.session_id, sessionID))
-              .orderBy(asc(PartTable.time_created), asc(PartTable.id))
-              .all()
-              .pipe(Effect.orDie)
-
-            const byMessage = new Map<string, SessionV1.Part[]>()
-            for (const part of partRows) {
-              const list = byMessage.get(part.message_id) ?? []
-              list.push({
-                ...(part.data as object),
-                id: part.id,
-                sessionID,
-                messageID: part.message_id,
-              } as SessionV1.Part)
-              byMessage.set(part.message_id, list)
-            }
-
-            const mapped = SessionV1Read.map(
-              messageRows.map((message) => ({
-                info: { ...(message.data as object), id: message.id, sessionID } as SessionV1.Info,
-                parts: byMessage.get(message.id) ?? [],
-              })),
-            )
-
-            let seq = 0
-            for (const message of mapped) {
-              const encoded = encode(message)
-              const { id, type, ...data } = encoded
-              yield* tx
-                .insert(SessionMessageTable)
-                .values({
-                  id: SessionMessage.ID.make(id),
-                  session_id: sessionID,
-                  type,
-                  seq,
-                  time_created: DateTime.toEpochMillis(message.time.created),
-                  data,
-                })
-                .run()
-                .pipe(Effect.orDie)
-              seq += 1
-            }
-          }),
-        )
-        .pipe(Effect.orDie)
+    for (const row of legacy) {
+      yield* migrateSession(db, SessionSchema.ID.make(row.id))
       migrated += 1
     }
-    return { migrated, mixed: mixed.map((row) => row.id) }
+    let repaired = 0
+    for (const row of mixed) {
+      yield* migrateSession(db, SessionSchema.ID.make(row.id))
+      repaired += 1
+    }
+    return { migrated, repaired }
   })
+
+const migrateSession = (db: Database.Interface["db"], sessionID: SessionSchema.ID) =>
+  db
+    .transaction((tx) =>
+      Effect.gen(function* () {
+        const messageRows = yield* tx
+          .select()
+          .from(MessageTable)
+          .where(eq(MessageTable.session_id, sessionID))
+          .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+          .all()
+          .pipe(Effect.orDie)
+        const partRows = yield* tx
+          .select()
+          .from(PartTable)
+          .where(eq(PartTable.session_id, sessionID))
+          .orderBy(asc(PartTable.time_created), asc(PartTable.id))
+          .all()
+          .pipe(Effect.orDie)
+
+        const byMessage = new Map<string, SessionV1.Part[]>()
+        for (const part of partRows) {
+          const list = byMessage.get(part.message_id) ?? []
+          list.push({
+            ...(part.data as object),
+            id: part.id,
+            sessionID,
+            messageID: part.message_id,
+          } as SessionV1.Part)
+          byMessage.set(part.message_id, list)
+        }
+
+        const mapped = SessionV1Read.map(
+          messageRows.map((message) => ({
+            info: { ...(message.data as object), id: message.id, sessionID } as SessionV1.Info,
+            parts: byMessage.get(message.id) ?? [],
+          })),
+        )
+
+        const existing = yield* tx
+          .select({ id: SessionMessageTable.id, seq: SessionMessageTable.seq })
+          .from(SessionMessageTable)
+          .where(eq(SessionMessageTable.session_id, sessionID))
+          .all()
+          .pipe(Effect.orDie)
+        const projected = new Set(existing.map((row) => row.id))
+        const stranded = mapped.filter((message) => !projected.has(message.id))
+        if (stranded.length === 0) return
+
+        // `session_message.seq` is the EventV2 aggregate sequence, and future
+        // events continue from the session's current maximum. Legacy messages
+        // have no event, so place them strictly below every existing and future
+        // sequence (negative when there is no projection yet) to avoid colliding
+        // with the next event.
+        let seq = (existing.length === 0 ? 0 : Math.min(...existing.map((row) => row.seq))) - stranded.length
+        for (const message of stranded) {
+          const encoded = encode(message)
+          const { id, type, ...data } = encoded
+          yield* tx
+            .insert(SessionMessageTable)
+            .values({
+              id: SessionMessage.ID.make(id),
+              session_id: sessionID,
+              type,
+              seq,
+              time_created: DateTime.toEpochMillis(message.time.created),
+              data,
+            })
+            .run()
+            .pipe(Effect.orDie)
+          seq += 1
+        }
+      }),
+    )
+    .pipe(Effect.orDie)

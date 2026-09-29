@@ -634,7 +634,7 @@ describe("SessionV2.create", () => {
     }),
   )
 
-  it.effect("reports mixed legacy/projected sessions instead of silently skipping them", () =>
+  it.effect("repairs stranded legacy messages in a mixed session", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const created = yield* session.create({ location })
@@ -676,9 +676,151 @@ describe("SessionV2.create", () => {
         .run()
         .pipe(Effect.orDie)
 
+      // The stranded legacy history blocks writes until the backfill repairs it.
+      const blocked = yield* session
+        .prompt({ sessionID: created.id, prompt: Prompt.make({ text: "hi" }), resume: false })
+        .pipe(Effect.flip)
+      expect(blocked).toBeInstanceOf(LegacyNotMigratedError)
+
       const result = yield* SessionBackfill.backfill(database.db)
       expect(result.migrated).toBe(0)
-      expect(result.mixed).toEqual([created.id])
+      expect(result.repaired).toBe(1)
+
+      const admitted = yield* session.prompt({
+        sessionID: created.id,
+        prompt: Prompt.make({ text: "hi" }),
+        resume: false,
+      })
+      expect(admitted.sessionID).toBe(created.id)
+    }),
+  )
+
+  it.effect("keeps a backfilled session appendable without sequence collisions", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      for (const index of [1, 2, 3]) {
+        yield* database.db
+          .insert(MessageTable)
+          .values({
+            id: `msg_legacyA${index}`,
+            session_id: created.id,
+            time_created: index,
+            time_updated: index,
+            data: { role: "user", time: { created: index }, agent: "build", model: { providerID: "p", modelID: "m" } },
+          } as never)
+          .run()
+          .pipe(Effect.orDie)
+        yield* database.db
+          .insert(PartTable)
+          .values({
+            id: `prt_legacyA${index}`,
+            message_id: `msg_legacyA${index}`,
+            session_id: created.id,
+            time_created: index,
+            time_updated: index,
+            data: { type: "text", text: `legacy ${index}` },
+          } as never)
+          .run()
+          .pipe(Effect.orDie)
+      }
+
+      expect((yield* SessionBackfill.backfill(database.db)).migrated).toBe(1)
+      // A new event projects a message at the session's next event sequence; it
+      // must not collide with the backfilled legacy rows.
+      yield* session.switchAgent({ sessionID: created.id, agent: "build" })
+
+      const rows = yield* database.db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, created.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toHaveLength(4)
+      expect(rows.filter((row) => row.seq < 0)).toHaveLength(3)
+    }),
+  )
+
+  it.effect("reads legacy messages through the messages endpoint fallback", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      for (const index of [1, 2]) {
+        yield* database.db
+          .insert(MessageTable)
+          .values({
+            id: `msg_legacyB${index}`,
+            session_id: created.id,
+            time_created: index,
+            time_updated: index,
+            data: { role: "user", time: { created: index }, agent: "build", model: { providerID: "p", modelID: "m" } },
+          } as never)
+          .run()
+          .pipe(Effect.orDie)
+        yield* database.db
+          .insert(PartTable)
+          .values({
+            id: `prt_legacyB${index}`,
+            message_id: `msg_legacyB${index}`,
+            session_id: created.id,
+            time_created: index,
+            time_updated: index,
+            data: { type: "text", text: `legacy ${index}` },
+          } as never)
+          .run()
+          .pipe(Effect.orDie)
+      }
+
+      const texts = (messages: ReadonlyArray<{ type: string; text?: string }>) =>
+        messages.map((message) => (message.type === "user" ? (message.text ?? "") : ""))
+      expect(texts(yield* session.messages({ sessionID: created.id, limit: 10 }))).toEqual(["legacy 2", "legacy 1"])
+      expect(texts(yield* session.messages({ sessionID: created.id, limit: 10, order: "asc" }))).toEqual([
+        "legacy 1",
+        "legacy 2",
+      ])
+    }),
+  )
+
+  it.effect("reports counts without writing in dry-run mode", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy6",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy6",
+          message_id: "msg_legacy6",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy hi" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      const plan = yield* SessionBackfill.backfill(database.db, { dryRun: true })
+      expect(plan).toEqual({ migrated: 1, repaired: 0 })
+      const rows = yield* database.db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, created.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toHaveLength(0)
     }),
   )
 
@@ -711,7 +853,9 @@ describe("SessionV2.create", () => {
         .run()
         .pipe(Effect.orDie)
 
-      expect((yield* SessionBackfill.backfill(database.db)).migrated).toBe(1)
+      const result = yield* SessionBackfill.backfill(database.db)
+      expect(result.migrated).toBe(1)
+      expect(result.repaired).toBe(0)
       const rows = yield* database.db
         .select()
         .from(SessionMessageTable)
@@ -719,6 +863,8 @@ describe("SessionV2.create", () => {
         .all()
         .pipe(Effect.orDie)
       expect(rows).toHaveLength(1)
+      // Legacy projection lives below the event sequence space.
+      expect(rows[0]?.seq ?? 0).toBeLessThan(0)
       expect(yield* session.context(created.id)).toMatchObject([{ type: "user", text: "backfilled hi" }])
     }),
   )
