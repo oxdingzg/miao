@@ -48,6 +48,19 @@ export function recentModels(
     .map((item) => ({ providerID: item.providerID, modelID: item.modelID }))
 }
 
+type ModelRef = { providerID: string; modelID: string }
+
+export function readModelRecord(value: object) {
+  const result: Record<string, ModelRef> = {}
+  for (const [name, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object") continue
+    const model = entry as Partial<ModelRef>
+    if (typeof model.providerID !== "string" || typeof model.modelID !== "string") continue
+    result[name] = { providerID: model.providerID, modelID: model.modelID }
+  }
+  return result
+}
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
@@ -173,6 +186,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }
         state.pending = false
         void writeJsonAtomic(filePath, {
+          current: modelStore.model,
           recent: modelStore.recent,
           favorite: modelStore.favorite,
           variant: modelStore.variant,
@@ -183,6 +197,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         .then((x) => {
           if (!x || typeof x !== "object") return
           const value = x as Record<string, unknown>
+          if (value.current && typeof value.current === "object")
+            setModelStore("model", readModelRecord(value.current))
           if (Array.isArray(value.recent)) setModelStore("recent", value.recent)
           if (Array.isArray(value.favorite)) setModelStore("favorite", value.favorite)
           if (typeof value.variant === "object" && value.variant !== null)
@@ -195,16 +211,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
 
       const fallbackModel = createMemo(() => {
-        if (args.model) {
-          const { providerID, modelID } = parseModel(args.model)
-          if (isModelValid({ providerID, modelID })) {
-            return {
-              providerID,
-              modelID,
-            }
-          }
-        }
-
         if (sync.data.config.model) {
           const { providerID, modelID } = parseModel(sync.data.config.model)
           if (isModelValid({ providerID, modelID })) {
@@ -237,6 +243,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const a = agent.current()
         return (
           getFirstValidModel(
+            // An explicit `--model` wins for this invocation only.
+            () => (args.model ? parseModel(args.model) : undefined),
+            // Otherwise restore the model last used for this agent, then fall
+            // back through agent/config defaults.
             () => a && modelStore.model[a.name],
             () => a && a.model,
             fallbackModel,
@@ -286,6 +296,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const a = agent.current()
           if (!a) return
           setModelStore("model", a.name, { ...val })
+          setModelStore("recent", recentModels(val, modelStore.recent))
+          save()
         },
         cycleFavorite(direction: 1 | -1) {
           const favorites = modelStore.favorite.filter((item) => isModelValid(item))
@@ -330,10 +342,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const a = agent.current()
             if (!a) return
             setModelStore("model", a.name, model)
-            if (options?.recent) {
-              setModelStore("recent", recentModels(model, modelStore.recent))
-              save()
-            }
+            if (options?.recent) setModelStore("recent", recentModels(model, modelStore.recent))
+            save()
           })
         },
         toggleFavorite(model: { providerID: string; modelID: string }) {
