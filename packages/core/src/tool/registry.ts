@@ -52,6 +52,21 @@ export interface Settlement {
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/ToolRegistry") {}
 
+/**
+ * Keep the order in which tool names were first advertised so the serialized
+ * tool prefix stays byte-stable across provider turns (research G2). Names that
+ * were already seen keep their relative order; names that appear for the first
+ * time append at the end. Removing a tool only drops it without reordering the
+ * rest.
+ */
+export function stableToolOrder(previous: readonly string[], current: readonly string[]): string[] {
+  const present = new Set(current)
+  const ordered = previous.filter((name) => present.has(name))
+  const known = new Set(ordered)
+  for (const name of current) if (!known.has(name)) ordered.push(name)
+  return ordered
+}
+
 const registryLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -63,6 +78,9 @@ const registryLayer = Layer.effect(
       SessionSchema.ID,
       Map<string, Array<{ readonly token: object; readonly registration: Registration }>>
     >()
+    // Per-scope memory of first-advertised tool names, so the definitions prefix
+    // stays byte-stable across turns even as registrations come and go (G2).
+    const advertisedOrder = new Map<string, string[]>()
     const openScope = (
       into: Map<string, Array<{ readonly token: object; readonly registration: Registration }>>,
       tools: Readonly<Record<string, AnyTool>>,
@@ -129,7 +147,10 @@ const registryLayer = Layer.effect(
         const into = sessionLocal.get(sessionID) ?? new Map()
         sessionLocal.set(sessionID, into)
         yield* openScope(into, tools, () => {
-          if (into.size === 0) sessionLocal.delete(sessionID)
+          if (into.size === 0) {
+            sessionLocal.delete(sessionID)
+            advertisedOrder.delete(sessionID)
+          }
         })
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], options?: MaterializeOptions) {
@@ -146,7 +167,13 @@ const registryLayer = Layer.effect(
           }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
-        const definitions = Array.from(registrations, ([name, registration]) => definition(name, registration.tool))
+        const orderKey = options?.sessionID ?? "@location"
+        const ordered = stableToolOrder(advertisedOrder.get(orderKey) ?? [], Array.from(registrations.keys()))
+        advertisedOrder.set(orderKey, ordered)
+        const definitions = ordered.flatMap((name) => {
+          const registration = registrations.get(name)
+          return registration ? [definition(name, registration.tool)] : []
+        })
         const inner: Materialization = {
           definitions,
           settle: (input) => {
