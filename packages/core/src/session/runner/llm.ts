@@ -82,8 +82,8 @@ import { llmClient } from "../../effect/app-node-platform"
  *   - [x] Authorize and execute recorded local calls through a core-owned registry hook.
  *   - [x] Persist typed success, failure, and provider-executed tool outcomes.
  *   - [x] Start each recorded local call eagerly and await all settlements before continuation.
- *   - [ ] Add scoped runtime context, progress updates, attachment normalization,
- *     plugins, and cancellation settlement.
+ *   - [x] Normalize image attachments against the model's declared input capabilities.
+ *   - [ ] Add scoped runtime context, progress updates, plugins, and cancellation settlement.
  *   - [x] Reload projected history and start the next explicit provider turn after local tool results.
  *   - [x] Continue for durable user steering accepted during an active provider turn.
  *   - [ ] Continue for compaction or another continuation condition when required.
