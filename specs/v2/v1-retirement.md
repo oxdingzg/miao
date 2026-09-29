@@ -40,16 +40,24 @@ a conformance test. Additive; no behavior change to the V1 release.
 `session.shell`, `session.skill`, and the `revert`/`unrevert` aliases. Each with core + handler +
 regenerated SDK, verified against the parity table.
 
-Progress: `session.todo`, `session.children`, `session.status`, `session.shell`, `session.skill`
-landed. Remaining and why they are harder:
+Progress: `session.todo`, `session.children`, `session.status`, `session.shell`, `session.skill`,
+`session.diff` landed. Remaining and why they need dedicated design:
 
-- `session.diff` — needs a persisted session baseline snapshot; V2 captures a start snapshot per
-  turn but does not yet persist the session snapshot range into queryable history.
 - `session.fork` — the event-sourced message model has no per-message copy primitive; a fork must
-  replay the parent's durable events under a new Session aggregate.
-- `revert` / `unrevert` aliases — V2 already exposes `revert.stage` / `revert.clear` /
-  `revert.commit`; the alias surface depends on the exact client call shapes and must be added
-  with the client cutover so the semantics stay consistent.
+  replay the parent's durable events under a new Session aggregate. This needs an event-replay
+  primitive on `EventV2` (publish a recorded event under a new aggregate) before it is safe.
+- `session.command` — running a slash command needs the template-render and argument-substitution
+  semantics (placeholders, `@`-file expansion, shell interpolation) defined for V2 and matched to
+  V1, plus optional agent/model selection from `Command.Info`.
+- `session.rename` / `session.archive` / `session.remove` — no durable Session events exist for
+  title / archived / removal in V2 yet; adding them (or a documented direct-update exception)
+  must preserve the event-sourced read model.
+- `revert` / `unrevert` aliases — V2 exposes `revert.stage` / `revert.clear` / `revert.commit`;
+  add the alias surface with the client cutover so the semantics stay consistent.
+
+The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
+missing, so the cutover (Stage 3–4) can proceed without them and they can be filled in behind it.
+
 
 
 **Stage 3 — dual-read shadow.** TUI and app read V2 session data (`/api/session/:id/context`,
