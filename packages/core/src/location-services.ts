@@ -15,6 +15,7 @@ import { Image } from "./image"
 import { Integration } from "./integration"
 import { Location } from "./location"
 import { LocationMutation } from "./location-mutation"
+import { LSP } from "./lsp"
 import { LocationServiceMap } from "./location-service-map"
 import { PermissionV2 } from "./permission"
 import { PluginV2 } from "./plugin"
@@ -65,6 +66,7 @@ export const locationServices = LayerNode.group([
   FileMutation.node,
   Format.node,
   PermissionV2.node,
+  LSP.node,
   ToolOutputStore.node,
   ToolRegistry.node,
   ToolRegistry.toolsNode,

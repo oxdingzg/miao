@@ -13,6 +13,9 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
+import { LSP } from "../lsp"
+import { LSPClient } from "../lsp/client"
+import { Diagnostic } from "../lsp/diagnostic"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
@@ -37,6 +40,7 @@ export const Input = Schema.Struct({
 export const Output = Schema.Struct({
   files: Schema.Array(FileDiff.Info),
   replacements: Schema.Number,
+  diagnostics: Schema.String.pipe(Schema.optional),
 })
 export type Output = typeof Output.Type
 
@@ -79,13 +83,14 @@ export const toModelOutput = (output: Output, oldString: string, newString: stri
     ...previewLines(oldString, "-"),
     ...previewLines(newString, "+"),
     "```",
-  ].join("\n")
+  ]
+    .concat(output.diagnostics ? ["", "LSP errors detected in this file, please fix:", output.diagnostics] : [])
+    .join("\n")
 
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
 // TODO: Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
-// TODO: Add LSP notification and diagnostics after V2 LSP runtime exists.
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -95,6 +100,7 @@ const layer = Layer.effectDiscard(
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
     const format = yield* Format.Service
+    const lsp = yield* LSP.Service
 
     yield* tools
       .register({
@@ -197,7 +203,14 @@ const layer = Layer.effectDiscard(
                   }),
                 )
                 yield* format.file(target.canonical).pipe(Effect.ignore)
+                yield* lsp.touchFile(target.canonical, "document").pipe(Effect.ignore)
+                const diagnostics = yield* lsp.diagnostics()
+                const report = Diagnostic.report(
+                  target.resource,
+                  diagnostics[LSPClient.fileURI(target.canonical)] ?? [],
+                )
                 return {
+                  ...(report ? { diagnostics: report } : {}),
                   files: [
                     {
                       file: result.resource,
@@ -221,5 +234,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/edit",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
 })
