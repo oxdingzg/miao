@@ -122,9 +122,9 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Test + commit + push
 
 ### G11 remainder — cross-process durable tail
-- [ ] Durable event tail polling fallback
-- [ ] Verify: process A appends, process B tails with no gaps
-- [ ] Test + commit + push
+- [x] Durable event tail polling fallback — `EventV2.durable` merges the in-process wake with a 1s DB poll (`pollInterval` overridable)
+- [x] Verify: a foreign writer committing rows directly is tailed with no gap — `event.test.ts` "tails durable events written by another process"
+- [x] Test + commit + push
 
 ### G12 — syscall-level confinement
 - [ ] Wire core-owned OS sandbox into V2 tool execution (workdir, allowed paths, network)

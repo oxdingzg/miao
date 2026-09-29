@@ -55,6 +55,9 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
   - G3 progress: `runSubagent` now returns a `ToolFailure` when the child's last assistant message
     carries an error or `finish: "error"`, so a failed subagent surfaces as a tool error rather than
     empty output; covered by `session-runner.test.ts`. Remaining: interrupt/kill path liveness.
+  - G11 progress: `EventV2.durable` now merges the in-process wake with a 1s database poll
+    (`pollInterval` overridable), so a second process appending to the same database is tailed
+    without gaps; covered by `event.test.ts`.
 
 ## 2. Environment
 

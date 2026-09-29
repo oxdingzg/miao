@@ -504,6 +504,53 @@ describe("EventV2", () => {
     }),
   )
 
+  it.live("tails durable events written by another process", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = Session.ID.create()
+      const firstSeen = yield* Deferred.make<void>()
+      const fiber = yield* events
+        .durable({ aggregateID, pollInterval: 20 })
+        .pipe(
+          Stream.tap((event) =>
+            event.durable?.seq === 0 ? Deferred.succeed(firstSeen, undefined).pipe(Effect.asVoid) : Effect.void,
+          ),
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkScoped,
+        )
+      yield* events.publish(DurableMessage, durableData(aggregateID, "local"))
+      yield* Deferred.await(firstSeen)
+
+      // A foreign writer commits directly to the shared tables without waking this
+      // process's PubSub; only the durable poll can observe the appended row.
+      const data = durableData(aggregateID, "foreign")
+      yield* db
+        .insert(EventSequenceTable)
+        .values([{ aggregate_id: aggregateID, seq: 1 }])
+        .onConflictDoUpdate({ target: EventSequenceTable.aggregate_id, set: { seq: 1 } })
+        .run()
+      yield* db
+        .insert(EventTable)
+        .values([
+          {
+            id: EventV2.ID.create(),
+            aggregate_id: aggregateID,
+            seq: 1,
+            type: EventV2.versionedType(DurableMessage.type, DurableMessage.durable!.version),
+            data,
+          },
+        ])
+        .run()
+
+      expect(Array.from(yield* Fiber.join(fiber)).map((event) => event.data)).toEqual([
+        durableData(aggregateID, "local"),
+        data,
+      ])
+    }),
+  )
+
   it.effect("omits live-only events from durable aggregate streams", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service

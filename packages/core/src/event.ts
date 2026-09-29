@@ -1,6 +1,6 @@
 export * as EventV2 from "./event"
 
-import { Cause, Context, Effect, Layer, Option, PubSub, Queue, Schema, Stream } from "effect"
+import { Cause, Context, Duration, Effect, Layer, Option, PubSub, Queue, Schema, Stream } from "effect"
 import { Event } from "@miao/schema/event"
 import type { Data, Definition, Payload } from "@miao/schema/event"
 import { and, asc, eq, gt, inArray } from "drizzle-orm"
@@ -112,6 +112,13 @@ export class SubscriberOverflowError extends Schema.TaggedErrorClass<SubscriberO
   { capacity: Schema.Int },
 ) {}
 
+/**
+ * Interval for the durable stream's database poll. The in-process PubSub wake is
+ * not shared across processes, so a second process writing to the same database
+ * is only observed by re-reading committed rows.
+ */
+export const DURABLE_POLL_MS = 1_000
+
 export const define = Event.define
 export const versionedType = Event.versionedType
 
@@ -131,7 +138,12 @@ export interface Interface {
   ) => Effect.Effect<Payload<D>>
   readonly subscribe: <D extends Definition>(definition: D) => Stream.Stream<Payload<D>>
   readonly all: () => Stream.Stream<Payload>
-  readonly durable: (input: { readonly aggregateID: string; readonly after?: number }) => Stream.Stream<Payload>
+  readonly durable: (input: {
+    readonly aggregateID: string
+    readonly after?: number
+    /** Database poll interval; defaults to `DURABLE_POLL_MS`. */
+    readonly pollInterval?: Duration.Input
+  }) => Stream.Stream<Payload>
   /** @deprecated Use `all()` and consume the returned stream. */
   readonly listen: (listener: Subscriber) => Effect.Effect<Unsubscribe>
   readonly project: <D extends Definition>(definition: D, projector: Subscriber<D>) => Effect.Effect<void>
@@ -582,7 +594,11 @@ export const layerWith = (options?: LayerOptions) =>
           return subscription
         })
 
-      const durable = (input: { readonly aggregateID: string; readonly after?: number }): Stream.Stream<Payload> =>
+      const durable = (input: {
+        readonly aggregateID: string
+        readonly after?: number
+        readonly pollInterval?: Duration.Input
+      }): Stream.Stream<Payload> =>
         Stream.unwrap(
           Effect.gen(function* () {
             const wakes = yield* subscribeDurable(input.aggregateID)
@@ -595,7 +611,13 @@ export const layerWith = (options?: LayerOptions) =>
               ),
             )
             const historical = yield* read
-            const live = Stream.fromSubscription(wakes).pipe(
+            // Merge the in-process wake with a database poll so a second process
+            // writing to the same database cannot leave rows unobserved.
+            const triggers = Stream.merge(
+              Stream.fromSubscription(wakes),
+              Stream.tick(input.pollInterval ?? DURABLE_POLL_MS),
+            )
+            const live = triggers.pipe(
               Stream.mapEffect(() => read),
               Stream.flattenIterable,
             )
