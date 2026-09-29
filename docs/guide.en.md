@@ -201,8 +201,10 @@ Effect-native core).
 - **Cutover** ([specs/v2/v1-retirement.md](https://github.com/oxdingzg/miao/blob/main/specs/v2/v1-retirement.md)):
   Stage 1 detection seam — done. Stage 2 protocol parity — done (`session.todo/children/status/
   shell/skill/diff/fork/command/rename/archive/remove`). Stage 3 old-session visibility — done
-  (read fallback + opt-in `miao db backfill`). Stage 4 per-surface write flip and Stage 5 delete
-  V1 — not done (they touch the daily engine and need staged verification).
+  (read fallback + opt-in `miao db backfill`). Stage 4 write flip — landed for the TUI (V2 is the
+  default; `MIAO_TUI_V2=0` falls back to V1) and for app/desktop/web (selects V2 when the server
+  advertises it; `?protocol=v1` forces V1). Stage 5 delete V1 — not done (needs soak; the TUI still
+  reads the session list/todo/diff over V1).
 - **Storage hardening**
   ([specs/storage/session-storage-hardening.md](https://github.com/oxdingzg/miao/blob/main/specs/storage/session-storage-hardening.md)):
   `miao db stats` / `vacuum` and `export --jsonl` done; event de-snapshotting, attachment

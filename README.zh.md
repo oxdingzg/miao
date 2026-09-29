@@ -68,8 +68,9 @@ Rust 原生的 edit / apply_patch 路径默认开启（`MIAO_NATIVE=0` 回退纯
 
 ## 架构
 
-miao 正处于 **V1 → V2 运行时重建**中。V1 是源自 opencode 的实现，仍是日常主力；V2 是一个
-Effect 原生的核心。与延迟和成本相关的机制：
+miao 正处于 **V1 → V2 运行时重建**的收尾阶段。Effect 原生的 V2 现在已是终端 TUI 与浏览器 app 的
+默认运行时；源自 opencode 的 V1 仍挂载以保证兼容，可用 `MIAO_TUI_V2=0`（TUI）或 `?protocol=v1`
+（app）强制回退。与延迟和成本相关的机制：
 
 - **Effect 原生核心（Effect v4）。** V2 运行时基于 Effect 构建，显式服务、类型化错误、作用域资源，
   行为是组合出来的，而不是打补丁堆出来的。
@@ -106,7 +107,7 @@ miao                         # 启动 TUI
 
 ## 状态
 
-miao 尚处于 pre-1.0，活跃开发中：CLI 与配置可能随版本变化，V2 运行时仍在从 V1 切换。日常使用的
+miao 尚处于 pre-1.0，活跃开发中：CLI 与配置可能随版本变化，V1 运行时仍在退役过程中。日常使用的
 稳定命令是 `miao`；`miao-dev` 从源码运行，`miao-preview` 构建当前检出。
 
 ## 基于 opencode

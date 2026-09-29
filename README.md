@@ -74,8 +74,10 @@ comparison in [docs/miao-vs-opencode.en.md](docs/miao-vs-opencode.en.md); integr
 
 ## Architecture
 
-miao is mid a **V1 → V2 runtime rebuild**. V1 is the opencode-derived implementation that still
-drives daily use; V2 is an Effect-native core. The mechanisms that matter for latency and cost:
+miao is in the final stage of a **V1 → V2 runtime rebuild**. V2, an Effect-native core, is now the
+default runtime for the terminal TUI and the browser app; the opencode-derived V1 remains mounted for
+compatibility and can be forced with `MIAO_TUI_V2=0` (TUI) or `?protocol=v1` (app). The mechanisms
+that matter for latency and cost:
 
 - **Effect-native core (Effect v4).** The V2 runtime is built on Effect, with explicit services,
   typed errors, and scoped resources, so behavior is composed rather than patched in.
@@ -117,8 +119,8 @@ Upgrade with `miao upgrade`; the installer places the binary at `~/.miao/bin/mia
 ## Status
 
 miao is pre-1.0 and under active development: the CLI and configuration may change between
-releases, and the V2 runtime is still being cut over from V1. The daily `miao` binary is the stable
-command; `miao-dev` runs from source and `miao-preview` builds the current checkout.
+releases, and the V1 runtime is still being retired. The daily `miao` binary is the stable command;
+`miao-dev` runs from source and `miao-preview` builds the current checkout.
 
 ## Built on opencode
 

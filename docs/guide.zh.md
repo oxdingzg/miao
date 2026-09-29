@@ -179,13 +179,14 @@ MIAO_SANDBOX_DENY_NETWORK=1 MIAO_SANDBOX=1 miao   # 同时禁网
 
 ## 6. 规划 / Roadmap
 
-miao 正处在 **V1 → V2 的运行时重建**中（V1 为 opencode 继承实现，V2 是 Effect 原生核心）。
+miao 正处在 **V1 → V2 的运行时重建**收尾阶段（V1 为 opencode 继承实现，V2 是 Effect 原生核心）。
 
 - **终局迁移**（[specs/v2/v1-retirement.zh 设计](https://github.com/oxdingzg/miao/blob/main/specs/v2/v1-retirement.md)）：
   - Stage 1 探测缝 —— 已完成（`/api/health` 自标识）。
   - Stage 2 协议补齐 —— 已完成（`session.todo/children/status/shell/skill/diff/fork/command/rename/archive/remove`）。
   - Stage 3 旧会话可见性 —— 已完成（只读回退 + 可选回填 `miao db backfill`）。
-  - Stage 4 分 surface 写翻转、Stage 5 删 V1 —— 未做（改动每日在用引擎，需分阶段验证）。
+  - Stage 4 写翻转 —— TUI 已落地（V2 为默认，`MIAO_TUI_V2=0` 回退 V1）；app/desktop/web 已落地（服务端advertise V2 时选 V2，`?protocol=v1` 强制 V1）。
+  - Stage 5 删 V1 —— 未做（需 soak；TUI 仍通过 V1 读会话列表/todo/diff）。
 - **存储加固**（[specs/storage/session-storage-hardening.md](https://github.com/oxdingzg/miao/blob/main/specs/storage/session-storage-hardening.md)）：已完成 `miao db stats`/`vacuum`、`export --jsonl`；事件去快照/附件外置/回收待 V2 落地后迁移。
 - 其余未做缺口：崩溃恢复幂等、后台作业、MCP 渐进式发现/OAuth、syscall 级 confinement、权限 fail-closed 强化等。
 
