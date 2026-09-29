@@ -19,6 +19,11 @@ miao 是我个人日常使用的 AI 编程工具，基于 [opencode](https://git
 > [!NOTE]
 > miao 目前是私有、预发布项目，尚未开源。
 
+## 使用文档
+
+- [使用指南（中文）](docs/guide.zh.md) —— 安装、配置、TUI、MCP/LSP/沙箱、自治循环、FAQ、排障。
+- [Guide (English)](docs/guide.en.md) —— the same guide in English.
+
 ## 与 opencode 的性能与能力对比
 
 miao 是 opencode 的 fork，因此下表的基线就是本仓库 fork 前 opencode 的 TS 实现，同机实测（release、中位数），越大越好。

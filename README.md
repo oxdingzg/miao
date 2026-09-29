@@ -19,6 +19,12 @@ Where those adjustments tend to land:
 > [!NOTE]
 > miao is currently a private, pre-release project. It is not open source yet.
 
+## Documentation
+
+- [Guide (English)](docs/guide.en.md) — install, configuration, TUI, MCP/LSP/sandbox, the
+  autonomous loop, FAQ, and troubleshooting.
+- [使用指南（中文）](docs/guide.zh.md) — the same guide in Chinese.
+
 ## Performance and capability vs opencode
 
 miao is a fork of opencode, so the baseline below is opencode's TS implementation as it stood in this repo before the fork, measured on the same machine (release, medians). Higher is better.
