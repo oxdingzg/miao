@@ -221,7 +221,7 @@ function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] })
 
 export const ExportCommand = effectCmd({
   command: "export [sessionID]",
-  describe: "export session data as JSON",
+  describe: "export session data as JSON or JSONL",
   builder: (yargs) =>
     yargs
       .positional("sessionID", {
@@ -231,18 +231,28 @@ export const ExportCommand = effectCmd({
       .option("sanitize", {
         describe: "redact sensitive transcript and file data",
         type: "boolean",
+      })
+      .option("format", {
+        describe: "output format: json (pretty) or jsonl (one line per message)",
+        type: "string",
+        choices: ["json", "jsonl"],
+        default: "json",
       }),
   handler: Effect.fn("Cli.export")(function* (args) {
     return yield* run(args)
   }),
 })
 
-const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; sanitize?: boolean }) {
+const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; sanitize?: boolean; format?: string }) {
   const svc = yield* Session.Service
   let sessionID = args.sessionID ? SessionID.make(args.sessionID) : undefined
   process.stderr.write(`Exporting session: ${sessionID ?? "latest"}\n`)
 
   if (!sessionID) {
+    if (args.format === "jsonl") {
+      if (!process.stdin.isTTY && !process.stdout.isTTY)
+        return yield* fail("export --format jsonl requires a sessionID when not interactive")
+    }
     UI.empty()
     prompts.intro("Export session", { output: process.stderr })
 
@@ -286,7 +296,12 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
 
     const exportData = { info: sessionInfo, messages }
 
-    process.stdout.write(JSON.stringify(args.sanitize ? sanitize(exportData) : exportData, null, 2))
+    const payload = args.sanitize ? sanitize(exportData) : exportData
+    if (args.format === "jsonl") {
+      for (const message of payload.messages) process.stdout.write(JSON.stringify(message) + EOL)
+      return
+    }
+    process.stdout.write(JSON.stringify(payload, null, 2))
     process.stdout.write(EOL)
   }).pipe(Effect.catchCause(() => fail(`Session not found: ${sessionID!}`)))
 })
