@@ -2,14 +2,21 @@
 
 ## Status (2026-09-29)
 
-Blocked slice: the V2 `task` (subagent) tool could not be implemented as a Location-scoped
-built-in. A Location tool cannot depend on the global `SessionV2` / `SessionExecution` services
-without creating a tag-dependency cycle:
+Landed. The registry gained a session scope (application < location < session) via
+`ToolRegistry.registerSession(sessionID, tools)` and `materialize(permissions, { sessionID })`. The
+runner opens the registration for the duration of a drain and registers the `task` subagent tool
+when the Session's agent is known. `SessionV2.create` gained an internal `parentID`, and session
+creation was extracted to `SessionCreate` so the runner can create child Sessions. The `task` tool
+runs end to end in `packages/core/test/session-runner.test.ts`.
 
-`SessionV2.node → SessionExecution.node → LocationServiceMap → location services → BuiltInTools → TaskTool.node → SessionV2.node`
+Verified: `packages/core` full suite (1130 tests) green; core/miao/server typecheck pass.
 
-The same wall blocks canonical MCP tools and plugin tools that need the owning Session. This spec
-defines the missing scope tier so those tools can be implemented as canonical leaves.
+## Original blocker (2026-09-29)
+
+A Location tool could not depend on the global `SessionV2` / `SessionExecution` services without a
+tag-dependency cycle (`SessionV2 → SessionExecution → LocationServiceMap → location services →
+BuiltInTools → TaskTool → SessionV2`). The session scope above breaks it by injecting the
+capability through the runner instead of through construction.
 
 ## Problem
 

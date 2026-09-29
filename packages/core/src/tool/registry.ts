@@ -24,12 +24,19 @@ export type ExecuteInput = {
 export type MaterializeOptions = {
   /** Collapse the tool set behind one `execute` tool with a budgeted Code Mode catalog. */
   readonly codeMode?: boolean
+  /** Overlay session-scoped registrations owned by this Session on top of location and application scopes. */
+  readonly sessionID?: SessionSchema.ID
 }
 
 export interface Interface {
   readonly materialize: (permissions?: PermissionV2.Ruleset, options?: MaterializeOptions) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
+  /** Session-scoped registration owned by the runner; highest precedence while its Session drain is active. */
+  readonly registerSession: (
+    sessionID: SessionSchema.ID,
+    tools: Readonly<Record<string, AnyTool>>,
+  ) => Effect.Effect<void, RegistrationError, Scope.Scope>
 }
 
 export interface Materialization {
@@ -52,6 +59,32 @@ const registryLayer = Layer.effect(
     const resources = yield* ToolOutputStore.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
+    const sessionLocal = new Map<
+      SessionSchema.ID,
+      Map<string, Array<{ readonly token: object; readonly registration: Registration }>>
+    >()
+    const openScope = (
+      into: Map<string, Array<{ readonly token: object; readonly registration: Registration }>>,
+      tools: Readonly<Record<string, AnyTool>>,
+      onEmpty?: () => void,
+    ) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const token = {}
+          for (const [name, tool] of Object.entries(tools))
+            into.set(name, [...(into.get(name) ?? []), { token, registration: { identity: {}, tool } }])
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              for (const name of Object.keys(tools)) {
+                const registrations = into.get(name)?.filter((registration) => registration.token !== token) ?? []
+                if (registrations.length > 0) into.set(name, registrations)
+                else into.delete(name)
+              }
+              onEmpty?.()
+            }),
+          )
+        }),
+      )
 
     const settleRegistration = Effect.fn("ToolRegistry.settleRegistration")(function* (
       input: ExecuteInput,
@@ -82,40 +115,22 @@ const registryLayer = Layer.effect(
         : { result, output: bounded.output }
     })
 
-    const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
-      const registration =
-        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
-      if (!registration)
-        return {
-          result: {
-            type: "error" as const,
-            value: advertised ? `Stale tool call: ${input.call.name}` : `Unknown tool: ${input.call.name}`,
-          },
-        }
-      return yield* settleRegistration(input, registration, advertised)
-    })
-
     return Service.of({
       register: Effect.fn("ToolRegistry.register")(function* (tools) {
         const entries = Object.entries(tools)
         if (entries.length === 0) return
         yield* Effect.forEach(entries, ([name]) => validateName(name), { discard: true })
-        yield* Effect.uninterruptible(
-          Effect.gen(function* () {
-            const token = {}
-            for (const [name, tool] of entries)
-              local.set(name, [...(local.get(name) ?? []), { token, registration: { identity: {}, tool } }])
-            yield* Effect.addFinalizer(() =>
-              Effect.sync(() => {
-                for (const [name] of entries) {
-                  const registrations = local.get(name)?.filter((registration) => registration.token !== token) ?? []
-                  if (registrations.length > 0) local.set(name, registrations)
-                  else local.delete(name)
-                }
-              }),
-            )
-          }),
-        )
+        yield* openScope(local, tools)
+      }),
+      registerSession: Effect.fn("ToolRegistry.registerSession")(function* (sessionID, tools) {
+        const entries = Object.entries(tools)
+        if (entries.length === 0) return
+        yield* Effect.forEach(entries, ([name]) => validateName(name), { discard: true })
+        const into = sessionLocal.get(sessionID) ?? new Map()
+        sessionLocal.set(sessionID, into)
+        yield* openScope(into, tools, () => {
+          if (into.size === 0) sessionLocal.delete(sessionID)
+        })
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], options?: MaterializeOptions) {
         const registrations = new Map(applications.entries())
@@ -123,15 +138,28 @@ const registryLayer = Layer.effect(
           const registration = entries.at(-1)?.registration
           if (registration) registrations.set(name, registration)
         }
+        const sessionRegistrations = options?.sessionID ? sessionLocal.get(options.sessionID) : undefined
+        if (sessionRegistrations)
+          for (const [name, entries] of sessionRegistrations) {
+            const registration = entries.at(-1)?.registration
+            if (registration) registrations.set(name, registration)
+          }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
         const definitions = Array.from(registrations, ([name, registration]) => definition(name, registration.tool))
         const inner: Materialization = {
           definitions,
           settle: (input) => {
-            const registration = registrations.get(input.call.name)
-            if (registration) return settleWith(input, registration.identity)
-            return Effect.succeed({ result: { type: "error" as const, value: `Unknown tool: ${input.call.name}` } })
+            const captured = registrations.get(input.call.name)
+            if (!captured)
+              return Effect.succeed({ result: { type: "error" as const, value: `Unknown tool: ${input.call.name}` } })
+            const now =
+              sessionRegistrations?.get(input.call.name)?.at(-1)?.registration ??
+              local.get(input.call.name)?.at(-1)?.registration ??
+              applications.entries().get(input.call.name)
+            if (now !== captured)
+              return Effect.succeed({ result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } })
+            return settleRegistration(input, captured, captured.identity)
           },
         }
         if (!options?.codeMode || definitions.length === 0) return inner

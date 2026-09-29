@@ -1593,6 +1593,63 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("runs a subagent through the session-scoped task tool", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate this" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "child", prompt: "Say sub", subagent_type: "build" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-sub" }),
+          LLMEvent.textDelta({ id: "text-sub", text: "Sub result" }),
+          LLMEvent.textEnd({ id: "text-sub" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      const context = yield* (yield* SessionStore.Service).context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "task")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "task",
+        state: { status: "completed", structured: { text: "Sub result" } },
+      })
+      expect(requests).toHaveLength(3)
+    }),
+  )
+
   it.effect("reloads a model switch before a tool-driven continuation turn", () =>    Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service

@@ -5,6 +5,7 @@ import {
   LLMEvent,
   Message,
   SystemPart,
+  ToolFailure,
   isContextOverflowFailure,
   type ProviderErrorEvent,
 } from "@miao/llm"
@@ -24,14 +25,18 @@ import { Flag } from "../../flag/flag"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
+import { TaskTool } from "../../tool/task"
 import { ToolOutputStore } from "../../tool-output-store"
+import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
 import { SessionCompactRequest } from "../compact-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
+import { SessionMessage } from "../message"
 import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
+import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { type RunError, Service } from "./index"
@@ -120,6 +125,7 @@ const layer = Layer.effect(
     const referenceGuidance = yield* ReferenceGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
+    const creation = yield* SessionCreate.Service
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -241,7 +247,10 @@ const layer = Layer.effect(
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep
         ? undefined
-        : yield* tools.materialize(agent.info?.permissions, { codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE })
+        : yield* tools.materialize(agent.info?.permissions, {
+            codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
+            sessionID: session.id,
+          })
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       const settings = yield* readSettings()
       const prior = turns.get(session.id)
@@ -477,11 +486,59 @@ const layer = Layer.effect(
       )
     })
 
+    let runDrain:
+      | ((input: { readonly sessionID: SessionSchema.ID; readonly force: boolean }) => Effect.Effect<void, RunError>)
+      | undefined
+
+    const runSubagent = Effect.fnUntraced(function* (
+      parentSessionID: SessionSchema.ID,
+      request: { readonly agent: string; readonly prompt: string; readonly description: string; readonly taskId?: string },
+    ) {
+      const parent = yield* getSession(parentSessionID)
+      if (parent.parentID !== undefined)
+        return yield* new ToolFailure({ message: "Nested subagents are not supported." })
+      const selection = yield* agents.select(request.agent)
+      if (!selection.info) return yield* new ToolFailure({ message: `Unknown agent type: ${request.agent}` })
+      const resumed = request.taskId ? yield* store.get(SessionSchema.ID.make(request.taskId)) : undefined
+      const child =
+        resumed ?? (yield* creation.create({ parentID: parentSessionID, agent: selection.id, location: parent.location }))
+      yield* SessionInput.admit(db, events, {
+        id: SessionMessage.ID.create(),
+        sessionID: child.id,
+        prompt: Prompt.make({ text: request.prompt }),
+        delivery: "steer",
+      })
+      yield* runDrain!({ sessionID: child.id, force: true })
+      const context = yield* store.context(child.id)
+      const assistant = context.findLast((message) => message.type === "assistant")
+      const text =
+        assistant?.type === "assistant"
+          ? assistant.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n")
+          : ""
+      return { sessionID: child.id, text: text.trim().length > 0 ? text : "(no output)" }
+    })
+
     const run = Effect.fn("SessionRunner.run")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
-      const repeatedPrefix = `${input.sessionID}\u0000`
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const drainSession = yield* store.get(input.sessionID)
+          const drainAgent = drainSession ? yield* agents.select(drainSession.agent) : undefined
+          if (drainAgent?.info !== undefined)
+            yield* tools
+              .registerSession(input.sessionID, {
+                task: TaskTool.make((request) =>
+                  runSubagent(input.sessionID, request).pipe(
+                    Effect.mapError((error) =>
+                      error instanceof ToolFailure ? error : new ToolFailure({ message: "Subagent task failed" }),
+                    ),
+                  ),
+                ),
+              })
+              .pipe(Effect.orDie)
+          const repeatedPrefix = `${input.sessionID}\u0000`
       for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
@@ -523,7 +580,10 @@ const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
       }
+        }),
+      )
     })
+    runDrain = run
 
     return Service.of({
       run,
@@ -548,5 +608,6 @@ export const node = makeLocationNode({
     Config.node,
     Snapshot.node,
     Database.node,
+    SessionCreate.node,
   ],
 })
