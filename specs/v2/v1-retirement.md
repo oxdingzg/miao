@@ -77,6 +77,12 @@ preference:
 Option 1 is preferred because it is the only path that lets V1 be deleted. It needs an explicit
 message/part → `SessionMessage` mapping and must preserve ordering and tool state.
 
+**Option 2 landed (read fallback).** `SessionStore.context` now falls back to reading the legacy
+`message` / `part` tables and mapping them through `session/v1-read.ts` when a Session has no
+`session_message` rows. This makes old sessions readable through the V2 API without touching data,
+so Stage 3 (read shadow) can proceed. A backfill migration (Option 1) is still required before V1
+can be deleted, because the fallback keeps V1 schema dependencies in V2.
+
 **Stage 4 — write flip, per surface.** Flip writes to `/api/session/*` and run the V2 engine for
 new sessions, one client surface at a time (TUI first, then app/desktop/web), each gated and
 verified end to end (prompt, steer/queue, tool loop, compaction, permissions, revert). V1 routes
