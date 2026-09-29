@@ -19,8 +19,9 @@ surface. It must not leave the daily TUI half-switched.
 
 ## Design
 
-- **Flag**: `MIAO_TUI_V2=1` selects the V2 read path for the TUI; default remains V1 so the release
-  is unaffected. A later stage flips the default per surface.
+- **Flag**: `MIAO_TUI_V2` now defaults to on (V2 read and write); set `MIAO_TUI_V2=0` to fall back to
+  the V1 read/write path. It started default-off for the read slice and was flipped on with the
+  Stage 4 write flip.
 - **Client**: when the flag is set, create a V2 client (`@opencode-ai/sdk/v2`) for the same server
   URL alongside the legacy one.
 - **Messages**: for the open session, read `v2.session.context({ sessionID })` for the projected
@@ -48,17 +49,19 @@ surface. It must not leave the daily TUI half-switched.
 
 ## Status
 
-First slice landed, flag-gated and default-off:
+Landed, now **default-on**:
 
-- `Flag.MIAO_TUI_V2` (`MIAO_TUI_V2=1`) selects the V2 read path.
+- `Flag.MIAO_TUI_V2` defaults to on; `MIAO_TUI_V2=0` forces the V1 read/write path.
 - `packages/tui/src/context/session-v2.ts` maps `session.context` output to the TUI's
   `Message` + `Part` shape (unit-tested in `packages/tui/test/session-v2.test.ts`).
-- `session.sync` loads messages from `sdk.client.v2.session.context` when the flag is set,
-  keeping `session.get`/`todo`/`diff` on V1. Live updates stay on the V1 event stream, so
-  there is still exactly one writer.
+- `session.sync` loads messages from `sdk.client.v2.session.context`, and the Stage 4 write flip
+  routes create/prompt/shell/command/interrupt/fork/compact/revert/permission/question to V2, so a
+  flagged/default TUI session is V2-only. Live updates come from V2 `session.next.*` events via a
+  debounced re-hydration.
+- The session list, todo, diff, and session `get` remain on V1 while the V1 routes are still mounted.
 
 Still open (needs a live `miao-dev` session):
 
-- End-to-end rendering of a projected session and a legacy session under the flag.
+- End-to-end rendering of a projected session and a legacy session.
 - The `LegacyNotMigratedError` prompt hint on send.
-- Flipping the default on, then the write flip (Stage 4).
+- Removing the remaining V1 reads and deleting V1 (Stage 5).

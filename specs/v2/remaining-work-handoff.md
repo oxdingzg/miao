@@ -175,7 +175,8 @@ storing the V2 question request (structurally identical) as a `QuestionRequest`.
 `v2.session.permission.reply` / `v2.session.question.reply|reject` under the flag.
 
 Still required: live end-to-end soak in `miao-dev` with a real provider (A.2 acceptance), and the
-browser app/desktop/web surfaces (A.3).
+browser app/desktop/web surfaces (A.3). The TUI now **defaults to V2** — `MIAO_TUI_V2=0` forces the
+V1 read/write path — so the daily `miao-dev` TUI runs the V2 engine unless overridden.
 
 ### A.2 Acceptance (from `v1-retirement.md`)
 

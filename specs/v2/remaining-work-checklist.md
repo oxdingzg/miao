@@ -11,12 +11,12 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Commit `type(scope): …` and push to `miao main` immediately
 
 ## 1. Stage 4 — read preflight
-- [ ] `MIAO_TUI_V2=1`: transcript byte-identical to V1 for a projected session
-- [ ] Legacy session renders from V1 fallback
-- [ ] Un-backfilled session send shows `LegacyNotMigratedError` hint
+- [ ] Transcript byte-identical to V1 for a projected session (`MIAO_TUI_V2` is now **on by default**; `=0` forces V1)
+- [ ] Legacy session renders from the V1 fallback
+- [ ] Un-backfilled session send shows the `LegacyNotMigratedError` hint
 - [ ] `miao-dev db backfill` migrates a legacy session; resend succeeds
-- [ ] Flag off: unchanged V1 behavior
-- [ ] **A.0b:** V2 runs stream live into the transcript (landed: re-hydrate on `session.next.*` under `MIAO_TUI_V2`; needs a manual `miao-dev` soak)
+- [ ] `MIAO_TUI_V2=0`: unchanged V1 behavior
+- [ ] **A.0b:** V2 runs stream live into the transcript (landed: re-hydrate on `session.next.*`; needs a manual `miao-dev` soak)
 
 ## 2. Stage 4 — TUI write flip
 - [x] Map editor text + non-text parts → `PromptInput.Prompt` (`{ text, files }`) — `context/session-v2-write.ts`
@@ -151,6 +151,6 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] No other session's WIP committed
 
 ## Rollback
-- [ ] TUI read: unset `MIAO_TUI_V2`
+- [ ] TUI: `MIAO_TUI_V2=0` forces the V1 read/write path
 - [ ] Stage 4 client: revert flipped call sites
 - [ ] Preview binary: `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao-preview`

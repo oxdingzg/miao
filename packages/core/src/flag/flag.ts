@@ -73,7 +73,8 @@ export const Flag = {
     return process.env["MIAO_TUI_CONFIG"]
   },
   get MIAO_TUI_V2() {
-    return truthy("MIAO_TUI_V2")
+    // V2 is the default TUI runtime. Set MIAO_TUI_V2=0 to fall back to V1.
+    return process.env["MIAO_TUI_V2"] === undefined ? true : truthy("MIAO_TUI_V2")
   },
   get MIAO_CONFIG_DIR() {
     return process.env["MIAO_CONFIG_DIR"]

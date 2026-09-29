@@ -12,6 +12,10 @@ import { createEventSource, createFetch, type FetchHandler, directory } from "..
 import { TestTuiContexts } from "../../../fixture/tui-environment"
 export { createEventSource, createFetch, directory, eventSource, json, worktree } from "../../../fixture/tui-sdk"
 
+// These sync tests exercise the V1 hydration path with a V1 mock server. Pin the
+// protocol so the default-on V2 runtime does not route them through /api/session.
+process.env["MIAO_TUI_V2"] = "0"
+
 export async function wait(fn: () => boolean, timeout = 2000) {
   const start = Date.now()
   while (!fn()) {
