@@ -77,7 +77,14 @@ preference:
 Option 1 is preferred because it is the only path that lets V1 be deleted. It needs an explicit
 message/part → `SessionMessage` mapping and must preserve ordering and tool state.
 
-**Option 2 landed (read fallback).** `SessionStore.context` now falls back to reading the legacy
+**Option 1 landed (opt-in backfill).** `SessionBackfill.backfill` (core) converts each V1 session's
+`message` / `part` rows into projected `session_message` rows, one transaction per session, and is
+exposed as `miao db backfill` rather than an automatic migration so it never mutates history
+without an explicit command. It is idempotent (skips sessions that already have a projection).
+After a backfill run the read fallback is no longer needed for migrated sessions; V1 tables can
+then be deleted.
+
+Option 2 landed (read fallback). `SessionStore.context` now falls back to reading the legacy
 `message` / `part` tables and mapping them through `session/v1-read.ts` when a Session has no
 `session_message` rows. This makes old sessions readable through the V2 API without touching data,
 so Stage 3 (read shadow) can proceed. A backfill migration (Option 1) is still required before V1
