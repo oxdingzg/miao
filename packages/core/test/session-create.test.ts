@@ -16,12 +16,13 @@ import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionV1 } from "@miao/core/v1/session"
+import { SessionBackfill } from "@miao/core/session/backfill"
 import { Prompt } from "@miao/core/session/prompt"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionInput } from "@miao/core/session/input"
 import { SessionEvent } from "@miao/core/session/event"
-import { MessageTable, PartTable, SessionTable } from "@miao/core/session/sql"
+import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTodo } from "@miao/core/session/todo"
 import { WorkspaceV2 } from "@miao/core/workspace"
@@ -535,6 +536,47 @@ describe("SessionV2.create", () => {
         .pipe(Effect.orDie)
 
       expect(yield* session.context(created.id)).toMatchObject([{ type: "user", text: "legacy hi" }])
+    }),
+  )
+
+  it.effect("backfills legacy V1 messages into the V2 projection", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy2",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy2",
+          message_id: "msg_legacy2",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "backfilled hi" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(yield* SessionBackfill.backfill(database.db)).toBe(1)
+      const rows = yield* database.db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, created.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toHaveLength(1)
+      expect(yield* session.context(created.id)).toMatchObject([{ type: "user", text: "backfilled hi" }])
     }),
   )
 })

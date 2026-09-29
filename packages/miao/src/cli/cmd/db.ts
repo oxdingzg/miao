@@ -1,6 +1,7 @@
 import type { Argv } from "yargs"
 import { spawn } from "child_process"
 import { Database } from "@miao/core/database/database"
+import { SessionBackfill } from "@miao/core/session/backfill"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
@@ -97,6 +98,17 @@ const StatsCommand = effectCmd({
   }),
 })
 
+const BackfillCommand = effectCmd({
+  command: "backfill",
+  describe: "convert legacy V1 session messages into the V2 projection (idempotent)",
+  instance: false,
+  handler: Effect.fn("Cli.db.backfill")(function* () {
+    const { db } = yield* Database.Service
+    const migrated = yield* SessionBackfill.backfill(db)
+    console.log(`backfilled ${migrated} session(s)`)
+  }),
+})
+
 const VacuumCommand = effectCmd({
   command: "vacuum",
   describe: "checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free space",
@@ -122,6 +134,7 @@ export const DbCommand = effectCmd({
       .command(PathCommand)
       .command(StatsCommand)
       .command(VacuumCommand)
+      .command(BackfillCommand)
       .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),
