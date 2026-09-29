@@ -40,6 +40,18 @@ a conformance test. Additive; no behavior change to the V1 release.
 `session.shell`, `session.skill`, and the `revert`/`unrevert` aliases. Each with core + handler +
 regenerated SDK, verified against the parity table.
 
+Progress: `session.todo`, `session.children`, `session.status`, `session.shell`, `session.skill`
+landed. Remaining and why they are harder:
+
+- `session.diff` — needs a persisted session baseline snapshot; V2 captures a start snapshot per
+  turn but does not yet persist the session snapshot range into queryable history.
+- `session.fork` — the event-sourced message model has no per-message copy primitive; a fork must
+  replay the parent's durable events under a new Session aggregate.
+- `revert` / `unrevert` aliases — V2 already exposes `revert.stage` / `revert.clear` /
+  `revert.commit`; the alias surface depends on the exact client call shapes and must be added
+  with the client cutover so the semantics stay consistent.
+
+
 **Stage 3 — dual-read shadow.** TUI and app read V2 session data (`/api/session/:id/context`,
 `/event`) and render it, while still writing through V1. Verify V2 sees everything V1 records
 (no lost messages) before any write flip. This proves read parity with zero write risk.
