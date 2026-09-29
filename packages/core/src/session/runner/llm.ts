@@ -104,6 +104,13 @@ import { llmClient } from "../../effect/app-node-platform"
 /** Cap on how many times one identical (name, input) tool call may execute in a drain. */
 const MAX_IDENTICAL_TOOL_CALLS = 5
 
+/**
+ * How many overflow compactions one drain may attempt before surfacing the
+ * failure. A turn can still overflow after a compaction, so compact again on
+ * the smaller history before giving up (research G3).
+ */
+const MAX_OVERFLOW_COMPACTIONS = 2
+
 /** Goal/todo-driven autonomous loop bounds. */
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
 const LOOP_STALL_LIMIT = 2
@@ -473,17 +480,33 @@ const layer = Layer.effect(
       sessionID: SessionSchema.ID,
       promotion: SessionInput.Delivery | undefined,
       step: number,
+      remaining?: number,
     ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number }, RunError>
 
-    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
-      return yield* runTurnAttempt(sessionID, promotion, step).pipe(
+    // Recovery after a compaction may compact again, including an
+    // already-compacted history that still overflows, so it opts into
+    // summary-only compaction. The auto path never does.
+    const recoverOverflow = (input: Parameters<typeof compaction.compactAfterOverflow>[0]) =>
+      compaction.compactAfterOverflow(input, { allowSummaryOnly: true })
+
+    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (
+      sessionID,
+      promotion,
+      step,
+      remaining = MAX_OVERFLOW_COMPACTIONS - 1,
+    ) {
+      return yield* runTurnAttempt(sessionID, promotion, step, remaining > 0 ? recoverOverflow : undefined).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
-            if (defect.transition._tag === "ContinueAfterOverflowCompaction")
-              return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
+            if (defect.transition._tag === "ContinueAfterOverflowCompaction") {
+              if (remaining <= 0)
+                return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
+              yield* Effect.yieldNow
+              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, remaining - 1)
+            }
             yield* Effect.yieldNow
-            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)
+            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, remaining)
           }),
         ),
       )

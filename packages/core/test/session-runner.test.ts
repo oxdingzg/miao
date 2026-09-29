@@ -1278,7 +1278,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("persists a second context overflow after one recovery", () =>
+  it.effect("recovers twice then persists a third context overflow", () =>
     Effect.gen(function* () {
       const session = yield* setupOverflowRecovery
       const overflow = () => [
@@ -1287,16 +1287,44 @@ describe("SessionRunnerLLM", () => {
       ]
       responses = [
         overflow(),
-        fragmentFixture("text", "text-summary", ["## Objective\n- Recover once"]).completeEvents,
+        fragmentFixture("text", "text-summary-1", ["## Objective\n- Recover once"]).completeEvents,
+        overflow(),
+        fragmentFixture("text", "text-summary-2", ["## Objective\n- Recover twice"]).completeEvents,
         overflow(),
       ]
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
       yield* session.resume(sessionID)
 
-      expect(requests).toHaveLength(3)
+      expect(requests).toHaveLength(5)
+      expect(userTexts(requests[3])[0]).toContain("Recover once")
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "compaction" },
         { type: "assistant", finish: "error", error: { message: "prompt too long" } },
+      ])
+    }),
+  )
+
+  it.effect("recovers twice and finishes when the second compaction fits", () =>
+    Effect.gen(function* () {
+      const session = yield* setupOverflowRecovery
+      const overflow = () => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" }),
+      ]
+      responses = [
+        overflow(),
+        fragmentFixture("text", "text-summary-1", ["## Objective\n- Recover once"]).completeEvents,
+        overflow(),
+        fragmentFixture("text", "text-summary-2", ["## Objective\n- Recover twice"]).completeEvents,
+        fragmentFixture("text", "text-final", ["Recovered"]).completeEvents,
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(5)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "compaction" },
+        { type: "assistant", finish: "stop" },
       ])
     }),
   )

@@ -302,16 +302,27 @@ export const make = (dependencies: Dependencies) => {
 
   // Overflow recovery cannot reuse the prefix (the request already failed to
   // fit), so it re-embeds a truncated head instead.
-  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (input: Input) {
+  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (
+    input: Input,
+    options?: { readonly allowSummaryOnly?: boolean },
+  ) {
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const selected = select(input.entries, config.tokens)
     const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
-    if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
+    if (!selected) {
+      // Nothing fresh to summarize. Only the bounded overflow-recovery path may
+      // compact an existing summary again, and only while it still carries a
+      // retained tail; otherwise a summary-only history would loop forever.
+      if (!options?.allowSummaryOnly || previousSummary?.type !== "compaction" || previousSummary.recent.length === 0)
+        return false
+    }
+    const head = selected?.head ?? ""
+    if (head.length === 0 && previousSummary?.type !== "compaction") return false
     const summaryPrompt = buildPrompt({
       previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
-      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
+      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", head].filter(Boolean),
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     if (measure(summaryPrompt) > context - summaryOutput) return false
@@ -329,7 +340,7 @@ export const make = (dependencies: Dependencies) => {
       })
     return yield* runSummary({
       sessionID: input.sessionID,
-      recent: selected.recent,
+      recent: selected?.recent ?? "",
       request: requestFor(summarizeModel),
       fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model),
     })
