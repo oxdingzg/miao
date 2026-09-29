@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
-import { sessionContextToMessages } from "../src/context/session-v2"
+import { sessionContextToMessages, isLiveSessionV2Event } from "../src/context/session-v2"
 
 const base = { sessionID: "ses_1", cwd: "/work", root: "/work" }
 
@@ -84,4 +84,11 @@ test("skips V2 meta messages", () => {
   ]
   const mapped = sessionContextToMessages({ ...base, messages })
   expect(mapped.map((entry) => entry.info.id)).toEqual(["msg_u"])
+})
+
+test("classifies live V2 session events for transcript refresh", () => {
+  expect(isLiveSessionV2Event("session.next.text.delta")).toBe(true)
+  expect(isLiveSessionV2Event("session.next.step.ended")).toBe(true)
+  expect(isLiveSessionV2Event("session.next.moved")).toBe(false)
+  expect(isLiveSessionV2Event("message.part.updated")).toBe(false)
 })

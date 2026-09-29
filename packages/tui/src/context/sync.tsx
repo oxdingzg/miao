@@ -26,7 +26,7 @@ import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
-import { sessionContextToMessages } from "./session-v2"
+import { isLiveSessionV2Event, sessionContextToMessages } from "./session-v2"
 import { Flag } from "@miao/core/flag/flag"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
@@ -175,7 +175,28 @@ export const {
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
+    // V2 durable events are not projected into the legacy event stream, so with
+    // MIAO_TUI_V2 the transcript would only update on a manual reopen. Re-hydrate
+    // the affected session (debounced) so live V2 runs render.
+    let refreshSession: ((sessionID: string) => Promise<void>) | undefined
+    const v2RefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
+    function scheduleV2Refresh(sessionID: string) {
+      const existing = v2RefreshTimers.get(sessionID)
+      if (existing) clearTimeout(existing)
+      v2RefreshTimers.set(
+        sessionID,
+        setTimeout(() => {
+          v2RefreshTimers.delete(sessionID)
+          void refreshSession?.(sessionID)
+        }, 200),
+      )
+    }
+
     event.subscribe((event, { directory, workspace }) => {
+      if (Flag.MIAO_TUI_V2 && isLiveSessionV2Event(event.type)) {
+        const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
+        if (sessionID) scheduleV2Refresh(sessionID)
+      }
       switch (event.type) {
         case "server.instance.disposed":
           void bootstrap()
@@ -700,6 +721,10 @@ export const {
         },
       },
       bootstrap,
+    }
+    refreshSession = (sessionID) => {
+      fullSyncedSessions.delete(sessionID)
+      return result.session.sync(sessionID)
     }
     return result
   },

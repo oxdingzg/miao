@@ -1,6 +1,14 @@
 import type { Message, Part, SessionMessage } from "@opencode-ai/sdk/v2"
 
 /**
+ * A V2 durable session event that changes the transcript and therefore needs a
+ * re-hydration. Location moves (`session.next.moved`) do not change messages.
+ */
+export function isLiveSessionV2Event(type: string): boolean {
+  return type.startsWith("session.next.") && type !== "session.next.moved"
+}
+
+/**
  * Maps the V2 session context transcript (`/api/session/:id/context`) into the
  * V1 `Message` + `Part` shape the TUI already renders. This is the read half of
  * the TUI V2 cutover (`specs/v2/tui-read-cutover.md`); writes stay on V1 for now.

@@ -93,33 +93,29 @@ Key locations:
 2. Legacy session: renders from V1 fallback; sending shows the `LegacyNotMigratedError` hint.
 3. Flag off: unchanged V1 behavior.
 
-### A.0b Blocker found while starting A.1 (2026-09-30, verified from source)
+### A.0b Read live updates (resolved 2026-09-30)
 
-`MIAO_TUI_V2` hydrates the transcript only when `sync` runs; it does not update live.
+`MIAO_TUI_V2` hydrated the transcript only when `sync` ran and did not update live.
 
 - The session route renders from the V1 `sync` store: `packages/tui/src/routes/session/index.tsx`
   reads `sync.data.message` / `sync.data.part`.
 - The global event stream carries both V1 legacy events (`message.updated`, `message.part.*`) and
-  V2 durable events (`session.next.*`), but `packages/tui/src/context/sync.tsx` handles the legacy
-  cases plus only `session.next.moved` (line ~320). It has no `session.next.text/reasoning/tool/step`
-  handling, so V2 activity is ignored.
+  V2 durable events (`session.next.*`), but `packages/tui/src/context/sync.tsx` handled the legacy
+  cases plus only `session.next.moved`; it had no `session.next.text/reasoning/tool/step` handling.
 - `packages/tui/src/context/data.tsx` has a V2 reducer, but the session route does not consume that
   store (`useData` is used only by `component/prompt/autocomplete.tsx`).
 - The V2 engine publishes only `session.next.*` (`packages/core/src/session/runner/llm.ts`); nothing
   projects those into the legacy `message.*` stream for the TUI.
 
-Consequence: after a V2 prompt, neither the user message nor streamed assistant output appears until
-the session is re-opened/re-hydrated, so A.1 cannot be verified end-to-end. Per the guardrail
-("if a step cannot be verified, stop and write the blocker"), A.1 is paused here.
+Resolved by re-hydrating the affected session from `v2.session.context` on each live V2
+`session.next.*` event (debounced ~200ms) in `packages/tui/src/context/sync.tsx`, gated on
+`MIAO_TUI_V2` and classified by `isLiveSessionV2Event` (`context/session-v2.ts`). The route keeps
+rendering the V1-shaped `sync.data` store, so reads and writes now both come from the V2 API under
+the flag.
 
-Unblock (pick one, then re-run A.0, A.1, A.2):
-
-1. **Preferred:** route `routes/session/index.tsx` to read the V2 `data` store under `MIAO_TUI_V2`
-   (mirror the V2 event rendering already used by the app), so reads render V2 runs directly.
-2. Add `session.next.*` handling to `context/sync.tsx` that writes the existing V1-shaped
-   `sync.data` store (an incremental reducer; duplicates `data.tsx`'s logic).
-3. Bridge V2 durable events to legacy `message.*` events on the server. Not preferred: it recreates
-   the per-delta event bloat Workstream D is removing.
+Tradeoff: this is a refetch-based unblock (full `context` per burst), not an incremental reducer;
+an incremental V2 event reducer can replace it later. Live behavior still needs a manual `miao-dev`
+soak (`MIAO_TUI_V2=1`, send a prompt, confirm streamed output).
 
 ### A.1 TUI write sites (V1 → V2)
 
