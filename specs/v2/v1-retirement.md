@@ -60,9 +60,22 @@ missing, so the cutover (Stage 3–4) can proceed without them and they can be f
 
 
 
-**Stage 3 — dual-read shadow.** TUI and app read V2 session data (`/api/session/:id/context`,
-`/event`) and render it, while still writing through V1. Verify V2 sees everything V1 records
-(no lost messages) before any write flip. This proves read parity with zero write risk.
+**Stage 3 — old-session visibility (revised).** The original "dual-read shadow" is not viable:
+V2 reads only `session_message`, while existing sessions live in V1's `message` / `part`
+(`session/history.ts` reads `SessionMessageTable` only, and a migration
+`20260622170816_reset_v2_session_state` explicitly clears V2 state). A V2 read of a V1 session is
+therefore empty, so reads cannot move ahead of writes. Two viable options, in order of
+preference:
+
+1. **Backfill migration.** A one-time migration converts each V1 session's `message` / `part`
+   rows into projected `session_message` rows so the V2 read model and runner can serve them.
+   Old sessions become continuable on V2; V1 then only owns the engine, not the read path.
+2. **Read fallback.** `SessionStore.context` falls back to V1 `message` / `part` (mapped to
+   `SessionMessage`) when a session has no `session_message` rows. Simpler, but keeps V1 schema
+   dependencies in V2 and delays V1 deletion.
+
+Option 1 is preferred because it is the only path that lets V1 be deleted. It needs an explicit
+message/part → `SessionMessage` mapping and must preserve ordering and tool state.
 
 **Stage 4 — write flip, per surface.** Flip writes to `/api/session/*` and run the V2 engine for
 new sessions, one client surface at a time (TUI first, then app/desktop/web), each gated and
