@@ -5,6 +5,7 @@ import { FileDiff } from "@miao/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
@@ -63,6 +64,7 @@ const layer = Layer.effectDiscard(
     const files = yield* FileMutation.Service
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
+    const format = yield* Format.Service
 
     yield* tools
       .register({
@@ -169,6 +171,7 @@ const layer = Layer.effectDiscard(
                               : `${change.contents}\n`,
                         })
                         applied.push({ type: change.type, resource: result.resource, target: result.target })
+                        yield* format.file(change.target.canonical).pipe(Effect.ignore)
                         return
                       }
                       if (change.type === "delete") {
@@ -182,6 +185,7 @@ const layer = Layer.effectDiscard(
                         content: change.content,
                       })
                       applied.push({ type: change.type, resource: result.resource, target: result.target })
+                      yield* format.file(change.target.canonical).pipe(Effect.ignore)
                     }).pipe(Effect.mapError(() => fail(change.path))),
                   { discard: true },
                 )
@@ -199,7 +203,7 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/apply-patch",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node],
 })
 
 function patchFile(change: Prepared): typeof FileDiff.Info.Type {

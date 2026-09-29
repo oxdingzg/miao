@@ -9,6 +9,7 @@ export * as WriteTool from "./write"
 import { ToolFailure } from "@miao/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
@@ -39,7 +40,6 @@ export const toModelOutput = (output: Output) =>
   `${output.existed ? "Wrote" : "Created"} file successfully: ${output.resource}`
 
 /** Deferred V2 write UX integrations remain visible at the model-facing seam. */
-// TODO: Add formatter integration after V2 formatter runtime exists.
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
 // TODO: Add LSP notification and diagnostics after V2 LSP runtime exists.
@@ -50,6 +50,7 @@ const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const files = yield* FileMutation.Service
     const permission = yield* PermissionV2.Service
+    const format = yield* Format.Service
 
     yield* tools
       .register({
@@ -84,7 +85,9 @@ const layer = Layer.effectDiscard(
                   agent: context.agent,
                   source,
                 })
-                return yield* files.writeTextPreservingBom({ target, content: input.content })
+                const result = yield* files.writeTextPreservingBom({ target, content: input.content })
+                yield* format.file(target.canonical).pipe(Effect.ignore)
+                return result
               }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to write ${input.path}` }))),
           }),
           "edit",
@@ -97,5 +100,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/write",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node, Format.node],
 })

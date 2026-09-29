@@ -11,6 +11,7 @@ import { FileDiff } from "@miao/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
@@ -82,7 +83,6 @@ export const toModelOutput = (output: Output, oldString: string, newString: stri
 
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
 // TODO: Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.
-// TODO: Add formatter integration after V2 formatter runtime exists.
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
 // TODO: Add LSP notification and diagnostics after V2 LSP runtime exists.
@@ -94,6 +94,7 @@ const layer = Layer.effectDiscard(
     const files = yield* FileMutation.Service
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
+    const format = yield* Format.Service
 
     yield* tools
       .register({
@@ -195,6 +196,7 @@ const layer = Layer.effectDiscard(
                     content: joinBom(next.text, source.bom || next.bom),
                   }),
                 )
+                yield* format.file(target.canonical).pipe(Effect.ignore)
                 return {
                   files: [
                     {
@@ -219,5 +221,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/edit",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node],
 })
