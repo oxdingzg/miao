@@ -13,6 +13,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
+import { EditFuzzy } from "./edit-fuzzy"
 import { LSP } from "../lsp"
 import { LSPClient } from "../lsp/client"
 import { Diagnostic } from "../lsp/diagnostic"
@@ -167,9 +168,16 @@ const layer = Layer.effectDiscard(
                 )
                 const source = decodeUtf8(yield* unableToEdit(fs.readFile(target.canonical)))
                 const ending = detectLineEnding(source.text)
-                const oldString = convertToLineEnding(input.oldString, ending)
+                let oldString = convertToLineEnding(input.oldString, ending)
                 const newString = convertToLineEnding(input.newString, ending)
-                const replacements = countOccurrences(source.text, oldString)
+                let replacements = countOccurrences(source.text, oldString)
+                if (replacements === 0) {
+                  const fuzzy = EditFuzzy.matchFuzzy(source.text, oldString)
+                  if (fuzzy !== undefined) {
+                    oldString = fuzzy
+                    replacements = countOccurrences(source.text, oldString)
+                  }
+                }
                 if (replacements === 0) {
                   return yield* new ToolFailure({
                     message:
