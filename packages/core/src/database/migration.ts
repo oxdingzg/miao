@@ -46,69 +46,69 @@ export function applyOnly(db: Database, input: Migration[]) {
   // cannot apply the same migration concurrently.
   return Effect.scoped(
     Effect.gen(function* () {
-    yield* Flock.effect("database-migration")
-    yield* db.run(
-      sql`CREATE TABLE IF NOT EXISTS ${sql.identifier("migration")} (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`,
-    )
-    let completed = new Set(
-      (yield* db.all<{ id: string }>(sql`SELECT id FROM ${sql.identifier("migration")}`)).map((row) => row.id),
-    )
-    if (completed.size === 0) {
-      // Existing installs used Drizzle's migration journal. Seed the new
-      // journal once so TypeScript migrations don't replay old SQL.
-      if (
-        yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"__drizzle_migrations"}`)
-      ) {
-        const named = (yield* db.all<{ name: string }>(
-          sql`SELECT name FROM pragma_table_info('__drizzle_migrations')`,
-        )).some((column) => column.name === "name")
+      yield* Flock.effect("database-migration")
+      yield* db.run(
+        sql`CREATE TABLE IF NOT EXISTS ${sql.identifier("migration")} (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`,
+      )
+      let completed = new Set(
+        (yield* db.all<{ id: string }>(sql`SELECT id FROM ${sql.identifier("migration")}`)).map((row) => row.id),
+      )
+      if (completed.size === 0) {
+        // Existing installs used Drizzle's migration journal. Seed the new
+        // journal once so TypeScript migrations don't replay old SQL.
+        if (
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"__drizzle_migrations"}`)
+        ) {
+          const named = (yield* db.all<{ name: string }>(
+            sql`SELECT name FROM pragma_table_info('__drizzle_migrations')`,
+          )).some((column) => column.name === "name")
 
-        if (named) {
-          yield* db.run(sql`
-            INSERT OR IGNORE INTO ${sql.identifier("migration")} (id, time_completed)
-            SELECT name, ${Date.now()}
-            FROM ${sql.identifier("__drizzle_migrations")}
-            WHERE name IS NOT NULL
-          `)
-        }
-
-        if (!named) {
-          const entries = yield* db.all<{ created_at: number; prefix: string | null }>(sql`
-            SELECT created_at, strftime('%Y%m%d%H%M%S', created_at / 1000, 'unixepoch') AS prefix
-            FROM ${sql.identifier("__drizzle_migrations")}
-            WHERE created_at IS NOT NULL
-          `)
-
-          for (const entry of entries) {
-            const migration = input.find((item) => item.id.startsWith(`${entry.prefix}_`))
-            if (!migration) {
-              return yield* Effect.die(
-                new Error(`Legacy migration timestamp ${entry.created_at} does not match any known migration`),
-              )
-            }
+          if (named) {
             yield* db.run(sql`
               INSERT OR IGNORE INTO ${sql.identifier("migration")} (id, time_completed)
-              VALUES (${migration.id}, ${Date.now()})
+              SELECT name, ${Date.now()}
+              FROM ${sql.identifier("__drizzle_migrations")}
+              WHERE name IS NOT NULL
             `)
           }
+
+          if (!named) {
+            const entries = yield* db.all<{ created_at: number; prefix: string | null }>(sql`
+              SELECT created_at, strftime('%Y%m%d%H%M%S', created_at / 1000, 'unixepoch') AS prefix
+              FROM ${sql.identifier("__drizzle_migrations")}
+              WHERE created_at IS NOT NULL
+            `)
+
+            for (const entry of entries) {
+              const migration = input.find((item) => item.id.startsWith(`${entry.prefix}_`))
+              if (!migration) {
+                return yield* Effect.die(
+                  new Error(`Legacy migration timestamp ${entry.created_at} does not match any known migration`),
+                )
+              }
+              yield* db.run(sql`
+                INSERT OR IGNORE INTO ${sql.identifier("migration")} (id, time_completed)
+                VALUES (${migration.id}, ${Date.now()})
+              `)
+            }
+          }
+          completed = new Set(
+            (yield* db.all<{ id: string }>(sql`SELECT id FROM ${sql.identifier("migration")}`)).map((row) => row.id),
+          )
         }
-        completed = new Set(
-          (yield* db.all<{ id: string }>(sql`SELECT id FROM ${sql.identifier("migration")}`)).map((row) => row.id),
+      }
+
+      for (const migration of input) {
+        if (completed.has(migration.id)) continue
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* migration.up(tx)
+            yield* tx.run(
+              sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
+            )
+          }),
         )
       }
-    }
-
-    for (const migration of input) {
-      if (completed.has(migration.id)) continue
-      yield* db.transaction((tx) =>
-        Effect.gen(function* () {
-          yield* migration.up(tx)
-          yield* tx.run(
-            sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
-          )
-        }),
-      )
-    }
     }),
   )
 }
