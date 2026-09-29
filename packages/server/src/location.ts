@@ -34,7 +34,7 @@ function ref(request: HttpServerRequest.HttpServerRequest): Location.Ref {
     (request.headers["x-opencode-directory"] ? decode(request.headers["x-opencode-directory"]) : process.cwd())
   return Location.Ref.make({
     directory: AbsolutePath.make(directory),
-    workspaceID: workspaceID ? WorkspaceV2.ID.make(workspaceID) : undefined,
+    ...(workspaceID ? { workspaceID: WorkspaceV2.ID.make(workspaceID) } : {}),
   })
 }
 

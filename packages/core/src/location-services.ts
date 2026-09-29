@@ -81,10 +81,16 @@ export const locationServices = LayerNode.group([
 export type LocationServices = LayerNode.Output<typeof locationServices>
 export type LocationError = LayerNode.Error<typeof locationServices>
 
+let sharedMap: Layer.Layer<LocationServiceMap.Service> | undefined
 export function buildLocationServiceMap(
   replacements: LayerNode.Replacements = [],
 ): Layer.Layer<LocationServiceMap.Service> {
-  return Layer.effect(
+  // The map with no replacements is the common configuration and is requested
+  // from several places (server routes and legacy service layers). Reuse one
+  // layer instance so it resolves to a single LayerMap: without this the same
+  // directory builds the full location service graph more than once.
+  if (replacements.length === 0 && sharedMap) return sharedMap
+  const layer = Layer.effect(
     LocationServiceMap.Service,
     LayerMap.make(
       (ref: Location.Ref) => {
@@ -109,6 +115,8 @@ export function buildLocationServiceMap(
       { idleTimeToLive: "60 minutes" },
     ),
   )
+  if (replacements.length === 0) sharedMap = layer
+  return layer
 }
 
 // This is temporary for backwards compatibility

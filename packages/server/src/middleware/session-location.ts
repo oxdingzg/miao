@@ -56,7 +56,7 @@ export const sessionLocationLayer = Layer.effect(
             locations.get(
               Location.Ref.make({
                 directory: AbsolutePath.make(row.directory),
-                workspaceID: row.workspaceID ? WorkspaceV2.ID.make(row.workspaceID) : undefined,
+                ...(row.workspaceID ? { workspaceID: WorkspaceV2.ID.make(row.workspaceID) } : {}),
               }),
             ),
           ),
