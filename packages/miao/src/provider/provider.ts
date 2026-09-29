@@ -11,6 +11,7 @@ import { Plugin } from "../plugin"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "@miao/core/models-dev"
+import { EventV2 } from "@miao/core/event"
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { InstallationVersion } from "@miao/core/installation/version"
@@ -18,7 +19,7 @@ import { iife } from "@/util/iife"
 import { Global } from "@miao/core/global"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema, Types } from "effect"
+import { Effect, Layer, Context, Schema, Stream, Types } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
@@ -1439,6 +1440,7 @@ const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
+    const events = yield* EventV2.Service
 
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
@@ -2083,6 +2085,13 @@ const layer = Layer.effect(
       }
     })
 
+    // A refreshed models.dev catalog must invalidate the per-directory provider
+    // state, so newly published models appear without a restart.
+    yield* events.subscribe(ModelsDev.Event.Refreshed).pipe(
+      Stream.runForEach(() => InstanceState.invalidateAll(state)),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+
     return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
   }),
 )
@@ -2109,7 +2118,7 @@ export function parseModel(model: string) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, ModelsDev.node, RuntimeFlags.node],
+  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, ModelsDev.node, EventV2.node, RuntimeFlags.node],
 })
 
 export * as Provider from "./provider"
