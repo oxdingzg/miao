@@ -4,6 +4,7 @@ import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
+import { DialogProviderSwitch } from "./dialog-provider-switch"
 import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
@@ -160,9 +161,13 @@ export function DialogModel(props: { providerID?: string }) {
       actions={[
         {
           command: "model.dialog.provider",
-          title: connected() ? "Connect provider" : "View all providers",
+          title: sync.data.provider.length === 0 ? "Connect provider" : "Switch provider",
           onTrigger() {
-            dialog.replace(() => <DialogProvider />)
+            if (sync.data.provider.length === 0) {
+              dialog.replace(() => <DialogProvider />)
+              return
+            }
+            dialog.replace(() => <DialogProviderSwitch />)
           },
         },
         {
