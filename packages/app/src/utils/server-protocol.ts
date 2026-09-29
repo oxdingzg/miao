@@ -28,11 +28,13 @@ export async function detectServerProtocol(
 ): Promise<ServerProtocol> {
   if (override) return override
 
-  const legacy = await probe(server, fetch, "/global/health").catch(() => undefined)
-  if (legacy && "healthy" in legacy && legacy.healthy === true) return "v1"
-
+  // Prefer the current API whenever the server advertises it, so app/desktop/web
+  // run on V2 while the legacy routes are still mounted during the soak.
   const current = await probe(server, fetch, "/api/health").catch(() => undefined)
   if (current && "pid" in current && typeof current.pid === "number") return "v2"
+
+  const legacy = await probe(server, fetch, "/global/health").catch(() => undefined)
+  if (legacy && "healthy" in legacy && legacy.healthy === true) return "v1"
   if (current && "healthy" in current && current.healthy === true) return "v1"
   return "v2"
 }

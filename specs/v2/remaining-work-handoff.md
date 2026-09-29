@@ -190,12 +190,12 @@ browser app/desktop/web surfaces (A.3).
 They already render V2 events (`packages/app/src/context/data.tsx`) and have a protocol detector
 (`packages/app/src/utils/server-protocol.ts`).
 
-**A.3 status (2026-09-30).** The client side is already wired: `utils/server-compat.ts` routes every
-write to the V2 `ServerApi` when `detectServerProtocol` returns `v2`, and the app renders V2 events.
-Detection prefers the legacy `/global/health` endpoint when both API generations respond, so the app
-selects V2 once the server stops serving V1 health (the server cutover, not a client change). Added
-a `?protocol=v1|v2` query override in `server-protocol.ts` so a build can be soaked on V2 before
-that cutover; absent/unknown values fall back to detection. Live browser preflight/soak remains.
+**A.3 status (2026-09-30).** Cutover landed. The client side is already wired: `utils/server-compat.ts`
+routes every write to the V2 `ServerApi` when `detectServerProtocol` returns `v2`, and the app renders
+V2 events. `detectServerProtocol` now prefers `/api/health` (its `pid`) and falls back to the legacy
+`/global/health`, so app/desktop/web select V2 whenever the server advertises it while the V1 routes
+stay mounted for soak. A `?protocol=v1|v2` query override forces a protocol for A/B soak or rollback
+(absent/unknown values fall back to detection). Live browser preflight/soak remains.
 
 ## 4. Workstream B — Stage 5 delete V1
 

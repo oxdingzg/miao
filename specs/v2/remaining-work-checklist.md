@@ -39,9 +39,10 @@ Definition of Done. Run in `miao-dev` only.
 
 ## 3. Stage 4 — app / desktop / web
 - [ ] Repeat read preflight for app/desktop/web (needs a live browser soak)
-- [x] Write paths select V2 via `utils/server-compat.ts` when `detectServerProtocol` returns `v2`; app already renders V2 events
-- [x] `?protocol=v1|v2` override added (`utils/server-protocol.ts`) so a build can be soaked on V2 before the server stops serving V1 health
-- [ ] Same acceptance as TUI; commit + push (client wiring landed; server cutover drives selection)
+- [x] `detectServerProtocol` now prefers `/api/health` (pid) and falls back to legacy `/global/health`, so app/desktop/web select V2 whenever the server advertises it
+- [x] Reads and writes follow the selection (`utils/server-compat.ts`; app renders V2 events)
+- [x] `?protocol=v1|v2` override forces a protocol for soak/rollback
+- [ ] Same acceptance as TUI; commit + push (client cutover landed; live soak remains)
 
 ## 4. Stage 5 — delete V1
 - [ ] Gate: no shipped client imports/calls a `/session/*` route
