@@ -114,10 +114,10 @@ const migrateSession = (db: Database.Interface["db"], sessionID: SessionSchema.I
 
         // `session_message.seq` is the EventV2 aggregate sequence, and future
         // events continue from the session's current maximum. Legacy messages
-        // have no event, so place them strictly below every existing and future
-        // sequence (negative when there is no projection yet) to avoid colliding
-        // with the next event.
-        let seq = (existing.length === 0 ? 0 : Math.min(...existing.map((row) => row.seq))) - stranded.length
+        // have no event, so place them strictly below every event sequence
+        // (always negative) to avoid colliding with the next event and to keep
+        // them identifiable as event-less legacy projection.
+        let seq = -stranded.length
         for (const message of stranded) {
           const encoded = encode(message)
           const { id, type, ...data } = encoded

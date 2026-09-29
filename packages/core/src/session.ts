@@ -465,13 +465,25 @@ const layer = Layer.effect(
           .orderBy(asc(EventTable.seq))
           .all()
           .pipe(Effect.orDie)
+        // Backfilled legacy history has no EventV2 rows, so replay cannot
+        // reproduce it. It lives in the projection at a negative sequence.
+        const legacyRows = yield* db
+          .select()
+          .from(SessionMessageTable)
+          .where(and(eq(SessionMessageTable.session_id, parent.id), lt(SessionMessageTable.seq, 0)))
+          .orderBy(asc(SessionMessageTable.seq))
+          .all()
+          .pipe(Effect.orDie)
+        const legacyCutoff =
+          input.messageID === undefined ? -1 : legacyRows.findIndex((row) => row.id === input.messageID)
         let cutoff: number | undefined
         if (input.messageID !== undefined) {
           const target = rows.find((row) => {
             const data = row.data as Record<string, unknown>
             return data?.messageID === input.messageID || data?.assistantMessageID === input.messageID
           })
-          cutoff = target?.seq ?? rows.at(-1)?.seq
+          // A cutoff at a legacy message stops before any event.
+          cutoff = legacyCutoff >= 0 ? -1 : (target?.seq ?? rows.at(-1)?.seq)
         }
         const allowed = new Set(SessionDurable.definitions.keys())
         const sequence = yield* db
@@ -506,6 +518,25 @@ const layer = Layer.effect(
             )
             .pipe(Effect.catchCause(() => Effect.void))
           seq += 1
+        }
+        if (legacyRows.length > 0) {
+          const included = legacyCutoff >= 0 ? legacyRows.slice(0, legacyCutoff + 1) : legacyRows
+          let legacySeq = -included.length
+          for (const row of included) {
+            yield* db
+              .insert(SessionMessageTable)
+              .values({
+                id: SessionMessage.ID.create(),
+                session_id: child.id,
+                type: row.type,
+                seq: legacySeq,
+                time_created: row.time_created,
+                data: row.data,
+              })
+              .run()
+              .pipe(Effect.orDie)
+            legacySeq += 1
+          }
         }
         return child
       }),

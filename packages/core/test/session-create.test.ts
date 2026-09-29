@@ -487,6 +487,45 @@ describe("SessionV2.create", () => {
     ),
   )
 
+  it.effect("forks backfilled legacy history into the child", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacyF1",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacyF1",
+          message_id: "msg_legacyF1",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy fork" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* SessionBackfill.backfill(database.db)
+
+      const forked = yield* session.fork({ sessionID: created.id })
+      expect(forked.parentID).toBe(created.id)
+      const parentMessages = yield* session.context(created.id)
+      const childMessages = yield* session.context(forked.id)
+      expect(childMessages).toMatchObject([{ type: "user", text: "legacy fork" }])
+      expect(childMessages[0]?.id).not.toBe(parentMessages[0]?.id)
+    }),
+  )
+
   it.effect("renames, archives, and removes a session", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service

@@ -44,7 +44,9 @@ Progress: `session.todo`, `session.children`, `session.status`, `session.shell`,
 `session.diff`, `session.fork`, `session.command`, `session.rename`, `session.archive`,
 `session.remove` landed. `session.fork` replays the parent's stored event rows under the child
 aggregate through `EventV2.replay`, remapping every message-scoped identifier so the projected
-`session_message` primary keys stay unique. `session.command` renders the V2 template semantics
+`session_message` primary keys stay unique. It also copies the parent's event-less projection
+(backfilled legacy rows at a negative sequence) into the child with fresh ids, so forking a
+backfilled session keeps its legacy history. `session.command` renders the V2 template semantics
 (positional placeholders, `$ARGUMENTS`, trailing-argument append). `rename` / `archive` publish a
 new durable `session.next.info.updated` event; `remove` deletes the projected row and clears the
 aggregate's events.
