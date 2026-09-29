@@ -35,6 +35,8 @@ import type {
   SessionsContextOutput,
   SessionsTodoInput,
   SessionsTodoOutput,
+  SessionsDiffInput,
+  SessionsDiffOutput,
   SessionsStatusInput,
   SessionsStatusOutput,
   SessionsChildrenInput,
@@ -487,6 +489,17 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/todo`,
             successStatus: 200,
             declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      diff: (input: SessionsDiffInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsDiffOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/diff`,
+            successStatus: 200,
+            declaredStatuses: [404, 500, 400, 401],
             empty: false,
           },
           requestOptions,

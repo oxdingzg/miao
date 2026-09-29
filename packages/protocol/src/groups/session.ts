@@ -358,6 +358,21 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.get("session.diff", "/api/session/:sessionID/diff", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(Revert.FileDiff) }),
+        error: [SessionNotFoundError, UnknownError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.diff",
+            summary: "Get session diff",
+            description: "Files changed by the session since its first recorded snapshot.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.get("session.status", "/api/session/:sessionID/status", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: Schema.Struct({ type: Schema.Literals(["idle", "busy"]) }) }),

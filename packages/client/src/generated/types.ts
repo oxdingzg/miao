@@ -698,6 +698,18 @@ export type SessionsTodoOutput = {
   readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
 }["data"]
 
+export type SessionsDiffInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsDiffOutput = {
+  readonly data: ReadonlyArray<{
+    readonly path: string
+    readonly status: "added" | "modified" | "deleted"
+    readonly additions: number
+    readonly deletions: number
+    readonly patch: string
+  }>
+}["data"]
+
 export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsStatusOutput = { readonly data: { readonly type: "idle" | "busy" } }["data"]

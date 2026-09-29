@@ -25,6 +25,7 @@ import { AppProcess } from "./process"
 import { ChildProcess } from "effect/unstable/process"
 import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
+import { SessionDiff } from "./session/diff"
 import { SkillV2 } from "./skill"
 import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
@@ -132,6 +133,7 @@ export interface Interface {
   readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
   readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
+  readonly diff: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<typeof Revert.FileDiff.Type>, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Message[], NotFoundError | MessageDecodeError>
@@ -332,6 +334,23 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         const active = yield* execution.active
         return { type: active.has(sessionID) ? ("busy" as const) : ("idle" as const) }
+      }),
+      diff: Effect.fn("V2Session.diff")(function* (sessionID) {
+        const session = yield* result.get(sessionID)
+        return yield* Effect.gen(function* () {
+          const snapshots = yield* Snapshot.Service
+          const history = yield* EventV2.readAggregate(db, {
+            aggregateID: sessionID,
+            manifest: SessionDurable,
+            after: 0,
+            limit: 100_000,
+          })
+          const baseline = SessionDiff.baselineSnapshot(history.events)
+          if (baseline === undefined) return []
+          const current = yield* snapshots.capture()
+          if (current === undefined) return []
+          return yield* snapshots.diff({ from: Snapshot.ID.make(baseline), to: current })
+        }).pipe(Effect.provide(locations.get(session.location)), Effect.orElseSucceed(() => []))
       }),
       context: Effect.fn("V2Session.context")(function* (sessionID) {
         yield* result.get(sessionID)
