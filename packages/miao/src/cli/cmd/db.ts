@@ -51,12 +51,78 @@ const PathCommand = effectCmd({
   }),
 })
 
+const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
+
+const StatsCommand = effectCmd({
+  command: "stats",
+  describe: "report database size and per-table / per-event-type usage",
+  instance: false,
+  handler: Effect.fn("Cli.db.stats")(function* () {
+    const { db } = yield* Database.Service
+    const pragma = (name: string) =>
+      db.get<Record<string, unknown>>(sql.raw(`PRAGMA ${name}`)).pipe(Effect.orDie)
+    const pageSize = Number((yield* pragma("page_size"))?.page_size ?? 0)
+    const pageCount = Number((yield* pragma("page_count"))?.page_count ?? 0)
+    const freelist = Number((yield* pragma("freelist_count"))?.freelist_count ?? 0)
+    const autoVacuum = Number((yield* pragma("auto_vacuum"))?.auto_vacuum ?? 0)
+    const journalValue = (yield* pragma("journal_mode"))?.journal_mode
+    const journal = typeof journalValue === "string" ? journalValue : ""
+
+    console.log(`path:        ${Database.path()}`)
+    console.log(`journal:     ${journal}   auto_vacuum: ${autoVacuum}`)
+    console.log(`size:        ${mb(pageSize * pageCount)} MB   free: ${mb(pageSize * freelist)} MB`)
+
+    const tables = yield* db
+      .all<{ name: string }>(
+        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+      )
+      .pipe(Effect.orDie)
+    console.log("\ntables:")
+    for (const table of tables) {
+      const row = yield* db
+        .get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM ${sql.identifier(table.name)}`)
+        .pipe(Effect.orDie)
+      console.log(`  ${table.name}\t${row?.n ?? 0} rows`)
+    }
+
+    const events = yield* db
+      .all<{ type: string; n: number; bytes: number }>(
+        sql`SELECT type, COUNT(*) AS n, SUM(LENGTH(data)) AS bytes FROM event GROUP BY type ORDER BY bytes DESC`,
+      )
+      .pipe(Effect.orElseSucceed(() => [] as { type: string; n: number; bytes: number }[]))
+    if (events.length > 0) {
+      console.log("\nevent types:")
+      for (const event of events) console.log(`  ${event.type}\t${event.n}\t${mb(event.bytes ?? 0)} MB`)
+    }
+  }),
+})
+
+const VacuumCommand = effectCmd({
+  command: "vacuum",
+  describe: "checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free space",
+  instance: false,
+  handler: Effect.fn("Cli.db.vacuum")(function* () {
+    const { db } = yield* Database.Service
+    // auto_vacuum is only persisted by VACUUM, and must be requested before it runs.
+    yield* db.run(sql.raw("PRAGMA auto_vacuum = INCREMENTAL")).pipe(Effect.orDie)
+    yield* db.run(sql.raw("PRAGMA wal_checkpoint(TRUNCATE)")).pipe(Effect.orDie)
+    yield* db.run(sql.raw("VACUUM")).pipe(Effect.orDie)
+    yield* db.run(sql.raw("PRAGMA incremental_vacuum")).pipe(Effect.orDie)
+    console.log("vacuum complete (auto_vacuum=INCREMENTAL)")
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
   instance: false,
   builder: (yargs: Argv) => {
-    return yargs.command(QueryCommand).command(PathCommand).demandCommand()
+    return yargs
+      .command(QueryCommand)
+      .command(PathCommand)
+      .command(StatsCommand)
+      .command(VacuumCommand)
+      .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),
 })
