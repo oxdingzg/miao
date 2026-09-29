@@ -13,6 +13,7 @@ import { CodexAuthPlugin } from "./openai/codex"
 import { Session } from "@/session/session"
 import { NamedError } from "@miao/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
+import { MiaottyPlugin } from "./miaotty"
 import { ModalPlugin } from "./modal/modal"
 import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
 import { PoeAuthPlugin } from "opencode-poe-auth"
@@ -84,6 +85,8 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
     SnowflakeCortexAuthPlugin,
     XaiAuthPlugin,
     CerebrasPlugin,
+    // Reports agent state to miao-term's terminal (miaotty) when it hosts us.
+    MiaottyPlugin,
   ]
 }
 
