@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { detectServerProtocol } from "./server-protocol"
+import { detectServerProtocol, protocolOverride } from "./server-protocol"
 
 const server = { url: "http://localhost:4096" }
 const json = (value: unknown, status = 200) =>
@@ -36,5 +36,18 @@ describe("detectServerProtocol", () => {
     })
 
     expect(await detectServerProtocol(server, fetcher)).toBe("v1")
+  })
+
+  test("an explicit override wins over detection", async () => {
+    const fetcher = mockFetch(() => Promise.resolve(json({ healthy: true, version: "1.18.4" })))
+    expect(await detectServerProtocol(server, fetcher, "v2")).toBe("v2")
+    expect(await detectServerProtocol(server, fetcher, "v1")).toBe("v1")
+  })
+
+  test("parses the ?protocol override from a query string", () => {
+    expect(protocolOverride("?protocol=v2")).toBe("v2")
+    expect(protocolOverride("protocol=v1&x=1")).toBe("v1")
+    expect(protocolOverride("?protocol=other")).toBeUndefined()
+    expect(protocolOverride(undefined)).toBeUndefined()
   })
 })

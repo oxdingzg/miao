@@ -11,7 +11,7 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
-import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
+import { detectServerProtocol, protocolOverride, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
 
 const isAbortError = (error: unknown) =>
@@ -205,7 +205,11 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     fetch: eventFetch,
     server: server.http,
   })
-  const protocol = detectServerProtocol(server.http, platform.fetch ?? globalThis.fetch)
+  const protocol = detectServerProtocol(
+    server.http,
+    platform.fetch ?? globalThis.fetch,
+    protocolOverride((globalThis as { location?: { search?: string } }).location?.search),
+  )
   const [protocolKind] = createResource(
     () => protocol,
     (value) => value,
