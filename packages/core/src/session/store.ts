@@ -68,9 +68,15 @@ const layer = Layer.effect(
       }),
       context: Effect.fn("SessionStore.context")(function* (sessionID) {
         const projected = yield* SessionHistory.load(db, sessionID)
-        if (projected.length > 0) return projected
         const legacy = yield* loadV1(sessionID)
-        return legacy === undefined ? projected : SessionV1Read.map(legacy)
+        if (legacy === undefined) return projected
+        const mapped = SessionV1Read.map(legacy)
+        if (projected.length === 0) return mapped
+        // A backfill preserves legacy message ids, so drop any legacy message
+        // that is already projected to stay idempotent. Legacy history that was
+        // never backfilled must still be visible after a V2 turn appends rows.
+        const projectedIDs = new Set(projected.map((message) => message.id))
+        return [...mapped.filter((message) => !projectedIDs.has(message.id)), ...projected]
       }),
       runnerContext: Effect.fn("SessionStore.runnerContext")(function* (sessionID, baselineSeq) {
         return yield* SessionHistory.loadForRunner(db, sessionID, baselineSeq)

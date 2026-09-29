@@ -539,6 +539,55 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.effect("keeps legacy V1 messages visible after a V2 projection is appended", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy3",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy3",
+          message_id: "msg_legacy3",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy hi" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(SessionMessageTable)
+        .values({
+          id: "msg_v2new",
+          session_id: created.id,
+          type: "user",
+          seq: 0,
+          time_created: 2,
+          time_updated: 2,
+          data: { text: "v2 hi", time: { created: 2 } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(yield* session.context(created.id)).toMatchObject([
+        { type: "user", text: "legacy hi" },
+        { type: "user", text: "v2 hi" },
+      ])
+    }),
+  )
+
   it.effect("backfills legacy V1 messages into the V2 projection", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
