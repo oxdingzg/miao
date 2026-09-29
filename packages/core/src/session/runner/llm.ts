@@ -94,6 +94,17 @@ import { llmClient } from "../../effect/app-node-platform"
  * explicit loop starts the next provider turn after local settlement. Configured agent step limits bound the loop.
  */
 
+/** Cap on how many times one identical (name, input) tool call may execute in a drain. */
+const MAX_IDENTICAL_TOOL_CALLS = 5
+
+const signatureInput = (input: unknown) => {
+  try {
+    return JSON.stringify(input) ?? String(input)
+  } catch {
+    return String(input)
+  }
+}
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -115,6 +126,8 @@ const layer = Layer.effect(
     // compaction). Process-local and best-effort.
     const WARM_WINDOW_MS = 5 * 60_000
     const turns = new Map<string, { at: number; afterCompaction: boolean }>()
+    // Repeated identical tool calls per Session drain; reset at each drain start.
+    const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
       const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
       let ttl: number | undefined
@@ -301,6 +314,18 @@ const layer = Layer.effect(
               return
             }
             needsContinuation = true
+            const signature = `${session.id}\u0000${event.name}\u0000${signatureInput(event.input)}`
+            const executions = (repeatedToolCalls.get(signature) ?? 0) + 1
+            repeatedToolCalls.set(signature, executions)
+            if (executions > MAX_IDENTICAL_TOOL_CALLS) {
+              yield* withPublication(
+                publisher.failTool(
+                  event.id,
+                  `Refusing to run ${event.name} again: the same call has already executed ${MAX_IDENTICAL_TOOL_CALLS} times in this turn. Stop repeating it and change approach, or explain the blocker.`,
+                ),
+              )
+              return
+            }
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
@@ -456,6 +481,8 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      const repeatedPrefix = `${input.sessionID}\u0000`
+      for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return

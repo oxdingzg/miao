@@ -1561,8 +1561,39 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("reloads a model switch before a tool-driven continuation turn", () =>
+  it.effect("bounds repeated identical tool calls within a drain", () =>
     Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Repeat" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      const repeatCall = (index: number) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({ id: `call-repeat-${index}`, name: "echo", input: { text: "repeat" } }),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        ...Array.from({ length: 6 }, (_unused, index) => repeatCall(index)),
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(executions).toEqual(["repeat", "repeat", "repeat", "repeat", "repeat"])
+    }),
+  )
+
+  it.effect("reloads a model switch before a tool-driven continuation turn", () =>    Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
