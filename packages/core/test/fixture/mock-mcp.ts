@@ -11,6 +11,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: "Echo the given text",
       inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
     },
+    {
+      name: "a.b",
+      description: "Dot form",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "a_b",
+      description: "Underscore form",
+      inputSchema: { type: "object", properties: {} },
+    },
   ],
 }))
 

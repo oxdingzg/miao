@@ -65,6 +65,10 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
   - G2 remainder complete: `materialize` accepts `disabledTools` (filtered before ordering) and the
     runner sources it from the new global `disabled_tools` config; re-enabling appends without
     reordering the prefix. Covered by `tool-registry-order.test.ts`.
+  - G9 progress: MCP canonical tool names are deduped in deterministic codepoint order (first wins),
+    so a reconnect or duplicate listing cannot change the advertised set; covered by `mcp.test.ts`.
+    Remaining G9: progressive discovery, OAuth/CIMD, and `ttlMs`/`cacheScope` (not exposed by the
+    installed `@modelcontextprotocol/sdk`).
 
 ## 2. Environment
 
@@ -182,6 +186,13 @@ browser app/desktop/web surfaces (A.3).
 
 They already render V2 events (`packages/app/src/context/data.tsx`) and have a protocol detector
 (`packages/app/src/utils/server-protocol.ts`).
+
+**A.3 status (2026-09-30).** The client side is already wired: `utils/server-compat.ts` routes every
+write to the V2 `ServerApi` when `detectServerProtocol` returns `v2`, and the app renders V2 events.
+Detection prefers the legacy `/global/health` endpoint when both API generations respond, so the app
+selects V2 once the server stops serving V1 health (the server cutover, not a client change). Added
+a `?protocol=v1|v2` query override in `server-protocol.ts` so a build can be soaked on V2 before
+that cutover; absent/unknown values fall back to detection. Live browser preflight/soak remains.
 
 ## 4. Workstream B — Stage 5 delete V1
 

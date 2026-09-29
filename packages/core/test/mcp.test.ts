@@ -42,6 +42,20 @@ const server = () =>
   })
 
 describe("MCP", () => {
+  it.live("dedupes canonical tool names deterministically", () =>
+    withMCP([server()], (registry) =>
+      Effect.gen(function* () {
+        const materialized = yield* registry.materialize()
+        const names = materialized.definitions.map((definition) => definition.name)
+        expect(names.filter((name) => name === "mcp__mock__a_b")).toHaveLength(1)
+        // "a.b" sorts before "a_b", so the dot form is the one that wins.
+        expect(materialized.definitions.find((definition) => definition.name === "mcp__mock__a_b")?.description).toBe(
+          "Dot form",
+        )
+      }),
+    ),
+  )
+
   it.live("registers an MCP tool and calls it", () =>
     withMCP([server()], (registry) =>
       Effect.gen(function* () {

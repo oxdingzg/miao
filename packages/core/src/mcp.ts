@@ -66,16 +66,21 @@ const layer = Layer.effectDiscard(
     for (const entry of entries) if (entry.type === "document" && entry.info.mcp !== undefined) mcp = entry.info.mcp
     if (mcp?.servers === undefined) return
 
-    for (const [serverID, server] of Object.entries(mcp.servers)) {
+    // Canonical names are registered in a deterministic order so a reconnect or a
+    // server listing the same tool twice cannot change the advertised tool set.
+    const compareNames = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+    const registered = new Set<string>()
+    for (const [serverID, server] of Object.entries(mcp.servers).toSorted(([a], [b]) => compareNames(a, b))) {
       if (server.disabled === true) continue
       const connected = yield* connect(server as ConfigMCP.Local | ConfigMCP.Remote).pipe(
         Effect.orElseSucceed(() => undefined as Connected | undefined),
       )
       if (connected === undefined) continue
       const registrations: Record<string, AnyTool> = {}
-      for (const tool of connected.tools) {
+      for (const tool of [...connected.tools].toSorted((a, b) => compareNames(a.name, b.name))) {
         const name = toolName(serverID, tool.name)
-        if (!NAME_PATTERN.test(name)) continue
+        if (!NAME_PATTERN.test(name) || registered.has(name)) continue
+        registered.add(name)
         registrations[name] = Tool.makeExternal({
           description: tool.description ?? `MCP tool ${tool.name} from ${serverID}`,
           inputSchema: (tool.inputSchema as JsonSchema.JsonSchema | undefined) ?? { type: "object" },

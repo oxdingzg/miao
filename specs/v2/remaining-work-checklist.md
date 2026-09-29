@@ -38,9 +38,10 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Commit + push (partial: write sites landed; see notes)
 
 ## 3. Stage 4 — app / desktop / web
-- [ ] Repeat read preflight for app/desktop/web
-- [ ] Flip their write paths to `/api/session/*`
-- [ ] Same acceptance as TUI; commit + push
+- [ ] Repeat read preflight for app/desktop/web (needs a live browser soak)
+- [x] Write paths select V2 via `utils/server-compat.ts` when `detectServerProtocol` returns `v2`; app already renders V2 events
+- [x] `?protocol=v1|v2` override added (`utils/server-protocol.ts`) so a build can be soaked on V2 before the server stops serving V1 health
+- [ ] Same acceptance as TUI; commit + push (client wiring landed; server cutover drives selection)
 
 ## 4. Stage 5 — delete V1
 - [ ] Gate: no shipped client imports/calls a `/session/*` route
@@ -119,6 +120,7 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Progressive discovery (`search_tools` → `get_tool_details`, append after cache breakpoint)
 - [ ] OAuth via CIMD ordering; creds keyed by AS `issuer`; validate `iss`
 - [ ] Deterministic `tools/list` with `ttlMs`/`cacheScope`; dedupe
+  - [x] Deterministic canonical-name dedupe (codepoint order, first wins) — `mcp.test.ts`; `ttlMs`/`cacheScope` still open (not exposed by the installed MCP SDK)
 - [ ] Verify: large catalog loads lazily without disturbing the prefix; OAuth persists per issuer
 - [ ] Test + commit + push
 
