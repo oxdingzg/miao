@@ -70,9 +70,16 @@ const layer = Layer.effect(
       return (yield* all())[providerID]
     })
 
+    // Raw file contents, without the schema filter `all()` applies. Writes must
+    // merge into this so an entry this build cannot decode is never dropped —
+    // dropping it on the next write is how a saved key disappears for good.
+    const raw = Effect.fn("Auth.raw")(function* () {
+      return (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>
+    })
+
     const set = Effect.fn("Auth.set")(function* (key: string, info: Info) {
       const norm = key.replace(/\/+$/, "")
-      const data = yield* all()
+      const data = yield* raw()
       if (norm !== key) delete data[key]
       delete data[norm + "/"]
       yield* fsys
@@ -82,7 +89,7 @@ const layer = Layer.effect(
 
     const remove = Effect.fn("Auth.remove")(function* (key: string) {
       const norm = key.replace(/\/+$/, "")
-      const data = yield* all()
+      const data = yield* raw()
       delete data[key]
       delete data[norm]
       yield* fsys.writeJson(file, data, 0o600).pipe(Effect.mapError(fail("Failed to write auth data")))
