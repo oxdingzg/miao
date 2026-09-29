@@ -23,6 +23,7 @@ import { SessionInput } from "@miao/core/session/input"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
+import { SessionTodo } from "@miao/core/session/todo"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { testEffect } from "./lib/effect"
 import { tmpdir } from "./fixture/tmpdir"
@@ -37,7 +38,14 @@ const projects = Layer.succeed(
 )
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, SessionStore.node, SessionV2.node]),
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      SessionProjector.node,
+      SessionStore.node,
+      SessionTodo.node,
+      SessionV2.node,
+    ]),
     [
       [ProjectV2.node, projects],
       [SessionExecution.node, SessionExecution.noopLayer],
@@ -420,6 +428,32 @@ describe("SessionV2.create", () => {
             Effect.map((error) => error._tag),
           ),
       ).toBe("Session.NotFoundError")
+    }),
+  )
+
+  it.effect("lists child sessions by parent", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location })
+      const child = yield* session.create({ parentID: parent.id, location })
+
+      expect((yield* session.children(parent.id)).map((item) => item.id)).toEqual([child.id])
+      expect(yield* session.children(child.id)).toEqual([])
+    }),
+  )
+
+  it.effect("reads the session todo list", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      const created = yield* session.create({ location })
+      yield* todos.update({
+        sessionID: created.id,
+        todos: [{ content: "Ship it", status: "in_progress", priority: "high" }],
+      })
+      expect(yield* session.todo(created.id)).toEqual([
+        { content: "Ship it", status: "in_progress", priority: "high" },
+      ])
     }),
   )
 })

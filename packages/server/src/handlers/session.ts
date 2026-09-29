@@ -330,6 +330,40 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.todo",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* session.todo(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            ),
+          }
+        }),
+      )
+      .handle(
+        "session.children",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* session.children(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            ),
+          }
+        }),
+      )
+      .handle(
         "session.history",
         Effect.fn(function* (ctx) {
           return yield* session

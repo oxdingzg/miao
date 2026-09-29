@@ -2,6 +2,7 @@ import { SessionMessage } from "@miao/schema/session-message"
 import { SessionInput } from "@miao/schema/session-input"
 import { PromptInput } from "@miao/schema/prompt-input"
 import { Session } from "@miao/schema/session"
+import { SessionTodo } from "@miao/schema/session-todo"
 import { Project } from "@miao/schema/project"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@miao/schema/schema"
 import { Workspace } from "@miao/schema/workspace"
@@ -300,6 +301,36 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.context",
             summary: "Get session context",
             description: "Retrieve the active context messages for a session (all messages after the last compaction).",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.todo", "/api/session/:sessionID/todo", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(SessionTodo.Info) }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.todo",
+            summary: "Get session todos",
+            description: "Read the session's structured todo list.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.children", "/api/session/:sessionID/children", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(Session.Info) }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.children",
+            summary: "List child sessions",
+            description: "List sessions spawned from this session.",
           }),
         ),
     )

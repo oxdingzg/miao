@@ -14,13 +14,14 @@ import { PromptInput } from "@miao/schema/prompt-input"
 import { EventV2 } from "./event"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
-import { SessionMessageTable, SessionTable } from "./session/sql"
+import { SessionMessageTable, SessionTable, TodoTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
+import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
 import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
@@ -125,6 +126,8 @@ export interface Interface {
     sessionID: SessionSchema.ID
     messageID: SessionMessage.ID
   }) => Effect.Effect<SessionMessage.Message | undefined>
+  readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
+  readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Message[], NotFoundError | MessageDecodeError>
@@ -282,6 +285,28 @@ const layer = Layer.effect(
       message: Effect.fn("V2Session.message")(function* (input) {
         const stored = yield* store.message(input.messageID)
         return stored?.sessionID === input.sessionID ? stored.message : undefined
+      }),
+      todo: Effect.fn("V2Session.todo")(function* (sessionID) {
+        yield* result.get(sessionID)
+        const rows = yield* db
+          .select()
+          .from(TodoTable)
+          .where(eq(TodoTable.session_id, sessionID))
+          .orderBy(asc(TodoTable.position))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map((row) => ({ content: row.content, status: row.status, priority: row.priority }))
+      }),
+      children: Effect.fn("V2Session.children")(function* (sessionID) {
+        yield* result.get(sessionID)
+        const rows = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.parent_id, sessionID))
+          .orderBy(asc(SessionTable.time_created))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map(fromRow)
       }),
       context: Effect.fn("V2Session.context")(function* (sessionID) {
         yield* result.get(sessionID)

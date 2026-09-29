@@ -676,6 +676,48 @@ export type SessionsContextOutput = {
   >
 }["data"]
 
+export type SessionsTodoInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsTodoOutput = {
+  readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
+}["data"]
+
+export type SessionsChildrenInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsChildrenOutput = {
+  readonly data: ReadonlyArray<{
+    readonly id: string
+    readonly parentID?: string
+    readonly projectID: string
+    readonly agent?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly cost: number
+    readonly tokens: {
+      readonly input: number
+      readonly output: number
+      readonly reasoning: number
+      readonly cache: { readonly read: number; readonly write: number }
+    }
+    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly subpath?: string
+    readonly revert?: {
+      readonly messageID: string
+      readonly partID?: string
+      readonly snapshot?: string
+      readonly diff?: string
+      readonly files?: ReadonlyArray<{
+        readonly path: string
+        readonly status: "added" | "modified" | "deleted"
+        readonly additions: number
+        readonly deletions: number
+        readonly patch: string
+      }>
+    }
+  }>
+}["data"]
+
 export type SessionsHistoryInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly limit?: { readonly limit?: number | undefined; readonly after?: number | undefined }["limit"]
