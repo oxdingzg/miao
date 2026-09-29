@@ -1169,6 +1169,91 @@ describe("session.message-v2.toModelMessage", () => {
     expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([])
   })
 
+  test("drops reasoning-only assistant segments that serialize to empty content", async () => {
+    const assistantID = "m-assistant"
+
+    // Reproduces the poison pattern: a step segment holding only a reasoning
+    // part (empty or not) becomes { role: "assistant", content: "" } on
+    // OpenAI-compatible wire formats and gets rejected by validating gateways.
+    const input: SessionV1.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, "m-parent"),
+        parts: [
+          {
+            ...basePart(assistantID, "p1"),
+            type: "step-start",
+          },
+          {
+            ...basePart(assistantID, "p2"),
+            type: "reasoning",
+            text: "",
+            time: { start: 0 },
+          },
+          {
+            ...basePart(assistantID, "p3"),
+            type: "step-start",
+          },
+          {
+            ...basePart(assistantID, "p4"),
+            type: "reasoning",
+            text: "thinking",
+            time: { start: 0 },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([])
+  })
+
+  test("drops the reasoning-only segment but keeps text and tool segments", async () => {
+    const assistantID = "m-assistant"
+
+    const input: SessionV1.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, "m-parent"),
+        parts: [
+          {
+            ...basePart(assistantID, "p1"),
+            type: "step-start",
+          },
+          {
+            ...basePart(assistantID, "p2"),
+            type: "reasoning",
+            text: "thinking",
+            time: { start: 0 },
+          },
+          {
+            ...basePart(assistantID, "p3"),
+            type: "step-start",
+          },
+          {
+            ...basePart(assistantID, "p4"),
+            type: "reasoning",
+            text: "more thinking",
+            time: { start: 0 },
+          },
+          {
+            ...basePart(assistantID, "p5"),
+            type: "tool",
+            callID: "call-1",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { cmd: "ls" },
+              output: "ok",
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model)
+    expect(messages.map((m) => m.role)).toStrictEqual(["assistant", "tool"])
+    expect(messages[0]!.role === "assistant" && Array.isArray(messages[0]!.content)).toBe(true)
+  })
+
   test("converts pending/running tool calls to error results to prevent dangling tool_use", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

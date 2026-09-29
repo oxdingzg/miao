@@ -407,7 +407,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
 
   const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
 
-  return yield* Effect.promise(() =>
+  const converted = yield* Effect.promise(() =>
     convertToModelMessages(
       result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
       {
@@ -415,6 +415,18 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         tools,
       },
     ),
+  )
+  // OpenAI-compatible gateways like Tencent LKEAP/Moonshot reject any assistant
+  // message whose content is empty and carries no tool calls ("the message at
+  // position N with role 'assistant' must not be empty"). A reasoning-only
+  // segment serializes to content: "" there, and reasoning_content does not
+  // lift the validation. Dropping such messages is safe: signed thinking
+  // replay (Anthropic) only requires thinking blocks that accompany tool calls,
+  // which always survive this filter via their tool-call parts.
+  return converted.filter(
+    (message) =>
+      message.role !== "assistant" ||
+      message.content.some((part) => part.type === "tool-call" || (part.type === "text" && part.text.length > 0)),
   )
 })
 
