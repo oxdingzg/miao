@@ -11,4 +11,8 @@ describe("EditFuzzy.matchFuzzy", () => {
     expect(EditFuzzy.matchFuzzy("a\nb\n", "zzz")).toBeUndefined()
     expect(EditFuzzy.matchFuzzy("x = 1\nx = 1\n", "x = 1")).toBeUndefined()
   })
+
+  test("rejects a match that starts mid-line instead of swallowing the prefix", () => {
+    expect(EditFuzzy.matchFuzzy("  xfooy\nbar\n", "foo")).toBeUndefined()
+  })
 })

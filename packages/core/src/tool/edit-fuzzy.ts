@@ -34,6 +34,10 @@ export const matchFuzzy = (text: string, search: string): string | undefined => 
   const start = normalized.indexOf(target)
   if (start < 0) return undefined
   if (normalized.indexOf(target, start + 1) >= 0) return undefined
+  // Only accept a match that begins a line. A mid-line hit is not an
+  // indentation-only difference, and expanding it to the line start would
+  // swallow the unrelated characters before it.
+  if (start > 0 && normalized[start - 1] !== "\n") return undefined
   const last = start + target.length - 1
   const mapped = offsets[start]
   const end = last < offsets.length ? offsets[last]! + 1 : text.length
