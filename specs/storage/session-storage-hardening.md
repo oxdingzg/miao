@@ -10,6 +10,12 @@ Landed in the safe, standalone slice:
   `incremental_vacuum`. Confirmed the pragma flips 0 → 2 on a scratch database.
 - `miao export --format jsonl <session>` — one JSON object per message for grep/diff/backup.
 
+Landed since (2026-09-30), still standalone:
+
+- `packages/core/src/blob.ts` — content-addressed blob store: `blobs/<sha256>` layout, `put` /
+  `get` / `has` / `remove`, atomic temp-then-rename writes, and dedupe on write. Unit-tested in
+  `packages/core/test/blob.test.ts`. Not yet wired into attachment or tool-output persistence.
+
 Not in this slice (blocked on the V2 runner becoming the active write path; see Migration plan
 stages 2–4):
 

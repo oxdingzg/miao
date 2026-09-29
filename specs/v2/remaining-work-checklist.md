@@ -64,6 +64,7 @@ Definition of Done. Run in `miao-dev` only.
 ## 6. Storage hardening (§5)
 - [ ] Delta-only events: retire V1 per-delta sync events; one row per completed fragment
 - [ ] Blob externalization: `blobs/<sha256>` for attachments + oversized tool output
+  - [x] Content-addressed `Blob` store (`blob.ts`: put/get/has/remove, atomic write, dedupe) — `blob.test.ts`; not yet wired
 - [ ] Messages/events store `hash + mime`; materialize in `to-llm-message.ts`
 - [ ] Incremental auto-vacuum enabled
 - [ ] Event-log retention/compaction (snapshot-then-truncate)
