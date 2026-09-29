@@ -460,4 +460,27 @@ describe("SessionV2.create", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+
+  it.live("forks a session by replaying its history with fresh message ids", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const session = yield* SessionV2.Service
+          const created = yield* session.create({
+            location: Location.Ref.make({ directory: AbsolutePath.make(tmp.path) }),
+          })
+          yield* session.shell({ sessionID: created.id, command: "echo fork-me", resume: false })
+
+          const forked = yield* session.fork({ sessionID: created.id })
+          expect(forked.parentID).toBe(created.id)
+
+          const parentShell = (yield* session.context(created.id)).find((message) => message.type === "shell")
+          const childShell = (yield* session.context(forked.id)).find((message) => message.type === "shell")
+          expect(childShell?.type === "shell" ? childShell.output : "").toContain("fork-me")
+          expect(childShell?.id).not.toBe(parentShell?.id)
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
 })

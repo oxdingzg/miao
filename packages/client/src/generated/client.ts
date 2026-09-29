@@ -35,6 +35,8 @@ import type {
   SessionsContextOutput,
   SessionsTodoInput,
   SessionsTodoOutput,
+  SessionsForkInput,
+  SessionsForkOutput,
   SessionsDiffInput,
   SessionsDiffOutput,
   SessionsStatusInput,
@@ -489,6 +491,18 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/todo`,
             successStatus: 200,
             declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      fork: (input: SessionsForkInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsForkOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/fork`,
+            body: { messageID: input["messageID"] },
+            successStatus: 200,
+            declaredStatuses: [404, 500, 400, 401],
             empty: false,
           },
           requestOptions,

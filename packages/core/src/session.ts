@@ -26,6 +26,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
 import { SessionDiff } from "./session/diff"
+import { SessionFork } from "./session/fork"
 import { SkillV2 } from "./skill"
 import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
@@ -39,6 +40,7 @@ import { SessionRevert } from "./session/revert"
 import { Revert } from "@miao/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
+import { EventSequenceTable, EventTable } from "./event/sql"
 
 export const RevertState = Revert.State
 export type RevertState = Revert.State
@@ -134,6 +136,10 @@ export interface Interface {
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
   readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
   readonly diff: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<typeof Revert.FileDiff.Type>, NotFoundError>
+  readonly fork: (input: {
+    sessionID: SessionSchema.ID
+    messageID?: SessionMessage.ID
+  }) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Message[], NotFoundError | MessageDecodeError>
@@ -334,6 +340,64 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         const active = yield* execution.active
         return { type: active.has(sessionID) ? ("busy" as const) : ("idle" as const) }
+      }),
+      fork: Effect.fn("V2Session.fork")(function* (input) {
+        const parent = yield* result.get(input.sessionID)
+        const child = yield* creation.create({
+          parentID: input.sessionID,
+          agent: parent.agent,
+          location: parent.location,
+        })
+        const rows = yield* db
+          .select()
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, input.sessionID))
+          .orderBy(asc(EventTable.seq))
+          .all()
+          .pipe(Effect.orDie)
+        let cutoff: number | undefined
+        if (input.messageID !== undefined) {
+          const target = rows.find((row) => {
+            const data = row.data as Record<string, unknown>
+            return data?.messageID === input.messageID || data?.assistantMessageID === input.messageID
+          })
+          cutoff = target?.seq ?? rows.at(-1)?.seq
+        }
+        const allowed = new Set(SessionDurable.definitions.keys())
+        const sequence = yield* db
+          .select()
+          .from(EventSequenceTable)
+          .where(eq(EventSequenceTable.aggregate_id, child.id))
+          .get()
+          .pipe(Effect.orDie)
+        let seq = (sequence?.seq ?? -1) + 1
+        const remapped = new Map<string, string>()
+        const next = (old: string) => {
+          const existing = remapped.get(old)
+          if (existing !== undefined) return existing
+          const created = SessionMessage.ID.create()
+          remapped.set(old, created)
+          return created
+        }
+        for (const row of rows) {
+          if (!allowed.has(row.type)) continue
+          if (cutoff !== undefined && row.seq > cutoff) break
+          const data = SessionFork.remapEventData(row.data, next) as Record<string, unknown>
+          yield* events
+            .replay(
+              {
+                id: EventV2.ID.create(),
+                type: row.type,
+                aggregateID: child.id,
+                seq,
+                data: { ...data, sessionID: child.id },
+              },
+              { publish: true },
+            )
+            .pipe(Effect.catchCause(() => Effect.void))
+          seq += 1
+        }
+        return child
       }),
       diff: Effect.fn("V2Session.diff")(function* (sessionID) {
         const session = yield* result.get(sessionID)
