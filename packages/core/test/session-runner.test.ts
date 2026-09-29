@@ -23,6 +23,7 @@ import { ProjectTable } from "@miao/core/project/sql"
 import { QuestionV2 } from "@miao/core/question"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { SessionTodo } from "@miao/core/session/todo"
 import { Snapshot } from "@miao/core/snapshot"
 import { ContextSnapshotDecodeError } from "@miao/core/session/error"
 import { SessionEvent } from "@miao/core/session/event"
@@ -40,6 +41,7 @@ import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { AgentV2 } from "@miao/core/agent"
 import { Config } from "@miao/core/config"
 import { ConfigCompaction } from "@miao/core/config/compaction"
+import { ConfigLoop } from "@miao/core/config/loop"
 import { Tool } from "@miao/core/tool/tool"
 import {
   SessionContextEpochTable,
@@ -220,6 +222,7 @@ const config = Layer.succeed(
               buffer: 3_000,
               keep: new ConfigCompaction.Keep({ tokens: 1_000 }),
             }),
+            loop: new ConfigLoop.Info({ enabled: true, max_iterations: 10, continue_prompt: "keep going" }),
           }),
         }),
       ]),
@@ -260,6 +263,7 @@ const it = testEffect(
       QuestionV2.node,
       SessionProjector.node,
       SessionStore.node,
+      SessionTodo.node,
       ApplicationTools.node,
       AgentV2.node,
       ToolRegistry.node,
@@ -1647,6 +1651,28 @@ describe("SessionRunnerLLM", () => {
         state: { status: "completed", structured: { text: "Sub result" } },
       })
       expect(requests).toHaveLength(3)
+    }),
+  )
+
+  it.effect("keeps continuing while todos stay open, then stops on no progress", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "Do the thing", status: "in_progress", priority: "high" }],
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+
+      requests.length = 0
+      responses = undefined
+      response = fragmentFixture("text", "text-loop", ["ok"]).completeEvents
+      yield* session.resume(sessionID)
+
+      // Two unchanged todo signatures trigger the stall guard and stop the loop.
+      expect(requests.length).toBeGreaterThan(1)
+      expect(requests.length).toBeLessThanOrEqual(5)
     }),
   )
 

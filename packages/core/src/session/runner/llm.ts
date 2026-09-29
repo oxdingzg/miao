@@ -39,6 +39,7 @@ import { SessionInput } from "../input"
 import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
+import { SessionTodo } from "../todo"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
@@ -102,6 +103,12 @@ import { llmClient } from "../../effect/app-node-platform"
 /** Cap on how many times one identical (name, input) tool call may execute in a drain. */
 const MAX_IDENTICAL_TOOL_CALLS = 5
 
+/** Goal/todo-driven autonomous loop bounds. */
+const DEFAULT_LOOP_MAX_ITERATIONS = 25
+const LOOP_STALL_LIMIT = 2
+const DEFAULT_LOOP_PROMPT =
+  "Continue with the next incomplete todo item. Make concrete progress, then update the todo list. If every todo is complete and verified, reply DONE and stop."
+
 const signatureInput = (input: unknown) => {
   try {
     return JSON.stringify(input) ?? String(input)
@@ -126,6 +133,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const creation = yield* SessionCreate.Service
+    const todos = yield* SessionTodo.Service
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -139,12 +147,18 @@ const layer = Layer.effect(
       let ttl: number | undefined
       let prune = false
       let budget: number | undefined
+      let loop: { readonly maxIterations: number; readonly continuePrompt: string } | undefined
       for (const entry of documents) {
         if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
         if (entry.info.compaction?.prune !== undefined) prune = entry.info.compaction.prune
         if (entry.info.cost?.budget_usd !== undefined) budget = entry.info.cost.budget_usd
+        if (entry.info.loop?.enabled === true)
+          loop = {
+            maxIterations: entry.info.loop.max_iterations ?? DEFAULT_LOOP_MAX_ITERATIONS,
+            continuePrompt: entry.info.loop.continue_prompt ?? DEFAULT_LOOP_PROMPT,
+          }
       }
-      return { ttl, prune, budget }
+      return { ttl, prune, budget, loop }
     })
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -544,6 +558,9 @@ const layer = Layer.effect(
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
       const settings = yield* readSettings()
+      let loopIterations = 0
+      let lastTodoSignature: string | undefined
+      let loopStalls = 0
       const exceeded = (session: SessionSchema.Info) =>
         settings.budget !== undefined && session.cost >= settings.budget
       const initial = yield* getSession(input.sessionID)
@@ -578,6 +595,37 @@ const layer = Layer.effect(
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+        if (!shouldRun && settings.loop !== undefined) {
+          const current = yield* getSession(input.sessionID)
+          if (exceeded(current)) {
+            yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "budget" })
+          } else if (loopIterations >= settings.loop.maxIterations) {
+            yield* Effect.logWarning("session.loop-stopped", {
+              sessionID: input.sessionID,
+              reason: "max-iterations",
+            })
+          } else {
+            const list = yield* todos.get(input.sessionID)
+            const open = list.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled")
+            if (list.length > 0 && open.length > 0) {
+              const signature = JSON.stringify(list)
+              loopStalls = signature === lastTodoSignature ? loopStalls + 1 : 0
+              lastTodoSignature = signature
+              if (loopStalls >= LOOP_STALL_LIMIT) {
+                yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "no-progress" })
+              } else {
+                loopIterations += 1
+                yield* SessionInput.admit(db, events, {
+                  id: SessionMessage.ID.create(),
+                  sessionID: input.sessionID,
+                  prompt: Prompt.make({ text: settings.loop.continuePrompt }),
+                  delivery: "queue",
+                })
+                shouldRun = true
+              }
+            }
+          }
+        }
         promotion = shouldRun ? "queue" : undefined
       }
         }),
@@ -609,5 +657,6 @@ export const node = makeLocationNode({
     Snapshot.node,
     Database.node,
     SessionCreate.node,
+    SessionTodo.node,
   ],
 })

@@ -18,6 +18,7 @@ import { ConfigCommand } from "./config/command"
 import { ConfigCost } from "./config/cost"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
+import { ConfigLoop } from "./config/loop"
 import { ConfigLSP } from "./config/lsp"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPlugin } from "./config/plugin"
@@ -91,6 +92,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   cache: ConfigCache.Info.pipe(Schema.optional).annotate({
     description: "Prompt cache behavior",
+  }),
+  loop: ConfigLoop.Info.pipe(Schema.optional).annotate({
+    description: "Goal/todo-driven autonomous loop that continues the session until todos complete",
   }),
   cost: ConfigCost.Info.pipe(Schema.optional).annotate({
     description: "Cost guardrails",
