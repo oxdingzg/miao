@@ -43,9 +43,12 @@ regenerated SDK, verified against the parity table.
 Progress: `session.todo`, `session.children`, `session.status`, `session.shell`, `session.skill`,
 `session.diff` landed. Remaining and why they need dedicated design:
 
-- `session.fork` — the event-sourced message model has no per-message copy primitive; a fork must
-  replay the parent's durable events under a new Session aggregate. This needs an event-replay
-  primitive on `EventV2` (publish a recorded event under a new aggregate) before it is safe.
+- `session.fork` — the event-sourced message model has no per-message copy primitive. Replaying
+  the parent's durable events verbatim under a new Session aggregate reuses the parent's
+  `messageID` / `assistantMessageID` / `callID`, which collide with the `session_message` primary
+  key (verified by an attempted implementation). A correct fork needs an event-replay primitive
+  that **remaps message-scoped identifiers** across every message-scoped event before publishing
+  under the child aggregate.
 - `session.command` — running a slash command needs the template-render and argument-substitution
   semantics (placeholders, `@`-file expansion, shell interpolation) defined for V2 and matched to
   V1, plus optional agent/model selection from `Command.Info`.
