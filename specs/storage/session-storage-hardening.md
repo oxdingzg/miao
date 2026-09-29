@@ -19,7 +19,10 @@ Landed since (2026-09-30), still standalone:
 Not in this slice (blocked on the V2 runner becoming the active write path; see Migration plan
 stages 2–4):
 
-- Delta-only event persistence and retiring the V1 per-delta sync events (the 1.26 GB source).
+- Retiring the V1 per-delta sync events (the 1.26 GB source). The V2 write path is already
+  delta-only — one durable `text.started`/`text.ended` per fragment, no durable delta row
+  (`packages/core/test/session-runner-recorded.test.ts`) — so this reduces to the Workstream B V1
+  retirement and migration.
 - Blob externalization for attachments, and materializing references in `to-llm-message.ts`.
 - Log retention / compaction, blob GC.
 
