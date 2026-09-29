@@ -16,6 +16,7 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Un-backfilled session send shows `LegacyNotMigratedError` hint
 - [ ] `miao-dev db backfill` migrates a legacy session; resend succeeds
 - [ ] Flag off: unchanged V1 behavior
+- [ ] **Blocker (A.0b):** V2 runs stream live into the transcript (route reads the V2 `data` store, or `sync` handles `session.next.*`) — required before section 2
 
 ## 2. Stage 4 — TUI write flip
 - [ ] Map editor text + non-text parts → `PromptInput.Prompt` (`{ text, files, agents }`)
