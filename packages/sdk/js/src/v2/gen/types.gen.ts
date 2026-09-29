@@ -2708,6 +2708,12 @@ export type SessionNotFoundError = {
   message: string
 }
 
+export type ServiceUnavailableError = {
+  _tag: "ServiceUnavailableError"
+  message: string
+  service?: string
+}
+
 export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
@@ -2718,12 +2724,6 @@ export type ConflictError = {
   _tag: "ConflictError"
   message: string
   resource?: string
-}
-
-export type ServiceUnavailableError = {
-  _tag: "ServiceUnavailableError"
-  message: string
-  service?: string
 }
 
 export type MessageNotFoundError = {
@@ -11257,6 +11257,8 @@ export type V2HealthGetResponses = {
    */
   200: {
     healthy: true
+    version: string
+    pid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
 }
 
@@ -11504,6 +11506,10 @@ export type V2SessionSwitchAgentErrors = {
    * SessionNotFoundError
    */
   404: SessionNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionSwitchAgentError = V2SessionSwitchAgentErrors[keyof V2SessionSwitchAgentErrors]
@@ -11541,6 +11547,10 @@ export type V2SessionSwitchModelErrors = {
    * SessionNotFoundError
    */
   404: SessionNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionSwitchModelError = V2SessionSwitchModelErrors[keyof V2SessionSwitchModelErrors]
@@ -11585,6 +11595,10 @@ export type V2SessionPromptErrors = {
    * ConflictError
    */
   409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionPromptError = V2SessionPromptErrors[keyof V2SessionPromptErrors]
@@ -11599,6 +11613,90 @@ export type V2SessionPromptResponses = {
 }
 
 export type V2SessionPromptResponse = V2SessionPromptResponses[keyof V2SessionPromptResponses]
+
+export type V2SessionSkillData = {
+  body: {
+    skill: string
+    resume?: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/skill"
+}
+
+export type V2SessionSkillErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionSkillError = V2SessionSkillErrors[keyof V2SessionSkillErrors]
+
+export type V2SessionSkillResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionSkillResponse = V2SessionSkillResponses[keyof V2SessionSkillResponses]
+
+export type V2SessionShellData = {
+  body: {
+    command: string
+    resume?: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/shell"
+}
+
+export type V2SessionShellErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionShellError = V2SessionShellErrors[keyof V2SessionShellErrors]
+
+export type V2SessionShellResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionShellResponse = V2SessionShellResponses[keyof V2SessionShellResponses]
 
 export type V2SessionCompactData = {
   body?: never
@@ -11836,6 +11934,363 @@ export type V2SessionContextResponses = {
 }
 
 export type V2SessionContextResponse = V2SessionContextResponses[keyof V2SessionContextResponses]
+
+export type V2SessionTodoData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/todo"
+}
+
+export type V2SessionTodoErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionTodoError = V2SessionTodoErrors[keyof V2SessionTodoErrors]
+
+export type V2SessionTodoResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<Todo>
+  }
+}
+
+export type V2SessionTodoResponse = V2SessionTodoResponses[keyof V2SessionTodoResponses]
+
+export type V2SessionRenameData = {
+  body: {
+    title: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/rename"
+}
+
+export type V2SessionRenameErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionRenameError = V2SessionRenameErrors[keyof V2SessionRenameErrors]
+
+export type V2SessionRenameResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionRenameResponse = V2SessionRenameResponses[keyof V2SessionRenameResponses]
+
+export type V2SessionArchiveData = {
+  body: {
+    archived: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/archive"
+}
+
+export type V2SessionArchiveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionArchiveError = V2SessionArchiveErrors[keyof V2SessionArchiveErrors]
+
+export type V2SessionArchiveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionArchiveResponse = V2SessionArchiveResponses[keyof V2SessionArchiveResponses]
+
+export type V2SessionRemoveData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/remove"
+}
+
+export type V2SessionRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionRemoveError = V2SessionRemoveErrors[keyof V2SessionRemoveErrors]
+
+export type V2SessionRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionRemoveResponse = V2SessionRemoveResponses[keyof V2SessionRemoveResponses]
+
+export type V2SessionCommandData = {
+  body: {
+    command: string
+    arguments: string
+    resume?: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/command"
+}
+
+export type V2SessionCommandErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionCommandError = V2SessionCommandErrors[keyof V2SessionCommandErrors]
+
+export type V2SessionCommandResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionCommandResponse = V2SessionCommandResponses[keyof V2SessionCommandResponses]
+
+export type V2SessionForkData = {
+  body: {
+    messageID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/fork"
+}
+
+export type V2SessionForkErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionForkError = V2SessionForkErrors[keyof V2SessionForkErrors]
+
+export type V2SessionForkResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionV2Info
+  }
+}
+
+export type V2SessionForkResponse = V2SessionForkResponses[keyof V2SessionForkResponses]
+
+export type V2SessionDiffData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/diff"
+}
+
+export type V2SessionDiffErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type V2SessionDiffError = V2SessionDiffErrors[keyof V2SessionDiffErrors]
+
+export type V2SessionDiffResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<FileDiff>
+  }
+}
+
+export type V2SessionDiffResponse = V2SessionDiffResponses[keyof V2SessionDiffResponses]
+
+export type V2SessionStatusData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/status"
+}
+
+export type V2SessionStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionStatusError = V2SessionStatusErrors[keyof V2SessionStatusErrors]
+
+export type V2SessionStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
+      type: "idle" | "busy"
+    }
+  }
+}
+
+export type V2SessionStatusResponse = V2SessionStatusResponses[keyof V2SessionStatusResponses]
+
+export type V2SessionChildrenData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/children"
+}
+
+export type V2SessionChildrenErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionChildrenError = V2SessionChildrenErrors[keyof V2SessionChildrenErrors]
+
+export type V2SessionChildrenResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<SessionV2Info>
+  }
+}
+
+export type V2SessionChildrenResponse = V2SessionChildrenResponses[keyof V2SessionChildrenResponses]
 
 export type V2SessionHistoryData = {
   body?: never

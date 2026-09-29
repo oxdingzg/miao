@@ -335,14 +335,24 @@ import type {
   V2ReferenceListResponses,
   V2SessionActiveErrors,
   V2SessionActiveResponses,
+  V2SessionArchiveErrors,
+  V2SessionArchiveResponses,
+  V2SessionChildrenErrors,
+  V2SessionChildrenResponses,
+  V2SessionCommandErrors,
+  V2SessionCommandResponses,
   V2SessionCompactErrors,
   V2SessionCompactResponses,
   V2SessionContextErrors,
   V2SessionContextResponses,
   V2SessionCreateErrors,
   V2SessionCreateResponses,
+  V2SessionDiffErrors,
+  V2SessionDiffResponses,
   V2SessionEventsErrors,
   V2SessionEventsResponses,
+  V2SessionForkErrors,
+  V2SessionForkResponses,
   V2SessionGetErrors,
   V2SessionGetResponses,
   V2SessionHistoryErrors,
@@ -371,16 +381,28 @@ import type {
   V2SessionQuestionRejectResponses,
   V2SessionQuestionReplyErrors,
   V2SessionQuestionReplyResponses,
+  V2SessionRemoveErrors,
+  V2SessionRemoveResponses,
+  V2SessionRenameErrors,
+  V2SessionRenameResponses,
   V2SessionRevertClearErrors,
   V2SessionRevertClearResponses,
   V2SessionRevertCommitErrors,
   V2SessionRevertCommitResponses,
   V2SessionRevertStageErrors,
   V2SessionRevertStageResponses,
+  V2SessionShellErrors,
+  V2SessionShellResponses,
+  V2SessionSkillErrors,
+  V2SessionSkillResponses,
+  V2SessionStatusErrors,
+  V2SessionStatusResponses,
   V2SessionSwitchAgentErrors,
   V2SessionSwitchAgentResponses,
   V2SessionSwitchModelErrors,
   V2SessionSwitchModelResponses,
+  V2SessionTodoErrors,
+  V2SessionTodoResponses,
   V2SessionWaitErrors,
   V2SessionWaitResponses,
   V2SkillListErrors,
@@ -5656,6 +5678,80 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
+   * Invoke a skill
+   *
+   * Load a skill by name and inject its instructions into the session.
+   */
+  public skill<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      skill?: string
+      resume?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "skill" },
+            { in: "body", key: "resume" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionSkillResponses, V2SessionSkillErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/skill",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Run a shell command
+   *
+   * Run a shell command in the session directory and record it in the session.
+   */
+  public shell<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      command?: string
+      resume?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "command" },
+            { in: "body", key: "resume" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionShellResponses, V2SessionShellErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/shell",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
    * Compact session
    *
    * Compact a session conversation.
@@ -5707,6 +5803,239 @@ export class Session3 extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
     return (options?.client ?? this.client).get<V2SessionContextResponses, V2SessionContextErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/context",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session todos
+   *
+   * Read the session's structured todo list.
+   */
+  public todo<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionTodoResponses, V2SessionTodoErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/todo",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Rename session
+   */
+  public rename<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      title?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "title" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionRenameResponses, V2SessionRenameErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/rename",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Archive session
+   */
+  public archive<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      archived?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "archived" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionArchiveResponses, V2SessionArchiveErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/archive",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete session
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).post<V2SessionRemoveResponses, V2SessionRemoveErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/remove",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Run a command
+   *
+   * Render a slash-command template and admit it as session input.
+   */
+  public command<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      command?: string
+      arguments?: string
+      resume?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "command" },
+            { in: "body", key: "arguments" },
+            { in: "body", key: "resume" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionCommandResponses, V2SessionCommandErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/command",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Fork session
+   *
+   * Create a new session by replaying this session's history with fresh ids.
+   */
+  public fork<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "messageID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionForkResponses, V2SessionForkErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/fork",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get session diff
+   *
+   * Files changed by the session since its first recorded snapshot.
+   */
+  public diff<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionDiffResponses, V2SessionDiffErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/diff",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session status
+   *
+   * Whether the session has an active agent loop in this process.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionStatusResponses, V2SessionStatusErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List child sessions
+   *
+   * List sessions spawned from this session.
+   */
+  public children<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionChildrenResponses, V2SessionChildrenErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/children",
       ...options,
       ...params,
     })
