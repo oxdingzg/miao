@@ -1,6 +1,7 @@
 export * as DatabaseMigration from "./migration"
 
 import { sql } from "drizzle-orm"
+import { Flock } from "../util/flock"
 import { Effect, Semaphore } from "effect"
 import type { EffectDrizzleSqlite } from "@miao/effect-drizzle-sqlite"
 import { migrations } from "./migration.gen"
@@ -41,7 +42,11 @@ export function apply(db: Database) {
 }
 
 export function applyOnly(db: Database, input: Migration[]) {
-  return Effect.gen(function* () {
+  // Hold a cross-process file lock so two processes sharing one database file
+  // cannot apply the same migration concurrently.
+  return Effect.scoped(
+    Effect.gen(function* () {
+    yield* Flock.effect("database-migration")
     yield* db.run(
       sql`CREATE TABLE IF NOT EXISTS ${sql.identifier("migration")} (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`,
     )
@@ -104,5 +109,6 @@ export function applyOnly(db: Database, input: Migration[]) {
         }),
       )
     }
-  })
+    }),
+  )
 }
