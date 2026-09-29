@@ -58,6 +58,10 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
   - G11 progress: `EventV2.durable` now merges the in-process wake with a 1s database poll
     (`pollInterval` overridable), so a second process appending to the same database is tailed
     without gaps; covered by `event.test.ts`.
+  - G4 progress: attachment normalization at request build. `toLLMMessages` accepts the target
+    model's declared input modalities and replaces image files with a text placeholder when the
+    model omits `image`; the runner passes `resolved.info.capabilities.input`. Covered by
+    `session-runner-message.test.ts`. Remaining G4 work: cancellation settlement, tool progress.
 
 ## 2. Environment
 

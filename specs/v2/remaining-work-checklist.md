@@ -85,7 +85,7 @@ Definition of Done. Run in `miao-dev` only.
 
 ### G4 — cancellation settlement / attachments / progress
 - [ ] Cancellation: cascade-cancel child fibers, drain inbox, settle pending approvals
-- [ ] Normalize attachments by model capability at request build
+- [x] Normalize attachments by model capability at request build — image files become a text placeholder when `capabilities.input` omits `image`
 - [ ] Wire tool progress events
 - [ ] Verify: interrupt session with child task + pending approval → no dangling/lost state
 - [ ] Test + commit + push

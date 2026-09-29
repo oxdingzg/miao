@@ -10,13 +10,28 @@ import {
 import { SessionMessage } from "../message"
 import type { FileAttachment } from "../prompt"
 
-const media = (file: FileAttachment): ContentPart => ({
-  type: "media",
-  mediaType: file.mime,
-  data: file.uri,
-  filename: file.name,
-  metadata: file.description === undefined ? undefined : { description: file.description },
-})
+/**
+ * Whether the model accepts image input. An absent or empty capability list is
+ * treated as unknown so a catalog entry that does not declare modalities keeps
+ * the pre-normalization behavior instead of silently dropping images.
+ */
+const acceptsImages = (input: readonly string[] | undefined) =>
+  input === undefined || input.length === 0 || input.some((item) => item.startsWith("image"))
+
+const media = (file: FileAttachment, images: boolean): ContentPart => {
+  if (!images && file.mime.startsWith("image/"))
+    return {
+      type: "text",
+      text: `[image attachment omitted: model does not support image input${file.name ? `: ${file.name}` : ""}]`,
+    }
+  return {
+    type: "media",
+    mediaType: file.mime,
+    data: file.uri,
+    filename: file.name,
+    metadata: file.description === undefined ? undefined : { description: file.description },
+  }
+}
 
 const toolInput = (tool: SessionMessage.AssistantTool) => {
   if (tool.state.status !== "pending") return tool.state.input
@@ -112,7 +127,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   ]
 }
 
-function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] {
+function toLLMMessage(message: SessionMessage.Message, model: Model, images: boolean): Message[] {
   switch (message.type) {
     case "agent-switched":
     case "model-switched":
@@ -122,7 +137,7 @@ function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] 
         Message.make({
           id: message.id,
           role: "user",
-          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map(media)],
+          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map((file) => media(file, images))],
           metadata: {
             ...message.metadata,
             ...(message.agents?.length ? { agents: message.agents } : {}),
@@ -166,6 +181,13 @@ ${message.recent}
   }
 }
 
-/** Translate projected V2 Session history into canonical @miao/llm context. */
-export const toLLMMessages = (messages: readonly SessionMessage.Message[], model: Model) =>
-  messages.flatMap((message) => toLLMMessage(message, model))
+/**
+ * Translate projected V2 Session history into canonical @miao/llm context.
+ * `input` is the target model's declared input modalities; when it claims no
+ * image support, image attachments are replaced with a text placeholder.
+ */
+export const toLLMMessages = (
+  messages: readonly SessionMessage.Message[],
+  model: Model,
+  input?: readonly string[],
+) => messages.flatMap((message) => toLLMMessage(message, model, acceptsImages(input)))

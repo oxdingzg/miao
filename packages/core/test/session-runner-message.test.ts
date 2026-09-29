@@ -139,6 +139,31 @@ Recent work
     ])
   })
 
+  test("replaces image attachments with a text placeholder when the model has no image input", () => {
+    const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
+    const user = SessionMessage.User.make({
+      id: id("user"),
+      type: "user",
+      text: "Inspect this image",
+      files: [file],
+      time: { created },
+    })
+
+    const unsupported = toLLMMessages([user], model, ["text"])
+    expect(unsupported[0].content).toEqual([
+      { type: "text", text: "Inspect this image" },
+      { type: "text", text: "[image attachment omitted: model does not support image input: hello.png]" },
+    ])
+
+    const supported = toLLMMessages([user], model, ["text", "image"])
+    expect(supported[0].content).toContainEqual({
+      type: "media",
+      mediaType: "image/png",
+      data: "data:image/png;base64,aGVsbG8=",
+      filename: "hello.png",
+    })
+  })
+
   test("replays durable tool media into canonical tool messages without structured base64", () => {
     const messages = toLLMMessages(
       [

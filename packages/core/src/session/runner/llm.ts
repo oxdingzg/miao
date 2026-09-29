@@ -279,7 +279,10 @@ const layer = Layer.effect(
       const expectedRebuild = prior?.afterCompaction === true
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
-      const messages = [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])]
+      const messages = [
+        ...toLLMMessages(context, model, resolved.info.capabilities.input),
+        ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
+      ]
       const request = LLM.request({
         model,
         http: {
