@@ -1149,6 +1149,39 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("forces one compaction on request and ends without a provider turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      response = fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Earlier question ".repeat(180) }),
+        resume: false,
+      })
+      yield* session.resume(sessionID)
+
+      response = fragmentFixture("text", "text-recent", ["Recent answer"]).completeEvents
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+        resume: false,
+      })
+      yield* session.resume(sessionID)
+
+      currentModel = compactModel
+      requests.length = 0
+      responses = [fragmentFixture("text", "text-forced", ["## Objective\n- Forced summary"]).completeEvents]
+
+      yield* session.compact({ sessionID })
+
+      expect(requests).toHaveLength(1)
+      expect(userTexts(requests[0])[0]).toContain("Earlier question")
+      const context = yield* (yield* SessionStore.Service).context(sessionID)
+      expect(context[0]).toMatchObject({ type: "compaction", summary: "## Objective\n- Forced summary" })
+    }),
+  )
+
   it.effect("retains only complete serialized messages during compaction", () =>
     Effect.gen(function* () {
       yield* setup

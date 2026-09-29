@@ -27,6 +27,7 @@ import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
+import { SessionCompactRequest } from "../compact-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionPrune } from "../prune"
@@ -174,6 +175,8 @@ const layer = Layer.effect(
       | { readonly _tag: "ContinueAfterCompaction"; readonly step: number }
       // Overflow compaction completed; rebuild once through the path without overflow recovery.
       | { readonly _tag: "ContinueAfterOverflowCompaction"; readonly step: number }
+      // Forced (user-requested) compaction completed; end the drain without a provider turn.
+      | { readonly _tag: "StopAfterCompaction"; readonly step: number }
 
     class TurnTransitionError extends Error {
       constructor(readonly transition: TurnTransition) {
@@ -184,6 +187,7 @@ const layer = Layer.effect(
     const continueAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "ContinueAfterCompaction", step })
     const continueAfterOverflowCompaction = (step: number) =>
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
+    const stopAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "StopAfterCompaction", step })
 
     const loadSystemContext = (agent: AgentV2.Selection) =>
       Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load()], {
@@ -252,6 +256,11 @@ const layer = Layer.effect(
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
       })
+      if (SessionCompactRequest.consume(session.id)) {
+        const compacted = yield* compaction.compactAfterOverflow({ sessionID: session.id, entries, model, summarizeModel, request })
+        if (compacted) turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        return yield* Effect.die(stopAfterCompaction(currentStep))
+      }
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request })) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
         return yield* Effect.die(continueAfterCompaction(currentStep))
@@ -432,6 +441,8 @@ const layer = Layer.effect(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
+            if (defect.transition._tag === "StopAfterCompaction")
+              return { needsContinuation: false, step: defect.transition.step }
             yield* Effect.yieldNow
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)

@@ -26,6 +26,7 @@ import path from "path"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
+import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
@@ -416,7 +417,8 @@ const layer = Layer.effect(
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
         yield* result.get(input.sessionID)
-        return yield* new OperationUnavailableError({ operation: "compact" })
+        SessionCompactRequest.request(input.sessionID)
+        yield* execution.resume(input.sessionID).pipe(Effect.ignore)
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
         yield* result.get(sessionID)
