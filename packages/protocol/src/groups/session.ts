@@ -358,6 +358,41 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.rename", "/api/session/:sessionID/rename", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ title: Schema.String }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.rename", summary: "Rename session" }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.archive", "/api/session/:sessionID/archive", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ archived: Schema.Boolean }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.archive", summary: "Archive session" }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.remove", "/api/session/:sessionID/remove", {
+        params: { sessionID: Session.ID },
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.remove", summary: "Delete session" }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.command", "/api/session/:sessionID/command", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({

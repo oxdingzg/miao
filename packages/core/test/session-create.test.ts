@@ -483,4 +483,20 @@ describe("SessionV2.create", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+
+  it.effect("renames, archives, and removes a session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+
+      yield* session.rename({ sessionID: created.id, title: "Renamed" })
+      expect((yield* session.get(created.id)).title).toBe("Renamed")
+
+      yield* session.archive({ sessionID: created.id, archived: true })
+      expect((yield* session.get(created.id)).time.archived).toBeDefined()
+
+      yield* session.remove(created.id)
+      expect((yield* session.list()).some((item) => item.id === created.id)).toBe(false)
+    }),
+  )
 })

@@ -445,6 +445,19 @@ export namespace RevertEvent {
   })
 }
 
+export namespace Info {
+  export const Updated = Event.define({
+    type: "session.next.info.updated",
+    ...options,
+    schema: {
+      ...Base,
+      title: Schema.String.pipe(optional),
+      archived: Schema.Boolean.pipe(optional),
+    },
+  })
+  export type Updated = typeof Updated.type
+}
+
 export const DurableDefinitions = Event.inventory(
   AgentSwitched,
   ModelSwitched,

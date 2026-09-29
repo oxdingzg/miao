@@ -21,6 +21,7 @@ import { AgentV2 } from "./agent"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
+import { SessionV1 } from "./v1/session"
 import { AppProcess } from "./process"
 import { ChildProcess } from "effect/unstable/process"
 import { SessionTodo } from "./session/todo"
@@ -148,6 +149,9 @@ export interface Interface {
     arguments: string
     resume?: boolean
   }) => Effect.Effect<void, NotFoundError>
+  readonly rename: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
+  readonly archive: (input: { sessionID: SessionSchema.ID; archived: boolean }) => Effect.Effect<void, NotFoundError>
+  readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Message[], NotFoundError | MessageDecodeError>
@@ -348,6 +352,27 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         const active = yield* execution.active
         return { type: active.has(sessionID) ? ("busy" as const) : ("idle" as const) }
+      }),
+      rename: Effect.fn("V2Session.rename")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.Info.Updated, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          title: input.title,
+        })
+      }),
+      archive: Effect.fn("V2Session.archive")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.Info.Updated, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          archived: input.archived,
+        })
+      }),
+      remove: Effect.fn("V2Session.remove")(function* (sessionID) {
+        yield* result.get(sessionID)
+        yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+        yield* events.remove(sessionID)
       }),
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)

@@ -385,6 +385,42 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.rename",
+        Effect.fn(function* (ctx) {
+          yield* session.rename({ sessionID: ctx.params.sessionID, title: ctx.payload.title }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` }),
+              ),
+            ),
+          )
+        }),
+      )
+      .handle(
+        "session.archive",
+        Effect.fn(function* (ctx) {
+          yield* session.archive({ sessionID: ctx.params.sessionID, archived: ctx.payload.archived }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` }),
+              ),
+            ),
+          )
+        }),
+      )
+      .handle(
+        "session.remove",
+        Effect.fn(function* (ctx) {
+          yield* session.remove(ctx.params.sessionID).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` }),
+              ),
+            ),
+          )
+        }),
+      )
+      .handle(
         "session.command",
         Effect.fn(function* (ctx) {
           yield* session

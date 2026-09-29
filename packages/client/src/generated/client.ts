@@ -35,6 +35,12 @@ import type {
   SessionsContextOutput,
   SessionsTodoInput,
   SessionsTodoOutput,
+  SessionsRenameInput,
+  SessionsRenameOutput,
+  SessionsArchiveInput,
+  SessionsArchiveOutput,
+  SessionsRemoveInput,
+  SessionsRemoveOutput,
   SessionsCommandInput,
   SessionsCommandOutput,
   SessionsForkInput,
@@ -497,6 +503,41 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      rename: (input: SessionsRenameInput, requestOptions?: RequestOptions) =>
+        request<SessionsRenameOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/rename`,
+            body: { title: input["title"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      archive: (input: SessionsArchiveInput, requestOptions?: RequestOptions) =>
+        request<SessionsArchiveOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/archive`,
+            body: { archived: input["archived"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      remove: (input: SessionsRemoveInput, requestOptions?: RequestOptions) =>
+        request<SessionsRemoveOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/remove`,
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       command: (input: SessionsCommandInput, requestOptions?: RequestOptions) =>
         request<SessionsCommandOutput>(
           {

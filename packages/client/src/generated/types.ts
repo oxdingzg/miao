@@ -698,6 +698,24 @@ export type SessionsTodoOutput = {
   readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
 }["data"]
 
+export type SessionsRenameInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly title: { readonly title: string }["title"]
+}
+
+export type SessionsRenameOutput = void
+
+export type SessionsArchiveInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly archived: { readonly archived: boolean }["archived"]
+}
+
+export type SessionsArchiveOutput = void
+
+export type SessionsRemoveInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsRemoveOutput = void
+
 export type SessionsCommandInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly command: {

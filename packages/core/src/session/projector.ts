@@ -309,6 +309,20 @@ const layer = Layer.effectDiscard(
           .pipe(Effect.orDie)
       }),
     )
+    yield* events.project(SessionEvent.Info.Updated, (event) =>
+      db
+        .update(SessionTable)
+        .set({
+          ...(event.data.title !== undefined ? { title: event.data.title } : {}),
+          ...(event.data.archived !== undefined
+            ? { time_archived: event.data.archived ? DateTime.toEpochMillis(event.data.timestamp) : null }
+            : {}),
+          time_updated: DateTime.toEpochMillis(event.data.timestamp),
+        })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie),
+    )
     yield* events.project(SessionV1.Event.Deleted, (event) =>
       db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie),
     )
