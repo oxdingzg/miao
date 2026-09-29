@@ -131,6 +131,56 @@ export function make<
   return tool
 }
 
+/**
+ * Builds a canonical tool from a raw JSON Schema input instead of an Effect
+ * Schema. Used for tools whose schema comes from an external system (MCP).
+ */
+export function makeExternal(config: {
+  readonly description: string
+  readonly inputSchema: JsonSchema.JsonSchema
+  readonly outputSchema?: JsonSchema.JsonSchema
+  readonly execute: (
+    input: Record<string, unknown>,
+    context: Context,
+  ) => Effect.Effect<ReadonlyArray<Content>, ToolFailure>
+}): AnyTool {
+  const tool = Object.freeze({}) as Definition<any, any>
+  const definitions = new Map<string, ToolDefinition>()
+  runtimes.set(tool, {
+    definition: (name) => {
+      const cached = definitions.get(name)
+      if (cached) return cached
+      const definition = new ToolDefinition({
+        name,
+        description: config.description,
+        inputSchema: config.inputSchema,
+        outputSchema: config.outputSchema,
+      })
+      definitions.set(name, definition)
+      return definition
+    },
+    settle: (call, context) => {
+      const input = typeof call.input === "object" && call.input !== null ? (call.input as Record<string, unknown>) : {}
+      return config.execute(input, context).pipe(
+        Effect.map((parts) => ({
+          structured: {},
+          content: parts.map((part) =>
+            part.type === "text"
+              ? { type: "text" as const, text: part.text }
+              : {
+                  type: "file" as const,
+                  uri: `data:${part.mime};base64,${part.data}`,
+                  mime: part.mime,
+                  name: part.name,
+                },
+          ),
+        })),
+      )
+    },
+  })
+  return tool
+}
+
 export const validateName = (name: string) =>
   /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)
     ? Effect.void

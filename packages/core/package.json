@@ -92,6 +92,7 @@
     "@miao/effect-sqlite-node": "workspace:*",
     "@miao/llm": "workspace:*",
     "@miao/schema": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@npmcli/arborist": "9.4.0",
     "@npmcli/config": "10.8.1",
     "@opencode-ai/plugin": "workspace:*",
