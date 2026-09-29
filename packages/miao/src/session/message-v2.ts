@@ -426,7 +426,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   return converted.filter(
     (message) =>
       message.role !== "assistant" ||
-      message.content.some((part) => part.type === "tool-call" || (part.type === "text" && part.text.length > 0)),
+      (Array.isArray(message.content) &&
+        message.content.some((part) => part.type === "tool-call" || (part.type === "text" && part.text.length > 0))),
   )
 })
 
