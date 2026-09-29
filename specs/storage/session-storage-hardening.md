@@ -1,5 +1,27 @@
 # Session Storage Hardening
 
+## Status (2026-09-29)
+
+Landed in the safe, standalone slice:
+
+- `miao db stats` — reports file/table sizes and the per-event-type breakdown. Verified against the
+  live database: `message.updated.1` 880 MB, `message.part.updated.1` 282 MB.
+- `miao db vacuum` — checkpoints, requests `auto_vacuum = INCREMENTAL`, runs `VACUUM`, then
+  `incremental_vacuum`. Confirmed the pragma flips 0 → 2 on a scratch database.
+- `miao export --format jsonl <session>` — one JSON object per message for grep/diff/backup.
+
+Not in this slice (blocked on the V2 runner becoming the active write path; see Migration plan
+stages 2–4):
+
+- Delta-only event persistence and retiring the V1 per-delta sync events (the 1.26 GB source).
+- Blob externalization for attachments, and materializing references in `to-llm-message.ts`.
+- Log retention / compaction, blob GC.
+
+Reason: the bloat lives in the legacy V1 write path (`message.updated.1` /
+`message.part.updated.1`). The V2 publisher already coalesces deltas
+(`session/runner/publish-llm-event.ts`), so the fix is to finish and activate V2 and migrate the
+old rows — not to patch V1 in place.
+
 ## Goal
 
 Bound the growth of the local SQLite database and remove the write amplification caused by
