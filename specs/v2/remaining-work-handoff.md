@@ -69,6 +69,9 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
     so a reconnect or duplicate listing cannot change the advertised set; covered by `mcp.test.ts`.
     Remaining G9: progressive discovery, OAuth/CIMD, and `ttlMs`/`cacheScope` (not exposed by the
     installed `@modelcontextprotocol/sdk`).
+  - G13 progress: `session.turn` telemetry now logs `cacheMissCause`
+    (`none`/`cold`/`rebuild`/`prefix-change`) and `SessionRunnerMetrics.cacheMissCause` documents the
+    prefix-invalidating actions; covered by `session-runner-metrics.test.ts`.
 
 ## 2. Environment
 

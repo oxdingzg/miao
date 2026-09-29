@@ -136,10 +136,10 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Test + commit + push
 
 ### G13 remainder — cache invalidation + buckets
-- [ ] Document invalidation-action list
-- [ ] Split cache-creation vs reasoning token buckets in telemetry
-- [ ] Verify: misses distinguished by cause
-- [ ] Commit + push
+- [x] Document invalidation-action list — see `SessionRunnerMetrics.cacheMissCause`
+- [ ] Split cache-creation vs reasoning token buckets in telemetry — `tokens` already carries distinct `cache.write` and `reasoning` fields
+- [x] Verify: misses distinguished by cause — `session.turn` logs `cacheMissCause` (`none`/`cold`/`rebuild`/`prefix-change`); `session-runner-metrics.test.ts`
+- [x] Commit + push
 
 ## Definition of Done (each slice)
 - [ ] Behavior verified in `miao-dev` (command + output recorded)

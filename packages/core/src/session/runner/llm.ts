@@ -466,6 +466,11 @@ const layer = Layer.effect(
               warm,
               expectedRebuild,
               cacheMiss: stepSettlement.tokens.cache.write > 0,
+              cacheMissCause: SessionRunnerMetrics.cacheMissCause({
+                cacheWrite: stepSettlement.tokens.cache.write,
+                warm,
+                expectedRebuild,
+              }),
               cacheHitRatio: SessionRunnerMetrics.cacheHitRatio(stepSettlement.tokens),
               cost: stepSettlement.cost,
               tokens: stepSettlement.tokens,
