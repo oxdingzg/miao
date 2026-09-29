@@ -385,6 +385,28 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.command",
+        Effect.fn(function* (ctx) {
+          yield* session
+            .command({
+              sessionID: ctx.params.sessionID,
+              command: ctx.payload.command,
+              arguments: ctx.payload.arguments,
+              resume: ctx.payload.resume,
+            })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session or command not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
+        }),
+      )
+      .handle(
         "session.fork",
         Effect.fn(function* (ctx) {
           return {

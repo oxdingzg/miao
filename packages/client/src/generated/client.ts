@@ -35,6 +35,8 @@ import type {
   SessionsContextOutput,
   SessionsTodoInput,
   SessionsTodoOutput,
+  SessionsCommandInput,
+  SessionsCommandOutput,
   SessionsForkInput,
   SessionsForkOutput,
   SessionsDiffInput,
@@ -495,6 +497,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      command: (input: SessionsCommandInput, requestOptions?: RequestOptions) =>
+        request<SessionsCommandOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/command`,
+            body: { command: input["command"], arguments: input["arguments"], resume: input["resume"] },
+            successStatus: 204,
+            declaredStatuses: [404, 500, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       fork: (input: SessionsForkInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsForkOutput }>(
           {

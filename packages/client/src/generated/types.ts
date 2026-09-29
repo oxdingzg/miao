@@ -698,6 +698,27 @@ export type SessionsTodoOutput = {
   readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
 }["data"]
 
+export type SessionsCommandInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly command: {
+    readonly command: string
+    readonly arguments: string
+    readonly resume?: boolean | undefined
+  }["command"]
+  readonly arguments: {
+    readonly command: string
+    readonly arguments: string
+    readonly resume?: boolean | undefined
+  }["arguments"]
+  readonly resume?: {
+    readonly command: string
+    readonly arguments: string
+    readonly resume?: boolean | undefined
+  }["resume"]
+}
+
+export type SessionsCommandOutput = void
+
 export type SessionsForkInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly messageID?: { readonly messageID?: string | undefined }["messageID"]

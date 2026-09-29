@@ -27,6 +27,8 @@ import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
 import { SessionDiff } from "./session/diff"
 import { SessionFork } from "./session/fork"
+import { SessionCommand } from "./session/command"
+import { CommandV2 } from "./command"
 import { SkillV2 } from "./skill"
 import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
@@ -140,6 +142,12 @@ export interface Interface {
     sessionID: SessionSchema.ID
     messageID?: SessionMessage.ID
   }) => Effect.Effect<SessionSchema.Info, NotFoundError>
+  readonly command: (input: {
+    sessionID: SessionSchema.ID
+    command: string
+    arguments: string
+    resume?: boolean
+  }) => Effect.Effect<void, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Message[], NotFoundError | MessageDecodeError>
@@ -340,6 +348,36 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         const active = yield* execution.active
         return { type: active.has(sessionID) ? ("busy" as const) : ("idle" as const) }
+      }),
+      command: Effect.fn("V2Session.command")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const command = yield* Effect.gen(function* () {
+          const commands = yield* CommandV2.Service
+          return yield* commands.get(input.command)
+        }).pipe(Effect.provide(locations.get(session.location)), Effect.orElseSucceed(() => undefined))
+        if (command === undefined) return yield* new NotFoundError({ sessionID: input.sessionID })
+        const text = SessionCommand.renderTemplate(command.template, input.arguments)
+        if (command.agent !== undefined)
+          yield* events.publish(SessionEvent.AgentSwitched, {
+            sessionID: session.id,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            agent: command.agent,
+          })
+        if (command.model !== undefined)
+          yield* events.publish(SessionEvent.ModelSwitched, {
+            sessionID: session.id,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            model: command.model,
+          })
+        yield* SessionInput.admit(db, events, {
+          id: SessionMessage.ID.create(),
+          sessionID: session.id,
+          prompt: Prompt.make({ text }),
+          delivery: "steer",
+        })
+        if (input.resume !== false) yield* execution.wake(session.id)
       }),
       fork: Effect.fn("V2Session.fork")(function* (input) {
         const parent = yield* result.get(input.sessionID)
