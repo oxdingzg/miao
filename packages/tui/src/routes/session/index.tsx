@@ -2069,7 +2069,7 @@ function BlockTool(props: {
 }
 
 function Shell(props: ToolProps) {
-  const { theme } = useTheme()
+  const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
   const ctx = use()
   const isRunning = createMemo(() => props.part.state.status === "running")
@@ -2106,7 +2106,18 @@ function Shell(props: ToolProps) {
           onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
-            <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
+            <Show
+              when={isRunning()}
+              fallback={
+                <code
+                  conceal={false}
+                  fg={theme.text}
+                  filetype="shellscript"
+                  syntaxStyle={syntax()}
+                  content={`$ ${stringValue(props.input.command)}`}
+                />
+              }
+            >
               <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
             </Show>
             <Show when={output()}>
