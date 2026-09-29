@@ -1,6 +1,6 @@
 export * as Ripgrep from "./ripgrep"
 
-import { Context, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Entry, Match } from "@miao/schema/filesystem"
 import { makeGlobalNode } from "./effect/app-node"
@@ -18,6 +18,9 @@ import { RipgrepBinary } from "./ripgrep/binary"
 const ERROR_BYTES = 8 * 1024
 const MAX_RECORD_BYTES = 64 * 1024
 const MAX_SUBMATCHES = 100
+
+/** Bound a single ripgrep invocation so an unbounded scan cannot hang a tool call. */
+export const DEFAULT_TIMEOUT_MS = 30_000
 
 const RawMatch = Schema.Struct({
   type: Schema.Literal("match"),
@@ -55,6 +58,7 @@ export interface FindInput {
   readonly hidden?: boolean
   readonly follow?: boolean
   readonly signal?: AbortSignal
+  readonly timeout?: Duration.Input
   readonly onEntry?: (entry: Entry) => Effect.Effect<void>
 }
 
@@ -65,6 +69,7 @@ export interface GlobInput {
   readonly hidden?: boolean
   readonly follow?: boolean
   readonly signal?: AbortSignal
+  readonly timeout?: Duration.Input
 }
 
 export interface GrepInput {
@@ -74,6 +79,7 @@ export interface GrepInput {
   readonly include?: string
   readonly limit: number
   readonly signal?: AbortSignal
+  readonly timeout?: Duration.Input
 }
 
 export interface Interface {
@@ -100,6 +106,7 @@ const layer = Layer.effect(
       readonly args: string[]
       readonly limit: number
       readonly signal?: AbortSignal
+      readonly timeout?: Duration.Input
       readonly parse: (line: string) => Effect.Effect<A | undefined, Error>
       readonly pattern?: string
       readonly onItem?: (item: A) => Effect.Effect<void>
@@ -141,7 +148,12 @@ const layer = Layer.effect(
           return { items: code === 1 ? [] : rows, truncated: false, partial: code === 2 }
         }),
       )
-      const abortable = input.signal ? program.pipe(Effect.raceFirst(waitForAbort(input.signal))) : program
+      const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
+      const timed = Effect.timeoutOrElse(program, {
+        duration: timeout,
+        orElse: () => Effect.fail(failure(`ripgrep timed out after ${Duration.toMillis(timeout)}ms`)),
+      })
+      const abortable = input.signal ? timed.pipe(Effect.raceFirst(waitForAbort(input.signal))) : timed
       return abortable.pipe(
         Effect.mapError((cause) =>
           cause instanceof Error || cause instanceof InvalidPatternError
@@ -157,6 +169,7 @@ const layer = Layer.effect(
           cwd: input.cwd,
           limit: input.limit,
           signal: input.signal,
+          timeout: input.timeout,
           args: [
             "--no-config",
             "--files",
@@ -189,6 +202,7 @@ const layer = Layer.effect(
           cwd: input.cwd,
           limit: input.limit,
           signal: input.signal,
+          timeout: input.timeout,
           args: [
             "--no-config",
             "--files",

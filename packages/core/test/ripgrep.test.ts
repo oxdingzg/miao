@@ -62,6 +62,22 @@ describe("Ripgrep", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+  it.live("kills a search that exceeds its timeout and reports a failure", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "file.txt"), "needle\n"))
+
+          const error = yield* (yield* Ripgrep.Service)
+            .grep({ cwd: tmp.path, pattern: "needle", limit: 10, timeout: 1 })
+            .pipe(Effect.flip)
+
+          expect(error.message).toContain("timed out")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
   it.live("does not split surrogate pairs in oversized line previews", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

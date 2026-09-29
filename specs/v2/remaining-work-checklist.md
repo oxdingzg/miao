@@ -101,7 +101,7 @@ Definition of Done. Run in `miao-dev` only.
 
 ### G7 — output bounds / timeouts / caps
 - [ ] Stream shell output to disk with bounded preview
-- [ ] Ripgrep timeout (kill + model-visible error)
+- [x] Ripgrep timeout (kill + model-visible error) — 30s default, `timeout` override
 - [ ] Non-streamed JSON/image body caps
 - [ ] Verify: `yes`/huge lines don't blow memory; long grep times out
 - [ ] Test + commit + push
