@@ -217,7 +217,7 @@ export function Prompt(props: PromptProps) {
   }
 
   function openModelList() {
-    dialog.replace(() => <DialogModel providerID={local.model.current()?.providerID} />)
+    dialog.replace(() => <DialogModel />)
   }
 
   function openProviderList() {
