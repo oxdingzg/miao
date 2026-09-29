@@ -285,6 +285,101 @@ export const {
           break
         }
 
+        case "permission.v2.asked": {
+          const request = event.properties
+          const mapped = {
+            id: request.id,
+            sessionID: request.sessionID,
+            permission: request.action,
+            patterns: request.resources,
+            metadata: request.metadata ?? {},
+            always: request.save ?? [],
+            tool:
+              request.source?.type === "tool"
+                ? { messageID: request.source.messageID, callID: request.source.callID }
+                : undefined,
+          } as unknown as PermissionRequest
+          if (permission.mode === "auto") {
+            void sdk.client.v2.session.permission.reply({
+              sessionID: request.sessionID,
+              requestID: request.id,
+              reply: "once",
+            })
+            break
+          }
+          const requests = store.permission[request.sessionID]
+          if (!requests) {
+            setStore("permission", request.sessionID, [mapped])
+            break
+          }
+          const match = search(requests, request.id, (r) => r.id)
+          if (match.found) {
+            setStore("permission", request.sessionID, match.index, reconcile(mapped))
+            break
+          }
+          setStore(
+            "permission",
+            request.sessionID,
+            produce((draft) => {
+              draft.splice(match.index, 0, mapped)
+            }),
+          )
+          break
+        }
+
+        case "permission.v2.replied": {
+          const requests = store.permission[event.properties.sessionID]
+          if (!requests) break
+          const match = search(requests, event.properties.requestID, (r) => r.id)
+          if (!match.found) break
+          setStore(
+            "permission",
+            event.properties.sessionID,
+            produce((draft) => {
+              draft.splice(match.index, 1)
+            }),
+          )
+          break
+        }
+
+        case "question.v2.asked": {
+          const request = event.properties as unknown as QuestionRequest
+          const requests = store.question[request.sessionID]
+          if (!requests) {
+            setStore("question", request.sessionID, [request])
+            break
+          }
+          const match = search(requests, request.id, (r) => r.id)
+          if (match.found) {
+            setStore("question", request.sessionID, match.index, reconcile(request))
+            break
+          }
+          setStore(
+            "question",
+            request.sessionID,
+            produce((draft) => {
+              draft.splice(match.index, 0, request)
+            }),
+          )
+          break
+        }
+
+        case "question.v2.replied":
+        case "question.v2.rejected": {
+          const requests = store.question[event.properties.sessionID]
+          if (!requests) break
+          const match = search(requests, event.properties.requestID, (r) => r.id)
+          if (!match.found) break
+          setStore(
+            "question",
+            event.properties.sessionID,
+            produce((draft) => {
+              draft.splice(match.index, 1)
+            }),
+          )
+          break
+        }
+
         case "todo.updated":
           setStore("todo", event.properties.sessionID, event.properties.todos)
           break

@@ -5,6 +5,7 @@ import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
+import { Flag } from "@miao/core/flag/flag"
 import { SplitBorder } from "../../ui/border"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
@@ -47,18 +48,29 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
   function submit() {
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void sdk.client.question.reply({
-      requestID: props.request.id,
-      directory: props.directory,
-      answers,
-    })
+    void (Flag.MIAO_TUI_V2
+      ? sdk.client.v2.session.question.reply({
+          sessionID: props.request.sessionID,
+          requestID: props.request.id,
+          questionV2Reply: { answers },
+        })
+      : sdk.client.question.reply({
+          requestID: props.request.id,
+          directory: props.directory,
+          answers,
+        }))
   }
 
   function reject() {
-    void sdk.client.question.reject({
-      requestID: props.request.id,
-      directory: props.directory,
-    })
+    void (Flag.MIAO_TUI_V2
+      ? sdk.client.v2.session.question.reject({
+          sessionID: props.request.sessionID,
+          requestID: props.request.id,
+        })
+      : sdk.client.question.reject({
+          requestID: props.request.id,
+          directory: props.directory,
+        }))
   }
 
   function pick(answer: string, custom: boolean = false) {
@@ -71,11 +83,17 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
       setStore("custom", inputs)
     }
     if (single()) {
-      void sdk.client.question.reply({
-        requestID: props.request.id,
-        directory: props.directory,
-        answers: [[answer]],
-      })
+      void (Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session.question.reply({
+            sessionID: props.request.sessionID,
+            requestID: props.request.id,
+            questionV2Reply: { answers: [[answer]] },
+          })
+        : sdk.client.question.reply({
+            requestID: props.request.id,
+            directory: props.directory,
+            answers: [[answer]],
+          }))
       return
     }
     setStore("tab", store.tab + 1)
