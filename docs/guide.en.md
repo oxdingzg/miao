@@ -3,8 +3,8 @@
 <p align="center"><a href="guide.en.md">English</a> | <a href="guide.zh.md">简体中文</a></p>
 
 > [!NOTE]
-> miao is a personal, pre-release project and is not open source yet. This guide is written for
-> personal and internal use, and aims to cover install, usage, and troubleshooting end to end.
+> miao is pre-1.0 and under active development, so the CLI and configuration may change between
+> releases. This guide covers install, usage, and troubleshooting end to end.
 
 ## 1. What this is
 
