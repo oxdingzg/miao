@@ -21,6 +21,8 @@ import { AgentV2 } from "./agent"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
+import { AppProcess } from "./process"
+import { ChildProcess } from "effect/unstable/process"
 import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
 import { SessionCompactRequest } from "./session/compact-request"
@@ -158,7 +160,7 @@ export interface Interface {
     sessionID: SessionSchema.ID
     command: string
     resume?: boolean
-  }) => Effect.Effect<void, OperationUnavailableError>
+  }) => Effect.Effect<void, NotFoundError>
   readonly skill: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
@@ -192,6 +194,7 @@ const layer = Layer.effect(
     const execution = yield* SessionExecution.Service
     const store = yield* SessionStore.Service
     const creation = yield* SessionCreate.Service
+    const appProcess = yield* AppProcess.Service
     const locations = yield* LocationServiceMap.Service
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
@@ -205,6 +208,21 @@ const layer = Layer.effect(
             }),
         ),
       )
+
+    const runShell = (session: SessionSchema.Info, command: string): Effect.Effect<string> =>
+      Effect.gen(function* () {
+        const result = yield* appProcess.run(
+          ChildProcess.make(command, [], {
+            cwd: session.location.directory,
+            shell: true,
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+          }),
+          { combineOutput: true },
+        )
+        return (result.output ?? Buffer.alloc(0)).toString()
+      }).pipe(Effect.orElseSucceed(() => ""))
 
     const result = Service.of({
       create: Effect.fn("V2Session.create")((input) => creation.create(input)),
@@ -359,8 +377,25 @@ const layer = Layer.effect(
           }),
         ),
       ),
-      shell: Effect.fn("V2Session.shell")(function* () {
-        return yield* new OperationUnavailableError({ operation: "shell" })
+      shell: Effect.fn("V2Session.shell")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const callID = input.id ?? SessionMessage.ID.create()
+        const messageID = SessionMessage.ID.create()
+        yield* events.publish(SessionEvent.Shell.Started, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          messageID,
+          callID,
+          command: input.command,
+        })
+        const output = yield* runShell(session, input.command)
+        yield* events.publish(SessionEvent.Shell.Ended, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          callID,
+          output,
+        })
+        if (input.resume !== false) yield* execution.wake(session.id)
       }),
       skill: Effect.fn("V2Session.skill")(function* () {
         return yield* new OperationUnavailableError({ operation: "skill" })
@@ -457,6 +492,7 @@ export const node = makeGlobalNode({
     SessionExecution.node,
     SessionStore.node,
     SessionCreate.node,
+    AppProcess.node,
     LocationServiceMap.node,
     SessionProjector.node,
   ],

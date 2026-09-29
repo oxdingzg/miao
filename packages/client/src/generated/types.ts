@@ -482,6 +482,14 @@ export type SessionsPromptOutput = {
   }
 }["data"]
 
+export type SessionsShellInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly command: { readonly command: string; readonly resume?: boolean | undefined }["command"]
+  readonly resume?: { readonly command: string; readonly resume?: boolean | undefined }["resume"]
+}
+
+export type SessionsShellOutput = void
+
 export type SessionsCompactInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsCompactOutput = void
