@@ -23,6 +23,7 @@ import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
+import { Flag } from "@miao/core/flag/flag"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -576,11 +577,13 @@ export function Session() {
           })
           return
         }
-        void sdk.client.session.summarize({
-          sessionID: route.sessionID,
-          modelID: selectedModel.modelID,
-          providerID: selectedModel.providerID,
-        })
+        void (Flag.MIAO_TUI_V2
+          ? sdk.client.v2.session.compact({ sessionID: route.sessionID })
+          : sdk.client.session.summarize({
+              sessionID: route.sessionID,
+              modelID: selectedModel.modelID,
+              providerID: selectedModel.providerID,
+            }))
         dialog.clear()
       },
     },
@@ -616,17 +619,22 @@ export function Session() {
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
-        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
+        if (status?.type !== "idle")
+          await (Flag.MIAO_TUI_V2
+            ? sdk.client.v2.session.interrupt({ sessionID: route.sessionID })
+            : sdk.client.session.abort({ sessionID: route.sessionID })
+          ).catch(() => {})
         const message = messagesBeforeRevert().findLast((item) => item.role === "user")
         if (!message) return
-        void sdk.client.session
-          .revert({
-            sessionID: route.sessionID,
-            messageID: message.id,
-          })
-          .then(() => {
-            toBottom()
-          })
+        void (Flag.MIAO_TUI_V2
+          ? sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
+          : sdk.client.session.revert({
+              sessionID: route.sessionID,
+              messageID: message.id,
+            })
+        ).then(() => {
+          toBottom()
+        })
         const parts = sync.data.part[message.id]
         prompt?.set(
           parts.reduce(
@@ -657,16 +665,20 @@ export function Session() {
         if (!messageID) return
         const message = messages().find((x) => x.role === "user" && x.id > messageID)
         if (!message) {
-          void sdk.client.session.unrevert({
-            sessionID: route.sessionID,
-          })
+          void (Flag.MIAO_TUI_V2
+            ? sdk.client.v2.session.revert.clear({ sessionID: route.sessionID })
+            : sdk.client.session.unrevert({
+                sessionID: route.sessionID,
+              }))
           prompt?.set({ input: "", parts: [] })
           return
         }
-        void sdk.client.session.revert({
-          sessionID: route.sessionID,
-          messageID: message.id,
-        })
+        void (Flag.MIAO_TUI_V2
+          ? sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
+          : sdk.client.session.revert({
+              sessionID: route.sessionID,
+              messageID: message.id,
+            }))
       },
     },
     {

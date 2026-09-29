@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
 import { sessionContextToMessages, isLiveSessionV2Event } from "../src/context/session-v2"
+import { promptInputFromParts } from "../src/context/session-v2-write"
 
 const base = { sessionID: "ses_1", cwd: "/work", root: "/work" }
 
@@ -91,4 +92,20 @@ test("classifies live V2 session events for transcript refresh", () => {
   expect(isLiveSessionV2Event("session.next.step.ended")).toBe(true)
   expect(isLiveSessionV2Event("session.next.moved")).toBe(false)
   expect(isLiveSessionV2Event("message.part.updated")).toBe(false)
+})
+
+test("maps prompt parts into the V2 prompt input", () => {
+  expect(promptInputFromParts([{ type: "text", text: "hi" }])).toEqual({ text: "hi" })
+  expect(
+    promptInputFromParts([
+      { type: "text", text: "hi" },
+      { type: "file", url: "file:///a.png", filename: "a.png" },
+    ]),
+  ).toEqual({ text: "hi", files: [{ uri: "file:///a.png", name: "a.png" }] })
+  expect(
+    promptInputFromParts([
+      { type: "text", text: "a" },
+      { type: "text", text: "b" },
+    ]),
+  ).toEqual({ text: "a\n\nb" })
 })

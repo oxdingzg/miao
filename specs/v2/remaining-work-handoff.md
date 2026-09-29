@@ -147,6 +147,19 @@ TUI's existing steer-vs-queue decision.
 Make reads and writes agree: the session route currently reads `sync` (V1). Either read `data` (V2)
 under `MIAO_TUI_V2`, or keep reads on `MIAO_TUI_V2` and gate writes on the same flag.
 
+**A.1 status (2026-09-30).** Landed, gated on `MIAO_TUI_V2`: create, prompt, shell, command,
+interrupt, fork, and compact/revert (`summarize`→`v2.session.compact`, `revert`→
+`v2.session.revert.stage`, `unrevert`→`v2.session.revert.clear`). Payload mapping is
+`promptInputFromParts` in `context/session-v2-write.ts`; the legacy JS SDK was regenerated so
+`v2.session.shell/command/fork` exist (they were missing). Reads already come from V2 under the
+flag (A.0b).
+
+Not yet flipped: permission and question replies. They are blocked on rendering — the route reads
+`sync.data.permission` / `sync.data.question` from V1 events, and V2 requests are not surfaced
+there, so flipping the replies alone would not make the prompts appear. Needs the route to read the
+V2 request lists (or a V2→sync bridge) first. Live end-to-end soak (`miao-dev`, a real provider) is
+still required for the rest.
+
 ### A.2 Acceptance (from `v1-retirement.md`)
 
 - A session driven entirely through `/api/session/*` writes **`session_message` rows and no

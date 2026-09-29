@@ -503,7 +503,10 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (match) {
       continued = true
       if (args.fork) {
-        void sdk.client.session.fork({ sessionID: match }).then((result) => {
+        void (Flag.MIAO_TUI_V2
+          ? sdk.client.v2.session.fork({ sessionID: match }).then((forked) => ({ data: forked.data?.data }))
+          : sdk.client.session.fork({ sessionID: match })
+        ).then((result) => {
           if (result.data?.id) {
             route.navigate({ type: "session", sessionID: result.data.id })
           } else {
@@ -523,7 +526,10 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   createEffect(() => {
     if (forked || sync.status !== "complete" || !args.sessionID || !args.fork) return
     forked = true
-    void sdk.client.session.fork({ sessionID: args.sessionID }).then((result) => {
+    void (Flag.MIAO_TUI_V2
+      ? sdk.client.v2.session.fork({ sessionID: args.sessionID }).then((forked) => ({ data: forked.data?.data }))
+      : sdk.client.session.fork({ sessionID: args.sessionID })
+    ).then((result) => {
       if (result.data?.id) {
         route.navigate({ type: "session", sessionID: result.data.id })
       } else {

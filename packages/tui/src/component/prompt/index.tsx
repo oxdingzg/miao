@@ -24,6 +24,7 @@ import { useSDK } from "../../context/sdk"
 import { useRoute } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
+import { promptInputFromParts } from "../../context/session-v2-write"
 import { useEvent } from "../../context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "../../context/editor"
 import { normalizePromptContent, openEditor } from "../../editor"
@@ -432,10 +433,11 @@ export function Prompt(props: PromptProps) {
             setStore("interrupt", 0)
           }, 5000)
 
-          if (store.interrupt >= 2) {
-            void sdk.client.session.abort({
-              sessionID: props.sessionID,
-            })
+          if (store.interrupt >= 2 && props.sessionID) {
+            const sessionID = props.sessionID
+            void (Flag.MIAO_TUI_V2
+              ? sdk.client.v2.session.interrupt({ sessionID })
+              : sdk.client.session.abort({ sessionID }))
             setStore("interrupt", 0)
           }
           dialog.clear()
@@ -1018,30 +1020,49 @@ export function Prompt(props: PromptProps) {
       if (move.pending() && !directory) return false
       finishMoveProgress = Boolean(move.progress())
 
-      const res = await sdk.client.session.create({
-        directory,
-        workspace: workspaceID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          id: selectedModel.modelID,
-          variant,
-        },
-      })
-
-      if (res.error) {
-        if (finishMoveProgress) move.finishSubmit()
-        console.log("Creating a session failed:", res.error)
-
-        toast.show({
-          message: "Creating a session failed. Open console for more details.",
-          variant: "error",
+      if (Flag.MIAO_TUI_V2) {
+        const res = await sdk.client.v2.session
+          .create(
+            {
+              agent: agent.name,
+              model: { id: selectedModel.modelID, providerID: selectedModel.providerID, variant },
+              location: directory === undefined ? undefined : { directory, workspaceID },
+            },
+            { throwOnError: true },
+          )
+          .catch((error) => {
+            if (finishMoveProgress) move.finishSubmit()
+            toast.show({ message: errorMessage(error), variant: "error" })
+            return undefined
+          })
+        if (!res) return true
+        sessionID = res.data.data.id
+      } else {
+        const res = await sdk.client.session.create({
+          directory,
+          workspace: workspaceID,
+          agent: agent.name,
+          model: {
+            providerID: selectedModel.providerID,
+            id: selectedModel.modelID,
+            variant,
+          },
         })
 
-        return true
-      }
+        if (res.error) {
+          if (finishMoveProgress) move.finishSubmit()
+          console.log("Creating a session failed:", res.error)
 
-      sessionID = res.data.id
+          toast.show({
+            message: "Creating a session failed. Open console for more details.",
+            variant: "error",
+          })
+
+          return true
+        }
+
+        sessionID = res.data.id
+      }
     }
 
     const inputText = expandTrackedPastedText(
@@ -1079,15 +1100,19 @@ export function Prompt(props: PromptProps) {
 
     if (store.mode === "shell") {
       move.startSubmit()
-      void sdk.client.session.shell({
-        sessionID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          modelID: selectedModel.modelID,
-        },
-        command: inputText,
-      })
+      if (Flag.MIAO_TUI_V2) {
+        void sdk.client.v2.session.shell({ sessionID, command: inputText })
+      } else {
+        void sdk.client.session.shell({
+          sessionID,
+          agent: agent.name,
+          model: {
+            providerID: selectedModel.providerID,
+            modelID: selectedModel.modelID,
+          },
+          command: inputText,
+        })
+      }
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1101,43 +1126,47 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void sdk.client.session.command({
-        sessionID,
-        command: command.slice(1),
-        arguments: args,
-        agent: agent.name,
-        model: `${selectedModel.providerID}/${selectedModel.modelID}`,
-        variant,
-        parts: nonTextParts.filter((x) => x.type === "file"),
-      })
+      void (Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session.command({ sessionID, command: command.slice(1), arguments: args })
+        : sdk.client.session.command({
+            sessionID,
+            command: command.slice(1),
+            arguments: args,
+            agent: agent.name,
+            model: `${selectedModel.providerID}/${selectedModel.modelID}`,
+            variant,
+            parts: nonTextParts.filter((x) => x.type === "file"),
+          }))
     } else {
       move.startSubmit()
-      sdk.client.session
-        .prompt(
-          {
-            sessionID,
-            ...selectedModel,
-            agent: agent.name,
-            model: selectedModel,
-            variant,
-            parts: [
-              ...editorParts,
-              {
-                type: "text",
-                text: inputText,
-              },
-              ...nonTextParts,
-            ],
-          },
-          { throwOnError: true },
-        )
-        .catch((error) => {
-          toast.show({
-            title: "Failed to send prompt",
-            message: errorMessage(error),
-            variant: "error",
-          })
+      const parts = [
+        ...editorParts,
+        {
+          type: "text" as const,
+          text: inputText,
+        },
+        ...nonTextParts,
+      ]
+      const request = Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session.prompt({ sessionID, prompt: promptInputFromParts(parts) }, { throwOnError: true })
+        : sdk.client.session.prompt(
+            {
+              sessionID,
+              ...selectedModel,
+              agent: agent.name,
+              model: selectedModel,
+              variant,
+              parts,
+            },
+            { throwOnError: true },
+          )
+      request.catch((error) => {
+        toast.show({
+          title: "Failed to send prompt",
+          message: errorMessage(error),
+          variant: "error",
         })
+      })
       if (editorParts.length > 0) editor.markSelectionSent()
     }
     history.append({

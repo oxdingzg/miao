@@ -19,22 +19,23 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] **A.0b:** V2 runs stream live into the transcript (landed: re-hydrate on `session.next.*` under `MIAO_TUI_V2`; needs a manual `miao-dev` soak)
 
 ## 2. Stage 4 — TUI write flip
-- [ ] Map editor text + non-text parts → `PromptInput.Prompt` (`{ text, files, agents }`)
-- [ ] Choose `delivery` (`steer`|`queue`) from the existing TUI decision
-- [ ] Send prompt: `session.prompt` → `v2.session.prompt` (`prompt/index.tsx:1115`)
-- [ ] Interrupt: `session.abort` → `v2.session.interrupt` (`prompt/index.tsx:436`, `routes/session/index.tsx:619`)
-- [ ] Shell: `session.shell` → `v2.session.shell` (`prompt/index.tsx:1082`)
-- [ ] Command: `session.command` → `v2.session.command` (`prompt/index.tsx:1104`)
-- [ ] Create: `session.create` → `v2.session.create` (`prompt/index.tsx:1021`)
-- [ ] Fork: `session.fork` → `v2.session.fork` (`app.tsx:506,526`, `routes/session/dialog-*.tsx`, `dialog-message.tsx:81`)
-- [ ] Permission reply: → `v2.session.permission.*reply` (`routes/session/permission.tsx:168,180,418,426`, `context/sync.tsx:201`)
-- [ ] Question reply/reject: → `v2.session.question.*` (`routes/session/question.tsx:50,58,74`)
-- [ ] Reads and writes agree (session route reads `data` under `MIAO_TUI_V2`, or gate writes on same flag)
+- [x] Map editor text + non-text parts → `PromptInput.Prompt` (`{ text, files }`) — `context/session-v2-write.ts`
+- [ ] Choose `delivery` (`steer`|`queue`) from the existing TUI decision (currently defaults to the V1 steer behavior)
+- [x] Send prompt: `session.prompt` → `v2.session.prompt` (`prompt/index.tsx`)
+- [x] Interrupt: `session.abort` → `v2.session.interrupt` (`prompt/index.tsx`, `routes/session/index.tsx`)
+- [x] Shell: `session.shell` → `v2.session.shell` (`prompt/index.tsx`)
+- [x] Command: `session.command` → `v2.session.command` (`prompt/index.tsx`)
+- [x] Create: `session.create` → `v2.session.create` (`prompt/index.tsx`)
+- [x] Fork: `session.fork` → `v2.session.fork` (`app.tsx`, `routes/session/dialog-fork-from-timeline.tsx`, `dialog-message.tsx`)
+- [x] Compact/revert: `summarize`→`v2.session.compact`, `revert`→`v2.session.revert.stage`, `unrevert`→`v2.session.revert.clear` (`routes/session/index.tsx`, `dialog-message.tsx`)
+- [ ] Permission reply: → `v2.session.permission.reply` (`routes/session/permission.tsx`, `context/sync.tsx`) — **blocked on rendering**: the route reads `sync.data.permission` from V1 events; V2 requests are not surfaced there
+- [ ] Question reply/reject: → `v2.session.question.*` (`routes/session/question.tsx`) — same rendering gap
+- [x] Reads and writes agree (writes gated on `MIAO_TUI_V2`, the same flag that switches reads)
 - [ ] Verify: driven session writes `session_message`, no `message`/`part` rows (`miao-dev db stats`)
 - [ ] Verify: TUI and app transcripts identical before/after flip
-- [ ] Exercise: prompt, steer, queue, tool loop, compaction, permissions, revert, interrupt
+- [ ] Exercise: prompt, steer, queue, tool loop, compaction, permissions, revert, interrupt (needs live `miao-dev` soak)
 - [ ] Suites green: `core`, `miao`, `tui`, `client`; `bun typecheck`
-- [ ] Commit + push
+- [ ] Commit + push (partial: write sites landed; see notes)
 
 ## 3. Stage 4 — app / desktop / web
 - [ ] Repeat read preflight for app/desktop/web
