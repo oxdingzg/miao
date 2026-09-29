@@ -1684,6 +1684,55 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("reports a failed subagent as an error instead of empty output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate this" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "child", prompt: "Say sub", subagent_type: "build" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.providerError({ message: "child boom" })],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Recovered" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      const context = yield* (yield* SessionStore.Service).context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "task")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "task",
+        state: { status: "error", error: { type: "unknown", message: "Subagent failed: child boom" } },
+      })
+    }),
+  )
+
   it.effect("keeps continuing while todos stay open, then stops on no progress", () =>
     Effect.gen(function* () {
       yield* setup

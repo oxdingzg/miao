@@ -77,7 +77,9 @@ Definition of Done. Run in `miao-dev` only.
 
 ### G3 remainder — subagent liveness
 - [ ] Report summary model/failure; surface dead/killed subagent to parent
-- [ ] Verify: killed subagent reported failed, not hung
+  - [x] Failed subagent step (provider error / `finish: "error"`) returns a `ToolFailure` to the parent instead of "(no output)" — `runSubagent` in `session/runner/llm.ts`
+  - [x] Verify: failed subagent reported as an error state — `session-runner.test.ts` "reports a failed subagent as an error instead of empty output"
+- [ ] Verify: killed subagent reported failed, not hung (interrupt path still open)
 - [ ] Test + commit + push
 
 ### G4 — cancellation settlement / attachments / progress

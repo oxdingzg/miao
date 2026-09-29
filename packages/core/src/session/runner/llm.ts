@@ -553,6 +553,10 @@ const layer = Layer.effect(
       yield* runDrain!({ sessionID: child.id, force: true })
       const context = yield* store.context(child.id)
       const assistant = context.findLast((message) => message.type === "assistant")
+      if (assistant?.type === "assistant" && (assistant.error !== undefined || assistant.finish === "error"))
+        return yield* new ToolFailure({
+          message: `Subagent failed: ${assistant.error?.message ?? "provider error"}`,
+        })
       const text =
         assistant?.type === "assistant"
           ? assistant.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n")
