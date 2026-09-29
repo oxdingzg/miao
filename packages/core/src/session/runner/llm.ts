@@ -419,6 +419,10 @@ const layer = Layer.effect(
             const message = failure instanceof Error ? failure.message : String(failure)
             yield* withPublication(publisher.failUnsettledTools(`Tool execution failed: ${message}`))
           }
+          // A cleanly-closed stream without a step-finish frame is incomplete, not a
+          // successful turn: surface it as a failed step instead of a partial answer.
+          if (stream._tag === "Success" && !publisher.hasProviderError() && publisher.hasActiveAssistant())
+            yield* withPublication(publisher.failAssistant("Provider stream ended without a completion frame"))
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
             const endSnapshot = yield* snapshots.capture()

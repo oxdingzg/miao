@@ -3611,4 +3611,27 @@ describe("SessionRunnerLLM", () => {
       )
     }),
   )
+
+  it.effect("fails a turn whose stream ends without a completion frame", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Hi" }), resume: false })
+
+      requests.length = 0
+      responses = undefined
+      response = [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id: "text-partial" }),
+        LLMEvent.textDelta({ id: "text-partial", text: "partial" }),
+        LLMEvent.textEnd({ id: "text-partial" }),
+      ]
+      yield* session.resume(sessionID)
+
+      const assistant = (yield* (yield* SessionStore.Service).context(sessionID)).findLast(
+        (message) => message.type === "assistant",
+      )
+      expect(assistant?.type === "assistant" ? assistant.error : undefined).toBeDefined()
+    }),
+  )
 })
