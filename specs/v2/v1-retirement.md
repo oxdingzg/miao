@@ -41,19 +41,18 @@ a conformance test. Additive; no behavior change to the V1 release.
 regenerated SDK, verified against the parity table.
 
 Progress: `session.todo`, `session.children`, `session.status`, `session.shell`, `session.skill`,
-`session.diff`, `session.fork` landed. `session.fork` replays the parent's stored event rows
-under the child aggregate through `EventV2.replay`, remapping every message-scoped identifier so
-the projected `session_message` primary keys stay unique. Remaining and why they need dedicated
-design:
+`session.diff`, `session.fork`, `session.command`, `session.rename`, `session.archive`,
+`session.remove` landed. `session.fork` replays the parent's stored event rows under the child
+aggregate through `EventV2.replay`, remapping every message-scoped identifier so the projected
+`session_message` primary keys stay unique. `session.command` renders the V2 template semantics
+(positional placeholders, `$ARGUMENTS`, trailing-argument append). `rename` / `archive` publish a
+new durable `session.next.info.updated` event; `remove` deletes the projected row and clears the
+aggregate's events.
 
-- `session.command` — running a slash command needs the template-render and argument-substitution
-  semantics (placeholders, `@`-file expansion, shell interpolation) defined for V2 and matched to
-  V1, plus optional agent/model selection from `Command.Info`.
-- `session.rename` / `session.archive` / `session.remove` — no durable Session events exist for
-  title / archived / removal in V2 yet; adding them (or a documented direct-update exception)
-  must preserve the event-sourced read model.
-- `revert` / `unrevert` aliases — V2 exposes `revert.stage` / `revert.clear` / `revert.commit`;
-  add the alias surface with the client cutover so the semantics stay consistent.
+`revert` / `unrevert` aliases are not needed: V2 already exposes `revert.stage` / `revert.clear` /
+`revert.commit`, which is what the clients call.
+
+Stage 2 is complete. The remaining work is the cutover itself (Stages 3–5).
 
 
 The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
