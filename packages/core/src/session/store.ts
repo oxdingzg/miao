@@ -126,12 +126,37 @@ const layer = Layer.effect(
           .where(eq(SessionMessageTable.id, messageID))
           .get()
           .pipe(Effect.orDie)
-        return row
-          ? {
-              sessionID: SessionSchema.ID.make(row.session_id),
-              message: yield* decodeMessage({ ...row.data, id: row.id, type: row.type }).pipe(Effect.orDie),
-            }
-          : undefined
+        if (row)
+          return {
+            sessionID: SessionSchema.ID.make(row.session_id),
+            message: yield* decodeMessage({ ...row.data, id: row.id, type: row.type }).pipe(Effect.orDie),
+          }
+        // An un-migrated session has no projection row; serve the legacy one.
+        const legacy = yield* db
+          .select()
+          .from(MessageTable)
+          .where(eq(MessageTable.id, messageID as unknown as SessionV1.MessageID))
+          .get()
+          .pipe(Effect.orDie)
+        if (legacy === undefined) return undefined
+        const sessionID = SessionSchema.ID.make(legacy.session_id)
+        const partRows = yield* db
+          .select()
+          .from(PartTable)
+          .where(eq(PartTable.message_id, messageID as unknown as SessionV1.MessageID))
+          .orderBy(asc(PartTable.time_created), asc(PartTable.id))
+          .all()
+          .pipe(Effect.orDie)
+        const [message] = SessionV1Read.map([
+          {
+            info: { ...(legacy.data as object), id: legacy.id, sessionID } as SessionV1.Info,
+            parts: partRows.map(
+              (part) =>
+                ({ ...(part.data as object), id: part.id, sessionID, messageID: part.message_id }) as SessionV1.Part,
+            ),
+          },
+        ])
+        return message === undefined ? undefined : { sessionID, message }
       }),
     })
   }),

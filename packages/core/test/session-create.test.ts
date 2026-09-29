@@ -24,6 +24,7 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionInput } from "@miao/core/session/input"
 import { SessionEvent } from "@miao/core/session/event"
 import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "@miao/core/session/sql"
+import { SessionMessage } from "@miao/core/session/message"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTodo } from "@miao/core/session/todo"
 import { WorkspaceV2 } from "@miao/core/workspace"
@@ -780,6 +781,43 @@ describe("SessionV2.create", () => {
         "legacy 1",
         "legacy 2",
       ])
+    }),
+  )
+
+  it.effect("reads a single legacy message through the message endpoint fallback", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacyC1",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacyC1",
+          message_id: "msg_legacyC1",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy single" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      const message = yield* session.message({
+        sessionID: created.id,
+        messageID: SessionMessage.ID.make("msg_legacyC1"),
+      })
+      expect(message).toMatchObject({ type: "user", text: "legacy single" })
     }),
   )
 
