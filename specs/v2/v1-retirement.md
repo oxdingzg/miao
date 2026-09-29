@@ -41,14 +41,11 @@ a conformance test. Additive; no behavior change to the V1 release.
 regenerated SDK, verified against the parity table.
 
 Progress: `session.todo`, `session.children`, `session.status`, `session.shell`, `session.skill`,
-`session.diff` landed. Remaining and why they need dedicated design:
+`session.diff`, `session.fork` landed. `session.fork` replays the parent's stored event rows
+under the child aggregate through `EventV2.replay`, remapping every message-scoped identifier so
+the projected `session_message` primary keys stay unique. Remaining and why they need dedicated
+design:
 
-- `session.fork` — the event-sourced message model has no per-message copy primitive. Replaying
-  the parent's durable events verbatim under a new Session aggregate reuses the parent's
-  `messageID` / `assistantMessageID` / `callID`, which collide with the `session_message` primary
-  key (verified by an attempted implementation). A correct fork needs an event-replay primitive
-  that **remaps message-scoped identifiers** across every message-scoped event before publishing
-  under the child aggregate.
 - `session.command` — running a slash command needs the template-render and argument-substitution
   semantics (placeholders, `@`-file expansion, shell interpolation) defined for V2 and matched to
   V1, plus optional agent/model selection from `Command.Info`.
@@ -57,6 +54,7 @@ Progress: `session.todo`, `session.children`, `session.status`, `session.shell`,
   must preserve the event-sourced read model.
 - `revert` / `unrevert` aliases — V2 exposes `revert.stage` / `revert.clear` / `revert.commit`;
   add the alias surface with the client cutover so the semantics stay consistent.
+
 
 The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
 missing, so the cutover (Stage 3–4) can proceed without them and they can be filled in behind it.
