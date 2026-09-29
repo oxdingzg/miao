@@ -415,4 +415,68 @@ describe("SessionRunCoordinator", () => {
       }),
     ),
   )
+
+  it.effect("returns immediately from awaitIdle when idle", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const coordinator = yield* SessionRunCoordinator.make({ drain: () => Effect.void })
+        yield* coordinator.awaitIdle("session")
+      }),
+    ),
+  )
+
+  it.effect("awaits the active execution before returning", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>()
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: () => Deferred.await(gate),
+        })
+
+        yield* coordinator.wake("session")
+        yield* Effect.yieldNow
+        expect(Array.from(yield* coordinator.active)).toEqual(["session"])
+
+        const waiting = yield* coordinator.awaitIdle("session").pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(waiting)
+
+        expect(Array.from(yield* coordinator.active)).toEqual([])
+      }),
+    ),
+  )
+
+  it.effect("awaits through a coalesced successor", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const secondStarted = yield* Deferred.make<void>()
+        const secondGate = yield* Deferred.make<void>()
+        let runs = 0
+        let wake: (key: string) => Effect.Effect<void> = () => Effect.void
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: (key) =>
+            Effect.sync(() => ++runs).pipe(
+              Effect.flatMap((run) =>
+                run === 1
+                  ? wake(key)
+                  : Deferred.succeed(secondStarted, undefined).pipe(Effect.andThen(Deferred.await(secondGate))),
+              ),
+            ),
+        })
+        wake = coordinator.wake
+
+        const resumed = yield* coordinator.run("session").pipe(Effect.forkChild)
+        yield* Deferred.await(secondStarted)
+
+        const waiting = yield* coordinator.awaitIdle("session").pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(secondGate, undefined)
+        yield* Effect.all([Fiber.join(resumed), Fiber.join(waiting)])
+
+        expect(runs).toBe(2)
+        expect(Array.from(yield* coordinator.active)).toEqual([])
+      }),
+    ),
+  )
 })
