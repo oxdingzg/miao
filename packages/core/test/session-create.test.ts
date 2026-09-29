@@ -17,6 +17,7 @@ import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionV1 } from "@miao/core/v1/session"
 import { SessionBackfill } from "@miao/core/session/backfill"
+import { LegacyNotMigratedError } from "@miao/core/session/error"
 import { Prompt } from "@miao/core/session/prompt"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionExecution } from "@miao/core/session/execution"
@@ -588,6 +589,99 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.effect("refuses to write to a legacy session until it is backfilled", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy4",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy4",
+          message_id: "msg_legacy4",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy hi" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      const error = yield* session
+        .prompt({ sessionID: created.id, prompt: Prompt.make({ text: "hi" }), resume: false })
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(LegacyNotMigratedError)
+      expect((error as LegacyNotMigratedError).state).toBe("legacy")
+
+      yield* SessionBackfill.backfill(database.db)
+      const admitted = yield* session.prompt({
+        sessionID: created.id,
+        prompt: Prompt.make({ text: "hi" }),
+        resume: false,
+      })
+      expect(admitted.sessionID).toBe(created.id)
+    }),
+  )
+
+  it.effect("reports mixed legacy/projected sessions instead of silently skipping them", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy5",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "p", modelID: "m" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy5",
+          message_id: "msg_legacy5",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy hi" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(SessionMessageTable)
+        .values({
+          id: "msg_mixed",
+          session_id: created.id,
+          type: "user",
+          seq: 0,
+          time_created: 2,
+          time_updated: 2,
+          data: { text: "v2 hi", time: { created: 2 } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      const result = yield* SessionBackfill.backfill(database.db)
+      expect(result.migrated).toBe(0)
+      expect(result.mixed).toEqual([created.id])
+    }),
+  )
+
   it.effect("backfills legacy V1 messages into the V2 projection", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -617,7 +711,7 @@ describe("SessionV2.create", () => {
         .run()
         .pipe(Effect.orDie)
 
-      expect(yield* SessionBackfill.backfill(database.db)).toBe(1)
+      expect((yield* SessionBackfill.backfill(database.db)).migrated).toBe(1)
       const rows = yield* database.db
         .select()
         .from(SessionMessageTable)

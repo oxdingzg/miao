@@ -175,7 +175,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ agent: Agent.ID }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -191,7 +191,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ model: Model.Ref }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -212,7 +212,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: SessionInput.Admitted }),
-        error: [ConflictError, SessionNotFoundError],
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -401,7 +401,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, UnknownError],
+        error: [SessionNotFoundError, UnknownError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -417,7 +417,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ messageID: SessionMessage.ID.pipe(Schema.optional) }),
         success: Schema.Struct({ data: Session.Info }),
-        error: [SessionNotFoundError, UnknownError],
+        error: [SessionNotFoundError, UnknownError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

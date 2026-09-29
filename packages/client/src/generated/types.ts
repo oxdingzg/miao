@@ -33,14 +33,6 @@ export type SessionNotFoundError = {
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
 
-export type ConflictError = {
-  readonly _tag: "ConflictError"
-  readonly message: string
-  readonly resource?: string | undefined
-}
-export const isConflictError = (value: unknown): value is ConflictError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
-
 export type ServiceUnavailableError = {
   readonly _tag: "ServiceUnavailableError"
   readonly message: string
@@ -48,6 +40,14 @@ export type ServiceUnavailableError = {
 }
 export const isServiceUnavailableError = (value: unknown): value is ServiceUnavailableError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ServiceUnavailableError"
+
+export type ConflictError = {
+  readonly _tag: "ConflictError"
+  readonly message: string
+  readonly resource?: string | undefined
+}
+export const isConflictError = (value: unknown): value is ConflictError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
 export type MessageNotFoundError = {
   readonly _tag: "MessageNotFoundError"

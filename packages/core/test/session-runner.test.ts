@@ -25,7 +25,7 @@ import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionTodo } from "@miao/core/session/todo"
 import { Snapshot } from "@miao/core/snapshot"
-import { ContextSnapshotDecodeError } from "@miao/core/session/error"
+import { ContextSnapshotDecodeError, LegacyNotMigratedError } from "@miao/core/session/error"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionInput } from "@miao/core/session/input"
 import { SessionMessage } from "@miao/core/session/message"
@@ -44,6 +44,8 @@ import { ConfigCompaction } from "@miao/core/config/compaction"
 import { ConfigLoop } from "@miao/core/config/loop"
 import { Tool } from "@miao/core/tool/tool"
 import {
+  MessageTable,
+  PartTable,
   SessionContextEpochTable,
   SessionInputTable,
   SessionMessageTable,
@@ -3632,6 +3634,42 @@ describe("SessionRunnerLLM", () => {
         (message) => message.type === "assistant",
       )
       expect(assistant?.type === "assistant" ? assistant.error : undefined).toBeDefined()
+    }),
+  )
+
+  it.effect("refuses to drain a session whose history is still legacy-only", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy_runner",
+          session_id: sessionID,
+          time_created: 1,
+          time_updated: 1,
+          data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "fake", modelID: "fake-model" } },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy_runner",
+          message_id: "msg_legacy_runner",
+          session_id: sessionID,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      const runner = yield* SessionRunner.Service
+      requests.length = 0
+      const error = yield* runner.run({ sessionID, force: true }).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(LegacyNotMigratedError)
+      expect(requests).toHaveLength(0)
     }),
   )
 })

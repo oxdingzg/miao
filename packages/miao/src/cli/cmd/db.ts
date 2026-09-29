@@ -104,8 +104,12 @@ const BackfillCommand = effectCmd({
   instance: false,
   handler: Effect.fn("Cli.db.backfill")(function* () {
     const { db } = yield* Database.Service
-    const migrated = yield* SessionBackfill.backfill(db)
-    console.log(`backfilled ${migrated} session(s)`)
+    const result = yield* SessionBackfill.backfill(db)
+    console.log(`backfilled ${result.migrated} session(s)`)
+    if (result.mixed.length > 0) {
+      console.warn(`skipped ${result.mixed.length} session(s) with mixed legacy and V2 history:`)
+      for (const id of result.mixed) console.warn(`  ${id}`)
+    }
   }),
 })
 

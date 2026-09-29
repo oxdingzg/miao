@@ -35,7 +35,7 @@ import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
-import { MessageDecodeError } from "./session/error"
+import { LegacyNotMigratedError, MessageDecodeError } from "./session/error"
 import { SessionEvent } from "./session/event"
 import { SessionInput } from "./session/input"
 import { Snapshot } from "./snapshot"
@@ -107,7 +107,7 @@ export class OperationUnavailableError extends Schema.TaggedErrorClass<Operation
   },
 ) {}
 
-export { ContextSnapshotDecodeError, MessageDecodeError } from "./session/error"
+export { ContextSnapshotDecodeError, LegacyNotMigratedError, MessageDecodeError } from "./session/error"
 
 export class PromptConflictError extends Schema.TaggedErrorClass<PromptConflictError>()("Session.PromptConflictError", {
   sessionID: SessionSchema.ID,
@@ -116,7 +116,12 @@ export class PromptConflictError extends Schema.TaggedErrorClass<PromptConflictE
 export const MessageNotFoundError = SessionRevert.MessageNotFoundError
 export type MessageNotFoundError = SessionRevert.MessageNotFoundError
 
-export type Error = NotFoundError | MessageDecodeError | OperationUnavailableError | PromptConflictError
+export type Error =
+  | NotFoundError
+  | MessageDecodeError
+  | OperationUnavailableError
+  | PromptConflictError
+  | LegacyNotMigratedError
 
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<SessionSchema.Info[]>
@@ -142,13 +147,13 @@ export interface Interface {
   readonly fork: (input: {
     sessionID: SessionSchema.ID
     messageID?: SessionMessage.ID
-  }) => Effect.Effect<SessionSchema.Info, NotFoundError>
+  }) => Effect.Effect<SessionSchema.Info, NotFoundError | LegacyNotMigratedError>
   readonly command: (input: {
     sessionID: SessionSchema.ID
     command: string
     arguments: string
     resume?: boolean
-  }) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
   readonly rename: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly archive: (input: { sessionID: SessionSchema.ID; archived: boolean }) => Effect.Effect<void, NotFoundError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
@@ -164,31 +169,37 @@ export interface Interface {
     after?: number
     limit: number
   }) => Effect.Effect<{ events: ReadonlyArray<SessionEvent.DurableEvent>; hasMore: boolean }, NotFoundError>
-  readonly switchAgent: (input: { sessionID: SessionSchema.ID; agent: string }) => Effect.Effect<void, NotFoundError>
+  readonly switchAgent: (input: {
+    sessionID: SessionSchema.ID
+    agent: string
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
   readonly switchModel: (input: {
     sessionID: SessionSchema.ID
     model: ModelV2.Ref
-  }) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
     prompt: PromptInput.Prompt
     delivery?: SessionInput.Delivery
     resume?: boolean
-  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError>
+  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | LegacyNotMigratedError>
   readonly shell: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
     command: string
     resume?: boolean
-  }) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
   readonly skill: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
     skill: string
     resume?: boolean
-  }) => Effect.Effect<void, NotFoundError>
-  readonly compact: (input: CompactInput) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
+  readonly compact: (input: CompactInput) => Effect.Effect<
+    void,
+    NotFoundError | OperationUnavailableError | LegacyNotMigratedError
+  >
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
@@ -244,6 +255,14 @@ const layer = Layer.effect(
         )
         return (result.output ?? Buffer.alloc(0)).toString()
       }).pipe(Effect.orElseSucceed(() => ""))
+
+    // V2 writes must not touch a session whose history is still legacy-only, or
+    // the projection and the legacy tables would mix with no safe ordering.
+    const requireMigrated = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      const state = yield* store.historyState(sessionID)
+      if (state === "legacy" || state === "mixed")
+        return yield* new LegacyNotMigratedError({ sessionID, state })
+    })
 
     const result = Service.of({
       create: Effect.fn("V2Session.create")((input) => creation.create(input)),
@@ -376,6 +395,7 @@ const layer = Layer.effect(
       }),
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
         const command = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
           return yield* commands.get(input.command)
@@ -406,6 +426,7 @@ const layer = Layer.effect(
       }),
       fork: Effect.fn("V2Session.fork")(function* (input) {
         const parent = yield* result.get(input.sessionID)
+        yield* requireMigrated(parent.id)
         const child = yield* creation.create({
           parentID: input.sessionID,
           agent: parent.agent,
@@ -501,6 +522,7 @@ const layer = Layer.effect(
         Effect.uninterruptible(
           Effect.gen(function* () {
             yield* result.get(input.sessionID)
+            yield* requireMigrated(input.sessionID)
             const prompt = resolvePrompt(input.prompt)
             const messageID = input.id ?? SessionMessage.ID.create()
             const delivery = input.delivery ?? "steer"
@@ -526,6 +548,7 @@ const layer = Layer.effect(
       ),
       shell: Effect.fn("V2Session.shell")(function* (input) {
         const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
         const callID = input.id ?? SessionMessage.ID.create()
         const messageID = SessionMessage.ID.create()
         yield* events.publish(SessionEvent.Shell.Started, {
@@ -546,6 +569,7 @@ const layer = Layer.effect(
       }),
       skill: Effect.fn("V2Session.skill")(function* (input) {
         const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
         const skill = yield* Effect.gen(function* () {
           const skills = yield* SkillV2.Service
           return (yield* skills.list()).find((item) => item.name === input.skill)
@@ -561,6 +585,7 @@ const layer = Layer.effect(
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         yield* result.get(input.sessionID)
+        yield* requireMigrated(input.sessionID)
         yield* events.publish(SessionEvent.AgentSwitched, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
@@ -570,6 +595,7 @@ const layer = Layer.effect(
       }),
       switchModel: Effect.fn("V2Session.switchModel")(function* (input) {
         const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
         if (
           session.model?.providerID === input.model.providerID &&
           session.model.id === input.model.id &&
@@ -585,6 +611,7 @@ const layer = Layer.effect(
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
         yield* result.get(input.sessionID)
+        yield* requireMigrated(input.sessionID)
         SessionCompactRequest.request(input.sessionID)
         yield* execution.resume(input.sessionID).pipe(Effect.ignore)
       }),
@@ -595,6 +622,7 @@ const layer = Layer.effect(
       active: execution.active,
       resume: Effect.fn("V2Session.resume")(function* (sessionID) {
         yield* result.get(sessionID)
+        yield* requireMigrated(sessionID)
         yield* execution.resume(sessionID)
       }),
       interrupt: Effect.fn("V2Session.interrupt")((sessionID) =>

@@ -1,6 +1,6 @@
 export * as SessionStore from "./store"
 
-import { asc, eq } from "drizzle-orm"
+import { asc, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -13,6 +13,17 @@ import { SessionV1 } from "../v1/session"
 import { SessionV1Read } from "./v1-read"
 import { fromRow } from "./info"
 
+/**
+ * Storage provenance of a session's history:
+ * - `empty`: nothing recorded yet.
+ * - `legacy`: only V1 `message` / `part` rows, never projected.
+ * - `projected`: every legacy message (if any) has a V2 projection.
+ * - `mixed`: V2 rows exist but some legacy message has no projection, so the
+ *   two histories cannot be ordered safely. Should not happen; a backfill
+ *   either never ran or was interrupted.
+ */
+export type HistoryState = "empty" | "legacy" | "projected" | "mixed"
+
 export interface Interface {
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info | undefined>
   readonly context: (sessionID: SessionSchema.ID) => Effect.Effect<SessionMessage.Message[], MessageDecodeError>
@@ -20,6 +31,7 @@ export interface Interface {
     sessionID: SessionSchema.ID,
     baselineSeq: number,
   ) => Effect.Effect<SessionMessage.Message[], MessageDecodeError>
+  readonly historyState: (sessionID: SessionSchema.ID) => Effect.Effect<HistoryState>
   readonly message: (
     messageID: SessionMessage.ID,
   ) => Effect.Effect<{ readonly sessionID: SessionSchema.ID; readonly message: SessionMessage.Message } | undefined>
@@ -61,6 +73,38 @@ const layer = Layer.effect(
       }))
     })
 
+    const historyState: Interface["historyState"] = Effect.fn("SessionStore.historyState")(function* (sessionID) {
+      const legacy = yield* db
+        .select({ id: MessageTable.id })
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, sessionID))
+        .limit(1)
+        .get()
+        .pipe(Effect.orDie)
+      const projected = yield* db
+        .select({ id: SessionMessageTable.id })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .limit(1)
+        .get()
+        .pipe(Effect.orDie)
+      if (legacy === undefined) return projected === undefined ? "empty" : "projected"
+      if (projected === undefined) return "legacy"
+      // Both exist: a completed backfill preserves legacy message ids, so only
+      // a legacy message missing from the projection makes the state unsafe.
+      const stranded = yield* db
+        .get(sql`
+          SELECT 1 AS present FROM message m
+          WHERE m.session_id = ${sessionID}
+            AND NOT EXISTS (
+              SELECT 1 FROM session_message x WHERE x.id = m.id AND x.session_id = m.session_id
+            )
+          LIMIT 1
+        `)
+        .pipe(Effect.orDie)
+      return stranded === undefined ? "projected" : "mixed"
+    })
+
     return Service.of({
       get: Effect.fn("SessionStore.get")(function* (sessionID) {
         const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
@@ -81,6 +125,7 @@ const layer = Layer.effect(
       runnerContext: Effect.fn("SessionStore.runnerContext")(function* (sessionID, baselineSeq) {
         return yield* SessionHistory.loadForRunner(db, sessionID, baselineSeq)
       }),
+      historyState,
       message: Effect.fn("SessionStore.message")(function* (messageID) {
         const row = yield* db
           .select()

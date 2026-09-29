@@ -40,6 +40,7 @@ import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTodo } from "../todo"
+import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
@@ -561,6 +562,12 @@ const layer = Layer.effect(
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
+      // Refuse to run a provider turn on a session whose history is still only
+      // in the legacy V1 tables: the projected context would be empty and the
+      // turn would silently drop everything recorded before the V2 runtime.
+      const historyState = yield* store.historyState(input.sessionID)
+      if (historyState === "legacy" || historyState === "mixed")
+        return yield* new LegacyNotMigratedError({ sessionID: input.sessionID, state: historyState })
       const settings = yield* readSettings()
       let loopIterations = 0
       let lastTodoSignature: string | undefined

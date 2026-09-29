@@ -11,11 +11,20 @@ import { SessionV1Read } from "./v1-read"
 
 const encode = Schema.encodeSync(SessionMessage.Message)
 
+export interface Result {
+  /** Number of sessions converted from legacy-only history. */
+  readonly migrated: number
+  /**
+   * Sessions that hold both legacy and projected history. Backfill cannot order
+   * these safely, so they are reported instead of silently skipped.
+   */
+  readonly mixed: ReadonlyArray<string>
+}
+
 /**
  * One-time, idempotent backfill: converts legacy V1 `message` / `part` rows into
  * projected V2 `session_message` rows for sessions that have no V2 projection
- * yet. Each session is migrated in its own transaction. Returns the number of
- * sessions migrated.
+ * yet. Each session is migrated in its own transaction.
  */
 export const backfill = (db: Database.Interface["db"]) =>
   Effect.gen(function* () {
@@ -24,6 +33,16 @@ export const backfill = (db: Database.Interface["db"]) =>
         SELECT s.id AS id FROM session s
         WHERE EXISTS (SELECT 1 FROM message m WHERE m.session_id = s.id)
           AND NOT EXISTS (SELECT 1 FROM session_message x WHERE x.session_id = s.id)
+      `)
+      .pipe(Effect.orDie)
+
+    const mixed = yield* db
+      .all<{ id: string }>(sql`
+        SELECT DISTINCT m.session_id AS id FROM message m
+        WHERE NOT EXISTS (
+            SELECT 1 FROM session_message x WHERE x.id = m.id AND x.session_id = m.session_id
+          )
+          AND EXISTS (SELECT 1 FROM session_message y WHERE y.session_id = m.session_id)
       `)
       .pipe(Effect.orDie)
 
@@ -90,5 +109,5 @@ export const backfill = (db: Database.Interface["db"]) =>
         .pipe(Effect.orDie)
       migrated += 1
     }
-    return migrated
+    return { migrated, mixed: mixed.map((row) => row.id) }
   })

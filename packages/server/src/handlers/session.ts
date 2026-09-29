@@ -16,6 +16,9 @@ import { AbsolutePath } from "@miao/core/schema"
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
 
+const legacyNotMigrated = (error: SessionV2.LegacyNotMigratedError) =>
+  new ServiceUnavailableError({ message: error.message, service: "session-migration" })
+
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
@@ -116,6 +119,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }),
               ),
             ),
+            Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
           )
           return HttpApiSchema.NoContent.make()
         }),
@@ -132,6 +136,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }),
               ),
             ),
+            Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
           )
           return HttpApiSchema.NoContent.make()
         }),
@@ -165,6 +170,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                     }),
                   ),
                 ),
+                Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
               ),
           }
         }),
@@ -185,6 +191,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }),
               ),
             ),
+            Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
           )
         }),
       )
@@ -204,6 +211,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }),
               ),
             ),
+            Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
           )
         }),
       )
@@ -227,6 +235,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }),
               ),
             ),
+            Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
           )
           return HttpApiSchema.NoContent.make()
         }),
@@ -439,6 +448,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   }),
                 ),
               ),
+              Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
             )
         }),
       )
@@ -457,6 +467,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                     }),
                   ),
                 ),
+                Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
               ),
           }
         }),
