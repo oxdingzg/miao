@@ -26,6 +26,8 @@ import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
+import { sessionContextToMessages } from "./session-v2"
+import { Flag } from "@miao/core/flag/flag"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
 import { batch, onMount } from "solid-js"
@@ -616,9 +618,22 @@ export const {
           const tracker = { messages: new Set<string>(), parts: new Set<string>() }
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
+            const sessionPromise = sdk.client.session.get({ sessionID }, { throwOnError: true })
+            const messagesPromise = Flag.MIAO_TUI_V2
+              ? sessionPromise.then((session) =>
+                  sdk.client.v2.session.context({ sessionID }, { throwOnError: true }).then((x) => ({
+                    data: sessionContextToMessages({
+                      sessionID,
+                      cwd: session.data!.directory,
+                      root: session.data!.directory,
+                      messages: x.data.data,
+                    }),
+                  })),
+                )
+              : sdk.client.session.messages({ sessionID, limit: 100 })
             const [session, messages, todo, diff] = await Promise.all([
-              sdk.client.session.get({ sessionID }, { throwOnError: true }),
-              sdk.client.session.messages({ sessionID, limit: 100 }),
+              sessionPromise,
+              messagesPromise,
               sdk.client.session.todo({ sessionID }),
               sdk.client.session.diff({ sessionID }),
             ])

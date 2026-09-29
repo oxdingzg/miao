@@ -72,6 +72,9 @@ export const Flag = {
   get MIAO_TUI_CONFIG() {
     return process.env["MIAO_TUI_CONFIG"]
   },
+  get MIAO_TUI_V2() {
+    return truthy("MIAO_TUI_V2")
+  },
   get MIAO_CONFIG_DIR() {
     return process.env["MIAO_CONFIG_DIR"]
   },

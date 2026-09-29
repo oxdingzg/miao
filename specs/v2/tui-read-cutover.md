@@ -48,4 +48,17 @@ surface. It must not leave the daily TUI half-switched.
 
 ## Status
 
-Not started. Requires a live `miao-dev` session to verify; cannot be validated headlessly.
+First slice landed, flag-gated and default-off:
+
+- `Flag.MIAO_TUI_V2` (`MIAO_TUI_V2=1`) selects the V2 read path.
+- `packages/tui/src/context/session-v2.ts` maps `session.context` output to the TUI's
+  `Message` + `Part` shape (unit-tested in `packages/tui/test/session-v2.test.ts`).
+- `session.sync` loads messages from `sdk.client.v2.session.context` when the flag is set,
+  keeping `session.get`/`todo`/`diff` on V1. Live updates stay on the V1 event stream, so
+  there is still exactly one writer.
+
+Still open (needs a live `miao-dev` session):
+
+- End-to-end rendering of a projected session and a legacy session under the flag.
+- The `LegacyNotMigratedError` prompt hint on send.
+- Flipping the default on, then the write flip (Stage 4).
