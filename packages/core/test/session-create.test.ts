@@ -21,7 +21,7 @@ import { SessionProjector } from "@miao/core/session/projector"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionInput } from "@miao/core/session/input"
 import { SessionEvent } from "@miao/core/session/event"
-import { SessionTable } from "@miao/core/session/sql"
+import { MessageTable, PartTable, SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTodo } from "@miao/core/session/todo"
 import { WorkspaceV2 } from "@miao/core/workspace"
@@ -497,6 +497,44 @@ describe("SessionV2.create", () => {
 
       yield* session.remove(created.id)
       expect((yield* session.list()).some((item) => item.id === created.id)).toBe(false)
+    }),
+  )
+
+  it.effect("reads legacy V1 messages when there is no V2 projection", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(MessageTable)
+        .values({
+          id: "msg_legacy1",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: {
+            role: "user",
+            time: { created: 1 },
+            agent: "build",
+            model: { providerID: "p", modelID: "m" },
+          },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .insert(PartTable)
+        .values({
+          id: "prt_legacy1",
+          message_id: "msg_legacy1",
+          session_id: created.id,
+          time_created: 1,
+          time_updated: 1,
+          data: { type: "text", text: "legacy hi" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(yield* session.context(created.id)).toMatchObject([{ type: "user", text: "legacy hi" }])
     }),
   )
 })
