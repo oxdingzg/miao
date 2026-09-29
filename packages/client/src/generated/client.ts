@@ -17,6 +17,8 @@ import type {
   SessionsSwitchModelOutput,
   SessionsPromptInput,
   SessionsPromptOutput,
+  SessionsSkillInput,
+  SessionsSkillOutput,
   SessionsShellInput,
   SessionsShellOutput,
   SessionsCompactInput,
@@ -387,6 +389,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      skill: (input: SessionsSkillInput, requestOptions?: RequestOptions) =>
+        request<SessionsSkillOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/skill`,
+            body: { skill: input["skill"], resume: input["resume"] },
+            successStatus: 204,
+            declaredStatuses: [404, 503, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       shell: (input: SessionsShellInput, requestOptions?: RequestOptions) =>
         request<SessionsShellOutput>(
           {

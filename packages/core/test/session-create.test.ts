@@ -313,21 +313,6 @@ describe("SessionV2.create", () => {
     }),
   )
 
-  it.effect("reports unfinished Session operations as unavailable", () =>
-    Effect.gen(function* () {
-      const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
-      const unavailable = (
-        effect: Effect.Effect<void, SessionV2.NotFoundError | SessionV2.OperationUnavailableError>,
-      ) =>
-        effect.pipe(
-          Effect.flip,
-          Effect.map((error) => (error instanceof SessionV2.OperationUnavailableError ? error.operation : "not-found")),
-        )
-
-      expect(yield* unavailable(session.skill({ sessionID: created.id, skill: "review" }))).toBe("skill")
-    }),
-  )
 
   it.effect("switches the selected agent through the durable Session event", () =>
     Effect.gen(function* () {
@@ -455,5 +440,24 @@ describe("SessionV2.create", () => {
         { content: "Ship it", status: "in_progress", priority: "high" },
       ])
     }),
+  )
+
+  it.live("records a shell command and its output in the session", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const session = yield* SessionV2.Service
+          const created = yield* session.create({
+            location: Location.Ref.make({ directory: AbsolutePath.make(tmp.path) }),
+          })
+          yield* session.shell({ sessionID: created.id, command: "echo hello-shell", resume: false })
+          const messages = yield* session.context(created.id)
+          const shell = messages.find((message) => message.type === "shell")
+          expect(shell).toMatchObject({ type: "shell", command: "echo hello-shell" })
+          expect(shell?.type === "shell" ? shell.output : "").toContain("hello-shell")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
   )
 })

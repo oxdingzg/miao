@@ -25,6 +25,7 @@ import { AppProcess } from "./process"
 import { ChildProcess } from "effect/unstable/process"
 import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
+import { SkillV2 } from "./skill"
 import { SessionCompactRequest } from "./session/compact-request"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
@@ -166,7 +167,7 @@ export interface Interface {
     sessionID: SessionSchema.ID
     skill: string
     resume?: boolean
-  }) => Effect.Effect<void, OperationUnavailableError>
+  }) => Effect.Effect<void, NotFoundError>
   readonly compact: (input: CompactInput) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
@@ -397,8 +398,20 @@ const layer = Layer.effect(
         })
         if (input.resume !== false) yield* execution.wake(session.id)
       }),
-      skill: Effect.fn("V2Session.skill")(function* () {
-        return yield* new OperationUnavailableError({ operation: "skill" })
+      skill: Effect.fn("V2Session.skill")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const skill = yield* Effect.gen(function* () {
+          const skills = yield* SkillV2.Service
+          return (yield* skills.list()).find((item) => item.name === input.skill)
+        }).pipe(Effect.provide(locations.get(session.location)), Effect.orElseSucceed(() => undefined))
+        if (skill === undefined) return yield* new NotFoundError({ sessionID: input.sessionID })
+        yield* events.publish(SessionEvent.Synthetic, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          messageID: SessionMessage.ID.create(),
+          text: skill.content,
+        })
+        if (input.resume !== false) yield* execution.wake(session.id)
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         yield* result.get(input.sessionID)

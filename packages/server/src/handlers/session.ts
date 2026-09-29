@@ -170,6 +170,25 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.skill",
+        Effect.fn(function* (ctx) {
+          yield* session.skill({
+            sessionID: ctx.params.sessionID,
+            skill: ctx.payload.skill,
+            resume: ctx.payload.resume,
+          }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session or skill not found: ${error.sessionID}`,
+                }),
+              ),
+            ),
+          )
+        }),
+      )
+      .handle(
         "session.shell",
         Effect.fn(function* (ctx) {
           yield* session.shell({

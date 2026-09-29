@@ -224,6 +224,25 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.skill", "/api/session/:sessionID/skill", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          skill: Schema.String,
+          resume: Schema.Boolean.pipe(Schema.optional),
+        }),
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.skill",
+            summary: "Invoke a skill",
+            description: "Load a skill by name and inject its instructions into the session.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.shell", "/api/session/:sessionID/shell", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
