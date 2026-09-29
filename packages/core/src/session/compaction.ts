@@ -208,9 +208,33 @@ export const make = (dependencies: Dependencies) => {
   // character heuristic stays the default.
   const measure = (text: string) => (config.preciseTokens ? Token.count(text) : Token.estimate(text))
   const measureValue = (value: unknown) => measure(JSON.stringify(value))
+  // One summarization attempt. Returns the text only when the stream completed
+  // cleanly and produced a non-empty summary, so an empty or refused response
+  // can never replace the conversation.
+  const summarizeOnce = (request: LLMRequest) =>
+    Effect.gen(function* () {
+      const chunks: string[] = []
+      let failed = false
+      const completed = yield* dependencies.llm
+        .stream(request)
+        .pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.providerError(event)) failed = true
+            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+            return Effect.void
+          }),
+          Effect.as(true),
+          Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
+        )
+      const summary = chunks.join("")
+      return completed && !failed && summary.trim() ? summary : undefined
+    })
+
   const runSummary = Effect.fnUntraced(function* (input: {
     readonly sessionID: SessionSchema.ID
     readonly request: LLMRequest
+    /** Retried when the primary summarize request is refused or fails. */
+    readonly fallbackRequest?: LLMRequest
     readonly recent: string
   }) {
     const messageID = SessionMessage.ID.create()
@@ -221,21 +245,12 @@ export const make = (dependencies: Dependencies) => {
       reason: "auto",
     })
 
-    const chunks: string[] = []
-    let failed = false
-    const summarized = yield* dependencies.llm
-      .stream(input.request)
-      .pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.providerError(event)) failed = true
-          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          return Effect.void
-        }),
-        Effect.as(true),
-        Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
-      )
-    const summary = chunks.join("")
-    if (!summarized || failed || !summary.trim()) return false
+    // A refused or failed cheap-model summary falls back to the session model
+    // once before giving up, matching the "refusal -> retry with another model"
+    // behavior for compaction (research G3).
+    let summary = yield* summarizeOnce(input.request)
+    if (summary === undefined && input.fallbackRequest) summary = yield* summarizeOnce(input.fallbackRequest)
+    if (summary === undefined) return false
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
       messageID,
@@ -266,11 +281,9 @@ export const make = (dependencies: Dependencies) => {
       ? pickSummarizeModel(input, requestTokens + measure(instruction), summaryOutput)
       : input.model
     const selected = select(input.entries, config.tokens)
-    return yield* runSummary({
-      sessionID: input.sessionID,
-      recent: selected?.recent ?? "",
-      request: LLM.request({
-        model: summarizeModel,
+    const requestFor = (model: Model) =>
+      LLM.request({
+        model,
         http: input.request.http,
         providerOptions: input.request.providerOptions,
         system: input.request.system,
@@ -278,7 +291,12 @@ export const make = (dependencies: Dependencies) => {
         tools: input.request.tools,
         toolChoice: "none",
         generation: { maxTokens: summaryOutput },
-      }),
+      })
+    return yield* runSummary({
+      sessionID: input.sessionID,
+      recent: selected?.recent ?? "",
+      request: requestFor(summarizeModel),
+      fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model),
     })
   })
 
@@ -300,17 +318,20 @@ export const make = (dependencies: Dependencies) => {
     const summarizeModel = config.summarizeSmall
       ? pickSummarizeModel(input, measure(summaryPrompt), summaryOutput)
       : input.model
-    return yield* runSummary({
-      sessionID: input.sessionID,
-      recent: selected.recent,
-      request: LLM.request({
-        model: summarizeModel,
+    const requestFor = (model: Model) =>
+      LLM.request({
+        model,
         http: input.request.http,
         providerOptions: input.request.providerOptions,
         messages: [Message.user(summaryPrompt)],
         tools: [],
         generation: { maxTokens: summaryOutput },
-      }),
+      })
+    return yield* runSummary({
+      sessionID: input.sessionID,
+      recent: selected.recent,
+      request: requestFor(summarizeModel),
+      fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model),
     })
   })
 

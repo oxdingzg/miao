@@ -1,9 +1,72 @@
 import { expect, test } from "bun:test"
+import { LLM, LLMEvent } from "@miao/llm"
 import { OpenAIChat } from "@miao/llm/protocols/openai-chat"
+import { Effect, Stream } from "effect"
 import { SessionCompaction } from "@miao/core/session/compaction"
+import { SessionSchema } from "@miao/core/session/schema"
 
 const model = (id: string, context: number) =>
   OpenAIChat.route.with({ limits: { context, output: 4_096 } }).model({ id })
+
+const compactionInput = (main: ReturnType<typeof model>, small: ReturnType<typeof model>) =>
+  ({
+    sessionID: SessionSchema.ID.make("ses_compaction_fallback"),
+    entries: [{ seq: 1, message: { type: "user", id: "msg_1", text: "hello world" } }],
+    model: main,
+    summarizeModel: small,
+    request: LLM.request({ model: main, messages: [] }),
+  }) as never
+
+const summarizeHarness = (attempts: Array<Stream.Stream<never, never>>) => {
+  const requests: Array<{ readonly model: unknown }> = []
+  const published: string[] = []
+  let index = 0
+  const compaction = SessionCompaction.make({
+    events: {
+      publish: (_schema: unknown, data: { text?: string }) => {
+        if (typeof data?.text === "string") published.push(data.text)
+        return Effect.succeed(undefined)
+      },
+    } as never,
+    llm: {
+      stream: (request: { readonly model: unknown }) => {
+        requests.push(request)
+        return attempts[Math.min(index++, attempts.length - 1)] as never
+      },
+    },
+    config: [
+      { type: "document", info: { compaction: { summarize_small: true, keep: { tokens: 1 } } } },
+    ] as never,
+  })
+  return { compaction, requests, published }
+}
+
+const empty = Stream.empty as Stream.Stream<never, never>
+const summary = (text: string) => Stream.make(LLMEvent.textDelta({ id: "c", text })) as Stream.Stream<never, never>
+
+test("compaction falls back to the session model when the small model returns no summary", async () => {
+  const main = model("main", 100_000)
+  const small = model("small", 100_000)
+  const { compaction, requests, published } = summarizeHarness([empty, summary("fallback summary")])
+
+  const ok = await Effect.runPromise(compaction.compactAfterOverflow(compactionInput(main, small)))
+
+  expect(ok).toBe(true)
+  expect(requests.map((request) => request.model)).toEqual([small, main])
+  expect(published).toEqual(["fallback summary"])
+})
+
+test("compaction does not persist an empty summary from any model", async () => {
+  const main = model("main", 100_000)
+  const small = model("small", 100_000)
+  const { compaction, requests, published } = summarizeHarness([empty, empty])
+
+  const ok = await Effect.runPromise(compaction.compactAfterOverflow(compactionInput(main, small)))
+
+  expect(ok).toBe(false)
+  expect(requests).toHaveLength(2)
+  expect(published).toEqual([])
+})
 
 test("compaction prefers the small model when the prompt fits its context", () => {
   const main = model("main", 100_000)
