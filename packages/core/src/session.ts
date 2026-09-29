@@ -128,6 +128,7 @@ export interface Interface {
   }) => Effect.Effect<SessionMessage.Message | undefined>
   readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
+  readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Message[], NotFoundError | MessageDecodeError>
@@ -307,6 +308,11 @@ const layer = Layer.effect(
           .all()
           .pipe(Effect.orDie)
         return rows.map(fromRow)
+      }),
+      status: Effect.fn("V2Session.status")(function* (sessionID) {
+        yield* result.get(sessionID)
+        const active = yield* execution.active
+        return { type: active.has(sessionID) ? ("busy" as const) : ("idle" as const) }
       }),
       context: Effect.fn("V2Session.context")(function* (sessionID) {
         yield* result.get(sessionID)

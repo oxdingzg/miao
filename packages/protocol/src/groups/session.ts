@@ -320,6 +320,21 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.get("session.status", "/api/session/:sessionID/status", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Struct({ type: Schema.Literals(["idle", "busy"]) }) }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.status",
+            summary: "Get session status",
+            description: "Whether the session has an active agent loop in this process.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.get("session.children", "/api/session/:sessionID/children", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: Schema.Array(Session.Info) }),

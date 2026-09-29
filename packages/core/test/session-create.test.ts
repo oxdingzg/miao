@@ -439,6 +439,7 @@ describe("SessionV2.create", () => {
 
       expect((yield* session.children(parent.id)).map((item) => item.id)).toEqual([child.id])
       expect(yield* session.children(child.id)).toEqual([])
+      expect(yield* session.status(parent.id)).toEqual({ type: "idle" })
     }),
   )
 

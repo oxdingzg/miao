@@ -682,6 +682,10 @@ export type SessionsTodoOutput = {
   readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
 }["data"]
 
+export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsStatusOutput = { readonly data: { readonly type: "idle" | "busy" } }["data"]
+
 export type SessionsChildrenInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsChildrenOutput = {

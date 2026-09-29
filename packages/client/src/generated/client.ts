@@ -31,6 +31,8 @@ import type {
   SessionsContextOutput,
   SessionsTodoInput,
   SessionsTodoOutput,
+  SessionsStatusInput,
+  SessionsStatusOutput,
   SessionsChildrenInput,
   SessionsChildrenOutput,
   SessionsHistoryInput,
@@ -455,6 +457,17 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/todo`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      status: (input: SessionsStatusInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsStatusOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/status`,
             successStatus: 200,
             declaredStatuses: [404, 400, 401],
             empty: false,
