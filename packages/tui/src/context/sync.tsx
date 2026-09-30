@@ -28,10 +28,11 @@ import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
 import { isLiveSessionV2Event, sessionContextToMessages } from "./session-v2"
 import { sessionInfo } from "./session-v2-read"
+import { createSessionRefreshScheduler } from "./session-refresh"
 import { Flag } from "@miao/core/flag/flag"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onCleanup, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
@@ -180,28 +181,23 @@ export const {
       return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
-    // V2 durable events are not projected into the legacy event stream, so with
-    // MIAO_TUI_V2 the transcript would only update on a manual reopen. Re-hydrate
-    // the affected session (debounced) so live V2 runs render.
+    // V2 renders from hydrated context. A trailing-only debounce starves the
+    // transcript while deltas keep arriving, so coalesce with a fixed deadline.
     let refreshSession: ((sessionID: string) => Promise<void>) | undefined
     let refreshStatus: ((sessionID: string) => void) | undefined
-    const v2RefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
-    function scheduleV2Refresh(sessionID: string) {
-      const existing = v2RefreshTimers.get(sessionID)
-      if (existing) clearTimeout(existing)
-      v2RefreshTimers.set(
-        sessionID,
-        setTimeout(() => {
-          v2RefreshTimers.delete(sessionID)
-          void refreshSession?.(sessionID).then(() => refreshStatus?.(sessionID))
-        }, 200),
-      )
-    }
+    const v2Refresh = createSessionRefreshScheduler({
+      refresh: async (sessionID) => {
+        await refreshSession?.(sessionID)
+        refreshStatus?.(sessionID)
+      },
+      onError: (error) => console.error("Failed to refresh V2 session", error),
+    })
+    onCleanup(() => v2Refresh.dispose())
 
     event.subscribe((event, { directory, workspace }) => {
       if (Flag.MIAO_TUI_V2 && isLiveSessionV2Event(event.type)) {
         const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
-        if (sessionID) scheduleV2Refresh(sessionID)
+        if (sessionID) v2Refresh.schedule(sessionID)
       }
       switch (event.type) {
         case "server.instance.disposed":
@@ -872,9 +868,12 @@ export const {
         )
       },
     }
-    refreshSession = (sessionID) => {
+    refreshSession = async (sessionID) => {
+      // Initial hydration may predate the event that requested this refresh.
+      // Join it first, then read a fresh snapshot instead of dropping the event.
+      await syncingSessions.get(sessionID)
       fullSyncedSessions.delete(sessionID)
-      return result.session.sync(sessionID)
+      await result.session.sync(sessionID)
     }
     // V2 has no bulk status stream; derive the working indicator from the
     // re-hydrated transcript after each live V2 event burst.
