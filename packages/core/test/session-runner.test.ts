@@ -162,9 +162,10 @@ const echo = Layer.effectDiscard(
 )
 const echoNode = makeLocationNode({ name: "test/session-runner-tools", layer: echo, deps: [ToolRegistry.node] })
 let modelResolveHook = Effect.void
+let modelResolveFailure: SessionRunnerModel.Error | undefined
 let currentModel = model
 const models = SessionRunnerModel.layerWith((session) =>
-  modelResolveHook.pipe(Effect.as(session.model?.id === "replacement" ? replacementModel : currentModel)),
+  modelResolveFailure ? Effect.fail(modelResolveFailure) : modelResolveHook.pipe(Effect.as(session.model?.id === "replacement" ? replacementModel : currentModel)),
 )
 const systemContextKey = SystemContext.Key.make("test/context")
 let systemBaseline = "Initial context"
@@ -330,6 +331,7 @@ const setup = Effect.gen(function* () {
   systemRemoved = false
   systemUnavailable = false
   systemLoadHook = Effect.void
+  modelResolveFailure = undefined
   modelResolveHook = Effect.void
   currentModel = model
   skillBaselines.clear()
@@ -570,6 +572,18 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  it.effect("persists model resolution errors as a visible failed assistant", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const failure = new SessionRunnerModel.VariantUnavailableError({ providerID: ProviderV2.ID.openai, modelID: ModelV2.ID.make("gpt-6.1-sol"), variant: ModelV2.VariantID.make("medium") })
+      modelResolveFailure = failure
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "hi" }), resume: false })
+      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ type: "assistant", error: { message: failure.message } })
+    }).pipe(Effect.ensuring(Effect.sync(() => { modelResolveFailure = undefined }))),
+  )
+
   it.effect("advertises and executes a globally attached application tool", () =>
     Effect.gen(function* () {
       yield* setup

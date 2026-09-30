@@ -292,6 +292,13 @@ const layer = Layer.effect(
           while: (error) => SessionRunnerProviderRetry.retryable(error),
           schedule: SessionRunnerProviderRetry.catalogSchedule,
         }),
+        Effect.tapError((error) =>
+          createLLMEventPublisher(events, {
+            sessionID: session.id,
+            agent: agent.id,
+            model: session.model ?? { id: ModelV2.ID.make("unavailable"), providerID: ProviderV2.ID.make("unavailable") },
+          }).failAssistant(error.message),
+        ),
       )
       const model = resolved.model
       const summarizeModel = yield* models.resolveSmall(session)
