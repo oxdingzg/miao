@@ -399,7 +399,6 @@ export const locationLayer = Layer.effect(
      * working.
      */
     const adoptLegacy = Effect.fnUntraced(function* (id: ID) {
-      if ((yield* credentials.list(id)).length > 0) return
       const method = state
         .get()
         .integrations.get(id)
@@ -414,17 +413,33 @@ export const locationLayer = Layer.effect(
       yield* credentials.create({ integrationID: id, label: "legacy", value })
     })
 
+    // `adoptLegacy` assumes the caller already knows there are no credentials,
+    // so confirm that with one lookup before calling it one integration at a time.
+    const adoptIfMissing = Effect.fnUntraced(function* (id: ID) {
+      if ((yield* credentials.list(id)).length > 0) return
+      yield* adoptLegacy(id)
+    })
+
     return Service.of({
       transform: state.transform,
       reload: state.reload,
       get: Effect.fn("Integration.get")(function* (id) {
-        yield* adoptLegacy(id)
+        yield* adoptIfMissing(id)
         const entry = state.get().integrations.get(id)
         if (!entry) return undefined
         return project(entry, resolveConnections(entry, yield* credentials.list(id)))
       }),
       list: Effect.fn("Integration.list")(function* () {
-        yield* Effect.forEach(state.get().integrations.keys(), adoptLegacy, { discard: true })
+        // The models.dev plugin registers an integration for every provider that
+        // has env vars, so confirming "no credentials yet" per integration cost
+        // hundreds of queries on every provider turn. Read the credentials once
+        // and only consider the integrations that are actually missing.
+        const before = Map.groupBy(yield* credentials.all(), (credential) => credential.integrationID)
+        yield* Effect.forEach(
+          state.get().integrations.keys(),
+          (id) => (before.has(id) ? Effect.void : adoptLegacy(id)),
+          { discard: true },
+        )
         const saved = Map.groupBy(yield* credentials.all(), (credential) => credential.integrationID)
         return Array.from(state.get().integrations.values(), (entry) =>
           project(entry, resolveConnections(entry, saved.get(entry.ref.id) ?? [])),
@@ -432,7 +447,7 @@ export const locationLayer = Layer.effect(
       }),
       connection: {
         active: Effect.fn("Integration.connection.active")(function* (id) {
-          yield* adoptLegacy(id)
+          yield* adoptIfMissing(id)
           const entry = state.get().integrations.get(id)
           return resolveConnections(entry, yield* credentials.list(id))[0]
         }),
