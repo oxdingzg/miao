@@ -184,6 +184,9 @@ const CompactCommand = effectCmd({
     if (!args.yes) {
       console.error("refusing to run without --yes: this deletes every legacy event and drops message / part")
       console.error("back up the database first, then re-run with --yes")
+      console.error(
+        "a miao built before the legacy fallback reads a compacted database as `no such table: message`, so upgrade every installed build that opens this file first",
+      )
       process.exitCode = 1
       return
     }

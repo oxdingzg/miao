@@ -139,6 +139,29 @@ attachments and oversized tool output.
    drop `message` / `part` and compact the legacy event range.
 5. **Retention + GC:** snapshot-then-truncate the event log; mark-and-sweep blobs per project.
 
+### Status (2026-09-30)
+
+Steps 1, 2 and 4 are implemented; 3 and 5 are open.
+
+- Step 2 + 4: `miao db backfill` projects the V1 history through the fidelity mapping in
+  `session/v1-read.ts` (`db backfill --verify` maps and encodes every row without writing), and
+  `miao db compact` deletes the legacy `message.*` event range in batches, drops `message` /
+  `part`, resets only the `event_sequence` rows it emptied, then vacuum. Measured locally:
+  `miao-local.db` 816 MB → 48.8 MB; `miao.db` 2500.6 MB → 334.7 MB; `miao-main.db` 2153 MB →
+  176.7 MB, with sampled transcripts byte-identical to their pre-compact baselines.
+- The `<200 MB` acceptance is not met for `miao.db` yet: 297 MB of the remainder is
+  `session_message`, which is now the single copy of the history (V1 held it twice, in `part` and
+  `message`). Reaching the target needs steps 3 and 5.
+
+**Ordering precondition.** Compacting a database is only safe once every build that opens it
+carries the "legacy tables are retired" fallback (`SessionLegacyTables.present`). A build from
+before that fallback reads a compacted database as `SQLiteError: no such table: message` from
+`SessionStore.context` / `SessionStore.historyState` — it does not degrade, it fails every read.
+`miao db compact` runs from the checkout, while the database it rewrites is usually opened by the
+installed release binary, so the release has to ship first. On 2026-09-30 the two release-channel
+databases were compacted while the installed CLI (0.0.21) predated the guard and both had to be
+restored from backup.
+
 ## Acceptance
 
 - A representative database (same 47 sessions) drops from 1.67 GB to **under 200 MB**.

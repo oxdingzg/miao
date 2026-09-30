@@ -72,6 +72,9 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Messages/events store `hash + mime`; materialize in `to-llm-message.ts`
   - [x] Request-time materialization: the runner resolves `blob://<hash>` user attachments to data URIs before the request (`materialize-files.ts`; `session-runner-materialize.test.ts`); write side + API boundary still open
 - [x] Incremental auto-vacuum enabled — native SQLite layers request `auto_vacuum = INCREMENTAL` before WAL on new databases; `database-migration.test.ts`
+- [x] Retire V1 tables and the legacy event range — `miao db compact` (batched delete of the `message.*` events, drop `message` / `part`, reset only the `event_sequence` rows it emptied, checkpoint + vacuum); the V1 readers and `miao import` explain the retirement instead of failing on a missing table
+  - [ ] Compact only after a release carries the legacy fallback: a build from before it fails a compacted database with `no such table: message`, so the two release-channel databases were restored from backup on 2026-09-30 pending that release
+  - [ ] Measure `miao.db` against the <200 MB acceptance — 297 MB of it is `session_message`, now the single copy of the history
 - [ ] Event-log retention/compaction (snapshot-then-truncate)
 - [ ] Per-project blob GC (refcount or mark-and-sweep)
 - [ ] Verify: `db stats` shows no `message.part.updated` bloat, no inline base64; size reclaimed by `db vacuum`
