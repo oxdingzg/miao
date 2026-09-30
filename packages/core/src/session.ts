@@ -42,6 +42,9 @@ import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { Revert } from "@miao/schema/revert"
 import { FSUtil } from "./fs-util"
+import { Blob } from "./blob"
+import { SessionBlobStorage } from "./session/blob-storage"
+import { materializeBlobFiles } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
 import { EventSequenceTable, EventTable } from "./event/sql"
 
@@ -250,6 +253,7 @@ const layer = Layer.effect(
     const creation = yield* SessionCreate.Service
     const appProcess = yield* AppProcess.Service
     const locations = yield* LocationServiceMap.Service
+    const blob = yield* Blob.Service
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = (row: typeof SessionMessageTable.$inferSelect) =>
@@ -563,7 +567,7 @@ const layer = Layer.effect(
       }),
       context: Effect.fn("V2Session.context")(function* (sessionID) {
         yield* result.get(sessionID)
-        return yield* store.context(sessionID)
+        return yield* materializeBlobFiles(blob, yield* store.context(sessionID))
       }),
       events: (input) =>
         Stream.unwrap(
@@ -584,7 +588,7 @@ const layer = Layer.effect(
           Effect.gen(function* () {
             yield* result.get(input.sessionID)
             yield* requireMigrated(input.sessionID)
-            const prompt = resolvePrompt(input.prompt)
+            const prompt = yield* SessionBlobStorage.externalizePromptAttachments(blob, resolvePrompt(input.prompt))
             const messageID = input.id ?? SessionMessage.ID.create()
             const delivery = input.delivery ?? "steer"
             const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
@@ -743,5 +747,6 @@ export const node = makeGlobalNode({
     AppProcess.node,
     LocationServiceMap.node,
     SessionProjector.node,
+    Blob.node,
   ],
 })
