@@ -588,6 +588,11 @@ const layer = Layer.effect(
         return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
       if (target.projectID !== sender.projectID)
         return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
+      const pending = yield* SessionInput.countPending(db, target.id, "queue")
+      if (pending >= SendMessageTool.MAX_INBOUND_QUEUE)
+        return yield* new ToolFailure({
+          message: `Session ${target.id} inbox is full (${pending} queued messages); try again later.`,
+        })
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: target.id,

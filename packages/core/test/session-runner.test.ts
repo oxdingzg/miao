@@ -38,6 +38,7 @@ import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
+import { SendMessageTool } from "@miao/core/tool/send-message"
 import { AgentV2 } from "@miao/core/agent"
 import { Config } from "@miao/core/config"
 import { ConfigCompaction } from "@miao/core/config/compaction"
@@ -1836,6 +1837,59 @@ describe("SessionRunnerLLM", () => {
         name: "send_message",
         state: { status: "error", error: { type: "unknown", message: "Unknown session: ses_missing" } },
       })
+    }),
+  )
+
+  it.effect("refuses to overflow a peer session inbox", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      yield* insertSession(otherSessionID)
+      for (let index = 0; index < SendMessageTool.MAX_INBOUND_QUEUE; index++) {
+        yield* SessionInput.admit(db, events, {
+          id: SessionMessage.ID.create(),
+          sessionID: otherSessionID,
+          prompt: Prompt.make({ text: `filler ${index}` }),
+          delivery: "queue",
+        })
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping full inbox" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-overflow",
+            name: "send_message",
+            input: { to: otherSessionID, message: "one too many" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID, force: true })
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "send_message")
+      expect(tool).toMatchObject({ type: "tool", name: "send_message", state: { status: "error" } })
+      expect(JSON.stringify(tool)).toContain("inbox is full")
     }),
   )
 

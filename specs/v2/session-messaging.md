@@ -61,9 +61,10 @@ Only explicit messaging wakes a peer, so `resume: false` semantics are unchanged
 ## Status
 
 First slice landed: the session-scoped `send_message` tool (`{ to, message }`) resolves a Session
-ID, rejects a missing target or a target in another project, admits a queued input attributed as
+ID, rejects a missing target or a target in another project, refuses to exceed the per-Session
+inbound queue cap (`MAX_INBOUND_QUEUE`), admits a queued input attributed as
 `<message from session="…">`, and wakes the target through the runner's `wake` callback. Covered by
 `packages/core/test/session-runner.test.ts`.
 
 Still open: `@name` handle resolution and a `list_sessions` discovery tool; the `message` permission
-action; a per-Session inbound-queue cap; and loop-guard cost accounting for a receiving drain.
+action; and loop-guard cost accounting for a receiving drain.

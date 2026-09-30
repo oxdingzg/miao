@@ -6,6 +6,9 @@ import { Tool, type AnyTool } from "./tool"
 
 export const name = "send_message"
 
+/** Most queued inputs a Session may accumulate from peers before delivery is refused. */
+export const MAX_INBOUND_QUEUE = 16
+
 /** Session capability injected by the runner so the tool can reach a peer Session. */
 export type Send = (input: {
   readonly to: string
