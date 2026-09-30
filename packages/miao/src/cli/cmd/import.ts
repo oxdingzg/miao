@@ -5,6 +5,7 @@ import { MessageV2 } from "../../session/message-v2"
 import { CliError, effectCmd } from "../effect-cmd"
 import { Database } from "@miao/core/database/database"
 import { SessionTable, MessageTable, PartTable } from "@miao/core/session/sql"
+import { SessionLegacyTables } from "@miao/core/session/legacy-tables"
 import { InstanceRef } from "@/effect/instance-ref"
 import { ShareNext } from "@/share/share-next"
 import { EOL } from "os"
@@ -175,6 +176,15 @@ const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: Ins
     process.stdout.write(EOL)
     return
   }
+
+  // An archive carries V1 messages, and only the legacy tables hold those.
+  // Checking before the session row is written keeps the import all-or-nothing.
+  if (!(yield* SessionLegacyTables.present(db)))
+    return yield* Effect.die(
+      new Error(
+        "importing a V1 session archive needs the legacy message / part tables, which `miao db compact` retired",
+      ),
+    )
 
   const info = Schema.decodeUnknownSync(Session.Info)({
     ...exportData.info,

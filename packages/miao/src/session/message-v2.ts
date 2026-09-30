@@ -28,6 +28,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@miao/core/session/sql"
+import { SessionLegacyTables } from "@miao/core/session/legacy-tables"
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
@@ -45,6 +46,22 @@ interface FetchDecompressionError extends Error {
 
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
 export { isMedia }
+
+/**
+ * The V1 message API reads the legacy `message` / `part` tables, which
+ * `miao db compact` drops once every session has been projected. These
+ * entrypoints fail with the reason instead of a bare "no such table", pointing
+ * at the projection the V2 API reads.
+ */
+const requireLegacyStorage = (db: Pick<Database.Interface["db"], "get">) =>
+  Effect.gen(function* () {
+    if (yield* SessionLegacyTables.present(db)) return
+    return yield* Effect.die(
+      new Error(
+        "the V1 message API reads legacy storage that `miao db compact` retired; read the session through the V2 API instead",
+      ),
+    )
+  })
 
 function truncateToolOutput(text: string, maxChars?: number) {
   if (!maxChars || text.length <= maxChars) return text
@@ -445,6 +462,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   before?: string
 }) {
   const { db } = yield* Database.Service
+  yield* requireLegacyStorage(db)
   const before = input.before ? cursor.decode(input.before) : undefined
   const where = before
     ? and(eq(MessageTable.session_id, input.sessionID), older(before))
@@ -509,6 +527,7 @@ export function stream(sessionID: SessionID) {
 export function parts(messageID: MessageID) {
   return Effect.gen(function* () {
     const { db } = yield* Database.Service
+    yield* requireLegacyStorage(db)
     const rows = yield* db
       .select()
       .from(PartTable)
@@ -522,6 +541,7 @@ export function parts(messageID: MessageID) {
 
 export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: SessionID; messageID: MessageID }) {
   const { db } = yield* Database.Service
+  yield* requireLegacyStorage(db)
   const row = yield* db
     .select()
     .from(MessageTable)
