@@ -7,6 +7,9 @@
 export * as WriteTool from "./write"
 
 import { ToolFailure } from "@miao/llm"
+import { FileDiff } from "@miao/schema/file-diff"
+import { createTwoFilesPatch, diffLines } from "diff"
+import { FSUtil } from "../fs-util"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
@@ -36,6 +39,7 @@ export const Output = Schema.Struct({
   target: Schema.String,
   resource: Schema.String,
   existed: Schema.Boolean,
+  files: Schema.Array(FileDiff.Info),
   diagnostics: Schema.String.pipe(Schema.optional),
 })
 export type Output = typeof Output.Type
@@ -53,6 +57,7 @@ const layer = Layer.effectDiscard(
     const tools = yield* Tools.Service
     const mutation = yield* LocationMutation.Service
     const files = yield* FileMutation.Service
+    const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
@@ -98,7 +103,27 @@ const layer = Layer.effectDiscard(
                   target.resource,
                   diagnostics[LSPClient.fileURI(target.canonical)] ?? [],
                 )
-                return { ...result, ...(report ? { diagnostics: report } : {}) }
+                const content = (yield* fs.readFileString(target.canonical)).replace(/^\uFEFF/, "")
+                const counts = diffLines(result.previous, content).reduce(
+                  (counts, line) => ({
+                    additions: counts.additions + (line.added ? (line.count ?? 0) : 0),
+                    deletions: counts.deletions + (line.removed ? (line.count ?? 0) : 0),
+                  }),
+                  { additions: 0, deletions: 0 },
+                )
+                return {
+                  operation: result.operation,
+                  target: result.target,
+                  resource: result.resource,
+                  existed: result.existed,
+                  files: [{
+                    file: result.resource,
+                    patch: createTwoFilesPatch(result.resource, result.resource, result.previous, content),
+                    status: result.existed ? "modified" as const : "added" as const,
+                    ...counts,
+                  }],
+                  ...(report ? { diagnostics: report } : {}),
+                }
               }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to write ${input.path}` }))),
           }),
           "edit",
@@ -111,5 +136,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/write",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node, Format.node, LSP.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
 })

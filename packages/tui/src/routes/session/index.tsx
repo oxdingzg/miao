@@ -40,7 +40,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
-import { toolDisplay, webSearchProviderLabel } from "../../util/tool-display"
+import { fileToolSummary, toolDisplay, webSearchProviderLabel } from "../../util/tool-display"
 import { Dynamic, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "../../context/sdk"
 import { useEditorContext } from "../../context/editor"
@@ -2215,27 +2215,41 @@ function Write(props: ToolProps) {
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
-        <BlockTool title={"# Wrote " + pathFormatter.format(stringValue(props.input.filePath))} part={props.part}>
-          <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-            <code
-              conceal={false}
-              fg={theme.text}
-              filetype={filetype(stringValue(props.input.filePath))}
-              syntaxStyle={syntax()}
-              content={code()}
-            />
-          </line_number>
-          <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
-        </BlockTool>
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
+          <InlineTool
+            icon="●"
+            iconColor={props.part.state.status === "completed" ? theme.success : undefined}
+            color={theme.text}
+            pending="Preparing write…"
+            complete={true}
+            part={props.part}
+          >
+            <b>Write</b>({pathFormatter.format(stringValue(props.input.filePath))})
+          </InlineTool>
+          <FileToolResult summary={fileToolSummary("write", props.metadata) ?? "Wrote file"} color={theme.text}>
+            <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
+              <code
+                conceal={false}
+                fg={theme.text}
+                filetype={filetype(stringValue(props.input.filePath))}
+                syntaxStyle={syntax()}
+                content={code()}
+              />
+            </line_number>
+            <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
+          </FileToolResult>
+        </box>
       </Match>
       <Match when={true}>
         <InlineTool
-          icon={INLINE_TOOL_ICON}
+          icon="●"
+          color={theme.text}
           pending="Preparing write…"
           complete={stringValue(props.input.filePath)}
+          spinner={props.part.state.status === "running"}
           part={props.part}
         >
-          Write {pathFormatter.format(stringValue(props.input.filePath))}
+          <b>Write</b>({pathFormatter.format(stringValue(props.input.filePath))})
         </InlineTool>
       </Match>
     </Switch>
@@ -2274,22 +2288,22 @@ function Read(props: ToolProps) {
   return (
     <>
       <InlineTool
-        icon={INLINE_TOOL_ICON}
+        icon="●"
+        iconColor={props.part.state.status === "completed" ? theme.success : undefined}
+        color={theme.text}
         pending="Reading file…"
         complete={stringValue(props.input.filePath)}
         spinner={isRunning()}
         part={props.part}
       >
-        Read {pathFormatter.format(stringValue(props.input.filePath))} {input(props.input, ["filePath", "path"])}
+        <b>Read</b>({pathFormatter.format(stringValue(props.input.filePath))})
+        {input(props.input, ["filePath", "path"]) && ` ${input(props.input, ["filePath", "path"])}`}
       </InlineTool>
+      <Show when={props.part.state.status === "completed" && fileToolSummary("read", props.metadata)}>
+        {(summary) => <FileToolResult summary={summary()} color={theme.textMuted} />}
+      </Show>
       <For each={loaded()}>
-        {(filepath) => (
-          <box paddingLeft={3}>
-            <text paddingLeft={3} fg={theme.textMuted}>
-              ↳ Loaded {pathFormatter.format(filepath)}
-            </text>
-          </box>
-        )}
+        {(filepath) => <FileToolResult summary={`Loaded ${pathFormatter.format(filepath)}`} color={theme.textMuted} />}
       </For>
     </>
   )
@@ -2539,17 +2553,21 @@ function Execute(props: ToolProps) {
   )
 }
 
+export function FileToolResult(props: { summary: string; color?: RGBA; children?: JSX.Element }) {
+  return (
+    <box paddingLeft={5}>
+      <text fg={props.color}>{`⎿  ${props.summary}`}</text>
+      <Show when={props.children}>
+        <box paddingLeft={3}>{props.children}</box>
+      </Show>
+    </box>
+  )
+}
+
 function Edit(props: ToolProps) {
   const ctx = use()
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
-
-  const view = createMemo(() => {
-    const diffStyle = ctx.tui.diff_style
-    if (diffStyle === "stacked") return "unified"
-    // Default to "auto" behavior
-    return ctx.width > 120 ? "split" : "unified"
-  })
 
   const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
 
@@ -2558,11 +2576,21 @@ function Edit(props: ToolProps) {
   return (
     <Switch>
       <Match when={stringValue(props.metadata.diff) !== undefined}>
-        <BlockTool title={"← Edit " + pathFormatter.format(stringValue(props.input.filePath))} part={props.part}>
-          <box paddingLeft={1}>
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
+          <InlineTool
+            icon="●"
+            iconColor={props.part.state.status === "completed" ? theme.success : undefined}
+            color={theme.text}
+            pending="Preparing edit…"
+            complete={true}
+            part={props.part}
+          >
+            <b>Update</b>({pathFormatter.format(stringValue(props.input.filePath))})
+          </InlineTool>
+          <FileToolResult summary={fileToolSummary("edit", props.metadata) ?? "Updated file"} color={theme.text}>
             <diff
               diff={diffContent()}
-              view={view()}
+              view="unified"
               filetype={ft()}
               syntaxStyle={syntax()}
               showLineNumbers={true}
@@ -2571,26 +2599,28 @@ function Edit(props: ToolProps) {
               fg={theme.text}
               addedBg={theme.diffAddedBg}
               removedBg={theme.diffRemovedBg}
-              contextBg={theme.diffContextBg}
+              contextBg={theme.background}
               addedSignColor={theme.diffHighlightAdded}
               removedSignColor={theme.diffHighlightRemoved}
               lineNumberFg={theme.diffLineNumber}
-              lineNumberBg={theme.diffContextBg}
+              lineNumberBg={theme.background}
               addedLineNumberBg={theme.diffAddedLineNumberBg}
               removedLineNumberBg={theme.diffRemovedLineNumberBg}
             />
-          </box>
-          <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
-        </BlockTool>
+            <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
+          </FileToolResult>
+        </box>
       </Match>
       <Match when={true}>
         <InlineTool
-          icon={INLINE_TOOL_ICON}
+          icon="●"
+          color={theme.text}
           pending="Preparing edit…"
           complete={stringValue(props.input.filePath)}
+          spinner={props.part.state.status === "running"}
           part={props.part}
         >
-          Edit {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
+          <b>Update</b>({pathFormatter.format(stringValue(props.input.filePath))})
         </InlineTool>
       </Match>
     </Switch>

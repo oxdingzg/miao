@@ -9,6 +9,7 @@ import {
   formatSubagentTitle,
   formatSubagentToolcalls,
   InlineToolRow,
+  FileToolResult,
   parseApplyPatchFiles,
   parseDiagnostics,
   parseQuestionAnswers,
@@ -295,6 +296,29 @@ describe("TUI inline tool wrapping", () => {
   test("reports a running subagent before its child transcript loads", () => {
     expect(formatSubagentRunningDetail(0)).toBe("Running")
     expect(formatSubagentRunningDetail(65000)).toBe("Running · 1m 5s")
+  })
+
+  test("indents file results under their heading and aligns diff with summary text", async () => {
+    const frame = await renderFrame(
+      () => (
+        <box width={72}>
+          <InlineToolRow icon="●" complete={true} pending="">
+            <b>Update</b>(src/example.ts)
+          </InlineToolRow>
+          <FileToolResult summary="Added 1 line, removed 1 line">
+            <text>810 - old()</text>
+            <text>810 + next()</text>
+          </FileToolResult>
+        </box>
+      ),
+      { width: 72, height: 4 },
+    )
+    expect(frame.split("\n").slice(0, 4)).toEqual([
+      "   ● Update(src/example.ts)",
+      "     ⎿  Added 1 line, removed 1 line",
+      "        810 - old()",
+      "        810 + next()",
+    ])
   })
 
   test("snapshots consecutive grep, glob, and read rows at a narrow width", async () => {

@@ -56,7 +56,9 @@ export interface Interface {
   readonly create: (input: WriteInput) => Effect.Effect<WriteResult, TargetExistsError | FSUtil.Error>
   readonly write: (input: WriteInput) => Effect.Effect<WriteResult, FSUtil.Error>
   /** Write text while retaining an existing UTF-8 BOM and emitting at most one BOM. */
-  readonly writeTextPreservingBom: (input: TextWriteInput) => Effect.Effect<WriteResult, FSUtil.Error>
+  readonly writeTextPreservingBom: (
+    input: TextWriteInput,
+  ) => Effect.Effect<WriteResult & { readonly previous: string }, FSUtil.Error>
   /** Commit only if an existing target still has the expected bytes. */
   readonly writeIfUnchanged: (
     input: ConditionalWriteInput,
@@ -116,7 +118,10 @@ const layer = Layer.effect(
             input.target.canonical,
             joinBom(next.text, Boolean(current && hasUtf8Bom(current)) || next.bom),
           )
-          return writeResult(input.target, current !== undefined)
+          return {
+            ...writeResult(input.target, current !== undefined),
+            previous: current ? new TextDecoder().decode(current) : "",
+          }
         }),
       ),
     )

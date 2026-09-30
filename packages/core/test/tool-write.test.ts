@@ -106,17 +106,18 @@ describe("WriteTool", () => {
           Effect.gen(function* () {
             expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["write"])
             const settled = yield* settleTool(registry, call({ path: "src/new.txt", content: "created" }))
-            expect(settled).toEqual({
-              result: { type: "text", value: "Created file successfully: src/new.txt" },
-              output: {
-                structured: {
-                  operation: "write",
-                  target: path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt"),
-                  resource: "src/new.txt",
-                  existed: false,
-                },
-                content: [{ type: "text", text: "Created file successfully: src/new.txt" }],
+            expect(settled.result).toEqual({ type: "text", value: "Created file successfully: src/new.txt" })
+            expect(settled.output).toMatchObject({
+              structured: {
+                operation: "write",
+                target: path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt"),
+                resource: "src/new.txt",
+                existed: false,
+                // The transcript renders a write summary from committed line counts,
+                // so the tool reports the same patch shape the edit tool does.
+                files: [{ file: "src/new.txt", additions: 1, deletions: 0, status: "added" }],
               },
+              content: [{ type: "text", text: "Created file successfully: src/new.txt" }],
             })
             expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "src", "new.txt"), "utf8"))).toBe(
               "created",
