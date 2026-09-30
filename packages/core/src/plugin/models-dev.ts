@@ -3,6 +3,7 @@ import type { ModelV2Info } from "@opencode-ai/sdk/v2/types"
 import { Effect, Stream } from "effect"
 import { EventV2 } from "../event"
 import { ModelsDev } from "../models-dev"
+import { ModelVariants } from "../model-variants"
 import { ProviderV2 } from "../provider"
 
 function released(date: string) {
@@ -102,7 +103,10 @@ function applyModel(
     input: [...(model.modalities?.input ?? [])],
     output: [...(model.modalities?.output ?? [])],
   }
-  draft.variants = []
+  // The catalog is where a model's reasoning options are reachable; a config-only
+  // model on the same provider never sees them, so it falls back to
+  // `ModelVariants.generate` in the variant plugin.
+  draft.variants = ModelVariants.fromReasoningOptions({ api: draft.api, options: model.reasoning_options })
   draft.time.released = released(model.release_date)
   draft.cost = input.cost ?? cost(model.cost)
   draft.status = model.status ?? "active"
