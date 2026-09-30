@@ -1,6 +1,8 @@
 import { Database } from "@miao/core/database/database"
 import { LocationServiceMap } from "@miao/core/location-services"
 import { Location } from "@miao/core/location"
+import { PermissionSaved } from "@miao/core/permission/saved"
+import { Project } from "@miao/core/project"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionTable } from "@miao/core/session/sql"
@@ -26,6 +28,8 @@ export const sessionLocationLayer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const locations = yield* LocationServiceMap.Service
+    const project = yield* Project.Service
+    const permissions = yield* PermissionSaved.Service
 
     return SessionLocationMiddleware.of((effect) =>
       Effect.gen(function* () {
@@ -60,6 +64,8 @@ export const sessionLocationLayer = Layer.effect(
               }),
             ),
           ),
+          Effect.provideService(Project.Service, project),
+          Effect.provideService(PermissionSaved.Service, permissions),
         )
       }),
     )

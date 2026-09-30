@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { EventV2 } from "@miao/core/event"
 import { Credential } from "@miao/core/credential"
 import { PermissionSaved } from "@miao/core/permission/saved"
+import { Project } from "@miao/core/project"
 import { PtyTicket } from "@miao/core/pty/ticket"
 import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
@@ -34,6 +35,7 @@ const applicationServices = LayerNode.group([
   Credential.node,
   PtyEnvironment.node,
   LocationServiceMap.node,
+  Project.node,
 ])
 
 export function createRoutes(password?: string) {
