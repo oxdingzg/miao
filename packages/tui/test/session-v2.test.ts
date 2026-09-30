@@ -158,7 +158,10 @@ test("projects V2 structured tool output onto the V1 metadata renderers read", (
             input: { patchText: "*** Begin Patch" },
             structured: {
               applied: [],
-              files: [{ file: "d.ts", patch: "@@ -1 +1 @@\n-a\n+b\n", additions: 1, deletions: 1, status: "added" }],
+              files: [
+                { file: "d.ts", patch: "@@ -1 +1 @@\n-a\n+b\n", additions: 1, deletions: 1, status: "added" },
+                { file: "gone.ts", patch: "@@ -1,2 +0,0 @@\n-a\n-b\n", additions: 0, deletions: 2, status: "deleted" },
+              ],
             },
             content: [],
           },
@@ -189,6 +192,15 @@ test("projects V2 structured tool output onto the V1 metadata renderers read", (
         filePath: "d.ts",
         patch: "@@ -1 +1 @@\n-a\n+b\n",
         deletions: 1,
+      },
+      // The transcript renders a deleted file from this patch, so the removal diff
+      // has to survive projection instead of collapsing to a line count.
+      {
+        type: "delete",
+        relativePath: "gone.ts",
+        filePath: "gone.ts",
+        patch: "@@ -1,2 +0,0 @@\n-a\n-b\n",
+        deletions: 2,
       },
     ],
   })

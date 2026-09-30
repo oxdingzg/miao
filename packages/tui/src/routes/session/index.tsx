@@ -2649,8 +2649,10 @@ function ApplyPatch(props: ToolProps) {
         <For each={files()}>
           {(file) => (
             <BlockTool title={title(file)} part={props.part}>
+              {/* A deleted file carries its whole removal patch, so it renders like any
+                  other change; only an empty patch falls back to the line count. */}
               <Show
-                when={file.type !== "delete"}
+                when={file.patch.trim().length > 0}
                 fallback={
                   <text fg={theme.diffRemoved}>
                     -{file.deletions} line{file.deletions !== 1 ? "s" : ""}
