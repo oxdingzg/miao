@@ -54,7 +54,8 @@ aggregate's events.
 `revert` / `unrevert` aliases are not needed: V2 already exposes `revert.stage` / `revert.clear` /
 `revert.commit`, which is what the clients call.
 
-Stage 2 is complete. The remaining work is the cutover itself (Stages 3–5).
+Stage 2 is complete. Stages 3 and 4 are complete; Stage 5 (delete V1) remains, gated on a soak of
+the V2 runtime.
 
 
 The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
@@ -106,14 +107,23 @@ reads and continues normally.
 The 503 from the guard is the signal a client should surface to prompt the user to run
 `miao db backfill` once before the cutover.
 
-**Stage 4 — write flip, per surface.** Flip writes to `/api/session/*` and run the V2 engine for
-new sessions, one client surface at a time (TUI first, then app/desktop/web), each gated and
-verified end to end (prompt, steer/queue, tool loop, compaction, permissions, revert). V1 routes
-remain mounted but unused during the soak.
+**Stage 4 — write flip, per surface (landed).** The TUI defaults to the V2 runtime
+(`MIAO_TUI_V2=0` falls back to V1): session writes, `context`/`messages`,
+`get`/`todo`/`list`/`rename`/`remove`/`diff`, permissions, questions, and status all go through
+`/api/session/*`, with V2 shapes mapped in `packages/tui/src/context/session-v2-read.ts`. The
+app/desktop/web surfaces select V2 whenever the server advertises it (`?protocol=v1` forces V1).
+V1 routes remain mounted but are reachable only through those explicit fallbacks.
 
-**Stage 5 — delete V1.** In the order from the migration map: app SDK shims → V1 route groups →
-V1 session engine → V1 tools/transport → `packages/core/v1` schemas → legacy SDK → the
-`packages/miao` server/engine. Each deletion only after its prerequisite stage is soaked.
+Behaviors that changed because V2 has no exact equivalent (confirm during soak): `session.list`
+drops the V1 `start` recency filter and filters roots client-side; status comes from
+`v2.session.active()` plus a derived per-session status instead of a bulk endpoint; the last-turn
+diff is session-scoped (no message cutoff); share/unshare is hidden.
+
+**Stage 5 — delete V1 (gated on soak).** In the order from the migration map: app SDK shims → V1
+route groups → V1 session engine → V1 tools/transport → `packages/core/v1` schemas → legacy SDK →
+the `packages/miao` server/engine. Each deletion only after its prerequisite stage is soaked. With
+Stage 4 landed the default client paths no longer call `/session/*`, so the gate can be evaluated;
+deletion also removes the `MIAO_TUI_V2=0` / `?protocol=v1` rollbacks.
 
 ## Acceptance for the cutover
 
@@ -124,7 +134,7 @@ V1 session engine → V1 tools/transport → `packages/core/v1` schemas → lega
   suites pass at every stage.
 - No shipped client imports or calls a `/session/*` (V1) route after Stage 5.
 
-## Stage 1 (this round)
+## Stage 1 (first round, complete)
 
 - Align `packages/protocol/src/groups/health.ts` and `packages/server/src/handlers/health.ts` so
   `/api/health` returns a stable, versioned payload including the process id.
