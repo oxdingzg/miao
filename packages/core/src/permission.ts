@@ -208,9 +208,23 @@ const layer = Layer.effect(
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.catchTag("PermissionV2.DeclinedError", (error) => EffectRuntime.die(error)),
             EffectRuntime.ensuring(
-              EffectRuntime.sync(() => {
-                pending.delete(item.request.id)
-              }),
+              EffectRuntime.uninterruptible(
+                EffectRuntime.gen(function* () {
+                  // A reply already settles the deferred and publishes Replied.
+                  // If the assertion is instead interrupted (e.g. the Session
+                  // drain is cancelled), clear the pending request and tell
+                  // subscribers it is gone so no prompt dangles.
+                  if (yield* Deferred.isDone(item.deferred)) return
+                  pending.delete(item.request.id)
+                  yield* events
+                    .publish(Event.Replied, {
+                      sessionID: item.request.sessionID,
+                      requestID: item.request.id,
+                      reply: "reject",
+                    })
+                    .pipe(EffectRuntime.catchCause(() => EffectRuntime.void))
+                }),
+              ),
             ),
           )
         }),

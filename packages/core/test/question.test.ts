@@ -60,6 +60,28 @@ describe("QuestionV2", () => {
     }),
   )
 
+  it.effect("publishes a rejection when the ask is interrupted", () =>
+    Effect.gen(function* () {
+      const service = yield* QuestionV2.Service
+      const events = yield* EventV2.Service
+      const { fiber, request } = yield* waitForAsk(service, { sessionID, questions: [question] })
+      const rejected = yield* Deferred.make<{ sessionID: SessionV2.ID; requestID: QuestionV2.ID }>()
+      const unsubscribe = yield* events.listen((event) =>
+        event.type === QuestionV2.Event.Rejected.type
+          ? Deferred.succeed(rejected, event.data as { sessionID: SessionV2.ID; requestID: QuestionV2.ID }).pipe(
+              Effect.asVoid,
+            )
+          : Effect.void,
+      )
+
+      yield* Fiber.interrupt(fiber)
+
+      expect(yield* service.list()).toEqual([])
+      expect(yield* Deferred.await(rejected)).toEqual({ sessionID, requestID: request.id })
+      yield* unsubscribe
+    }),
+  )
+
   it.effect("publishes rejection, fails the ask, and rejects unknown IDs", () =>
     Effect.gen(function* () {
       const service = yield* QuestionV2.Service

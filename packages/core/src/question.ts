@@ -100,9 +100,18 @@ const layer = Layer.effect(
           return yield* events.publish(Event.Asked, request).pipe(
             Effect.andThen(restore(Deferred.await(deferred))),
             Effect.ensuring(
-              Effect.sync(() => {
-                pending.delete(id)
-              }),
+              Effect.uninterruptible(
+                Effect.gen(function* () {
+                  // A reply/reject already settles the deferred and publishes an
+                  // event. If the ask is instead interrupted, clear the pending
+                  // question and tell subscribers so no prompt dangles.
+                  if (yield* Deferred.isDone(deferred)) return
+                  pending.delete(id)
+                  yield* events
+                    .publish(Event.Rejected, { sessionID: request.sessionID, requestID: id })
+                    .pipe(Effect.catchCause(() => Effect.void))
+                }),
+              ),
             ),
           )
         }),

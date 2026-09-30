@@ -283,6 +283,27 @@ describe("PermissionV2", () => {
     }),
   )
 
+  it.effect("settles a pending request when its assertion is interrupted", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const events = yield* EventV2.Service
+      const { fiber, request } = yield* waitForRequest()
+      const replied = yield* Deferred.make<{ requestID: PermissionV2.ID; reply: string }>()
+      const unsubscribe = yield* events.listen((event) =>
+        event.type === PermissionV2.Event.Replied.type
+          ? Deferred.succeed(replied, event.data as { requestID: PermissionV2.ID; reply: string }).pipe(Effect.asVoid)
+          : Effect.void,
+      )
+
+      yield* Fiber.interrupt(fiber)
+
+      expect(yield* service.list()).toEqual([])
+      expect(yield* Deferred.await(replied)).toMatchObject({ requestID: request.id, reply: "reject" })
+      yield* unsubscribe
+    }),
+  )
+
   it.effect("stores and removes saved resources for a project", () =>
     Effect.gen(function* () {
       yield* setup()

@@ -74,6 +74,9 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
   - G13 progress: `session.turn` telemetry now logs `cacheMissCause`
     (`none`/`cold`/`rebuild`/`prefix-change`) and `SessionRunnerMetrics.cacheMissCause` documents the
     prefix-invalidating actions; covered by `session-runner-metrics.test.ts`.
+  - G4 progress: interrupting a session now settles a pending permission request
+    (`Replied(reject)`) and a pending question (`Rejected`) so subscribers clear the prompt instead
+    of leaving it dangling; covered by `permission.test.ts` and `question.test.ts`.
   - G5 progress: a tool left running by a prior process is settled with an outcome-unknown error
     ("the process stopped while it was running") instead of a definite failure; covered by
     `session-runner.test.ts`. Remaining G5: the idempotency key / one-shot consume token and
