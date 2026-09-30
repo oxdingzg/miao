@@ -41,23 +41,35 @@ const openAIProviderOptions = (options: OpenAIOptionsInput | undefined): Provide
   return { openai }
 }
 
+// GPT-5 and later are reasoning models, except the chat/pro variants that
+// dropped the reasoning controls. Only the model id is available at this layer,
+// so match the family prefix instead of one version: keying off a single version
+// silently drops every later model to no reasoning options at all.
+const isReasoningModel = (id: string) => {
+  const match = id.match(/^gpt-(\d+)/)
+  if (!match) return false
+  return Number(match[1]) >= 5 && !id.includes("-chat") && !id.includes("-pro")
+}
+
+const hasVersion = (id: string) => /^gpt-\d+\./.test(id)
+
 export const gpt5DefaultOptions = (
   modelID: string,
   options: { readonly textVerbosity?: boolean } = {},
 ): ProviderOptions | undefined => {
   const id = modelID.toLowerCase()
-  if (!id.includes("gpt-5") || id.includes("gpt-5-chat") || id.includes("gpt-5-pro")) return undefined
+  if (!isReasoningModel(id)) return undefined
   return openAIProviderOptions({
     reasoningEffort: "medium",
     reasoningSummary: "auto",
-    // GPT-5 reasoning models are configured stateless (`store: false`) by
+    // Reasoning models are configured stateless (`store: false`) by
     // `openAIDefaultOptions` below, so the only way a follow-up turn can
     // carry reasoning state is via the encrypted reasoning include. Without
     // this, callers using the default model facade get reasoning summaries
     // they cannot replay statelessly.
     include: ["reasoning.encrypted_content"],
     textVerbosity:
-      options.textVerbosity === true && id.includes("gpt-5.") && !id.includes("codex") && !id.includes("-chat")
+      options.textVerbosity === true && hasVersion(id) && !id.includes("codex") && !id.includes("-chat")
         ? "low"
         : undefined,
   })
