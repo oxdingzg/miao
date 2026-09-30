@@ -86,7 +86,7 @@ const it = testEffect(
 describe("session.system", () => {
   test("selects the Meta prompt for Muse Spark model IDs", () => {
     for (const id of ["meta/muse-spark-preview", "muse-spark-1.1", "muse-spark-1.2"]) {
-      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]
+      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)
       expect(prompt).toContain("powered by Muse Spark,")
       expect(prompt).toContain("using Meta Muse Spark.")
       expect(prompt).not.toContain("{{MODEL_NAME}}")
@@ -95,7 +95,7 @@ describe("session.system", () => {
 
   test("selects the Meta prompt for Muse Glimmer model IDs", () => {
     for (const id of ["meta/muse-glimmer", "meta/muse-glimmer-30b", "muse-glimmer-30b"]) {
-      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]
+      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)
       expect(prompt).toContain("powered by Muse Glimmer,")
       expect(prompt).toContain("using Meta Muse Glimmer.")
       expect(prompt).not.toContain("{{MODEL_NAME}}")
@@ -104,7 +104,7 @@ describe("session.system", () => {
 
   test("selects the Kimi prompt for official provider model IDs", () => {
     for (const providerID of ["kimi-for-coding", "moonshotai", "moonshotai-cn"]) {
-      const prompt = SystemPrompt.provider({ providerID, api: { id: "k3" } } as Provider.Model)[0]
+      const prompt = SystemPrompt.provider({ providerID, api: { id: "k3" } } as Provider.Model)
       expect(prompt).toContain("# Prompt and Tool Use")
     }
   })

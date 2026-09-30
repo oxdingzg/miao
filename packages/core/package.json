@@ -20,6 +20,7 @@
     "./effect/app-node": "./src/effect/app-node.ts",
     "./session/runner": "./src/session/runner/index.ts",
     "./system-context": "./src/system-context/index.ts",
+    "./system-context/persona/*": "./src/system-context/persona/*",
     "./*": "./src/*.ts"
   },
   "imports": {

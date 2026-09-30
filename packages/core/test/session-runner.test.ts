@@ -54,6 +54,7 @@ import {
 } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
 import { SystemContext } from "@miao/core/system-context"
+import DEFAULT_PERSONA from "@miao/core/system-context/persona/default.txt"
 import { SystemContextRegistry } from "@miao/core/system-context/registry"
 import { SkillGuidance } from "@miao/core/skill/guidance"
 import { ReferenceGuidance } from "@miao/core/reference/guidance"
@@ -102,6 +103,8 @@ const client = Layer.succeed(
   }),
 )
 const model = Model.make({ id: "fake-model", provider: "fake", route: OpenAIChat.route })
+// The fake models name no family, so the default persona leads every request.
+const persona = DEFAULT_PERSONA
 const replacementModel = Model.make({ id: "replacement", provider: "fake", route: OpenAIChat.route })
 const compactModel = Model.make({
   id: "compact",
@@ -782,8 +785,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
+        [persona, "Initial context"],
+        [persona, "Initial context"],
       ])
       expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
       expect(requests[1]?.messages.at(-1)?.content).toEqual([{ type: "text", text: "Changed context" }])
@@ -901,8 +904,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context\n\nBuild skills"],
-        ["Initial context\n\nBuild skills"],
+        [persona, "Initial context\n\nBuild skills"],
+        [persona, "Initial context\n\nBuild skills"],
       ])
       expect(systemTexts(requests[1]!)).toContainEqual(expect.stringContaining("Reviewer skills"))
     }),
@@ -935,7 +938,7 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context\n\nBuild skills"],
+        [persona, "Initial context\n\nBuild skills"],
       ])
     }),
   )
@@ -964,7 +967,25 @@ describe("SessionRunnerLLM", () => {
       response = []
       yield* session.resume(sessionID)
       expect(requests.map((request) => request.model)).toEqual([model])
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([["Initial context"]])
+      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([[persona, "Initial context"]])
+    }),
+  )
+
+  it.effect("leads the request with the model family persona of the resolved model", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const agents = yield* AgentV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
+
+      requests.length = 0
+      response = []
+      yield* session.resume(sessionID)
+
+      // A role-free agent inherits the family persona, which leads the request
+      // ahead of the durable context baseline.
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual([persona, "Initial context"])
+      expect((yield* agents.get(AgentV2.defaultID))?.system).toBeUndefined()
     }),
   )
 
@@ -1013,9 +1034,9 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
-        ["Initial context"],
+        [persona, "Initial context"],
+        [persona, "Initial context"],
+        [persona, "Initial context"],
       ])
       expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
       expect(requests[2]?.messages.filter((message) => message.role === "system")).toHaveLength(2)
@@ -1059,9 +1080,9 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
-        ["Initial context"],
+        [persona, "Initial context"],
+        [persona, "Initial context"],
+        [persona, "Initial context"],
       ])
     }),
   )
@@ -1096,8 +1117,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Replacement context"],
+        [persona, "Initial context"],
+        [persona, "Replacement context"],
       ])
       yield* replaySessionProjection(sessionID)
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
@@ -1457,7 +1478,7 @@ describe("SessionRunnerLLM", () => {
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
       yield* session.resume(sessionID)
 
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Initial context"])
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual([persona, "Initial context"])
       expect(systemTexts(requests.at(-1)!)).toContain("Changed context")
     }),
   )
@@ -2016,8 +2037,8 @@ describe("SessionRunnerLLM", () => {
 
       expect(requests.map((request) => request.model)).toEqual([model, replacementModel])
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
+        [persona, "Initial context"],
+        [persona, "Initial context"],
       ])
       expect(systemTexts(requests[1]!)).toContain("Replacement context")
     }),

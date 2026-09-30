@@ -21,6 +21,7 @@ import { PermissionV2 } from "../../permission"
 import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
 import { SystemContext } from "../../system-context/index"
+import { Persona } from "../../system-context/persona"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { Flag } from "../../flag/flag"
 import { SkillGuidance } from "../../skill/guidance"
@@ -371,7 +372,22 @@ const layer = Layer.effect(
         cache: settings.ttl
           ? { tools: true, system: true, messages: "latest-user-message", ttlSeconds: settings.ttl }
           : undefined,
-        system: [agent.info?.system, system.baseline]
+        system: [
+          // An agent that declares its own system prompt replaces the model
+          // family persona rather than stacking with it, so a subagent keeps
+          // its focused role text and only a role-free agent inherits the
+          // family's tool-calling etiquette. The persona is a pure function of
+          // the resolved model, so it stays out of the durable context epoch:
+          // rebuilding the prefix per turn is what lets the user switch models
+          // mid-session without injecting a second persona into the history.
+          agent.info?.system ??
+            Persona.system({
+              providerID: resolved.info.providerID,
+              modelID: resolved.info.id,
+              apiID: resolved.info.api.id,
+            }),
+          system.baseline,
+        ]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: settings.prune ? SessionPrune.toolResults(messages) : messages,
