@@ -15,6 +15,9 @@ Landed since (2026-09-30), still standalone:
 - `packages/core/src/blob.ts` — content-addressed blob store: `blobs/<sha256>` layout, `put` /
   `get` / `has` / `remove`, atomic temp-then-rename writes, and dedupe on write. Unit-tested in
   `packages/core/test/blob.test.ts`. Not yet wired into attachment or tool-output persistence.
+- New databases request `PRAGMA auto_vacuum = INCREMENTAL` in the native SQLite layers before WAL
+  writes the header (best-effort when another opener holds the lock). Existing databases keep
+  `auto_vacuum = 0` until `miao db vacuum`. Covered by `database-migration.test.ts`.
 
 Not in this slice (blocked on the V2 runner becoming the active write path; see Migration plan
 stages 2–4):

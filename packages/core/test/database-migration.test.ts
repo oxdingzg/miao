@@ -113,6 +113,16 @@ describe("DatabaseMigration", () => {
       ),
     )
   })
+
+  test("enables incremental auto-vacuum on a new database", async () => {
+    await using tmp = await tmpdir()
+    const filename = path.join(tmp.path, "auto-vacuum.sqlite")
+    const row = await Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      return yield* db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`)
+    }).pipe(Effect.provide(Database.layerFromPath(filename)), Effect.scoped, Effect.runPromise)
+    expect(row?.auto_vacuum).toBe(2)
+  })
   if (process.platform === "linux") {
     test("declared schema has no ungenerated migrations", async () => {
       const result = await $`bun ${fileURLToPath(new URL("../script/migration.ts", import.meta.url))} --check`

@@ -229,8 +229,10 @@ Spec: `specs/v2/session-messaging.md`. Depends on Stage 4 (both sessions must be
 ## 6. Workstream D — Storage hardening §5
 
 Progress: the content-addressed `Blob` store (`packages/core/src/blob.ts`, `blobs/<sha256>`,
-atomic write, dedupe) landed with `blob.test.ts`. Wiring attachments and oversized tool output to
-store `hash + mime` references, materialization in `to-llm-message.ts`, and reclaim remain.
+atomic write, dedupe) landed with `blob.test.ts`, and new databases now request
+`auto_vacuum = INCREMENTAL` before WAL (`database-migration.test.ts`). Wiring attachments and
+oversized tool output to store `hash + mime` references, materialization in `to-llm-message.ts`,
+and log retention/blob GC remain.
 
 Spec: `specs/storage/session-storage-hardening.md`. The 1.26 GB lives in the legacy V1 write path
 (`message.updated.1` / `message.part.updated.1`); the V2 publisher already coalesces

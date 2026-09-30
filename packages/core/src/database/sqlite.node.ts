@@ -172,7 +172,16 @@ const nativeLayer = (config: Config) =>
         open: true,
       })
       yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
-      if (config.disableWAL !== true && config.readonly !== true) native.exec("PRAGMA journal_mode = WAL;")
+      if (config.disableWAL !== true && config.readonly !== true) {
+        // auto_vacuum must precede the first header write (WAL) to persist on a
+        // new database. On an existing database it is a no-op until VACUUM, and
+        // it is best-effort: a concurrent opener may hold the write lock.
+        yield* Effect.try({
+          try: () => native.exec("PRAGMA auto_vacuum = INCREMENTAL;"),
+          catch: () => undefined,
+        }).pipe(Effect.ignore)
+        native.exec("PRAGMA journal_mode = WAL;")
+      }
       return native
     }),
   )
