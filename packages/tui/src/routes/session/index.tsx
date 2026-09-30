@@ -1483,6 +1483,7 @@ function UserMessage(props: {
                   body={message().body}
                   title={ctx.sync.session.get(message().sessionID)?.title}
                   conceal={ctx.conceal()}
+                  compact={Boolean(props.receipt)}
                 />
               )}
             </Show>
