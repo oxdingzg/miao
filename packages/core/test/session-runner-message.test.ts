@@ -257,7 +257,8 @@ Recent work
       model,
     )
 
-    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool"])
+    // Unsettled calls still answer on the wire; see the cancellation result below.
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool", "tool", "tool"])
     expect(messages[0]?.content).toEqual([
       { type: "text", text: "Checking" },
       { type: "reasoning", text: "Think", providerMetadata: { anthropic: { signature: "sig_1" } } },
@@ -306,6 +307,22 @@ Recent work
       },
     ])
     expect(messages[1]?.content).toEqual([
+      {
+        type: "tool-result",
+        id: "pending",
+        name: "read",
+        result: { type: "text", value: "Tool call read did not run." },
+      },
+    ])
+    expect(messages[2]?.content).toEqual([
+      {
+        type: "tool-result",
+        id: "running",
+        name: "read",
+        result: { type: "text", value: "Tool call read was interrupted before it produced a result." },
+      },
+    ])
+    expect(messages[3]?.content).toEqual([
       {
         type: "tool-result",
         id: "completed",
@@ -523,4 +540,45 @@ Recent work
       },
     ])
   })
+  test("answers an unsettled tool call so a replayed history stays valid", () => {
+    const tool = (value: string, state: SessionMessage.AssistantTool["state"]) =>
+      SessionMessage.AssistantTool.make({
+        type: "tool",
+        id: `call_${value}`,
+        name: "bash",
+        provider: { executed: false },
+        state,
+        time: { created },
+      })
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Assistant.make({
+          id: id("unsettled"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [
+            tool("pending", { status: "pending", input: '{"command":"ls"}' }),
+            tool("running", { status: "running", input: {}, structured: {}, content: [] }),
+          ],
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    expect(
+      messages.map((message) => ({
+        role: message.role,
+        ids: message.content
+          .filter((part) => part.type === "tool-call" || part.type === "tool-result")
+          .map((part) => `${part.type === "tool-call" ? "call" : "result"}:${part.id}`),
+      })),
+    ).toEqual([
+      { role: "assistant", ids: ["call:call_pending", "call:call_running"] },
+      { role: "tool", ids: ["result:call_pending"] },
+      { role: "tool", ids: ["result:call_running"] },
+    ])
+  })
+
 })

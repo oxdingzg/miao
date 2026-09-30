@@ -80,6 +80,25 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
       providerMetadata,
     })
   }
+  // A tool call that never settled — an interrupted turn, or a provider turn
+  // that failed between recording the call and its result — still has to answer
+  // on the wire. Chat protocols reject a history whose assistant tool call has
+  // no matching tool message ("insufficient tool messages following
+  // tool_calls"), so leaving this out would poison every later request too.
+  return ToolResultPart.make({
+    id: tool.id,
+    name: tool.name,
+    result: {
+      type: "text",
+      value:
+        tool.state.status === "running"
+          ? `Tool call ${tool.name} was interrupted before it produced a result.`
+          : `Tool call ${tool.name} did not run.`,
+    },
+    resultType: "error",
+    providerExecuted: tool.provider?.executed,
+    providerMetadata,
+  })
 }
 
 const assistant = (message: SessionMessage.Assistant, model: Model) => {
@@ -106,7 +125,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
       item,
       reuseProviderMetadata ? (item.provider.resultMetadata ?? item.provider.metadata) : undefined,
     )
-    return result ? [call, result] : [call]
+    return [call, result]
   })
   const meaningful = content.filter((part) => {
     if (part.type === "text") return part.text !== ""
@@ -118,7 +137,6 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
     .map((item) =>
       toolResult(item, reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined),
     )
-    .filter((message) => message !== undefined)
     .map(Message.tool)
   if (meaningful.length === 0) return results
   return [

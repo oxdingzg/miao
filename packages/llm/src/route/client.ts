@@ -338,6 +338,34 @@ export function make<Body, Prepared, Frame, Event, State>(
   })
 }
 
+/**
+ * Opt-in provider-wire diagnostic (`MIAO_DEBUG_LLM_WIRE=1`).
+ *
+ * Prints the message shape as it is sent — role, tool-call ids, the id each
+ * tool result answers, and content size — so a provider rejecting a history
+ * ("insufficient tool messages following tool_calls") can be diffed against
+ * the session it came from without log-guessing.
+ */
+const wireSummary = (body: unknown) => {
+  const messages = (body as { messages?: unknown }).messages
+  if (!Array.isArray(messages)) return { messages: undefined }
+  return {
+    messages: messages.map((message) => {
+      const item = message as Record<string, unknown>
+      const toolCalls = item.tool_calls
+      const content = item.content
+      return {
+        role: item.role,
+        tool_calls: Array.isArray(toolCalls)
+          ? toolCalls.map((call) => (call as { id?: unknown }).id)
+          : undefined,
+        tool_call_id: item.tool_call_id,
+        content_size: typeof content === "string" ? content.length : Array.isArray(content) ? content.length : content,
+      }
+    }),
+  }
+}
+
 // `compile` is the important boundary: it turns a common `LLMRequest` into a
 // validated provider body plus transport-private prepared data, but does not
 // execute transport.
@@ -348,6 +376,8 @@ const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest) {
   const body = yield* route.body
     .from(resolved)
     .pipe(Effect.flatMap(ProviderShared.validateWith(Schema.decodeUnknownEffect(route.body.schema))))
+  if (process.env.MIAO_DEBUG_LLM_WIRE === "1")
+    yield* Effect.logInfo("llm.wire", { route: route.id, ...wireSummary(body) })
   const prepared = yield* route.prepareTransport(body, resolved)
 
   return {
