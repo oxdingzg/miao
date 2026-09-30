@@ -462,7 +462,7 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
-  it.effect("lowers reasoning-only assistant history", () =>
+  it.effect("keeps reasoning-only assistant history valid with empty content", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
         LLM.request({
@@ -472,7 +472,51 @@ describe("OpenAI Chat route", () => {
         }),
       )
 
-      expect(prepared.body.messages).toEqual([{ role: "assistant", content: null, reasoning_content: "hidden" }])
+      // DeepSeek rejects an assistant message whose content and tool_calls are
+      // both unset, so the reasoning-only turn keeps an explicit empty content.
+      expect(prepared.body.messages).toEqual([{ role: "assistant", content: "", reasoning_content: "hidden" }])
+    }),
+  )
+
+  it.effect("drops assistant history with nothing to replay", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          id: "req_empty",
+          model,
+          messages: [Message.user("hello"), Message.assistant([]), Message.assistant({ type: "text", text: "" })],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([{ role: "user", content: "hello" }])
+    }),
+  )
+
+  it.effect("keeps reasoning linked to tool calls without inventing content", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          id: "req_reasoning_tool",
+          model,
+          messages: [
+            Message.assistant([
+              { type: "reasoning", text: "let me look" },
+              { type: "tool-call", id: "call_1", name: "lookup", input: { query: "weather" } },
+            ]),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_1", type: "function", function: { name: "lookup", arguments: '{"query":"weather"}' } },
+          ],
+          reasoning_content: "let me look",
+        },
+      ])
     }),
   )
 

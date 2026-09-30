@@ -5,6 +5,7 @@ import { LLM, Message, ToolCallPart } from "../../src"
 import { Auth, LLMClient } from "../../src/route"
 import * as OpenAICompatible from "../../src/providers/openai-compatible"
 import * as OpenAICompatibleChat from "../../src/protocols/openai-compatible-chat"
+import type { OpenAIChatBody } from "../../src/protocols/openai-chat"
 import { it } from "../lib/effect"
 import { dynamicResponse } from "../lib/http"
 import { sseEvents } from "../lib/sse"
@@ -233,6 +234,44 @@ describe("OpenAI-compatible Chat route", () => {
       expect(response.text).toBe("Hello!")
       expect(response.usage).toMatchObject({ inputTokens: 5, outputTokens: 2, totalTokens: 7 })
       expect(response.events.at(-1)).toMatchObject({ type: "finish", reason: "stop" })
+    }),
+  )
+
+  it.effect("normalizes DeepSeek reasoning-only assistant turns", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChatBody>(
+        LLM.request({
+          id: "req_deepseek_reasoning",
+          model,
+          messages: [
+            Message.user("check the weather"),
+            Message.assistant({ type: "reasoning", text: "hidden chain of thought" }),
+            Message.assistant([
+              { type: "reasoning", text: "call the tool" },
+              ToolCallPart.make({ id: "call_1", name: "lookup", input: { query: "weather" } }),
+            ]),
+            Message.tool({ id: "call_1", name: "lookup", result: { forecast: "sunny" } }),
+          ],
+        }),
+      )
+
+      // DeepSeek rejects an assistant message with neither content nor
+      // tool_calls ("Invalid assistant message: content or tool_calls must be
+      // set"). A reasoning-only turn keeps an explicit empty content, while a
+      // tool-call turn keeps content null and its reasoning linkage.
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "check the weather" },
+        { role: "assistant", content: "", reasoning_content: "hidden chain of thought" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_1", type: "function", function: { name: "lookup", arguments: '{"query":"weather"}' } },
+          ],
+          reasoning_content: "call the tool",
+        },
+        { role: "tool", tool_call_id: "call_1", content: '{"forecast":"sunny"}' },
+      ])
     }),
   )
 })

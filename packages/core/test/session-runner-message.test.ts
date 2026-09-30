@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Message, Model } from "@miao/llm"
+import { LLM, Message, Model } from "@miao/llm"
+import { LLMClient } from "@miao/llm/route"
 import * as OpenAIChat from "@miao/llm/protocols/openai-chat"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
@@ -7,7 +8,7 @@ import { SessionMessage } from "@miao/core/session/message"
 import { AgentAttachment, FileAttachment } from "@miao/core/session/prompt"
 import { toLLMMessages } from "@miao/core/session/runner/to-llm-message"
 import { SessionV2 } from "@miao/core/session"
-import { DateTime } from "effect"
+import { DateTime, Effect } from "effect"
 
 const created = DateTime.makeUnsafe(0)
 const id = (value: string) => SessionMessage.ID.make(`msg_${value}`)
@@ -45,6 +46,38 @@ describe("toLLMMessages", () => {
     )
 
     expect(messages.map((message) => message.id)).toEqual([id("text"), id("reasoning")])
+  })
+
+  test("encodes a reasoning-only assistant turn as a valid OpenAI Chat message", async () => {
+    const history = toLLMMessages(
+      [
+        SessionMessage.User.make({ id: id("user"), type: "user", text: "Continue", time: { created } }),
+        SessionMessage.Assistant.make({
+          id: id("reasoning-only"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [
+            SessionMessage.AssistantReasoning.make({ type: "reasoning", id: "reasoning", text: "hidden thought" }),
+          ],
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    const prepared = await Effect.runPromise(
+      LLMClient.prepare<OpenAIChat.OpenAIChatBody>(LLM.request({ id: "req", model, messages: history })),
+    )
+
+    // DeepSeek rejects an assistant message whose content and tool_calls are
+    // both unset ("Invalid assistant message: content or tool_calls must be
+    // set"). The projected reasoning-only turn stays replayable with an
+    // explicit empty content rather than being deleted from the request.
+    expect(prepared.body.messages).toEqual([
+      { role: "user", content: "Continue" },
+      { role: "assistant", content: "", reasoning_content: "hidden thought" },
+    ])
   })
 
   test("maps every top-level V2 Session message type", () => {

@@ -250,14 +250,26 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
       continue
     }
   }
+  const text = ProviderShared.joinText(content)
+  const reasoning_content =
+    reasoning.length > 0
+      ? reasoning.map((part) => part.text).join("")
+      : openAICompatibleReasoningContent(message.native?.openaiCompatible)
+  // Strict validators (DeepSeek) reject an assistant message whose `content`
+  // and `tool_calls` are both unset: "Invalid assistant message: content or
+  // tool_calls must be set". A reasoning-only turn carries no text and no tool
+  // calls, so emitting `content: null` would poison every later request. Keep
+  // the turn and its reasoning replayable with an explicit empty `content`, and
+  // drop only the turn when there is no reasoning left to preserve either.
+  if (text.length === 0 && toolCalls.length === 0)
+    return reasoning_content === undefined || reasoning_content.length === 0
+      ? undefined
+      : { role: "assistant" as const, content: "" as const, reasoning_content }
   return {
     role: "assistant" as const,
-    content: content.length === 0 ? null : ProviderShared.joinText(content),
+    content: text.length === 0 ? null : text,
     tool_calls: toolCalls.length === 0 ? undefined : toolCalls,
-    reasoning_content:
-      reasoning.length > 0
-        ? reasoning.map((part) => part.text).join("")
-        : openAICompatibleReasoningContent(message.native?.openaiCompatible),
+    reasoning_content,
   }
 })
 
@@ -286,7 +298,10 @@ const lowerToolMessages = Effect.fn("OpenAIChat.lowerToolMessages")(function* (m
 
 const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (message: OpenAIChatRequestMessage) {
   if (message.role === "user") return [yield* lowerUserMessage(message)]
-  if (message.role === "assistant") return [yield* lowerAssistantMessage(message)]
+  if (message.role === "assistant") {
+    const lowered = yield* lowerAssistantMessage(message)
+    return lowered === undefined ? [] : [lowered]
+  }
   return (yield* lowerToolMessages(message)).messages
 })
 
