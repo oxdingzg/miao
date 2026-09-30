@@ -27,26 +27,26 @@ const npmLayer = Layer.succeed(
   }),
 )
 
-export const PluginTestLayer = AppNodeBuilder.build(
-  LayerNode.group([
-    FileSystem.node,
-    FSUtil.node,
-    Location.node,
-    Npm.node,
-    Credential.node,
-    EventV2.node,
-    LayerNodePlatform.httpClient,
-    PluginV2.node,
-    AgentV2.node,
-    AISDK.node,
-    Catalog.node,
-    CommandV2.node,
-    Integration.node,
-    Reference.node,
-    SkillV2.node,
-  ]),
-  [
-    [Location.node, tempLocationLayer],
-    [Npm.node, npmLayer],
-  ],
-)
+export const pluginTestLayer = (replacements: LayerNode.Replacements = []) =>
+  AppNodeBuilder.build(
+    LayerNode.group([
+      FileSystem.node,
+      FSUtil.node,
+      Location.node,
+      Npm.node,
+      Credential.node,
+      EventV2.node,
+      LayerNodePlatform.httpClient,
+      PluginV2.node,
+      AgentV2.node,
+      AISDK.node,
+      Catalog.node,
+      CommandV2.node,
+      Integration.node,
+      Reference.node,
+      SkillV2.node,
+    ]),
+    [[Location.node, tempLocationLayer], [Npm.node, npmLayer], ...replacements],
+  )
+
+export const PluginTestLayer = pluginTestLayer()

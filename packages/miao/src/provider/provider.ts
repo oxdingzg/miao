@@ -8,6 +8,7 @@ import { NoSuchModelError, type Provider as SDK } from "ai"
 import { Npm } from "@miao/core/npm"
 import { Hash } from "@miao/core/util/hash"
 import { Plugin } from "../plugin"
+import { TencentTokenPlan } from "@miao/core/tencent-token-plan"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "@miao/core/models-dev"
@@ -20,6 +21,7 @@ import { Global } from "@miao/core/global"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema, Stream, Types } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
@@ -174,7 +176,8 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
 
 // Tencent documents these Token Plan model IDs, but models.dev currently lists
 // only Hy3 and Hy4. Keep catalog/user-defined entries authoritative when they
-// catch up. The shared plan key does not reveal which plan the user purchased.
+// catch up. A plan key is scoped to the models its plan includes, so an entry is
+// only seeded when the gateway's own model list confirms the key can call it.
 const TENCENT_TOKEN_PLAN_MODELS = [
   ["tc-code-latest", "Auto", "auto", false],
   ["deepseek-v4-flash-202605", "DeepSeek V4 Flash", "deepseek", false],
@@ -192,10 +195,29 @@ const TENCENT_TOKEN_PLAN_MODELS = [
 
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
-    "tencent-token-plan": (input) => {
-      const template = input.models["hy3"] ?? input.models["hy4-preview"]
+    "tencent-token-plan": Effect.fnUntraced(function* (input: Info) {
+      const configured = input.options?.baseURL
+      const baseURL = typeof configured === "string" && configured !== "" ? configured : TencentTokenPlan.API
+      const auth = yield* dep.auth(input.id)
+      const authorized = yield* Effect.gen(function* () {
+        if (auth?.type !== "api") return undefined
+        const http = yield* HttpClient.HttpClient
+        return yield* TencentTokenPlan.authorizedModels({ baseURL, key: auth.key, http })
+      }).pipe(Effect.provide(FetchHttpClient.layer))
+      // models.dev lists plan models the key may not be scoped for (Hy3 answers
+      // 403 on this gateway), so drop every catalog model the gateway does not list.
+      if (authorized !== undefined) {
+        for (const id of Object.keys(input.models)) {
+          if (authorized.has(id) || authorized.has(input.models[id].api.id)) continue
+          delete input.models[id]
+        }
+      }
+      // Seed from a model the gateway left in place, never from a hidden one.
+      const template =
+        input.models["hy4-preview"] ?? Object.values(input.models).find((model) => model.api.url === baseURL)
       if (template) {
         for (const [id, name, family, image] of TENCENT_TOKEN_PLAN_MODELS) {
+          if (authorized !== undefined && !authorized.has(id)) continue
           if (input.models[id]) continue
           input.models[id] = {
             ...template,
@@ -215,8 +237,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           }
         }
       }
-      return Effect.succeed({ autoload: false })
-    },
+      return { autoload: false }
+    }),
     anthropic: () =>
       Effect.succeed({
         autoload: false,
