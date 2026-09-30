@@ -7,6 +7,7 @@ import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
 import { Flag } from "@miao/core/flag/flag"
 import { SplitBorder } from "../../ui/border"
+import { useToast } from "../../ui/toast"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
 
@@ -14,6 +15,7 @@ const QUESTION_MODE = "question"
 
 export function QuestionPrompt(props: { request: QuestionRequest; directory?: string }) {
   const sdk = useSDK()
+  const toast = useToast()
   const { theme } = useTheme()
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
@@ -48,29 +50,45 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
   function submit() {
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void (Flag.MIAO_TUI_V2
-      ? sdk.client.v2.session.question.reply({
-          sessionID: props.request.sessionID,
-          requestID: props.request.id,
-          questionV2Reply: { answers },
-        })
-      : sdk.client.question.reply({
-          requestID: props.request.id,
-          directory: props.directory,
-          answers,
-        }))
+    void (
+      Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session.question.reply(
+            {
+              sessionID: props.request.sessionID,
+              requestID: props.request.id,
+              questionV2Reply: { answers },
+            },
+            { throwOnError: true },
+          )
+        : sdk.client.question.reply(
+            {
+              requestID: props.request.id,
+              directory: props.directory,
+              answers,
+            },
+            { throwOnError: true },
+          )
+    ).catch((error: unknown) => toast.error(error))
   }
 
   function reject() {
-    void (Flag.MIAO_TUI_V2
-      ? sdk.client.v2.session.question.reject({
-          sessionID: props.request.sessionID,
-          requestID: props.request.id,
-        })
-      : sdk.client.question.reject({
-          requestID: props.request.id,
-          directory: props.directory,
-        }))
+    void (
+      Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session.question.reject(
+            {
+              sessionID: props.request.sessionID,
+              requestID: props.request.id,
+            },
+            { throwOnError: true },
+          )
+        : sdk.client.question.reject(
+            {
+              requestID: props.request.id,
+              directory: props.directory,
+            },
+            { throwOnError: true },
+          )
+    ).catch((error: unknown) => toast.error(error))
   }
 
   function pick(answer: string, custom: boolean = false) {
@@ -83,17 +101,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
       setStore("custom", inputs)
     }
     if (single()) {
-      void (Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session.question.reply({
-            sessionID: props.request.sessionID,
-            requestID: props.request.id,
-            questionV2Reply: { answers: [[answer]] },
-          })
-        : sdk.client.question.reply({
-            requestID: props.request.id,
-            directory: props.directory,
-            answers: [[answer]],
-          }))
+      submit()
       return
     }
     setStore("tab", store.tab + 1)
@@ -116,6 +124,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   }
 
   function selectTab(index: number) {
+    setStore("editing", false)
     setStore("tab", index)
     setStore("selected", 0)
   }
