@@ -304,6 +304,23 @@ const statusError =
       })
     })
 
+// Effect's fetch client reports a client-side reject as
+// `TransportError({ request, cause })` and leaves `description` unset, so the
+// underlying failure only exists on `cause`. Flatten it into one readable
+// fragment: the error message, its errno-style code, and the wrapped cause that
+// undici attaches (`TypeError: fetch failed` -> `Error: connect ECONNRESET`).
+const causeDetail = (cause: unknown): string | undefined => {
+  if (cause === undefined || cause === null) return undefined
+  if (!(cause instanceof Error)) return String(cause)
+  const code = "code" in cause && typeof cause.code === "string" ? cause.code : undefined
+  const wrapped = cause.cause
+  const wrappedMessage = wrapped instanceof Error ? wrapped.message : typeof wrapped === "string" ? wrapped : undefined
+  const detail = [cause.message, code, wrappedMessage]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" / ")
+  return detail.length > 0 ? detail : undefined
+}
+
 const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: unknown) => {
   const transportError = (input: {
     readonly message: string
@@ -325,12 +342,17 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
     return transportError({ message: error.message, kind: "Timeout" })
   }
   if (!HttpClientError.isHttpClientError(error)) {
-    return transportError({ message: "HTTP transport failed" })
+    return transportError({ message: `HTTP transport failed: ${causeDetail(error) ?? "unknown error"}` })
   }
   const request = "request" in error ? error.request : undefined
   if (error.reason._tag === "TransportError") {
+    const detail = [error.reason.description, causeDetail(error.reason.cause)]
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
+      .join(": ")
     return transportError({
-      message: error.reason.description ?? "HTTP transport failed",
+      // Prefer the concrete cause; Effect's own message carries only the method
+      // and URL, which is still far more useful than a bare constant.
+      message: detail.length > 0 ? detail : error.reason.message,
       kind: error.reason._tag,
       request,
     })

@@ -425,6 +425,25 @@ describe("RequestExecutor", () => {
     }).pipe(Effect.provideService(Random.Random, randomMidpoint)),
   )
 
+  it.effect("names the underlying cause when the fetch layer rejects", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      // Port 1 refuses immediately, so this is the same shape the fetch client
+      // produces for any connection failure: `TransportError({ request, cause })`
+      // with no description. Before, every one of these collapsed into the bare
+      // constant and nothing about the failure survived.
+      const error = yield* executor
+        .execute(HttpClientRequest.post("http://127.0.0.1:1/v1/chat"))
+        .pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason).toMatchObject({ _tag: "Transport", kind: "TransportError" })
+      expect(error.reason.message).not.toBe("HTTP transport failed")
+      // Bun and Node word a refused connection differently, but both name it.
+      expect(error.reason.message.toLowerCase()).toContain("connect")
+    }).pipe(Effect.provide(RequestExecutor.fetchLayer)),
+  )
+
   it.effect("does not retry after a successful response reaches stream parsing", () =>
     Effect.gen(function* () {
       const attempts = yield* Ref.make(0)
