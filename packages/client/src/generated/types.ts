@@ -3072,3 +3072,34 @@ export type ProjectCopiesRefreshInput = {
 }
 
 export type ProjectCopiesRefreshOutput = void
+
+export type ServerProjectCurrentInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type ServerProjectCurrentOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly id: string; readonly directory: string }
+}
+
+export type ServerProjectDirectoriesInput = {
+  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type ServerProjectDirectoriesOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{ readonly directory: string; readonly strategy?: string | null }>
+}

@@ -134,6 +134,10 @@ import type {
   ProjectCopiesRemoveOutput,
   ProjectCopiesRefreshInput,
   ProjectCopiesRefreshOutput,
+  ServerProjectCurrentInput,
+  ServerProjectCurrentOutput,
+  ServerProjectDirectoriesInput,
+  ServerProjectDirectoriesOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -1132,6 +1136,32 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [400, 401],
             empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    "server.project": {
+      current: (input?: ServerProjectCurrentInput, requestOptions?: RequestOptions) =>
+        request<ServerProjectCurrentOutput>(
+          {
+            method: "GET",
+            path: `/api/project/current`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      directories: (input: ServerProjectDirectoriesInput, requestOptions?: RequestOptions) =>
+        request<ServerProjectDirectoriesOutput>(
+          {
+            method: "GET",
+            path: `/api/project/${encodeURIComponent(input.projectID)}/directories`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
           },
           requestOptions,
         ),
