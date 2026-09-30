@@ -1,6 +1,6 @@
 {
   "name": "@miao/function",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "$schema": "https://json.schemastore.org/package.json",
   "private": true,
   "type": "module",
