@@ -68,6 +68,8 @@ import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { SessionActivity } from "./activity"
+import { SessionMessageContent } from "./session-message"
+import { parseSessionMessage } from "../../util/session-message"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
 import { formatTranscript } from "../../util/transcript"
@@ -1407,6 +1409,7 @@ function UserMessage(props: {
       .filter(Boolean)
     return texts.join("\n\n")
   })
+  const sessionMessage = createMemo(() => parseSessionMessage(text()))
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
@@ -1442,7 +1445,16 @@ function UserMessage(props: {
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
           >
-            <text fg={theme.text}>{text()}</text>
+            <Show when={sessionMessage()} fallback={<text fg={theme.text}>{text()}</text>}>
+              {(message) => (
+                <SessionMessageContent
+                  sessionID={message().sessionID}
+                  body={message().body}
+                  title={ctx.sync.session.get(message().sessionID)?.title}
+                  conceal={ctx.conceal()}
+                />
+              )}
+            </Show>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
                 <For each={files()}>
