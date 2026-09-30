@@ -146,6 +146,7 @@ const layer = Layer.effect(
     const snapshots = yield* Snapshot.Service
     const creation = yield* SessionCreate.Service
     const todos = yield* SessionTodo.Service
+    const permission = yield* PermissionV2.Service
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -628,6 +629,7 @@ const layer = Layer.effect(
     const runSendMessage = Effect.fnUntraced(function* (
       senderSessionID: SessionSchema.ID,
       request: { readonly to: string; readonly message: string },
+      context: { readonly agent: AgentV2.ID; readonly assistantMessageID: SessionMessage.ID; readonly toolCallID: string },
       wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
     ) {
       const sender = yield* getSession(senderSessionID)
@@ -642,6 +644,16 @@ const layer = Layer.effect(
         return yield* new ToolFailure({
           message: `Session ${target.id} inbox is full (${pending} queued messages); try again later.`,
         })
+      // Consulted as action `message` per target; the shared user-declined path
+      // handles an explicit deny.
+      yield* permission.assert({
+        action: "message",
+        resources: [target.id],
+        save: ["*"],
+        sessionID: sender.id,
+        agent: context.agent,
+        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+      })
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: target.id,
@@ -673,8 +685,8 @@ const layer = Layer.effect(
                     ),
                   ),
                 ),
-                send_message: SendMessageTool.make((request) =>
-                  runSendMessage(input.sessionID, request, input.wake).pipe(
+                send_message: SendMessageTool.make((request, context) =>
+                  runSendMessage(input.sessionID, request, context, input.wake).pipe(
                     Effect.mapError((error) =>
                       error instanceof ToolFailure
                         ? error
@@ -797,5 +809,6 @@ export const node = makeLocationNode({
     Database.node,
     SessionCreate.node,
     SessionTodo.node,
+    PermissionV2.node,
   ],
 })

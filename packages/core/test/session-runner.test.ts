@@ -115,10 +115,14 @@ const recoveryModel = Model.make({
 })
 const authorizations: Tool.Context[] = []
 const executions: string[] = []
+const permissionAsserts: Array<{ action: string; resources: readonly string[] }> = []
 const permission = Layer.succeed(
   PermissionV2.Service,
   PermissionV2.Service.of({
-    assert: () => Effect.die("unused"),
+    assert: (input) => {
+      permissionAsserts.push({ action: input.action, resources: [...input.resources] })
+      return input.action === "message" ? Effect.void : Effect.die("unused")
+    },
     ask: () => Effect.die("unused"),
     reply: () => Effect.die("unused"),
     get: () => Effect.die("unused"),
@@ -339,6 +343,7 @@ const setup = Effect.gen(function* () {
   toolExecutionsReady = 5
   activeToolExecutions = 0
   maxActiveToolExecutions = 0
+  permissionAsserts.length = 0
   yield* db
     .insert(ProjectTable)
     .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
@@ -1777,6 +1782,9 @@ describe("SessionRunnerLLM", () => {
       yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
 
       expect(wakes).toEqual([otherSessionID])
+      expect(
+        permissionAsserts.some((entry) => entry.action === "message" && entry.resources.includes(otherSessionID)),
+      ).toBe(true)
       expect(yield* SessionInput.hasPending(db, otherSessionID, "queue")).toBe(true)
 
       // Draining the target materializes the attributed message in its transcript.

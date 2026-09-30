@@ -233,8 +233,9 @@ tool that resolves a target Session ID or `@slug`, rejects missing and cross-pro
 refuses to overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
 `<message from session="…">` input, and wakes the target through a new `wake` callback on
 `SessionRunner.run` (passed by `SessionExecutionLocal`). A companion `list_sessions` tool enumerates
-sibling Sessions so a sender can discover an `@slug` target. Covered by `session-runner.test.ts`.
-Remaining: the `message` permission action.
+sibling Sessions so a sender can discover an `@slug` target, and delivery asserts the `message`
+permission action per target (default ask). Covered by `session-runner.test.ts`.
+Remaining: loop-guard cost accounting for a receiving drain.
 
 - Verify: A sends to B; B receives as an input; replies route back; no duplicate delivery after
   restart; isolated from unrelated sessions.

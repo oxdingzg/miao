@@ -2,7 +2,7 @@ export * as SendMessageTool from "./send-message"
 
 import { ToolFailure } from "@miao/llm"
 import { Effect, Schema } from "effect"
-import { Tool, type AnyTool } from "./tool"
+import { Tool, type AnyTool, type Context } from "./tool"
 
 export const name = "send_message"
 
@@ -10,10 +10,13 @@ export const name = "send_message"
 export const MAX_INBOUND_QUEUE = 16
 
 /** Session capability injected by the runner so the tool can reach a peer Session. */
-export type Send = (input: {
-  readonly to: string
-  readonly message: string
-}) => Effect.Effect<{ readonly sessionID: string }, ToolFailure>
+export type Send = (
+  input: {
+    readonly to: string
+    readonly message: string
+  },
+  context: Context,
+) => Effect.Effect<{ readonly sessionID: string }, ToolFailure>
 
 export const Input = Schema.Struct({
   to: Schema.String.annotate({ description: "Target Session ID (ses_...)" }),
@@ -37,5 +40,5 @@ export const make = (send: Send): AnyTool =>
     input: Input,
     output: Output,
     toModelOutput: ({ output }) => [{ type: "text", text: `Message delivered to ${output.sessionID}` }],
-    execute: (input) => send({ to: input.to, message: input.message }),
+    execute: (input, context) => send({ to: input.to, message: input.message }, context),
   })

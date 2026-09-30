@@ -65,6 +65,9 @@ Landed: the session-scoped `send_message` tool (`{ to, message }`) resolves a Se
 project, refuses to exceed the per-Session inbound queue cap (`MAX_INBOUND_QUEUE`), admits a queued
 input attributed as `<message from session="…">`, and wakes the target through the runner's `wake`
 callback. The companion `list_sessions` tool enumerates sibling Sessions in the project so a
-sender can discover an `@slug` target. Covered by `packages/core/test/session-runner.test.ts`.
+sender can discover an `@slug` target. Delivery asserts the `message` permission action per target
+(default ask; explicit deny uses the shared user-declined path). Covered by
+`packages/core/test/session-runner.test.ts`.
 
-Still open: the `message` permission action and loop-guard cost accounting for a receiving drain.
+Still open: loop-guard cost accounting for a receiving drain and a per-target `save` policy for the
+`message` action.
