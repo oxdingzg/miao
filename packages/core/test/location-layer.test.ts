@@ -17,6 +17,7 @@ import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { WorkspaceV2 } from "@miao/core/workspace"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 import { toolDefinitions } from "./lib/tool"
@@ -29,6 +30,7 @@ import { ModelsDev } from "../src/models-dev"
 import { Npm } from "../src/npm"
 import { Project } from "../src/project"
 import { Reference } from "../src/reference"
+import { fromRow } from "../src/session/info"
 import { ToolRegistry } from "../src/tool/registry"
 import { ApplicationTools } from "../src/tool/application-tools"
 
@@ -55,6 +57,61 @@ describe("LocationServiceMap", () => {
             expect(Equal.equals(constructed, decoded)).toBe(true)
             expect(Hash.hash(constructed)).toBe(Hash.hash(decoded))
             expect(yield* locations.contextEffect(constructed)).toBe(yield* locations.contextEffect(decoded))
+          }),
+        ),
+      ),
+    ),
+  )
+
+  it.live("resolves a projected session location to the same services as a request ref", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const locations = yield* LocationServiceMap.Service
+            const row = {
+              id: "ses_location_identity",
+              project_id: "prj_location_identity",
+              title: "identity",
+              parent_id: null,
+              agent: null,
+              model: null,
+              cost: 0,
+              tokens_input: 0,
+              tokens_output: 0,
+              tokens_reasoning: 0,
+              tokens_cache_read: 0,
+              tokens_cache_write: 0,
+              directory: dir.path,
+              path: null,
+              time_created: 0,
+              time_updated: 0,
+              time_archived: null,
+              revert: null,
+            }
+            // The HTTP session-location middleware builds the request ref this
+            // way; the projected row must produce the exact same key shape or
+            // the two resolve separate Location instances and split pending
+            // question/permission state.
+            const absent = fromRow({ ...row, workspace_id: null } as never).location
+            const requestAbsent = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+
+            expect(absent).toEqual(requestAbsent)
+            expect(Reflect.ownKeys(absent)).toEqual(Reflect.ownKeys(requestAbsent))
+            expect(yield* locations.contextEffect(absent)).toBe(yield* locations.contextEffect(requestAbsent))
+
+            const present = fromRow({ ...row, workspace_id: "wrk_location_identity" } as never).location
+            const requestPresent = Location.Ref.make({
+              directory: AbsolutePath.make(dir.path),
+              workspaceID: WorkspaceV2.ID.make("wrk_location_identity"),
+            })
+
+            expect(present).toEqual(requestPresent)
+            expect(Reflect.ownKeys(present)).toEqual(Reflect.ownKeys(requestPresent))
+            expect(yield* locations.contextEffect(present)).toBe(yield* locations.contextEffect(requestPresent))
           }),
         ),
       ),
