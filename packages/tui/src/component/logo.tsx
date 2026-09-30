@@ -2,11 +2,14 @@ import { BoxRenderable, MouseButton, MouseEvent, RGBA, TextAttributes } from "@o
 import { useRenderer } from "@opentui/solid"
 import { For, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { useTheme, tint } from "../context/theme"
-import { logo } from "../logo"
+import { banner, logo, wordmarkColumns } from "../logo"
 
 export type LogoShape = {
   left: string[]
   right: string[]
+  // Per-column inks, in the same coordinates the shimmer field uses: the left block, then
+  // the right one at `left + GAP`. Cells outside every span keep the line's ink.
+  inks?: Array<{ from: number; to: number; ink: RGBA }>
 }
 
 type ShimmerConfig = {
@@ -87,6 +90,32 @@ const TAIL = 1.8
 const TRACE_IN = 200
 const GLOW_OUT = 1600
 const PEAK = RGBA.fromInts(255, 255, 255)
+
+// The exit-banner palette: coral cat, warm ramp across M I A O. Mirrors the ansi
+// indices 210 / 209 / 215 / 221 / 226 used by `util/presentation.ts` and `install`.
+const bannerInks = [
+  RGBA.fromInts(255, 135, 135),
+  RGBA.fromInts(255, 135, 95),
+  RGBA.fromInts(255, 175, 95),
+  RGBA.fromInts(255, 215, 95),
+  RGBA.fromInts(255, 255, 0),
+]
+
+const bannerOffset = banner.left[0].length + GAP
+
+/** The home banner: the cat beside the solid-block wordmark, in the exit-banner colors. */
+export const bannerShape: LogoShape = {
+  left: banner.left,
+  right: banner.right,
+  inks: [
+    { from: 0, to: banner.left[0].length - 1, ink: bannerInks[0] },
+    ...wordmarkColumns.map(([from, to], index) => ({
+      from: from + bannerOffset,
+      to: to + bannerOffset,
+      ink: bannerInks[index + 1],
+    })),
+  ],
+}
 
 type Ring = {
   x: number
@@ -684,17 +713,21 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
   const renderLine = (
     line: string,
     y: number,
-    ink: RGBA,
+    base: RGBA,
     bold: boolean,
     off: number,
     frame: Frame,
     dusk: Frame,
     state: IdleState | undefined,
   ): JSX.Element[] => {
-    const shadow = tint(theme.background, ink, 0.25)
     const attrs = bold ? TextAttributes.BOLD : undefined
 
     return Array.from(line).map((char, i) => {
+      // The banner art carries its own inks so the cat and every wordmark letter can match
+      // the exit epilogue; without them the line ink applies.
+      const ink = props.shape?.inks?.find((span) => off + i >= span.from && off + i <= span.to)?.ink ?? base
+      const shadow = tint(theme.background, ink, 0.25)
+
       if (char === " ") {
         return (
           <text fg={ink} attributes={attrs} selectable={false}>
