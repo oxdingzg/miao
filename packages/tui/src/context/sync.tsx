@@ -758,7 +758,17 @@ export const {
               Flag.MIAO_TUI_V2
                 ? sdk.client.v2.session.todo({ sessionID }).then((x) => ({ data: x.data?.data }))
                 : sdk.client.session.todo({ sessionID }),
-              sdk.client.session.diff({ sessionID }),
+              Flag.MIAO_TUI_V2
+                ? sdk.client.v2.session.diff({ sessionID }).then((x) => ({
+                    data: (x.data?.data ?? []).map((file) => ({
+                      file: file.path,
+                      patch: file.patch,
+                      additions: file.additions,
+                      deletions: file.deletions,
+                      status: file.status,
+                    })),
+                  }))
+                : sdk.client.session.diff({ sessionID }),
             ])
             setStore(
               produce((draft) => {

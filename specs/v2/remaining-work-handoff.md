@@ -205,16 +205,16 @@ map): app SDK shims → V1 route groups → V1 session engine → V1 tools/trans
 `packages/core/v1` schemas → legacy SDK → the `packages/miao` server/engine. Gate each deletion on
 "no client imports a `/session/*` route" and the full suite.
 
-**Stage 5 gate status (2026-09-30).** TUI session writes and `context`/`messages` are on V2, and
-`session.get`/`session.todo` now use `v2.session.get`/`v2.session.todo` (mapped through
+**Stage 5 gate status (2026-09-30).** TUI session writes, `context`/`messages`, `get`, `todo`,
+`rename`, `remove`, and the session-diff hydration are on V2 (mapped through
 `context/session-v2-read.ts`). Still calling `/session/*` (V1), so the gate is not met:
 
-- `sdk.client.session.list` — `context/sync.tsx` (`listSessions`), `component/dialog-session-list.tsx`.
-- `sdk.client.session.diff` — `context/sync.tsx`, `feature-plugins/system/diff-viewer.tsx`.
+- `sdk.client.session.list` — `context/sync.tsx` (`listSessions`), `component/dialog-session-list.tsx`
+  (V2 list uses different query params and a `SessionsResponse` body, so it needs a query/response map).
 - `sdk.client.session.status` — `context/sync.tsx` (V2 exposes per-session `v2.session.status` and
-  `v2.session.active` instead of a whole-map status).
-- `sdk.client.session.update` (rename) → `v2.session.rename`; `sdk.client.session.delete` →
-  `v2.session.remove` (`component/dialog-session-rename.tsx`, `dialog-session-list.tsx`).
+  `v2.session.active`, not a whole-map status).
+- `sdk.client.session.diff` with `messageID` — `feature-plugins/system/diff-viewer.tsx`
+  (V2 `session.diff` is session-scoped and has no message cutoff).
 - `sdk.client.session.unshare` — no V2 equivalent; sharing is not in the current protocol.
 
 Migrate/remove those, then Stage 5 can start.
