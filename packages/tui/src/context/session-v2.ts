@@ -71,7 +71,13 @@ export function sessionContextToMessages(input: {
         },
         parts: message.content.map((content) => {
           if (content.type === "text") {
-            return { id: content.id, sessionID: input.sessionID, messageID: message.id, type: "text", text: content.text }
+            return {
+              id: content.id,
+              sessionID: input.sessionID,
+              messageID: message.id,
+              type: "text",
+              text: content.text,
+            }
           }
           if (content.type === "reasoning") {
             return {
@@ -136,11 +142,25 @@ function toolPart(
                 input: state.input,
                 output: textOf(state.content),
                 title: tool.name,
-                metadata: {},
+                metadata: { ...structuredMetadata(state.structured), output: textOf(state.content) },
                 time: { start, end },
               }
-            : { status: "error", input: state.input, error: state.error.message, metadata: {}, time: { start, end } },
+            : {
+                status: "error",
+                input: state.input,
+                error: state.error.message,
+                metadata: structuredMetadata(state.structured),
+                time: { start, end },
+              },
   }
+}
+
+// V2 tool state carries the tool's structured output separately from its text
+// content. The TUI renderers read both `metadata` (summaries, diffs, counts) and
+// `output` (body text), so merge them back into the V1 shape.
+function structuredMetadata(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
 }
 
 function textOf(content: Array<{ type: string; text?: string }>) {
