@@ -245,6 +245,11 @@ export const {
         case "session.next.prompted": {
           if (!Flag.MIAO_TUI_V2) break
           const input = event.properties
+          // A promoted prompt is visible history now, so its local receipt has to
+          // go either way. `send` schedules a refresh that can hydrate the message
+          // before this event arrives, and returning early on that race used to
+          // leave the receipt pinned to the tail of the transcript forever.
+          if (event.type === "session.next.prompted") pendingPrompts.remove(input.messageID)
           if (store.message[input.sessionID]?.some((message) => message.id === input.messageID)) break
           const session = store.session.find((session) => session.id === input.sessionID)
           const [message] = sessionContextToMessages({
