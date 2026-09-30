@@ -1,6 +1,6 @@
 {
   "name": "@miao/console-function",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "$schema": "https://json.schemastore.org/package.json",
   "private": true,
   "type": "module",
