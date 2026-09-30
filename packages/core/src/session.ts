@@ -168,7 +168,9 @@ export interface Interface {
   readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
   readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
-  readonly diff: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<typeof Revert.FileDiff.Type>, NotFoundError>
+  readonly diff: (
+    sessionID: SessionSchema.ID,
+  ) => Effect.Effect<ReadonlyArray<typeof Revert.FileDiff.Type>, NotFoundError>
   readonly fork: (input: {
     sessionID: SessionSchema.ID
     messageID?: SessionMessage.ID
@@ -221,10 +223,9 @@ export interface Interface {
     skill: string
     resume?: boolean
   }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
-  readonly compact: (input: CompactInput) => Effect.Effect<
-    void,
-    NotFoundError | OperationUnavailableError | LegacyNotMigratedError
-  >
+  readonly compact: (
+    input: CompactInput,
+  ) => Effect.Effect<void, NotFoundError | OperationUnavailableError | LegacyNotMigratedError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
@@ -286,9 +287,17 @@ const layer = Layer.effect(
     // the projection and the legacy tables would mix with no safe ordering.
     const requireMigrated = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
       const state = yield* store.historyState(sessionID)
-      if (state === "legacy" || state === "mixed")
-        return yield* new LegacyNotMigratedError({ sessionID, state })
+      if (state === "legacy" || state === "mixed") return yield* new LegacyNotMigratedError({ sessionID, state })
     })
+
+    // The TUI re-hydrates on every live event and re-requests `session.diff`,
+    // which reads the whole durable log and captures a fresh worktree snapshot.
+    // Serving a cached diff until the durable log advances keeps the view live
+    // without re-snapshotting the worktree several times a second. The short TTL
+    // still picks up worktree edits that arrive without a durable event.
+    const diffCache = new Map<string, { seq: number; at: number; result: ReadonlyArray<typeof Revert.FileDiff.Type> }>()
+    const diffCacheTTL = 2_000
+    const diffCacheLimit = 32
 
     const result = Service.of({
       create: Effect.fn("V2Session.create")((input) => creation.create(input)),
@@ -429,7 +438,10 @@ const layer = Layer.effect(
         const command = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
           return yield* commands.get(input.command)
-        }).pipe(Effect.provide(locations.get(session.location)), Effect.orElseSucceed(() => undefined))
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.orElseSucceed(() => undefined),
+        )
         if (command === undefined) return yield* new NotFoundError({ sessionID: input.sessionID })
         const text = SessionCommand.renderTemplate(command.template, input.arguments)
         if (command.agent !== undefined)
@@ -492,8 +504,12 @@ const layer = Layer.effect(
         const allowed = new Set(SessionDurable.definitions.keys())
         // The child owns its own Session info; never replay the parent's
         // creation or info updates under the child aggregate.
-        allowed.delete(EventV2.versionedType(SessionEvent.Info.Created.type, SessionEvent.Info.Created.durable?.version ?? 1))
-        allowed.delete(EventV2.versionedType(SessionEvent.Info.Updated.type, SessionEvent.Info.Updated.durable?.version ?? 1))
+        allowed.delete(
+          EventV2.versionedType(SessionEvent.Info.Created.type, SessionEvent.Info.Created.durable?.version ?? 1),
+        )
+        allowed.delete(
+          EventV2.versionedType(SessionEvent.Info.Updated.type, SessionEvent.Info.Updated.durable?.version ?? 1),
+        )
         const sequence = yield* db
           .select()
           .from(EventSequenceTable)
@@ -551,6 +567,9 @@ const layer = Layer.effect(
       diff: Effect.fn("V2Session.diff")(function* (sessionID) {
         const session = yield* result.get(sessionID)
         return yield* Effect.gen(function* () {
+          const seq = yield* EventV2.latestSequence(db, sessionID)
+          const cached = diffCache.get(sessionID)
+          if (cached && cached.seq === seq && Date.now() - cached.at < diffCacheTTL) return cached.result
           const snapshots = yield* Snapshot.Service
           const history = yield* EventV2.readAggregate(db, {
             aggregateID: sessionID,
@@ -559,11 +578,26 @@ const layer = Layer.effect(
             limit: 100_000,
           })
           const baseline = SessionDiff.baselineSnapshot(history.events)
-          if (baseline === undefined) return []
+          if (baseline === undefined) {
+            diffCache.set(sessionID, { seq, at: Date.now(), result: [] })
+            return []
+          }
           const current = yield* snapshots.capture()
-          if (current === undefined) return []
-          return yield* snapshots.diff({ from: Snapshot.ID.make(baseline), to: current })
-        }).pipe(Effect.provide(locations.get(session.location)), Effect.orElseSucceed(() => []))
+          if (current === undefined) {
+            diffCache.set(sessionID, { seq, at: Date.now(), result: [] })
+            return []
+          }
+          const diff = yield* snapshots.diff({ from: Snapshot.ID.make(baseline), to: current })
+          if (diffCache.size > diffCacheLimit) {
+            const oldest = diffCache.keys().next().value
+            if (oldest !== undefined) diffCache.delete(oldest)
+          }
+          diffCache.set(sessionID, { seq, at: Date.now(), result: diff })
+          return diff
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.orElseSucceed(() => []),
+        )
       }),
       context: Effect.fn("V2Session.context")(function* (sessionID) {
         yield* result.get(sessionID)
@@ -638,7 +672,10 @@ const layer = Layer.effect(
         const skill = yield* Effect.gen(function* () {
           const skills = yield* SkillV2.Service
           return (yield* skills.list()).find((item) => item.name === input.skill)
-        }).pipe(Effect.provide(locations.get(session.location)), Effect.orElseSucceed(() => undefined))
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.orElseSucceed(() => undefined),
+        )
         if (skill === undefined) return yield* new NotFoundError({ sessionID: input.sessionID })
         yield* events.publish(SessionEvent.Synthetic, {
           sessionID: session.id,
