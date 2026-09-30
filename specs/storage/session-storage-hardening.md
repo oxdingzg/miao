@@ -13,8 +13,10 @@ Landed in the safe, standalone slice:
 Landed since (2026-09-30), still standalone:
 
 - `packages/core/src/blob.ts` — content-addressed blob store: `blobs/<sha256>` layout, `put` /
-  `get` / `has` / `remove`, atomic temp-then-rename writes, and dedupe on write. Unit-tested in
-  `packages/core/test/blob.test.ts`. Not yet wired into attachment or tool-output persistence.
+  `get` / `getBase64` / `has` / `remove`, atomic temp-then-rename writes, and dedupe on write, plus
+  the `blob://<hash>` reference helpers (`refUri` / `isRef` / `hashOf`) used by the wiring plan
+  below. Unit-tested in `packages/core/test/blob.test.ts`. Not yet wired into attachment or
+  tool-output persistence.
 - New databases request `PRAGMA auto_vacuum = INCREMENTAL` in the native SQLite layers before WAL
   writes the header (best-effort when another opener holds the lock). Existing databases keep
   `auto_vacuum = 0` until `miao db vacuum`. Covered by `database-migration.test.ts`.
@@ -88,6 +90,37 @@ legacy V1 data plus the not-yet-migrated V1 write path, not a V2 design defect.
 - **Portable export.** `miao export --jsonl <session>` reads the projection and writes one line
   per message for grep/diff/backup. Storage dedup is not token dedup: the model still receives
   materialized bytes.
+
+## Blob wiring (implementation plan)
+
+The `Blob` store (`packages/core/src/blob.ts`) exists; this is how to make it the storage medium for
+attachments and oversized tool output.
+
+1. **Reference encoding.** A stored payload is referenced as `uri: "blob://<sha256>"` in the fields
+   that already carry a URI (`PromptInput.FileAttachment.uri` / `FileAttachment.uri`, and
+   `Tool.Content` file `data`). `mime` and `name` stay inline. A helper `Blob.isRef(uri)` /
+   `Blob.hashOf(uri)` centralizes parsing so no caller hand-splits the scheme.
+2. **Write side.** Externalize at the two persistence boundaries, over a threshold (e.g. 256 KB
+   decoded):
+   - user prompt files at `SessionInput.admit` (store `prompt.files` with the ref),
+   - tool-result file parts in `publish-llm-event` / `ToolOutputStore.bound`.
+   Both already run inside `Effect`, so they can `yield* Blob.Service.put`.
+3. **Read side / materialization.** Keep clients and the model on bytes:
+   - the runner pre-processes projected history before `toLLMMessages`, resolving each `blob://`
+     ref to a `data:<mime>;base64,…` URI (cache per turn; a missing blob becomes a text placeholder,
+     never a broken media part);
+   - the server materializes refs at the API boundary (`SessionV2.context`, `SessionV2.events`) so
+     the TUI/app keep receiving data URIs and need no change. This is the seam that avoids touching
+     every client.
+4. **Migration.** A one-time, idempotent `miao db externalize-blobs` (like `db backfill`) rewrites
+   existing inline base64 in `session_message.data` and `event.data` into refs, per session, in one
+   transaction, with `--dry-run` reporting counts.
+5. **GC.** Mark-and-sweep per project: collect `blob://` hashes referenced by the project's
+   `session_message`/`event` rows, delete unreferenced blobs older than the retention window.
+   Runs from the existing `tool-output-cleanup` global loop.
+6. **Acceptance.** `miao db stats` shows zero inline base64 in `event.data`/`session_message.data`,
+   only refs; a large attachment round-trips to the model and renders in the TUI; `db vacuum`
+   reclaims the freed pages.
 
 ## Migration plan (staged, non-destructive)
 

@@ -72,4 +72,24 @@ describe("Blob", () => {
       }),
     ),
   )
+
+  it.live("returns stored bytes as base64", () =>
+    withBlob(({ blob }) =>
+      Effect.gen(function* () {
+        const ref = yield* blob.put({ bytes: new Uint8Array([104, 105]) })
+        expect(yield* blob.getBase64(ref.hash)).toBe("aGk=")
+        expect(yield* blob.getBase64("0".repeat(64))).toBeUndefined()
+      }),
+    ),
+  )
+
+  it.live("builds and parses blob references", () =>
+    Effect.sync(() => {
+      expect(Blob.refUri("abc")).toBe("blob://abc")
+      expect(Blob.isRef("blob://abc")).toBe(true)
+      expect(Blob.isRef("data:image/png;base64,AAAA")).toBe(false)
+      expect(Blob.hashOf("blob://abc")).toBe("abc")
+      expect(Blob.hashOf("data:image/png;base64,AAAA")).toBeUndefined()
+    }),
+  )
 })

@@ -19,6 +19,18 @@ import { Identifier } from "./util/identifier"
 
 export const DIRECTORY = "blobs"
 
+/** URI scheme for a stored blob reference, e.g. `blob://<sha256>`. */
+export const SCHEME = "blob://"
+
+/** True when a URI references a stored blob. */
+export const isRef = (uri: string) => uri.startsWith(SCHEME)
+
+/** The content hash of a `blob://` reference, or undefined for any other URI. */
+export const hashOf = (uri: string) => (uri.startsWith(SCHEME) ? uri.slice(SCHEME.length) : undefined)
+
+/** Builds the canonical reference URI for a content hash. */
+export const refUri = (hash: string) => `${SCHEME}${hash}`
+
 export class StorageError extends Schema.TaggedErrorClass<StorageError>()("Blob.StorageError", {
   operation: Schema.Literals(["write", "read", "remove"]),
   hash: Schema.String,
@@ -42,6 +54,8 @@ export class Ref extends Schema.Class<Ref>("Blob.Ref")({
 export interface Interface {
   readonly put: (input: { readonly bytes: Uint8Array; readonly mime?: string }) => Effect.Effect<Ref, Error>
   readonly get: (hash: string) => Effect.Effect<Uint8Array | undefined, Error>
+  /** Base64 of the stored bytes, or undefined when the blob is missing. */
+  readonly getBase64: (hash: string) => Effect.Effect<string | undefined, Error>
   readonly has: (hash: string) => Effect.Effect<boolean>
   readonly remove: (hash: string) => Effect.Effect<boolean, Error>
 }
@@ -57,6 +71,12 @@ const layer = Layer.effect(
     const pathFor = (hash: string) => path.join(directory, hash)
 
     const has: Interface["has"] = (hash) => fs.existsSafe(pathFor(hash))
+
+    const getBase64: Interface["getBase64"] = (hash) =>
+      Effect.gen(function* () {
+        const bytes = yield* get(hash)
+        return bytes === undefined ? undefined : Buffer.from(bytes).toString("base64")
+      })
 
     const get: Interface["get"] = Effect.fn("Blob.get")(function* (hash) {
       const target = pathFor(hash)
@@ -96,7 +116,7 @@ const layer = Layer.effect(
       return true
     })
 
-    return Service.of({ put, get, has, remove })
+    return Service.of({ put, get, getBase64, has, remove })
   }),
 )
 
