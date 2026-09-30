@@ -14,7 +14,11 @@ import { useBindings, useOpencodeModeStack } from "../../keymap"
 
 const QUESTION_MODE = "question"
 
-export function QuestionPrompt(props: { request: QuestionRequest; directory?: string; onSettled?: (request: QuestionRequest) => void }) {
+export function QuestionPrompt(props: {
+  request: QuestionRequest
+  directory?: string
+  onSettled?: (request: QuestionRequest) => void
+}) {
   const sdk = useSDK()
   const toast = useToast()
   const { theme } = useTheme()
@@ -34,6 +38,9 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
     editing: false,
   })
 
+  // Keep the lock after settlement until this prompt unmounts. A second key
+  // can arrive before the event stream removes the answered request.
+  const [settling, setSettling] = createSignal(false)
   let textarea: TextareaRenderable | undefined
 
   const question = createMemo(() => questions()[store.tab])
@@ -50,6 +57,8 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   })
 
   function submit() {
+    if (settling()) return
+    setSettling(true)
     const request = props.request
     const answers = questions().map((_, i) => store.answers[i] ?? [])
     void (
@@ -74,12 +83,18 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
       () => props.onSettled?.(request),
       (error: unknown) => {
         toast.error(error)
-        if (isNotFoundError(error)) props.onSettled?.(request)
+        if (isNotFoundError(error)) {
+          props.onSettled?.(request)
+          return
+        }
+        setSettling(false)
       },
     )
   }
 
   function reject() {
+    if (settling()) return
+    setSettling(true)
     const request = props.request
     void (
       Flag.MIAO_TUI_V2
@@ -101,7 +116,11 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
       () => props.onSettled?.(request),
       (error: unknown) => {
         toast.error(error)
-        if (isNotFoundError(error)) props.onSettled?.(request)
+        if (isNotFoundError(error)) {
+          props.onSettled?.(request)
+          return
+        }
+        setSettling(false)
       },
     )
   }
@@ -145,6 +164,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   }
 
   function selectOption() {
+    if (settling()) return
     if (other()) {
       if (!multi()) {
         setStore("editing", true)
