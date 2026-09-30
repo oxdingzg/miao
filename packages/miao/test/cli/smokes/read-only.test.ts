@@ -112,4 +112,29 @@ describe("opencode read-only commands (smoke)", () => {
       }),
     60_000,
   )
+
+  // `doctor` reports process/system/database health. With no sampled history it
+  // still prints the system and database sections.
+  cliIt.live(
+    "doctor: exits 0",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const r = yield* opencode.spawn(["doctor"])
+        opencode.expectExit(r, 0, "doctor")
+        expect(r.stdout).toContain("database:")
+      }),
+    60_000,
+  )
+
+  // `doctor report` analyzes sampled history. An empty sample directory is a
+  // valid state and must not be an error.
+  cliIt.live(
+    "doctor report: exits 0",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const r = yield* opencode.spawn(["doctor", "report", "--since", "1h"])
+        opencode.expectExit(r, 0, "doctor report")
+      }),
+    60_000,
+  )
 })

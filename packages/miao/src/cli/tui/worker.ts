@@ -8,11 +8,13 @@ import { GlobalBus } from "@/bus/global"
 import { ServerAuth } from "@/server/auth"
 import { writeHeapSnapshot } from "node:v8"
 import { Heap } from "@/cli/heap"
+import { Monitor } from "@/cli/monitor"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 
 Heap.start()
+Monitor.start()
 
 const onUnhandledRejection = (_error: unknown) => {}
 

@@ -351,7 +351,7 @@ exports[`miao CLI help-text snapshots every documented command emits stable help
 
 miao export [sessionID]
 
-export session data as JSON
+export session data as JSON or JSONL
 
 Positionals:
   sessionID  session id to export                                                           [string]
@@ -363,6 +363,8 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
       --sanitize    redact sensitive transcript and file data                              [boolean]
+      --format      output format: json (pretty) or jsonl (one line per message)
+                                               [string] [choices: "json", "jsonl"] [default: "json"]
 "
 `;
 
@@ -487,6 +489,9 @@ database tools
 Commands:
   miao db [query]     open an interactive sqlite3 shell or run a query                     [default]
   miao db path        print the database path
+  miao db stats       report database size and per-table / per-event-type usage
+  miao db vacuum      checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free space
+  miao db backfill    convert legacy V1 session messages into the V2 projection (idempotent)
 
 Positionals:
   query  SQL query to execute                                                               [string]
@@ -498,6 +503,28 @@ Options:
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
       --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao doctor --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao doctor
+
+process, storage, and system health
+
+Commands:
+  miao doctor         report current process, system, and database health                  [default]
+  miao doctor report  replay sampled history and report trends and anomalies
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
 "
 `;
 
@@ -787,5 +814,25 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao doctor report --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao doctor report
+
+replay sampled history and report trends and anomalies
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --since       window, e.g. 30m, 24h, 7d                              [string] [default: "24h"]
+      --json        emit machine-readable output                          [boolean] [default: false]
 "
 `;

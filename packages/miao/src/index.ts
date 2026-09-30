@@ -7,6 +7,7 @@ import { FormatError } from "./cli/error"
 import { EOL } from "os"
 import { errorMessage } from "./util/error"
 import { Heap } from "./cli/heap"
+import { Monitor } from "./cli/monitor"
 
 const args = hideBin(process.argv)
 
@@ -61,6 +62,7 @@ const commandLoaders: Array<[string, CommandLoader]> = [
   ["session", () => import("./cli/cmd/session").then((m) => m.SessionCommand)],
   ["plugin", () => import("./cli/cmd/plug").then((m) => m.PluginCommand)],
   ["db", () => import("./cli/cmd/db").then((m) => m.DbCommand)],
+  ["doctor", () => import("./cli/cmd/doctor").then((m) => m.DoctorCommand)],
 ]
 const defaultCommand: CommandLoader = () => import("./cli/cmd/tui").then((m) => m.TuiThreadCommand)
 
@@ -94,6 +96,7 @@ async function buildCli(selection: "all" | "default" | readonly string[]) {
       }
 
       Heap.start()
+      Monitor.start()
 
       process.env.AGENT = "1"
       process.env.MIAO = "1"
