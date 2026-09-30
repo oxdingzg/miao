@@ -22,7 +22,12 @@ export function SessionMessageContent(props: {
   )
   const origin = createMemo(() => `From: ${props.title ? `${props.title} · ` : ""}${source()}`)
   const preview = createMemo(() => {
-    const line = props.body.split("\n").find((line) => line.trim().length > 0)?.trim() ?? ""
+    const line =
+      props.body
+        .split("\n")
+        .find((line) => line.trim().length > 0)
+        ?.trim()
+        .replace(/^(?:#{1,6}|>)\s+/, "") ?? ""
     return line.length > PREVIEW_LIMIT ? `${line.slice(0, PREVIEW_LIMIT)}…` : line
   })
 
