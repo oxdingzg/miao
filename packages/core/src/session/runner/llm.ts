@@ -570,6 +570,7 @@ const layer = Layer.effect(
             yield* withPublication(publisher.failAssistant("Provider stream ended without a completion frame"))
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
+            const cacheMissed = SessionRunnerMetrics.cacheMissed(stepSettlement.tokens)
             const endSnapshotStartedAt = Date.now()
             const endSnapshot = yield* snapshots.capture()
             const endSnapshotMs = Date.now() - endSnapshotStartedAt
@@ -617,12 +618,8 @@ const layer = Layer.effect(
               },
               warm,
               expectedRebuild,
-              cacheMiss: stepSettlement.tokens.cache.write > 0,
-              cacheMissCause: SessionRunnerMetrics.cacheMissCause({
-                cacheWrite: stepSettlement.tokens.cache.write,
-                warm,
-                expectedRebuild,
-              }),
+              cacheMiss: cacheMissed,
+              cacheMissCause: SessionRunnerMetrics.cacheMissCause({ miss: cacheMissed, warm, expectedRebuild }),
               cacheHitRatio: SessionRunnerMetrics.cacheHitRatio(stepSettlement.tokens),
               cost: stepSettlement.cost,
               tokens: stepSettlement.tokens,
