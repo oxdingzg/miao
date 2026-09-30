@@ -2,7 +2,7 @@
   "name": "@miao/web",
   "type": "module",
   "license": "MIT",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "scripts": {
     "dev": "astro dev",
     "dev:remote": "VITE_API_URL=https://api.miao.dtee.top astro dev",
