@@ -24,6 +24,13 @@ export interface Interface {
   readonly add: (id: ID, effect: PluginRuntime["effect"]) => Effect.Effect<void>
   readonly remove: (id: ID) => Effect.Effect<void>
   readonly wait: (id: ID) => Effect.Effect<void>
+  /**
+   * Completed once the plugins a location boots with have loaded. Their effects
+   * build the catalog every reader sees, so a reader that must not answer with a
+   * location whose plugins have not run waits here; `PluginInternal` owns the
+   * boot that completes it.
+   */
+  readonly booted: Deferred.Deferred<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/Plugin") {}
@@ -32,6 +39,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const booted = yield* Deferred.make<void>()
     const locks = KeyedMutex.makeUnsafe<ID>()
     const scope = yield* Scope.make()
     const active = new Map<ID, Scope.Closeable>()
@@ -136,6 +144,7 @@ const layer = Layer.effect(
       add,
       remove,
       wait,
+      booted,
     })
     host = yield* PluginHost.make(service)
     return service

@@ -1,10 +1,12 @@
+import { Catalog } from "@miao/core/catalog"
 import { Location } from "@miao/core/location"
 import { LocationServiceMap } from "@miao/core/location-services"
 import { PermissionSaved } from "@miao/core/permission/saved"
+import { PluginV2 } from "@miao/core/plugin"
 import { Project } from "@miao/core/project"
 import { AbsolutePath } from "@miao/core/schema"
 import { WorkspaceV2 } from "@miao/core/workspace"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 
@@ -33,6 +35,19 @@ export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
     }
   })
 }
+
+/**
+ * The location's catalog, once the plugins that build it have loaded. A location
+ * boots its plugins while it answers its first requests, and the catalog is what
+ * those plugins produce, so a listing read any earlier would answer with the
+ * catalog the location starts from: no providers, or a provider's own model list
+ * with the entries its key cannot call still in it.
+ */
+export const bootedCatalog = Effect.gen(function* () {
+  const plugins = yield* PluginV2.Service
+  yield* Deferred.await(plugins.booted)
+  return yield* Catalog.Service
+})
 
 function ref(request: HttpServerRequest.HttpServerRequest): Location.Ref {
   const query = new URL(request.url, "http://localhost").searchParams

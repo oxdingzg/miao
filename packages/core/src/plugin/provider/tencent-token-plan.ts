@@ -1,4 +1,4 @@
-import { Effect, Scope, Stream } from "effect"
+import { Effect, Stream } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { EventV2 } from "../../event"
 import { Integration } from "../../integration"
@@ -11,16 +11,16 @@ import { define } from "../internal"
  *
  * models.dev describes the plan from the outside, so it lists models the key is
  * not scoped for, and calling one answers 403002 "not authorized". Only the
- * gateway's own per-key model list separates the two. Plugin boot is part of the
- * catalog materialize that waits on it, so the lookup is forked rather than
- * awaited, and it reloads the catalog once its answer arrives.
+ * gateway's own per-key model list separates the two, and the listing a request
+ * reads is the materialize the plugin boot builds, so the lookup is part of that
+ * materialize rather than a reload after it. Its answer is cached per key, which
+ * keeps a later rebuild from asking the gateway again.
  */
-export const TencentTokenPlanPlugin = define<HttpClient.HttpClient | EventV2.Service | Scope.Scope>({
+export const TencentTokenPlanPlugin = define<HttpClient.HttpClient | EventV2.Service>({
   id: "tencent-token-plan",
   effect: Effect.fn(function* (ctx) {
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2.Service
-    const scope = yield* Scope.Scope
     // Model IDs each gateway provider's key may call, from the last lookup.
     let authorized = new Map<ProviderV2.ID, ReadonlySet<string>>()
     // Gateway providers the last materialize saw, with the credential keying them.
@@ -49,41 +49,51 @@ export const TencentTokenPlanPlugin = define<HttpClient.HttpClient | EventV2.Ser
         if (models === undefined) continue
         next.set(providerID, models)
       }
-      // Every catalog rebuild triggers this lookup, so an answer that changes
-      // nothing must not reload the catalog and trigger it again.
-      if (signature(next) === signature(authorized)) return
-      authorized = next
-      yield* ctx.catalog.reload()
+      return next
     })
 
     // A key connected while the process runs reaches an open catalog.
     yield* events.subscribe(Integration.Event.ConnectionUpdated).pipe(
-      Stream.runForEach(() => lookup()),
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const next = yield* lookup()
+          // Every catalog rebuild triggers a lookup, so an answer that changes
+          // nothing must not reload the catalog and trigger it again.
+          if (signature(next) === signature(authorized)) return
+          authorized = next
+          yield* ctx.catalog.reload()
+        }),
+      ),
       Effect.forkScoped({ startImmediately: true }),
     )
 
-    yield* ctx.catalog.transform((catalog) => {
-      const seen = new Map<ProviderV2.ID, Integration.ID>()
-      for (const record of catalog.provider.list()) {
-        if (record.provider.api.type !== "aisdk") continue
-        if (record.provider.api.url !== TencentTokenPlan.API) continue
-        const providerID = ProviderV2.ID.make(record.provider.id)
-        seen.set(providerID, Integration.ID.make(record.provider.integrationID ?? providerID))
-        const models = authorized.get(providerID)
-        if (models === undefined) continue
-        // Keep a model when either its catalog ID or the ID it sends is
-        // authorized: a config alias names the gateway model behind it.
-        for (const [modelID, model] of record.models) {
-          if (models.has(modelID) || models.has(model.api.id)) continue
-          catalog.model.remove(record.provider.id, modelID)
+    yield* ctx.catalog.transform((catalog) =>
+      Effect.gen(function* () {
+        const gateways = catalog.provider.list().flatMap((record) => {
+          if (record.provider.api.type !== "aisdk") return []
+          if (record.provider.api.url !== TencentTokenPlan.API) return []
+          return [{ record, providerID: ProviderV2.ID.make(record.provider.id) }]
+        })
+        gateway = new Map(
+          gateways.map(({ record, providerID }) => {
+            return [providerID, Integration.ID.make(record.provider.integrationID ?? providerID)] as const
+          }),
+        )
+        // The lookup is awaited here, and not beside the materialize, so the
+        // catalog a request reads is already filtered. Its answer is cached per
+        // key, so the wait is only as long as the gateway is slow to answer.
+        authorized = yield* lookup()
+        for (const { record, providerID } of gateways) {
+          const models = authorized.get(providerID)
+          if (models === undefined) continue
+          // Keep a model when either its catalog ID or the ID it sends is
+          // authorized: a config alias names the gateway model behind it.
+          for (const [modelID, model] of record.models) {
+            if (models.has(modelID) || models.has(model.api.id)) continue
+            catalog.model.remove(record.provider.id, modelID)
+          }
         }
-      }
-      gateway = seen
-      // A transform cannot wait for the gateway without holding up the catalog
-      // it is building, so the lookup runs beside it and reloads once it knows
-      // the answer. Its answer is cached per key, so a rebuild that changes
-      // nothing costs neither a request nor a reload.
-      return lookup().pipe(Effect.forkIn(scope), Effect.asVoid)
-    })
+      }),
+    )
   }),
 })

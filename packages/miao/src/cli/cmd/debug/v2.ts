@@ -1,8 +1,9 @@
 import { EOL } from "os"
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
 import { Catalog } from "@miao/core/catalog"
 import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location-services"
 import { Location } from "@miao/core/location"
+import { PluginV2 } from "@miao/core/plugin"
 import { AbsolutePath } from "@miao/core/schema"
 import { effectCmd } from "../../effect-cmd"
 
@@ -12,6 +13,10 @@ export const V2Command = effectCmd({
   instance: false,
   handler: () =>
     Effect.gen(function* () {
+      // The catalog is what the location's plugin boot produces, so read it once
+      // that boot is done: its output is otherwise empty or pre-filter.
+      const plugins = yield* PluginV2.Service
+      yield* Deferred.await(plugins.booted)
       const catalog = yield* Catalog.Service
       const providers = (yield* catalog.provider.available()).sort((a, b) => a.id.localeCompare(b.id))
       const all = (yield* catalog.provider.all()).sort((a, b) => a.id.localeCompare(b.id))

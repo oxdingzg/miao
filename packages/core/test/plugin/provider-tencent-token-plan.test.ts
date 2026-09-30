@@ -56,8 +56,8 @@ const reachable = suite({ key: "reachable-key" })
 const failing = suite({ key: "failing-key", status: 500 })
 const late = suite({ key: "late-key" })
 
-// The plugin asks the gateway beside the catalog, so a test has to wait for the
-// reload that answer triggers instead of asserting right after boot.
+// A key connected to a running process reaches the catalog through a reload, so
+// that case has to wait for the reload instead of asserting right after.
 const eventually = <A>(
   effect: Effect.Effect<A>,
   predicate: (value: A) => boolean,
@@ -136,7 +136,9 @@ describe("TencentTokenPlanPlugin", () => {
       const catalog = yield* Catalog.Service
       yield* seed({ integrationID: reachable.integrationID, key: reachable.key })
       yield* addPlugin()
-      yield* eventually(catalog.model.get(planID, modelID("hy3")), (model) => model === undefined)
+      // The lookup is part of the materialize the plugin is added with, so the
+      // models are already gone by the time the catalog is readable.
+      expect(yield* catalog.model.get(planID, modelID("hy3"))).toBeUndefined()
 
       expect((yield* catalog.model.get(planID, modelID("hy4-preview")))?.id).toBe(modelID("hy4-preview"))
       // Authorized through the ID it sends, not the catalog ID it is listed as.
@@ -158,8 +160,8 @@ describe("TencentTokenPlanPlugin", () => {
       const catalog = yield* Catalog.Service
       yield* seed({ integrationID: failing.integrationID, key: failing.key })
       yield* addPlugin()
-      yield* eventually(Ref.get(failing.calls), (calls) => calls.urls.length === 1)
 
+      expect((yield* Ref.get(failing.calls)).urls).toEqual([`${TencentTokenPlan.API}/models`])
       expect((yield* catalog.model.get(planID, modelID("hy3")))?.id).toBe(modelID("hy3"))
     }),
   )

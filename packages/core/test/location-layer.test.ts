@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { DateTime, Effect, Equal, Hash, Schema } from "effect"
+import { DateTime, Deferred, Effect, Equal, Hash, Schema } from "effect"
 import { Tool } from "@miao/core/tool/tool"
 import { define } from "@opencode-ai/plugin/v2/effect"
 import { AgentV2 } from "@miao/core/agent"
@@ -243,6 +243,30 @@ describe("LocationServiceMap", () => {
             modelID: "chat",
           })
         }),
+      ),
+    ),
+  )
+
+  it.live("completes the plugin boot a catalog listing waits on", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const plugins = yield* PluginV2.Service
+          // The server's catalog listings wait here, so a boot that never
+          // completed would hang them rather than fail them.
+          yield* Deferred.await(plugins.booted).pipe(Effect.timeout("10 seconds"))
+          // What the boot left behind is what a listing reads: this description
+          // is set by the agent plugin the boot loads.
+          expect((yield* (yield* AgentV2.Service).get(AgentV2.defaultID))?.description).toBe(
+            "The default agent. Executes tools based on configured permissions.",
+          )
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }))),
+        ),
       ),
     ),
   )
