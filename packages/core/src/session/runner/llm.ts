@@ -49,9 +49,11 @@ import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
+import { materializeBlobFiles } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { SessionRunnerMetrics } from "./metrics"
 import { Snapshot } from "../../snapshot"
+import { Blob } from "../../blob"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 
@@ -147,6 +149,7 @@ const layer = Layer.effect(
     const creation = yield* SessionCreate.Service
     const todos = yield* SessionTodo.Service
     const permission = yield* PermissionV2.Service
+    const blob = yield* Blob.Service
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -313,8 +316,9 @@ const layer = Layer.effect(
       const expectedRebuild = prior?.afterCompaction === true
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
+      const materialized = yield* materializeBlobFiles(blob, context)
       const messages = [
-        ...toLLMMessages(context, model, resolved.info.capabilities.input),
+        ...toLLMMessages(materialized, model, resolved.info.capabilities.input),
         ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
       ]
       const request = LLM.request({
@@ -836,5 +840,6 @@ export const node = makeLocationNode({
     SessionCreate.node,
     SessionTodo.node,
     PermissionV2.node,
+    Blob.node,
   ],
 })

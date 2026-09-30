@@ -608,6 +608,7 @@ describe("SessionRunnerLLM", () => {
           agent: AgentV2.ID.make("build"),
           assistantMessageID: expect.stringMatching(/^msg_/),
           toolCallID: "call-application",
+          progress: expect.any(Function),
         },
       ])
       expect(yield* session.context(sessionID)).toMatchObject([

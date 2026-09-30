@@ -17,6 +17,10 @@ Landed since (2026-09-30), still standalone:
   the `blob://<hash>` reference helpers (`refUri` / `isRef` / `hashOf`) used by the wiring plan
   below. Unit-tested in `packages/core/test/blob.test.ts`. Not yet wired into attachment or
   tool-output persistence.
+- Request-time materialization: `packages/core/src/session/runner/materialize-files.ts` resolves
+  `blob://<hash>` user attachments to inline data URIs (a missing/unreadable blob becomes a text
+  note) so the model always receives bytes. Unit-tested in `session-runner-materialize.test.ts`.
+  The write side and API-boundary materialization are still open.
 - New databases request `PRAGMA auto_vacuum = INCREMENTAL` in the native SQLite layers before WAL
   writes the header (best-effort when another opener holds the lock). Existing databases keep
   `auto_vacuum = 0` until `miao db vacuum`. Covered by `database-migration.test.ts`.

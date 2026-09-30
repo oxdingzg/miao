@@ -70,6 +70,7 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Blob externalization: `blobs/<sha256>` for attachments + oversized tool output
   - [x] Content-addressed `Blob` store (`blob.ts`: put/get/has/remove, atomic write, dedupe) — `blob.test.ts`; not yet wired
 - [ ] Messages/events store `hash + mime`; materialize in `to-llm-message.ts`
+  - [x] Request-time materialization: the runner resolves `blob://<hash>` user attachments to data URIs before the request (`materialize-files.ts`; `session-runner-materialize.test.ts`); write side + API boundary still open
 - [x] Incremental auto-vacuum enabled — native SQLite layers request `auto_vacuum = INCREMENTAL` before WAL on new databases; `database-migration.test.ts`
 - [ ] Event-log retention/compaction (snapshot-then-truncate)
 - [ ] Per-project blob GC (refcount or mark-and-sweep)
