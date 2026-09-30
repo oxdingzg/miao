@@ -110,6 +110,7 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Stream shell output to disk with bounded preview
 - [x] Ripgrep timeout (kill + model-visible error) — 30s default, `timeout` override
 - [ ] Non-streamed JSON/image body caps
+  - [x] webfetch/websearch already use `collectBoundedResponseBody`; MCP image results are capped at 5 MB base64 (`mcp.test.ts`)
 - [ ] Verify: `yes`/huge lines don't blow memory; long grep times out
 - [ ] Test + commit + push
 

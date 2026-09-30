@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -55,6 +55,20 @@ describe("MCP", () => {
       }),
     ),
   )
+
+  test("caps oversized image results", () => {
+    const parts = MCP.resultContent({
+      content: [{ type: "image", data: "A".repeat(MCP.MAX_RESULT_IMAGE_BASE64_BYTES + 1), mimeType: "image/png" }],
+    })
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toMatchObject({ type: "text" })
+    expect(JSON.stringify(parts[0])).toContain("exceeds")
+  })
+
+  test("passes through image results within the cap", () => {
+    const parts = MCP.resultContent({ content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] })
+    expect(parts).toEqual([{ type: "file", data: "AAAA", mime: "image/png" }])
+  })
 
   it.live("registers an MCP tool and calls it", () =>
     withMCP([server()], (registry) =>

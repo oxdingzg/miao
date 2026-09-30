@@ -50,8 +50,10 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
 - Workstream E: gap items — G2 remainder, G3 remainder, G4, G5, G6, G7, G8 remainder, G9
   remainder, G11 remainder, G12, G13 remainder.
   - G7 progress: ripgrep now enforces a default 30s timeout (overridable via `timeout`) that kills
-    the invocation and fails the tool call; covered by `packages/core/test/ripgrep.test.ts`.
-    Remaining G7 work: shell output streaming to managed storage, non-streamed body caps.
+    the invocation and fails the tool call; covered by `packages/core/test/ripgrep.test.ts`. MCP
+    image results are capped at 5 MB base64 so a server cannot inline unbounded payloads
+    (`mcp.test.ts`); webfetch/websearch already bound response bodies. Remaining G7 work: shell
+    output streaming to managed storage.
   - G3 progress: `runSubagent` now returns a `ToolFailure` when the child's last assistant message
     carries an error or `finish: "error"`, so a failed subagent surfaces as a tool error rather than
     empty output; covered by `session-runner.test.ts`. Remaining: interrupt/kill path liveness.

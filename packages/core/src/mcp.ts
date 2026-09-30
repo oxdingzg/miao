@@ -16,6 +16,9 @@ import { Tools } from "./tool/tools"
 const MAX_TOOL_NAME = 64
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
 
+/** Bound inline base64 image results so a server cannot blow up a tool call. */
+export const MAX_RESULT_IMAGE_BASE64_BYTES = 5 * 1024 * 1024
+
 /** Sanitize an MCP tool name into the canonical tool-name alphabet. */
 export const toolName = (serverID: string, tool: string) =>
   `mcp__${serverID}__${tool}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, MAX_TOOL_NAME)
@@ -45,13 +48,21 @@ const connect = (server: ConfigMCP.Local | ConfigMCP.Remote): Effect.Effect<Conn
     return { client, tools: listed.tools }
   })
 
-const resultContent = (result: { content?: ReadonlyArray<unknown> }): ReadonlyArray<Tool.Content> =>
+export const resultContent = (result: { content?: ReadonlyArray<unknown> }): ReadonlyArray<Tool.Content> =>
   (result.content ?? []).flatMap((item): Tool.Content[] => {
     if (typeof item !== "object" || item === null) return []
     const part = item as Record<string, unknown>
     if (part.type === "text" && typeof part.text === "string") return [{ type: "text", text: part.text }]
-    if (part.type === "image" && typeof part.data === "string")
+    if (part.type === "image" && typeof part.data === "string") {
+      if (part.data.length > MAX_RESULT_IMAGE_BASE64_BYTES)
+        return [
+          {
+            type: "text",
+            text: `[image result omitted: base64 payload of ${part.data.length} bytes exceeds ${MAX_RESULT_IMAGE_BASE64_BYTES} bytes]`,
+          },
+        ]
       return [{ type: "file", data: part.data, mime: typeof part.mimeType === "string" ? part.mimeType : "image/png" }]
+    }
     if (part.type === "resource" && typeof part.text === "string") return [{ type: "text", text: part.text }]
     return []
   })
