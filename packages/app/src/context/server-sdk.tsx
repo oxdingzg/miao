@@ -200,11 +200,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   })()
 
   const eventApi = createApiForServer({ server: server.http, fetch: eventFetch })
-  const eventSdk = createSdkForServer({
-    signal: abort.signal,
-    fetch: eventFetch,
-    server: server.http,
-  })
   const protocol = detectServerProtocol(
     server.http,
     platform.fetch ?? globalThis.fetch,
@@ -276,18 +271,12 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         }
         abort.signal.addEventListener("abort", onAbort)
         try {
-          const kind = await protocol
-          const events =
-            kind === "v1"
-              ? (await eventSdk.global.event({ signal: attempt.signal })).stream
-              : eventApi.event.subscribe({ signal: attempt.signal })
+          const events = eventApi.event.subscribe({ signal: attempt.signal })
           let yielded = Date.now()
           for await (const event of events) {
             streamErrorLogged = false
-            const legacy = "payload" in event
-            if (legacy && event.payload.type === "sync") continue
-            const directory = legacy ? (event.directory ?? "global") : (event.location?.directory ?? "global")
-            const payload = legacy ? (event.payload as Event) : adaptServerEvent(event)
+            const directory = event.location?.directory ?? "global"
+            const payload = adaptServerEvent(event)
             if (enqueueServerEvent(queue, { directory, payload })) schedule()
 
             if (Date.now() - yielded < STREAM_YIELD_MS) continue
