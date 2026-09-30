@@ -97,3 +97,60 @@ test("V2 stream deltas append in place instead of re-hydrating", async () => {
     else process.env["MIAO_TUI_V2"] = previous
   }
 })
+
+test("V2 stream deltas request a refresh when the part is not projected yet", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const previous = process.env["MIAO_TUI_V2"]
+  process.env["MIAO_TUI_V2"] = "1"
+  let contextRequests = 0
+  let contextData: unknown[] = []
+  let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
+
+  try {
+    const mounted = await mount((url) => {
+      if (url.pathname === "/api/session") return json({ data: [session] })
+      if (url.pathname === `/api/session/${sessionID}`) return json({ data: session })
+      if (url.pathname === `/api/session/${sessionID}/context`) {
+        contextRequests += 1
+        return json({ data: contextData })
+      }
+      if (url.pathname === `/api/session/${sessionID}/todo`) return json({ data: [] })
+      if (url.pathname === `/api/session/${sessionID}/diff`) return json({ data: [] })
+      if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "busy" } })
+      return undefined
+    }, tmp.path)
+    app = mounted.app
+
+    await mounted.sync.session.sync(sessionID)
+    expect(mounted.sync.data.part[messageID]).toBeUndefined()
+
+    // A fragment lands before `session.next.text.started` has hydrated the part.
+    mounted.emit(
+      global({
+        id: "evt_early_delta",
+        type: "session.next.text.delta",
+        properties: { timestamp: 2, sessionID, assistantMessageID: messageID, textID, delta: " world" },
+      }),
+    )
+
+    // The server accumulated the same fragment once it projected the turn.
+    contextData = [
+      {
+        id: messageID,
+        type: "assistant",
+        time: { created: 1 },
+        agent: "build",
+        model: { id: "model", providerID: "test" },
+        content: [{ type: "text", id: textID, text: "hello world" }],
+      },
+    ]
+    await wait(() => mounted.sync.data.part[messageID]?.[0]?.type === "text")
+    expect(contextRequests).toBeGreaterThan(1)
+    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "hello world" })
+  } finally {
+    app?.renderer.destroy()
+    if (previous === undefined) delete process.env["MIAO_TUI_V2"]
+    else process.env["MIAO_TUI_V2"] = previous
+  }
+})

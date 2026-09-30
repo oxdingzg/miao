@@ -206,7 +206,14 @@ export const {
     // durable `ended` event later replaces it with the authoritative text.
     const appendV2StreamText = (sessionID: string, messageID: string, partID: string, delta: string) => {
       const parts = store.part[messageID]
-      if (!parts?.some((part) => part.id === partID)) return
+      if (!parts?.some((part) => part.id === partID)) {
+        // The message or part has not been projected yet (for example the first
+        // delta beats the `*.started` re-hydration, or the session is still
+        // doing its initial sync). Ask for a refresh so the accumulated value
+        // appears instead of silently dropping the fragment.
+        v2Refresh.schedule(sessionID)
+        return
+      }
       touchPart(sessionID, partID)
       setStore(
         "part",
