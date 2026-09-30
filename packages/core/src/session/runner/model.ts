@@ -13,6 +13,7 @@ import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
+import { ModelVariants } from "../../model-variants"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
 
@@ -123,7 +124,8 @@ const withVariant = (
   variantID: ModelV2.VariantID | undefined,
 ): Effect.Effect<ModelV2.Info, VariantUnavailableError> => {
   const id = variantID === "default" || variantID === undefined ? model.request.variant : variantID
-  const variant = model.variants.find((item) => item.id === id)
+  const variant =
+    model.variants.find((item) => item.id === id) ?? ModelVariants.generate(model).find((item) => item.id === id)
   if (!variant && variantID !== undefined && variantID !== "default")
     return Effect.fail(
       new VariantUnavailableError({
@@ -175,9 +177,23 @@ export const fromCatalogModel = (
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.api.package === "@ai-sdk/openai") {
-    return Effect.succeed(
-      withDefaults(resolved, OpenAIResponses.route).with({ auth: bearer }).model({ id: resolved.api.id }),
-    )
+    const route = withDefaults(resolved, OpenAIResponses.route).with({ auth: bearer })
+    if (resolved.providerID === ProviderV2.ID.openai && credential?.type === "oauth") {
+      const accountID = credential.metadata?.accountID
+      return Effect.succeed(
+        route
+          .with({
+            endpoint: { baseURL: "https://chatgpt.com/backend-api/codex" },
+            headers: {
+              ...resolved.request.headers,
+              ...(typeof accountID === "string" ? { "ChatGPT-Account-Id": accountID } : {}),
+            },
+            http: { body: { ...route.defaults.http?.body, store: false } },
+          })
+          .model({ id: resolved.api.id }),
+      )
+    }
+    return Effect.succeed(route.model({ id: resolved.api.id }))
   }
   if (resolved.api.package === "@ai-sdk/anthropic") {
     return Effect.succeed(

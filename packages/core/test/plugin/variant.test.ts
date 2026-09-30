@@ -19,6 +19,23 @@ const locationLayer = Layer.succeed(
 const it = testEffect(AppNodeBuilder.build(Catalog.node, [[Location.node, locationLayer]]))
 
 describe("VariantPlugin", () => {
+  it.effect("adds executable OpenAI reasoning variants to the catalog", () =>
+    Effect.gen(function* () {
+      const service = yield* Catalog.Service
+      yield* service.transform((catalog) => {
+        catalog.provider.update(ProviderV2.ID.openai, (provider) => {
+          provider.api = { type: "aisdk", package: "@ai-sdk/openai" }
+        })
+        catalog.model.update(ProviderV2.ID.openai, ModelV2.ID.make("gpt-6.1-sol"), () => {})
+      })
+      yield* VariantPlugin.Plugin.effect(host({ catalog: catalogHost(service) }))
+      const selected = yield* service.model.get(ProviderV2.ID.openai, ModelV2.ID.make("gpt-6.1-sol"))
+      expect(selected?.variants.find((variant) => variant.id === "medium")?.body).toEqual({
+        reasoning: { effort: "medium" },
+      })
+    }),
+  )
+
   it.effect("adds GLM 5.2 variants after catalog sources", () =>
     Effect.gen(function* () {
       const service = yield* Catalog.Service

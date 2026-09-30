@@ -210,7 +210,7 @@ export function Prompt(props: PromptProps) {
   const move = usePromptMove({ projectID: project.project, sessionID: () => props.sessionID })
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
-  const [footerHover, setFooterHover] = createSignal<"agent" | "model" | "provider" | null>(null)
+  const [footerHover, setFooterHover] = createSignal<"agent" | "model" | "provider" | "variant" | null>(null)
   const hasRightContent = createMemo(() => Boolean(props.right))
 
   function openAgentList() {
@@ -1343,12 +1343,7 @@ export function Prompt(props: PromptProps) {
     return local.agent.color(agent.name)
   })
 
-  const showVariant = createMemo(() => {
-    const variants = local.model.variant.list()
-    if (variants.length === 0) return false
-    const current = local.model.variant.current()
-    return !!current
-  })
+  const showVariant = createMemo(() => local.model.variant.list().length > 0)
 
   const agentMetaAlpha = createFadeIn(() => !!local.agent.current(), animationsEnabled)
   const modelMetaAlpha = createFadeIn(() => !!local.agent.current() && store.mode === "normal", animationsEnabled)
@@ -1544,11 +1539,26 @@ export function Prompt(props: PromptProps) {
                           </box>
                           <Show when={showVariant()}>
                             <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
-                            <text>
-                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
-                                {local.model.variant.current()}
-                              </span>
-                            </text>
+                            <box
+                              flexShrink={0}
+                              onMouseOver={() => setFooterHover("variant")}
+                              onMouseOut={() => setFooterHover(null)}
+                              onMouseUp={() => keymap.dispatchCommand("variant.list")}
+                            >
+                              <text>
+                                <span
+                                  style={{
+                                    fg: fadeColor(
+                                      footerHover() === "variant" ? theme.text : theme.warning,
+                                      variantMetaAlpha(),
+                                    ),
+                                    bold: true,
+                                  }}
+                                >
+                                  {local.model.variant.current() ?? "default"}
+                                </span>
+                              </text>
+                            </box>
                           </Show>
                         </box>
                       </Show>

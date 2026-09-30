@@ -42,6 +42,53 @@ const model = (api: Api, variants: ModelV2.Info["variants"] = []) =>
   })
 
 describe("SessionRunnerModel", () => {
+  it.effect("resolves a standard reasoning variant before catalog plugins finish", () =>
+    Effect.gen(function* () {
+      const catalog = ModelV2.Info.make({
+        ...model({ type: "aisdk", package: "@ai-sdk/openai" }),
+        api: { id: ModelV2.ID.make("gpt-6.1-sol"), type: "aisdk", package: "@ai-sdk/openai" },
+      })
+      const session = SessionV2.Info.make({
+        id: SessionV2.ID.make("ses_variant_boot"),
+        projectID: ProjectV2.ID.global,
+        title: "test",
+        model: { id: catalog.id, providerID: catalog.providerID, variant: ModelV2.VariantID.make("medium") },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      const resolved = yield* SessionRunnerModel.resolve(session, catalog)
+      expect(resolved.route.defaults.http?.body).toMatchObject({ reasoning: { effort: "medium" } })
+    }),
+  )
+
+  it.effect("routes ChatGPT OAuth to Codex and disables storage", () =>
+    Effect.gen(function* () {
+      const catalog = ModelV2.Info.make({
+        ...model({ type: "aisdk", package: "@ai-sdk/openai" }),
+        providerID: ProviderV2.ID.openai,
+        request: { headers: {}, body: { reasoning: { effort: "medium" } } },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        catalog,
+        Credential.OAuth.make({
+          type: "oauth",
+          access: "test-access",
+          refresh: "test-refresh",
+          expires: Date.now() + 60000,
+          methodID: Integration.MethodID.make("chatgpt-browser"),
+          metadata: { accountID: "test-account" },
+        }),
+      )
+      const prepared = yield* LLMClient.prepare(LLM.request({ model: resolved, prompt: "Hello" }))
+      expect(resolved.route.endpoint.baseURL).toBe("https://chatgpt.com/backend-api/codex")
+      expect(resolved.route.defaults.headers).toMatchObject({ "ChatGPT-Account-Id": "test-account" })
+      expect(prepared.body).toMatchObject({ store: false })
+      expect(resolved.route.defaults.http?.body).toMatchObject({ store: false, reasoning: { effort: "medium" } })
+    }),
+  )
+
   it.effect("maps catalog OpenAI AI SDK models into native Responses routes", () =>
     Effect.gen(function* () {
       const resolved = yield* SessionRunnerModel.fromCatalogModel(
@@ -341,9 +388,7 @@ describe("SessionRunnerModel", () => {
           model({ type: "aisdk", package: "@ai-sdk/google", url: "https://google.example/v1" }),
         ),
       ).toBe(true)
-      expect(
-        SessionRunnerModel.supported(model({ type: "aisdk", package: "@ai-sdk/groq" })),
-      ).toBe(true)
+      expect(SessionRunnerModel.supported(model({ type: "aisdk", package: "@ai-sdk/groq" }))).toBe(true)
       expect(SessionRunnerModel.supported(model({ type: "aisdk", package: "@ai-sdk/cohere" }))).toBe(false)
       expect(SessionRunnerModel.supported(model({ type: "native", settings: {} }))).toBe(false)
     }),
