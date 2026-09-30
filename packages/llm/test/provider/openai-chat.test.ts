@@ -484,10 +484,17 @@ describe("OpenAI Chat route", () => {
         LLM.request({
           id: "req_empty",
           model,
-          messages: [Message.user("hello"), Message.assistant([]), Message.assistant({ type: "text", text: "" })],
+          messages: [
+            Message.user("hello"),
+            Message.assistant([]),
+            Message.assistant({ type: "text", text: "" }),
+            Message.assistant({ type: "reasoning", text: "" }),
+          ],
         }),
       )
 
+      // Nothing here satisfies DeepSeek's "content or tool_calls must be set",
+      // so every empty turn is removed instead of serialized as null content.
       expect(prepared.body.messages).toEqual([{ role: "user", content: "hello" }])
     }),
   )

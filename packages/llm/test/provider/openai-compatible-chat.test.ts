@@ -274,4 +274,25 @@ describe("OpenAI-compatible Chat route", () => {
       ])
     }),
   )
+
+  it.effect("drops DeepSeek assistant turns with no content or tool calls", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChatBody>(
+        LLM.request({
+          id: "req_deepseek_empty",
+          model,
+          messages: [
+            Message.user("continue"),
+            Message.assistant([]),
+            Message.assistant({ type: "reasoning", text: "" }),
+            Message.assistant({ type: "text", text: "" }),
+          ],
+        }),
+      )
+
+      // Empty assistant turns are removed rather than serialized with a null or
+      // missing content key, which DeepSeek rejects outright.
+      expect(prepared.body.messages).toEqual([{ role: "user", content: "continue" }])
+    }),
+  )
 })
