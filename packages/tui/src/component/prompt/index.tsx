@@ -276,6 +276,20 @@ export function Prompt(props: PromptProps) {
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
 
+  // Claude Code shows how long the current turn has been running next to the
+  // interrupt hint. Measure from the prompt so it matches the completed footer.
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (status().type === "idle") return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const turnElapsed = createMemo(() => {
+    const start = lastUserMessage()?.time.created
+    return start === undefined ? 0 : Math.max(0, now() - start)
+  })
+
   const usage = createMemo(() => {
     if (!props.sessionID) return
     const session = sync.session.get(props.sessionID)
@@ -1673,6 +1687,9 @@ export function Prompt(props: PromptProps) {
                     })()}
                   </box>
                 </box>
+                <Show when={status().type === "busy" && turnElapsed() > 0}>
+                  <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
+                </Show>
                 <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
                   esc{" "}
                   <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>

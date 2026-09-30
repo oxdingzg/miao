@@ -22,6 +22,7 @@ const TOOL_GROUPS = [
     plural: "patterns",
   },
   { displays: ["edit", "write", "apply_patch"], verb: ["editing", "edited"], noun: "file", plural: "files" },
+  { displays: ["task"], verb: ["delegating to", "delegated to"], noun: "subagent", plural: "subagents" },
 ]
 
 export function SessionActivity(props: { sessionID: string }) {
@@ -54,6 +55,10 @@ export function SessionActivity(props: { sessionID: string }) {
     if (!Flag.MIAO_TUI_V2 || !busy() || blocked()) return undefined
     return turnActivity({ parts: turnParts(), working: !waiting() })
   })
+  // Measure from the prompt that opened the turn so the live timer agrees with
+  // the duration the completed assistant footer reports.
+  const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.role === "user")?.time.created)
+  const active = createMemo(() => busy() && !blocked())
 
   createEffect(() => {
     const sessionID = props.sessionID
@@ -70,10 +75,13 @@ export function SessionActivity(props: { sessionID: string }) {
   })
 
   createEffect(() => {
-    if (!props.sessionID || !waiting()) return
-    const start = Date.now()
-    setElapsed(0)
-    const timer = setInterval(() => setElapsed(Date.now() - start), 1000)
+    if (!active()) return
+    const read = () => {
+      const start = turnStartedAt()
+      return start === undefined ? 0 : Math.max(0, Date.now() - start)
+    }
+    setElapsed(read())
+    const timer = setInterval(() => setElapsed(read()), 1000)
     onCleanup(() => clearInterval(timer))
   })
 
@@ -81,9 +89,13 @@ export function SessionActivity(props: { sessionID: string }) {
 }
 
 export function turnActivity(input: { parts: Part[]; working: boolean }) {
-  const tools = input.parts.filter(
-    (part): part is ToolPart => part.type === "tool" && part.state.status === "completed",
-  )
+  // A running step is part of the turn's work, so count it in the live summary.
+  // Completed steps stay counted once the turn settles into past tense.
+  const tools = input.parts.filter((part): part is ToolPart => {
+    if (part.type !== "tool") return false
+    if (part.state.status === "completed") return true
+    return input.working && part.state.status === "running"
+  })
   const reasoning = input.parts.filter((part): part is ReasoningPart => part.type === "reasoning")
   const thinking = reasoning.some((part) => part.time.end === undefined && part.text.trim().length > 0)
   const thought = reasoning.reduce((total, part) => {
@@ -103,11 +115,20 @@ export function turnActivity(input: { parts: Part[]; working: boolean }) {
 
 export function SessionWaiting(props: { waiting: boolean; elapsed: number; activity?: string }) {
   const { theme } = useTheme()
+  // Claude Code keeps the elapsed time on the live status line whether the turn
+  // is still reading its first token or already running tools.
+  const text = createMemo(() => {
+    if (props.activity) {
+      return props.elapsed > 0 ? `${props.activity} · ${Locale.duration(props.elapsed)}` : props.activity
+    }
+    if (!props.waiting) return undefined
+    return waitingText(props.elapsed)
+  })
   return (
-    <Show when={props.activity ?? (props.waiting ? waitingText(props.elapsed) : undefined)}>
-      {(text) => (
+    <Show when={text()}>
+      {(value) => (
         <box paddingLeft={3} marginTop={1} flexShrink={0}>
-          <Spinner color={theme.textMuted}>{text()}</Spinner>
+          <Spinner color={theme.textMuted}>{value()}</Spinner>
         </box>
       )}
     </Show>

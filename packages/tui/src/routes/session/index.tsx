@@ -2380,11 +2380,28 @@ function Task(props: ToolProps) {
     return value
   })
 
+  // Claude Code keeps a live elapsed time on the subagent row for the whole run.
+  // Tick only while the task is live so an idle row does not repaint every second.
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!isRunning()) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+
   const duration = createMemo(() => {
     const first = messages().find((x) => x.role === "user")?.time.created
-    const assistant = messages().findLast((x) => x.role === "assistant")?.time.completed
-    if (!first || !assistant) return 0
-    return assistant - first
+    if (first !== undefined) {
+      const completed = messages().findLast((x) => x.role === "assistant")?.time.completed
+      return (completed ?? (isRunning() ? now() : first)) - first
+    }
+    // The child transcript can lag behind the tool call, so fall back to the
+    // call's own timing and still report how long the subagent has been running.
+    const state = props.part.state
+    if (state.status === "running") return Math.max(0, now() - state.time.start)
+    if (state.status === "completed") return Math.max(0, state.time.end - state.time.start)
+    return 0
   })
 
   const content = createMemo(() => {
@@ -2399,17 +2416,20 @@ function Task(props: ToolProps) {
     ]
 
     const retrying = retry()
-    if (isRunning() && retrying) {
-      content.push(`↳ ${formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))}`)
-    } else if (isRunning() && tools().length > 0) {
-      if (current()) {
+    if (isRunning()) {
+      const elapsed = duration() > 0 ? ` · ${Locale.duration(duration())}` : ""
+      if (retrying) {
+        content.push(`↳ ${formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))}${elapsed}`)
+      } else if (current()) {
         const state = current()!.state
         const title = state.status === "running" || state.status === "completed" ? state.title : undefined
-        content.push(`↳ ${Locale.titlecase(current()!.tool)} ${title}`)
-      } else content.push(`↳ ${formatSubagentToolcalls(tools().length)}`)
-    }
-
-    if (!isRunning() && props.part.state.status === "completed") {
+        content.push(`↳ ${Locale.titlecase(current()!.tool)} ${title}${elapsed}`)
+      } else if (tools().length > 0) {
+        content.push(`↳ ${formatSubagentToolcalls(tools().length)}${elapsed}`)
+      } else {
+        content.push(`↳ ${formatSubagentRunningDetail(duration())}`)
+      }
+    } else if (props.part.state.status === "completed") {
       content.push(`↳ ${formatCompletedSubagentDetail(tools().length, Locale.duration(duration()))}`)
     }
 
@@ -2448,6 +2468,10 @@ export function formatSubagentTitle(agent: string, description: string, backgrou
 
 export function formatSubagentRetry(attempt: number, message: string) {
   return `Retrying (attempt ${attempt}) · ${message}`
+}
+
+export function formatSubagentRunningDetail(elapsed: number) {
+  return elapsed > 0 ? `Running · ${Locale.duration(elapsed)}` : "Running"
 }
 
 export function formatCompletedSubagentDetail(toolcalls: number, duration: string) {

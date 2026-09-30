@@ -67,13 +67,14 @@ test("turn activity replaces the waiting text on the same status line", async ()
     import("../../../src/config"),
   ])
   const [activity, setActivity] = createSignal<string | undefined>(undefined)
+  const [elapsed, setElapsed] = createSignal(0)
   const app = await testRender(
     () => (
       <TestTuiContexts directory={tmp.path} paths={{ home: tmp.path, state, worktree: tmp.path }}>
         <TuiConfigProvider config={createTuiResolvedConfig()}>
           <KVProvider>
             <ThemeProvider mode="dark">
-              <SessionWaiting waiting={false} elapsed={0} activity={activity()} />
+              <SessionWaiting waiting={false} elapsed={elapsed()} activity={activity()} />
             </ThemeProvider>
           </KVProvider>
         </TuiConfigProvider>
@@ -96,6 +97,10 @@ test("turn activity replaces the waiting text on the same status line", async ()
     const active = await settled("Thought for 3.0s")
     expect(active).toContain("Thought for 3.0s, ran 43 shell commands")
     expect(active).not.toContain("Waiting for model response")
+    // The live timer rides along with the activity summary.
+    setElapsed(5000)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("Thought for 3.0s, ran 43 shell commands · 5.0s")
     setActivity(undefined)
     await app.renderOnce()
     expect(app.captureCharFrame().trim()).toBe("")

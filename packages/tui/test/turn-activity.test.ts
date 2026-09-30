@@ -40,7 +40,14 @@ test("in-flight reasoning replaces the recorded thought duration", () => {
 
 test("tool families report their own noun and skip absent families", () => {
   const parts = [tool("read"), tool("grep"), tool("glob"), tool("edit"), tool("write"), tool("task")]
-  expect(turnActivity({ parts, working: false })).toBe("read 1 file, searched for 2 patterns, edited 2 files")
+  expect(turnActivity({ parts, working: false })).toBe(
+    "read 1 file, searched for 2 patterns, edited 2 files, delegated to 1 subagent",
+  )
+})
+
+test("a running step counts while the turn is live", () => {
+  const parts = [tool("bash"), tool("bash", "running"), tool("task", "running")]
+  expect(turnActivity({ parts, working: true })).toBe("running 2 shell commands, delegating to 1 subagent")
 })
 
 test("running tools and text do not count as completed work", () => {

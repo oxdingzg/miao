@@ -5,6 +5,7 @@ import { testRender, type JSX } from "@opentui/solid"
 import {
   formatCompletedSubagentDetail,
   formatSubagentRetry,
+  formatSubagentRunningDetail,
   formatSubagentTitle,
   formatSubagentToolcalls,
   InlineToolRow,
@@ -289,6 +290,11 @@ describe("TUI inline tool wrapping", () => {
 
   test("keeps retry status ahead of wrapping messages", () => {
     expect(formatSubagentRetry(2, "Rate limited by provider")).toBe("Retrying (attempt 2) · Rate limited by provider")
+  })
+
+  test("reports a running subagent before its child transcript loads", () => {
+    expect(formatSubagentRunningDetail(0)).toBe("Running")
+    expect(formatSubagentRunningDetail(65000)).toBe("Running · 1m 5s")
   })
 
   test("snapshots consecutive grep, glob, and read rows at a narrow width", async () => {
