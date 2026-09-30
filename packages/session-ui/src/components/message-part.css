@@ -405,9 +405,27 @@
     }
   }
 
+  [data-slot="bash-scroll"][data-expanded] {
+    max-height: none;
+  }
+
+  [data-slot="bash-expand"] {
+    display: flex;
+    justify-content: center;
+    padding: 4px 12px 8px;
+  }
+
   [data-slot="bash-pre"] {
     margin: 0;
     padding: 12px;
+  }
+
+  /* The command arrives as a highlighted markdown block; its own chrome would double up on
+     the surrounding padding, so the shell block owns the spacing for command and output. */
+  [data-slot="bash-pre"] pre {
+    margin: 0;
+    padding: 0;
+    background: transparent;
   }
 
   [data-slot="bash-pre"] code {

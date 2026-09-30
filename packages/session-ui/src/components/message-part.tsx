@@ -2082,18 +2082,34 @@ ToolRegistry.register({
   },
 })
 
+// Long shell output is collapsed to its first lines so one noisy command cannot push the
+// rest of the turn off screen; the reader opts into the remainder.
+const COLLAPSED_OUTPUT_LINES = 10
+
+// The command is highlighted as shell source. A command may itself contain backticks, so the
+// fence has to be longer than any run inside it or the block would close early.
+function shellFence(command: string) {
+  const runs = command.match(/`+/g) ?? []
+  return "`".repeat(Math.max(3, ...runs.map((run) => run.length + 1)))
+}
+
 ToolRegistry.register({
   name: "shell",
   render(props) {
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"
     const sawPending = pending()
-    const text = createMemo(() => {
-      const cmd = props.input.command ?? props.metadata.command ?? ""
-      const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
-      return `$ ${cmd}${out ? "\n\n" + out : ""}`
+    const command = createMemo(() => props.input.command ?? props.metadata.command ?? "")
+    const output = createMemo(() => stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n"))
+    const text = createMemo(() => `$ ${command()}${output() ? "\n\n" + output() : ""}`)
+    const preview = createMemo(() => {
+      const lines = output().split("\n")
+      if (lines.length <= COLLAPSED_OUTPUT_LINES) return { text: output(), hidden: 0 }
+      return { text: lines.slice(0, COLLAPSED_OUTPUT_LINES).join("\n"), hidden: lines.length - COLLAPSED_OUTPUT_LINES }
     })
+    const [expanded, setExpanded] = createSignal(false)
     const [copied, setCopied] = createSignal(false)
+    const visible = createMemo(() => (expanded() ? output() : preview().text))
 
     const handleCopy = async () => {
       const content = text()
@@ -2138,14 +2154,30 @@ ToolRegistry.register({
           <div
             data-slot="bash-scroll"
             data-scrollable
+            data-expanded={expanded() ? "" : undefined}
             tabIndex={0}
             role="region"
             aria-label={i18n.t("ui.scrollView.ariaLabel")}
           >
-            <pre data-slot="bash-pre">
-              <code>{text()}</code>
-            </pre>
+            <div data-slot="bash-pre">
+              <Markdown
+                text={`${shellFence(command())}sh\n$ ${command()}\n${shellFence(command())}`}
+                streaming={false}
+              />
+              <Show when={visible()}>
+                <pre data-slot="bash-output">
+                  <code>{visible()}</code>
+                </pre>
+              </Show>
+            </div>
           </div>
+          <Show when={preview().hidden > 0}>
+            <div data-slot="bash-expand">
+              <ButtonV2 size="small" variant="ghost-muted" onClick={() => setExpanded((value) => !value)}>
+                {expanded() ? i18n.t("ui.sessionTurn.diffs.showLess") : i18n.t("ui.common.showMore")}
+              </ButtonV2>
+            </div>
+          </Show>
         </div>
       </BasicTool>
     )
