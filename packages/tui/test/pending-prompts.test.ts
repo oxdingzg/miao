@@ -81,3 +81,21 @@ test("sessions have independent receipts and clearing one does not clear another
   expect(receipts.data.msg_one).toBeUndefined()
   expect(receipts.messages("ses_other", []).map((message) => message.id)).toEqual(["msg_other"])
 })
+
+test("unpromoted receipts stay at the transcript tail when the client clock trails", () => {
+  const receipts = createPendingPrompts()
+  // Local receipt stamps 10; projected history is already past it (20).
+  receipts.add(prompt("msg_local"))
+  const projected = [
+    {
+      id: "msg_server",
+      sessionID: "ses_test",
+      role: "user",
+      time: { created: 20 },
+      agent: "build",
+      model: { providerID: "test", modelID: "model" },
+    },
+  ] as Message[]
+
+  expect(receipts.messages("ses_test", projected).map((message) => message.id)).toEqual(["msg_server", "msg_local"])
+})

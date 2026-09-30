@@ -28,9 +28,11 @@ export function createPendingPrompts() {
       setData(id, { state: "failed", error })
     },
     remove(id: string) {
-      setData(produce((draft) => {
-        delete draft[id]
-      }))
+      setData(
+        produce((draft) => {
+          delete draft[id]
+        }),
+      )
     },
     reconcile(sessionID: string, messages: ReadonlyArray<Message>) {
       const projected = new Set(messages.map((message) => message.id))
@@ -57,12 +59,15 @@ export function createPendingPrompts() {
     },
     messages(sessionID: string, projected: ReadonlyArray<Message>): Message[] {
       const ids = new Set(projected.map((message) => message.id))
-      return [
-        ...projected,
-        ...Object.values(data)
-          .filter((prompt) => prompt.info.sessionID === sessionID && !ids.has(prompt.info.id))
-          .map((prompt) => prompt.info),
-      ].toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+      const pending = Object.values(data)
+        .filter((prompt) => prompt.info.sessionID === sessionID && !ids.has(prompt.info.id))
+        .map((prompt) => prompt.info)
+        .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+      // Projected history is authoritative and already ordered by the server.
+      // Receipts for prompts that have not been promoted yet always belong at
+      // the tail: mixing them by `time.created` would let a client clock that
+      // trails the server insert the echo above older history.
+      return [...projected, ...pending]
     },
   }
 }
