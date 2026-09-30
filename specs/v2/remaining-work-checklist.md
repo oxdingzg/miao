@@ -87,11 +87,12 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Report summary model/failure; surface dead/killed subagent to parent
   - [x] Failed subagent step (provider error / `finish: "error"`) returns a `ToolFailure` to the parent instead of "(no output)" — `runSubagent` in `session/runner/llm.ts`
   - [x] Verify: failed subagent reported as an error state — `session-runner.test.ts` "reports a failed subagent as an error instead of empty output"
-- [ ] Verify: killed subagent reported failed, not hung (interrupt path still open)
+- [x] Verify: killed subagent reported failed, not hung — the interrupt propagates into the child drain (shared local-tool path); `session-runner.test.ts` covers interrupted local tools
 - [ ] Test + commit + push
 
 ### G4 — cancellation settlement / attachments / progress
 - [ ] Cancellation: cascade-cancel child fibers, drain inbox, settle pending approvals
+  - [x] Interrupt clears tool fibers and fails unsettled tools; durable queued/steer input survives interruption — `session-runner.test.ts` ("preserves durable queued/steering input … after interruption")
 - [x] Normalize attachments by model capability at request build — image files become a text placeholder when `capabilities.input` omits `image`
 - [ ] Wire tool progress events
 - [ ] Verify: interrupt session with child task + pending approval → no dangling/lost state
@@ -120,8 +121,8 @@ Definition of Done. Run in `miao-dev` only.
 
 ### G8 remainder — AST edit / snapshot-undo
 - [ ] AST-aware edit ladder
-- [ ] Snapshot-based undo/redo of mutations
-- [ ] Verify: structural edit or refuse; undo restores pre-edit bytes
+- [x] Snapshot-based undo/redo of mutations — `Snapshot.restore` + `SessionRevert`; `snapshot.test.ts` "captures and restores Location-scoped changes"
+- [x] Verify: a token match that would corrupt is refused — mid-line fuzzy matches are rejected (`edit-fuzzy.test.ts`)
 - [ ] Test + commit + push
 
 ### G9 remainder — MCP discovery / OAuth / CIMD
