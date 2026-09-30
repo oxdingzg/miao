@@ -23,6 +23,12 @@ export interface Interface {
   readonly run: (input: {
     readonly sessionID: SessionSchema.ID
     readonly force: boolean
+    /**
+     * Wakes a peer Session after `send_message` admits to it. Omitted by callers
+     * that only record durable input; the message is then delivered on the
+     * target's next drain.
+     */
+    readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   }) => Effect.Effect<void, RunError>
 }
 

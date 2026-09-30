@@ -245,9 +245,11 @@ const execution = Layer.effect(
   SessionExecution.Service,
   Effect.gen(function* () {
     const sessionRunner = yield* SessionRunner.Service
+    let wake: (sessionID: SessionV2.ID) => Effect.Effect<void> = () => Effect.void
     const coordinator = yield* SessionRunCoordinator.make<SessionV2.ID, SessionRunner.RunError>({
-      drain: (sessionID, force) => sessionRunner.run({ sessionID, force }),
+      drain: (sessionID, force) => sessionRunner.run({ sessionID, force, wake }),
     })
+    wake = coordinator.wake
     return SessionExecution.Service.of({
       active: coordinator.active,
       resume: coordinator.run,
@@ -1729,6 +1731,110 @@ describe("SessionRunnerLLM", () => {
         type: "tool",
         name: "task",
         state: { status: "error", error: { type: "unknown", message: "Subagent failed: child boom" } },
+      })
+    }),
+  )
+
+  it.effect("delivers a message to a peer session and wakes it", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      yield* insertSession(otherSessionID)
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping peer" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-message",
+            name: "send_message",
+            input: { to: otherSessionID, message: "hello peer" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-done" }),
+          LLMEvent.textDelta({ id: "text-done", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-done" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      const wakes: string[] = []
+      yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
+
+      expect(wakes).toEqual([otherSessionID])
+      expect(yield* SessionInput.hasPending(db, otherSessionID, "queue")).toBe(true)
+
+      // Draining the target materializes the attributed message in its transcript.
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-ack" }),
+          LLMEvent.textDelta({ id: "text-ack", text: "Ack" }),
+          LLMEvent.textEnd({ id: "text-ack" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID: otherSessionID, force: true })
+
+      const context = yield* session.context(otherSessionID)
+      const first = context[0]
+      expect(first).toMatchObject({ type: "user" })
+      expect(first?.type === "user" ? first.text : "").toContain(`<message from session="${sessionID}">`)
+      expect(first?.type === "user" ? first.text : "").toContain("hello peer")
+    }),
+  )
+
+  it.effect("fails clearly when a message target is missing", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping nobody" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-missing", name: "send_message", input: { to: "ses_missing", message: "hi" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID, force: true })
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "send_message")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "send_message",
+        state: { status: "error", error: { type: "unknown", message: "Unknown session: ses_missing" } },
       })
     }),
   )

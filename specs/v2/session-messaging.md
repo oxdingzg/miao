@@ -28,6 +28,24 @@ Messaging is "admit a synthetic input into another Session, then wake it".
   cap, and cost accounting so a messaging loop cannot run away (reuse the `loop` guards for the
   receiving drain).
 
+## Wake seam (implemented)
+
+`SessionExecution.wake` lives on the process-global execution service, which depends on the
+per-Location runner (`LocationServiceMap` → `SessionRunner`). A runner-owned tool therefore cannot
+depend on `SessionExecution` directly: the location → global → location edge would cycle, and an
+unbound global node cannot be resolved inside the lazily-built location graph. Waking on every
+`PromptAdmitted` is also wrong, because `prompt` with `resume: false` deliberately admits without
+running.
+
+Instead the runner receives the wake capability as a callback:
+
+- `SessionRunner.run` accepts an optional `wake?: (sessionID) => Effect<void>`.
+- `SessionExecutionLocal`'s drain passes `coordinator.wake`.
+- `runSendMessage` admits a queued input to the target and calls `wake` when present; callers that
+  only record durable input omit it and the message is delivered on the target's next drain.
+
+Only explicit messaging wakes a peer, so `resume: false` semantics are unchanged.
+
 ## Non-goals
 
 - No cross-machine/cluster routing yet (process-local drains only, matching the V2 execution model).
@@ -42,5 +60,10 @@ Messaging is "admit a synthetic input into another Session, then wake it".
 
 ## Status
 
-Not started. Depends on the V2 cutover (Stage 4) for the interactive path, but the core pieces
-(admit + wake + session-scoped tool) already exist.
+First slice landed: the session-scoped `send_message` tool (`{ to, message }`) resolves a Session
+ID, rejects a missing target or a target in another project, admits a queued input attributed as
+`<message from session="…">`, and wakes the target through the runner's `wake` callback. Covered by
+`packages/core/test/session-runner.test.ts`.
+
+Still open: `@name` handle resolution and a `list_sessions` discovery tool; the `message` permission
+action; a per-Session inbound-queue cap; and loop-guard cost accounting for a receiving drain.

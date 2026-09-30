@@ -13,11 +13,14 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
+    // Declared before the coordinator so the drain closure can wake peer Sessions
+    // without a circular type reference.
+    let wake: (sessionID: SessionSchema.ID) => Effect.Effect<void> = () => Effect.void
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
-        return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force })).pipe(
+        return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force, wake })).pipe(
           Effect.provide(locations.get(session.location)),
           Effect.tapCause((cause) =>
             Cause.hasInterruptsOnly(cause)
@@ -27,6 +30,7 @@ const layer = Layer.effect(
         )
       }),
     })
+    wake = coordinator.wake
 
     return SessionExecution.Service.of({
       active: coordinator.active,

@@ -26,6 +26,7 @@ import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
+import { SendMessageTool } from "../../tool/send-message"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
@@ -575,9 +576,34 @@ const layer = Layer.effect(
       return { sessionID: child.id, text: text.trim().length > 0 ? text : "(no output)" }
     })
 
+    const runSendMessage = Effect.fnUntraced(function* (
+      senderSessionID: SessionSchema.ID,
+      request: { readonly to: string; readonly message: string },
+      wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
+    ) {
+      const sender = yield* getSession(senderSessionID)
+      const target = yield* store.get(SessionSchema.ID.make(request.to))
+      if (!target) return yield* new ToolFailure({ message: `Unknown session: ${request.to}` })
+      if (target.id === sender.id)
+        return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
+      if (target.projectID !== sender.projectID)
+        return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
+      yield* SessionInput.admit(db, events, {
+        id: SessionMessage.ID.create(),
+        sessionID: target.id,
+        prompt: Prompt.make({ text: `<message from session="${sender.id}">\n${request.message}\n</message>` }),
+        delivery: "queue",
+      })
+      // Waking routes through the process-local execution coordinator when the
+      // runner was entered from a real drain; admit-only callers leave it durable.
+      if (wake) yield* wake(target.id)
+      return { sessionID: target.id }
+    })
+
     const run = Effect.fn("SessionRunner.run")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
+      readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
     }) {
       return yield* Effect.scoped(
         Effect.gen(function* () {
@@ -590,6 +616,15 @@ const layer = Layer.effect(
                   runSubagent(input.sessionID, request).pipe(
                     Effect.mapError((error) =>
                       error instanceof ToolFailure ? error : new ToolFailure({ message: "Subagent task failed" }),
+                    ),
+                  ),
+                ),
+                send_message: SendMessageTool.make((request) =>
+                  runSendMessage(input.sessionID, request, input.wake).pipe(
+                    Effect.mapError((error) =>
+                      error instanceof ToolFailure
+                        ? error
+                        : new ToolFailure({ message: "Session messaging failed" }),
                     ),
                   ),
                 ),
