@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, gte, ne, or } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { Database } from "../database/database"
+import { EventV2 } from "../event"
 import { MessageDecodeError } from "./error"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -22,17 +23,15 @@ export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService
 })
 
 type CachedEntries = {
+  readonly revision: number
   readonly baselineSeq: number | undefined
   readonly compactionSeq: number | undefined
   readonly maxSeq: number
   readonly entries: ReadonlyArray<{ readonly seq: number; readonly message: SessionMessage.Message }>
 }
 
-// A Session's projected history only grows between compaction (which changes
-// the baseline/compaction cutoff) and revert (which deletes rows). Caching the
-// decoded rows lets each provider turn decode only newly appended messages
-// instead of the whole transcript. The projector is the sole writer of
-// `session_message`, so it also owns invalidation.
+// Streaming updates existing assistant rows without changing their message sequence.
+// The durable event revision prevents cached partial messages from hiding their final text and finish state.
 const caches = new WeakMap<object, Map<string, CachedEntries>>()
 
 function cacheFor(db: object) {
@@ -104,11 +103,18 @@ const loadEntries = Effect.fnUntraced(function* (
   const map = cacheFor(db)
   const compactionSeq = compaction?.seq
   const cached = map.get(sessionID)
-  if (cached && cached.baselineSeq === baselineSeq && cached.compactionSeq === compactionSeq) {
+  const revision = yield* EventV2.latestSequence(db, sessionID)
+  if (
+    cached &&
+    cached.revision === revision &&
+    cached.baselineSeq === baselineSeq &&
+    cached.compactionSeq === compactionSeq
+  ) {
     const rows = yield* messageRows(db, sessionID, compaction, baselineSeq, cached.maxSeq)
     if (rows.length === 0) return cached.entries
     const entries = [...cached.entries, ...(yield* decodeRows(rows))]
     map.set(sessionID, {
+      revision,
       baselineSeq,
       compactionSeq,
       maxSeq: rows.at(-1)?.seq ?? cached.maxSeq,
@@ -119,6 +125,7 @@ const loadEntries = Effect.fnUntraced(function* (
   const rows = yield* messageRows(db, sessionID, compaction, baselineSeq)
   const entries = yield* decodeRows(rows)
   map.set(sessionID, {
+    revision,
     baselineSeq,
     compactionSeq,
     maxSeq: rows.at(-1)?.seq ?? -1,

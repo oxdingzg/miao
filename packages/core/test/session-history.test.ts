@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer, Schema } from "effect"
+import { DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -13,6 +13,10 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTable } from "@miao/core/session/sql"
+import { SessionEvent } from "@miao/core/session/event"
+import { SessionMessage } from "@miao/core/session/message"
+import { ModelV2 } from "@miao/core/model"
+import { ProviderV2 } from "@miao/core/provider"
 import { testEffect } from "./lib/effect"
 
 const projects = Layer.succeed(
@@ -41,6 +45,34 @@ const GapEvent = EventV2.define({
 })
 
 describe("SessionV2.history", () => {
+  it.effect("reloads cached partial assistant rows when their durable revision changes", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const created = yield* session.create({ location })
+      const assistantMessageID = SessionMessage.ID.create()
+      const base = { sessionID: created.id, assistantMessageID, timestamp: DateTime.makeUnsafe(0) }
+      yield* events.publish(SessionEvent.Step.Started, {
+        ...base,
+        agent: "build",
+        model: { id: ModelV2.ID.make("gpt-6.1-sol"), providerID: ProviderV2.ID.openai },
+      })
+      yield* events.publish(SessionEvent.Text.Started, { ...base, textID: "text" })
+      expect((yield* session.context(created.id)).at(-1)).toMatchObject({ content: [{ type: "text", text: "" }] })
+      yield* events.publish(SessionEvent.Text.Ended, { ...base, textID: "text", text: "OK" })
+      yield* events.publish(SessionEvent.Step.Ended, {
+        ...base,
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      expect((yield* session.context(created.id)).at(-1)).toMatchObject({
+        finish: "stop",
+        content: [{ type: "text", text: "OK" }],
+      })
+    }),
+  )
+
   it.effect("returns an exhausted page for a migrated Session with no event sequence", () =>
     Effect.gen(function* () {
       const db = (yield* Database.Service).db
