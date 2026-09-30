@@ -218,7 +218,7 @@ describe("SessionV2.create", () => {
         { durable: { seq: 1 }, type: "session.next.prompt.admitted", data: { prompt: { text: "Hello" } } },
         { durable: { seq: 2 }, type: "session.next.prompted" },
       ])
-      expect(streamed.some((event) => event.type === "session.created")).toBe(false)
+      expect(streamed.some((event) => (event.type as string) === "session.created")).toBe(false)
     }),
   )
 
