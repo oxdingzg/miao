@@ -27,22 +27,30 @@ function writeOsc52(text: string) {
   process.stdout.write(process.env.TMUX ? sequence + passthrough : process.env.STY ? passthrough : sequence)
 }
 
+/**
+ * The pasteboard already carries the image as `public.png`; AppleScript's
+ * `the clipboard as "PNGf"` instead makes the pasteboard server renegotiate
+ * and re-encode it, which costs about a second on every paste. Read the bytes
+ * directly and only convert the TIFF representation a screenshot leaves behind.
+ */
+function macImageScript(file: string) {
+  return `ObjC.import("AppKit")
+const pasteboard = $.NSPasteboard.generalPasteboard
+let image = pasteboard.dataForType("public.png")
+if (image.isNil()) {
+  const tiff = pasteboard.dataForType("public.tiff")
+  if (tiff.isNil()) throw new Error("clipboard holds no image")
+  image = $.NSBitmapImageRep.imageRepWithData(tiff).representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $())
+}
+if (image.isNil()) throw new Error("could not encode the clipboard image")
+image.writeToFileAtomically(${JSON.stringify(file)}, true)`
+}
+
 export async function read() {
   if (platform() === "darwin") {
     const file = path.join(tmpdir(), "miao-clipboard.png")
     try {
-      await exec("osascript", [
-        "-e",
-        'set imageData to the clipboard as "PNGf"',
-        "-e",
-        `set fileRef to open for access POSIX file "${file}" with write permission`,
-        "-e",
-        "set eof fileRef to 0",
-        "-e",
-        "write imageData to fileRef",
-        "-e",
-        "close access fileRef",
-      ])
+      await exec("osascript", ["-l", "JavaScript", "-e", macImageScript(file)])
       return { data: (await readFile(file)).toString("base64"), mime: "image/png" }
     } catch {
       // Fall through to text clipboard.
