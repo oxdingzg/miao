@@ -1,5 +1,6 @@
 import type {
   Message,
+  UserMessage,
   Agent,
   Provider,
   Session,
@@ -29,6 +30,11 @@ import { createSimpleContext } from "./helper"
 import { isLiveSessionV2Event, isV2StreamFragmentEvent, sessionContextToMessages } from "./session-v2"
 import { sessionInfo } from "./session-v2-read"
 import { createSessionRefreshScheduler } from "./session-refresh"
+import { createPendingPrompts } from "./pending-prompts"
+import { promptInputFromParts } from "./session-v2-write"
+import { SessionMessage } from "@miao/core/session/message"
+import type { PromptInfo } from "../prompt/history"
+import { errorMessage } from "../util/error"
 import { Flag } from "@miao/core/flag/flag"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
@@ -151,6 +157,7 @@ export const {
     const project = useProject()
     const sdk = useSDK()
 
+    const pendingPrompts = createPendingPrompts()
     const fullSyncedSessions = new Set<string>()
     const syncingSessions = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
@@ -217,6 +224,50 @@ export const {
         if (sessionID) v2Refresh.schedule(sessionID)
       }
       switch (event.type) {
+        case "session.next.prompt.admitted":
+        case "session.next.prompted": {
+          if (!Flag.MIAO_TUI_V2) break
+          const input = event.properties
+          if (store.message[input.sessionID]?.some((message) => message.id === input.messageID)) break
+          const session = store.session.find((session) => session.id === input.sessionID)
+          const [message] = sessionContextToMessages({
+            sessionID: input.sessionID,
+            cwd: session?.directory ?? "",
+            root: session?.directory ?? "",
+            messages: [
+              {
+                id: input.messageID,
+                type: "user",
+                time: { created: input.timestamp },
+                text: input.prompt.text,
+                files: input.prompt.files,
+                agents: input.prompt.agents,
+              },
+            ],
+          })
+          if (message.info.role !== "user") break
+          const info = {
+            ...message.info,
+            agent: pendingPrompts.data[input.messageID]?.info.agent ?? session?.agent ?? "",
+            model: pendingPrompts.data[input.messageID]?.info.model ?? {
+              providerID: session?.model?.providerID ?? "",
+              modelID: session?.model?.id ?? "",
+            },
+          }
+          if (event.type === "session.next.prompt.admitted") {
+            pendingPrompts.add({ info, parts: message.parts, state: "admitted", delivery: input.delivery })
+            pendingPrompts.admit(input.messageID)
+            break
+          }
+          touchMessage(input.sessionID, input.messageID)
+          message.parts.forEach((part) => touchPart(input.sessionID, part.id))
+          batch(() => {
+            setStore("message", input.sessionID, (messages = []) => [...messages, info].toSorted(compareMessage))
+            setStore("part", input.messageID, message.parts)
+            pendingPrompts.remove(input.messageID)
+          })
+          break
+        }
         case "server.instance.disposed":
           void bootstrap()
           break
@@ -435,6 +486,7 @@ export const {
           fullSyncedSessions.delete(id)
           syncingSessions.delete(id)
           hydratingSessions.delete(id)
+          pendingPrompts.clear(id)
           break
         }
         case "session.updated": {
@@ -741,6 +793,51 @@ export const {
 
     const result = {
       data: store,
+      prompt: {
+        ...pendingPrompts,
+        async send(input: {
+          sessionID: string
+          agent: string
+          model: UserMessage["model"]
+          parts: PromptInfo["parts"]
+        }) {
+          const id = SessionMessage.ID.create()
+          pendingPrompts.add({
+            info: {
+              id,
+              sessionID: input.sessionID,
+              role: "user",
+              agent: input.agent,
+              model: input.model,
+              time: { created: Date.now() },
+            },
+            parts: input.parts.map((part, index) => ({
+              ...part,
+              id: `${id}-${index}`,
+              messageID: id,
+              sessionID: input.sessionID,
+            })),
+            state: "sending",
+            delivery: "steer",
+          })
+          return sdk.client.v2.session
+            .prompt(
+              { id, sessionID: input.sessionID, prompt: promptInputFromParts(input.parts) },
+              { throwOnError: true },
+            )
+            .then(
+              (response) => {
+                pendingPrompts.admit(id)
+                v2Refresh.schedule(input.sessionID)
+                return response
+              },
+              (error: unknown) => {
+                pendingPrompts.fail(id, errorMessage(error))
+                throw error
+              },
+            )
+        },
+      },
       set: setStore,
       get status() {
         return store.status
@@ -883,6 +980,10 @@ export const {
                 draft.message[sessionID] = visible
                 draft.session_diff[sessionID] = diff.data ?? []
               }),
+            )
+            pendingPrompts.reconcile(
+              sessionID,
+              (messages.data ?? []).map((message) => message.info),
             )
             fullSyncedSessions.add(sessionID)
           })().finally(() => {

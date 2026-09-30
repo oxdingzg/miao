@@ -24,7 +24,6 @@ import { useSDK } from "../../context/sdk"
 import { useRoute } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
-import { promptInputFromParts } from "../../context/session-v2-write"
 import { useEvent } from "../../context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "../../context/editor"
 import { normalizePromptContent, openEditor } from "../../editor"
@@ -1148,7 +1147,7 @@ export function Prompt(props: PromptProps) {
         ...nonTextParts,
       ]
       const request = Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session.prompt({ sessionID, prompt: promptInputFromParts(parts) }, { throwOnError: true })
+        ? sync.prompt.send({ sessionID, agent: agent.name, model: { ...selectedModel, variant }, parts })
         : sdk.client.session.prompt(
             {
               sessionID,

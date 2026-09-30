@@ -69,6 +69,8 @@ import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { SessionActivity } from "./activity"
 import { SessionMessageContent } from "./session-message"
+import { PromptStatus } from "./prompt-status"
+import type { PendingPrompt } from "../../context/pending-prompts"
 import { parseSessionMessage } from "../../util/session-message"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
@@ -215,6 +217,7 @@ export function Session() {
       .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
+  const displayMessages = createMemo(() => sync.prompt.messages(route.sessionID, messages()))
   const messagesBeforeRevert = () => {
     const messageID = session()?.revert?.messageID
     if (!messageID) return messages()
@@ -1219,7 +1222,7 @@ export function Session() {
                 scrollAcceleration={scrollAcceleration()}
               >
                 <box height={1} />
-                <For each={messages()}>
+                <For each={displayMessages()}>
                   {(message, index) => (
                     <Switch>
                       <Match when={message.id === revert()?.messageID}>
@@ -1291,7 +1294,7 @@ export function Session() {
                         <UserMessage
                           index={index()}
                           onMouseUp={() => {
-                            if (renderer.getSelection()?.getSelectedText()) return
+                            if (renderer.getSelection()?.getSelectedText() || sync.prompt.data[message.id]) return
                             dialog.replace(() => (
                               <DialogMessage
                                 messageID={message.id}
@@ -1301,8 +1304,9 @@ export function Session() {
                             ))
                           }}
                           message={message as UserMessage}
-                          parts={sync.data.part[message.id] ?? []}
+                          parts={sync.prompt.data[message.id]?.parts ?? sync.data.part[message.id] ?? []}
                           pending={pending()}
+                          receipt={sync.prompt.data[message.id]}
                         />
                       </Match>
                       <Match when={message.role === "assistant"}>
@@ -1395,6 +1399,7 @@ function UserMessage(props: {
   onMouseUp: () => void
   index: number
   pending?: number
+  receipt?: PendingPrompt
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1416,7 +1421,7 @@ function UserMessage(props: {
   const queued = createMemo(() => props.pending !== undefined && props.index > props.pending)
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
-  const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
+  const metadataVisible = createMemo(() => Boolean(props.receipt) || queued() || ctx.showTimestamps())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
@@ -1472,8 +1477,9 @@ function UserMessage(props: {
                 </For>
               </box>
             </Show>
+            <Show when={props.receipt}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
             <Show
-              when={queued()}
+              when={!props.receipt && queued()}
               fallback={
                 <Show when={ctx.showTimestamps()}>
                   <text fg={theme.textMuted}>
