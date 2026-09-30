@@ -4,7 +4,12 @@ import { type ServerSDK, useServerSDK } from "./server-sdk"
 
 export type DirectorySDK = ReturnType<ServerSDK["ensureDirSdkContext"]>
 
-export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
+// The protocol event union is a wide structural type, so the context type is spelled out here
+// instead of being inferred: inference would ask the compiler to serialize the whole union.
+export const { use: useSDK, provider: SDKProvider } = createSimpleContext<
+  Accessor<DirectorySDK>,
+  { directory: string | Accessor<string> }
+>({
   name: "SDK",
   // Resolves the directory-scoped SDK reactively from the (possibly changing) server.
   init: (props: { directory: string | Accessor<string> }) => {

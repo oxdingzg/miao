@@ -533,11 +533,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       return
     }
 
-    if (event.current?.type === "session.moved") {
+    if (event.current?.type === "session.next.moved") {
       const info = session.get(event.current.data.sessionID)
       if (info) indexSession(info)
     }
-    if (event.current?.type === "session.forked")
+    // A fork shows up as the creation of a session, and the new session needs a directory index.
+    if (event.current?.type === "session.next.created")
       void session
         .resolve(event.current.data.sessionID, { force: true })
         .then(indexSession)
@@ -547,9 +548,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     if (!existing) return
     children.mark(key)
     if (
-      event.current?.type === "session.moved" ||
+      event.current?.type === "session.next.moved" ||
       // event.current?.type === "session.archived" ||
-      event.current?.type === "session.forked" ||
+      event.current?.type === "session.next.created" ||
       eventType === "command.updated" ||
       eventType === "config.updated" ||
       eventType === "agent.updated"

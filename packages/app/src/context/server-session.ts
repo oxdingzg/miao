@@ -1,6 +1,7 @@
 import { Binary } from "@miao/core/util/binary"
 import { retry } from "@miao/core/util/retry"
-import type { OpenCodeEvent, SessionApi, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionApi, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type {
   Message,
   OpencodeClient,
@@ -921,64 +922,57 @@ export function createServerSession(
     })
   }
 
-  const hydrateV2Message = (sessionID: string, messageID: string) => {
-    if (!sessionApi) return
-    void sessionApi
-      .message({ sessionID, messageID })
-      .then((message) => {
-        const current = data.session_message[sessionID] ?? []
-        const messages = [...current.filter((item) => item.id !== message.id), message].sort(compareMessages)
-        projectV2({ sessionID, messages, touched: [message.id] })
-      })
-      .catch(() => {})
-  }
-
-  const applyV2 = (event: OpenCodeEvent) => {
+  const applyV2 = (event: OpenCodeEventEncoded) => {
     if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
     const sessionID = event.data.sessionID
     const reduction = v2.reduce(data.session_message[sessionID] ?? [], event)
-    if (reduction) {
-      projectV2(reduction)
-      if (reduction.missing) hydrateV2Message(sessionID, reduction.missing)
-    }
+    if (reduction) projectV2(reduction)
 
     const info = data.info[sessionID]
-    if (event.type === "session.renamed" && info)
-      remember({ ...info, title: event.data.title, time: { ...info.time, updated: event.created } })
-    if (event.type === "session.moved" && info)
+    if (event.type === "session.next.info.updated" && info)
       remember({
         ...info,
-        projectID: event.data.projectID ?? info.projectID,
+        title: event.data.title ?? info.title,
+        time: {
+          ...info.time,
+          updated: event.data.timestamp,
+          // The event carries the archive flag, while the projected info stores the moment it happened.
+          archived:
+            event.data.archived === undefined
+              ? info.time.archived
+              : event.data.archived
+                ? event.data.timestamp
+                : undefined,
+        },
+      })
+    if (event.type === "session.next.moved" && info)
+      remember({
+        ...info,
         workspaceID: event.data.location.workspaceID,
         directory: event.data.location.directory,
-        path: event.data.subpath,
-        time: { ...info.time, updated: event.created },
+        path: event.data.subdirectory,
+        time: { ...info.time, updated: event.data.timestamp },
       })
-    if (event.type === "session.usage.updated" && info)
-      remember({ ...info, cost: event.data.cost, tokens: event.data.tokens })
-    // if (event.type === "session.archived") {
-    //   if (info) remember({ ...info, time: { ...info.time, archived: event.created, updated: event.created } })
-    //   evict([sessionID])
-    // }
-    if (event.type === "session.execution.started") setData("session_status", sessionID, { type: "busy" })
+    // The drain itself has no settlement event, so a turn counts as busy while a step is open and
+    // settles only when a step finishes without handing off to more tool work.
+    if (event.type === "session.next.step.started") setData("session_status", sessionID, { type: "busy" })
     if (
-      event.type === "session.execution.succeeded" ||
-      event.type === "session.execution.failed" ||
-      event.type === "session.execution.interrupted"
+      (event.type === "session.next.step.ended" && event.data.finish !== "tool-calls") ||
+      event.type === "session.next.step.failed"
     )
       setData("session_status", sessionID, { type: "idle" })
-    if (event.type === "session.retry.scheduled")
+    if (event.type === "session.next.retried")
       setData("session_status", sessionID, {
         type: "retry",
         attempt: event.data.attempt,
         message: event.data.error.message,
-        next: event.data.at,
+        next: event.data.timestamp,
       })
-    if (event.type === "session.forked") void resolve(sessionID, { force: true }).catch(() => {})
+    if (event.type === "session.next.created") void resolve(sessionID, { force: true }).catch(() => {})
     if (
-      event.type === "session.revert.staged" ||
-      event.type === "session.revert.cleared" ||
-      event.type === "session.revert.committed"
+      event.type === "session.next.revert.staged" ||
+      event.type === "session.next.revert.cleared" ||
+      event.type === "session.next.revert.committed"
     )
       void resolve(sessionID, { force: true }).catch(() => {})
   }

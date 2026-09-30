@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { retry } from "@miao/core/util/retry"
-import type { OpenCodeEvent, SessionApi } from "@opencode-ai/client/promise"
+import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
+import type { SessionApi } from "@opencode-ai/client/promise"
 import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { createServerSession } from "./server-session"
 import type { ServerApi } from "@/utils/server"
@@ -173,15 +174,15 @@ describe("server session", () => {
         time: { created: 1 },
       },
     ])
-    const apply = (input: object) => ctx.store.applyV2(input as OpenCodeEvent)
+    const apply = (input: object) => ctx.store.applyV2(input as OpenCodeEventEncoded)
 
     apply({
       id: "evt_step",
-      created: 2,
-      type: "session.step.started",
+      type: "session.next.step.started",
       durable: { aggregateID: "child", seq: 1, version: 1 },
       location: { directory: "/repo" },
       data: {
+        timestamp: 2,
         sessionID: "child",
         assistantMessageID: "msg_2_assistant",
         agent: "build",
@@ -190,18 +191,16 @@ describe("server session", () => {
     })
     apply({
       id: "evt_text_start",
-      created: 3,
-      type: "session.text.started",
+      type: "session.next.text.started",
       durable: { aggregateID: "child", seq: 2, version: 1 },
       location: { directory: "/repo" },
-      data: { sessionID: "child", assistantMessageID: "msg_2_assistant", ordinal: 0 },
+      data: { timestamp: 3, sessionID: "child", assistantMessageID: "msg_2_assistant", textID: "txt_1" },
     })
     apply({
       id: "evt_text_delta",
-      created: 4,
-      type: "session.text.delta",
+      type: "session.next.text.delta",
       location: { directory: "/repo" },
-      data: { sessionID: "child", assistantMessageID: "msg_2_assistant", ordinal: 0, delta: "world" },
+      data: { timestamp: 4, sessionID: "child", assistantMessageID: "msg_2_assistant", textID: "txt_1", delta: "world" },
     })
 
     expect(ctx.store.data.session_message.child?.at(-1)).toMatchObject({

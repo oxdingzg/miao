@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import type { OpenCodeEvent, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import { createV2SessionReducer } from "./server-session-v2-reducer"
 
-const event = (input: object) => input as OpenCodeEvent
-const base = { created: 1, location: { directory: "/repo" }, durable: { aggregateID: "ses_1", seq: 1, version: 1 } }
+const event = (input: object) => input as OpenCodeEventEncoded
+const base = { location: { directory: "/repo" }, durable: { aggregateID: "ses_1", seq: 1, version: 1 } }
+const stamp = { timestamp: 1, sessionID: "ses_1" }
+const model = { id: "model", providerID: "provider" }
 
 describe("v2 session reducer", () => {
-  test("projects promoted input and streaming assistant content", () => {
+  test("projects a prompted input and streaming assistant content", () => {
     const reducer = createV2SessionReducer()
     let messages: SessionMessageInfo[] = []
     const apply = (input: object) => {
@@ -17,48 +20,33 @@ describe("v2 session reducer", () => {
 
     apply({
       ...base,
-      id: "evt_admitted",
-      type: "session.input.admitted",
-      data: {
-        sessionID: "ses_1",
-        inputID: "msg_user",
-        input: { type: "user", delivery: "steer", data: { text: "hello" } },
-      },
-    })
-    apply({
-      ...base,
-      id: "evt_promoted",
-      type: "session.input.promoted",
-      data: { sessionID: "ses_1", inputID: "msg_user" },
+      id: "evt_prompted",
+      type: "session.next.prompted",
+      data: { ...stamp, messageID: "msg_user", prompt: { text: "hello" }, delivery: "steer" },
     })
     apply({
       ...base,
       id: "evt_step",
-      type: "session.step.started",
-      data: {
-        sessionID: "ses_1",
-        assistantMessageID: "msg_assistant",
-        agent: "build",
-        model: { id: "model", providerID: "provider" },
-      },
+      type: "session.next.step.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", agent: "build", model },
     })
     apply({
       ...base,
       id: "evt_text_start",
-      type: "session.text.started",
-      data: { sessionID: "ses_1", assistantMessageID: "msg_assistant", ordinal: 0 },
+      type: "session.next.text.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", textID: "txt_1" },
     })
     apply({
       ...base,
       id: "evt_text_delta",
-      type: "session.text.delta",
-      data: { sessionID: "ses_1", assistantMessageID: "msg_assistant", ordinal: 0, delta: "hel" },
+      type: "session.next.text.delta",
+      data: { ...stamp, assistantMessageID: "msg_assistant", textID: "txt_1", delta: "hel" },
     })
     apply({
       ...base,
       id: "evt_text_end",
-      type: "session.text.ended",
-      data: { sessionID: "ses_1", assistantMessageID: "msg_assistant", ordinal: 0, text: "hello" },
+      type: "session.next.text.ended",
+      data: { ...stamp, assistantMessageID: "msg_assistant", textID: "txt_1", text: "hello" },
     })
 
     expect(messages[0]).toMatchObject({ id: "msg_user", type: "user", text: "hello" })
@@ -66,6 +54,50 @@ describe("v2 session reducer", () => {
       id: "msg_assistant",
       type: "assistant",
       content: [{ type: "text", text: "hello" }],
+    })
+  })
+
+  test("addresses each text stream by its own id", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+    }
+
+    apply({
+      ...base,
+      id: "evt_step",
+      type: "session.next.step.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", agent: "build", model },
+    })
+    for (const [id, textID] of [
+      ["evt_a0", "txt_a"],
+      ["evt_b0", "txt_b"],
+    ] as const)
+      apply({
+        ...base,
+        id,
+        type: "session.next.text.started",
+        data: { ...stamp, assistantMessageID: "msg_assistant", textID },
+      })
+    for (const [id, textID, delta] of [
+      ["evt_a1", "txt_a", "one "],
+      ["evt_b1", "txt_b", "two "],
+      ["evt_a2", "txt_a", "more"],
+    ] as const)
+      apply({
+        ...base,
+        id,
+        type: "session.next.text.delta",
+        data: { ...stamp, assistantMessageID: "msg_assistant", textID, delta },
+      })
+
+    expect(messages[0]).toMatchObject({
+      content: [
+        { type: "text", text: "one more" },
+        { type: "text", text: "two " },
+      ],
     })
   })
 
@@ -80,77 +112,58 @@ describe("v2 session reducer", () => {
     apply({
       ...base,
       id: "evt_step",
-      type: "session.step.started",
-      data: {
-        sessionID: "ses_1",
-        assistantMessageID: "msg_assistant",
-        agent: "build",
-        model: { id: "model", providerID: "provider" },
-      },
+      type: "session.next.step.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", agent: "build", model },
     })
     apply({
       ...base,
       id: "evt_tool_start",
-      type: "session.tool.input.started",
-      data: { sessionID: "ses_1", assistantMessageID: "msg_assistant", callID: "call_1", name: "bash" },
+      type: "session.next.tool.input.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", callID: "call_1", name: "bash" },
     })
     apply({
       ...base,
       id: "evt_tool_delta",
-      type: "session.tool.input.delta",
-      data: { sessionID: "ses_1", assistantMessageID: "msg_assistant", callID: "call_1", delta: "{}" },
+      type: "session.next.tool.input.delta",
+      data: { ...stamp, assistantMessageID: "msg_assistant", callID: "call_1", delta: "{}" },
     })
     apply({
       ...base,
       id: "evt_tool_called",
-      type: "session.tool.called",
-      data: { sessionID: "ses_1", assistantMessageID: "msg_assistant", callID: "call_1", input: {}, executed: true },
+      type: "session.next.tool.called",
+      data: {
+        ...stamp,
+        assistantMessageID: "msg_assistant",
+        callID: "call_1",
+        tool: "bash",
+        input: {},
+        provider: { executed: true },
+      },
     })
     apply({
       ...base,
       id: "evt_tool_success",
-      type: "session.tool.success",
+      type: "session.next.tool.success",
       data: {
-        sessionID: "ses_1",
+        ...stamp,
         assistantMessageID: "msg_assistant",
         callID: "call_1",
-        metadata: {},
+        structured: {},
         content: [{ type: "text", text: "done" }],
-        executed: true,
+        provider: { executed: true },
       },
     })
     apply({
       ...base,
       id: "evt_retry",
-      type: "session.retry.scheduled",
-      data: {
-        sessionID: "ses_1",
-        assistantMessageID: "msg_assistant",
-        attempt: 2,
-        at: 10,
-        error: { type: "ProviderError", message: "retry" },
-      },
+      type: "session.next.retried",
+      data: { ...stamp, attempt: 2, error: { message: "retry", isRetryable: true } },
     })
-    apply({ ...base, id: "evt_done", type: "session.execution.succeeded", data: { sessionID: "ses_1" } })
 
     expect(messages[0]).toMatchObject({
       type: "assistant",
-      retry: undefined,
+      retry: { attempt: 2, at: 1, error: { type: "retry", message: "retry" } },
       content: [{ type: "tool", id: "call_1", state: { status: "completed", content: [{ text: "done" }] } }],
     })
-  })
-
-  test("requests hydration when promotion admission was missed", () => {
-    const result = createV2SessionReducer().reduce(
-      [],
-      event({
-        ...base,
-        id: "evt_promoted",
-        type: "session.input.promoted",
-        data: { sessionID: "ses_1", inputID: "msg_user" },
-      }),
-    )
-
-    expect(result).toMatchObject({ sessionID: "ses_1", missing: "msg_user", touched: [] })
   })
 })

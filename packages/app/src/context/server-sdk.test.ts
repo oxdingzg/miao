@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { adaptServerEvent, coalesceServerEvents, enqueueServerEvent, resumeStreamAfterPageShow } from "./server-sdk"
-import type { OpenCodeEvent } from "@opencode-ai/client/promise"
+import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type { Event } from "@opencode-ai/sdk/v2/client"
 
 describe("resumeStreamAfterPageShow", () => {
@@ -19,10 +19,9 @@ describe("adaptServerEvent", () => {
   test("preserves V2 events while adapting permission requests for existing consumers", () => {
     const current = {
       id: "evt_1",
-      created: 1,
       type: "permission.v2.asked",
       data: { id: "perm_1", sessionID: "ses_1", action: "read", resources: ["src/**"] },
-    } as OpenCodeEvent
+    } as unknown as OpenCodeEventEncoded
 
     expect(adaptServerEvent(current)).toMatchObject({
       type: "permission.asked",
@@ -56,11 +55,10 @@ describe("coalesceServerEvents", () => {
     const current = (id: string, value: string) =>
       adaptServerEvent({
         id,
-        created: 1,
-        type: "session.text.delta",
+        type: "session.next.text.delta",
         location: { directory: "/repo" },
-        data: { sessionID: "ses", assistantMessageID: "msg", ordinal: 0, delta: value },
-      } as OpenCodeEvent)
+        data: { timestamp: 1, sessionID: "ses", assistantMessageID: "msg", textID: "txt", delta: value },
+      } as unknown as OpenCodeEventEncoded)
     const result = coalesceServerEvents([
       { directory: "/repo", payload: current("evt_1", "hello ") },
       { directory: "/repo", payload: current("evt_2", "world") },
