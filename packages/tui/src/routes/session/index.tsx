@@ -1685,7 +1685,9 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
 
 function ReasoningHeader(props: { done: boolean; title: string | null; duration?: string; encrypted?: boolean }) {
   const { theme } = useTheme()
-  const fg = RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
+  // Theme fields are store reads; keep them inside a thunk so a theme switch
+  // repaints the header instead of freezing the color it was mounted with.
+  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
   const completed = () => {
     if (props.encrypted) return `Thought${props.duration ? ` · ${props.duration}` : ""}`
     const detail = [props.title, props.duration].filter(Boolean).join(" · ")
@@ -1696,11 +1698,11 @@ function ReasoningHeader(props: { done: boolean; title: string | null; duration?
     <Switch>
       <Match when={!props.done}>
         <box flexDirection="row">
-          <Spinner color={fg}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
+          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
         </box>
       </Match>
       <Match when={true}>
-        <text fg={fg} wrapMode="none">
+        <text fg={fg()} wrapMode="none">
           {completed()}
         </text>
       </Match>
