@@ -30,6 +30,7 @@ const locationIt = testEffect(
 describe("SessionRunnerProviderRetry", () => {
   test("retries catalog misses and transient provider failures", () => {
     expect(SessionRunnerProviderRetry.retryable({ _tag: "SessionRunnerModel.ModelUnavailableError" })).toBe(true)
+    expect(SessionRunnerProviderRetry.retryable({ _tag: "SessionRunnerModel.ModelNotSelectedError" })).toBe(true)
     expect(
       SessionRunnerProviderRetry.retryable(providerError(new RateLimitReason({ message: "slow down" }))),
     ).toBe(true)
@@ -161,6 +162,84 @@ describe("SessionRunnerProviderRetry against a live location", () => {
             Effect.scoped,
             Effect.provide(LocationServiceMap.Service.get(location)),
           )
+        }),
+      ),
+    ),
+  )
+
+  locationIt.live("retries a session that has no model of its own", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          yield* Effect.promise(() =>
+            fs.writeFile(
+              path.join(dir.path, "miao.json"),
+              JSON.stringify({
+                experimental: {
+                  // Every other provider is removed, so what this test resolves
+                  // is the `slow` provider alone, and not whichever provider the
+                  // machine running the suite happens to be logged into.
+                  policies: [
+                    { effect: "deny", action: "provider.use", resource: "*" },
+                    { effect: "allow", action: "provider.use", resource: "slow" },
+                  ],
+                },
+                providers: {
+                  slow: {
+                    name: "Slow",
+                    api: { type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" },
+                    models: { chat: { disabled: true } },
+                  },
+                },
+              }),
+            ),
+          )
+          // The shape `session.fork`, subagent creation, and a `session.create`
+          // without a model all produce.
+          const session = SessionV2.Info.make({
+            id: SessionV2.ID.make("ses_provider_retry_default"),
+            projectID: ProjectV2.ID.global,
+            title: "retry default",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
+            location,
+          })
+
+          yield* Effect.gen(function* () {
+            const models = yield* SessionRunnerModel.Service
+            const rejected = yield* models
+              .resolve(session)
+              .pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
+            expect(rejected).toMatchObject({ _tag: "SessionRunnerModel.ModelNotSelectedError", sessionID: session.id })
+
+            // A cold location's catalog is empty for the same reason this one is
+            // empty of available models: the plugins that build it have not run
+            // yet. The turn has to wait that window out instead of failing it.
+            yield* Effect.gen(function* () {
+              const plugins = yield* PluginV2.Service
+              yield* Effect.sleep("400 millis")
+              yield* plugins.add(PluginV2.ID.make("enable-slow"), (ctx) =>
+                ctx.catalog.transform((evt) => {
+                  evt.model.update(ProviderV2.ID.make("slow"), ModelV2.ID.make("chat"), (model) => {
+                    model.enabled = true
+                  })
+                }),
+              )
+            }).pipe(Effect.forkScoped)
+
+            const resolved = yield* models.resolve(session).pipe(
+              Effect.retry({
+                while: (error) => SessionRunnerProviderRetry.retryable(error),
+                schedule: SessionRunnerProviderRetry.catalogSchedule,
+              }),
+            )
+            expect(resolved).toMatchObject({ model: { id: "chat", provider: "slow" } })
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),
     ),

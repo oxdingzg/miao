@@ -44,6 +44,16 @@ export const catalogSchedule = Schedule.exponential(250, 2).pipe(
  */
 export const retryable = (error: { readonly _tag: string }): boolean => {
   if (error._tag === "SessionRunnerModel.ModelUnavailableError") return true
+  // A Session with no model of its own resolves against the catalog's default,
+  // which a cold location is missing for the same reason a selected model can
+  // be: the plugins that build the catalog have not run yet. Sessions that name
+  // a model already wait that window out, so without this the sessions created
+  // without one — `session.create` allows it, and `session.fork` and subagent
+  // creation always do it — fail on a cold catalog that a named model survives.
+  // The cost: a location with nothing to resolve at all, every provider
+  // unconfigured, now spends the catalog budget before reporting the error it
+  // would otherwise report at once.
+  if (error._tag === "SessionRunnerModel.ModelNotSelectedError") return true
   if (error._tag !== "LLM.Error") return false
   const reason = (error as LLMError).reason
   if (reason._tag === "Authentication") return true
