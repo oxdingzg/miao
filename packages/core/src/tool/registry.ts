@@ -10,7 +10,7 @@ import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ToolCodeMode } from "./code-mode"
-import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
+import { definition, permission, settle, validateName, type AnyTool, type Progress, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
@@ -28,6 +28,8 @@ export type MaterializeOptions = {
   readonly sessionID?: SessionSchema.ID
   /** Tool names hidden from the model. Filtering happens before ordering so the prefix stays stable. */
   readonly disabledTools?: ReadonlyArray<string>
+  /** Receives bounded running-tool checkpoints a tool emits through its context. */
+  readonly onProgress?: (input: ExecuteInput, update: Progress) => Effect.Effect<void>
 }
 
 export interface Interface {
@@ -110,6 +112,7 @@ const registryLayer = Layer.effect(
       input: ExecuteInput,
       registration: Registration,
       advertised?: object,
+      onProgress?: (input: ExecuteInput, update: Progress) => Effect.Effect<void>,
     ) {
       if (advertised && registration.identity !== advertised)
         return { result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } }
@@ -118,6 +121,7 @@ const registryLayer = Layer.effect(
         agent: input.agent,
         assistantMessageID: input.assistantMessageID,
         toolCallID: input.call.id,
+        ...(onProgress === undefined ? {} : { progress: (update) => onProgress(input, update) }),
       }).pipe(
         Effect.map((output) => ({ output })),
         Effect.catchTag("LLM.ToolFailure", (failure) =>
@@ -189,7 +193,7 @@ const registryLayer = Layer.effect(
               applications.entries().get(input.call.name)
             if (now !== captured)
               return Effect.succeed({ result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } })
-            return settleRegistration(input, captured, captured.identity)
+            return settleRegistration(input, captured, captured.identity, options?.onProgress)
           },
         }
         if (!options?.codeMode || definitions.length === 0) return inner
@@ -203,7 +207,7 @@ const registryLayer = Layer.effect(
           definitions: [definition(ToolCodeMode.CODE_MODE_TOOL, execute)],
           settle: (input) =>
             input.call.name === ToolCodeMode.CODE_MODE_TOOL
-              ? settleRegistration(input, executeRegistration, executeRegistration.identity)
+              ? settleRegistration(input, executeRegistration, executeRegistration.identity, options?.onProgress)
               : inner.settle(input),
         }
       }),

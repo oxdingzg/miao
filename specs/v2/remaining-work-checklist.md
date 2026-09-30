@@ -95,7 +95,7 @@ Definition of Done. Run in `miao-dev` only.
   - [x] Interrupt clears tool fibers and fails unsettled tools; durable queued/steer input survives interruption — `session-runner.test.ts` ("preserves durable queued/steering input … after interruption")
   - [x] Interrupting a pending permission/question publishes `Replied(reject)`/`Rejected` so subscribers clear the prompt — `permission.test.ts`, `question.test.ts`
 - [x] Normalize attachments by model capability at request build — image files become a text placeholder when `capabilities.input` omits `image`
-- [ ] Wire tool progress events
+- [x] Wire tool progress events — `Tool.Context.progress` → registry `onProgress` → runner publishes `session.next.tool.progress`; `tool-registry-order.test.ts`. No core tool emits incremental checkpoints yet (bash captures buffered output)
 - [ ] Verify: interrupt session with child task + pending approval → no dangling/lost state
 - [ ] Test + commit + push
 

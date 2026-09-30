@@ -74,6 +74,10 @@ Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
   - G13 progress: `session.turn` telemetry now logs `cacheMissCause`
     (`none`/`cold`/`rebuild`/`prefix-change`) and `SessionRunnerMetrics.cacheMissCause` documents the
     prefix-invalidating actions; covered by `session-runner-metrics.test.ts`.
+  - G4 progress: tool progress events are wired end to end — `Tool.Context.progress` → registry
+    `onProgress` → runner publishes `session.next.tool.progress` (covered by
+    `tool-registry-order.test.ts`); no core tool emits incremental checkpoints yet because bash
+    captures buffered output.
   - G4 progress: interrupting a session now settles a pending permission request
     (`Replied(reject)`) and a pending question (`Rejected`) so subscribers clear the prompt instead
     of leaving it dangling; covered by `permission.test.ts` and `question.test.ts`.

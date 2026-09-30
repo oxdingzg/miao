@@ -287,6 +287,26 @@ const layer = Layer.effect(
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
             sessionID: session.id,
             disabledTools: settings.disabledTools,
+            onProgress: (input, update) =>
+              events
+                .publish(SessionEvent.Tool.Progress, {
+                  sessionID: input.sessionID,
+                  timestamp: DateTime.makeUnsafe(Date.now()),
+                  assistantMessageID: input.assistantMessageID,
+                  callID: input.call.id,
+                  structured: update.structured ?? {},
+                  content: (update.content ?? []).map((part) =>
+                    part.type === "text"
+                      ? { type: "text" as const, text: part.text }
+                      : {
+                          type: "file" as const,
+                          uri: `data:${part.mime};base64,${part.data}`,
+                          mime: part.mime,
+                          name: part.name,
+                        },
+                  ),
+                })
+                .pipe(Effect.asVoid),
           })
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       const prior = turns.get(session.id)

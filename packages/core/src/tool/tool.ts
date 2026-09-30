@@ -11,6 +11,17 @@ export interface Context {
   readonly agent: AgentV2.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly toolCallID: string
+  /**
+   * Optional bounded running-tool checkpoint. The registry forwards this to the
+   * Session as a `session.next.tool.progress` event. Tools should checkpoint
+   * semantic transitions, not every output chunk.
+   */
+  readonly progress?: (update: Progress) => Effect.Effect<void>
+}
+
+export type Progress = {
+  readonly structured?: Record<string, unknown>
+  readonly content?: ReadonlyArray<Content>
 }
 
 export type SchemaType<A> = Schema.Codec<A, any, never, never>

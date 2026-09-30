@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { Tool } from "@miao/core/tool/tool"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
+import { AgentV2 } from "@miao/core/agent"
 import { SessionV2 } from "@miao/core/session"
+import { SessionMessage } from "@miao/core/session/message"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { Effect, Layer, Schema } from "effect"
@@ -76,6 +78,42 @@ describe("ToolRegistry stable definitions", () => {
       // Re-enabling keeps the established prefix and only appends the tool.
       const reenabled = yield* service.materialize(undefined, { sessionID })
       expect(reenabled.definitions.map((definition) => definition.name)).toEqual(["echo", "glob", "task"])
+    }),
+  )
+
+  it.effect("forwards a tool progress checkpoint to the materialize callback", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      const sessionID = SessionV2.ID.make("ses_progress")
+      const updates: unknown[] = []
+      yield* service.register({
+        progressor: Tool.make({
+          description: "Reports progress",
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          execute: (_input, context) =>
+            Effect.gen(function* () {
+              if (context.progress) yield* context.progress({ structured: { step: 1 } })
+              return {}
+            }),
+        }),
+      })
+      const materialized = yield* service.materialize(undefined, {
+        sessionID,
+        onProgress: (_input, update) =>
+          Effect.sync(() => {
+            updates.push(update)
+          }),
+      })
+
+      yield* materialized.settle({
+        sessionID,
+        agent: AgentV2.ID.make("build"),
+        assistantMessageID: SessionMessage.ID.make("msg_progress"),
+        call: { type: "tool-call", id: "call-progress", name: "progressor", input: {} },
+      })
+
+      expect(updates).toEqual([{ structured: { step: 1 } }])
     }),
   )
 })
