@@ -14,6 +14,7 @@ export type TriggerTitle = {
   args?: string[]
   argsClass?: string
   action?: JSX.Element
+  result?: string
 }
 
 const isTriggerTitle = (val: any): val is TriggerTitle => {
@@ -42,6 +43,7 @@ export interface BasicToolProps {
   triggerHref?: string
   triggerAsLink?: boolean
   clickable?: boolean
+  result?: string
 }
 
 const SPRING = { type: "spring" as const, visualDuration: 0.35, bounce: 0 }
@@ -182,6 +184,13 @@ export function BasicTool(props: BasicToolProps) {
     setOpen(value)
   }
 
+  // The outcome line stays under the trigger, so a tool that is collapsed (or is still streaming)
+  // still reports what it produced.
+  const result = () => {
+    if (pending()) return undefined
+    return (isTriggerTitle(props.trigger) ? props.trigger.result : props.result) || undefined
+  }
+
   const trigger = () => (
     <div
       data-component="tool-trigger"
@@ -246,6 +255,16 @@ export function BasicTool(props: BasicToolProps) {
             </Match>
             <Match when={true}>{props.trigger as JSX.Element}</Match>
           </Switch>
+          <Show when={result()}>
+            {(line) => (
+              <div data-slot="basic-tool-tool-result">
+                <span data-slot="basic-tool-tool-result-glyph" aria-hidden="true">
+                  ⎿
+                </span>
+                <span data-slot="basic-tool-tool-result-text">{line()}</span>
+              </div>
+            )}
+          </Show>
         </div>
       </div>
       <Show when={hasChildren() && !props.hideDetails && !props.locked && (!pending() || props.allowOpenWhilePending)}>

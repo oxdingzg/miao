@@ -65,6 +65,7 @@ import { partDefaultOpen } from "./part-default-open"
 import { animate } from "motion"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
+import { toolResultSummary } from "./message-part-tool-result"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 
 async function writeClipboard(text: string): Promise<boolean> {
@@ -1796,6 +1797,7 @@ ToolRegistry.register({
             title: i18n.t("ui.tool.read"),
             subtitle: props.input.filePath ? getFilename(props.input.filePath) : "",
             args,
+            result: toolResultSummary(props, i18n),
           }}
         />
         <For each={loaded()}>
@@ -1821,7 +1823,11 @@ ToolRegistry.register({
       <BasicTool
         {...props}
         icon="bullet-list"
-        trigger={{ title: i18n.t("ui.tool.list"), subtitle: getDirectory(props.input.path || "/") }}
+        trigger={{
+          title: i18n.t("ui.tool.list"),
+          subtitle: getDirectory(props.input.path || "/"),
+          result: toolResultSummary(props, i18n),
+        }}
       >
         <Show when={props.output}>
           <div
@@ -1851,6 +1857,7 @@ ToolRegistry.register({
           title: i18n.t("ui.tool.glob"),
           subtitle: getDirectory(props.input.path || "/"),
           args: props.input.pattern ? ["pattern=" + props.input.pattern] : [],
+          result: toolResultSummary(props, i18n),
         }}
       >
         <Show when={props.output}>
@@ -1884,6 +1891,7 @@ ToolRegistry.register({
           title: i18n.t("ui.tool.grep"),
           subtitle: getDirectory(props.input.path || "/"),
           args,
+          result: toolResultSummary(props, i18n),
         }}
       >
         <Show when={props.output}>
@@ -1917,6 +1925,7 @@ ToolRegistry.register({
         {...props}
         hideDetails
         icon="window-cursor"
+        result={toolResultSummary(props, i18n)}
         trigger={
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">

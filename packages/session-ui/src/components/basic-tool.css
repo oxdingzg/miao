@@ -168,6 +168,32 @@
     align-items: center;
     flex-shrink: 0;
   }
+
+  [data-slot="basic-tool-tool-result"] {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    font-family: var(--font-family-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--v2-text-text-muted);
+  }
+
+  [data-slot="basic-tool-tool-result-glyph"] {
+    flex-shrink: 0;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="basic-tool-tool-result-text"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 [data-component="task-tool-card"] {
