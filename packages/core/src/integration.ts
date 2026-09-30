@@ -16,13 +16,37 @@ import {
   Types,
 } from "effect"
 import { Integration } from "@miao/schema/integration"
+import path from "path"
 import { Credential } from "./credential"
+import { FSUtil } from "./fs-util"
+import { Global } from "./global"
 import { State } from "./state"
 import { EventV2 } from "./event"
 import { IntegrationConnection } from "./integration/connection"
 
 export const ID = Integration.ID
 export type ID = Integration.ID
+
+/**
+ * Maps a legacy `auth.json` OAuth entry onto a V2 credential for `methodID`.
+ *
+ * The old store kept the pieces V2 needs (`access`, `refresh`, `expires`) but
+ * no method, because method registration is V2-only; the caller supplies the
+ * integration's own OAuth method so refreshes keep working.
+ */
+export const legacyOAuth = (entry: unknown, methodID: MethodID): Credential.OAuth | undefined => {
+  if (typeof entry !== "object" || entry === null) return undefined
+  const legacy = entry as Record<string, unknown>
+  if (legacy.type !== "oauth" || typeof legacy.access !== "string" || typeof legacy.refresh !== "string") return
+  return Credential.OAuth.make({
+    type: "oauth",
+    methodID,
+    access: legacy.access,
+    refresh: legacy.refresh,
+    expires: typeof legacy.expires === "number" ? legacy.expires : Date.now() + 3_600_000,
+    ...(typeof legacy.accountId === "string" ? { metadata: { accountID: legacy.accountId } } : {}),
+  })
+}
 
 export const MethodID = Integration.MethodID
 export type MethodID = Integration.MethodID
@@ -223,6 +247,7 @@ export const locationLayer = Layer.effect(
   Effect.gen(function* () {
     const credentials = yield* Credential.Service
     const events = yield* EventV2.Service
+    const fsys = yield* FSUtil.Service
     const scope = yield* Scope.Scope
     const attempts = SynchronizedRef.makeUnsafe(new Map<AttemptID, AttemptEntry>())
     const state = State.create<Data, Draft>({
@@ -363,10 +388,37 @@ export const locationLayer = Layer.effect(
 
     yield* scrub().pipe(Effect.repeat(Schedule.spaced(scrubInterval)), Effect.forkIn(scope))
 
+    /**
+     * Adopt an OAuth connection made before the V2 store existed.
+     *
+     * `credential.ts` only bridges legacy `auth.json` API keys, so a ChatGPT
+     * account logged in through the old store was invisible here: the provider
+     * looked connected, but every V2 turn resolved no credential and sent an
+     * unauthenticated request (HTTP 401 "Missing bearer"). Import the entry
+     * once, mapped to this integration's own OAuth method so refreshes keep
+     * working.
+     */
+    const adoptLegacy = Effect.fnUntraced(function* (id: ID) {
+      if ((yield* credentials.list(id)).length > 0) return
+      const method = state
+        .get()
+        .integrations.get(id)
+        ?.methods.find((item) => item.type === "oauth")
+      if (!method) return
+      const raw = yield* fsys
+        .readJson(path.join(Global.Path.data, "auth.json"))
+        .pipe(Effect.orElseSucceed(() => ({})))
+      if (typeof raw !== "object" || raw === null) return
+      const value = legacyOAuth((raw as Record<string, unknown>)[id], method.id)
+      if (!value) return
+      yield* credentials.create({ integrationID: id, label: "legacy", value })
+    })
+
     return Service.of({
       transform: state.transform,
       reload: state.reload,
       get: Effect.fn("Integration.get")(function* (id) {
+        yield* adoptLegacy(id)
         const entry = state.get().integrations.get(id)
         if (!entry) return undefined
         return project(entry, resolveConnections(entry, yield* credentials.list(id)))
@@ -379,6 +431,7 @@ export const locationLayer = Layer.effect(
       }),
       connection: {
         active: Effect.fn("Integration.connection.active")(function* (id) {
+          yield* adoptLegacy(id)
           const entry = state.get().integrations.get(id)
           return resolveConnections(entry, yield* credentials.list(id))[0]
         }),
@@ -528,4 +581,8 @@ export const locationLayer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer: locationLayer, deps: [Credential.node, EventV2.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer: locationLayer,
+  deps: [Credential.node, EventV2.node, FSUtil.node],
+})
