@@ -309,41 +309,6 @@ describe("server session", () => {
     expect(assistants.map((item) => store.data.part[item.id]?.[0]?.type)).toEqual(["text", "text", "text"])
   })
 
-  test("indexes V1 messages for the current timeline projection", async () => {
-    const user = userMessage("message-1", { sessionID: "root" })
-    const assistant = assistantMessage("message-2", user.id, { sessionID: "root" })
-    const client = messageClient(
-      response([
-        { info: user, parts: [textPart(user.id, { sessionID: "root" })] },
-        { info: assistant, parts: [textPart(assistant.id, { sessionID: "root" })] },
-      ]),
-    )
-    const messageApi = {
-      list: () => {
-        throw new Error("current message endpoint called")
-      },
-    } as unknown as MessageApi
-    const store = createServerSession(client, {} as SessionApi, messageApi, {
-      protocol: Promise.resolve("v1"),
-    })
-    store.remember(session("root"))
-
-    await store.sync("root")
-
-    expect(store.data.message.root.map((message) => message.id)).toEqual([user.id, assistant.id])
-    expect(store.data.session_message.root).toMatchObject([
-      { id: user.id, type: "user", text: "text" },
-      { id: assistant.id, type: "assistant" },
-    ])
-
-    const next = userMessage("message-3", { sessionID: "root" })
-    store.apply({ type: "message.updated", properties: { info: next } })
-    expect(store.data.session_message.root.map((message) => message.id)).toEqual([user.id, assistant.id, next.id])
-
-    store.apply({ type: "message.removed", properties: { sessionID: "root", messageID: next.id } })
-    expect(store.data.session_message.root.map((message) => message.id)).toEqual([user.id, assistant.id])
-  })
-
   test("backfills an assistant-only initial page through its user root", async () => {
     const user = userMessage("message-1")
     const assistants = [assistantMessage("message-2", user.id), assistantMessage("message-3", user.id)]
