@@ -205,6 +205,20 @@ map): app SDK shims → V1 route groups → V1 session engine → V1 tools/trans
 `packages/core/v1` schemas → legacy SDK → the `packages/miao` server/engine. Gate each deletion on
 "no client imports a `/session/*` route" and the full suite.
 
+**Stage 5 gate status (2026-09-30).** TUI session writes and `context`/`messages` are on V2, and
+`session.get`/`session.todo` now use `v2.session.get`/`v2.session.todo` (mapped through
+`context/session-v2-read.ts`). Still calling `/session/*` (V1), so the gate is not met:
+
+- `sdk.client.session.list` — `context/sync.tsx` (`listSessions`), `component/dialog-session-list.tsx`.
+- `sdk.client.session.diff` — `context/sync.tsx`, `feature-plugins/system/diff-viewer.tsx`.
+- `sdk.client.session.status` — `context/sync.tsx` (V2 exposes per-session `v2.session.status` and
+  `v2.session.active` instead of a whole-map status).
+- `sdk.client.session.update` (rename) → `v2.session.rename`; `sdk.client.session.delete` →
+  `v2.session.remove` (`component/dialog-session-rename.tsx`, `dialog-session-list.tsx`).
+- `sdk.client.session.unshare` — no V2 equivalent; sharing is not in the current protocol.
+
+Migrate/remove those, then Stage 5 can start.
+
 ## 5. Workstream C — SendMessage (session-to-session messaging)
 
 Spec: `specs/v2/session-messaging.md`. Depends on Stage 4 (both sessions must be V2-driven).

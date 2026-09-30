@@ -19,6 +19,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
+import { sessionInfo } from "../../context/session-v2-read"
 import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -288,7 +289,11 @@ export function Session() {
     const sessionID = route.sessionID
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
-      const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
+      const result = Flag.MIAO_TUI_V2
+        ? await sdk.client.v2.session
+            .get({ sessionID }, { throwOnError: true })
+            .then((x) => ({ data: sessionInfo(x.data.data) }))
+        : await sdk.client.session.get({ sessionID }, { throwOnError: true })
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
