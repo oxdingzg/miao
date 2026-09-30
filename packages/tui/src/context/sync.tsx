@@ -845,6 +845,32 @@ export const {
         },
       },
       bootstrap,
+      dismissQuestion(sessionID: string, requestID: string) {
+        const requests = store.question[sessionID]
+        if (!requests) return
+        const match = search(requests, requestID, (request) => request.id)
+        if (!match.found) return
+        setStore(
+          "question",
+          sessionID,
+          produce((draft) => {
+            draft.splice(match.index, 1)
+          }),
+        )
+      },
+      dismissPermission(sessionID: string, requestID: string) {
+        const requests = store.permission[sessionID]
+        if (!requests) return
+        const match = search(requests, requestID, (request) => request.id)
+        if (!match.found) return
+        setStore(
+          "permission",
+          sessionID,
+          produce((draft) => {
+            draft.splice(match.index, 1)
+          }),
+        )
+      },
     }
     refreshSession = (sessionID) => {
       fullSyncedSessions.delete(sessionID)

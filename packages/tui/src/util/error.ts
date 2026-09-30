@@ -155,6 +155,21 @@ export function errorMessage(error: unknown): string {
   return "unknown error"
 }
 
+/**
+ * A prompt reply/reject can race the server settling the request (interrupt,
+ * reconnect, or a Location identity mismatch). When the server no longer knows
+ * the request it answers 404 and the caller must dismiss the local prompt or
+ * the user is trapped behind a modal that can never be confirmed.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error) || !isRecord(error.cause)) return false
+  if (error.cause.status === 404) return true
+  const body = error.cause.body
+  if (!isRecord(body)) return false
+  const name = typeof body.name === "string" ? body.name : typeof body._tag === "string" ? body._tag : undefined
+  return typeof name === "string" && name.endsWith("NotFoundError")
+}
+
 export function errorData(error: unknown) {
   if (error instanceof Error) {
     return {

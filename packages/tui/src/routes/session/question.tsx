@@ -8,12 +8,13 @@ import { useSDK } from "../../context/sdk"
 import { Flag } from "@miao/core/flag/flag"
 import { SplitBorder } from "../../ui/border"
 import { useToast } from "../../ui/toast"
+import { isNotFoundError } from "../../util/error"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
 
 const QUESTION_MODE = "question"
 
-export function QuestionPrompt(props: { request: QuestionRequest; directory?: string }) {
+export function QuestionPrompt(props: { request: QuestionRequest; directory?: string; onSettled?: (request: QuestionRequest) => void }) {
   const sdk = useSDK()
   const toast = useToast()
   const { theme } = useTheme()
@@ -49,46 +50,60 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   })
 
   function submit() {
+    const request = props.request
     const answers = questions().map((_, i) => store.answers[i] ?? [])
     void (
       Flag.MIAO_TUI_V2
         ? sdk.client.v2.session.question.reply(
             {
-              sessionID: props.request.sessionID,
-              requestID: props.request.id,
+              sessionID: request.sessionID,
+              requestID: request.id,
               questionV2Reply: { answers },
             },
             { throwOnError: true },
           )
         : sdk.client.question.reply(
             {
-              requestID: props.request.id,
+              requestID: request.id,
               directory: props.directory,
               answers,
             },
             { throwOnError: true },
           )
-    ).catch((error: unknown) => toast.error(error))
+    ).then(
+      () => props.onSettled?.(request),
+      (error: unknown) => {
+        toast.error(error)
+        if (isNotFoundError(error)) props.onSettled?.(request)
+      },
+    )
   }
 
   function reject() {
+    const request = props.request
     void (
       Flag.MIAO_TUI_V2
         ? sdk.client.v2.session.question.reject(
             {
-              sessionID: props.request.sessionID,
-              requestID: props.request.id,
+              sessionID: request.sessionID,
+              requestID: request.id,
             },
             { throwOnError: true },
           )
         : sdk.client.question.reject(
             {
-              requestID: props.request.id,
+              requestID: request.id,
               directory: props.directory,
             },
             { throwOnError: true },
           )
-    ).catch((error: unknown) => toast.error(error))
+    ).then(
+      () => props.onSettled?.(request),
+      (error: unknown) => {
+        toast.error(error)
+        if (isNotFoundError(error)) props.onSettled?.(request)
+      },
+    )
   }
 
   function pick(answer: string, custom: boolean = false) {

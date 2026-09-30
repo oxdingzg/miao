@@ -8,8 +8,12 @@ import path from "node:path"
 import { tmpdir } from "../../fixture/fixture"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
+import { Flag } from "@miao/core/flag/flag"
 
-async function mountQuestion(root: string, status = 204) {
+const replyPath = () => (Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_test/reply" : "/question/que_test/reply")
+const rejectPath = () => (Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_test/reject" : "/question/que_test/reject")
+
+async function mountQuestion(root: string, status = 204, onSettled?: () => void) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
@@ -70,6 +74,7 @@ async function mountQuestion(root: string, status = 204) {
                           options: [{ label: "Yes", description: "Accept" }],
                         })),
                       }}
+                      onSettled={onSettled}
                     />
                   </SDKProvider>
                 </ToastProvider>
@@ -99,10 +104,7 @@ test("question review responds to enter and escape", async () => {
     await Bun.sleep(60)
     app.mockInput.pressEscape()
     await Bun.sleep(60)
-    expect(calls).toEqual([
-      "/api/session/ses_test/question/que_test/reply",
-      "/api/session/ses_test/question/que_test/reject",
-    ])
+    expect(calls).toEqual([replyPath(), rejectPath()])
   } finally {
     app.renderer.destroy()
   }
@@ -125,18 +127,16 @@ test("switching from a custom answer to review keeps enter and escape active", a
     await Bun.sleep(60)
     app.mockInput.pressEscape()
     await Bun.sleep(60)
-    expect(calls).toEqual([
-      "/api/session/ses_test/question/que_test/reply",
-      "/api/session/ses_test/question/que_test/reject",
-    ])
+    expect(calls).toEqual([replyPath(), rejectPath()])
   } finally {
     app.renderer.destroy()
   }
 })
 
-test("failed question requests show an error", async () => {
+test("failed question requests show an error and dismiss the stale prompt", async () => {
   await using tmp = await tmpdir()
-  const { app, calls } = await mountQuestion(tmp.path, 404)
+  let settled = 0
+  const { app, calls } = await mountQuestion(tmp.path, 404, () => settled++)
   try {
     app.mockInput.pressEnter()
     app.mockInput.pressEnter()
@@ -145,6 +145,7 @@ test("failed question requests show an error", async () => {
     await app.renderOnce()
     expect(calls).toHaveLength(1)
     expect(app.captureCharFrame()).toContain("Question request not found")
+    expect(settled).toBe(1)
     app.mockInput.pressEscape()
     await Bun.sleep(60)
     expect(calls).toHaveLength(2)

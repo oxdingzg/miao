@@ -17,6 +17,8 @@ import { useTuiConfig } from "../../config"
 import { MIAO_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { Flag } from "@miao/core/flag/flag"
+import { useToast } from "../../ui/toast"
+import { isNotFoundError } from "../../util/error"
 
 type PermissionStage = "permission" | "always" | "reject"
 
@@ -109,14 +111,29 @@ function TextBody(props: { title: string; description?: string; icon?: string })
   )
 }
 
-export function PermissionPrompt(props: { request: PermissionRequest; directory?: string }) {
+export function PermissionPrompt(props: {
+  request: PermissionRequest
+  directory?: string
+  onSettled?: (request: PermissionRequest) => void
+}) {
   const sdk = useSDK()
   const project = useProject()
   const sync = useSync()
+  const toast = useToast()
   const [store, setStore] = createStore({
     stage: "permission" as PermissionStage,
   })
   const pathFormatter = usePathFormatter()
+
+  function settle(request: Promise<unknown>, settled: PermissionRequest) {
+    void request.then(
+      () => props.onSettled?.(settled),
+      (error: unknown) => {
+        toast.error(error)
+        if (isNotFoundError(error)) props.onSettled?.(settled)
+      },
+    )
+  }
 
   const session = createMemo(() => sync.data.session.find((s) => s.id === props.request.sessionID))
 
@@ -166,38 +183,44 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
           onSelect={(option) => {
             setStore("stage", "permission")
             if (option === "cancel") return
-            void (Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session.permission.reply({
-                  sessionID: props.request.sessionID,
-                  requestID: props.request.id,
-                  reply: "always",
-                })
-              : sdk.client.permission.reply({
-                  reply: "always",
-                  requestID: props.request.id,
-                  directory: props.directory,
-                  workspace: project.workspace.current(),
-                }))
+            settle(
+              Flag.MIAO_TUI_V2
+                ? sdk.client.v2.session.permission.reply({
+                    sessionID: props.request.sessionID,
+                    requestID: props.request.id,
+                    reply: "always",
+                  })
+                : sdk.client.permission.reply({
+                    reply: "always",
+                    requestID: props.request.id,
+                    directory: props.directory,
+                    workspace: project.workspace.current(),
+                  }),
+              props.request,
+            )
           }}
         />
       </Match>
       <Match when={store.stage === "reject"}>
         <RejectPrompt
           onConfirm={(message) => {
-            void (Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session.permission.reply({
-                  sessionID: props.request.sessionID,
-                  requestID: props.request.id,
-                  reply: "reject",
-                  message: message || undefined,
-                })
-              : sdk.client.permission.reply({
-                  reply: "reject",
-                  requestID: props.request.id,
-                  directory: props.directory,
-                  message: message || undefined,
-                  workspace: project.workspace.current(),
-                }))
+            settle(
+              Flag.MIAO_TUI_V2
+                ? sdk.client.v2.session.permission.reply({
+                    sessionID: props.request.sessionID,
+                    requestID: props.request.id,
+                    reply: "reject",
+                    message: message || undefined,
+                  })
+                : sdk.client.permission.reply({
+                    reply: "reject",
+                    requestID: props.request.id,
+                    directory: props.directory,
+                    message: message || undefined,
+                    workspace: project.workspace.current(),
+                  }),
+              props.request,
+            )
           }}
           onCancel={() => {
             setStore("stage", "permission")
@@ -429,32 +452,38 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                     setStore("stage", "reject")
                     return
                   }
-                  void (Flag.MIAO_TUI_V2
+                  settle(
+                    Flag.MIAO_TUI_V2
+                      ? sdk.client.v2.session.permission.reply({
+                          sessionID: props.request.sessionID,
+                          requestID: props.request.id,
+                          reply: "reject",
+                        })
+                      : sdk.client.permission.reply({
+                          reply: "reject",
+                          requestID: props.request.id,
+                          directory: props.directory,
+                          workspace: project.workspace.current(),
+                        }),
+                    props.request,
+                  )
+                  return
+                }
+                settle(
+                  Flag.MIAO_TUI_V2
                     ? sdk.client.v2.session.permission.reply({
                         sessionID: props.request.sessionID,
                         requestID: props.request.id,
-                        reply: "reject",
+                        reply: "once",
                       })
                     : sdk.client.permission.reply({
-                        reply: "reject",
+                        reply: "once",
                         requestID: props.request.id,
                         directory: props.directory,
                         workspace: project.workspace.current(),
-                      }))
-                  return
-                }
-                void (Flag.MIAO_TUI_V2
-                  ? sdk.client.v2.session.permission.reply({
-                      sessionID: props.request.sessionID,
-                      requestID: props.request.id,
-                      reply: "once",
-                    })
-                  : sdk.client.permission.reply({
-                      reply: "once",
-                      requestID: props.request.id,
-                      directory: props.directory,
-                      workspace: project.workspace.current(),
-                    }))
+                      }),
+                  props.request,
+                )
               }}
             />
           )
