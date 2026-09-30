@@ -1631,9 +1631,9 @@ const INLINE_TOOL_ICON = "⏺"
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme } = useTheme()
   const ctx = use()
-  // Collapsed by default in hide mode: a single line throughout, so the
-  // layout never shifts. Click to open the full markdown block, click to close.
-  const [expanded, setExpanded] = createSignal(false)
+  // Claude Code keeps thinking out of the transcript: the turn's accumulated
+  // thought time is reported on the status line instead.
+  const hidden = createMemo(() => ctx.thinkingMode() === "hide")
 
   const content = createMemo(() => {
     // OpenRouter encrypts some reasoning blocks; drop the placeholder.
@@ -1643,7 +1643,6 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
-  const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
   const duration = createMemo(() => {
     const end = props.part.time.end
     return end === undefined ? 0 : Math.max(0, end - props.part.time.start)
@@ -1651,13 +1650,8 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
 
-  const toggle = () => {
-    if (!inMinimal() || opaque()) return
-    setExpanded((prev) => !prev)
-  }
-
   return (
-    <Show when={content() || opaque()}>
+    <Show when={!hidden() && (content() || opaque())}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
         paddingLeft={3}
@@ -1665,18 +1659,14 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         flexDirection="column"
         flexShrink={0}
       >
-        <box onMouseUp={toggle}>
-          <ReasoningHeader
-            toggleable={inMinimal() && !opaque()}
-            open={!inMinimal() || expanded()}
-            done={isDone()}
-            title={summary().title}
-            duration={isDone() ? Locale.duration(duration()) : undefined}
-            encrypted={opaque()}
-          />
-        </box>
-        <Show when={!opaque() && (!inMinimal() || expanded()) && summary().body}>
-          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
+        <ReasoningHeader
+          done={isDone()}
+          title={summary().title}
+          duration={isDone() ? Locale.duration(duration()) : undefined}
+          encrypted={opaque()}
+        />
+        <Show when={!opaque() && summary().body}>
+          <box marginTop={1}>
             <code
               filetype="markdown"
               drawUnstyledText={false}
@@ -1693,34 +1683,24 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   )
 }
 
-function ReasoningHeader(props: {
-  toggleable: boolean
-  open: boolean
-  done: boolean
-  title: string | null
-  duration?: string
-  encrypted?: boolean
-}) {
+function ReasoningHeader(props: { done: boolean; title: string | null; duration?: string; encrypted?: boolean }) {
   const { theme } = useTheme()
-  const fg = () =>
-    props.open
-      ? RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
-      : theme.warning
+  const fg = RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
   const completed = () => {
     if (props.encrypted) return `Thought${props.duration ? ` · ${props.duration}` : ""}`
     const detail = [props.title, props.duration].filter(Boolean).join(" · ")
-    return `${props.toggleable ? (props.open ? "- " : "+ ") : ""}Thought${detail ? `: ${detail}` : ""}`
+    return `Thought${detail ? `: ${detail}` : ""}`
   }
 
   return (
     <Switch>
       <Match when={!props.done}>
         <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
+          <Spinner color={fg}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
         </box>
       </Match>
       <Match when={true}>
-        <text fg={fg()} wrapMode="none">
+        <text fg={fg} wrapMode="none">
           {completed()}
         </text>
       </Match>
