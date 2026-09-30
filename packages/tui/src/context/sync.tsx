@@ -26,7 +26,7 @@ import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
-import { isLiveSessionV2Event, sessionContextToMessages } from "./session-v2"
+import { isLiveSessionV2Event, isV2StreamFragmentEvent, sessionContextToMessages } from "./session-v2"
 import { sessionInfo } from "./session-v2-read"
 import { createSessionRefreshScheduler } from "./session-refresh"
 import { Flag } from "@miao/core/flag/flag"
@@ -194,8 +194,25 @@ export const {
     })
     onCleanup(() => v2Refresh.dispose())
 
+    // Text and reasoning fragments append in place. `touchPart` keeps an
+    // in-flight re-hydration from clobbering the locally streamed value; the
+    // durable `ended` event later replaces it with the authoritative text.
+    const appendV2StreamText = (sessionID: string, messageID: string, partID: string, delta: string) => {
+      const parts = store.part[messageID]
+      if (!parts?.some((part) => part.id === partID)) return
+      touchPart(sessionID, partID)
+      setStore(
+        "part",
+        messageID,
+        produce((draft) => {
+          const target = draft.find((part) => part.id === partID)
+          if (target?.type === "text" || target?.type === "reasoning") target.text += delta
+        }),
+      )
+    }
+
     event.subscribe((event, { directory, workspace }) => {
-      if (Flag.MIAO_TUI_V2 && isLiveSessionV2Event(event.type)) {
+      if (Flag.MIAO_TUI_V2 && isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
         if (sessionID) v2Refresh.schedule(sessionID)
       }
@@ -431,6 +448,28 @@ export const {
             produce((draft) => {
               draft.splice(result.index, 0, event.properties.info)
             }),
+          )
+          break
+        }
+
+        case "session.next.text.delta": {
+          if (!Flag.MIAO_TUI_V2) break
+          appendV2StreamText(
+            event.properties.sessionID,
+            event.properties.assistantMessageID,
+            event.properties.textID,
+            event.properties.delta,
+          )
+          break
+        }
+
+        case "session.next.reasoning.delta": {
+          if (!Flag.MIAO_TUI_V2) break
+          appendV2StreamText(
+            event.properties.sessionID,
+            event.properties.assistantMessageID,
+            event.properties.reasoningID,
+            event.properties.delta,
           )
           break
         }

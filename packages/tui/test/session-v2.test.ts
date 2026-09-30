@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
-import { sessionContextToMessages, isLiveSessionV2Event } from "../src/context/session-v2"
+import { sessionContextToMessages, isLiveSessionV2Event, isV2StreamFragmentEvent } from "../src/context/session-v2"
 import { promptInputFromParts } from "../src/context/session-v2-write"
 import { sessionInfo } from "../src/context/session-v2-read"
 
@@ -93,6 +93,16 @@ test("classifies live V2 session events for transcript refresh", () => {
   expect(isLiveSessionV2Event("session.next.step.ended")).toBe(true)
   expect(isLiveSessionV2Event("session.next.moved")).toBe(false)
   expect(isLiveSessionV2Event("message.part.updated")).toBe(false)
+})
+
+test("applies stream fragments incrementally instead of re-hydrating", () => {
+  expect(isV2StreamFragmentEvent("session.next.text.delta")).toBe(true)
+  expect(isV2StreamFragmentEvent("session.next.reasoning.delta")).toBe(true)
+  expect(isV2StreamFragmentEvent("session.next.tool.input.delta")).toBe(true)
+  expect(isV2StreamFragmentEvent("session.next.tool.progress")).toBe(true)
+  expect(isV2StreamFragmentEvent("session.next.text.ended")).toBe(false)
+  expect(isV2StreamFragmentEvent("session.next.tool.called")).toBe(false)
+  expect(isV2StreamFragmentEvent("session.next.step.ended")).toBe(false)
 })
 
 test("maps prompt parts into the V2 prompt input", () => {

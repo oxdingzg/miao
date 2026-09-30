@@ -9,6 +9,23 @@ export function isLiveSessionV2Event(type: string): boolean {
 }
 
 /**
+ * Live-only stream fragments. These arrive per token, so re-hydrating the whole
+ * transcript for each one is what made long V2 sessions burn CPU. Text and
+ * reasoning fragments are applied incrementally; tool input/progress fragments
+ * are dropped because the TUI only renders a running tool once it settles. The
+ * matching durable `*.ended`/`tool.success` event is the boundary that
+ * re-hydrates and reconciles the final value.
+ */
+export function isV2StreamFragmentEvent(type: string): boolean {
+  return (
+    type === "session.next.text.delta" ||
+    type === "session.next.reasoning.delta" ||
+    type === "session.next.tool.input.delta" ||
+    type === "session.next.tool.progress"
+  )
+}
+
+/**
  * Maps the V2 session context transcript (`/api/session/:id/context`) into the
  * V1 `Message` + `Part` shape the TUI already renders. This is the read half of
  * the TUI V2 cutover (`specs/v2/tui-read-cutover.md`); writes stay on V1 for now.
