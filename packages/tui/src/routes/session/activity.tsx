@@ -12,18 +12,71 @@ import type { Part, ReasoningPart, ToolPart } from "@opencode-ai/sdk/v2"
 // status line. miao's V2 core emits one assistant message per provider turn, so
 // counting per message would always report a single command; accumulate across
 // every step of the current turn instead.
+// The live line names the work in flight rather than only counting it, which is
+// what makes "running 1 shell command" readable as a command. A count is a last
+// resort for the cases a name cannot cover: a tool whose input we cannot read.
+const LIVE_LIMIT = 60
+
+const toolInput = (part: ToolPart, key: string) => {
+  if (part.state.status !== "running" && part.state.status !== "completed") return undefined
+  const value = part.state.input[key]
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+const shorten = (value: string | undefined) => {
+  const line = value?.split("\n")[0].trim()
+  if (!line) return undefined
+  return line.length > LIVE_LIMIT ? `${line.slice(0, LIVE_LIMIT)}…` : line
+}
+
 const TOOL_GROUPS = [
-  { displays: ["bash"], verb: ["running", "ran"], noun: "shell command", plural: "shell commands" },
-  { displays: ["read"], verb: ["reading", "read"], noun: "file", plural: "files" },
+  {
+    displays: ["bash"],
+    verb: ["running", "ran"],
+    noun: "shell command",
+    plural: "shell commands",
+    live: (part: ToolPart) => shorten(toolInput(part, "command")),
+  },
+  {
+    displays: ["read"],
+    verb: ["reading", "read"],
+    noun: "file",
+    plural: "files",
+    live: (part: ToolPart) => shorten(toolInput(part, "filePath")),
+  },
   {
     displays: ["grep", "glob", "websearch"],
     verb: ["searching for", "searched for"],
     noun: "pattern",
     plural: "patterns",
+    live: (part: ToolPart) => shorten(toolInput(part, "pattern") ?? toolInput(part, "query")),
   },
-  { displays: ["edit", "write", "apply_patch"], verb: ["editing", "edited"], noun: "file", plural: "files" },
-  { displays: ["task"], verb: ["delegating to", "delegated to"], noun: "subagent", plural: "subagents" },
+  {
+    displays: ["edit", "write", "apply_patch"],
+    verb: ["editing", "edited"],
+    noun: "file",
+    plural: "files",
+    live: (part: ToolPart) => shorten(toolInput(part, "filePath")),
+  },
+  {
+    displays: ["task"],
+    verb: ["delegating to", "delegated to"],
+    noun: "subagent",
+    plural: "subagents",
+    live: (part: ToolPart) => shorten(toolInput(part, "description")),
+  },
 ]
+
+// Naming one tool is only honest while exactly one is in flight; with several
+// running, one name would hide the others.
+function runningTool(parts: ReadonlyArray<Part>) {
+  const running = parts.filter((part): part is ToolPart => part.type === "tool" && part.state.status === "running")
+  if (running.length !== 1) return undefined
+  const group = TOOL_GROUPS.find((group) => group.displays.includes(toolDisplay(running[0].tool)))
+  if (!group) return undefined
+  const detail = group.live(running[0])
+  return detail ? { group, text: `${group.verb[0]} ${detail}` } : undefined
+}
 
 export function SessionActivity(props: { sessionID: string }) {
   const sync = useSync()
@@ -102,9 +155,11 @@ export function turnActivity(input: { parts: Part[]; working: boolean }) {
     const end = part.time.end
     return end === undefined ? total : total + Math.max(0, end - part.time.start)
   }, 0)
+  const live = input.working ? runningTool(input.parts) : undefined
   const segments = [
     thinking ? "Thinking" : thought > 0 ? `Thought for ${Locale.duration(thought)}` : undefined,
-    ...TOOL_GROUPS.map((group) => {
+    live?.text,
+    ...TOOL_GROUPS.filter((group) => group !== live?.group).map((group) => {
       const count = tools.filter((part) => group.displays.includes(toolDisplay(part.tool))).length
       if (count === 0) return undefined
       return `${input.working ? group.verb[0] : group.verb[1]} ${count} ${count === 1 ? group.noun : group.plural}`
