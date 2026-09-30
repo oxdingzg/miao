@@ -2,6 +2,7 @@ import type { Argv } from "yargs"
 import { spawn } from "child_process"
 import { Database } from "@miao/core/database/database"
 import { SessionBackfill } from "@miao/core/session/backfill"
+import { SessionCompact } from "@miao/core/session/compact"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
@@ -149,6 +150,58 @@ const VacuumCommand = effectCmd({
   }),
 })
 
+const CompactCommand = effectCmd({
+  command: "compact",
+  describe: "retire legacy V1 storage once its history is projected (deletes events, drops tables, vacuums)",
+  instance: false,
+  builder: (yargs: Argv) =>
+    yargs
+      .option("dry-run", {
+        type: "boolean",
+        default: false,
+        describe: "report what would be reclaimed without writing",
+      })
+      .option("yes", {
+        type: "boolean",
+        default: false,
+        describe: "required to run: this drops the legacy message and part tables",
+      }),
+  handler: Effect.fn("Cli.db.compact")(function* (args: { "dry-run": boolean; yes: boolean }) {
+    const { db } = yield* Database.Service
+    const report = (label: string, result: SessionCompact.Plan) => {
+      console.log(`${label}: file ${mb(result.fileBytes)} MB`)
+      for (const event of result.events)
+        console.log(`  event ${event.type}\t${event.rows} rows\t${mb(event.bytes)} MB`)
+      for (const table of result.tables)
+        console.log(`  table ${table.name}\t${table.rows} rows\t${mb(table.bytes)} MB`)
+      console.log(`  ${result.sequences} aggregate sequence(s) restart`)
+    }
+
+    if (args["dry-run"]) {
+      report("would compact", yield* SessionCompact.compact(db, { dryRun: true }))
+      return
+    }
+    if (!args.yes) {
+      console.error("refusing to run without --yes: this deletes every legacy event and drops message / part")
+      console.error("back up the database first, then re-run with --yes")
+      process.exitCode = 1
+      return
+    }
+    report("before", yield* SessionCompact.compact(db, { dryRun: true }))
+    const started = Date.now()
+    const result = yield* SessionCompact.compact(db, {
+      onProgress: (progress) => {
+        if (progress.remaining % 20_000 !== 0) return
+        console.log(`  ${progress.type}: ${progress.remaining} rows left`)
+      },
+    })
+    report(`after (${((Date.now() - started) / 1000).toFixed(0)}s)`, result)
+    console.log(
+      `deleted ${result.deleted} legacy event(s), dropped ${result.dropped} table(s), reset ${result.reset} sequence(s)`,
+    )
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
@@ -160,6 +213,7 @@ export const DbCommand = effectCmd({
       .command(StatsCommand)
       .command(VacuumCommand)
       .command(BackfillCommand)
+      .command(CompactCommand)
       .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),

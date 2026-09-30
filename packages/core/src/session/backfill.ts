@@ -7,6 +7,7 @@ import type { SessionV1 } from "../v1/session"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "./sql"
+import { SessionLegacyTables } from "./legacy-tables"
 import { SessionV1Read } from "./v1-read"
 
 const encode = Schema.encodeSync(SessionMessage.Message)
@@ -39,6 +40,11 @@ export interface Options {
  */
 const targets = (db: Database.Interface["db"]) =>
   Effect.gen(function* () {
+    // `miao db compact` retires the legacy tables once everything is projected,
+    // so a later backfill has nothing to read and must not query a table that is
+    // gone — becoming a no-op is the contract.
+    if (!(yield* SessionLegacyTables.present(db))) return { legacy: [], mixed: [] }
+
     const legacy = yield* db
       .all<{ id: string }>(sql`
         SELECT s.id AS id FROM session s

@@ -26,6 +26,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
+import { SessionLegacyTables } from "@miao/core/session/legacy-tables"
 import { PartTable, SessionTable } from "@miao/core/session/sql"
 import { ProjectTable } from "@miao/core/project/sql"
 import { MessageV2 } from "./message-v2"
@@ -626,14 +627,29 @@ const layer: Layer.Layer<
       }
     })
 
+    // `miao db compact` retires the legacy tables once every legacy message is
+    // projected. A V1 writer that kept publishing here would produce events
+    // nothing stores, so its history would silently disappear; fail instead.
+    const requireLegacyStorage = Effect.gen(function* () {
+      if (yield* SessionLegacyTables.present(db)) return
+      return yield* Effect.die(
+        new Error(
+          "legacy V1 session storage was retired by `miao db compact`;" +
+            " run the TUI on the V2 runtime (MIAO_TUI_V2 must not be 0)",
+        ),
+      )
+    })
+
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
+        yield* requireLegacyStorage
         yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg })
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
     const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
+        yield* requireLegacyStorage
         yield* events.publish(SessionV1.Event.PartUpdated, {
           sessionID: part.sessionID,
           part: structuredClone(part),

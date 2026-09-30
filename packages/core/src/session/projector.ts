@@ -12,6 +12,7 @@ import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionHistory } from "./history"
 import { SessionInput } from "./input"
+import { SessionLegacyTables } from "./legacy-tables"
 import { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
 import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
@@ -403,6 +404,11 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionV1.Event.MessageUpdated, (event) =>
       Effect.gen(function* () {
+        // `miao db compact` retires the legacy tables once every legacy message
+        // is projected. A stale V1 writer can still publish these events, so the
+        // legacy handlers below check for the tables instead of writing into
+        // tables that are gone and failing the whole projection.
+        if (!(yield* SessionLegacyTables.present(db))) return
         const time_created = event.data.info.time.created
         const id = event.data.info.id
         const sessionID = event.data.info.sessionID
@@ -417,6 +423,7 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionV1.Event.MessageRemoved, (event) =>
       Effect.gen(function* () {
+        if (!(yield* SessionLegacyTables.present(db))) return
         const rows = yield* db
           .select()
           .from(PartTable)
@@ -436,6 +443,7 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionV1.Event.PartRemoved, (event) =>
       Effect.gen(function* () {
+        if (!(yield* SessionLegacyTables.present(db))) return
         const row = yield* db
           .select()
           .from(PartTable)
@@ -453,6 +461,7 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionV1.Event.PartUpdated, (event) =>
       Effect.gen(function* () {
+        if (!(yield* SessionLegacyTables.present(db))) return
         const id = event.data.part.id
         const messageID = event.data.part.messageID
         const sessionID = event.data.part.sessionID

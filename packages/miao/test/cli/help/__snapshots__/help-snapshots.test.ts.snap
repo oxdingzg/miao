@@ -492,6 +492,8 @@ Commands:
   miao db stats       report database size and per-table / per-event-type usage
   miao db vacuum      checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free space
   miao db backfill    convert legacy V1 session messages into the V2 projection (idempotent)
+  miao db compact     retire legacy V1 storage once its history is projected (deletes events, drops
+                      tables, vacuums)
 
 Positionals:
   query  SQL query to execute                                                               [string]
@@ -817,26 +819,6 @@ Options:
 "
 `;
 
-exports[`miao CLI help-text snapshots every documented command emits stable help text: miao doctor report --help 1`] = `
-"  /\\/\\  
- ( o.o ) 
-  > ^ <
-
-miao doctor report
-
-replay sampled history and report trends and anomalies
-
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --since       window, e.g. 30m, 24h, 7d                              [string] [default: "24h"]
-      --json        emit machine-readable output                          [boolean] [default: false]
-"
-`;
-
 exports[`miao CLI help-text snapshots every documented command emits stable help text: miao db backfill --help 1`] = `
 "  /\\/\\  
  ( o.o ) 
@@ -855,5 +837,46 @@ Options:
       --dry-run     report what would be migrated without writing         [boolean] [default: false]
       --verify      map and check every row a migration would write, without writing
                                                                           [boolean] [default: false]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao db compact --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao db compact
+
+retire legacy V1 storage once its history is projected (deletes events, drops tables, vacuums)
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --dry-run     report what would be reclaimed without writing        [boolean] [default: false]
+      --yes         required to run: this drops the legacy message and part tables
+                                                                          [boolean] [default: false]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao doctor report --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao doctor report
+
+replay sampled history and report trends and anomalies
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --since       window, e.g. 30m, 24h, 7d                              [string] [default: "24h"]
+      --json        emit machine-readable output                          [boolean] [default: false]
 "
 `;

@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionHistory } from "./history"
+import { SessionLegacyTables } from "./legacy-tables"
 import { MessageDecodeError } from "./error"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -42,6 +43,7 @@ const layer = Layer.effect(
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
 
     const loadV1 = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      if (!(yield* SessionLegacyTables.present(db))) return undefined
       const session = yield* db
         .select({ directory: SessionTable.directory })
         .from(SessionTable)
@@ -79,13 +81,16 @@ const layer = Layer.effect(
     })
 
     const historyState: Interface["historyState"] = Effect.fn("SessionStore.historyState")(function* (sessionID) {
-      const legacy = yield* db
-        .select({ id: MessageTable.id })
-        .from(MessageTable)
-        .where(eq(MessageTable.session_id, sessionID))
-        .limit(1)
-        .get()
-        .pipe(Effect.orDie)
+      const retainsLegacy = yield* SessionLegacyTables.present(db)
+      const legacy = yield* retainsLegacy
+        ? db
+            .select({ id: MessageTable.id })
+            .from(MessageTable)
+            .where(eq(MessageTable.session_id, sessionID))
+            .limit(1)
+            .get()
+            .pipe(Effect.orDie)
+        : Effect.succeed(undefined)
       const projected = yield* db
         .select({ id: SessionMessageTable.id })
         .from(SessionMessageTable)
@@ -140,8 +145,11 @@ const layer = Layer.effect(
             sessionID: SessionSchema.ID.make(row.session_id),
             message: yield* decodeMessage({ ...row.data, id: row.id, type: row.type }).pipe(Effect.orDie),
           }
-        // An un-migrated session has no projection row; serve the legacy one.
-        const legacy = yield* db
+      // An un-migrated session has no projection row; serve the legacy one. Once
+      // the legacy tables are retired there is no fallback left, and a message
+      // that is not projected simply does not exist.
+      if (!(yield* SessionLegacyTables.present(db))) return undefined
+      const legacy = yield* db
           .select()
           .from(MessageTable)
           .where(eq(MessageTable.id, messageID as unknown as SessionV1.MessageID))
