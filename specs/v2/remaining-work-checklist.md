@@ -57,7 +57,7 @@ Definition of Done. Run in `miao-dev` only.
 
 ## 5. SendMessage (session-to-session)
 - [ ] Implement per `specs/v2/session-messaging.md` (after Stage 4)
-  - [x] `send_message` tool: admits a queued, sender-attributed input into a peer Session and wakes it via the runner's `wake` callback; missing/cross-project targets fail clearly, and an inbound-queue cap refuses overflow — `session-runner.test.ts`
+  - [x] `send_message` tool: resolves a Session ID or `@slug`, admits a queued sender-attributed input into a peer Session, and wakes it via the runner's `wake` callback; missing/cross-project targets fail clearly, and an inbound-queue cap refuses overflow — `session-runner.test.ts`
 - [x] A → B delivery; B receives as input (same project) — `session-runner.test.ts`
 - [ ] Replies route back; no duplicate delivery after restart; sessions isolated
 - [ ] Test + commit + push

@@ -229,11 +229,11 @@ After the soak, Stage 5 can start (app SDK shims → V1 route groups → V1 engi
 Spec: `specs/v2/session-messaging.md`. Depends on Stage 4 (both sessions must be V2-driven).
 
 Progress: `send_message` first slice landed. The runner registers a session-scoped `send_message`
-tool that resolves a target Session ID, rejects missing and cross-project targets, refuses to
-overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
+tool that resolves a target Session ID or `@slug`, rejects missing and cross-project targets,
+refuses to overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
 `<message from session="…">` input, and wakes the target through a new `wake` callback on
 `SessionRunner.run` (passed by `SessionExecutionLocal`). Covered by `session-runner.test.ts`.
-Remaining: `@name`/`list_sessions` discovery and the `message` permission action.
+Remaining: a `list_sessions` discovery tool and the `message` permission action.
 
 - Verify: A sends to B; B receives as an input; replies route back; no duplicate delivery after
   restart; isolated from unrelated sessions.

@@ -10,6 +10,7 @@ import {
   type ProviderErrorEvent,
 } from "@miao/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { and, eq, isNull } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Database } from "../../database/database"
@@ -39,6 +40,7 @@ import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
 import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
+import { SessionTable } from "../sql"
 import { SessionStore } from "../store"
 import { SessionTodo } from "../todo"
 import { LegacyNotMigratedError } from "../error"
@@ -576,13 +578,30 @@ const layer = Layer.effect(
       return { sessionID: child.id, text: text.trim().length > 0 ? text : "(no output)" }
     })
 
+    const resolveMessageTarget = Effect.fnUntraced(function* (sender: SessionSchema.Info, to: string) {
+      if (!to.startsWith("@")) return yield* store.get(SessionSchema.ID.make(to))
+      const row = yield* db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(
+          and(
+            eq(SessionTable.slug, to.slice(1)),
+            eq(SessionTable.project_id, sender.projectID),
+            isNull(SessionTable.time_archived),
+          ),
+        )
+        .get()
+        .pipe(Effect.orDie)
+      return row ? yield* store.get(row.id) : undefined
+    })
+
     const runSendMessage = Effect.fnUntraced(function* (
       senderSessionID: SessionSchema.ID,
       request: { readonly to: string; readonly message: string },
       wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
     ) {
       const sender = yield* getSession(senderSessionID)
-      const target = yield* store.get(SessionSchema.ID.make(request.to))
+      const target = yield* resolveMessageTarget(sender, request.to)
       if (!target) return yield* new ToolFailure({ message: `Unknown session: ${request.to}` })
       if (target.id === sender.id)
         return yield* new ToolFailure({ message: "Cannot send a message to the same session." })

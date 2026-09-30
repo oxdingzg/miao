@@ -1758,7 +1758,8 @@ describe("SessionRunnerLLM", () => {
           LLMEvent.toolCall({
             id: "call-message",
             name: "send_message",
-            input: { to: otherSessionID, message: "hello peer" },
+            // Resolved by slug, not by Session ID.
+            input: { to: `@${otherSessionID}`, message: "hello peer" },
           }),
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
