@@ -259,11 +259,17 @@ const layer = Layer.effect(
       step: number,
       recoverOverflow?: typeof compaction.compactAfterOverflow,
     ) {
+      const attemptStartedAt = Date.now()
       const session = yield* getSession(sessionID)
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
         return yield* Effect.interrupt
+      const sessionMs = Date.now() - attemptStartedAt
+      const agentStartedAt = Date.now()
       const agent = yield* agents.select(session.agent)
+      const agentMs = Date.now() - agentStartedAt
+      const epochStartedAt = Date.now()
       const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
+      const epochMs = Date.now() - epochStartedAt
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       let currentStep = step
@@ -279,6 +285,7 @@ const layer = Layer.effect(
       }
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
+      const resolveStartedAt = Date.now()
       const resolved = yield* models.resolve(session).pipe(
         // A provider can be missing from the catalog for a few seconds while a
         // credential refresh or plugin boot settles; waiting for it beats
@@ -300,12 +307,18 @@ const layer = Layer.effect(
           }).failAssistant(error.message),
         ),
       )
+      const resolveMs = Date.now() - resolveStartedAt
       const model = resolved.model
+      const smallStartedAt = Date.now()
       const summarizeModel = yield* models.resolveSmall(session)
+      const smallMs = Date.now() - smallStartedAt
+      const historyStartedAt = Date.now()
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
+      const historyMs = Date.now() - historyStartedAt
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const settings = yield* readSettings()
+      const toolsStartedAt = Date.now()
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
@@ -333,11 +346,13 @@ const layer = Layer.effect(
                 })
                 .pipe(Effect.asVoid),
           })
+      const toolsMs = Date.now() - toolsStartedAt
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       const prior = turns.get(session.id)
       const expectedRebuild = prior?.afterCompaction === true
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
+      const requestBuildStartedAt = Date.now()
       const materialized = yield* materializeBlobFiles(blob, context)
       const messages = [
         ...toLLMMessages(materialized, model, resolved.info.capabilities.input),
@@ -363,16 +378,32 @@ const layer = Layer.effect(
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
       })
+      const requestBuildMs = Date.now() - requestBuildStartedAt
+      const compactStartedAt = Date.now()
       if (SessionCompactRequest.consume(session.id)) {
         const compacted = yield* compaction.compactAfterOverflow({ sessionID: session.id, entries, model, summarizeModel, request })
         if (compacted) turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        yield* Effect.logInfo("session.compaction", {
+          sessionID: session.id,
+          cause: "overflow",
+          ms: Date.now() - compactStartedAt,
+        })
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
+      const compactCheckedAt = Date.now()
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request })) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        yield* Effect.logInfo("session.compaction", {
+          sessionID: session.id,
+          cause: "threshold",
+          ms: Date.now() - compactCheckedAt,
+        })
         return yield* Effect.die(continueAfterCompaction(currentStep))
       }
+      const compactMs = Date.now() - compactStartedAt
+      const startSnapshotStartedAt = Date.now()
       const startSnapshot = yield* snapshots.capture()
+      const startSnapshotMs = Date.now() - startSnapshotStartedAt
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
         agent: agent.id,
@@ -523,13 +554,17 @@ const layer = Layer.effect(
             yield* withPublication(publisher.failAssistant("Provider stream ended without a completion frame"))
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
+            const endSnapshotStartedAt = Date.now()
             const endSnapshot = yield* snapshots.capture()
+            const endSnapshotMs = Date.now() - endSnapshotStartedAt
+            const filesStartedAt = Date.now()
             const files =
               startSnapshot && endSnapshot
                 ? yield* snapshots
                     .files({ from: startSnapshot, to: endSnapshot })
                     .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
+            const filesMs = Date.now() - filesStartedAt
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -547,6 +582,23 @@ const layer = Layer.effect(
               model: `${model.provider}/${model.id}`,
               ttftMs:
                 requestStartedAt !== undefined && firstEventAt !== undefined ? firstEventAt - requestStartedAt : undefined,
+              turnMs: Date.now() - attemptStartedAt,
+              local: {
+                sessionMs,
+                agentMs,
+                epochMs,
+                resolveMs,
+                smallMs,
+                historyMs,
+                toolsMs,
+                requestBuildMs,
+                compactMs,
+                startSnapshotMs,
+                endSnapshotMs,
+                filesMs,
+                preRequestMs:
+                  requestStartedAt === undefined ? undefined : requestStartedAt - attemptStartedAt,
+              },
               warm,
               expectedRebuild,
               cacheMiss: stepSettlement.tokens.cache.write > 0,
