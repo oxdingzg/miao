@@ -35,7 +35,7 @@ export class ModelUnavailableError extends Schema.TaggedErrorClass<ModelUnavaila
   },
 ) {
   override get message() {
-    return `Model unavailable: ${this.providerID}/${this.modelID}`
+    return `Model unavailable: ${this.providerID}/${this.modelID} (provider disabled, or its credentials need re-authentication)`
   }
 }
 

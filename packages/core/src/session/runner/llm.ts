@@ -47,6 +47,7 @@ import { SessionTodo } from "../todo"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { SessionRunnerProviderRetry } from "./provider-retry"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { materializeBlobFiles } from "./materialize-files"
@@ -69,7 +70,7 @@ import { llmClient } from "../../effect/app-node-platform"
  *   - [ ] Mark busy, retrying, idle, interrupted, or terminal-failure status durably.
  *   - [ ] Honor interruption and reject stale work after runtime attachment replacement.
  *   - [x] Honor optional agent step limits.
- *   - [ ] Bound provider retries and repeated identical tool calls.
+ *   - [x] Bound provider retries (`runner/provider-retry`) and repeated identical tool calls.
  *
  * - Runtime context assembly
  *   - Track V1 runtime-context parity canonically in `specs/v2/session.md`.
@@ -100,7 +101,8 @@ import { llmClient } from "../../effect/app-node-platform"
  *   - [ ] Update title, summaries, compaction state, and cleanup in bounded background work.
  *
  * Use `llm.stream(request)` for each provider turn. Keep tool execution and continuation here.
- * Durable continuation recovery remains a separate future slice with an explicit retry policy.
+ * In-turn provider retries are bounded by `runner/provider-retry`. Durable continuation recovery
+ * across drains remains a separate future slice with an explicit retry policy.
  *
  * The current slice loads V2 history, translates it, resolves a model through a core service, and persists one
  * provider turn. Registry definitions are advertised, local tool calls are settled durably, and an
@@ -277,7 +279,20 @@ const layer = Layer.effect(
       }
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
-      const resolved = yield* models.resolve(session)
+      const resolved = yield* models.resolve(session).pipe(
+        // A provider can be missing from the catalog for a few seconds while a
+        // credential refresh or plugin boot settles; waiting for it beats
+        // failing the turn.
+        Effect.tapError((error) =>
+          SessionRunnerProviderRetry.retryable(error)
+            ? Effect.logWarning("retrying unavailable model", { sessionID: session.id, tag: error._tag })
+            : Effect.void,
+        ),
+        Effect.retry({
+          while: (error) => SessionRunnerProviderRetry.retryable(error),
+          schedule: SessionRunnerProviderRetry.catalogSchedule,
+        }),
+      )
       const model = resolved.model
       const summarizeModel = yield* models.resolveSmall(session)
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
@@ -428,8 +443,35 @@ const layer = Layer.effect(
 
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          requestStartedAt = Date.now()
-          const stream = yield* restore(providerStream).pipe(Effect.exit)
+          const stream = yield* Effect.suspend(() => {
+            // Reset per attempt so a retried stream neither skips events based on
+            // the previous attempt's overflow capture nor reports its latency.
+            overflowFailure = undefined
+            firstEventAt = undefined
+            requestStartedAt = Date.now()
+            return restore(providerStream)
+          }).pipe(
+            // Retry only while the attempt failed before publishing anything:
+            // once text, reasoning, or a tool call is visible, replaying the
+            // turn would duplicate it. Interrupts never retry.
+            Effect.tapError((error) =>
+              SessionRunnerProviderRetry.retryable(error)
+                ? Effect.logWarning("retrying provider attempt", {
+                    sessionID: session.id,
+                    model: `${model.provider}/${model.id}`,
+                    tag: error._tag,
+                  })
+                : Effect.void,
+            ),
+            Effect.retry({
+              while: (error) =>
+                !publisher.hasAssistantStarted() &&
+                !publisher.hasProviderError() &&
+                SessionRunnerProviderRetry.retryable(error),
+              schedule: SessionRunnerProviderRetry.providerSchedule,
+            }),
+            Effect.exit,
+          )
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
           if (

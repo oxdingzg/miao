@@ -397,7 +397,18 @@ export const locationLayer = Layer.effect(
           if (!implementation?.refresh) return credential.value
           const now = yield* Clock.currentTimeMillis
           if (credential.value.expires > now + Duration.toMillis(Duration.minutes(5))) return credential.value
-          const value = yield* authorize(implementation.refresh(credential.value))
+          const value = yield* authorize(implementation.refresh(credential.value)).pipe(
+            // A failed refresh silently degrades into an unauthenticated request
+            // or an unavailable provider, which is hard to trace from the
+            // Session side; always leave a record of why.
+            Effect.tapError((error) =>
+              Effect.logWarning("OAuth credential refresh failed", {
+                integrationID: credential.integrationID,
+                methodID: implementation.method.id,
+                message: error instanceof Error ? error.message : String(error),
+              }),
+            ),
+          )
           yield* credentials.update(credential.id, { value })
           return value
         }),
