@@ -184,11 +184,11 @@ export const {
     // V2 renders from hydrated context. A trailing-only debounce starves the
     // transcript while deltas keep arriving, so coalesce with a fixed deadline.
     let refreshSession: ((sessionID: string) => Promise<void>) | undefined
-    let refreshStatus: ((sessionID: string) => void) | undefined
+    let refreshStatus: ((sessionID: string) => Promise<void>) | undefined
     const v2Refresh = createSessionRefreshScheduler({
       refresh: async (sessionID) => {
         await refreshSession?.(sessionID)
-        refreshStatus?.(sessionID)
+        await refreshStatus?.(sessionID)
       },
       onError: (error) => console.error("Failed to refresh V2 session", error),
     })
@@ -726,10 +726,24 @@ export const {
           const list = await listSessions()
           setStore("session", reconcile(list))
         },
+        async syncStatus(sessionID: string, signal?: AbortSignal) {
+          if (!Flag.MIAO_TUI_V2) return store.session_status[sessionID]?.type === "busy" ? "busy" : "idle"
+          const response = await sdk.client.v2.session.status({ sessionID }, { throwOnError: true, signal })
+          const status = response.data.data.type
+          if (signal?.aborted) return status
+          const previous = store.session_status[sessionID]?.type
+          setStore("session_status", sessionID, { type: status })
+          // An idle transition is also a recovery path for a missed terminal
+          // event: fetch the final transcript instead of leaving stale output.
+          if (previous === "busy" && status === "idle") v2Refresh.schedule(sessionID)
+          return status
+        },
         status(sessionID: string) {
           const session = result.session.get(sessionID)
           if (!session) return "idle"
           if (session.time.compacting) return "compacting"
+          if (Flag.MIAO_TUI_V2 && store.session_status[sessionID])
+            return store.session_status[sessionID].type === "idle" ? "idle" : "working"
           const messages = store.message[sessionID] ?? []
           const last = messages.at(-1)
           if (!last) return "idle"
@@ -875,11 +889,11 @@ export const {
       fullSyncedSessions.delete(sessionID)
       await result.session.sync(sessionID)
     }
-    // V2 has no bulk status stream; derive the working indicator from the
-    // re-hydrated transcript after each live V2 event burst.
-    refreshStatus = (sessionID) => {
+    // Execution can be busy before any provider frame arrives, or idle after
+    // an interrupted user prompt. The transcript is not an ownership signal.
+    refreshStatus = async (sessionID) => {
       if (!Flag.MIAO_TUI_V2) return
-      setStore("session_status", sessionID, result.session.status(sessionID) === "idle" ? { type: "idle" } : { type: "busy" })
+      await result.session.syncStatus(sessionID)
     }
     return result
   },

@@ -67,6 +67,7 @@ import { useEpilogue } from "../../context/epilogue"
 import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
+import { SessionActivity } from "./activity"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
 import { formatTranscript } from "../../util/transcript"
@@ -1312,6 +1313,7 @@ export function Session() {
                     </Switch>
                   )}
                 </For>
+                <SessionActivity sessionID={route.sessionID} />
               </scrollbox>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
