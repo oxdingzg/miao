@@ -76,75 +76,6 @@ function directoryState() {
 }
 
 describe("bootstrapDirectory", () => {
-  test("uses legacy MCP endpoints while refreshing a v1 directory", async () => {
-    const legacyConfigReads: string[] = []
-    const mcpReads: string[] = []
-    const [store, setStore] = directoryState()
-
-    await bootstrapDirectory({
-      directory: "/project",
-      scope: ServerScope.local,
-      mcp: true,
-      global: {
-        config: {} satisfies Config,
-        path: { state: "", config: "", worktree: "/project", directory: "/project", home: "/home" },
-        project: [{ id: "project", worktree: "/project" } as Project],
-        provider,
-      },
-      sdk: {
-        app: { agents: async () => ({ data: [{ name: "build", mode: "primary" }] }) },
-        config: {
-          get: async () => {
-            legacyConfigReads.push("directory")
-            return { data: {} }
-          },
-        },
-        session: { status: async () => ({ data: {} }) },
-        vcs: { get: async () => ({ data: undefined }) },
-        command: {
-          list: async () => {
-            mcpReads.push("command")
-            return { data: [] }
-          },
-        },
-        permission: { list: async () => ({ data: [] }) },
-        question: { list: async () => ({ data: [] }) },
-        v2: { reference: { list: async () => ({ data: { data: [] } }) } },
-        mcp: {
-          status: async () => {
-            mcpReads.push("status")
-            return { data: {} }
-          },
-        },
-        experimental: {
-          resource: {
-            list: async () => {
-              mcpReads.push("resource")
-              return { data: {} }
-            },
-          },
-        },
-        provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
-      } as unknown as OpencodeClient,
-      api,
-      store,
-      setStore,
-      vcsCache: { setStore() {} } as unknown as VcsCache,
-      loadSessions() {},
-      translate: (key) => key,
-      queryClient: new QueryClient(),
-      protocol: Promise.resolve("v1"),
-    })
-
-    expect(store.status).toBe("partial")
-
-    await new Promise((resolve) => setTimeout(resolve, 80))
-
-    expect(store.status).toBe("complete")
-    expect(legacyConfigReads).toEqual(["directory"])
-    expect(mcpReads.sort()).toEqual(["command", "resource", "status"])
-  })
-
   test("skips legacy config while refreshing a v2 directory", async () => {
     const [store, setStore] = directoryState()
 
@@ -172,7 +103,6 @@ describe("bootstrapDirectory", () => {
       loadSessions() {},
       translate: (key) => key,
       queryClient: new QueryClient(),
-      protocol: Promise.resolve("v2"),
     })
 
     expect(store.status).toBe("partial")
@@ -184,44 +114,14 @@ describe("bootstrapDirectory", () => {
 })
 
 describe("config queries", () => {
-  test("skips legacy global config for v2 servers", async () => {
+  test("returns an empty global config", async () => {
     const sdk = {
-      global: {
-        config: {
-          get: async () => {
-            throw new Error("legacy global config should not be called")
-          },
-        },
-      },
+      global: { config: { get: async () => ({ data: {} }) } },
     } as unknown as OpencodeClient
 
-    const result = await new QueryClient().fetchQuery(
-      loadGlobalConfigQuery(ServerScope.local, sdk, Promise.resolve("v2")),
-    )
+    const result = await new QueryClient().fetchQuery(loadGlobalConfigQuery(ServerScope.local, sdk))
 
     expect(result).toEqual({})
-  })
-
-  test("loads legacy global config for v1 servers", async () => {
-    const calls: string[] = []
-    const config = { shell: "zsh" } satisfies Config
-    const sdk = {
-      global: {
-        config: {
-          get: async () => {
-            calls.push("global")
-            return { data: config }
-          },
-        },
-      },
-    } as unknown as OpencodeClient
-
-    const result = await new QueryClient().fetchQuery(
-      loadGlobalConfigQuery(ServerScope.local, sdk, Promise.resolve("v1")),
-    )
-
-    expect(result).toEqual(config)
-    expect(calls).toEqual(["global"])
   })
 })
 

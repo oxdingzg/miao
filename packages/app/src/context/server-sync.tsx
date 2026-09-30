@@ -94,8 +94,6 @@ export const loadMcpQuery = (
   scope: ServerScope,
   directory: string,
   api: McpListApi,
-  legacy?: OpencodeClient,
-  protocol?: Promise<"v1" | "v2">,
 ): ApiQueryOptions<Record<string, McpServer["status"]>, readonly [ServerScope, string, "mcp"]> =>
   queryOptions<
     Record<string, McpServer["status"]>,
@@ -105,7 +103,6 @@ export const loadMcpQuery = (
   >({
     queryKey: [scope, directory, "mcp"] as const,
     queryFn: async () => {
-      if ((await protocol) === "v1" && legacy) return (await legacy.mcp.status()).data ?? {}
       return api
         .list({ location: { directory } })
         .then((result) => Object.fromEntries(result.data.map((server) => [server.name, server.status])))
@@ -116,8 +113,6 @@ export const loadMcpResourcesQuery = (
   scope: ServerScope,
   directory: string,
   api: McpResourceApi,
-  legacy?: OpencodeClient,
-  protocol?: Promise<"v1" | "v2">,
 ): ApiQueryOptions<Record<string, McpResource>, readonly [ServerScope, string, "mcpResources"]> =>
   queryOptions<
     Record<string, McpResource>,
@@ -127,14 +122,6 @@ export const loadMcpResourcesQuery = (
   >({
     queryKey: [scope, directory, "mcpResources"] as const,
     queryFn: async () => {
-      if ((await protocol) === "v1" && legacy) {
-        return Object.fromEntries(
-          Object.entries((await legacy.experimental.resource.list()).data ?? {}).map(([key, resource]) => [
-            key,
-            { ...resource, server: resource.client },
-          ]),
-        )
-      }
       return api.resource
         .catalog({ location: { directory } })
         .then((result) =>
@@ -181,21 +168,17 @@ function makeQueryOptionsApi(
   serverSDK: () => OpencodeClient,
   serverAPI: ServerApi,
   sdkFor: (dir: PathKey) => OpencodeClient,
-  protocol: Promise<"v1" | "v2">,
 ) {
   return {
-    globalConfig: () => loadGlobalConfigQuery(scope, serverSDK(), protocol),
+    globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
     projects: () => loadProjectsQuery(scope, serverAPI.project),
-    providers: (directory: PathKey | null) =>
-      loadProvidersQuery(scope, directory, serverAPI, directory ? sdkFor(directory) : serverSDK(), protocol),
+    providers: (directory: PathKey | null) => loadProvidersQuery(scope, directory, serverAPI),
     path: (directory: PathKey | null) =>
-      loadPathQuery(scope, directory, directory ? sdkFor(directory) : serverSDK(), protocol),
-    agents: (directory: PathKey) => loadAgentsQuery(scope, directory, serverAPI.agent, sdkFor(directory), protocol),
-    references: (directory: PathKey) =>
-      loadReferencesQuery(scope, directory, serverAPI.reference, sdkFor(directory), protocol),
-    mcp: (directory: PathKey) => loadMcpQuery(scope, directory, serverAPI.mcp, sdkFor(directory), protocol),
-    mcpResources: (directory: PathKey) =>
-      loadMcpResourcesQuery(scope, directory, serverAPI.mcp, sdkFor(directory), protocol),
+      loadPathQuery(scope, directory, directory ? sdkFor(directory) : serverSDK()),
+    agents: (directory: PathKey) => loadAgentsQuery(scope, directory, serverAPI.agent),
+    references: (directory: PathKey) => loadReferencesQuery(scope, directory, serverAPI.reference),
+    mcp: (directory: PathKey) => loadMcpQuery(scope, directory, serverAPI.mcp),
+    mcpResources: (directory: PathKey) => loadMcpResourcesQuery(scope, directory, serverAPI.mcp),
     lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
     sessions: (directory: PathKey) => ({ queryKey: [scope, directory, "loadSessions"] as const }),
   }
@@ -224,15 +207,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return sdk
   }
 
-  const session = createServerSession(serverSDK.client, serverSDK.api.session, serverSDK.api.message, {
-    protocol: serverSDK.protocol,
-  })
+  const session = createServerSession(serverSDK.client, serverSDK.api.session, serverSDK.api.message)
   const queryOptionsApi = makeQueryOptionsApi(
     serverSDK.scope,
     () => serverSDK.client,
     serverSDK.api,
     sdkFor,
-    serverSDK.protocol,
   )
 
   const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
@@ -241,18 +221,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const activeSessionsQuery = useQuery(() =>
     loadActiveSessionsQuery(serverSDK.scope, {
       active: async () => {
-        if ((await serverSDK.protocol) === "v1") {
-          const statuses = (await serverSDK.client.session.status()).data ?? {}
-          seedActiveSessionStatuses(session, statuses)
-          for (const sessionID of Object.keys(statuses)) {
-            void session.resolve(sessionID).catch(() => undefined)
-          }
-          return Object.fromEntries(
-            Object.entries(statuses).flatMap(([sessionID, status]) =>
-              status.type === "idle" ? [] : [[sessionID, { type: "running" as const }]],
-            ),
-          )
-        }
         const active = await serverSDK.api.session.active()
         seedActiveSessionStatuses(session, active)
         for (const sessionID of Object.keys(active)) {
@@ -323,7 +291,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       await bootstrapGlobal({
         serverSDK: serverSDK.client,
         serverAPI: serverSDK.api,
-        protocol: serverSDK.protocol,
         scope: serverSDK.scope,
         requestFailedTitle: language.t("common.requestFailed"),
         translate: language.t,
@@ -363,7 +330,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       void bootstrapInstance(directory)
     },
     onMcp: (directory, setStore) => {
-      void loadCommands(directory, serverSDK.api.command, sdkFor(directory), serverSDK.protocol)
+      void loadCommands(directory, serverSDK.api.command)
         .then((commands) => setStore("command", commands))
         .catch((err) => {
           showToast({
@@ -494,7 +461,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         translate: language.t,
         queryClient,
         session,
-        protocol: serverSDK.protocol,
       })
     })
 
@@ -693,17 +659,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         await toggleMcp({
           status,
           connect: async () => {
-            if ((await serverSDK.protocol) === "v1") {
-              await sdk.mcp.connect({ name })
-              return
-            }
             await serverSDK.api.mcp.connect({ server: name, location: { directory: key } })
           },
           disconnect: async () => {
-            if ((await serverSDK.protocol) === "v1") {
-              await sdk.mcp.disconnect({ name })
-              return
-            }
             await serverSDK.api.mcp.disconnect({ server: name, location: { directory: key } })
           },
           authenticate: async () => {

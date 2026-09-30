@@ -211,18 +211,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     }),
   )
 
-  function enableConfiguredDirectory(directory: string) {
-    if (input.sdk.protocolKind() !== "v1") return
-    if (meta.disposed || !ready()) return
-    const [childStore] = input.sync.child(directory)
-    if (childStore.config.permission !== "allow") return
-    const key = directoryAcceptKey(directory)
-    if (store.autoAccept[key] !== undefined) return
-    setStore(
-      produce((draft) => {
-        draft.autoAccept[key] = true
-      }),
-    )
+  function enableConfiguredDirectory(_directory: string) {
+    // V2 permissions are answered through the session-scoped API; directory
+    // auto-accept was a V1-only behavior.
   }
 
   const MAX_RESPONDED = 1000
@@ -258,9 +249,6 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   const list = async (directory: string) => {
-    if ((await input.sdk.protocol) === "v1") {
-      return (await input.sdk.client.permission.list({ directory })).data ?? []
-    }
     return input.sdk.api.permission.request
       .list({ location: { directory } })
       .then((result) => result.data.map(normalizePermissionRequest))
