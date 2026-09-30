@@ -10,7 +10,7 @@ import {
   type ProviderErrorEvent,
 } from "@miao/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
-import { and, eq, isNull } from "drizzle-orm"
+import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Database } from "../../database/database"
@@ -28,6 +28,7 @@ import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
 import { SendMessageTool } from "../../tool/send-message"
+import { ListSessionsTool } from "../../tool/list-sessions"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
@@ -595,6 +596,35 @@ const layer = Layer.effect(
       return row ? yield* store.get(row.id) : undefined
     })
 
+    const runListSessions = Effect.fnUntraced(function* (senderSessionID: SessionSchema.ID) {
+      const sender = yield* getSession(senderSessionID)
+      const rows = yield* db
+        .select({
+          id: SessionTable.id,
+          slug: SessionTable.slug,
+          title: SessionTable.title,
+          parent_id: SessionTable.parent_id,
+        })
+        .from(SessionTable)
+        .where(
+          and(
+            eq(SessionTable.project_id, sender.projectID),
+            isNull(SessionTable.time_archived),
+            ne(SessionTable.id, sender.id),
+          ),
+        )
+        .orderBy(desc(SessionTable.time_updated))
+        .limit(50)
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map((row) => ({
+        id: row.id,
+        slug: row.slug,
+        title: row.title,
+        ...(row.parent_id === null ? {} : { parentID: row.parent_id }),
+      }))
+    })
+
     const runSendMessage = Effect.fnUntraced(function* (
       senderSessionID: SessionSchema.ID,
       request: { readonly to: string; readonly message: string },
@@ -652,6 +682,7 @@ const layer = Layer.effect(
                     ),
                   ),
                 ),
+                list_sessions: ListSessionsTool.make(() => runListSessions(input.sessionID)),
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`

@@ -232,8 +232,9 @@ Progress: `send_message` first slice landed. The runner registers a session-scop
 tool that resolves a target Session ID or `@slug`, rejects missing and cross-project targets,
 refuses to overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
 `<message from session="…">` input, and wakes the target through a new `wake` callback on
-`SessionRunner.run` (passed by `SessionExecutionLocal`). Covered by `session-runner.test.ts`.
-Remaining: a `list_sessions` discovery tool and the `message` permission action.
+`SessionRunner.run` (passed by `SessionExecutionLocal`). A companion `list_sessions` tool enumerates
+sibling Sessions so a sender can discover an `@slug` target. Covered by `session-runner.test.ts`.
+Remaining: the `message` permission action.
 
 - Verify: A sends to B; B receives as an input; replies route back; no duplicate delivery after
   restart; isolated from unrelated sessions.

@@ -1894,6 +1894,46 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("lists sibling sessions for discovery", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      yield* insertSession(otherSessionID)
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Who is around?" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-list", name: "list_sessions", input: {} }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID, force: true })
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "list_sessions")
+      expect(tool).toMatchObject({ type: "tool", name: "list_sessions", state: { status: "completed" } })
+      expect(JSON.stringify(tool)).toContain(String(otherSessionID))
+      expect(JSON.stringify(tool)).toContain(`@${otherSessionID}`)
+    }),
+  )
+
   it.effect("keeps continuing while todos stay open, then stops on no progress", () =>
     Effect.gen(function* () {
       yield* setup
