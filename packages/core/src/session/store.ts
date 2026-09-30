@@ -42,6 +42,12 @@ const layer = Layer.effect(
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
 
     const loadV1 = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      const session = yield* db
+        .select({ directory: SessionTable.directory })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
       const messageRows = yield* db
         .select()
         .from(MessageTable)
@@ -63,10 +69,13 @@ const layer = Layer.effect(
         list.push({ ...(row.data as object), id: row.id, sessionID, messageID: row.message_id } as SessionV1.Part)
         byMessage.set(row.message_id, list)
       }
-      return messageRows.map((row) => ({
-        info: { ...(row.data as object), id: row.id, sessionID } as SessionV1.Info,
-        parts: byMessage.get(row.id) ?? [],
-      }))
+      return {
+        directory: session?.directory,
+        messages: messageRows.map((row) => ({
+          info: { ...(row.data as object), id: row.id, sessionID } as SessionV1.Info,
+          parts: byMessage.get(row.id) ?? [],
+        })),
+      }
     })
 
     const historyState: Interface["historyState"] = Effect.fn("SessionStore.historyState")(function* (sessionID) {
@@ -110,7 +119,7 @@ const layer = Layer.effect(
         const projected = yield* SessionHistory.load(db, sessionID)
         const legacy = yield* loadV1(sessionID)
         if (legacy === undefined) return projected
-        const mapped = SessionV1Read.map(legacy)
+        const mapped = SessionV1Read.map(legacy.messages, { directory: legacy.directory })
         if (projected.length === 0) return mapped
         // A backfill preserves legacy message ids, so drop any legacy message
         // that is already projected to stay idempotent. Legacy history that was
@@ -140,6 +149,12 @@ const layer = Layer.effect(
           .pipe(Effect.orDie)
         if (legacy === undefined) return undefined
         const sessionID = SessionSchema.ID.make(legacy.session_id)
+        const session = yield* db
+          .select({ directory: SessionTable.directory })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
         const partRows = yield* db
           .select()
           .from(PartTable)
@@ -147,15 +162,18 @@ const layer = Layer.effect(
           .orderBy(asc(PartTable.time_created), asc(PartTable.id))
           .all()
           .pipe(Effect.orDie)
-        const [message] = SessionV1Read.map([
-          {
-            info: { ...(legacy.data as object), id: legacy.id, sessionID } as SessionV1.Info,
-            parts: partRows.map(
-              (part) =>
-                ({ ...(part.data as object), id: part.id, sessionID, messageID: part.message_id }) as SessionV1.Part,
-            ),
-          },
-        ])
+        const [message] = SessionV1Read.map(
+          [
+            {
+              info: { ...(legacy.data as object), id: legacy.id, sessionID } as SessionV1.Info,
+              parts: partRows.map(
+                (part) =>
+                  ({ ...(part.data as object), id: part.id, sessionID, messageID: part.message_id }) as SessionV1.Part,
+              ),
+            },
+          ],
+          { directory: session?.directory },
+        )
         return message === undefined ? undefined : { sessionID, message }
       }),
     })

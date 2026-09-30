@@ -6,7 +6,7 @@ import type { Database } from "../database/database"
 import type { SessionV1 } from "../v1/session"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
-import { MessageTable, PartTable, SessionMessageTable } from "./sql"
+import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "./sql"
 import { SessionV1Read } from "./v1-read"
 
 const encode = Schema.encodeSync(SessionMessage.Message)
@@ -68,6 +68,12 @@ const migrateSession = (db: Database.Interface["db"], sessionID: SessionSchema.I
   db
     .transaction((tx) =>
       Effect.gen(function* () {
+        const session = yield* tx
+          .select({ directory: SessionTable.directory })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
         const messageRows = yield* tx
           .select()
           .from(MessageTable)
@@ -100,6 +106,7 @@ const migrateSession = (db: Database.Interface["db"], sessionID: SessionSchema.I
             info: { ...(message.data as object), id: message.id, sessionID } as SessionV1.Info,
             parts: byMessage.get(message.id) ?? [],
           })),
+          { directory: session?.directory },
         )
 
         const existing = yield* tx
