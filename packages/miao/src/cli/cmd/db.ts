@@ -103,13 +103,31 @@ const BackfillCommand = effectCmd({
   describe: "convert legacy V1 session messages into the V2 projection (idempotent)",
   instance: false,
   builder: (yargs: Argv) =>
-    yargs.option("dry-run", {
-      type: "boolean",
-      default: false,
-      describe: "report what would be migrated without writing",
-    }),
-  handler: Effect.fn("Cli.db.backfill")(function* (args: { "dry-run": boolean }) {
+    yargs
+      .option("dry-run", {
+        type: "boolean",
+        default: false,
+        describe: "report what would be migrated without writing",
+      })
+      .option("verify", {
+        type: "boolean",
+        default: false,
+        describe: "map and check every row a migration would write, without writing",
+      }),
+  handler: Effect.fn("Cli.db.backfill")(function* (args: { "dry-run": boolean; verify: boolean }) {
     const { db } = yield* Database.Service
+    if (args.verify) {
+      const result = yield* SessionBackfill.verify(db)
+      console.log(
+        `verified ${result.messages} message(s) across ${result.sessions} session(s)` +
+          ` — ${result.failures.length} failure(s)`,
+      )
+      for (const failure of result.failures.slice(0, 10))
+        console.log(`  ${failure.sessionID}\t${failure.messageID}\t${failure.error}`)
+      if (result.failures.length > 10) console.log(`  ... and ${result.failures.length - 10} more`)
+      if (result.failures.length > 0) process.exitCode = 1
+      return
+    }
     const result = yield* SessionBackfill.backfill(db, { dryRun: args["dry-run"] })
     const prefix = args["dry-run"] ? "would backfill" : "backfilled"
     console.log(`${prefix} ${result.migrated} session(s), repaired ${result.repaired} mixed session(s)`)

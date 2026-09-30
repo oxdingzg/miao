@@ -10,6 +10,7 @@ import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "./sq
 import { SessionV1Read } from "./v1-read"
 
 const encode = Schema.encodeSync(SessionMessage.Message)
+const decode = Schema.decodeUnknownSync(SessionMessage.Message)
 
 export interface Result {
   /** Sessions that had no projection and were converted from legacy-only history. */
@@ -18,18 +19,25 @@ export interface Result {
   readonly repaired: number
 }
 
+export interface VerifyResult {
+  /** Sessions a migration would touch. */
+  readonly sessions: number
+  /** Legacy messages a migration would project. */
+  readonly messages: number
+  /** Rows that do not survive a projection round trip. */
+  readonly failures: ReadonlyArray<{ readonly sessionID: string; readonly messageID: string; readonly error: string }>
+}
+
 export interface Options {
   /** Report what would change without writing anything. */
   readonly dryRun?: boolean
 }
 
 /**
- * One-time, idempotent backfill: converts legacy V1 `message` / `part` rows into
- * projected V2 `session_message` rows. Each session is migrated in its own
- * transaction. Sessions with no projection are `migrated`; sessions that already
- * have a projection but still hold legacy messages without one are `repaired`.
+ * Sessions holding legacy messages the projection does not cover: those with no
+ * projection at all, and those whose projection is missing some legacy message.
  */
-export const backfill = (db: Database.Interface["db"], options: Options = {}) =>
+const targets = (db: Database.Interface["db"]) =>
   Effect.gen(function* () {
     const legacy = yield* db
       .all<{ id: string }>(sql`
@@ -49,6 +57,64 @@ export const backfill = (db: Database.Interface["db"], options: Options = {}) =>
       `)
       .pipe(Effect.orDie)
 
+    return { legacy, mixed }
+  })
+
+/** Reads a session's legacy transcript and projects it into V2 messages. */
+const read = (db: Pick<Database.Interface["db"], "select">, sessionID: SessionSchema.ID) =>
+  Effect.gen(function* () {
+    const session = yield* db
+      .select({ directory: SessionTable.directory })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, sessionID))
+      .get()
+      .pipe(Effect.orDie)
+    const messageRows = yield* db
+      .select()
+      .from(MessageTable)
+      .where(eq(MessageTable.session_id, sessionID))
+      .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+      .all()
+      .pipe(Effect.orDie)
+    const partRows = yield* db
+      .select()
+      .from(PartTable)
+      .where(eq(PartTable.session_id, sessionID))
+      .orderBy(asc(PartTable.time_created), asc(PartTable.id))
+      .all()
+      .pipe(Effect.orDie)
+
+    const byMessage = new Map<string, SessionV1.Part[]>()
+    for (const part of partRows) {
+      const list = byMessage.get(part.message_id) ?? []
+      list.push({
+        ...(part.data as object),
+        id: part.id,
+        sessionID,
+        messageID: part.message_id,
+      } as SessionV1.Part)
+      byMessage.set(part.message_id, list)
+    }
+
+    return SessionV1Read.map(
+      messageRows.map((message) => ({
+        info: { ...(message.data as object), id: message.id, sessionID } as SessionV1.Info,
+        parts: byMessage.get(message.id) ?? [],
+      })),
+      { directory: session?.directory },
+    )
+  })
+
+/**
+ * One-time, idempotent backfill: converts legacy V1 `message` / `part` rows into
+ * projected V2 `session_message` rows. Each session is migrated in its own
+ * transaction. Sessions with no projection are `migrated`; sessions that already
+ * have a projection but still hold legacy messages without one are `repaired`.
+ */
+export const backfill = (db: Database.Interface["db"], options: Options = {}) =>
+  Effect.gen(function* () {
+    const { legacy, mixed } = yield* targets(db)
+
     if (options.dryRun) return { migrated: legacy.length, repaired: mixed.length }
 
     let migrated = 0
@@ -64,53 +130,47 @@ export const backfill = (db: Database.Interface["db"], options: Options = {}) =>
     return { migrated, repaired }
   })
 
+/**
+ * Checks every projection a migration would write, without writing. Encoding
+ * that does not throw is not enough: the writer splits an encoded message across
+ * columns, the reader reassembles it, and the model then sees that reading — so
+ * the projection has to survive the whole round trip unchanged. A mapping that
+ * only fails here would otherwise die mid-migration, after some sessions were
+ * already committed.
+ */
+export const verify = (db: Database.Interface["db"]) =>
+  Effect.gen(function* () {
+    const { legacy, mixed } = yield* targets(db)
+    const failures: { sessionID: string; messageID: string; error: string }[] = []
+    let messages = 0
+
+    for (const row of [...legacy, ...mixed]) {
+      const sessionID = SessionSchema.ID.make(row.id)
+      const mapped = yield* read(db, sessionID)
+      for (const message of mapped) {
+        messages += 1
+        try {
+          const encoded = encode(message)
+          const { id, type, ...data } = encoded
+          const restored = encode(decode({ ...data, id, type }))
+          if (JSON.stringify(restored) !== JSON.stringify(encoded))
+            failures.push({ sessionID, messageID: message.id, error: "projection does not round trip" })
+        } catch (error) {
+          failures.push({ sessionID, messageID: message.id, error: String(error) })
+        }
+      }
+    }
+
+    return { sessions: legacy.length + mixed.length, messages, failures }
+  })
+
 const migrateSession = (db: Database.Interface["db"], sessionID: SessionSchema.ID) =>
   db
     .transaction((tx) =>
       Effect.gen(function* () {
-        const session = yield* tx
-          .select({ directory: SessionTable.directory })
-          .from(SessionTable)
-          .where(eq(SessionTable.id, sessionID))
-          .get()
-          .pipe(Effect.orDie)
-        const messageRows = yield* tx
-          .select()
-          .from(MessageTable)
-          .where(eq(MessageTable.session_id, sessionID))
-          .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
-          .all()
-          .pipe(Effect.orDie)
-        const partRows = yield* tx
-          .select()
-          .from(PartTable)
-          .where(eq(PartTable.session_id, sessionID))
-          .orderBy(asc(PartTable.time_created), asc(PartTable.id))
-          .all()
-          .pipe(Effect.orDie)
-
-        const byMessage = new Map<string, SessionV1.Part[]>()
-        for (const part of partRows) {
-          const list = byMessage.get(part.message_id) ?? []
-          list.push({
-            ...(part.data as object),
-            id: part.id,
-            sessionID,
-            messageID: part.message_id,
-          } as SessionV1.Part)
-          byMessage.set(part.message_id, list)
-        }
-
-        const mapped = SessionV1Read.map(
-          messageRows.map((message) => ({
-            info: { ...(message.data as object), id: message.id, sessionID } as SessionV1.Info,
-            parts: byMessage.get(message.id) ?? [],
-          })),
-          { directory: session?.directory },
-        )
-
+        const mapped = yield* read(tx, sessionID)
         const existing = yield* tx
-          .select({ id: SessionMessageTable.id, seq: SessionMessageTable.seq })
+          .select({ id: SessionMessageTable.id })
           .from(SessionMessageTable)
           .where(eq(SessionMessageTable.session_id, sessionID))
           .all()
