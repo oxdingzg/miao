@@ -1,6 +1,7 @@
 import { Global } from "@miao/core/global"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { Flag } from "@miao/core/flag/flag"
+import { readUpgradeResult } from "@/installation/upgrade-result"
 import type { CommandModule } from "yargs"
 import os from "os"
 import { Duration, Effect } from "effect"
@@ -66,6 +67,12 @@ const InfoCommand = effectCmd({
     console.log(`opencode version: ${InstallationVersion}`)
     console.log(`os: ${os.type()} ${os.release()} ${os.arch()}`)
     console.log(`terminal: ${terminal || "unknown"}`)
+    const last = yield* Effect.promise(() => readUpgradeResult())
+    console.log(
+      `last auto-update: ${
+        last ? `${last.outcome} ${last.versionFrom} → ${last.versionTo}${last.error ? ` (${last.error})` : ""}` : "none"
+      }`,
+    )
     console.log("plugins:")
     if (Flag.MIAO_PURE) {
       console.log("external plugins disabled (--pure)")

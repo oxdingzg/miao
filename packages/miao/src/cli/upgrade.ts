@@ -4,13 +4,21 @@ import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Flag } from "@miao/core/flag/flag"
 import { Installation } from "@/installation"
+import { writeUpgradeResult } from "@/installation/upgrade-result"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { GlobalBus } from "@/bus/global"
 import { Global } from "@miao/core/global"
+import { Flock } from "@miao/core/util/flock"
+import { errorMessage } from "@/util/error"
 
 // How long a cached "latest version" is trusted before refreshing in the
 // background. Startup never waits on the network (see upgrade()).
 const CHECK_INTERVAL_MS = 20 * 60 * 60 * 1000
+
+// A crashed installer is reclaimable after this long; a live one keeps the lock
+// fresh with a heartbeat, so this only bounds crash recovery.
+const LOCK_STALE_MS = 2 * 60 * 1000
+const LOCK_KEY = "installation-upgrade"
 
 interface Cache {
   checkedAt: number
@@ -57,6 +65,19 @@ function autoInstalls(method: Installation.Method) {
 }
 
 /**
+ * Single non-blocking attempt at the shared upgrade lock. `timeoutMs: 0` makes
+ * a held lock fail immediately: another process is already installing, so this
+ * one skips instead of waiting and installing a second time.
+ */
+async function acquireUpgradeLock() {
+  try {
+    return await Flock.acquire(LOCK_KEY, { staleMs: LOCK_STALE_MS, timeoutMs: 0 })
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Check for updates and, by default, upgrade in the background. The running
  * process keeps the old build; the TUI shows a non-blocking "restart to apply"
  * notice. Unlike the previous behavior there is no blocking confirmation dialog.
@@ -90,12 +111,24 @@ export async function upgrade() {
     return
   }
 
-  await Installation.upgrade(method, latest)
-    .then(async () => {
-      await writeCache({ checkedAt: Date.now(), latest, installed: latest })
-      emitUpdated(latest)
+  const lock = await acquireUpgradeLock()
+  if (!lock) return
+
+  try {
+    await Installation.upgrade(method, latest)
+    await writeCache({ checkedAt: Date.now(), latest, installed: latest })
+    await writeUpgradeResult({ outcome: "success", method, versionFrom: InstallationVersion, versionTo: latest })
+    emitUpdated(latest)
+  } catch (error) {
+    await writeUpgradeResult({
+      outcome: "failure",
+      method,
+      versionFrom: InstallationVersion,
+      versionTo: latest,
+      error: errorMessage(error),
     })
-    .catch(() => {
-      emitAvailable(latest)
-    })
+    emitAvailable(latest)
+  } finally {
+    await lock.release().catch(() => {})
+  }
 }
