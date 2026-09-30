@@ -1591,11 +1591,11 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         >
           <Switch>
             <Match when={reasoningActive()}>
-              <Spinner color={theme.warning}>Thinking</Spinner>
+              <Spinner color={theme.textMuted}>Thinking</Spinner>
             </Match>
             <Match when={true}>
               <text wrapMode="none">
-                <span style={{ fg: theme.warning }}>✻ </span>
+                <span style={{ fg: theme.textMuted }}>✻ </span>
                 <span style={{ fg: theme.textMuted }}>{activity()}</span>
               </text>
             </Match>
@@ -2339,7 +2339,7 @@ function Read(props: ToolProps) {
         spinner={isRunning()}
         part={props.part}
       >
-        Read {pathFormatter.format(stringValue(props.input.filePath))} {input(props.input, ["filePath"])}
+        Read {pathFormatter.format(stringValue(props.input.filePath))} {input(props.input, ["filePath", "path"])}
       </InlineTool>
       <For each={loaded()}>
         {(filepath) => (

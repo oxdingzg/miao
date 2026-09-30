@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
-import { sessionContextToMessages, isLiveSessionV2Event, isV2StreamFragmentEvent } from "../src/context/session-v2"
+import {
+  isLiveSessionV2Event,
+  isV2StreamFragmentEvent,
+  mergeTranscript,
+  sessionContextToMessages,
+} from "../src/context/session-v2"
 import { promptInputFromParts } from "../src/context/session-v2-write"
 import { sessionInfo } from "../src/context/session-v2-read"
 
@@ -76,6 +81,139 @@ test("maps a completed tool state to V1 output/title", () => {
   if (part.type !== "tool") throw new Error("expected tool part")
   expect(part.tool).toBe("bash")
   expect(part.state).toMatchObject({ status: "completed", output: "ok", title: "bash" })
+})
+
+test("projects V2 file tool input onto the V1 filePath the renderers read", () => {
+  const messages: SessionMessage[] = [
+    { id: "msg_u", type: "user", time: { created: 10 }, text: "change it" },
+    {
+      id: "msg_a",
+      type: "assistant",
+      time: { created: 20 },
+      agent: "build",
+      model: { id: "gpt", providerID: "openai" },
+      content: [
+        {
+          type: "tool",
+          id: "prt_read",
+          name: "read",
+          time: { created: 20, ran: 21, completed: 22 },
+          state: { status: "completed", input: { path: "a.ts" }, structured: {}, content: [] },
+        },
+        {
+          type: "tool",
+          id: "prt_write",
+          name: "write",
+          time: { created: 20, ran: 21, completed: 22 },
+          state: { status: "completed", input: { path: "b.ts", content: "x" }, structured: {}, content: [] },
+        },
+        {
+          type: "tool",
+          id: "prt_edit",
+          name: "edit",
+          time: { created: 20, ran: 21, completed: 22 },
+          state: {
+            status: "completed",
+            input: { path: "c.ts", oldString: "a", newString: "b" },
+            structured: {
+              files: [{ file: "c.ts", patch: "@@ -1 +1 @@\n-a\n+b\n", additions: 1, deletions: 1, status: "modified" }],
+              replacements: 1,
+            },
+            content: [{ type: "text", text: "Edited c.ts" }],
+          },
+        },
+      ],
+    },
+  ]
+  const [, assistant] = sessionContextToMessages({ ...base, messages })
+  const [read, write, edit] = assistant.parts
+  if (read.type !== "tool" || write.type !== "tool" || edit.type !== "tool") throw new Error("expected tool parts")
+  expect(read.state.input).toMatchObject({ path: "a.ts", filePath: "a.ts" })
+  expect(write.state.input).toMatchObject({ path: "b.ts", filePath: "b.ts", content: "x" })
+  expect(edit.state.input).toMatchObject({ filePath: "c.ts" })
+  expect(edit.state).toMatchObject({
+    status: "completed",
+    output: "Edited c.ts",
+    metadata: { diff: "@@ -1 +1 @@\n-a\n+b\n", replacements: 1, output: "Edited c.ts" },
+  })
+})
+
+test("projects V2 structured tool output onto the V1 metadata renderers read", () => {
+  const messages: SessionMessage[] = [
+    { id: "msg_u", type: "user", time: { created: 10 }, text: "go" },
+    {
+      id: "msg_a",
+      type: "assistant",
+      time: { created: 20 },
+      agent: "build",
+      model: { id: "gpt", providerID: "openai" },
+      content: [
+        {
+          type: "tool",
+          id: "prt_patch",
+          name: "apply_patch",
+          time: { created: 20, ran: 21, completed: 22 },
+          state: {
+            status: "completed",
+            input: { patchText: "*** Begin Patch" },
+            structured: {
+              applied: [],
+              files: [{ file: "d.ts", patch: "@@ -1 +1 @@\n-a\n+b\n", additions: 1, deletions: 1, status: "added" }],
+            },
+            content: [],
+          },
+        },
+        {
+          type: "tool",
+          id: "prt_task",
+          name: "task",
+          time: { created: 20, ran: 21, completed: 22 },
+          state: {
+            status: "completed",
+            input: { description: "explore", prompt: "p", subagent_type: "explore" },
+            structured: { sessionID: "ses_child", text: "done" },
+            content: [],
+          },
+        },
+      ],
+    },
+  ]
+  const [, assistant] = sessionContextToMessages({ ...base, messages })
+  const [patch, task] = assistant.parts
+  if (patch.type !== "tool" || task.type !== "tool") throw new Error("expected tool parts")
+  expect(patch.state.status === "completed" && patch.state.metadata).toMatchObject({
+    files: [
+      {
+        type: "add",
+        relativePath: "d.ts",
+        filePath: "d.ts",
+        patch: "@@ -1 +1 @@\n-a\n+b\n",
+        deletions: 1,
+      },
+    ],
+  })
+  expect(task.state.status === "completed" && task.state.metadata).toMatchObject({
+    sessionID: "ses_child",
+    sessionId: "ses_child",
+  })
+})
+
+test("merges the active context with the older projected timeline", () => {
+  const user = (id: string, created: number, text: string): SessionMessage => ({
+    id,
+    type: "user",
+    time: { created },
+    text,
+  })
+  const active = [user("msg_3", 30, "after compaction")]
+  const history = [
+    user("msg_2", 20, "pruned copy"),
+    user("msg_3", 30, "stale copy"),
+    user("msg_1", 10, "before compaction"),
+  ]
+  const merged = mergeTranscript(active, history)
+  expect(merged.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+  expect(merged.find((message) => message.id === "msg_3")).toMatchObject({ text: "after compaction" })
 })
 
 test("skips V2 meta messages", () => {

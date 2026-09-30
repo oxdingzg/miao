@@ -114,6 +114,23 @@ export function sessionContextToMessages(input: {
   return result
 }
 
+/**
+ * The transcript must reach back past compaction the way V1 did. `context` is
+ * the model-visible window (everything after the last compaction) and carries
+ * unpruned tool detail, while the paginated `messages` page also includes the
+ * compacted timeline. Keep the active window's richer copy for ids it owns and
+ * append the older projected history in timeline order.
+ */
+export function mergeTranscript(
+  active: readonly SessionMessage[],
+  history: readonly SessionMessage[],
+): SessionMessage[] {
+  const activeIDs = new Set(active.map((message) => message.id))
+  return [...history.filter((message) => !activeIDs.has(message.id)), ...active].toSorted(
+    (a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id),
+  )
+}
+
 function userParts(sessionID: string, message: Extract<SessionMessage, { type: "user" }>): Part[] {
   const parts: Part[] = []
   if (message.text) {
@@ -152,32 +169,84 @@ function toolPart(
       state.status === "pending"
         ? { status: "pending", input: {}, raw: String(state.input) }
         : state.status === "running"
-          ? { status: "running", input: state.input, time: { start } }
+          ? { status: "running", input: toolInput(tool.name, state.input), time: { start } }
           : state.status === "completed"
             ? {
                 status: "completed",
-                input: state.input,
+                input: toolInput(tool.name, state.input),
                 output: textOf(state.content),
                 title: tool.name,
-                metadata: { ...structuredMetadata(state.structured), output: textOf(state.content) },
+                metadata: toolMetadata(tool.name, state.structured, textOf(state.content)),
                 time: { start, end },
               }
             : {
                 status: "error",
-                input: state.input,
+                input: toolInput(tool.name, state.input),
                 error: state.error.message,
-                metadata: structuredMetadata(state.structured),
+                metadata: toolMetadata(tool.name, state.structured),
                 time: { start, end },
               },
   }
 }
 
+// V2 file tools name their target `path`; the shared TUI renderers read the V1
+// `filePath`. Without this translation a completed file tool renders as a
+// permanently pending row, which is why substantive blocks used to disappear.
+const FILE_PATH_TOOLS = ["read", "write", "edit"]
+
+function toolInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (!FILE_PATH_TOOLS.includes(name)) return input
+  if (typeof input.path !== "string" || typeof input.filePath === "string") return input
+  return { ...input, filePath: input.path }
+}
+
 // V2 tool state carries the tool's structured output separately from its text
-// content. The TUI renderers read both `metadata` (summaries, diffs, counts) and
+// content. The TUI renderers read `metadata` (diffs, diagnostics, summaries) and
 // `output` (body text), so merge them back into the V1 shape.
+function toolMetadata(name: string, structured: unknown, output?: string): Record<string, unknown> {
+  const metadata = structuredMetadata(structured)
+  const diff = name === "edit" ? editsToDiff(metadata.files) : undefined
+  if (diff && metadata.diff === undefined) metadata.diff = diff
+  if (name === "apply_patch" && Array.isArray(metadata.files)) metadata.files = patchFileEntries(metadata.files)
+  if (name === "task" && typeof metadata.sessionID === "string") metadata.sessionId = metadata.sessionID
+  if (output === undefined) return metadata
+  return { ...metadata, output }
+}
+
+// V2 `edit` reports `FileDiff.Info` entries while the TUI renders one V1
+// `metadata.diff` string, so join the patches back into a single block.
+function editsToDiff(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined
+  const patches = value.flatMap((file) => {
+    if (typeof file !== "object" || file === null) return []
+    const patch = (file as { patch?: unknown }).patch
+    return typeof patch === "string" && patch.length > 0 ? [patch] : []
+  })
+  return patches.length > 0 ? patches.join("\n") : undefined
+}
+
+// The patch block renderer reads the legacy `type`/`relativePath`/`filePath`
+// shape, not `FileDiff.Info`.
+function patchFileEntries(files: ReadonlyArray<unknown>): Record<string, unknown>[] {
+  return files.flatMap((file) => {
+    if (typeof file !== "object" || file === null) return []
+    const entry = file as { file?: unknown; patch?: unknown; deletions?: unknown; status?: unknown }
+    if (typeof entry.file !== "string") return []
+    return [
+      {
+        type: entry.status === "added" ? "add" : entry.status === "deleted" ? "delete" : "update",
+        relativePath: entry.file,
+        filePath: entry.file,
+        patch: entry.patch,
+        deletions: typeof entry.deletions === "number" ? entry.deletions : 0,
+      },
+    ]
+  })
+}
+
 function structuredMetadata(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
+  return { ...(value as Record<string, unknown>) }
 }
 
 function textOf(content: Array<{ type: string; text?: string }>) {

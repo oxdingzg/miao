@@ -27,7 +27,7 @@ import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
-import { isLiveSessionV2Event, isV2StreamFragmentEvent, sessionContextToMessages } from "./session-v2"
+import { isLiveSessionV2Event, isV2StreamFragmentEvent, mergeTranscript, sessionContextToMessages } from "./session-v2"
 import { sessionInfo } from "./session-v2-read"
 import { createSessionRefreshScheduler } from "./session-refresh"
 import { createPendingPrompts } from "./pending-prompts"
@@ -907,12 +907,17 @@ export const {
               : sdk.client.session.get({ sessionID }, { throwOnError: true })
             const messagesPromise = Flag.MIAO_TUI_V2
               ? sessionPromise.then((session) =>
-                  sdk.client.v2.session.context({ sessionID }, { throwOnError: true }).then((x) => ({
+                  Promise.all([
+                    sdk.client.v2.session.context({ sessionID }, { throwOnError: true }),
+                    // `context` stops at the last compaction, so also read a page
+                    // of the projected timeline to keep older history reachable.
+                    sdk.client.v2.session.messages({ sessionID, limit: 200, order: "desc" }, { throwOnError: true }),
+                  ]).then(([context, history]) => ({
                     data: sessionContextToMessages({
                       sessionID,
                       cwd: session.data!.directory,
                       root: session.data!.directory,
-                      messages: x.data.data,
+                      messages: mergeTranscript(context.data.data, history.data.data),
                     }),
                   })),
                 )
@@ -953,9 +958,12 @@ export const {
                   ),
                 )
                 infos.sort(compareMessage)
-                const removed = infos.slice(0, -100)
-                const visible = infos.slice(-100)
-                const visibleIDs = new Set(visible.map((message) => message.id))
+                // Render the whole active context (everything since the last
+                // compaction). Windowing this to the newest N messages made the
+                // transcript feel scroll-locked because older history existed
+                // server-side but was never rendered.
+                const visibleIDs = new Set(infos.map((message) => message.id))
+                const removed = currentMessages.filter((message) => !visibleIDs.has(message.id))
                 for (const message of messages.data ?? []) {
                   if (!visibleIDs.has(message.info.id)) {
                     delete draft.part[message.info.id]
@@ -984,7 +992,7 @@ export const {
                   draft.part[message.info.id] = parts
                 }
                 for (const message of removed) delete draft.part[message.id]
-                draft.message[sessionID] = visible
+                draft.message[sessionID] = infos
                 draft.session_diff[sessionID] = diff.data ?? []
               }),
             )
