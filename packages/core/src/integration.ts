@@ -424,6 +424,7 @@ export const locationLayer = Layer.effect(
         return project(entry, resolveConnections(entry, yield* credentials.list(id)))
       }),
       list: Effect.fn("Integration.list")(function* () {
+        yield* Effect.forEach(state.get().integrations.keys(), adoptLegacy, { discard: true })
         const saved = Map.groupBy(yield* credentials.all(), (credential) => credential.integrationID)
         return Array.from(state.get().integrations.values(), (entry) =>
           project(entry, resolveConnections(entry, saved.get(entry.ref.id) ?? [])),
