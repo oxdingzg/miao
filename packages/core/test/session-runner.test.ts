@@ -2747,7 +2747,13 @@ describe("SessionRunnerLLM", () => {
             {
               type: "tool",
               id: "call-interrupted",
-              state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
+              state: {
+                status: "error",
+                error: {
+                  type: "unknown",
+                  message: "Tool execution outcome unknown: the process stopped while it was running.",
+                },
+              },
             },
           ],
         },

@@ -100,6 +100,7 @@ Definition of Done. Run in `miao-dev` only.
 ### G5 — crash recovery idempotency
 - [ ] Idempotency key (`callID` + attempt) + one-shot consume token
 - [ ] On restart: unsettled call = outcome-unknown; explicit retry/abandon
+  - [x] Crash-recovered tools report an outcome-unknown error, not a definite failure — `failInterruptedTools`; `session-runner.test.ts`
 - [ ] Verify: kill mid-tool, resume → no repeat side effect; model sees unknown
 - [ ] Test + commit + push
 

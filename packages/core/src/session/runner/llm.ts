@@ -197,7 +197,13 @@ const layer = Layer.effect(
             timestamp: yield* DateTime.now,
             assistantMessageID: message.id,
             callID: tool.id,
-            error: { type: "unknown", message: "Tool execution interrupted" },
+            // The process stopped while this tool was running, so the side
+            // effect may or may not have happened. Tell the model it is
+            // unknown rather than reporting a definite failure.
+            error: {
+              type: "unknown",
+              message: "Tool execution outcome unknown: the process stopped while it was running.",
+            },
             provider: {
               executed: tool.provider?.executed === true,
               ...(tool.provider?.metadata === undefined ? {} : { metadata: tool.provider.metadata }),
