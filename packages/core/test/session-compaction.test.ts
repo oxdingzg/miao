@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { LLM, LLMEvent } from "@miao/llm"
+import { LLM, LLMEvent, Message } from "@miao/llm"
 import { OpenAIChat } from "@miao/llm/protocols/openai-chat"
 import { Effect, Stream } from "effect"
 import { SessionCompaction } from "@miao/core/session/compaction"
@@ -43,6 +43,31 @@ const summarizeHarness = (attempts: Array<Stream.Stream<never, never>>) => {
 
 const empty = Stream.empty as Stream.Stream<never, never>
 const summary = (text: string) => Stream.make(LLMEvent.textDelta({ id: "c", text })) as Stream.Stream<never, never>
+
+const overflowHarness = () => {
+  const requests: Array<{ readonly model: unknown }> = []
+  const compaction = SessionCompaction.make({
+    events: { publish: () => Effect.succeed(undefined) } as never,
+    llm: {
+      stream: (request: { readonly model: unknown }) => {
+        requests.push(request)
+        return summary("summary") as never
+      },
+    },
+    config: [] as never,
+  })
+  return { compaction, requests }
+}
+
+// Long enough that the summary prompt keeps a head to summarize: `select` holds
+// the most recent 8k tokens back as recent context.
+const overflowEntries = () => [
+  { seq: 1, message: { type: "user", id: "msg_1", text: "x".repeat(40_000) } },
+  { seq: 2, message: { type: "user", id: "msg_2", text: "y".repeat(20_000) } },
+  { seq: 3, message: { type: "user", id: "msg_3", text: "what is in this screenshot?" } },
+]
+
+const inlineImage = (bytes: number) => `data:image/png;base64,${"A".repeat(bytes)}`
 
 test("compaction falls back to the session model when the small model returns no summary", async () => {
   const main = model("main", 100_000)
@@ -123,6 +148,87 @@ test("compaction prompt gives update instructions for a prior summary", () => {
   )
   expect(prompt).toContain('Move completed work from "Active" to "Completed".')
   expect(prompt).toContain('Update "Objective" and "Next Move" to reflect the current work state.')
+})
+
+test("compaction charges inline media per attachment instead of per base64 character", async () => {
+  const main = model("main", 60_000)
+  const { compaction, requests } = overflowHarness()
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_compaction_media"),
+    entries: overflowEntries(),
+    model: main,
+    request: LLM.request({
+      model: main,
+      messages: [
+        Message.user([
+          { type: "text", text: "what is in this screenshot?" },
+          { type: "media", mediaType: "image/png", data: inlineImage(400_000), filename: "shot.png" },
+        ]),
+      ],
+    }),
+  } as never
+
+  // 400k base64 characters is one image, not 100k tokens.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(false)
+  expect(requests).toHaveLength(0)
+})
+
+test("compaction charges inline tool attachment data per attachment", async () => {
+  const main = model("main", 60_000)
+  const { compaction, requests } = overflowHarness()
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_compaction_tool_media"),
+    entries: overflowEntries(),
+    model: main,
+    request: LLM.request({
+      model: main,
+      messages: [
+        Message.tool({
+          id: "call_1",
+          name: "read",
+          result: {
+            type: "content",
+            value: [
+              { type: "text", text: "Image read successfully" },
+              { type: "file", uri: inlineImage(400_000), mime: "image/png", name: "shot.png" },
+            ],
+          },
+        }),
+      ],
+    }),
+  } as never
+
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(false)
+  expect(requests).toHaveLength(0)
+})
+
+test("compaction still triggers when the request text fills the window", async () => {
+  const main = model("main", 60_000)
+  const { compaction, requests } = overflowHarness()
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_compaction_text"),
+    entries: overflowEntries(),
+    model: main,
+    request: LLM.request({ model: main, messages: [Message.user("z".repeat(400_000))] }),
+  } as never
+
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(true)
+  expect(requests).toHaveLength(1)
+})
+
+test("compaction reserves the requested output instead of the model output ceiling", async () => {
+  const main = OpenAIChat.route.with({ limits: { context: 60_000, output: 393_216 } }).model({ id: "main" })
+  const { compaction, requests } = overflowHarness()
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_compaction_reserve"),
+    entries: overflowEntries(),
+    model: main,
+    request: LLM.request({ model: main, messages: [Message.user("z".repeat(40_000))] }),
+  } as never
+
+  // A 393k output ceiling is not a reserve: the window keeps its real size.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(false)
+  expect(requests).toHaveLength(0)
 })
 
 test("compaction describes tool media without embedding base64", () => {

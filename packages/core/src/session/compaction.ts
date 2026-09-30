@@ -88,6 +88,39 @@ type Input = {
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
 
+// Providers tokenize attachments by resolution and cap the per-image cost, so
+// inline base64 length is the wrong unit for the window guard: a screenshot is a
+// few thousand base64 characters per real token. Charging a flat ceiling keeps
+// the estimate within an order of magnitude, where measuring the serialized
+// request at four characters per token overcounted a 700 KB screenshot by
+// roughly 500x and compacted conversations that comfortably fit.
+const ATTACHMENT_TOKENS = 1_600
+const INLINE_BASE64 = /^data:[^,]*;base64,/
+const MEDIA_MIME = /^(?:image|audio|video)\//
+
+/**
+ * Token estimate for a request-shaped value. Inline base64 payloads, media
+ * parts, and media file references are charged per attachment so their byte
+ * length never reaches the text measure; every other value recurses until it
+ * reaches strings, numbers, or booleans.
+ */
+const measureRequest = (value: unknown, measure: (text: string) => number): number => {
+  if (typeof value === "string") return INLINE_BASE64.test(value) ? ATTACHMENT_TOKENS : measure(value)
+  if (value instanceof Uint8Array) return ATTACHMENT_TOKENS
+  if (value === null || typeof value !== "object") return 0
+  if (Array.isArray(value)) return value.reduce<number>((total, item) => total + measureRequest(item, measure), 0)
+  const record = value as Record<string, unknown>
+  // A media part is an attachment whatever its declared type, including when its
+  // payload is a managed or remote URI rather than inline bytes.
+  if (record.type === "media") return ATTACHMENT_TOKENS
+  if (record.type === "file")
+    return typeof record.uri === "string" &&
+      (INLINE_BASE64.test(record.uri) || MEDIA_MIME.test(typeof record.mime === "string" ? record.mime : ""))
+      ? ATTACHMENT_TOKENS
+      : measureRequest(record.uri, measure) + measureRequest(record.name, measure)
+  return Object.values(record).reduce<number>((total, item) => total + measureRequest(item, measure), 0)
+}
+
 // Use the cheap model only when the summary request still fits its context;
 // otherwise the session model is the safe choice.
 export const pickSummarizeModel = (input: { model: Model; summarizeModel?: Model }, tokens: number, output: number) => {
@@ -207,7 +240,7 @@ export const make = (dependencies: Dependencies) => {
   // Precise BPE counting is opt-in: it changes threshold behavior, so the
   // character heuristic stays the default.
   const measure = (text: string) => (config.preciseTokens ? Token.count(text) : Token.estimate(text))
-  const measureValue = (value: unknown) => measure(JSON.stringify(value))
+  const measureValue = (value: unknown) => measureRequest(value, measure)
   // One summarization attempt. Returns the text only when the stream completed
   // cleanly and produced a non-empty summary, so an empty or refused response
   // can never replace the conversation.
@@ -350,10 +383,13 @@ export const make = (dependencies: Dependencies) => {
     if (!config.auto) return false
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
-    const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
+    // Reserve what this turn can still generate, not the model's declared output
+    // ceiling: `limits.output` is a catalog limit, and treating it as the reserve
+    // shrinks the usable window to a fraction of the real context.
+    const reserve = Math.max(input.request.generation?.maxTokens ?? 0, config.buffer)
     if (
       measureValue({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }) <=
-      context - Math.max(output, config.buffer)
+      context - reserve
     )
       return false
     return yield* (config.hotPrefix ? compactHot(input) : compactAfterOverflow(input))
