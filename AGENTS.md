@@ -148,6 +148,13 @@ const table = sqliteTable("session", {
 
 - Always run `bun typecheck` from package directories (e.g., `packages/miao`), never `tsc` directly.
 
+## Version source
+
+- Root `package.json` is the single source of the miao version.
+- Run `bun script/set-version.ts X.Y.Z` to update it and synchronize workspace manifests; run without an argument to synchronize existing versions.
+- Builds and source runtime read that version. `MIAO_VERSION` may only assert the same value; automatic bumps and timestamp versions are not supported.
+- CHANGELOG and GitHub releases record publication history, not the current development version.
+
 ## Local install workflow
 
 Keep the release-managed `miao` as the daily command and validate edits in separate

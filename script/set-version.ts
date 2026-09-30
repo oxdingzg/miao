@@ -1,23 +1,26 @@
 #!/usr/bin/env bun
-// Set the version in every workspace package.json to a given value (defaults to
-// the computed release version). Run before tagging a release, then
-// `bun install --lockfile-only` to sync the lockfile.
-//
-//   bun script/set-version.ts 0.0.1
-//   bun script/set-version.ts            # uses @miao/script's computed version
+// Root package.json owns the version; workspace manifests are synchronized copies.
+// bun script/set-version.ts X.Y.Z updates the root and all workspace versions.
+// bun script/set-version.ts synchronizes workspaces with the existing root version.
 import { Glob } from "bun"
-import { Script } from "@miao/script"
+import semver from "semver"
+import path from "node:path"
 
-const version = process.argv[2] ?? Script.version
+const root = path.resolve(import.meta.dir, "..")
+const manifest = await Bun.file(path.join(root, "package.json")).json()
+const version = process.argv[2] ?? manifest.version
+if (typeof version !== "string" || !semver.valid(version)) throw new Error("Expected a semantic version X.Y.Z")
 
-let changed = 0
-for await (const file of new Glob("**/package.json").scan({ cwd: process.cwd() })) {
-  if (file.includes("node_modules") || file.includes("/dist/") || file.startsWith("dist/")) continue
-  const text = await Bun.file(file).text()
+const files = new Set(["package.json"])
+for (const pattern of manifest.workspaces.packages) {
+  for await (const file of new Glob(`${pattern}/package.json`).scan({ cwd: root })) files.add(file)
+}
+for (const file of files) {
+  const target = Bun.file(path.join(root, file))
+  const text = await target.text()
   const next = text.replace(/^(\s*"version":\s*)"[^"]*"/m, (_match, prefix: string) => `${prefix}"${version}"`)
   if (next === text) continue
-  await Bun.write(file, next)
-  changed++
+  await Bun.write(target, next)
   console.log(file)
 }
-console.log(`set version ${version} in ${changed} files`)
+console.log(`workspace versions synchronized to ${version}`)

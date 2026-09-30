@@ -10,6 +10,19 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-09-30
+
+Published release: [v0.0.15](https://github.com/oxdingzg/miao/releases/tag/v0.0.15).
+
+### Fixed
+
+- **core**: generate OpenAI reasoning variants from inherited provider APIs, resolve standard variants during startup, route ChatGPT OAuth through Codex, and persist model resolution failures in the conversation.
+- **core**: refresh cached assistant history when durable events update reply text or completion state.
+
+- **tui**: switching away from a custom question answer restores Enter and Esc; failed replies and dismissals display an error.
+- **server**: load the embedded web UI using the generated miao asset module name.
+- **build**: root package.json is the single version source for builds, source runtime, and synchronized workspace manifests; inconsistent overrides fail before building.
+
 ### Added
 
 - **core**: prompt-cache telemetry now reports `warm`, `expectedRebuild`, and `cacheMiss` per turn; `cache.ttl_seconds` can extend the prompt-cache TTL.
@@ -24,6 +37,10 @@ to add a section here.
 ### Internal
 
 - **native (PoC; edit/patch wired on by default, the rest not wired)**: added `gitRevParse` / `gitBlob` / `gitWorktreeChanges` / `gitMergeBase` / `gitDiff`, line-ending detection and normalization, BPE token counting (o200k/cl100k), `.gitignore`-aware file walking, sha256/blake3 hashing, shell command analysis (bash/powershell via native tree-sitter), and Linux landlock sandbox enforcement (write allowlist + TCP denied by default). Each ships with Rust unit tests and JS parity tests (`gitDiff` is verified by a `git apply` round-trip).
+
+## [0.0.12] - 2026-09-29
+
+Published release: [v0.0.12](https://github.com/oxdingzg/miao/releases/tag/v0.0.12). Release notes for 0.0.5–0.0.12 are available on GitHub.
 
 ## [0.0.4] - 2026-09-27
 

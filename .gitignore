@@ -35,3 +35,4 @@ tsconfig.tsbuildinfo
 
 # Local research notes (not committed)
 docs/research/
+.gstack/
