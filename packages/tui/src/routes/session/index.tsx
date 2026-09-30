@@ -626,18 +626,20 @@ export function Session() {
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
         if (status?.type !== "idle")
-          await (Flag.MIAO_TUI_V2
-            ? sdk.client.v2.session.interrupt({ sessionID: route.sessionID })
-            : sdk.client.session.abort({ sessionID: route.sessionID })
+          await (
+            Flag.MIAO_TUI_V2
+              ? sdk.client.v2.session.interrupt({ sessionID: route.sessionID })
+              : sdk.client.session.abort({ sessionID: route.sessionID })
           ).catch(() => {})
         const message = messagesBeforeRevert().findLast((item) => item.role === "user")
         if (!message) return
-        void (Flag.MIAO_TUI_V2
-          ? sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
-          : sdk.client.session.revert({
-              sessionID: route.sessionID,
-              messageID: message.id,
-            })
+        void (
+          Flag.MIAO_TUI_V2
+            ? sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
+            : sdk.client.session.revert({
+                sessionID: route.sessionID,
+                messageID: message.id,
+              })
         ).then(() => {
           toBottom()
         })
@@ -1493,6 +1495,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
+  const renderer = useRenderer()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
@@ -1511,15 +1514,81 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
 
+  // Claude-style collapsed transcript: in hide mode, per-step reasoning and
+  // completed shell rows collapse into a single summary line per message.
+  // Clicking the summary expands them again so command output stays reachable.
+  const [revealed, setRevealed] = createSignal(false)
+  const hideMode = createMemo(() => ctx.thinkingMode() === "hide")
+  const collapsed = createMemo(() => hideMode() && !revealed())
+  const reasoningActive = createMemo(() =>
+    props.parts.some((part) => part.type === "reasoning" && part.time.end === undefined && part.text.trim().length > 0),
+  )
+  const reasoningDuration = createMemo(() =>
+    props.parts.reduce((total, part) => {
+      if (part.type !== "reasoning") return total
+      const end = part.time.end
+      if (end === undefined) return total
+      return total + Math.max(0, end - part.time.start)
+    }, 0),
+  )
+  const shellCommands = createMemo(
+    () =>
+      props.parts.filter(
+        (part) => part.type === "tool" && toolDisplay(part.tool) === "bash" && part.state.status === "completed",
+      ).length,
+  )
+  const activity = createMemo(() => {
+    if (!hideMode()) return undefined
+    if (reasoningActive()) return "Thinking"
+    const parts = [
+      reasoningDuration() > 0 ? `Thought for ${Locale.duration(reasoningDuration())}` : undefined,
+      shellCommands() > 0 ? `ran ${shellCommands()} shell command${shellCommands() === 1 ? "" : "s"}` : undefined,
+    ].filter(Boolean)
+    if (parts.length === 0) return undefined
+    return parts.join(", ")
+  })
+  const visibleParts = createMemo(() => {
+    if (!collapsed()) return props.parts
+    return props.parts.filter((part) => {
+      if (part.type === "reasoning") return false
+      if (part.type === "tool" && toolDisplay(part.tool) === "bash" && part.state.status === "completed") return false
+      return true
+    })
+  })
+
   return (
     <>
-      <For each={props.parts}>
+      <Show when={activity()}>
+        <box
+          ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+          paddingLeft={3}
+          marginTop={1}
+          flexShrink={0}
+          onMouseUp={() => {
+            if (renderer.getSelection()?.getSelectedText()) return
+            setRevealed((value) => !value)
+          }}
+        >
+          <Switch>
+            <Match when={reasoningActive()}>
+              <Spinner color={theme.warning}>Thinking</Spinner>
+            </Match>
+            <Match when={true}>
+              <text wrapMode="none">
+                <span style={{ fg: theme.warning }}>✻ </span>
+                <span style={{ fg: theme.textMuted }}>{activity()}</span>
+              </text>
+            </Match>
+          </Switch>
+        </box>
+      </Show>
+      <For each={visibleParts()}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
           return (
             <Show when={component()}>
               <Dynamic
-                last={index() === props.parts.length - 1}
+                last={index() === visibleParts().length - 1}
                 component={component()}
                 part={part as any}
                 message={props.message}
@@ -1604,6 +1673,7 @@ const PART_MAPPING = {
 }
 
 const INLINE_TOOL_ICON_WIDTH = 2
+const INLINE_TOOL_ICON = "⏺"
 
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme } = useTheme()
@@ -1735,17 +1805,26 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   })
   return (
     <Show when={rendered()}>
-      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
-        <markdown
-          syntaxStyle={syntax()}
-          streaming={true}
-          internalBlockMode="top-level"
-          content={rendered()}
-          tableOptions={{ style: "grid" }}
-          conceal={ctx.conceal()}
-          fg={theme.markdownText}
-          bg={theme.background}
-        />
+      <box
+        ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+        paddingLeft={3}
+        marginTop={1}
+        flexDirection="row"
+        flexShrink={0}
+      >
+        <text fg={theme.textMuted}>● </text>
+        <box flexGrow={1} minWidth={0}>
+          <markdown
+            syntaxStyle={syntax()}
+            streaming={true}
+            internalBlockMode="top-level"
+            content={rendered()}
+            tableOptions={{ style: "grid" }}
+            conceal={ctx.conceal()}
+            fg={theme.markdownText}
+            bg={theme.background}
+          />
+        </box>
       </box>
     </Show>
   )
@@ -1859,7 +1938,7 @@ function GenericTool(props: ToolProps) {
     <Show
       when={props.output && ctx.showGenericToolOutput()}
       fallback={
-        <InlineTool icon="⚙" pending="Writing command…" complete={true} part={props.part}>
+        <InlineTool icon={INLINE_TOOL_ICON} pending="Writing command…" complete={true} part={props.part}>
           {props.tool} {input(props.input)}
         </InlineTool>
       }
@@ -2152,7 +2231,12 @@ function Shell(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="$" pending="Writing command…" complete={stringValue(props.input.command)} part={props.part}>
+        <InlineTool
+          icon={INLINE_TOOL_ICON}
+          pending="Writing command…"
+          complete={stringValue(props.input.command)}
+          part={props.part}
+        >
           {stringValue(props.input.command)}
         </InlineTool>
       </Match>
@@ -2184,7 +2268,12 @@ function Write(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="←" pending="Preparing write…" complete={stringValue(props.input.filePath)} part={props.part}>
+        <InlineTool
+          icon={INLINE_TOOL_ICON}
+          pending="Preparing write…"
+          complete={stringValue(props.input.filePath)}
+          part={props.part}
+        >
           Write {pathFormatter.format(stringValue(props.input.filePath))}
         </InlineTool>
       </Match>
@@ -2195,7 +2284,12 @@ function Write(props: ToolProps) {
 function Glob(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Finding files…" complete={stringValue(props.input.pattern)} part={props.part}>
+    <InlineTool
+      icon={INLINE_TOOL_ICON}
+      pending="Finding files…"
+      complete={stringValue(props.input.pattern)}
+      part={props.part}
+    >
       Glob "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.count)}>
@@ -2219,7 +2313,7 @@ function Read(props: ToolProps) {
   return (
     <>
       <InlineTool
-        icon="→"
+        icon={INLINE_TOOL_ICON}
         pending="Reading file…"
         complete={stringValue(props.input.filePath)}
         spinner={isRunning()}
@@ -2243,7 +2337,12 @@ function Read(props: ToolProps) {
 function Grep(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Searching content…" complete={stringValue(props.input.pattern)} part={props.part}>
+    <InlineTool
+      icon={INLINE_TOOL_ICON}
+      pending="Searching content…"
+      complete={stringValue(props.input.pattern)}
+      part={props.part}
+    >
       Grep "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.matches)}>
@@ -2255,7 +2354,12 @@ function Grep(props: ToolProps) {
 
 function WebFetch(props: ToolProps) {
   return (
-    <InlineTool icon="%" pending="Fetching from the web…" complete={stringValue(props.input.url)} part={props.part}>
+    <InlineTool
+      icon={INLINE_TOOL_ICON}
+      pending="Fetching from the web…"
+      complete={stringValue(props.input.url)}
+      part={props.part}
+    >
       WebFetch {stringValue(props.input.url)}
     </InlineTool>
   )
@@ -2263,7 +2367,12 @@ function WebFetch(props: ToolProps) {
 
 function WebSearch(props: ToolProps) {
   return (
-    <InlineTool icon="◈" pending="Searching web…" complete={stringValue(props.input.query)} part={props.part}>
+    <InlineTool
+      icon={INLINE_TOOL_ICON}
+      pending="Searching web…"
+      complete={stringValue(props.input.query)}
+      part={props.part}
+    >
       {webSearchProviderLabel(props.metadata.provider)} "{stringValue(props.input.query)}"{" "}
       <Show when={numberValue(props.metadata.numResults)}>({numberValue(props.metadata.numResults)} results)</Show>
     </InlineTool>
@@ -2490,7 +2599,12 @@ function Edit(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="←" pending="Preparing edit…" complete={stringValue(props.input.filePath)} part={props.part}>
+        <InlineTool
+          icon={INLINE_TOOL_ICON}
+          pending="Preparing edit…"
+          complete={stringValue(props.input.filePath)}
+          part={props.part}
+        >
           Edit {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
@@ -2566,7 +2680,13 @@ function ApplyPatch(props: ToolProps) {
         </For>
       </Match>
       <Match when={true}>
-        <InlineTool icon="%" pending="Preparing patch…" failure="Patch failed" complete={false} part={props.part}>
+        <InlineTool
+          icon={INLINE_TOOL_ICON}
+          pending="Preparing patch…"
+          failure="Patch failed"
+          complete={false}
+          part={props.part}
+        >
           Patch
         </InlineTool>
       </Match>
@@ -2586,7 +2706,13 @@ function TodoWrite(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="⚙" pending="Updating todos…" failure="Todo update failed" complete={false} part={props.part}>
+        <InlineTool
+          icon={INLINE_TOOL_ICON}
+          pending="Updating todos…"
+          failure="Todo update failed"
+          complete={false}
+          part={props.part}
+        >
           Updating todos…
         </InlineTool>
       </Match>
@@ -2622,7 +2748,7 @@ function Question(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="→" pending="Asking questions…" complete={count()} part={props.part}>
+        <InlineTool icon={INLINE_TOOL_ICON} pending="Asking questions…" complete={count()} part={props.part}>
           Asked {count()} question{count() !== 1 ? "s" : ""}
         </InlineTool>
       </Match>
@@ -2632,7 +2758,12 @@ function Question(props: ToolProps) {
 
 function Skill(props: ToolProps) {
   return (
-    <InlineTool icon="→" pending="Loading skill…" complete={stringValue(props.input.name)} part={props.part}>
+    <InlineTool
+      icon={INLINE_TOOL_ICON}
+      pending="Loading skill…"
+      complete={stringValue(props.input.name)}
+      part={props.part}
+    >
       Skill "{stringValue(props.input.name)}"
     </InlineTool>
   )
