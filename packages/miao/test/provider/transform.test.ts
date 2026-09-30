@@ -785,6 +785,50 @@ describe("ProviderTransform.options - gpt-5 reasoningEffort", () => {
 
     expect(result.reasoningEffort).toBe("medium")
   })
+
+  const createOpenAIModel = (apiId: string) =>
+    ({
+      ...createModel(apiId),
+      providerID: "openai",
+      api: { id: apiId, url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }) as any
+
+  test("gpt-6 should request the reasoning summary the transcript renders", () => {
+    const result = ProviderTransform.options({
+      model: createOpenAIModel("gpt-6.1-sol"),
+      sessionID,
+      providerOptions: {},
+    })
+
+    // The backend only returns readable thinking when a summary is asked for. Without
+    // one it answers with encrypted reasoning alone and the thinking block stays empty.
+    expect(result.reasoningEffort).toBe("medium")
+    expect(result.reasoningSummary).toBe("auto")
+    expect(result.include).toEqual(["reasoning.encrypted_content"])
+  })
+
+  test("gpt-6 keeps the reasoning options behind either id prefix", () => {
+    for (const apiId of ["openai/gpt-6.1-sol", "openai.gpt-6.1-sol"]) {
+      const result = ProviderTransform.options({
+        model: createOpenAIModel(apiId),
+        sessionID,
+        providerOptions: {},
+      })
+
+      expect(result.reasoningSummary).toBe("auto")
+    }
+  })
+
+  test("models older than gpt-5 still skip reasoning options", () => {
+    const result = ProviderTransform.options({
+      model: createOpenAIModel("gpt-4o"),
+      sessionID,
+      providerOptions: {},
+    })
+
+    expect(result.reasoningEffort).toBeUndefined()
+    expect(result.reasoningSummary).toBeUndefined()
+  })
 })
 
 describe("ProviderTransform.options - gateway", () => {

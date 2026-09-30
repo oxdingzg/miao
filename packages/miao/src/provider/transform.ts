@@ -1350,7 +1350,12 @@ export function options(input: {
     return result
   }
 
-  if (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) {
+  // gpt-6 and later speak the same Responses reasoning shape as gpt-5. Omitting the
+  // summary leaves the backend returning encrypted reasoning only, so the transcript's
+  // thinking block comes back empty.
+  // The id keeps whatever prefix the provider uses, so this matches anywhere in the string:
+  // gateway ids are "openai/gpt-5.1" and Bedrock Mantle ids are "openai.gpt-5.5".
+  if (/gpt-[5-9](?:[.-]|$)/.test(input.model.api.id) && !input.model.api.id.includes("gpt-5-chat")) {
     if (!input.model.api.id.includes("gpt-5-pro")) {
       result["reasoningEffort"] = "medium"
       if (
