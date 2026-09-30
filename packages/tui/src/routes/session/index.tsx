@@ -781,6 +781,7 @@ export function Session() {
       hidden: true,
       run: () => {
         scroll.scrollBy(-scroll.height / 2)
+        loadOlderAtTop()
         dialog.clear()
       },
     },
@@ -801,6 +802,7 @@ export function Session() {
       hidden: true,
       run: () => {
         scroll.scrollBy(-1)
+        loadOlderAtTop()
         dialog.clear()
       },
     },
@@ -821,6 +823,7 @@ export function Session() {
       hidden: true,
       run: () => {
         scroll.scrollBy(-scroll.height / 4)
+        loadOlderAtTop()
         dialog.clear()
       },
     },
@@ -841,6 +844,7 @@ export function Session() {
       hidden: true,
       run: () => {
         scroll.scrollTo(0)
+        loadOlderAtTop()
         dialog.clear()
       },
     },
@@ -1180,6 +1184,25 @@ export function Session() {
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
+  // Older history is paged in only when the reader actually reaches the top, so
+  // a long session never pays for its whole timeline up front. Prepended rows
+  // shift the viewport, so restore the reader's place once layout catches up.
+  async function loadOlder() {
+    if (!scroll || scroll.isDestroyed) return
+    const height = scroll.scrollHeight
+    const loaded = await sync.session.loadOlder(route.sessionID).catch(() => false)
+    if (!loaded) return
+    setTimeout(() => {
+      if (!scroll || scroll.isDestroyed) return
+      scroll.scrollBy(scroll.scrollHeight - height)
+    }, 50)
+  }
+
+  function loadOlderAtTop() {
+    if (!scroll || scroll.isDestroyed || scroll.scrollTop > 1) return
+    void loadOlder()
+  }
+
   return (
     <LocationProvider location={location()}>
       <context.Provider
@@ -1220,6 +1243,9 @@ export function Session() {
                 stickyStart="bottom"
                 flexGrow={1}
                 scrollAcceleration={scrollAcceleration()}
+                onMouseScroll={(event) => {
+                  if (event.scroll?.direction === "up") loadOlderAtTop()
+                }}
               >
                 <box height={1} />
                 <For each={displayMessages()}>

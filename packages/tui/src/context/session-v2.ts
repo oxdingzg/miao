@@ -115,9 +115,16 @@ export function sessionContextToMessages(input: {
 }
 
 /**
+ * Timeline pages already pulled in behind the active window, oldest last. V2
+ * pages a `desc` (newest first) timeline with `cursor.next` walking back in
+ * time, so `cursor` is the anchor for the next older page.
+ */
+export type OlderHistory = { messages: SessionMessage[]; cursor?: string }
+
+/**
  * The transcript must reach back past compaction the way V1 did. `context` is
  * the model-visible window (everything after the last compaction) and carries
- * unpruned tool detail, while the paginated `messages` page also includes the
+ * unpruned tool detail, while the paginated `messages` pages also include the
  * compacted timeline. Keep the active window's richer copy for ids it owns and
  * append the older projected history in timeline order.
  */
@@ -125,10 +132,14 @@ export function mergeTranscript(
   active: readonly SessionMessage[],
   history: readonly SessionMessage[],
 ): SessionMessage[] {
-  const activeIDs = new Set(active.map((message) => message.id))
-  return [...history.filter((message) => !activeIDs.has(message.id)), ...active].toSorted(
-    (a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id),
-  )
+  const seen = new Set(active.map((message) => message.id))
+  const older: SessionMessage[] = []
+  for (const message of history) {
+    if (seen.has(message.id)) continue
+    seen.add(message.id)
+    older.push(message)
+  }
+  return [...older, ...active].toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
 }
 
 function userParts(sessionID: string, message: Extract<SessionMessage, { type: "user" }>): Part[] {

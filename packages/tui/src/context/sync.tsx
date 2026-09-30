@@ -27,7 +27,13 @@ import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
-import { isLiveSessionV2Event, isV2StreamFragmentEvent, mergeTranscript, sessionContextToMessages } from "./session-v2"
+import {
+  isLiveSessionV2Event,
+  isV2StreamFragmentEvent,
+  mergeTranscript,
+  sessionContextToMessages,
+  type OlderHistory,
+} from "./session-v2"
 import { sessionInfo } from "./session-v2-read"
 import { createSessionRefreshScheduler } from "./session-refresh"
 import { createPendingPrompts } from "./pending-prompts"
@@ -161,6 +167,10 @@ export const {
     const fullSyncedSessions = new Set<string>()
     const syncingSessions = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
+    // Older timeline pages stay out of the store until a reader asks for them, so
+    // opening a long session never pays for its whole history up front.
+    const olderHistory = new Map<string, OlderHistory>()
+    const loadingOlder = new Set<string>()
     const touchMessage = (sessionID: string, messageID: string) => {
       hydratingSessions.get(sessionID)?.messages.add(messageID)
     }
@@ -912,14 +922,22 @@ export const {
                     // `context` stops at the last compaction, so also read a page
                     // of the projected timeline to keep older history reachable.
                     sdk.client.v2.session.messages({ sessionID, limit: 200, order: "desc" }, { throwOnError: true }),
-                  ]).then(([context, history]) => ({
-                    data: sessionContextToMessages({
-                      sessionID,
-                      cwd: session.data!.directory,
-                      root: session.data!.directory,
-                      messages: mergeTranscript(context.data.data, history.data.data),
-                    }),
-                  })),
+                  ]).then(([context, history]) => {
+                    // Seed the older-history walk once. Later re-hydrations must
+                    // not reset it to the newest page, or every scroll to the
+                    // top would refetch a page that is already loaded.
+                    const seeded = olderHistory.get(sessionID)
+                    const older = seeded ?? { messages: [], cursor: history.data.cursor.next }
+                    if (!seeded) olderHistory.set(sessionID, older)
+                    return {
+                      data: sessionContextToMessages({
+                        sessionID,
+                        cwd: session.data!.directory,
+                        root: session.data!.directory,
+                        messages: mergeTranscript(context.data.data, [...older.messages, ...history.data.data]),
+                      }),
+                    }
+                  }),
                 )
               : sdk.client.session.messages({ sessionID, limit: 100 })
             const [session, messages, todo, diff] = await Promise.all([
@@ -1007,6 +1025,36 @@ export const {
           })
           syncingSessions.set(sessionID, task)
           return task
+        },
+        /**
+         * Pull the timeline page behind everything already held and re-hydrate.
+         * Called only when a reader reaches the top of the transcript; returns
+         * false once the session's oldest page has been reached.
+         */
+        async loadOlder(sessionID: string) {
+          if (!Flag.MIAO_TUI_V2) return false
+          const older = olderHistory.get(sessionID)
+          if (!older?.cursor || loadingOlder.has(sessionID)) return false
+          loadingOlder.add(sessionID)
+          try {
+            const page = await sdk.client.v2.session.messages(
+              { sessionID, limit: 200, cursor: older.cursor },
+              { throwOnError: true },
+            )
+            if (page.data.data.length === 0) {
+              olderHistory.set(sessionID, { ...older, cursor: undefined })
+              return false
+            }
+            olderHistory.set(sessionID, {
+              messages: [...page.data.data, ...older.messages],
+              cursor: page.data.cursor.next,
+            })
+            fullSyncedSessions.delete(sessionID)
+            await result.session.sync(sessionID)
+            return true
+          } finally {
+            loadingOlder.delete(sessionID)
+          }
         },
       },
       bootstrap,

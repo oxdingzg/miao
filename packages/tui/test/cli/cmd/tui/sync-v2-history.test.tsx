@@ -67,3 +67,47 @@ test("V2 hydration keeps compacted history reachable", async () => {
     else process.env["MIAO_TUI_V2"] = previous
   }
 })
+
+test("V2 loadOlder walks the timeline behind the transcript and stops at the oldest page", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const previous = process.env["MIAO_TUI_V2"]
+  process.env["MIAO_TUI_V2"] = "1"
+  let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
+
+  try {
+    const mounted = await mount((url) => {
+      if (url.pathname === "/api/session") return json({ data: [session] })
+      if (url.pathname === `/api/session/${sessionID}`) return json({ data: session })
+      if (url.pathname === `/api/session/${sessionID}/context`)
+        return json({ data: [message("msg_active", 30, "after compaction")] })
+      if (url.pathname === `/api/session/${sessionID}/message`) {
+        if (url.searchParams.get("cursor") === "older")
+          return json({ data: [message("msg_oldest", 1, "oldest")], cursor: {} })
+        return json({ data: [message("msg_older", 10, "before compaction")], cursor: { next: "older" } })
+      }
+      if (url.pathname === `/api/session/${sessionID}/todo`) return json({ data: [] })
+      if (url.pathname === `/api/session/${sessionID}/diff`) return json({ data: [] })
+      if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "idle" } })
+      return undefined
+    }, tmp.path)
+    app = mounted.app
+
+    await mounted.sync.session.sync(sessionID)
+    await wait(() => mounted.sync.data.part["msg_older"]?.[0]?.type === "text")
+
+    expect(await mounted.sync.session.loadOlder(sessionID)).toBe(true)
+    await wait(() => mounted.sync.data.part["msg_oldest"]?.[0]?.type === "text")
+
+    expect(mounted.sync.data.message[sessionID].map((info) => info.id)).toEqual([
+      "msg_oldest",
+      "msg_older",
+      "msg_active",
+    ])
+    expect(await mounted.sync.session.loadOlder(sessionID)).toBe(false)
+  } finally {
+    app?.renderer.destroy()
+    if (previous === undefined) delete process.env["MIAO_TUI_V2"]
+    else process.env["MIAO_TUI_V2"] = previous
+  }
+})
