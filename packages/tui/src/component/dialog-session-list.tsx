@@ -8,6 +8,7 @@ import { Locale } from "../util/locale"
 import { useProject } from "../context/project"
 import { useTheme } from "../context/theme"
 import { useSDK } from "../context/sdk"
+import { Flag } from "@miao/core/flag/flag"
 import { useLocal } from "../context/local"
 import { DialogSessionRename } from "./dialog-session-rename"
 import { createDebouncedSignal } from "../util/signal"
@@ -304,9 +305,11 @@ export function DialogSessionList() {
               const status = session?.workspaceID ? project.workspace.status(session.workspaceID) : undefined
 
               try {
-                const result = await sdk.client.session.delete({
-                  sessionID: option.value,
-                })
+                const result = await (Flag.MIAO_TUI_V2
+                  ? sdk.client.v2.session.remove({ sessionID: option.value })
+                  : sdk.client.session.delete({
+                      sessionID: option.value,
+                    }))
                 if (result.error) {
                   if (session?.workspaceID) {
                     recover(session)
