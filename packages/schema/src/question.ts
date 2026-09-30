@@ -22,14 +22,24 @@ export type ID = typeof ID.Type
 export const Option = Schema.Struct({
   label: Schema.String.annotate({ description: "Display text (1-5 words, concise)" }),
   description: Schema.String.annotate({ description: "Explanation of choice" }),
+  preview: Schema.String.pipe(optional).annotate({
+    description:
+      "Optional preview shown when this option is focused; rendered as markdown in a monospace box. Only for single-select questions.",
+  }),
 }).annotate({ identifier: "QuestionV2.Option" })
 export interface Option extends Schema.Schema.Type<typeof Option> {}
 
 const base = {
   question: Schema.String.annotate({ description: "Complete question" }),
-  header: Schema.String.annotate({ description: "Very short label (max 30 chars)" }),
-  options: Schema.Array(Option).annotate({ description: "Available choices" }),
-  multiple: Schema.Boolean.pipe(optional).annotate({ description: "Allow selecting multiple choices" }),
+  header: Schema.String.check(Schema.isMaxLength(12)).annotate({
+    description: "Very short label (max 12 chars)",
+  }),
+  // Same hard bounds as Claude Code's AskUserQuestion: a choice needs a real
+  // decision, so fewer than two options is refused rather than padded.
+  options: Schema.Array(Option)
+    .check(Schema.isMinLength(2), Schema.isMaxLength(4))
+    .annotate({ description: "Available choices (2-4)" }),
+  multiSelect: Schema.Boolean.pipe(optional).annotate({ description: "Allow selecting multiple choices" }),
 }
 
 export const Info = Schema.Struct({
@@ -52,7 +62,9 @@ export interface Tool extends Schema.Schema.Type<typeof Tool> {}
 export const Request = Schema.Struct({
   id: ID,
   sessionID: SessionID,
-  questions: Schema.Array(Info).annotate({ description: "Questions to ask" }),
+  questions: Schema.Array(Info)
+    .check(Schema.isMinLength(1), Schema.isMaxLength(4))
+    .annotate({ description: "Questions to ask (1-4)" }),
   tool: Tool.pipe(optional),
 }).annotate({ identifier: "QuestionV2.Request" })
 export interface Request extends Schema.Schema.Type<typeof Request> {}

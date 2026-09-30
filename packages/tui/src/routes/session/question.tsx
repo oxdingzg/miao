@@ -21,13 +21,13 @@ export function QuestionPrompt(props: {
 }) {
   const sdk = useSDK()
   const toast = useToast()
-  const { theme } = useTheme()
+  const { theme, syntax } = useTheme()
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
   const modeStack = useOpencodeModeStack()
 
   const questions = createMemo(() => props.request.questions)
-  const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
+  const single = createMemo(() => questions().length === 1 && questions()[0]?.multiSelect !== true)
   const tabs = createMemo(() => (single() ? 1 : questions().length + 1)) // questions + confirm tab (no confirm for single select)
   const [tabHover, setTabHover] = createSignal<number | "confirm" | null>(null)
   const [store, setStore] = createStore({
@@ -49,7 +49,11 @@ export function QuestionPrompt(props: {
   const custom = createMemo(() => question()?.custom !== false)
   const other = createMemo(() => custom() && store.selected === options().length)
   const input = createMemo(() => store.custom[store.tab] ?? "")
-  const multi = createMemo(() => question()?.multiple === true)
+  const multi = createMemo(() => question()?.multiSelect === true)
+  // Previews switch the prompt to a side-by-side layout, but only for
+  // single-select questions: a multi-select list has no single focused preview.
+  const preview = createMemo(() => (multi() ? undefined : options()[store.selected]?.preview))
+  const hasPreview = createMemo(() => !multi() && options().some((option) => option.preview !== undefined))
   const customPicked = createMemo(() => {
     const value = input()
     if (!value) return false
@@ -422,7 +426,8 @@ export function QuestionPrompt(props: {
                 {multi() ? " (select all that apply)" : ""}
               </text>
             </box>
-            <box>
+            <box flexDirection={hasPreview() ? "row" : "column"} gap={hasPreview() ? 2 : 0}>
+              <box flexGrow={hasPreview() ? 1 : 0} flexBasis={hasPreview() ? 0 : "auto"} minWidth={0}>
               <For each={options()}>
                 {(opt, i) => {
                   const active = () => i() === store.selected
@@ -512,6 +517,27 @@ export function QuestionPrompt(props: {
                       <text fg={theme.textMuted}>{input()}</text>
                     </box>
                   </Show>
+                </box>
+              </Show>
+              </box>
+              <Show when={hasPreview()}>
+                <box
+                  flexGrow={1}
+                  flexBasis={0}
+                  minWidth={0}
+                  border={["left"]}
+                  borderColor={theme.border}
+                  paddingLeft={2}
+                >
+                  <markdown
+                    syntaxStyle={syntax()}
+                    streaming={false}
+                    internalBlockMode="top-level"
+                    content={preview() ?? ""}
+                    conceal={false}
+                    fg={theme.markdownText}
+                    bg={theme.backgroundPanel}
+                  />
                 </box>
               </Show>
             </box>

@@ -1771,7 +1771,7 @@ describe("run stream transport", () => {
           question: "Which area should I inspect first?",
           header: "Area",
           options: [{ label: "CLI", description: "Look at the direct run flow." }],
-          multiple: false,
+          multiSelect: false,
         },
       ],
       tool: {
@@ -1894,7 +1894,7 @@ describe("run stream transport", () => {
           question: "Which area should I inspect first?",
           header: "Area",
           options: [{ label: "CLI", description: "Look at the direct run flow." }],
-          multiple: false,
+          multiSelect: false,
         },
       ],
       tool: {

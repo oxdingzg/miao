@@ -202,7 +202,7 @@ describe("run session data", () => {
             question: "Mode?",
             header: "Mode",
             options: [{ label: "chunked", description: "Incremental output" }],
-            multiple: false,
+            multiSelect: false,
           },
         ],
       },

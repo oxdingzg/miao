@@ -51,7 +51,7 @@ test("renders multiple question answers and preserves open state on answer updat
   const input = {
     questions: [
       { header: "First", question: "First choice?", options: [] },
-      { header: "Second", question: "Second choice?", options: [], multiple: true },
+      { header: "Second", question: "Second choice?", options: [], multiSelect: true },
     ],
   }
   const timeline = await setupTimeline(page, {

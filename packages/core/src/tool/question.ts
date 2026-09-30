@@ -18,12 +18,17 @@ export const description = `Use this tool when you need to ask the user question
 4. Offer choices to the user about what direction to take.
 
 Usage notes:
+- Provide 1-4 questions, each with 2-4 distinct options; a question with fewer than two options has no decision in it, so ask it as plain text instead
 - When \`custom\` is enabled (default), a "Type your own answer" option is added automatically; don't include "Other" or catch-all options
-- Answers are returned as arrays of labels; set \`multiple: true\` to allow selecting more than one
-- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label`
+- Answers are returned as arrays of labels; set \`multiSelect: true\` to allow selecting more than one, and use it whenever the choices are not mutually exclusive
+- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label
+- An option's \`preview\` is rendered as markdown in a monospace box beside the options; use it for mockups, code, or comparisons, only on single-select questions, and not for simple preference questions where labels and descriptions suffice
+- Keep \`header\` to a very short chip label (at most 12 characters)`
 
 export const Input = Schema.Struct({
-  questions: Schema.Array(QuestionV2.Prompt).annotate({ description: "Questions to ask" }),
+  questions: Schema.Array(QuestionV2.Prompt)
+    .check(Schema.isMinLength(1), Schema.isMaxLength(4))
+    .annotate({ description: "Questions to ask (1-4)" }),
 })
 
 export const Output = Schema.Struct({

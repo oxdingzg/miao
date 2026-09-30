@@ -120,7 +120,7 @@ export function traceSubagentState(state: FooterSubagentState) {
         header: question.header,
         question: question.question,
         options: question.options.length,
-        multiple: question.multiple,
+        multiSelect: question.multiSelect,
       })),
     })),
   }

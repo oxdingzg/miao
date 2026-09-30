@@ -2972,8 +2972,12 @@ export type QuestionsListRequestsOutput = {
     readonly questions: ReadonlyArray<{
       readonly question: string
       readonly header: string
-      readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
-      readonly multiple?: boolean
+      readonly options: ReadonlyArray<{
+        readonly label: string
+        readonly description: string
+        readonly preview?: string
+      }>
+      readonly multiSelect?: boolean
       readonly custom?: boolean
     }>
     readonly tool?: { readonly messageID: string; readonly callID: string }
@@ -2989,8 +2993,12 @@ export type QuestionsListOutput = {
     readonly questions: ReadonlyArray<{
       readonly question: string
       readonly header: string
-      readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
-      readonly multiple?: boolean
+      readonly options: ReadonlyArray<{
+        readonly label: string
+        readonly description: string
+        readonly preview?: string
+      }>
+      readonly multiSelect?: boolean
       readonly custom?: boolean
     }>
     readonly tool?: { readonly messageID: string; readonly callID: string }

@@ -51,6 +51,17 @@ const it = testEffect(
   ]),
 )
 
+const validQuestions = [
+  {
+    question: "What should happen?",
+    header: "Action",
+    options: [
+      { label: "Build", description: "Build it" },
+      { label: "Skip", description: "Skip it" },
+    ],
+  },
+]
+
 describe("QuestionTool", () => {
   it.effect("omits a denied built-in question and terminally settles a stale call", () =>
     Effect.gen(function* () {
@@ -63,7 +74,7 @@ describe("QuestionTool", () => {
         yield* settleTool(registry, {
           sessionID,
           ...toolIdentity,
-          call: { type: "tool-call", id: "call-question-denied", name: "question", input: { questions: [] } },
+          call: { type: "tool-call", id: "call-question-denied", name: "question", input: { questions: validQuestions } },
         }),
       ).toEqual({ result: { type: "error", value: "Permission denied: question" } })
       expect(capturedInput()).toBeUndefined()
@@ -82,12 +93,18 @@ describe("QuestionTool", () => {
         {
           question: "What should happen?",
           header: "Action",
-          options: [{ label: "Build", description: "Build it" }],
+          options: [
+            { label: "Build", description: "Build it" },
+            { label: "Skip", description: "Skip it" },
+          ],
         },
         {
           question: "Which environment?",
           header: "Environment",
-          options: [{ label: "Dev", description: "Development" }],
+          options: [
+            { label: "Dev", description: "Development" },
+            { label: "Prod", description: "Production" },
+          ],
         },
       ]
 
@@ -133,11 +150,11 @@ describe("QuestionTool", () => {
       yield* executeTool(registryService, {
         sessionID,
         ...toolIdentity,
-        call: { type: "tool-call", id: "call-question", name: "question", input: { questions: [] } },
+        call: { type: "tool-call", id: "call-question", name: "question", input: { questions: validQuestions } },
       })
       expect(capturedInput()).toEqual({
         sessionID,
-        questions: [],
+        questions: validQuestions,
         tool: { messageID: toolIdentity.assistantMessageID, callID: "call-question" },
       })
     }),
@@ -152,7 +169,7 @@ describe("QuestionTool", () => {
       const fiber = yield* executeTool(registryService, {
         sessionID,
         ...toolIdentity,
-        call: { type: "tool-call", id: "call-question", name: "question", input: { questions: [] } },
+        call: { type: "tool-call", id: "call-question", name: "question", input: { questions: validQuestions } },
       }).pipe(Effect.forkScoped)
 
       const exit = yield* Fiber.await(fiber)

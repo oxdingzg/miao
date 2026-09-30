@@ -15,7 +15,21 @@ const replyPath = () =>
 const rejectPath = () =>
   Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_test/reject" : "/question/que_test/reject"
 
-async function mountQuestion(root: string, status = 204, onSettled?: () => void, delay = 0, advance = false) {
+type QuestionInput = {
+  header: string
+  question: string
+  options: Array<{ label: string; description: string; preview?: string }>
+  multiSelect?: boolean
+}
+
+async function mountQuestion(
+  root: string,
+  status = 204,
+  onSettled?: () => void,
+  delay = 0,
+  advance = false,
+  custom?: QuestionInput[],
+) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
@@ -42,11 +56,13 @@ async function mountQuestion(root: string, status = 204, onSettled?: () => void,
     const requests = ["test", "next"].map((id) => ({
       id: `que_${id}`,
       sessionID: "ses_test",
-      questions: ["First", "Second"].map((header) => ({
-        header,
-        question: id === "test" ? header : `Next ${header}`,
-        options: [{ label: "Yes", description: "Accept" }],
-      })),
+      questions:
+        custom ??
+        ["First", "Second"].map((header) => ({
+          header,
+          question: id === "test" ? header : `Next ${header}`,
+          options: [{ label: "Yes", description: "Accept" }],
+        })),
     }))
     const renderer = useRenderer()
     const keymap = createDefaultOpenTuiKeymap(renderer)
@@ -220,6 +236,57 @@ test("settling a queued question mounts the next question with fresh answers and
       replyPath(),
       Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_next/reject" : "/question/que_next/reject",
     ])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("shows the focused option preview beside a single-select question", async () => {
+  await using tmp = await tmpdir()
+  const { app } = await mountQuestion(tmp.path, 204, undefined, 0, false, [
+    {
+      header: "Approach",
+      question: "Which approach?",
+      options: [
+        { label: "Fast", description: "Ship sooner", preview: "preview-fast-body" },
+        { label: "Safe", description: "Fewer risks", preview: "preview-safe-body" },
+      ],
+    },
+  ])
+  try {
+    await Bun.sleep(150)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("preview-fast-body")
+    expect(app.captureCharFrame()).not.toContain("preview-safe-body")
+    await app.mockInput.pressKeys(["ARROW_DOWN"])
+    await Bun.sleep(150)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("preview-safe-body")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("multiSelect toggles options instead of submitting", async () => {
+  await using tmp = await tmpdir()
+  const { app, calls } = await mountQuestion(tmp.path, 204, undefined, 0, false, [
+    {
+      header: "Features",
+      question: "Which features?",
+      options: [
+        { label: "Alpha", description: "First" },
+        { label: "Beta", description: "Second" },
+      ],
+      multiSelect: true,
+    },
+  ])
+  try {
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("select all that apply")
+    app.mockInput.pressEnter()
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("[✓] Alpha")
+    expect(calls).toHaveLength(0)
   } finally {
     app.renderer.destroy()
   }

@@ -52,7 +52,7 @@ export function questionSync(state: QuestionBodyState, requestID: string): Quest
 }
 
 export function questionSingle(request: QuestionRequest): boolean {
-  return request.questions.length === 1 && request.questions[0]?.multiple !== true
+  return request.questions.length === 1 && request.questions[0]?.multiSelect !== true
 }
 
 export function questionTabs(request: QuestionRequest): number {
@@ -223,7 +223,7 @@ export function questionSelect(state: QuestionBodyState, request: QuestionReques
   }
 
   if (questionOther(request, state)) {
-    if (!info.multiple) {
+    if (!info.multiSelect) {
       return {
         state: questionSetEditing(state, true),
       }
@@ -246,7 +246,7 @@ export function questionSelect(state: QuestionBodyState, request: QuestionReques
     return { state }
   }
 
-  if (info.multiple) {
+  if (info.multiSelect) {
     return {
       state: questionToggle(state, option.label),
     }
@@ -283,7 +283,7 @@ export function questionSave(state: QuestionBodyState, request: QuestionRequest)
     }
   }
 
-  if (info.multiple) {
+  if (info.multiSelect) {
     const answers = [...(state.answers[state.tab] ?? [])]
     if (prev) {
       const idx = answers.indexOf(prev)
@@ -333,8 +333,8 @@ export function questionHint(request: QuestionRequest, state: QuestionBodyState)
 
   const info = questionInfo(request, state)
   if (questionSingle(request)) {
-    return `↑↓ select   enter ${info?.multiple ? "toggle" : "submit"}   esc dismiss`
+    return `↑↓ select   enter ${info?.multiSelect ? "toggle" : "submit"}   esc dismiss`
   }
 
-  return `⇆ tab   ↑↓ select   enter ${info?.multiple ? "toggle" : "confirm"}   esc dismiss`
+  return `⇆ tab   ↑↓ select   enter ${info?.multiSelect ? "toggle" : "confirm"}   esc dismiss`
 }

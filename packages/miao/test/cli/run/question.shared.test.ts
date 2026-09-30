@@ -21,7 +21,7 @@ function req(input: Partial<QuestionRequest> = {}): QuestionRequest {
         question: "Mode?",
         header: "Mode",
         options: [{ label: "chunked", description: "Incremental output" }],
-        multiple: false,
+        multiSelect: false,
       },
     ],
     ...input,
@@ -45,7 +45,7 @@ describe("run question shared", () => {
           question: "Mode?",
           header: "Mode",
           options: [{ label: "chunked", description: "Incremental output" }],
-          multiple: false,
+          multiSelect: false,
         },
         {
           question: "Output?",
@@ -54,7 +54,7 @@ describe("run question shared", () => {
             { label: "yes", description: "Show tool output" },
             { label: "no", description: "Hide tool output" },
           ],
-          multiple: false,
+          multiSelect: false,
         },
       ],
     })
@@ -78,7 +78,7 @@ describe("run question shared", () => {
           question: "Tags?",
           header: "Tags",
           options: [{ label: "bug", description: "Bug fix" }],
-          multiple: true,
+          multiSelect: true,
         },
       ],
     })

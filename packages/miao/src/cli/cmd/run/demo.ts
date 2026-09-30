@@ -767,7 +767,7 @@ function emitQuestionTool(state: State): void {
           { label: "Diff", description: "Show diff block" },
           { label: "Code", description: "Show code block" },
         ],
-        multiple: false,
+        multiSelect: false,
       },
       {
         header: "Extras",
@@ -776,7 +776,7 @@ function emitQuestionTool(state: State): void {
           { label: "Usage", description: "Add usage row" },
           { label: "Duration", description: "Add duration row" },
         ],
-        multiple: true,
+        multiSelect: true,
         custom: true,
       },
     ],
@@ -938,7 +938,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
             { label: "Question", description: "Keep this question footer open" },
             { label: "Prompt", description: "Return to the normal composer" },
           ],
-          multiple: false,
+          multiSelect: false,
           custom: false,
         },
       ]
@@ -955,7 +955,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
             { label: "Todo", description: "Show a todo snapshot" },
             { label: "Error", description: "Show an error transcript row" },
           ],
-          multiple: true,
+          multiSelect: true,
           custom: false,
         },
       ]
@@ -970,7 +970,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
             { label: "Short note", description: "Keep the answer to one line" },
             { label: "Wrapped note", description: "Use a longer answer to test wrapping" },
           ],
-          multiple: false,
+          multiSelect: false,
           custom: true,
         },
       ]
@@ -984,7 +984,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
           { label: "Prompt", description: "Return to prompt" },
           { label: "Question", description: "Keep question open" },
         ],
-        multiple: false,
+        multiSelect: false,
       },
       {
         header: "Rows",
@@ -994,7 +994,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
           { label: "Task", description: "Emit task card" },
           { label: "Todo", description: "Emit todo card" },
         ],
-        multiple: true,
+        multiSelect: true,
         custom: true,
       },
     ]

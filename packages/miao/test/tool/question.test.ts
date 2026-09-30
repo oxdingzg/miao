@@ -55,7 +55,7 @@ describe("tool.question", () => {
             { label: "Red", description: "The color of passion" },
             { label: "Blue", description: "The color of sky" },
           ],
-          multiple: false,
+          multiSelect: false,
         },
       ]
 

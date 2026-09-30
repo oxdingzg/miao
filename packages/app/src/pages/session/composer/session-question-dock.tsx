@@ -93,7 +93,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const options = createMemo(() => question()?.options ?? [])
   const input = createMemo(() => store.custom[store.tab] ?? "")
   const on = createMemo(() => store.customOn[store.tab] === true)
-  const multi = createMemo(() => question()?.multiple === true)
+  const multi = createMemo(() => question()?.multiSelect === true)
   const count = createMemo(() => options().length + 1)
 
   const summary = createMemo(() => {

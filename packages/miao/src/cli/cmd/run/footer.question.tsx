@@ -65,7 +65,7 @@ export function RunQuestionBody(props: {
       return "submit"
     }
 
-    if (info()?.multiple) {
+    if (info()?.multiSelect) {
       return "toggle"
     }
 
@@ -357,7 +357,7 @@ export function RunQuestionBody(props: {
             <box>
               <text fg={props.theme.text} wrapMode="word">
                 {info()?.question}
-                {info()?.multiple ? " (select all that apply)" : ""}
+                {info()?.multiSelect ? " (select all that apply)" : ""}
               </text>
             </box>
 
@@ -405,10 +405,10 @@ export function RunQuestionBody(props: {
                               <text
                                 fg={active() ? props.theme.highlight : hit() ? props.theme.success : props.theme.text}
                               >
-                                {info()?.multiple ? `[${hit() ? "✓" : " "}] ${item.label}` : item.label}
+                                {info()?.multiSelect ? `[${hit() ? "✓" : " "}] ${item.label}` : item.label}
                               </text>
                             </box>
-                            <Show when={!info()?.multiple}>
+                            <Show when={!info()?.multiSelect}>
                               <text fg={props.theme.success}>{hit() ? " ✓" : ""}</text>
                             </Show>
                           </box>
@@ -452,12 +452,12 @@ export function RunQuestionBody(props: {
                           <text
                             fg={other() ? props.theme.highlight : picked() ? props.theme.success : props.theme.text}
                           >
-                            {info()?.multiple
+                            {info()?.multiSelect
                               ? `[${picked() ? "✓" : " "}] Type your own answer`
                               : "Type your own answer"}
                           </text>
                         </box>
-                        <Show when={!info()?.multiple}>
+                        <Show when={!info()?.multiSelect}>
                           <text fg={props.theme.success}>{picked() ? " ✓" : ""}</text>
                         </Show>
                       </box>

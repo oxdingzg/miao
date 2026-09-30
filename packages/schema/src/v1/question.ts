@@ -15,13 +15,20 @@ export const ID = Schema.String.check(Schema.isStartsWith("que")).pipe(
 export const Option = Schema.Struct({
   label: Schema.String.annotate({ description: "Display text (1-5 words, concise)" }),
   description: Schema.String.annotate({ description: "Explanation of choice" }),
+  preview: Schema.optional(Schema.String).annotate({
+    description:
+      "Optional preview shown when this option is focused; rendered as markdown in a monospace box. Only for single-select questions.",
+  }),
 }).annotate({ identifier: "QuestionOption" })
 
+// Legacy V1 intentionally keeps these bounds advisory: the V1 tool dropped
+// hard validation because rejected calls reached the model as errors. V2
+// enforces the Claude Code bounds.
 const base = {
   question: Schema.String.annotate({ description: "Complete question" }),
   header: Schema.String.annotate({ description: "Very short label (max 30 chars)" }),
-  options: Schema.Array(Option).annotate({ description: "Available choices" }),
-  multiple: Schema.optional(Schema.Boolean).annotate({ description: "Allow selecting multiple choices" }),
+  options: Schema.Array(Option).annotate({ description: "Available choices (2-4)" }),
+  multiSelect: Schema.optional(Schema.Boolean).annotate({ description: "Allow selecting multiple choices" }),
 }
 
 export const Info = Schema.Struct({
@@ -35,7 +42,7 @@ export const Tool = Schema.Struct({ messageID: SessionV1.MessageID, callID: Sche
 export const Request = Schema.Struct({
   id: ID,
   sessionID: SessionID,
-  questions: Schema.Array(Info).annotate({ description: "Questions to ask" }),
+  questions: Schema.Array(Info).annotate({ description: "Questions to ask (1-4)" }),
   tool: Schema.optional(Tool),
 }).annotate({ identifier: "QuestionRequest" })
 export const Answer = Schema.Array(Schema.String).annotate({ identifier: "QuestionAnswer" })

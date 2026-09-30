@@ -144,7 +144,7 @@ function question(id: string, sessionID: string) {
         question: "Mode?",
         header: "Mode",
         options: [{ label: "Fast", description: "Quick pass" }],
-        multiple: false,
+        multiSelect: false,
       },
     ],
   }

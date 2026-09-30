@@ -703,6 +703,7 @@ export type QuestionOption = {
    * Explanation of choice
    */
   description: string
+  preview?: string
 }
 
 export type QuestionInfo = {
@@ -715,10 +716,10 @@ export type QuestionInfo = {
    */
   header: string
   /**
-   * Available choices
+   * Available choices (2-4)
    */
   options: Array<QuestionOption>
-  multiple?: boolean
+  multiSelect?: boolean
   custom?: boolean
 }
 
@@ -1358,7 +1359,7 @@ export type GlobalEvent = {
           id: string
           sessionID: string
           /**
-           * Questions to ask
+           * Questions to ask (1-4)
            */
           questions: Array<QuestionV2Info>
           tool?: QuestionV2Tool
@@ -1535,7 +1536,7 @@ export type GlobalEvent = {
           id: string
           sessionID: string
           /**
-           * Questions to ask
+           * Questions to ask (1-4)
            */
           questions: Array<QuestionInfo>
           tool?: QuestionTool
@@ -2481,7 +2482,7 @@ export type QuestionRequest = {
   id: string
   sessionID: string
   /**
-   * Questions to ask
+   * Questions to ask (1-4)
    */
   questions: Array<QuestionInfo>
   tool?: QuestionTool
@@ -3195,6 +3196,7 @@ export type QuestionV2Option = {
    * Explanation of choice
    */
   description: string
+  preview?: string
 }
 
 export type QuestionV2Info = {
@@ -3203,14 +3205,14 @@ export type QuestionV2Info = {
    */
   question: string
   /**
-   * Very short label (max 30 chars)
+   * Very short label (max 12 chars)
    */
   header: string
   /**
-   * Available choices
+   * Available choices (2-4)
    */
   options: Array<QuestionV2Option>
-  multiple?: boolean
+  multiSelect?: boolean
   custom?: boolean
 }
 
@@ -5707,6 +5709,20 @@ export type PtyDeleted = {
   }
 }
 
+export type QuestionV2Info1 = {
+  /**
+   * Complete question
+   */
+  question: string
+  /**
+   * Very short label (max 12 chars)
+   */
+  header: string
+  options: Array<QuestionV2Option>
+  multiSelect?: boolean
+  custom?: boolean
+}
+
 export type QuestionV2Asked = {
   id: string
   metadata?: {
@@ -5722,10 +5738,7 @@ export type QuestionV2Asked = {
   data: {
     id: string
     sessionID: string
-    /**
-     * Questions to ask
-     */
-    questions: Array<QuestionV2Info>
+    questions: Array<QuestionV2Info1>
     tool?: QuestionV2Tool
   }
 }
@@ -6052,7 +6065,7 @@ export type QuestionAsked = {
     id: string
     sessionID: string
     /**
-     * Questions to ask
+     * Questions to ask (1-4)
      */
     questions: Array<QuestionInfo>
     tool?: QuestionTool
@@ -6218,7 +6231,7 @@ export type QuestionV2Request = {
   id: string
   sessionID: string
   /**
-   * Questions to ask
+   * Questions to ask (1-4)
    */
   questions: Array<QuestionV2Info>
   tool?: QuestionV2Tool
@@ -6258,6 +6271,16 @@ export type ReferenceInfo = {
 
 export type ProjectCopyCopy = {
   directory: string
+}
+
+export type ProjectCurrent = {
+  id: string
+  directory: string
+}
+
+export type ProjectDirectory = {
+  directory: string
+  strategy?: string
 }
 
 export type EventModelsDevRefreshed = {
@@ -6945,7 +6968,7 @@ export type EventQuestionV2Asked = {
     id: string
     sessionID: string
     /**
-     * Questions to ask
+     * Questions to ask (1-4)
      */
     questions: Array<QuestionV2Info>
     tool?: QuestionV2Tool
@@ -7084,7 +7107,7 @@ export type EventQuestionAsked = {
     id: string
     sessionID: string
     /**
-     * Questions to ask
+     * Questions to ask (1-4)
      */
     questions: Array<QuestionInfo>
     tool?: QuestionTool
@@ -14171,6 +14194,82 @@ export type V2ProjectCopyRefreshResponses = {
 }
 
 export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
+
+export type V2ProjectCurrentData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/project/current"
+}
+
+export type V2ProjectCurrentErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ProjectCurrentError = V2ProjectCurrentErrors[keyof V2ProjectCurrentErrors]
+
+export type V2ProjectCurrentResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: ProjectCurrent
+  }
+}
+
+export type V2ProjectCurrentResponse = V2ProjectCurrentResponses[keyof V2ProjectCurrentResponses]
+
+export type V2ProjectDirectoriesData = {
+  body?: never
+  path: {
+    projectID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/project/{projectID}/directories"
+}
+
+export type V2ProjectDirectoriesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ProjectDirectoriesError = V2ProjectDirectoriesErrors[keyof V2ProjectDirectoriesErrors]
+
+export type V2ProjectDirectoriesResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<ProjectDirectory>
+  }
+}
+
+export type V2ProjectDirectoriesResponse = V2ProjectDirectoriesResponses[keyof V2ProjectDirectoriesResponses]
 
 export type PtyConnectData = {
   body?: never
