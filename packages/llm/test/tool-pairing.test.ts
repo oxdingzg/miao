@@ -47,7 +47,7 @@ it.effect("wire messages keep every tool call paired", () =>
     const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
       LLM.request({ id: "pairing", model: route.model({ id: "deepseek-chat" }), messages, tools: [tool] }),
     )
-    const wire = prepared.body.messages as Array<Record<string, any>>
+    const wire = prepared.body.messages as ReadonlyArray<Record<string, any>>
     console.log(
       "WIRE",
       JSON.stringify(
