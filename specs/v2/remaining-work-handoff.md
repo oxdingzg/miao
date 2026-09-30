@@ -208,13 +208,18 @@ map): app SDK shims → V1 route groups → V1 session engine → V1 tools/trans
 "no client imports a `/session/*` route" and the full suite.
 
 **Stage 5 gate status (2026-09-30).** TUI session writes, `context`/`messages`, `get`, `todo`,
-`rename`, `remove`, and the session-diff hydration are on V2 (mapped through
-`context/session-v2-read.ts`). Still calling `/session/*` (V1), so the gate is not met:
+`rename`, `remove`, session-diff hydration, `list`, and status are on V2 under `MIAO_TUI_V2`
+(mapped through `context/session-v2-read.ts`). Notes:
 
-- `sdk.client.session.list` — `context/sync.tsx` (`listSessions`), `component/dialog-session-list.tsx`
-  (V2 list uses different query params and a `SessionsResponse` body, so it needs a query/response map).
-- `sdk.client.session.status` — `context/sync.tsx` (V2 exposes per-session `v2.session.status` and
-  `v2.session.active`, not a whole-map status).
+- `session.list` → `v2.session.list` with a client-side root filter (`parentID === undefined`) and
+  `subpath`; the V1 `start` recency filter has no V2 equivalent, and the list is fetched with
+  `limit: 200` (no cursor paging yet).
+- `session.status` → boot snapshot from `v2.session.active()` (running → `busy`) plus a derived
+  status (`context/sync.tsx` `session.status`) refreshed after each V2 event burst; there is no
+  bulk V2 status endpoint or status event pair.
+
+Still calling `/session/*` (V1), so the gate is not met:
+
 - `sdk.client.session.diff` with `messageID` — `feature-plugins/system/diff-viewer.tsx`
   (V2 `session.diff` is session-scoped and has no message cutoff).
 - `sdk.client.session.unshare` — no V2 equivalent; sharing is not in the current protocol.

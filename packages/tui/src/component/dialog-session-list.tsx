@@ -8,6 +8,7 @@ import { Locale } from "../util/locale"
 import { useProject } from "../context/project"
 import { useTheme } from "../context/theme"
 import { useSDK } from "../context/sdk"
+import { sessionInfo } from "../context/session-v2-read"
 import { Flag } from "@miao/core/flag/flag"
 import { useLocal } from "../context/local"
 import { DialogSessionRename } from "./dialog-session-rename"
@@ -60,9 +61,23 @@ export function DialogSessionList() {
   const quickSwitch1 = useCommandShortcut("session.quick_switch.1")
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
 
+  const listSessions = (query: ReturnType<typeof createDialogSessionListQuery>) =>
+    Flag.MIAO_TUI_V2
+      ? sdk.client.v2.session
+          .list({
+            limit: query.limit,
+            ...(query.search ? { search: query.search } : {}),
+            ...(query.path ? { subpath: query.path } : {}),
+          })
+          .then((x) => ({
+            // V2 list has no roots filter; keep only root sessions like the V1 query did.
+            data: (x.data?.data ?? []).map(sessionInfo).filter((session) => session.parentID === undefined),
+          }))
+      : sdk.client.session.list(query)
+
   const [browseResults, { refetch: refetchBrowse }] = createResource(
     () => sync.session.query(),
-    (filter) => loadDialogSessionList({ filter, list: (query) => sdk.client.session.list(query) }),
+    (filter) => loadDialogSessionList({ filter, list: listSessions }),
   )
   const [searchResults, { refetch }] = createResource(
     () => ({ query: search(), filter: sync.session.query() }),
@@ -71,7 +86,7 @@ export function DialogSessionList() {
       return loadDialogSessionList({
         search: input.query,
         filter: input.filter,
-        list: (query) => sdk.client.session.list(query),
+        list: listSessions,
       })
     },
   )

@@ -171,15 +171,20 @@ export const {
     }
 
     function listSessions() {
-      return sdk.client.session
-        .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
-        .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+      const query = sessionListQuery()
+      const promise = Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session
+            .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
+            .then((x) => ({ data: (x.data?.data ?? []).map(sessionInfo) }))
+        : sdk.client.session.list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...query })
+      return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
     // V2 durable events are not projected into the legacy event stream, so with
     // MIAO_TUI_V2 the transcript would only update on a manual reopen. Re-hydrate
     // the affected session (debounced) so live V2 runs render.
     let refreshSession: ((sessionID: string) => Promise<void>) | undefined
+    let refreshStatus: ((sessionID: string) => void) | undefined
     const v2RefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
     function scheduleV2Refresh(sessionID: string) {
       const existing = v2RefreshTimers.get(sessionID)
@@ -188,7 +193,7 @@ export const {
         sessionID,
         setTimeout(() => {
           v2RefreshTimers.delete(sessionID)
-          void refreshSession?.(sessionID)
+          void refreshSession?.(sessionID).then(() => refreshStatus?.(sessionID))
         }, 200),
       )
     }
@@ -664,7 +669,14 @@ export const {
               .list({ workspace })
               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
             sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
-            sdk.client.session.status({ workspace }).then((x) => {
+            (Flag.MIAO_TUI_V2
+              ? sdk.client.v2.session.active().then((x) => ({
+                  data: Object.fromEntries(
+                    Object.keys(x.data?.data ?? {}).map((id) => [id, { type: "busy" as const }]),
+                  ),
+                }))
+              : sdk.client.session.status({ workspace })
+            ).then((x) => {
               setStore("session_status", reconcile(x.data ?? {}))
             }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
@@ -837,6 +849,12 @@ export const {
     refreshSession = (sessionID) => {
       fullSyncedSessions.delete(sessionID)
       return result.session.sync(sessionID)
+    }
+    // V2 has no bulk status stream; derive the working indicator from the
+    // re-hydrated transcript after each live V2 event burst.
+    refreshStatus = (sessionID) => {
+      if (!Flag.MIAO_TUI_V2) return
+      setStore("session_status", sessionID, result.session.status(sessionID) === "idle" ? { type: "idle" } : { type: "busy" })
     }
     return result
   },

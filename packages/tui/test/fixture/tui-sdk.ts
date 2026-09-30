@@ -1,6 +1,10 @@
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import type { EventSource } from "../../src/context/sdk"
 
+// TUI tests mock a V1 server. Pin the protocol so the default-on V2 runtime
+// does not route them through /api/session.
+process.env["MIAO_TUI_V2"] = "0"
+
 export const worktree = "/tmp/opencode"
 export const directory = `${worktree}/packages/tui`
 
