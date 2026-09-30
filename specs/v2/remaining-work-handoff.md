@@ -207,24 +207,22 @@ map): app SDK shims → V1 route groups → V1 session engine → V1 tools/trans
 `packages/core/v1` schemas → legacy SDK → the `packages/miao` server/engine. Gate each deletion on
 "no client imports a `/session/*` route" and the full suite.
 
-**Stage 5 gate status (2026-09-30).** TUI session writes, `context`/`messages`, `get`, `todo`,
-`rename`, `remove`, session-diff hydration, `list`, and status are on V2 under `MIAO_TUI_V2`
-(mapped through `context/session-v2-read.ts`). Notes:
+**Stage 5 gate status (2026-09-30).** Under `MIAO_TUI_V2` (the default), the TUI no longer calls
+`/session/*`: session reads and writes go to `/api/session/*` (V2 shapes mapped through
+`context/session-v2-read.ts`), and share/unshare — which have no V2 API — are disabled. The V1
+`sdk.client.session.*` calls now exist only in the `MIAO_TUI_V2=0` fallback branches. So the
+"no shipped client on `/session/*`" gate is met for the TUI whenever the default holds.
 
-- `session.list` → `v2.session.list` with a client-side root filter (`parentID === undefined`) and
-  `subpath`; the V1 `start` recency filter has no V2 equivalent, and the list is fetched with
-  `limit: 200` (no cursor paging yet).
+Behaviors to confirm in soak (chosen because V2 has no exact equivalent):
+
+- `session.list` → `v2.session.list` with a client-side root filter and `limit: 200`; the V1 `start`
+  recency filter is dropped.
 - `session.status` → boot snapshot from `v2.session.active()` (running → `busy`) plus a derived
-  status (`context/sync.tsx` `session.status`) refreshed after each V2 event burst; there is no
-  bulk V2 status endpoint or status event pair.
+  status refreshed after each V2 event burst; no bulk V2 status stream.
+- last-turn diff → `v2.session.diff` (session-scoped; the V1 message cutoff is dropped).
+- share/unshare hidden while `MIAO_TUI_V2` is on.
 
-Still calling `/session/*` (V1), so the gate is not met:
-
-- `sdk.client.session.diff` with `messageID` — `feature-plugins/system/diff-viewer.tsx`
-  (V2 `session.diff` is session-scoped and has no message cutoff).
-- `sdk.client.session.unshare` — no V2 equivalent; sharing is not in the current protocol.
-
-Migrate/remove those, then Stage 5 can start.
+After the soak, Stage 5 can start (app SDK shims → V1 route groups → V1 engine → …).
 
 ## 5. Workstream C — SendMessage (session-to-session messaging)
 

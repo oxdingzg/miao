@@ -474,7 +474,8 @@ export function Session() {
       value: "session.share",
       suggested: route.type === "session",
       category: "Session",
-      enabled: sync.data.config.share !== "disabled",
+      // Sharing has no V2 API; hide it while the V2 runtime is active.
+      enabled: !Flag.MIAO_TUI_V2 && sync.data.config.share !== "disabled",
       slash: {
         name: "share",
       },
@@ -596,7 +597,7 @@ export function Session() {
       title: "Unshare session",
       value: "session.unshare",
       category: "Session",
-      enabled: !!session()?.share?.url,
+      enabled: !Flag.MIAO_TUI_V2 && !!session()?.share?.url,
       slash: {
         name: "unshare",
       },
