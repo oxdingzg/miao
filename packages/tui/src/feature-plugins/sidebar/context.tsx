@@ -2,9 +2,17 @@ import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { Currency } from "../../util/currency"
+import { cacheEconomy } from "../../util/cache-economy"
 import { createMemo } from "solid-js"
 
 const id = "internal:sidebar-context"
+
+/** Sidebar rows are 42 columns wide, so cache counts stay abbreviated. */
+function compact(value: number) {
+  if (value < 10000) return value.toLocaleString()
+  if (value < 1000000) return `${Math.round(value / 1000)}k`
+  return `${(value / 1000000).toFixed(1)}m`
+}
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
@@ -15,6 +23,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const nativeCurrency = createMemo(() =>
     Currency.native(props.api.state.provider, session()?.model?.providerID, session()?.model?.id),
   )
+  // Session cost is already denominated in the model's native currency when the
+  // model declares one, and in USD otherwise; the cache figures are derived
+  // from the same price table, so every amount follows that split.
+  const money = (value: number) => {
+    const native = nativeCurrency()
+    return native ? Currency.amount(value, native) : Currency.format(value, currency())
+  }
 
   const state = createMemo(() => {
     const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
@@ -37,6 +52,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }
   })
 
+  // The turn above reports the current context; this reports what caching has
+  // earned over the whole session, which is only visible across turns.
+  const economy = createMemo(() =>
+    cacheEconomy(
+      msg().filter((item): item is AssistantMessage => item.role === "assistant"),
+      props.api.state.provider,
+    ),
+  )
+
   return (
     <box>
       <text fg={theme().text}>
@@ -46,8 +70,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
       <text fg={theme().textMuted}>{state().cacheHit ?? 0}% cached</text>
       <text fg={theme().textMuted}>
-        {nativeCurrency() ? Currency.amount(cost(), nativeCurrency()) : Currency.format(cost(), currency())} spent
+        read {compact(economy().read)} · write {compact(economy().write)}
       </text>
+      <text fg={theme().textMuted}>
+        {economy().saved < 0 ? `${money(-economy().saved)} cache cost` : `${money(economy().saved)} saved`}
+      </text>
+      <text fg={theme().textMuted}>{money(cost())} spent</text>
     </box>
   )
 }
