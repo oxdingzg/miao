@@ -40,7 +40,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
-import { webSearchProviderLabel } from "../../util/tool-display"
+import { toolDisplay, webSearchProviderLabel } from "../../util/tool-display"
 import { Dynamic, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "../../context/sdk"
 import { useEditorContext } from "../../context/editor"
@@ -1515,7 +1515,6 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
-  const renderer = useRenderer()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
@@ -1534,81 +1533,15 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
 
-  // Claude-style collapsed transcript: in hide mode, per-step reasoning and
-  // completed shell rows collapse into a single summary line per message.
-  // Clicking the summary expands them again so command output stays reachable.
-  const [revealed, setRevealed] = createSignal(false)
-  const hideMode = createMemo(() => ctx.thinkingMode() === "hide")
-  const collapsed = createMemo(() => hideMode() && !revealed())
-  const reasoningActive = createMemo(() =>
-    props.parts.some((part) => part.type === "reasoning" && part.time.end === undefined && part.text.trim().length > 0),
-  )
-  const reasoningDuration = createMemo(() =>
-    props.parts.reduce((total, part) => {
-      if (part.type !== "reasoning") return total
-      const end = part.time.end
-      if (end === undefined) return total
-      return total + Math.max(0, end - part.time.start)
-    }, 0),
-  )
-  const shellCommands = createMemo(
-    () =>
-      props.parts.filter(
-        (part) => part.type === "tool" && toolDisplay(part.tool) === "bash" && part.state.status === "completed",
-      ).length,
-  )
-  const activity = createMemo(() => {
-    if (!hideMode()) return undefined
-    if (reasoningActive()) return "Thinking"
-    const parts = [
-      reasoningDuration() > 0 ? `Thought for ${Locale.duration(reasoningDuration())}` : undefined,
-      shellCommands() > 0 ? `ran ${shellCommands()} shell command${shellCommands() === 1 ? "" : "s"}` : undefined,
-    ].filter(Boolean)
-    if (parts.length === 0) return undefined
-    return parts.join(", ")
-  })
-  const visibleParts = createMemo(() => {
-    if (!collapsed()) return props.parts
-    return props.parts.filter((part) => {
-      if (part.type === "reasoning") return false
-      if (part.type === "tool" && toolDisplay(part.tool) === "bash" && part.state.status === "completed") return false
-      return true
-    })
-  })
-
   return (
     <>
-      <Show when={activity()}>
-        <box
-          ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-          paddingLeft={3}
-          marginTop={1}
-          flexShrink={0}
-          onMouseUp={() => {
-            if (renderer.getSelection()?.getSelectedText()) return
-            setRevealed((value) => !value)
-          }}
-        >
-          <Switch>
-            <Match when={reasoningActive()}>
-              <Spinner color={theme.textMuted}>Thinking</Spinner>
-            </Match>
-            <Match when={true}>
-              <text wrapMode="none">
-                <span style={{ fg: theme.textMuted }}>✻ </span>
-                <span style={{ fg: theme.textMuted }}>{activity()}</span>
-              </text>
-            </Match>
-          </Switch>
-        </box>
-      </Show>
-      <For each={visibleParts()}>
+      <For each={props.parts}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
           return (
             <Show when={component()}>
               <Dynamic
-                last={index() === visibleParts().length - 1}
+                last={index() === props.parts.length - 1}
                 component={component()}
                 part={part as any}
                 message={props.message}
@@ -2830,27 +2763,6 @@ function stringValue(value: unknown) {
 
 function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
-
-const toolDisplays = new Set([
-  "bash",
-  "glob",
-  "read",
-  "grep",
-  "webfetch",
-  "websearch",
-  "write",
-  "edit",
-  "task",
-  "apply_patch",
-  "todowrite",
-  "question",
-  "skill",
-  "execute",
-])
-
-export function toolDisplay(tool: string) {
-  return toolDisplays.has(tool) ? tool : "generic"
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

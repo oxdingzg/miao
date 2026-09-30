@@ -1,3 +1,24 @@
+const toolDisplays = new Set([
+  "bash",
+  "glob",
+  "read",
+  "grep",
+  "webfetch",
+  "websearch",
+  "write",
+  "edit",
+  "task",
+  "apply_patch",
+  "todowrite",
+  "question",
+  "skill",
+  "execute",
+])
+
+export function toolDisplay(tool: string) {
+  return toolDisplays.has(tool) ? tool : "generic"
+}
+
 export function webSearchProviderLabel(provider: unknown) {
   if (provider === "parallel") return "Parallel Web Search"
   if (provider === "exa") return "Exa Web Search"
