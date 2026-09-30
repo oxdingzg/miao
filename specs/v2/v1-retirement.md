@@ -119,6 +119,10 @@ drops the V1 `start` recency filter and filters roots client-side; status comes 
 `v2.session.active()` plus a derived per-session status instead of a bulk endpoint; the last-turn
 diff is session-scoped (no message cutoff); share/unshare is hidden.
 
+Creation is now fully V2: `SessionCreate` publishes `session.next.created.1` (current
+`Session.Info` plus `slug`/`version`) instead of the legacy `session.created`, so the create path
+writes no V1 durable event. The V1 projector remains only to read/backfill older databases.
+
 **Stage 5 — delete V1 (gated on soak).** In the order from the migration map: app SDK shims → V1
 route groups → V1 session engine → V1 tools/transport → `packages/core/v1` schemas → legacy SDK →
 the `packages/miao` server/engine. Each deletion only after its prerequisite stage is soaked. With

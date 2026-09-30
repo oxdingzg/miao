@@ -390,6 +390,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.revert.staged": () => Effect.void,
       "session.next.revert.cleared": () => Effect.void,
       "session.next.revert.committed": () => Effect.void,
+      // Session-info lifecycle events project the Session row, not messages.
+      "session.next.created": () => Effect.void,
+      "session.next.info.updated": () => Effect.void,
     })
   })
 }

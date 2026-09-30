@@ -1,5 +1,12 @@
 # V2 Schema Changelog
 
+## 2026-09-30: Session Creation Uses a Current Event
+
+- Add `session.next.created.1` carrying the current `Session.Info` plus `slug`/`version`, and register the already-defined `session.next.info.updated.1` in the durable Session manifest.
+- Publish it from `SessionCreate` instead of the legacy `session.created` event, so the V2 create path no longer writes a V1 durable event. The V1 projector stays for reading and backfilling old databases.
+- Fork skips Session-info events so a child keeps its own identity and title.
+- Stored data: a new Session's durable stream starts at `session.next.created.1` (seq 0); legacy V1 `session.created.1` rows remain readable. No migration needed.
+
 ## 2026-06-26: Add Finite Session History
 
 - Add `GET /api/session/:sessionID/history` and generated Promise, Effect, and legacy JavaScript client methods.

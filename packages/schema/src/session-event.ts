@@ -11,6 +11,7 @@ import { FileAttachment, Prompt } from "./prompt"
 import { SessionID } from "./session-id"
 import { Location } from "./location"
 import { SessionMessage } from "./session-message"
+import { SessionInfo } from "./session-info"
 import { Revert } from "./revert"
 
 export { FileAttachment }
@@ -446,6 +447,18 @@ export namespace RevertEvent {
 }
 
 export namespace Info {
+  export const Created = Event.define({
+    type: "session.next.created",
+    ...options,
+    schema: {
+      ...Base,
+      info: SessionInfo.Info,
+      slug: Schema.String,
+      version: Schema.String,
+    },
+  })
+  export type Created = typeof Created.type
+
   export const Updated = Event.define({
     type: "session.next.info.updated",
     ...options,
@@ -459,6 +472,8 @@ export namespace Info {
 }
 
 export const DurableDefinitions = Event.inventory(
+  Info.Created,
+  Info.Updated,
   AgentSwitched,
   ModelSwitched,
   Moved,
@@ -490,6 +505,8 @@ export const DurableDefinitions = Event.inventory(
 )
 
 export const Definitions = Event.inventory(
+  Info.Created,
+  Info.Updated,
   AgentSwitched,
   ModelSwitched,
   Moved,

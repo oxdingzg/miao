@@ -1,7 +1,7 @@
 export * as SessionCreate from "./session-create"
 
 import path from "path"
-import { Context, Effect, Layer } from "effect"
+import { Context, DateTime, Effect, Layer } from "effect"
 import type { EffectDrizzleSqlite } from "@miao/effect-drizzle-sqlite"
 import { Database } from "./database/database"
 import { EventV2 } from "./event"
@@ -10,7 +10,8 @@ import { ProjectTable } from "./project/sql"
 import { SessionStore } from "./session/store"
 import { SessionProjector } from "./session/projector"
 import { SessionSchema } from "./session/schema"
-import { SessionV1 } from "./v1/session"
+import { SessionEvent } from "./session/event"
+import { RelativePath } from "./schema"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
 import { AgentV2 } from "./agent"
@@ -54,30 +55,26 @@ const layer = Layer.effect(
         .run()
         .pipe(Effect.orDie)
       const now = Date.now()
-      const info = SessionV1.SessionInfo.make({
+      const timestamp = DateTime.makeUnsafe(now)
+      const info: SessionSchema.Info = {
         id: sessionID,
-        slug: Slug.create(),
-        version: InstallationVersion,
-        projectID: project.id,
-        directory: input.location.directory,
-        path: path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
-        workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
         parentID: input.parentID,
-        title: `New session - ${new Date(now).toISOString()}`,
+        projectID: project.id,
         agent: input.agent,
-        model: input.model
-          ? {
-              id: ModelV2.ID.make(input.model.id),
-              providerID: input.model.providerID,
-              variant: input.model.variant,
-            }
-          : undefined,
+        model: input.model,
         cost: 0,
         tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        time: { created: now, updated: now },
-      })
+        time: { created: timestamp, updated: timestamp },
+        title: `New session - ${new Date(now).toISOString()}`,
+        location: input.location,
+        subpath: RelativePath.make(path.relative(project.directory, input.location.directory).replaceAll("\\", "/")),
+      }
       const projected = yield* events
-        .publish(SessionV1.Event.Created, { sessionID, info }, { location: input.location })
+        .publish(
+          SessionEvent.Info.Created,
+          { sessionID, timestamp, info, slug: Slug.create(), version: InstallationVersion },
+          { location: input.location },
+        )
         .pipe(
           Effect.as({ type: "created" } as const),
           Effect.catchDefect((defect) => {

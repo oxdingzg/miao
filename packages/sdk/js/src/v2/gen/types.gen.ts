@@ -16,6 +16,8 @@ export type Event =
   | EventMessageRemoved
   | EventMessagePartUpdated
   | EventMessagePartRemoved
+  | EventSessionNextCreated
+  | EventSessionNextInfoUpdated
   | EventSessionNextAgentSwitched
   | EventSessionNextModelSwitched
   | EventSessionNextMoved
@@ -820,6 +822,27 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.created"
+        properties: {
+          timestamp: number
+          sessionID: string
+          info: SessionV2Info
+          slug: string
+          version: string
+        }
+      }
+    | {
+        id: string
+        type: "session.next.info.updated"
+        properties: {
+          timestamp: number
+          sessionID: string
+          title?: string
+          archived?: boolean
+        }
+      }
+    | {
+        id: string
         type: "session.next.agent.switched"
         properties: {
           timestamp: number
@@ -1608,6 +1631,8 @@ export type GlobalEvent = {
     | SyncEventMessageRemoved
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
+    | SyncEventSessionNextCreated
+    | SyncEventSessionNextInfoUpdated
     | SyncEventSessionNextAgentSwitched
     | SyncEventSessionNextModelSwitched
     | SyncEventSessionNextMoved
@@ -2740,6 +2765,8 @@ export type UnknownError1 = {
 }
 
 export type SessionDurableEvent =
+  | SessionNextCreated
+  | SessionNextInfoUpdated
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextMoved
@@ -2867,6 +2894,8 @@ export type V2Event =
   | MessageRemoved
   | MessagePartUpdated
   | MessagePartRemoved
+  | SessionNextCreated
+  | SessionNextInfoUpdated
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextMoved
@@ -3049,6 +3078,49 @@ export type LocationRef = {
   workspaceID?: string
 }
 
+export type FileDiff = {
+  path: string
+  status: "added" | "modified" | "deleted"
+  additions: number
+  deletions: number
+  patch: string
+}
+
+export type RevertState = {
+  messageID: string
+  partID?: string
+  snapshot?: string
+  diff?: string
+  files?: Array<FileDiff>
+}
+
+export type SessionV2Info = {
+  id: string
+  parentID?: string
+  projectID: string
+  agent?: string
+  model?: ModelRef
+  cost: number
+  tokens: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+  title: string
+  location: LocationRef
+  subpath?: string
+  revert?: RevertState
+}
+
 export type PromptSource = {
   start: number
   end: number
@@ -3104,22 +3176,6 @@ export type SessionNextRetryError = {
   metadata?: {
     [key: string]: string
   }
-}
-
-export type FileDiff = {
-  path: string
-  status: "added" | "modified" | "deleted"
-  additions: number
-  deletions: number
-  patch: string
-}
-
-export type RevertState = {
-  messageID: string
-  partID?: string
-  snapshot?: string
-  diff?: string
-  files?: Array<FileDiff>
 }
 
 export type PermissionV2Source = {
@@ -3297,6 +3353,41 @@ export type SyncEventMessagePartRemoved = {
       sessionID: string
       messageID: string
       partID: string
+    }
+  }
+}
+
+export type SyncEventSessionNextCreated = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.created.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      info: SessionV2Info
+      slug: string
+      version: string
+    }
+  }
+}
+
+export type SyncEventSessionNextInfoUpdated = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.info.updated.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      title?: string
+      archived?: boolean
     }
   }
 }
@@ -3905,33 +3996,6 @@ export type AgentV2Info = {
   permissions: PermissionV2Ruleset
 }
 
-export type SessionV2Info = {
-  id: string
-  parentID?: string
-  projectID: string
-  agent?: string
-  model?: ModelRef
-  cost: number
-  tokens: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  time: {
-    created: number
-    updated: number
-    archived?: number
-  }
-  title: string
-  location: LocationRef
-  subpath?: string
-  revert?: RevertState
-}
-
 export type PromptInputFileAttachment = {
   uri: string
   name?: string
@@ -4164,6 +4228,47 @@ export type SessionMessage =
   | SessionMessageShell
   | SessionMessageAssistant
   | SessionMessageCompaction
+
+export type SessionNextCreated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.created"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    info: SessionV2Info
+    slug: string
+    version: string
+  }
+}
+
+export type SessionNextInfoUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.info.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    title?: string
+    archived?: boolean
+  }
+}
 
 export type SessionNextAgentSwitched = {
   id: string
@@ -6249,6 +6354,29 @@ export type EventMessagePartRemoved = {
     sessionID: string
     messageID: string
     partID: string
+  }
+}
+
+export type EventSessionNextCreated = {
+  id: string
+  type: "session.next.created"
+  properties: {
+    timestamp: number
+    sessionID: string
+    info: SessionV2Info
+    slug: string
+    version: string
+  }
+}
+
+export type EventSessionNextInfoUpdated = {
+  id: string
+  type: "session.next.info.updated"
+  properties: {
+    timestamp: number
+    sessionID: string
+    title?: string
+    archived?: boolean
   }
 }
 

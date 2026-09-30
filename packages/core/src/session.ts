@@ -486,6 +486,10 @@ const layer = Layer.effect(
           cutoff = legacyCutoff >= 0 ? -1 : (target?.seq ?? rows.at(-1)?.seq)
         }
         const allowed = new Set(SessionDurable.definitions.keys())
+        // The child owns its own Session info; never replay the parent's
+        // creation or info updates under the child aggregate.
+        allowed.delete(EventV2.versionedType(SessionEvent.Info.Created.type, SessionEvent.Info.Created.durable?.version ?? 1))
+        allowed.delete(EventV2.versionedType(SessionEvent.Info.Updated.type, SessionEvent.Info.Updated.durable?.version ?? 1))
         const sequence = yield* db
           .select()
           .from(EventSequenceTable)

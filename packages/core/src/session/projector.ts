@@ -76,6 +76,36 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
   }
 }
 
+function sessionRowFromInfo(
+  info: SessionSchema.Info,
+  slug: string,
+  version: string,
+): typeof SessionTable.$inferInsert {
+  return {
+    id: info.id,
+    project_id: info.projectID,
+    workspace_id: info.location.workspaceID ?? null,
+    parent_id: info.parentID,
+    slug,
+    directory: info.location.directory,
+    path: info.subpath,
+    title: info.title,
+    agent: info.agent,
+    model: info.model,
+    version,
+    cost: info.cost ?? 0,
+    tokens_input: info.tokens.input,
+    tokens_output: info.tokens.output,
+    tokens_reasoning: info.tokens.reasoning,
+    tokens_cache_read: info.tokens.cache.read,
+    tokens_cache_write: info.tokens.cache.write,
+    revert: info.revert ? { ...info.revert, messageID: SessionMessage.ID.make(info.revert.messageID) } : null,
+    time_created: DateTime.toEpochMillis(info.time.created),
+    time_updated: DateTime.toEpochMillis(info.time.updated),
+    time_archived: info.time.archived === undefined ? undefined : DateTime.toEpochMillis(info.time.archived),
+  }
+}
+
 function messageData(
   info: (typeof SessionV1.Event.MessageUpdated.Type)["data"]["info"],
 ): typeof MessageTable.$inferInsert.data {
@@ -306,6 +336,26 @@ const layer = Layer.effectDiscard(
             .update(WorkspaceTable)
             .set({ time_used: Date.now() })
             .where(eq(WorkspaceTable.id, event.data.info.workspaceID))
+            .run()
+            .pipe(Effect.orDie)
+        }
+      }),
+    )
+    yield* events.project(SessionEvent.Info.Created, (event) =>
+      Effect.gen(function* () {
+        const stored = yield* db
+          .insert(SessionTable)
+          .values(sessionRowFromInfo(event.data.info, event.data.slug, event.data.version))
+          .onConflictDoNothing()
+          .returning({ sessionID: SessionTable.id })
+          .get()
+          .pipe(Effect.orDie)
+        if (!stored) return yield* Effect.die(new SessionAlreadyProjected())
+        if (event.data.info.location.workspaceID) {
+          yield* db
+            .update(WorkspaceTable)
+            .set({ time_used: Date.now() })
+            .where(eq(WorkspaceTable.id, event.data.info.location.workspaceID))
             .run()
             .pipe(Effect.orDie)
         }
