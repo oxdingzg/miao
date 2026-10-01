@@ -113,7 +113,7 @@ describe("RequestExecutor", () => {
     }).pipe(Effect.provide(responsesLayer([new Response("invalid parameter", { status: 400 })]))),
   )
 
-  it.effect("returns redacted diagnostics for retryable rate limits", () =>
+  it.live("returns redacted diagnostics for retryable rate limits", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
       const error = yield* executor.execute(request).pipe(Effect.flip)
@@ -174,7 +174,7 @@ describe("RequestExecutor", () => {
     ),
   )
 
-  it.effect("extracts OpenAI-style rate-limit diagnostics", () =>
+  it.live("extracts OpenAI-style rate-limit diagnostics", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
       const error = yield* executor.execute(request).pipe(Effect.flip)
@@ -211,7 +211,7 @@ describe("RequestExecutor", () => {
     ),
   )
 
-  it.effect("extracts Anthropic-style rate-limit diagnostics", () =>
+  it.live("extracts Anthropic-style rate-limit diagnostics", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
       const error = yield* executor.execute(request).pipe(Effect.flip)
@@ -248,7 +248,7 @@ describe("RequestExecutor", () => {
     ),
   )
 
-  it.effect("retries retryable status responses before returning the stream", () =>
+  it.live("retries retryable status responses before returning the stream", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
       const response = yield* executor.execute(request)
@@ -265,7 +265,7 @@ describe("RequestExecutor", () => {
     ),
   )
 
-  it.effect("marks 504 and 529 status responses retryable", () =>
+  it.live("marks 504 and 529 status responses retryable", () =>
     Effect.gen(function* () {
       const failWith = (status: number) =>
         Effect.gen(function* () {
@@ -383,6 +383,26 @@ describe("RequestExecutor", () => {
         ),
       )
     }),
+  )
+
+  it.effect("waits a minimum pause when Retry-After is zero", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const fiber = yield* executor.execute(request).pipe(Effect.forkChild)
+
+      yield* TestClock.adjust(249)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(1)
+      const response = yield* Fiber.join(fiber)
+      expect(response.status).toBe(200)
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response("busy", { status: 503, headers: { "retry-after": "0" } }),
+          new Response("ok", { status: 200 }),
+        ]),
+      ),
+    ),
   )
 
   it.effect("uses exponential jittered delay when retry-after is absent", () =>
