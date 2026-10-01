@@ -74,7 +74,7 @@ describe("plugin.workspace", () => {
           path.join(dir, "miao.json"),
           JSON.stringify(
             {
-              $schema: "https://opencode.ai/config.json",
+              $schema: "https://mtty.dev/miao/config.json",
               plugin: [pathToFileURL(file).href],
             },
             null,
