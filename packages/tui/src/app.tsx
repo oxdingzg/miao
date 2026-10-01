@@ -202,6 +202,10 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
           }),
       )
       win32DisableProcessedInput()
+      yield* Effect.acquireRelease(
+        Effect.sync(() => settleResizes(renderer)),
+        (stop) => Effect.sync(stop),
+      )
       const keymap = createDefaultOpenTuiKeymap(renderer)
       yield* Effect.acquireRelease(
         Effect.sync(() => registerOpencodeKeymap(keymap, renderer, input.config)),
@@ -1117,4 +1121,34 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       </Show>
     </box>
   )
+}
+
+// The kernel coalesces SIGWINCH while a window is being dragged, and the size
+// read inside the handler can still be an intermediate one: three resizes to 160
+// columns arrived as two signals that both read 120. The renderer then keeps the
+// stale size until the next resize. Re-read the size shortly after each signal and
+// resize the renderer if it still disagrees with the terminal.
+function settleResizes(renderer: Awaited<ReturnType<typeof createCliRenderer>>) {
+  if (process.platform === "win32") return () => {}
+  const timers = new Set<ReturnType<typeof setTimeout>>()
+  const check = () => {
+    const [width, height] = process.stdout.getWindowSize?.() ?? [process.stdout.columns, process.stdout.rows]
+    if (!width || !height) return
+    if (width === renderer.terminalWidth && height === renderer.terminalHeight) return
+    renderer.resize(width, height)
+  }
+  const onResize = () => {
+    for (const delay of [60, 250]) {
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        check()
+      }, delay)
+      timers.add(timer)
+    }
+  }
+  process.on("SIGWINCH", onResize)
+  return () => {
+    process.off("SIGWINCH", onResize)
+    for (const timer of timers) clearTimeout(timer)
+  }
 }
