@@ -379,11 +379,17 @@ describe("session HttpApi", () => {
 
         yield* insertLegacyAssistantMessage(parent.id)
 
+        // The V1 messages above were never backfilled, so the V2 route serves them
+        // alongside the projected assistant row (newest first).
         expect(
           (yield* requestJson<{ data: SessionMessage.Message[] }>(`/api/session/${parent.id}/message`, {
             headers,
           })).data,
-        ).toMatchObject([{ type: "assistant" }])
+        ).toMatchObject([
+          { type: "assistant" },
+          { type: "user", text: "world" },
+          { type: "user", text: "hello" },
+        ])
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
@@ -637,28 +643,18 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
-    "returns v2 public unavailable errors for unfinished session mutations",
+    "serves v2 compact and wait for an idle session",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         const headers = { "x-opencode-directory": test.directory }
-        const session = yield* createSession({ title: "v2 unavailable" })
+        const session = yield* createSession({ title: "v2 compact and wait" })
 
         const compact = yield* request(`/api/session/${session.id}/compact`, { method: "POST", headers })
-        expect(compact.status).toBe(503)
-        expect(yield* responseJson(compact)).toEqual({
-          _tag: "ServiceUnavailableError",
-          message: "Session compact is not available yet",
-          service: "session.compact",
-        })
+        expect(compact.status).toBe(204)
 
         const wait = yield* request(`/api/session/${session.id}/wait`, { method: "POST", headers })
-        expect(wait.status).toBe(503)
-        expect(yield* responseJson(wait)).toEqual({
-          _tag: "ServiceUnavailableError",
-          message: "Session wait is not available yet",
-          service: "session.wait",
-        })
+        expect(wait.status).toBe(204)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
