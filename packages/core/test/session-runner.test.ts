@@ -3012,6 +3012,21 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("sends the prompt cache key as the session-id header to OpenAI", () =>
+    Effect.gen(function* () {
+      yield* setup
+      currentModel = Model.make({ id: "gpt-6.1-sol", provider: "openai", route: OpenAIChat.route })
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run cached request" }), resume: false })
+
+      requests.length = 0
+      yield* session.resume(sessionID)
+
+      expect(requests[0]?.http?.headers?.["session-id"]).toBe(sessionID)
+      expect(requests[0]?.providerOptions?.openai?.promptCacheKey).toBe(requests[0]?.http?.headers?.["session-id"])
+    }),
+  )
+
   it.effect("adds the parent session header to child model requests", () =>
     Effect.gen(function* () {
       yield* setup

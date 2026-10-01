@@ -366,6 +366,10 @@ const layer = Layer.effect(
             "x-session-affinity": session.id,
             "X-Session-Id": session.id,
             ...(session.parentID ? { "x-parent-session-id": session.parentID } : {}),
+            // ChatGPT's Codex backend derives prompt-cache affinity from this header,
+            // not from prompt_cache_key; without it each request lands on an arbitrary
+            // cache server and only hits whatever older prefix that server holds.
+            ...(model.provider === "openai" ? { "session-id": promptCacheKey } : {}),
           },
         },
         providerOptions: { openai: { promptCacheKey } },
