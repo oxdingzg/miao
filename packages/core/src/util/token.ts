@@ -1,18 +1,26 @@
 export * as Token from "./token"
 
-import { encode } from "gpt-tokenizer"
+import type { encode } from "gpt-tokenizer"
 
 const CHARS_PER_TOKEN = 4
 
 /** Fast character heuristic; used only where a BPE pass is not worth its cost. */
 export const estimate = (input: string) => Math.max(0, Math.round(input.length / CHARS_PER_TOKEN))
 
+let encoder: typeof encode | undefined
+
 /**
  * BPE token count. Exact for OpenAI-family models (o200k base), a close
  * approximation for other providers, and always better than `estimate` for
  * code and CJK text where the character heuristic under-counts heavily.
  */
-export const count = (input: string) => encode(input).length
+export const count = (input: string) => {
+  // The o200k tables cost ~27 MB of heap and ~240 ms to load, and only opt-in
+  // precise compaction counts tokens, so they load on the first count. `require`
+  // keeps `count` synchronous for the measure callbacks that call it.
+  encoder ??= (require("gpt-tokenizer") as { encode: typeof encode }).encode
+  return encoder(input).length
+}
 
 // Providers tokenize attachments by resolution and cap the per-image cost, so
 // inline base64 length is the wrong unit for a context budget: a screenshot is a
