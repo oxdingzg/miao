@@ -1,7 +1,18 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
-import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
+import {
+  batch,
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  Show,
+  useContext,
+  type JSX,
+  type ParentProps,
+} from "solid-js"
 import { useTheme } from "../context/theme"
-import { MouseButton, Renderable, RGBA } from "@opentui/core"
+import { MouseButton, Renderable, RGBA, type BoxRenderable } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { Flag } from "@miao/core/flag/flag"
@@ -12,12 +23,33 @@ export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge"
     placement?: "center" | "bottom"
+    anchor?: () => BoxRenderable | undefined
     onClose: () => void
   }>,
 ) {
   const dimensions = useTerminalDimensions()
   const { theme } = useTheme()
   const renderer = useRenderer()
+  // A bottom sheet sits directly above the prompt and matches its width, the way
+  // Claude Code and Codex show pickers in place of the composer. Layout moves the
+  // prompt without notifying anyone, so poll its box while the sheet is open.
+  const [tick, setTick] = createSignal(0)
+  const timer = setInterval(() => setTick((value) => value + 1), 50)
+  onCleanup(() => clearInterval(timer))
+  const anchored = createMemo(
+    () => {
+      tick()
+      dimensions()
+      if (props.placement !== "bottom") return undefined
+      const box = props.anchor?.()
+      if (!box || box.isDestroyed || !box.visible || box.width < 20 || box.y < 12) return undefined
+      return { left: box.x, width: box.width, bottom: dimensions().height - box.y }
+    },
+    undefined,
+    {
+      equals: (a, b) => a?.left === b?.left && a?.width === b?.width && a?.bottom === b?.bottom,
+    },
+  )
 
   let dismiss = false
   const width = () => {
@@ -46,8 +78,8 @@ export function Dialog(
       position="absolute"
       zIndex={3000}
       paddingTop={props.placement === "bottom" ? 0 : Math.floor(dimensions().height / 4)}
-      paddingBottom={props.placement === "bottom" ? Math.min(7, Math.floor(dimensions().height / 4)) : 0}
-      paddingLeft={props.placement === "bottom" ? 1 : 0}
+      paddingBottom={props.placement === "bottom" && !anchored() ? Math.min(7, Math.floor(dimensions().height / 4)) : 0}
+      paddingLeft={props.placement === "bottom" && !anchored() ? 1 : 0}
       left={0}
       top={0}
       backgroundColor={RGBA.fromInts(0, 0, 0, 0)}
@@ -60,8 +92,11 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={width()}
+        width={anchored()?.width ?? width()}
         maxWidth={dimensions().width - 2}
+        position={anchored() ? "absolute" : undefined}
+        left={anchored()?.left}
+        bottom={anchored()?.bottom}
         backgroundColor={theme.backgroundPanel}
         border={props.placement === "bottom" ? true : undefined}
         borderColor={theme.border}
@@ -74,6 +109,7 @@ export function Dialog(
 }
 
 function init() {
+  const [anchor, setAnchor] = createSignal<() => BoxRenderable | undefined>()
   const [store, setStore] = createStore({
     stack: [] as {
       element: JSX.Element
@@ -182,6 +218,14 @@ function init() {
     get placement() {
       return store.placement
     },
+    get anchor() {
+      return anchor()
+    },
+    /** Register the prompt box that bottom sheets align to; returns the unregister. */
+    setAnchor(box: () => BoxRenderable | undefined) {
+      setAnchor(() => box)
+      return () => setAnchor((current) => (current === box ? undefined : current))
+    },
     setPlacement(placement: "center" | "bottom") {
       setStore("placement", placement)
     },
@@ -229,7 +273,7 @@ export function DialogProvider(props: ParentProps) {
         onMouseUp={!Flag.MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size} placement={value.placement}>
+          <Dialog onClose={() => value.clear()} size={value.size} placement={value.placement} anchor={value.anchor}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

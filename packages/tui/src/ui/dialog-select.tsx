@@ -1,5 +1,6 @@
 import {
   InputRenderable,
+  type MouseEvent,
   RGBA,
   ScrollBoxRenderable,
   TextAttributes,
@@ -355,6 +356,16 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     }
   }
 
+  // Hover follows the pointer only once it actually moves to another cell. Some
+  // terminals report motion while the pointer rests, which let a pointer parked
+  // over the list keep taking the selection back from the arrow keys.
+  let pointer: { x: number; y: number } | undefined
+  function pointerMoved(event: MouseEvent) {
+    const moved = pointer !== undefined && (pointer.x !== event.x || pointer.y !== event.y)
+    pointer = { x: event.x, y: event.y }
+    return moved
+  }
+
   function submit() {
     if (props.locked) return
     setStore("input", "keyboard")
@@ -578,7 +589,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             </text>
           )}
           <text fg={theme.textMuted} onMouseUp={() => dialog.clear()}>
-            esc
+            {props.compact && dimensions().width >= 72 ? "↑↓ select · enter confirm · esc" : "esc"}
           </text>
         </box>
         <Show when={props.renderFilter !== false}>
@@ -586,6 +597,16 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             <input
               onInput={(e) => {
                 if (props.locked) return
+                // Pickers number their first nine options; a digit typed into an empty
+                // search picks that option, as in Codex.
+                const shortcut =
+                  props.compact && store.filter === "" && /^[1-9]$/.test(e) ? flat()[Number(e) - 1] : undefined
+                if (shortcut) {
+                  input.value = ""
+                  moveTo(Number(e) - 1)
+                  submit()
+                  return
+                }
                 batch(() => {
                   setStore("filter", e)
                   props.onFilter?.(e)
@@ -650,12 +671,16 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                     {(option) => {
                       const active = createMemo(() => !props.locked && isDeepEqual(option.value, selected()?.value))
                       const current = createMemo(() => isDeepEqual(option.value, props.current))
+                      const position = createMemo(() =>
+                        flat().findIndex((item) => isDeepEqual(item.value, option.value)),
+                      )
                       return (
                         <box
                           flexDirection="column"
                           position="relative"
-                          onMouseMove={() => {
+                          onMouseMove={(event: MouseEvent) => {
                             if (props.locked) return
+                            if (!pointerMoved(event)) return
                             setStore("input", "mouse")
                             setFocusedAction(undefined)
                           }}
@@ -680,7 +705,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                         >
                           <box
                             flexDirection="row"
-                            paddingLeft={current() || option.gutter ? 1 : 3}
+                            paddingLeft={props.compact ? 1 : current() || option.gutter ? 1 : 3}
                             paddingRight={3}
                             gap={1}
                             backgroundColor={
@@ -691,6 +716,22 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                                 : RGBA.fromInts(0, 0, 0, 0)
                             }
                           >
+                            <Show when={props.compact}>
+                              <text
+                                flexShrink={0}
+                                width={1}
+                                fg={active() ? selectedForeground(theme) : theme.textMuted}
+                              >
+                                {active() ? "❯" : " "}
+                              </text>
+                              <text
+                                flexShrink={0}
+                                width={2}
+                                fg={active() ? selectedForeground(theme) : theme.textMuted}
+                              >
+                                {store.filter === "" && position() < 9 ? `${position() + 1}.` : ""}
+                              </text>
+                            </Show>
                             <Show when={!current() && option.margin}>
                               <box position="absolute" left={1} flexShrink={0}>
                                 {option.margin}
@@ -707,6 +748,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                               current={current()}
                               muted={actionFocused()}
                               gutter={option.gutter}
+                              compact={props.compact}
                             />
                           </box>
                           <For each={option.details}>
@@ -754,6 +796,7 @@ function Option(props: {
   titleWidth?: number
   truncateTitle?: boolean | "left"
   gutter?: () => JSX.Element
+  compact?: boolean
   onMouseOver?: () => void
 }) {
   const { theme } = useTheme()
@@ -767,7 +810,12 @@ function Option(props: {
 
   return (
     <>
-      <Show when={props.current && !props.gutter}>
+      <Show when={props.compact && !props.gutter}>
+        <text flexShrink={0} width={1} fg={text()}>
+          {props.current ? "●" : " "}
+        </text>
+      </Show>
+      <Show when={!props.compact && props.current && !props.gutter}>
         <text flexShrink={0} fg={text()} marginRight={0}>
           ●
         </text>
@@ -783,7 +831,7 @@ function Option(props: {
         attributes={props.active && !props.muted ? TextAttributes.BOLD : undefined}
         overflow="hidden"
         wrapMode="none"
-        paddingLeft={3}
+        paddingLeft={props.compact ? 0 : 3}
       >
         {props.titleView ??
           (props.truncateTitle === false

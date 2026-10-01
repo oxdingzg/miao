@@ -660,6 +660,9 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  // Bottom-sheet pickers align to this box; a hidden prompt reports no anchor.
+  onCleanup(dialog.setAnchor(() => (props.visible === false ? undefined : anchor)))
+
   onCleanup(() => {
     if (store.prompt.input) {
       stashed = { prompt: unwrap(store.prompt), cursor: input.cursorOffset }
