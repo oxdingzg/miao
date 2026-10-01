@@ -259,16 +259,17 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         Boolean(yield* dep.auth(input.id)) ||
         Boolean((yield* dep.config()).provider?.["opencode"]?.options?.apiKey)
 
-      if (!ok) {
-        for (const [key, value] of Object.entries(input.models)) {
-          if (value.cost.input === 0) continue
-          delete input.models[key]
-        }
+      // OpenCode's free tier serves only the official OpenCode client and answers
+      // miao with a FreeTierError, so free models are never offered; paid models
+      // need a key.
+      for (const [key, value] of Object.entries(input.models)) {
+        if (ok && value.cost.input > 0) continue
+        delete input.models[key]
       }
 
       return {
         autoload: Object.keys(input.models).length > 0,
-        options: ok ? {} : { apiKey: "public" },
+        options: {},
       }
     }),
     openai: () =>

@@ -257,7 +257,7 @@ describe("OpencodePlugin", () => {
     ),
   )
 
-  it.effect("uses a public key and disables paid models without credentials", () =>
+  it.effect("disables paid models without credentials", () =>
     withEnv({ MIAO_API_KEY: undefined }, () =>
       Effect.gen(function* () {
         const catalog = yield* Catalog.Service
@@ -277,13 +277,13 @@ describe("OpencodePlugin", () => {
           })
         })
         yield* addPlugin()
-        expect(required(yield* catalog.provider.get(ProviderV2.ID.opencode)).request.body.apiKey).toBe("public")
+        expect(required(yield* catalog.provider.get(ProviderV2.ID.opencode)).request.body.apiKey).toBeUndefined()
         expect(required(yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("paid"))).enabled).toBe(false)
       }),
     ),
   )
 
-  it.effect("keeps free models without credentials", () =>
+  it.effect("disables free models, which only the OpenCode client may use", () =>
     withEnv({ MIAO_API_KEY: undefined }, () =>
       Effect.gen(function* () {
         const catalog = yield* Catalog.Service
@@ -303,13 +303,12 @@ describe("OpencodePlugin", () => {
           })
         })
         yield* addPlugin()
-        expect(required(yield* catalog.provider.get(ProviderV2.ID.opencode)).request.body.apiKey).toBe("public")
-        expect(required(yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("free"))).enabled).toBe(true)
+        expect(required(yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("free"))).enabled).toBe(false)
       }),
     ),
   )
 
-  it.effect("treats output-only cost as free without credentials", () =>
+  it.effect("treats output-only cost as free", () =>
     withEnv({ MIAO_API_KEY: undefined }, () =>
       Effect.gen(function* () {
         const catalog = yield* Catalog.Service
@@ -329,9 +328,8 @@ describe("OpencodePlugin", () => {
           })
         })
         yield* addPlugin()
-        expect(required(yield* catalog.provider.get(ProviderV2.ID.opencode)).request.body.apiKey).toBe("public")
         expect(required(yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("output-only"))).enabled).toBe(
-          true,
+          false,
         )
       }),
     ),
@@ -355,10 +353,14 @@ describe("OpencodePlugin", () => {
           catalog.model.update(provider.id, model.id, (draft) => {
             draft.cost = [...model.cost]
           })
+          catalog.model.update(provider.id, ModelV2.ID.make("free"), (draft) => {
+            draft.cost = [...cost(0)]
+          })
         })
         yield* addPlugin()
         expect(required(yield* catalog.provider.get(ProviderV2.ID.opencode)).request.body.apiKey).toBeUndefined()
         expect(required(yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("paid"))).enabled).toBe(true)
+        expect(required(yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("free"))).enabled).toBe(false)
       }),
     ),
   )
