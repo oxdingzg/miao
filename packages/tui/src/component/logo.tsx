@@ -84,6 +84,9 @@ const KICK = 0.86
 const LAG = 60
 const SUCK = 0.34
 const SHIMMER_IN = 60
+const FRAME_MS = 16
+const IDLE_FRAME_MS = 80
+const IDLE_REST = 20_000
 const SHIMMER_OUT = 2.8
 const TRACE = 0.033
 const TAIL = 1.8
@@ -588,8 +591,14 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
   const [release, setRelease] = createSignal<Release>()
   const [glow, setGlow] = createSignal<Glow>()
   const [now, setNow] = createSignal(0)
+  // The idle shimmer rests after a stretch without input, so a home screen left
+  // open does not keep repainting; any key or mouse event wakes it.
+  const [resting, setResting] = createSignal(false)
+  let lastInput = performance.now()
   let box: BoxRenderable | undefined
   let timer: ReturnType<typeof setInterval> | undefined
+  let rate = 0
+  const shimmering = () => props.idle === true && !resting()
 
   const stop = () => {
     if (!timer) return
@@ -615,22 +624,39 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
       setGlow(undefined)
     }
     if (!live) setRelease(undefined)
-    if (live || hold() || release() || glow()) return
-    if (props.idle) return
+    if (live || hold() || release() || glow()) return start()
+    if (shimmering() && t - lastInput > IDLE_REST) setResting(true)
+    if (shimmering()) return start()
     stop()
   }
 
+  // Interaction (rings, a held press, a glow) needs full frame rate; the slow
+  // idle sweep alone looks the same at a fraction of the frames.
   const start = () => {
-    if (timer) return
-    timer = setInterval(tick, 16)
+    const next = hold() || release() || glow() || rings().length > 0 ? FRAME_MS : IDLE_FRAME_MS
+    if (timer && rate === next) return
+    stop()
+    rate = next
+    timer = setInterval(tick, next)
   }
+
+  const wake = () => {
+    lastInput = performance.now()
+    if (!resting()) return false
+    setResting(false)
+    setNow(lastInput)
+    start()
+    return false
+  }
+  renderer.prependInputHandler(wake)
 
   onCleanup(() => {
     stop()
+    renderer.removeInputHandler(wake)
   })
 
   // Idle shimmer follows the live animations switch so it can be turned off
-  // without leaving a 60fps timer running behind a static logo.
+  // without leaving a timer running behind a static logo.
   createEffect(() => {
     if (!props.idle) {
       stop()
@@ -707,7 +733,7 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
     }
   })
 
-  const idleState = createMemo(() => (props.idle ? buildIdleState(frame().t, ctx) : undefined))
+  const idleState = createMemo(() => (shimmering() ? buildIdleState(frame().t, ctx) : undefined))
   const useSubpixelBlocks = () => renderer.capabilities?.rgb === true
 
   const renderLine = (
