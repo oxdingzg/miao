@@ -1,7 +1,7 @@
 import { DialogSelect, type DialogSelectRef } from "../ui/dialog-select"
 import { useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
-import { onCleanup } from "solid-js"
+import { For, onCleanup } from "solid-js"
 
 export function DialogThemeList() {
   const theme = useTheme()
@@ -25,6 +25,7 @@ export function DialogThemeList() {
       title="Themes"
       options={options}
       current={initial}
+      footer={<ThemePreview />}
       onMove={(opt) => {
         theme.set(opt.value)
       }}
@@ -46,5 +47,38 @@ export function DialogThemeList() {
         if (first) theme.set(first.value)
       }}
     />
+  )
+}
+
+// A theme is judged by how code and diffs look in it, and the list itself hides
+// most of the screen, so the picker carries its own sample that follows the
+// highlighted theme.
+const SAMPLE = `function greet(name: string) {
+  const count = 3 // retries
+  return \`Hello, \${name}!\``
+
+const DIFF = [
+  { sign: "-", text: '  return "Hi " + name', kind: "removed" },
+  { sign: "+", text: "  return `Hello, ${name}!`", kind: "added" },
+] as const
+
+function ThemePreview() {
+  const { theme, syntax } = useTheme()
+  return (
+    <box flexDirection="column" flexGrow={1} paddingTop={1} paddingBottom={1}>
+      <code conceal={false} fg={theme.text} filetype="typescript" syntaxStyle={syntax()} content={SAMPLE} />
+      <For each={DIFF}>
+        {(line) => (
+          <box flexDirection="row" backgroundColor={line.kind === "added" ? theme.diffAddedBg : theme.diffRemovedBg}>
+            <text fg={line.kind === "added" ? theme.diffHighlightAdded : theme.diffHighlightRemoved}>{line.sign} </text>
+            <code conceal={false} fg={theme.text} filetype="typescript" syntaxStyle={syntax()} content={line.text} />
+          </box>
+        )}
+      </For>
+      <text fg={theme.textMuted}>
+        <span style={{ fg: theme.primary }}>primary</span> · <span style={{ fg: theme.success }}>success</span> ·{" "}
+        <span style={{ fg: theme.warning }}>warning</span> · <span style={{ fg: theme.error }}>error</span> · muted
+      </text>
+    </box>
   )
 }
