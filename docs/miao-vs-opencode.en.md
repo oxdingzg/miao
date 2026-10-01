@@ -1,69 +1,58 @@
-# miao vs opencode: performance and capability comparison
+# miao and its opencode baseline: differences, evidence, and availability
 
 **Language:** [English](miao-vs-opencode.en.md) | [中文](miao-vs-opencode.zh.md)
 
-miao is a fork of opencode. opencode's TS implementation is exactly the baseline in this repo
-before the native modules were added, running on the same JavaScriptCore engine. This page
-consolidates the benchmarks and capability comparisons into one checklist.
+miao builds on opencode's open-source coding workflow and invests in context efficiency, session control, and measurable operating cost. This page describes the fork's engineering work and its recorded baseline measurements. It is **not an audit of the current upstream product**, and shared capabilities such as model selection, MCP, and subagents are not claimed as exclusive to miao.
 
-Measurement conditions: release build, same machine, medians; the TS baseline is the current
-`packages/miao` implementation (source and `--compile` output verified equivalent); Rust is
-`crates/miao-native` called in-process via napi. Correctness is covered by parity tests
-(29 JS + 24 Rust).
+## What changes the daily workflow
 
-## 1. Performance (higher is better; `x` is the speedup)
+| Area                      | miao's implementation                                                                        | Practical value                                                             | Availability                         |
+| ------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------ |
+| Input during execution    | Durable admission; steer at safe provider-turn boundaries; explicit queue at idle boundaries | Add constraints while work continues, with a recorded pending input         | V2                                   |
+| Session collaboration     | `task`, resumable child sessions, project-scoped `list_sessions` / `send_message`            | Delegate focused work and exchange findings across conversations            | V2; messaging subject to permissions |
+| Context stability         | Immutable Context Epoch baseline; chronological context updates                              | Reduce unnecessary changes to a reusable provider-cache prefix              | V2                                   |
+| Cost and cache visibility | Per-turn usage, estimated cost, TTFT, cache-hit ratio and cache-state classification         | Diagnose expensive or slow turns with measurements                          | Implemented                          |
+| Context controls          | Output bounding, optional pruning, compaction settings and cache TTL                         | Keep large tool results and long histories from consuming context unchecked | V2; advanced settings opt-in         |
+| Long-task continuation    | Todo-driven loop with iteration / stall guards and optional cost budget                      | Continue multi-step work without a new prompt after every idle boundary     | V2, opt-in                           |
+| Durable history           | Stored inbox and event-backed history; fork and export                                       | Keep inspectable conversations beyond a terminal's lifetime                 | V2; no automatic crash continuation  |
+| Independent distribution  | Own release source and versioning; separate release, source, and preview commands            | Validate development builds while keeping the daily command usable          | Implemented                          |
 
-| Item | opencode (TS baseline) | miao (Rust native) | Speedup | Status |
-|---|---|---|---|---|
-| edit exact match (12k lines) | 0.21 ms | 0.12 ms | **1.7x** | PoC |
-| edit fuzzy match (12k lines) | 0.76 ms | 0.39 ms | **1.9x** | PoC |
-| edit match + diff stats (12k lines) | 2.03 ms | 1.78 ms | 1.14x | PoC |
-| apply_patch `deriveNewContents` exact (20k lines) | 1.67 ms | 1.28 ms | **1.3x** | PoC |
-| apply_patch trim match (20k lines) | 3.47 ms | 1.76 ms | **2.0x** | PoC |
-| apply_patch unicode-normalize (20k lines) | 13.06 ms | 5.21 ms | **2.5x** | PoC |
-| git status small repo (10 files / 2 changes) | 12.3 ms | 1.0 ms | **11.9x** | PoC |
-| git status large repo (2200 files / 400 changes) | 13.6 ms | 5.8 ms | **2.4x** | PoC |
+Estimated costs depend on configured model rates and currency metadata. Budget checks stop further scheduling once the threshold is reached; they do not cap a request already in flight or replace provider billing. Prompt caching depends on the provider and workload, so there is no guaranteed task-level savings percentage.
 
-Key points:
+## Recorded native benchmarks
 
-- **opencode reads git status with a subprocess model**, with a fixed ~11 ms floor (11 ms even for 10 files); miao uses `gix` in-process, scaling with file count: 12x faster on a small repo and still 2.4x on a large one.
-- **Fuzzy matching and unicode normalization** are pure CPU paths where miao is 2-2.5x faster; exact matching is 1.7x.
-- Only paths dominated by whole-file diff/string assembly show a small gain (1.1-1.3x), because both sides pay the same O(n) assembly cost there.
+The baseline is this repository's TypeScript implementation before the native work, not today's `anomalyco/opencode`. These are recorded same-machine release-build medians for isolated operations through the Rust addon. They exclude shared orchestration, I/O, LSP, formatting, provider latency, and model reasoning. They have not been re-run as part of this documentation update.
 
-## 2. Capability (what opencode does not have)
+| Operation                                         | TypeScript baseline | Rust native | Speedup   | Integration scope      |
+| ------------------------------------------------- | ------------------- | ----------- | --------- | ---------------------- |
+| edit exact match (12k lines)                      | 0.21 ms             | 0.12 ms     | **1.7x**  | Compatibility path     |
+| edit fuzzy match (12k lines)                      | 0.76 ms             | 0.39 ms     | **1.9x**  | Compatibility path     |
+| edit match + diff stats (12k lines)               | 2.03 ms             | 1.78 ms     | 1.14x     | Compatibility path     |
+| apply_patch `deriveNewContents` exact (20k lines) | 1.67 ms             | 1.28 ms     | **1.3x**  | Compatibility path     |
+| apply_patch trim match (20k lines)                | 3.47 ms             | 1.76 ms     | **2.0x**  | Compatibility path     |
+| apply_patch unicode-normalize (20k lines)         | 13.06 ms            | 5.21 ms     | **2.5x**  | Compatibility path     |
+| git status small repo (10 files / 2 changes)      | 12.3 ms             | 1.0 ms      | **11.9x** | Prototype; not default |
+| git status large repo (2200 files / 400 changes)  | 13.6 ms             | 5.8 ms      | **2.4x**  | Prototype; not default |
 
-| Capability | opencode | miao | Status |
-|---|---|---|---|
-| Process-level sandbox | None. Rule-based permissions; once approved the process has full user privileges | Opt-in (`MIAO_SANDBOX=1`): macOS seatbelt / Linux Landlock enforce a write allowlist by the kernel; blocked paths reported and retried after a prompt. Network allowed by default (`MIAO_SANDBOX_DENY_NETWORK=1` denies it) | Opt-in |
-| Sandbox configurability | None | `--allow-path` for precise allowlisting; `--compat` mode (deny only credential paths + network) | Opt-in |
-| git status read | `git` subprocess (`diff-files` + `ls-files`) | `gix` in-process, no spawn | PoC |
-| Self-update source | `anomalyco/opencode`, follows upstream versioning | `oxdingzg/miao`, version starts at `0.0.1`, does not follow upstream | Merged |
-| Branding | opencode | miao: exit banner (cat + MIAO), terminal title prefixed with miao, install script | Merged |
+CPU-heavy matching and normalization show the clearest gains. In-process Git avoids subprocess startup overhead in the prototype. Neither result establishes an end-to-end coding-task speedup.
 
-Sandbox measured on the same machine:
+## Native tools and sandbox: where they apply
 
-| Behavior | opencode (rule-based permissions) | miao (seatbelt) |
-|---|---|---|
-| Write `$HOME/...` | Allowed (no enforcement after approval) | Denied (Operation not permitted) |
-| Network access | Allowed (HTTP 200) | Denied (curl exit 6, cannot resolve host) |
-| Write workdir | Allowed | Allowed |
-| Normal command (`git status`) | Works | Works |
+The current code has two tool implementations. Native integration lives in `packages/miao/src/tool`; the default V2 runner uses the separate leaves in `packages/core/src/tool`.
 
-Note: the table is the sandbox backend's (`miao-run` / `__sandbox-run`) default behavior; once wired into the shell tool, network is allowed by default, and only `MIAO_SANDBOX_DENY_NETWORK=1` restores the denial above.
+- **Compatibility edit / patch:** use the native addon where available, with a TypeScript fallback; `MIAO_NATIVE=0` disables it. This is not a claim that V2 edits use the addon.
+- **In-process Git:** the `gix` implementation and benchmarks exist, but it is not the default Git path.
+- **Compatibility shell sandbox:** opt in with `MIAO_SANDBOX=1`. macOS seatbelt and Linux Landlock restrict writes; network is allowed in the shell integration unless `MIAO_SANDBOX_DENY_NETWORK=1` is also set. Availability depends on the platform and packaged backend.
+- **V2 permissions:** rule-based approvals remain the relevant default control. V2's `bash` leaf does not currently route through the compatibility sandbox. An environment flag alone does not provide V2 kernel confinement.
 
-## 3. Status and boundaries (read this)
+For compatibility TUI testing, `MIAO_TUI_V2=0` selects V1. Read the [guide](guide.en.md#56-kernel-level-sandbox-compatibility-runtime-opt-in) and [integration risks](rust-integration-risks.en.md) before relying on the sandbox. Windows kernel sandbox parity is not implemented.
 
-- **Merged to main**: version/update-source decoupling and branding (banner / terminal title / install script).
-- **Native modules are a PoC, on by default where wired**: the edit/patch pure functions in `crates/miao-native` run by default (`MIAO_NATIVE=0` falls back); the git/text/walk/shell modules are still unwired and the default paths use TS, subprocess git, and rule-based permissions.
-- **The sandbox is wired, opt-in**: the shell tool runs through the sandbox runner when `MIAO_SANDBOX=1` (release binary self-execs `__sandbox-run`; macOS seatbelt / Linux Landlock).
-- The baseline is **the TS implementation in this repo before the fork's native work** (i.e. opencode's implementation), not the live opencode repository.
-- Performance numbers are **isolated pure-function comparisons**; they exclude the Effect/IO/LSP/formatting work that is identical on both sides.
-- Sandbox backends: macOS and Linux are implemented; Windows (AppContainer + Job object) is not.
+## Boundaries and ongoing work
 
-Risks of wiring these PoCs into production (packaging, false-green CI, synchronous blocking, platform gaps) are in [rust-integration-risks.en.md](rust-integration-risks.en.md).
+- V2 is the default TUI runtime; V1 retirement remains in progress.
+- Durable history and exact prompt retry reconciliation do not mean automatic recovery of interrupted provider execution or exactly-once shell side effects.
+- Session execution and messaging wakes remain process-local; no cross-machine agent cluster is advertised.
+- Code Mode is experimental. Generated clients and the embedded host are private workspace packages with evolving contracts.
+- Per-target messaging policy persistence and receiving-drain loop accounting still have open design work; see [session messaging](../specs/v2/session-messaging.md).
 
-## 4. Next steps (toward "merged")
-
-1. Wire `edit` / `apply_patch` / `snapshot` to native with a TS fallback, and compare RSS memory.
-2. ~~Route the bash tool through the sandbox runner with the permission prompt as `ask`~~ Done: the shell tool runs sandboxed when `MIAO_SANDBOX=1`.
-3. ~~Add the Linux landlock/seccomp backend~~ Done (Landlock with TCP denied); Windows remains.
+See [README](../README.md) for the product overview, [the guide](guide.en.md) for usage, and [CONTEXT.md](../CONTEXT.md) for runtime contracts.

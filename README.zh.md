@@ -1,131 +1,137 @@
 <p align="center">
   <strong>miao</strong>
 </p>
-<p align="center">同样的结果，更快、更省。</p>
+<p align="center">模型由你选，工作持续推进，少浪费上下文。</p>
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh.md">简体中文</a>
+</p>
+<p align="center">
+  <a href="#快速开始">快速开始</a> · <a href="#为什么选择-miao">为什么选择 miao</a> · <a href="docs/guide.zh.md">使用指南</a> · <a href="https://github.com/oxdingzg/miao/releases">下载版本</a>
 </p>
 
 ---
 
-miao 是一个用于日常工程工作的终端 AI 编程代理，fork 自
-[opencode](https://github.com/anomalyco/opencode)。它只围绕一个约束来构建：
-**用更低的延迟和更少的 token，得到同样的结果。**
+**miao 是一个开源 AI 编程代理，让你在终端里完成真实工程任务，也看清任务消耗了多少时间和费用。** 使用你选择的模型，让代理理解仓库、修改代码、执行命令并验证结果。
 
-大多数编程代理只以能力论高下。miao 把延迟、token 消耗和成本当作运行时的一等属性，而不是事后
-加上去的开关。目标是一个启动更快、单轮返回更快、每天都更省钱的代理——同时不牺牲模型覆盖面和
-安全性。
+miao 基于 [opencode](https://github.com/anomalyco/opencode)，把重点放在模型周围的工程能力上：**上下文效率、持久化会话、代理协作，以及长任务的执行控制。** 目标是用更少的等待、更少浪费的 token，得到同样有用的结果。
 
-## 设计原则
+## 为什么选择 miao
 
-- **延迟是预算。** 启动、首 token、每轮响应延迟都被度量并守住。热路径在进程内执行，不起子进程、
-  不付逐次调用的进程开销。
-- **token 与费用都要可计量。** 提示缓存稳定性、上下文纪元（Context Epoch）、压缩调优、逐轮成本
-  核算都是运行时的一部分，而非外挂。成本按 provider 的本币计量，统计与真实账单一致。
-- **广覆盖优先于锁定。** 一套接口适配尽可能多的模型与供应商，并有显式的模型目录。
-- **安全是强制的，不是请求式的。** 规则式权限之外，可选的内核级沙箱（macOS seatbelt / Linux
-  Landlock）在系统调用层限制写入与网络——这是规则式权限无法保证的。
+### 按任务选择模型，保留熟悉的工作流
 
-## 实测性能
+在同一个界面连接多个供应商，随时切换会话模型，也可以为专门的代理设置各自的模型和权限。模型目录与自定义供应商配置，让你按推理能力、响应速度或价格做选择，减少切换工具和重新建立上下文的成本。
 
-基线是本仓库在引入原生模块之前、opencode 的 TypeScript 实现，同机实测（release 构建、中位数）。
-越大越好。
+### 长任务持续推进，中途也能补充要求
 
-| 路径 | opencode（TS） | miao（Rust 原生） | 提速 | 状态 |
-|---|---|---|---|---|
-| edit 精确匹配（12k 行） | 0.21 ms | 0.12 ms | **1.7x** | PoC |
-| edit 模糊匹配（12k 行） | 0.76 ms | 0.39 ms | **1.9x** | PoC |
-| edit 匹配 + diff 统计（12k 行） | 2.03 ms | 1.78 ms | 1.14x | PoC |
-| apply_patch exact（20k 行） | 1.67 ms | 1.28 ms | **1.3x** | PoC |
-| apply_patch trim 匹配（20k 行） | 3.47 ms | 1.76 ms | **2.0x** | PoC |
-| apply_patch unicode 归一化（20k 行） | 13.06 ms | 5.21 ms | **2.5x** | PoC |
-| git status 小仓（10 文件） | 12.3 ms | 1.0 ms | **11.9x** | PoC |
-| git status 大仓（2200 文件） | 13.6 ms | 5.8 ms | **2.4x** | PoC |
+代理执行时，你仍然可以提交新要求。V2 会先持久化输入，再调度执行，在安全的模型轮次边界把补充要求带入会话；显式排队的输入则等当前工作即将空闲时再处理。无需另开对话，也不必为每一次工具调用停下来重新交代任务。
 
-- opencode 的 git 状态是子进程模型，10 个文件也要付 ~11 ms 的固定开销；miao 用 `gix` 进程内读取，
-  开销随文件数增长。
-- 模糊匹配与 unicode 归一化是纯 CPU 路径（2–2.5x）。被整文件 diff 与字符串拼接主导的路径收益较小
-  （1.1–1.3x），因为两边都要付同一套 O(n) 成本。
+### 把专项工作交给拥有独立上下文的代理
 
-## opencode 之外
+通过子代理委派一个范围明确的任务，后续还可以继续同一个子会话。V2 提供 `list_sessions` 和 `send_message`，代理能在权限约束下发现并联系同项目的其他会话。把调研、排查等专项工作放进独立对话，主会话保持对整体目标的关注。
 
-| 能力 | 说明 | 状态 |
-|---|---|---|
-| 内核级沙箱 | 需开启（`MIAO_SANDBOX=1`）：macOS seatbelt / Linux Landlock 把写入限制在工作目录；被拒路径回传并在询问后重试。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 才禁网） | opt-in |
-| 进程内 git status | `gix`，不再起子进程 | PoC |
-| 独立的版本与更新源 | `oxdingzg/miao`，版本从 `0.0.1` 起，独立发布与自更新 | 已合入 |
-| 成本核算 | 按模型费率计算逐轮成本、会话汇总、revert 时回滚 | 已合入 |
-| 按 provider 本币计价 | 使用 provider 官方本币单价（如 DeepSeek 的 CNY），统计与账单一致 | 已合入 |
-| 缓存遥测 | 逐轮 TTFT、缓存命中率、warm / expected-rebuild / miss，可配 TTL | 已合入 |
-| 压缩调优（opt-in） | 廉价摘要模型、热前缀复用、BPE 阈值、工具输出裁剪 | opt-in |
-| 自治循环 | 一直做到 todo 列表完成为止，受迭代次数、成本预算与停滞检测约束 | 实验（V2 runner） |
-| Code Mode | 工具集收成一个 `execute` 工具 + budgeted catalog | 实验 |
+### 看清 token、缓存和费用花在哪里
 
-Rust 原生的 edit / apply_patch 路径默认开启（`MIAO_NATIVE=0` 回退纯 TS）；其余原生模块尚未接入
-默认路径。进程沙箱已接入但需开启（`MIAO_SANDBOX=1`）。版本、更新源、品牌与成本相关已合入。完整
-对比见 [docs/miao-vs-opencode.zh.md](docs/miao-vs-opencode.zh.md)，接入风险见
-[docs/rust-integration-risks.zh.md](docs/rust-integration-risks.zh.md)。
+逐轮用量、估算费用、首 token 延迟和提示缓存遥测，让性能有据可查。Context Epoch 保持一段会话内的系统上下文基线不变，把变化按时间顺序引入，帮助复用缓存前缀。工具输出裁剪、压缩调优、缓存 TTL 和会话预算均可按需配置，为长任务提供更多成本控制手段。
 
-## 架构
+费用按配置的模型费率和供应商货币信息估算，方便理解会话开销；实际扣费以供应商账单为准。
 
-miao 正处于 **V1 → V2 运行时重建**的收尾阶段。Effect 原生的 V2 现在已是终端 TUI 与浏览器 app 的
-默认运行时；源自 opencode 的 V1 仍挂载以保证兼容，可用 `MIAO_TUI_V2=0`（TUI）或 `?protocol=v1`
-（app）强制回退。与延迟和成本相关的机制：
+### 工作记录可以继续，也可以检查和复用
 
-- **Effect 原生核心（Effect v4）。** V2 运行时基于 Effect 构建，显式服务、类型化错误、作用域资源，
-  行为是组合出来的，而不是打补丁堆出来的。
-- **持久化、事件溯源的会话。** 会话历史是只追加的事件日志，投影到单写入者的读模型，因此重放、
-  恢复、跨进程 tail 都是一等能力。
-- **Context Epoch（上下文纪元）。** 每个提示缓存基线在其纪元内不可变；会话中途的上下文变化通过安全
-  轮次边界上的持久化 system 消息引入，保持提示缓存前缀稳定、廉价。
-- **原生加速。** CPU 密集的热路径（edit、apply_patch、进程内 git status）在 Rust 插件中实现，通过
-  napi 进程内调用，并保留纯 TS 回退；其中 edit 与 apply_patch 路径默认开启。
+V2 使用持久化输入与事件记录保存会话。你可以查看、重新打开、分叉和导出会话，让工作记录不局限于某一个终端窗口。过大的工具输出在模型上下文中受到限制，完整内容在可用时保留到临时文件。
 
-V2 运行时的设计说明见 [CONTEXT.md](CONTEXT.md) 与 [specs/v2](specs/v2)；切换计划见
-[specs/v2/v1-retirement.md](specs/v2/v1-retirement.md)。
+保存历史不代表崩溃后自动续跑：未完成的模型执行需要显式恢复，也不保证任意命令严格只执行一次。
 
-## 安装
+## 面向日常工程工作的能力
 
-需要 macOS / Linux（Windows 构建可用但未完整验证）。
+| 你要完成的事       | miao 提供的能力                                                           |
+| ------------------ | ------------------------------------------------------------------------- |
+| 理解陌生仓库       | 文件读取、搜索、项目指令、技能、专项子代理                                |
+| 实现功能并验证     | 文件编辑与补丁、Shell 命令、可选 LSP 诊断和格式化                         |
+| 比较模型而不换工具 | 会话内模型切换、自定义供应商、按代理配置模型、受支持模型的推理档位        |
+| 推进较大的任务     | 待办、中途补充要求、持久化会话、可选自治续跑                              |
+| 接入自己的工具     | 本地与远程 MCP、自定义命令、技能、插件                                    |
+| 检查并复用工作成果 | 差异查看、会话分叉、历史导出、权限确认                                    |
+| 接入其他应用       | HTTP 服务、浏览器界面、CLI 自动化、工作区内生成的 Promise / Effect 客户端 |
+
+**可以从这样一个任务开始：**「找到这个测试失败的原因，修复它，运行相关检查，并解释代码差异。」执行中再补充：「保持公共 API 不变，不引入新的运行时依赖。」
+
+## 快速开始
+
+文档中的安装流程面向 macOS / Linux。Windows 已有构建，验证情况见 [Windows 验证说明](docs/windows-vt-verification.zh.md)。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash
 
-miao auth login <provider>   # 凭证写入 auth.json
+miao providers login          # 选择供应商，连接账户或 API Key
 cd /path/to/project
-miao                         # 启动 TUI
+miao                          # 启动终端界面
 ```
 
-升级用 `miao upgrade`；安装脚本会把二进制放到 `~/.miao/bin/miao`。
+在 TUI 内用 `ctrl+p` 打开命令面板，或用 `ctrl+x m` 选择模型。`miao models` 可以列出可用模型。
 
-## 文档
+```bash
+miao run "解释这个仓库的架构，找出主要入口"
+miao web                      # 打开浏览器界面
+miao upgrade                  # 更新正式版
+```
 
-- [使用指南（中文）](docs/guide.zh.md) —— 安装、配置、TUI、MCP/LSP/沙箱、自治循环、FAQ、排障。
-- [Guide (English)](docs/guide.en.md) —— the same guide in English.
-- [miao vs opencode](docs/miao-vs-opencode.zh.md) —— 完整基准与能力对比。
-- [版本管理与发布](docs/release.zh.md) —— 版本方案与发布流程。
+安装脚本把正式版放到 `~/.miao/bin/miao`。配置、权限、MCP、LSP 和排障说明见 [使用指南](docs/guide.zh.md)。
 
-## 状态
+## 给长任务设置执行边界
 
-miao 尚处于 pre-1.0，活跃开发中：CLI 与配置可能随版本变化，V1 运行时仍在退役过程中。日常使用的
-稳定命令是 `miao`；`miao-dev` 从源码运行，`miao-preview` 构建当前检出。
+V2 自治循环需要显式开启：待办仍未完成时继续推进，同时受迭代次数和停滞检测约束。费用预算达到估算阈值后停止调度后续模型轮次；它不是供应商账单的硬上限，也不会截断正在执行的请求。
 
-## 基于 opencode
+```jsonc
+{
+  "loop": { "enabled": true, "max_iterations": 25 },
+  "cost": { "budget_usd": 5 },
+  "compaction": { "prune": true },
+}
+```
 
-miao 是基于 [opencode](https://github.com/anomalyco/opencode) 的衍生作品，采用 MIT 许可证。miao
-并非由 OpenCode 团队开发，也未获得其背书，双方不存在隶属关系。
+项目配置放在 `.miao/miao.jsonc`，全局配置放在 `~/.config/miao/miao.jsonc`。这些设置都是可选的，调优前请查看 [配置参考](docs/guide.zh.md#4-配置参考)。
 
-## 开发
+## 有数据，也有明确边界的性能优化
 
-需要 [Bun](https://bun.sh)。
+miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对照基准。以下摘自已有的同机实测记录，采用 release 构建与中位数：
+
+| 独立操作                     | TypeScript 基线 | Rust 原生 | 提速  |
+| ---------------------------- | --------------- | --------- | ----- |
+| edit 模糊匹配，12k 行        | 0.76 ms         | 0.39 ms   | 1.9×  |
+| patch Unicode 归一化，20k 行 | 13.06 ms        | 5.21 ms   | 2.5×  |
+| git status，10 个文件        | 12.3 ms         | 1.0 ms    | 11.9× |
+
+这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。原生 edit／patch 接入和可选的 macOS / Linux 内核沙箱目前位于兼容工具路径；V2 使用独立工具实现。进程内 Git 仍属原型。完整数据和可用范围见 [对比说明](docs/miao-vs-opencode.zh.md)。
+
+## 当前状态与架构
+
+miao 处于 pre-1.0。终端界面和受支持的浏览器连接默认使用 V2，V1 保留用于兼容。V2 核心采用 Effect 服务、按 Location 限定的工具、持久化输入箱、事件记录与 Context Epoch。执行协调目前限于本进程，尚未实现集群执行和崩溃后自动续跑。
+
+| 能力                                               | 可用状态                             |
+| -------------------------------------------------- | ------------------------------------ |
+| V2 会话、持久化输入、Context Epoch、项目内会话消息 | 已实现                               |
+| 自治续跑、费用预算、输出裁剪与压缩调优             | 按需开启；各设置行为不同             |
+| Code Mode（`MIAO_EXPERIMENTAL_CODE_MODE=1`）       | 实验功能                             |
+| 原生 edit／patch、内核沙箱                         | 兼容运行时；启用方法和限制见对比文档 |
+| 生成的客户端与内嵌 Effect host                     | 私有工作区包，API 仍在演进           |
+
+日常用 `miao` 正式版，源码迭代用 `miao-dev`，编译验证用 `miao-preview`。源码中的新能力可能尚未包含在已安装的发行版里。
+
+## 文档与开发
+
+- [使用指南](docs/guide.zh.md) · [Usage guide](docs/guide.en.md)
+- [miao 与 opencode 基线对比](docs/miao-vs-opencode.zh.md) —— 测量数据、差异和接入状态
+- [发布流程](docs/release.zh.md) —— 版本、构建与发布
+- [运行时设计](CONTEXT.md) · [V2 规格](specs/v2) —— 会话、上下文与客户端契约
+
+开发需要 [Bun](https://bun.sh)：
 
 ```bash
 bun install
 bun run dev
+# 在修改的包目录内执行检查，例如：
+cd packages/miao
+bun typecheck
 ```
 
-提交改动前，请在包目录（例如 `packages/miao`）内运行 `bun typecheck`。
-
-## 许可证
-
-MIT，详见 [LICENSE](./LICENSE)。
+miao 是基于 opencode 的 MIT 许可衍生作品，独立开发与发布，与 OpenCode 团队无隶属关系，也未获得其背书。详见 [LICENSE](LICENSE)。

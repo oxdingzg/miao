@@ -1,64 +1,58 @@
-# miao vs opencode：性能与能力对比清单
+# miao 与 opencode 基线：差异、证据与可用范围
 
 **语言 / Language:** [中文](miao-vs-opencode.zh.md) | [English](miao-vs-opencode.en.md)
 
-miao 是 opencode 的 fork。opencode 的 TS 实现就是本仓库改原生模块之前的基线，同一套 JavaScriptCore 运行时。本页把已做过的基准与能力对比汇总成一张清单。
+miao 延续 opencode 的开源编程工作流，把工程投入集中在上下文效率、会话执行控制和可观察的运行成本上。本页介绍 fork 的实现与已有的基准记录，**不是对当前上游产品的功能审计**。模型选择、MCP、子代理等共有能力，不作为 miao 独有功能宣传。
 
-测量条件：release 构建、同机、取中位数；TS 基线为 `packages/miao` 现有实现（源码与 `--compile` 产物已实测一致）；Rust 为 `crates/miao-native` 经 napi 进程内调用。结果正确性由 parity 测试保证（29 个 JS + 24 个 Rust）。
+## 对日常工作流有用的差异
 
-## 一、性能对比（越大越好，`x` 为提速倍数）
+| 方向             | miao 的实现                                                       | 实际价值                                   | 可用状态               |
+| ---------------- | ----------------------------------------------------------------- | ------------------------------------------ | ---------------------- |
+| 执行中补充要求   | 先持久化输入；steer 在安全轮次边界生效，显式 queue 在空闲边界处理 | 工作继续推进，新增要求有待处理记录         | V2                     |
+| 会话协作         | `task`、可继续的子会话、项目内 `list_sessions`／`send_message`    | 把专项工作委派出去，在不同对话之间交换发现 | V2；消息受权限约束     |
+| 上下文稳定性     | 不可变的 Context Epoch 基线，按时间顺序引入变化                   | 减少缓存前缀不必要的变化                   | V2                     |
+| 成本与缓存可见性 | 逐轮用量、估算成本、TTFT、缓存命中率与状态分类                    | 用数据定位昂贵或缓慢的轮次                 | 已实现                 |
+| 上下文控制       | 工具输出限额、可选裁剪、压缩设置、缓存 TTL                        | 限制大量工具输出与长历史占用上下文         | V2；高级设置按需开启   |
+| 长任务续跑       | 待办驱动循环、迭代／停滞检测、可选费用预算                        | 多步骤任务无需每次空闲后都手动发送继续     | V2，需开启             |
+| 持久化历史       | 输入箱与事件记录、会话分叉与导出                                  | 终端关闭后仍有可检查的工作记录             | V2；不含崩溃后自动续跑 |
+| 独立分发         | 独立版本与更新源，正式／源码／预览三个入口                        | 日常工具与开发验证可以并存                 | 已实现                 |
 
-| 项目 | opencode（TS 基线） | miao（Rust native） | 提速 | 状态 |
-|---|---|---|---|---|
-| edit 精确匹配（12k 行） | 0.21 ms | 0.12 ms | **1.7x** | PoC |
-| edit 模糊匹配（12k 行） | 0.76 ms | 0.39 ms | **1.9x** | PoC |
-| edit 匹配 + diff 统计（12k 行） | 2.03 ms | 1.78 ms | 1.14x | PoC |
-| apply_patch `deriveNewContents` exact（20k 行） | 1.67 ms | 1.28 ms | **1.3x** | PoC |
-| apply_patch trim 匹配（20k 行） | 3.47 ms | 1.76 ms | **2.0x** | PoC |
-| apply_patch unicode 归一化（20k 行） | 13.06 ms | 5.21 ms | **2.5x** | PoC |
-| git status 小仓（10 文件 / 2 变更） | 12.3 ms | 1.0 ms | **11.9x** | PoC |
-| git status 大仓（2200 文件 / 400 变更） | 13.6 ms | 5.8 ms | **2.4x** | PoC |
+费用估算依赖配置的模型费率与货币信息。预算达到阈值后停止调度，不截断正在执行的请求，也不能替代供应商账单。缓存效果取决于供应商与任务，没有承诺固定的整任务省钱比例。
 
-关键点：
+## 已有的原生基准记录
 
-- **opencode 的 git 状态是子进程模型**，固定开销 ~11 ms 起步（10 个文件也要 11 ms）；miao 用 `gix` 进程内读取，随文件数增长，小仓快 12x、大仓仍 2.4x。
-- **模糊匹配与 unicode 归一化**是纯 CPU 密集路径，miao 快 2–2.5x；精确匹配快 1.7x。
-- 只有被整文件 diff/字符串拼接主导的路径提升较小（1.1–1.3x），因为两边都受同一套 O(n) 组装成本限制。
+基线是本仓库引入原生模块之前的 TypeScript 实现，不是当前的 `anomalyco/opencode`。数据为同机 release 构建的中位数，测量经 Rust 插件调用的独立操作，不包含双方共有的编排、I/O、LSP、格式化、供应商延迟或模型推理。本次文档更新没有重新运行这些基准。
 
-## 二、能力对比（opencode 没有的能力）
+| 操作                                            | TypeScript 基线 | Rust 原生 | 提速      | 接入范围             |
+| ----------------------------------------------- | --------------- | --------- | --------- | -------------------- |
+| edit 精确匹配（12k 行）                         | 0.21 ms         | 0.12 ms   | **1.7x**  | 兼容工具路径         |
+| edit 模糊匹配（12k 行）                         | 0.76 ms         | 0.39 ms   | **1.9x**  | 兼容工具路径         |
+| edit 匹配 + diff 统计（12k 行）                 | 2.03 ms         | 1.78 ms   | 1.14x     | 兼容工具路径         |
+| apply_patch `deriveNewContents` exact（20k 行） | 1.67 ms         | 1.28 ms   | **1.3x**  | 兼容工具路径         |
+| apply_patch trim 匹配（20k 行）                 | 3.47 ms         | 1.76 ms   | **2.0x**  | 兼容工具路径         |
+| apply_patch unicode 归一化（20k 行）            | 13.06 ms        | 5.21 ms   | **2.5x**  | 兼容工具路径         |
+| git status 小仓（10 文件 / 2 变更）             | 12.3 ms         | 1.0 ms    | **11.9x** | 原型，未接入默认路径 |
+| git status 大仓（2200 文件 / 400 变更）         | 13.6 ms         | 5.8 ms    | **2.4x**  | 原型，未接入默认路径 |
 
-| 能力 | opencode | miao | 状态 |
-|---|---|---|---|
-| 进程级沙箱 | 无。规则式权限，用户批准后进程拥有完整用户权限 | 需开启（`MIAO_SANDBOX=1`）：macOS seatbelt / Linux landlock 内核级强制写白名单；被拒路径回传并询问后重试。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 禁网） | opt-in |
-| 沙箱可配置 | 无 | `--allow-path` 精确补白名单；`--compat` 兼容模式（只禁凭证路径 + 网络） | opt-in |
-| git 状态读取 | `git` 子进程（`diff-files` + `ls-files`） | `gix` 进程内，无 spawn | PoC |
-| 自更新源 | `anomalyco/opencode`，跟随 upstream 版本号 | `oxdingzg/miao`，版本从 `0.0.1` 起，不跟随 upstream | 已合入 |
-| 品牌 | opencode | miao：退出横幅（猫 + MIAO）、终端标题以 miao 开头、install 脚本 | 已合入 |
+匹配和归一化等 CPU 密集操作的收益更明显；进程内 Git 原型减少了子进程启动开销。这些结果都不等于完整编程任务的端到端提速。
 
-沙箱实测（同机）：
+## 原生工具与沙箱：适用范围
 
-| 行为 | opencode（规则式权限） | miao（seatbelt） |
-|---|---|---|
-| 写 `$HOME/...` | 允许（批准后无强制） | 拒绝（Operation not permitted） |
-| 访问网络 | 允许（HTTP 200） | 拒绝（curl exit 6，无法解析主机） |
-| 写工作目录 | 允许 | 允许 |
-| 普通命令（`git status`） | 正常 | 正常 |
+当前代码存在两套工具实现。原生接入位于 `packages/miao/src/tool`，默认 V2 runner 使用 `packages/core/src/tool` 中独立实现的工具。
 
-注：上表是沙箱后端（`miao-run` / `__sandbox-run`）的默认行为；接入 shell 工具后默认放行网络，只有 `MIAO_SANDBOX_DENY_NETWORK=1` 才按上表禁网。
+- **兼容路径的 edit／patch：** 可用时使用原生插件，并保留 TypeScript 回退；`MIAO_NATIVE=0` 可禁用原生路径。这不代表 V2 编辑已经使用插件。
+- **进程内 Git：** 已有 `gix` 实现和基准，尚未成为默认 Git 路径。
+- **兼容路径的 Shell 沙箱：** `MIAO_SANDBOX=1` 显式开启；macOS seatbelt 与 Linux Landlock 限制写入。Shell 接入默认放行网络，叠加 `MIAO_SANDBOX_DENY_NETWORK=1` 才限制网络。实际可用性取决于平台和打包的后端。
+- **V2 权限：** 默认依赖规则式批准。V2 `bash` 工具目前未经过兼容沙箱，单独设置环境变量不构成 V2 内核隔离。
 
-## 三、状态与边界（务必看清）
+测试兼容 TUI 可用 `MIAO_TUI_V2=0` 选择 V1。依赖沙箱前，请阅读 [使用指南](guide.zh.md#56-内核级沙箱兼容运行时需开启) 与 [接入风险](rust-integration-risks.zh.md)。Windows 内核沙箱尚未实现同等能力。
 
-- **已合入 main**：版本与更新源解耦、品牌 rebrand（横幅 / 终端标题 / install 脚本）。
-- **native 模块 PoC、已接入处默认开启**：`crates/miao-native` 的 edit/patch 纯函数默认启用（`MIAO_NATIVE=0` 回退）；git/text/walk/shell 模块尚未接入，默认路径仍走 TS 实现、子进程 git、规则式权限。
-- **沙箱已接入、需开启**：shell 工具在 `MIAO_SANDBOX=1` 时经沙箱 runner 执行（release 二进制自执行 `__sandbox-run`；macOS seatbelt / Linux landlock）。
-- 对比对象是**本仓库 fork 前的 TS 实现**（即 opencode 的实现）；不是 opencode 仓库的实时版本。
-- 性能数字是**纯函数隔离对比**，不含 Effect/IO/LSP/格式化等两侧相同的开销。
-- 沙箱后端：macOS 与 Linux 已实现；Windows（AppContainer + Job object）尚未实现。
+## 边界与后续工作
 
-把上述 PoC 接入生产的风险（打包分发、CI 假绿、同步阻塞、平台等）见 [rust-integration-risks.zh.md](rust-integration-risks.zh.md)。
+- V2 是默认 TUI 运行时，V1 退役仍在推进。
+- 持久化历史与精确提示重试校验，不等于模型执行自动恢复或 Shell 副作用严格只发生一次。
+- 会话执行和消息唤醒限于本进程，不宣传跨机器代理集群。
+- Code Mode 属于实验功能；生成的客户端与内嵌 host 是私有工作区包，契约仍在演进。
+- 消息权限的逐目标策略持久化、接收会话的循环成本计量仍有设计工作，见 [会话消息规格](../specs/v2/session-messaging.md)。
 
-## 四、下一步（进入"已合入"的路径）
-
-1. 把 `edit` / `apply_patch` / `snapshot` 接 native（带 TS 回退），并做 RSS 内存对比。
-2. ~~把 bash 工具经 `runSandboxed` 执行~~ 已完成：shell 工具在 `MIAO_SANDBOX=1` 时经沙箱 runner 执行。
-3. ~~补 Linux landlock/seccomp 后端~~ 已完成（landlock + TCP 默认禁）。剩 Windows。
+产品概览见 [README](../README.zh.md)，操作方法见 [使用指南](guide.zh.md)，运行时契约见 [CONTEXT.md](../CONTEXT.md)。
