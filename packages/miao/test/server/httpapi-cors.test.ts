@@ -1,6 +1,7 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@miao/core/flag/flag"
-import { describe, expect } from "bun:test"
+import { isAllowedCorsOrigin } from "@miao/server/cors"
+import { describe, expect, test } from "bun:test"
 import { Config, ConfigProvider, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
@@ -119,4 +120,12 @@ describe("HttpApi CORS", () => {
       expect(rejected.headers.get("access-control-allow-origin")).not.toBe("https://evil.example")
     }),
   )
+
+  test("trusts miao's hosted origins but not opencode's", () => {
+    expect(isAllowedCorsOrigin("https://app.miao.dtee.top")).toBe(true)
+    expect(isAllowedCorsOrigin("https://miao.dtee.top")).toBe(true)
+    expect(isAllowedCorsOrigin("http://localhost:4096")).toBe(true)
+    expect(isAllowedCorsOrigin("https://app.opencode.ai")).toBe(false)
+    expect(isAllowedCorsOrigin("https://opencode.ai")).toBe(false)
+  })
 })
