@@ -42,6 +42,27 @@ function testLayer(
   ])
 }
 
+function withEnv<A, E, R>(vars: Record<string, string | undefined>, effect: () => Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = Object.fromEntries(Object.keys(vars).map((key) => [key, process.env[key]]))
+      Object.entries(vars).forEach(([key, value]) => {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      })
+      return previous
+    }),
+    effect,
+    (previous) =>
+      Effect.sync(() =>
+        Object.entries(previous).forEach(([key, value]) => {
+          if (value === undefined) delete process.env[key]
+          else process.env[key] = value
+        }),
+      ),
+  )
+}
+
 const provider = {
   api: { type: "native", settings: {} },
   request: {
@@ -747,10 +768,7 @@ describe("Config", () => {
               fs.writeFile(path.join(parent, "miao.jsonc"), JSON.stringify({ $schema: "parent" })),
               fs.writeFile(path.join(directory, "miao.json"), JSON.stringify({ $schema: "directory" })),
               fs.writeFile(path.join(root, ".miao", "miao.json"), JSON.stringify({ $schema: "root-dot" })),
-              fs.writeFile(
-                path.join(directory, ".miao", "miao.jsonc"),
-                JSON.stringify({ $schema: "directory-dot" }),
-              ),
+              fs.writeFile(path.join(directory, ".miao", "miao.jsonc"), JSON.stringify({ $schema: "directory-dot" })),
             ])
           })
 
@@ -791,6 +809,62 @@ describe("Config", () => {
               }),
             ),
           )
+        })
+      }),
+    ),
+  )
+  it.live("applies the MIAO_CONFIG, MIAO_CONFIG_DIR, and MIAO_CONFIG_CONTENT overrides in V1 order", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const directory = path.join(tmp.path, "repo")
+        const customFile = path.join(tmp.path, "custom.json")
+        const customDirectory = path.join(tmp.path, "custom-dir")
+        return Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            await fs.mkdir(global, { recursive: true })
+            await fs.mkdir(path.join(directory, ".miao"), { recursive: true })
+            await fs.mkdir(customDirectory, { recursive: true })
+            await Promise.all([
+              fs.writeFile(path.join(global, "miao.json"), JSON.stringify({ $schema: "global" })),
+              fs.writeFile(customFile, JSON.stringify({ $schema: "custom-file" })),
+              fs.writeFile(path.join(directory, "miao.json"), JSON.stringify({ $schema: "project" })),
+              fs.writeFile(path.join(directory, ".miao", "miao.json"), JSON.stringify({ $schema: "project-dot" })),
+              fs.writeFile(path.join(customDirectory, "miao.json"), JSON.stringify({ $schema: "custom-dir" })),
+            ])
+          })
+          const loaded = () =>
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              const entries = yield* config.entries()
+              return entries.flatMap((entry) => (entry.type === "document" ? [entry.info.$schema] : []))
+            }).pipe(Effect.provide(testLayer(directory, global)))
+
+          expect(
+            yield* withEnv(
+              {
+                MIAO_CONFIG: customFile,
+                MIAO_CONFIG_DIR: customDirectory,
+                MIAO_CONFIG_CONTENT: JSON.stringify({ $schema: "content" }),
+                MIAO_DISABLE_PROJECT_CONFIG: undefined,
+              },
+              loaded,
+            ),
+          ).toEqual(["global", "custom-file", "project", "project-dot", "custom-dir", "content"])
+          expect(
+            yield* withEnv(
+              {
+                MIAO_CONFIG: undefined,
+                MIAO_CONFIG_DIR: undefined,
+                MIAO_CONFIG_CONTENT: undefined,
+                MIAO_DISABLE_PROJECT_CONFIG: "1",
+              },
+              loaded,
+            ),
+          ).toEqual(["global"])
         })
       }),
     ),
