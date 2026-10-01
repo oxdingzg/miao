@@ -1,5 +1,3 @@
-import { runtimeModules as keymapRuntimeModules } from "@opentui/keymap/runtime-modules"
-import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
 import {
   type TuiDispose,
   type TuiPlugin,
@@ -43,8 +41,6 @@ import { createCommandShim } from "@miao/tui/plugin/command-shim"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect } from "effect"
 import { createPluginRuntime, type PluginRuntime, type TuiPluginHost } from "@miao/tui/plugin/runtime"
-
-ensureRuntimePluginSupport({ additional: keymapRuntimeModules })
 
 type PluginLoad = {
   options: ConfigPluginV1.Options | undefined
@@ -674,6 +670,7 @@ function applyInitialPluginEnabledState(state: RuntimeState, config: TuiConfig.R
 }
 
 async function resolveExternalPlugins(list: ConfigPlugin.Origin[], wait: () => Promise<void>) {
+  if (list.length) await ensurePluginSupport()
   return PluginLoader.loadExternal({
     items: list,
     kind: "tui",
@@ -771,6 +768,16 @@ async function resolveExternalPlugins(list: ConfigPlugin.Origin[], wait: () => P
       },
     },
   })
+}
+
+// Runtime plugin support registers the Bun plugins that map @opentui/solid imports
+// to the host runtime and Babel-transform plugin JSX; loading it costs ~50 MB and
+// ~0.13 s. Internal plugins are bundled, so it installs right before the first
+// external plugin is imported. Installing again is a no-op.
+async function ensurePluginSupport() {
+  const { runtimeModules } = await import("@opentui/keymap/runtime-modules")
+  const { ensureRuntimePluginSupport } = await import("@opentui/solid/runtime-plugin-support/configure")
+  ensureRuntimePluginSupport({ additional: runtimeModules })
 }
 
 async function addExternalPluginEntries(state: RuntimeState, ready: PluginLoad[]) {
