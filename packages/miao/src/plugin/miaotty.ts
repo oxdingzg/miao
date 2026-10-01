@@ -1,10 +1,11 @@
 import type { Event } from "@opencode-ai/sdk/v2"
 import type { Hooks, Plugin } from "@opencode-ai/plugin"
 
-// miao-term (the `miaotty` terminal) spawns every pane with MIAOTTY_PANE_ID set
-// and ships `miaotty-cli`, which talks to the terminal's control plane. When we
-// detect that environment we report the agent state so the terminal can badge
-// the pane and drive notifications. Outside miaotty this plugin is a no-op.
+// miao-term's terminal, mtty (named miaotty up to v0.0.5), spawns every pane
+// with MTTY_PANE_ID and MTTY_CLI set (and, during the rename, the MIAOTTY_*
+// names too). When we detect that environment we report the agent state so the
+// terminal can badge the pane, deliver queued prompts and drive notifications.
+// Outside the terminal this plugin is a no-op.
 
 export const MIAOTTY_STATES = ["idle", "processing", "awaiting", "error"] as const
 export type MiaottyState = (typeof MIAOTTY_STATES)[number]
@@ -78,6 +79,16 @@ export function createMiaottyStateTracker() {
   }
 }
 
+// The pane to report for and the CLI that reaches the terminal, preferring the
+// mtty names. An older miaotty host sets only MIAOTTY_PANE_ID, and its CLI is
+// `miaotty-cli`.
+export function terminalTarget(env: Record<string, string | undefined>) {
+  const pane = env.MTTY_PANE_ID || env.MIAOTTY_PANE_ID
+  if (!pane) return undefined
+  const exe = env.MTTY_CLI || env.MIAOTTY_CLI || (env.MTTY_PANE_ID ? "mtty-cli" : "miaotty-cli")
+  return { pane, exe }
+}
+
 function report(pane: string, exe: string, state: MiaottyState) {
   if (typeof Bun === "undefined") return
   try {
@@ -88,14 +99,14 @@ function report(pane: string, exe: string, state: MiaottyState) {
     })
     void child.exited.catch(() => {})
   } catch {
-    // `miaotty-cli` is not reachable; nothing to report to.
+    // The terminal's CLI is not reachable; nothing to report to.
   }
 }
 
 export const MiaottyPlugin: Plugin = async () => {
-  const pane = process.env.MIAOTTY_PANE_ID
-  if (!pane) return {}
-  const exe = process.env.MIAOTTY_CLI || "miaotty-cli"
+  const target = terminalTarget(process.env)
+  if (!target) return {}
+  const { pane, exe } = target
   const tracker = createMiaottyStateTracker()
 
   report(pane, exe, tracker.current)
