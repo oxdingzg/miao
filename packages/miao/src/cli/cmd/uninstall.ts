@@ -55,7 +55,7 @@ export const UninstallCommand = {
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
-    prompts.intro("Uninstall OpenCode")
+    prompts.intro("Uninstall miao")
 
     const method = await Installation.method()
     prompts.log.info(`Installation method: ${method}`)
@@ -129,13 +129,13 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g opencode-ai",
-      pnpm: "pnpm uninstall -g opencode-ai",
-      bun: "bun remove -g opencode-ai",
-      yarn: "yarn global remove opencode-ai",
-      brew: "brew uninstall opencode",
-      choco: "choco uninstall opencode",
-      scoop: "scoop uninstall opencode",
+      npm: "npm uninstall -g miao",
+      pnpm: "pnpm uninstall -g miao",
+      bun: "bun remove -g miao",
+      yarn: "yarn global remove miao",
+      brew: "brew uninstall miao",
+      choco: "choco uninstall miao",
+      scoop: "scoop uninstall miao",
     }
     prompts.log.info(`  ✓ Package: ${cmds[method] || method}`)
   }
@@ -180,19 +180,19 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "opencode-ai"],
-      pnpm: ["pnpm", "uninstall", "-g", "opencode-ai"],
-      bun: ["bun", "remove", "-g", "opencode-ai"],
-      yarn: ["yarn", "global", "remove", "opencode-ai"],
-      brew: ["brew", "uninstall", "opencode"],
-      choco: ["choco", "uninstall", "opencode"],
-      scoop: ["scoop", "uninstall", "opencode"],
+      npm: ["npm", "uninstall", "-g", "miao"],
+      pnpm: ["pnpm", "uninstall", "-g", "miao"],
+      bun: ["bun", "remove", "-g", "miao"],
+      yarn: ["yarn", "global", "remove", "miao"],
+      brew: ["brew", "uninstall", "miao"],
+      choco: ["choco", "uninstall", "miao"],
+      scoop: ["scoop", "uninstall", "miao"],
     }
 
     const cmd = cmds[method]
     if (cmd) {
       spinner.start(`Running ${cmd.join(" ")}...`)
-      const result = await Process.run(method === "choco" ? ["choco", "uninstall", "opencode", "-y", "-r"] : cmd, {
+      const result = await Process.run(method === "choco" ? ["choco", "uninstall", "miao", "-y", "-r"] : cmd, {
         nothrow: true,
       })
       if (result.code !== 0) {
@@ -215,7 +215,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
     prompts.log.info(`  rm "${targets.binary}"`)
 
     const binDir = path.dirname(targets.binary)
-    if (binDir.includes(".miao") || binDir.includes(".opencode")) {
+    if (binDir.includes(".miao")) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)
     }
   }
@@ -229,7 +229,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
   }
 
   UI.empty()
-  prompts.log.success("Thank you for using OpenCode!")
+  prompts.log.success("Thank you for using miao!")
 }
 
 async function getShellConfigFile(): Promise<string | null> {
@@ -266,7 +266,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (content.includes("# opencode") || content.includes(".miao/bin")) {
+    if (content.includes(".miao/bin")) {
       return file
     }
   }
@@ -284,22 +284,19 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# opencode") {
+    // The installer writes a "# miao" marker followed by the PATH line. Only lines
+    // naming ~/.miao/bin are removed, so an opencode install's PATH entry survives.
+    if (trimmed === "# miao") {
       skip = true
       continue
     }
 
     if (skip) {
       skip = false
-      if ((trimmed.includes(".miao/bin") || trimmed.includes(".miao/bin")) || trimmed.includes("fish_add_path")) {
-        continue
-      }
+      if (trimmed.includes(".miao/bin")) continue
     }
 
-    if (
-      (trimmed.startsWith("export PATH=") && (trimmed.includes(".miao/bin") || trimmed.includes(".miao/bin"))) ||
-      (trimmed.startsWith("fish_add_path") && (trimmed.includes(".miao") || trimmed.includes(".opencode")))
-    ) {
+    if ((trimmed.startsWith("export PATH=") || trimmed.startsWith("fish_add_path")) && trimmed.includes(".miao/bin")) {
       continue
     }
 
