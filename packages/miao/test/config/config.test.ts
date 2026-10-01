@@ -888,6 +888,22 @@ it.instance("migrates autoshare to share field", () =>
   }),
 )
 
+it.instance("defaults share to disabled", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, { $schema: "https://opencode.ai/config.json" })
+    expect((yield* Config.use.get()).share).toBe("disabled")
+  }),
+)
+
+it.instance("keeps an explicit manual share setting", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, { $schema: "https://opencode.ai/config.json", share: "manual" })
+    expect((yield* Config.use.get()).share).toBe("manual")
+  }),
+)
+
 it.instance("migrates mode field to agent field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
