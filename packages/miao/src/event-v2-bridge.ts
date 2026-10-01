@@ -36,11 +36,14 @@ const layer = Layer.effect(
       Effect.gen(function* () {
         const ctx = yield* InstanceRef
         const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
+        // GlobalBus payloads are JSON-serialized on the way to the TUI worker
+        // and SSE clients, so they must already be in wire form.
+        const data = EventV2.encodeData(event)
         GlobalBus.emit("event", {
           directory: event.location?.directory ?? ctx?.directory,
           project: ctx?.project.id,
           workspace: workspaceID,
-          payload: { id: event.id, type: event.type, properties: event.data },
+          payload: { id: event.id, type: event.type, properties: data },
         })
         if (event.durable === undefined) return
         GlobalBus.emit("event", {
@@ -54,7 +57,7 @@ const layer = Layer.effect(
               type: EventV2.versionedType(event.type, event.durable.version),
               seq: event.durable.seq,
               aggregateID: event.durable.aggregateID,
-              data: event.data,
+              data,
             },
           },
         })

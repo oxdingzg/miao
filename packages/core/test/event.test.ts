@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
 import { EventV2 } from "@miao/core/event"
 import { Event } from "@miao/schema/event"
@@ -1168,4 +1168,26 @@ describe("EventV2", () => {
       expect(received[0]?.data).toEqual(durableData(aggregateID, "replayed"))
     }),
   )
+})
+
+describe("EventV2.encodeData", () => {
+  const wire = {
+    timestamp: 1790896908000,
+    sessionID: "ses_f07d6a8cdffeiDL9G9KnxY57A7",
+    messageID: "msg_0f9c622cf001RJOTYGNaJgS7mV",
+    prompt: { text: "status?" },
+    delivery: "steer",
+  }
+
+  test("encodes decoded event data back to its wire form", () => {
+    const data = Schema.decodeUnknownSync(SessionEvent.Prompted.data)(wire)
+    // JSON.stringify on the decoded data would emit an ISO string here.
+    expect(JSON.parse(JSON.stringify(data)).timestamp).toBe("2026-10-01T23:21:48.000Z")
+    expect(JSON.parse(JSON.stringify(EventV2.encodeData({ type: SessionEvent.Prompted.type, data })))).toEqual(wire)
+  })
+
+  test("passes data of unknown event types through", () => {
+    const data = { value: 1 }
+    expect(EventV2.encodeData({ type: "test.unknown", data })).toBe(data)
+  })
 })

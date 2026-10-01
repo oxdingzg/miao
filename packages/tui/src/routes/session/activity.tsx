@@ -130,8 +130,10 @@ export function SessionActivity(props: { sessionID: string }) {
   createEffect(() => {
     if (!active()) return
     const read = () => {
-      const start = turnStartedAt()
-      return start === undefined ? 0 : Math.max(0, Date.now() - start)
+      // A start that is not epoch millis would print "NaNd NaNh"; show no
+      // timer rather than a broken one.
+      const elapsed = Date.now() - (turnStartedAt() ?? Number.NaN)
+      return Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0
     }
     setElapsed(read())
     const timer = setInterval(() => setElapsed(read()), 1000)
