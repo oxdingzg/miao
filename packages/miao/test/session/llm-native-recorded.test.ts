@@ -291,7 +291,7 @@ const writeConfig = (directory: string, scenario: RecordedScenario, model: Model
   Effect.promise(() =>
     Bun.write(
       path.join(directory, "miao.json"),
-      JSON.stringify({ $schema: "https://opencode.ai/config.json", ...scenario.config(model) }),
+      JSON.stringify({ $schema: "https://mtty.dev/miao/config.json", ...scenario.config(model) }),
     ),
   )
 

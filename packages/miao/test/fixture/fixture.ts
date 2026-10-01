@@ -96,7 +96,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
     await Bun.write(
       path.join(dirpath, "miao.json"),
       JSON.stringify({
-        $schema: "https://opencode.ai/config.json",
+        $schema: "https://mtty.dev/miao/config.json",
         ...options.config,
       }),
     )
@@ -154,7 +154,7 @@ export function tmpdirScoped<E = never, R = never>(options?: {
       yield* Effect.promise(() =>
         fs.writeFile(
           path.join(dir, "miao.json"),
-          JSON.stringify({ $schema: "https://opencode.ai/config.json", ...resolved }),
+          JSON.stringify({ $schema: "https://mtty.dev/miao/config.json", ...resolved }),
         ),
       )
     }

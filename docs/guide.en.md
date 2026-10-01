@@ -65,7 +65,7 @@ Replace `<provider>/<model>` with an entry from `miao models`. A typical config 
 
 ```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "model": "<provider>/<model>",
   "permission": { "*": "ask" },
   "lsp": true,

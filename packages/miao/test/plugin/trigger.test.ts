@@ -41,7 +41,7 @@ function withProject<A, E, R>(source: string, self: Effect.Effect<A, E, R>) {
             path.join(test.directory, "miao.json"),
             JSON.stringify(
               {
-                $schema: "https://opencode.ai/config.json",
+                $schema: "https://mtty.dev/miao/config.json",
                 plugin: [pathToFileURL(file).href],
               },
               null,

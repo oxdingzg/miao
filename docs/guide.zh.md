@@ -68,7 +68,7 @@ miao
 
 ```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "model": "<provider>/<model>",
   "permission": { "*": "ask" },
   "lsp": true,
