@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { reasoningSummary } from "../../../src/context/thinking"
+import { reasoningHeadline, reasoningSummary } from "../../../src/context/thinking"
 
 describe("reasoningSummary", () => {
   test("extracts a leading summary title and leaves markdown body", () => {
@@ -32,5 +32,32 @@ describe("reasoningSummary", () => {
 
   test("leaves content without a leading title in its body", () => {
     expect(reasoningSummary("Details only.")).toEqual({ title: null, body: "Details only." })
+  })
+})
+
+describe("reasoningHeadline", () => {
+  test("uses the summary title when the provider sends one", () => {
+    expect(reasoningHeadline("**Inspecting PR workflow**\n\nReading the workflow file.")).toBe("Inspecting PR workflow")
+  })
+
+  test("falls back to the first sentence of plain reasoning", () => {
+    expect(reasoningHeadline("Let me look at the footer around line 363. Then check the editor.")).toBe(
+      "Let me look at the footer around line 363.",
+    )
+    expect(reasoningHeadline("先看一下 editor.ts 的实现。再决定怎么改。")).toBe("先看一下 editor.ts 的实现。")
+  })
+
+  test("skips markdown markers and blank lines", () => {
+    expect(reasoningHeadline("\n\n- **Check** the `run` command\nmore")).toBe("Check the run command")
+  })
+
+  test("truncates a long first sentence to one line", () => {
+    const headline = reasoningHeadline("a".repeat(200))
+    expect(headline).toHaveLength(80)
+    expect(headline?.endsWith("…")).toBe(true)
+  })
+
+  test("returns null for empty reasoning", () => {
+    expect(reasoningHeadline("   ")).toBeNull()
   })
 })

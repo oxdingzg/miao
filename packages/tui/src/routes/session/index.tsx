@@ -80,7 +80,13 @@ import { sessionEpilogue } from "../../util/presentation"
 import { setPreLayoutSiblingMargin } from "../../util/layout"
 import { useTuiConfig } from "../../config"
 import { useClipboard } from "../../context/clipboard"
-import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
+import {
+  nextThinkingMode,
+  reasoningHeadline,
+  reasoningSummary,
+  useThinkingMode,
+  type ThinkingMode,
+} from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { createTranscriptWindow } from "../../util/transcript-window"
@@ -1687,8 +1693,7 @@ const INLINE_TOOL_ICON = "●"
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme } = useTheme()
   const ctx = use()
-  // Claude Code keeps thinking out of the transcript: the turn's accumulated
-  // thought time is reported on the status line instead.
+  const sync = useSync()
   const hidden = createMemo(() => ctx.thinkingMode() === "hide")
 
   const content = createMemo(() => {
@@ -1696,6 +1701,16 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     return props.part.text.replace("[REDACTED]", "").trim()
   })
   const opaque = createMemo(() => !content() && Boolean(props.part.metadata))
+  // Hide mode keeps thinking out of the transcript, except for one headline
+  // line when the step has no text of its own: models that do not narrate
+  // between tool calls (DeepSeek) otherwise look like they never reasoned.
+  // Narrating models and opaque reasoning stay hidden so long turns do not
+  // gain a row per step.
+  const visible = createMemo(() => {
+    if (!hidden()) return Boolean(content() || opaque())
+    if (!content()) return false
+    return !(sync.data.part[props.message.id] ?? []).some((part) => part.type === "text" && part.text.trim())
+  })
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
@@ -1707,7 +1722,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
 
   return (
-    <Show when={!hidden() && (content() || opaque())}>
+    <Show when={visible()}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
         paddingLeft={2}
@@ -1717,11 +1732,11 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
       >
         <ReasoningHeader
           done={isDone()}
-          title={summary().title}
+          title={hidden() ? reasoningHeadline(content()) : summary().title}
           duration={isDone() ? Locale.duration(duration()) : undefined}
           encrypted={opaque()}
         />
-        <Show when={!opaque() && summary().body}>
+        <Show when={!hidden() && !opaque() && summary().body}>
           <box marginTop={1}>
             <code
               filetype="markdown"
