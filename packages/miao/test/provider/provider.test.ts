@@ -76,9 +76,12 @@ const providerLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const list = Provider.use.list()
 
+// Without a key the opencode provider has no usable models (its free tier serves
+// only the official client), so it is absent rather than empty.
 const paid = (providers: Record<string, { models: Record<string, { cost: { input: number } }> }>) => {
   const item = providers[ProviderV2.ID.make("opencode")]
-  expect(item).toBeDefined()
+  if (!item) return 0
+  expect(Object.values(item.models).filter((model) => model.cost.input === 0)).toEqual([])
   return Object.values(item.models).filter((model) => model.cost.input > 0).length
 }
 

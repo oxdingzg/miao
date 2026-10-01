@@ -174,12 +174,11 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
       const item = catalog.provider.get(ProviderV2.ID.opencode)
       if (!item) return
       const hasKey = Boolean(process.env.MIAO_API_KEY || connected || item.provider.request.body.apiKey)
-      catalog.provider.update(item.provider.id, (provider) => {
-        if (!hasKey) provider.request.body.apiKey = "public"
-      })
-      if (hasKey) return
+      // OpenCode's free tier serves only the official OpenCode client and answers
+      // miao with a FreeTierError, so free models are never offered; paid models
+      // need a key.
       for (const model of item.models.values()) {
-        if (!model.cost.some((cost) => cost.input > 0)) continue
+        if (hasKey && model.cost.some((cost) => cost.input > 0)) continue
         catalog.model.update(item.provider.id, model.id, (draft) => {
           draft.enabled = false
         })
