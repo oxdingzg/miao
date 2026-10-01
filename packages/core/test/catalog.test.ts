@@ -101,6 +101,43 @@ describe("CatalogV2", () => {
     }).pipe(Effect.provide(localCatalogLayer))
   })
 
+  it.effect("counts a key in the provider's own config as a connection", () => {
+    const localCatalogLayer = Layer.fresh(
+      AppNodeBuilder.build(LayerNode.group([Catalog.node, Credential.node, Integration.node]), [
+        [Location.node, locationLayer],
+      ]),
+    )
+
+    return Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const integrations = yield* Integration.Service
+      // Each provider names an env integration that never connects, as a config
+      // provider with `env: []` (or an unset variable) does.
+      const declare = (id: string, configure: (provider: ProviderV2.MutableInfo) => void) =>
+        Effect.gen(function* () {
+          yield* integrations.transform((editor) => editor.update(Integration.ID.make(id), () => {}))
+          yield* catalog.transform((editor) =>
+            editor.provider.update(ProviderV2.ID.make(id), (provider) => {
+              provider.integrationID = Integration.ID.make(id)
+              configure(provider)
+            }),
+          )
+        })
+      yield* declare("settings-key", (provider) => {
+        provider.api = { type: "aisdk", package: "@ai-sdk/openai-compatible", settings: { apiKey: "test-key" } }
+      })
+      yield* declare("header-key", (provider) => {
+        provider.request.headers.Authorization = "Bearer test-key"
+      })
+      yield* declare("no-key", () => {})
+
+      expect((yield* catalog.provider.available()).map((provider) => provider.id).toSorted()).toEqual([
+        ProviderV2.ID.make("header-key"),
+        ProviderV2.ID.make("settings-key"),
+      ])
+    }).pipe(Effect.provide(localCatalogLayer))
+  })
+
   it.effect("projects environment connections without a catalog plugin", () =>
     Effect.acquireUseRelease(
       Effect.sync(() => {

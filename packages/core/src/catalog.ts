@@ -59,6 +59,17 @@ export interface Interface extends State.Transformable<Draft> {
   }
 }
 
+// A key written into the provider's own config counts as a connection, wherever
+// the V1 option lowering put it: the request body, the SDK settings (where
+// openai-compatible keeps `apiKey`, and where model resolution reads it), or an
+// auth header. Without this a provider that also names `env` variables, even an
+// empty list, was reported unavailable although its key was configured.
+function configuredCredential(provider: ProviderV2.Info) {
+  if (typeof provider.request.body.apiKey === "string") return true
+  if ("settings" in provider.api && typeof provider.api.settings?.apiKey === "string") return true
+  return Object.keys(provider.request.headers).some((key) => /^(authorization|x-api-key|api-key)$/i.test(key))
+}
+
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/Catalog") {}
 
 const layer = Layer.effect(
@@ -70,7 +81,7 @@ const layer = Layer.effect(
 
     const available = (provider: ProviderV2.Info, integration: Integration.Info | undefined) => {
       if (provider.disabled) return false
-      if (typeof provider.request.body.apiKey === "string") return true
+      if (configuredCredential(provider)) return true
       if (integration?.connections.length) return true
       return provider.integrationID === undefined && !integration
     }
