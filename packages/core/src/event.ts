@@ -10,6 +10,7 @@ import { Location } from "./location"
 import { makeGlobalNode } from "./effect/app-node"
 import { isDeepStrictEqual } from "node:util"
 import { Durable } from "@miao/schema/durable-event-manifest"
+import { EventManifest } from "@miao/schema/event-manifest"
 
 export const ID = Event.ID
 export type ID = import("@miao/schema/event").ID
@@ -37,6 +38,20 @@ export type SerializedEvent = {
   readonly seq: number
   readonly aggregateID: string
   readonly data: Record<string, unknown>
+}
+
+/**
+ * Wire form of an event's data. Payloads carry decoded values (DateTime.Utc
+ * timestamps, branded ids); serializing them with `JSON.stringify` turns a
+ * DateTime into an ISO string where clients and the generated SDK expect epoch
+ * milliseconds. Unknown event types and data that does not encode pass through.
+ */
+export const encodeData = (event: Pick<Payload, "type" | "durable" | "data">): unknown => {
+  const definition =
+    (event.durable ? Durable.get(Event.versionedType(event.type, event.durable.version)) : undefined) ??
+    EventManifest.Latest.get(event.type)
+  if (!definition) return event.data
+  return Option.getOrElse(Schema.encodeUnknownOption(definition.data)(event.data), () => event.data)
 }
 
 export class InvalidDurableEventError extends Schema.TaggedErrorClass<InvalidDurableEventError>()(
