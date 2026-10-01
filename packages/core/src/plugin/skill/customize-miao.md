@@ -411,13 +411,36 @@ rules last.
 everything" and is rarely what the user wants.
 
 Known permission keys: `read, edit, glob, grep, list, bash, task,
-external_directory, todowrite, question, webfetch, websearch, lsp, doom_loop,
-skill`. Some of these (`todowrite,
+external_directory, bash_unsandboxed, todowrite, question, webfetch, websearch,
+lsp, doom_loop, skill`. Some of these (`todowrite,
 question, webfetch, websearch, doom_loop`) only accept a flat
 action, not a per-pattern object.
 
 `external_directory` patterns are filesystem paths (use `~/`, absolute paths,
 or globs like `~/projects/**`).
+
+`bash_unsandboxed` (pattern: the command) gates rerunning one bash command
+outside the OS sandbox. It defaults to `ask`, and an approval is never
+remembered.
+
+## Sandbox
+
+```json
+"sandbox": {
+  "mode": "workspace-write",
+  "network": true,
+  "writable_roots": ["~/.cache/my-tool"],
+  "on_unavailable": "warn"
+}
+```
+
+Off by default. With `mode: "workspace-write"`, bash commands run under the OS
+sandbox (macOS seatbelt, Linux Landlock): reads stay unrestricted, writes are
+limited to the project, the command's working directory, temp directories,
+`writable_roots`, and directories the user approves when a write is blocked.
+`network: false` also blocks network access. `MIAO_SANDBOX=1`/`0` and
+`MIAO_SANDBOX_DENY_NETWORK=1` override the config. When no sandbox runner is
+available, bash warns and runs unsandboxed unless `on_unavailable` is `"fail"`.
 
 Per-agent `permission:` overrides top-level `permission:`. Plan Mode lives on
 the `plan` agent's permission ruleset (`edit: deny *`).
