@@ -56,6 +56,9 @@ export const retryable = (error: { readonly _tag: string }): boolean => {
   if (error._tag === "SessionRunnerModel.ModelNotSelectedError") return true
   if (error._tag !== "LLM.Error") return false
   const reason = (error as LLMError).reason
-  if (reason._tag === "Authentication") return true
+  // Refreshing helps a missing, invalid or expired credential; a 403 means the
+  // credential is fine but not allowed (OpenCode's free tier answers miao this
+  // way), and retrying it only burned the whole provider budget before failing.
+  if (reason._tag === "Authentication") return reason.kind !== "insufficient-permissions"
   return reason.retryable === true
 }

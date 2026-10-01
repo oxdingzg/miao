@@ -45,6 +45,11 @@ describe("SessionRunnerProviderRetry", () => {
     expect(
       SessionRunnerProviderRetry.retryable(providerError(new InvalidRequestReason({ message: "bad request" }))),
     ).toBe(false)
+    expect(
+      SessionRunnerProviderRetry.retryable(
+        providerError(new AuthenticationReason({ message: "free tier", kind: "insufficient-permissions" })),
+      ),
+    ).toBe(false)
     expect(SessionRunnerProviderRetry.retryable({ _tag: "SessionRunnerModel.UnsupportedApiError" })).toBe(false)
     expect(SessionRunnerProviderRetry.retryable({ _tag: "Other" })).toBe(false)
   })
