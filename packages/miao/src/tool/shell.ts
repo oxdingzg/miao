@@ -23,7 +23,8 @@ import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { extract, type Part } from "./shell/extract"
 import { Flag } from "@miao/core/flag/flag"
-import { resolveSandboxRunner, sandboxArgs, sandboxEnabled, type SandboxRunner } from "./sandbox"
+import { SandboxRunner } from "@miao/core/sandbox/runner"
+import { readDenyReport, resolveSandboxRunner, sandboxArgs, sandboxEnabled } from "./sandbox"
 
 export { Parameters } from "./shell/prompt"
 
@@ -297,16 +298,6 @@ const parser = lazy(async () => {
   return { bash, ps }
 })
 
-async function readDenyReport(reportPath: string): Promise<string[]> {
-  try {
-    const parsed = (await Bun.file(reportPath).json()) as { denied?: unknown }
-    if (!Array.isArray(parsed.denied)) return []
-    return parsed.denied.filter((item): item is string => typeof item === "string")
-  } catch {
-    return []
-  }
-}
-
 export const ShellTool = Tool.define(
   ShellID.ToolID,
   Effect.gen(function* () {
@@ -403,7 +394,7 @@ export const ShellTool = Tool.define(
         env: NodeJS.ProcessEnv
         timeout: number
         sandbox?: {
-          runner: SandboxRunner
+          runner: SandboxRunner.Runner
           workdirs: string[]
           allowPaths: string[]
           allowNetwork: boolean

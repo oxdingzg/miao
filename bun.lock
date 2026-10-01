@@ -325,6 +325,7 @@
         "@miao/effect-drizzle-sqlite": "workspace:*",
         "@miao/effect-sqlite-node": "workspace:*",
         "@miao/llm": "workspace:*",
+        "@miao/native": "workspace:*",
         "@miao/schema": "workspace:*",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@npmcli/arborist": "9.4.0",
