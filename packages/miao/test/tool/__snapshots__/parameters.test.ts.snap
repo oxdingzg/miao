@@ -206,12 +206,12 @@ exports[`tool parameters JSON Schema (wire shape) question 1`] = `
             "description": "Very short label (max 30 chars)",
             "type": "string",
           },
-          "multiple": {
+          "multiSelect": {
             "description": "Allow selecting multiple choices",
             "type": "boolean",
           },
           "options": {
-            "description": "Available choices",
+            "description": "Available choices (2-4)",
             "items": {
               "properties": {
                 "description": {
@@ -220,6 +220,10 @@ exports[`tool parameters JSON Schema (wire shape) question 1`] = `
                 },
                 "label": {
                   "description": "Display text (1-5 words, concise)",
+                  "type": "string",
+                },
+                "preview": {
+                  "description": "Optional preview shown when this option is focused; rendered as markdown in a monospace box. Only for single-select questions.",
                   "type": "string",
                 },
               },
