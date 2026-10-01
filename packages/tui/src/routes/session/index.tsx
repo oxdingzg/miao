@@ -85,6 +85,7 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { createTranscriptWindow } from "../../util/transcript-window"
 import { createDiffContextHighlighter } from "../../util/diff-context-highlight"
+import { shellSegments } from "../../util/shell-highlight"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
@@ -2200,7 +2201,17 @@ function Shell(props: ToolProps) {
           <Show when={stringValue(props.input.workdir)}>
             <text fg={theme.textMuted}>in {pathFormatter.format(stringValue(props.input.workdir))}</text>
           </Show>
-          <code conceal={false} fg={theme.text} filetype="shellscript" syntaxStyle={syntax()} content={command()} />
+          <For each={shellSegments(command())}>
+            {(segment) => (
+              <code
+                conceal={false}
+                fg={theme.text}
+                filetype={segment.filetype}
+                syntaxStyle={syntax()}
+                content={segment.content}
+              />
+            )}
+          </For>
         </box>
       </Show>
       <Show when={expanded() ? output() : preview()}>
