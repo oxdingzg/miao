@@ -14,44 +14,26 @@
  * through the runner, and asks for any path the kernel denies before retrying.
  * `runSandboxed` is the standalone helper used by tests and manual runs.
  */
-import { existsSync } from "fs"
 import os from "os"
 import path from "path"
-import { native as addon } from "@miao/native"
 import { Flag } from "@miao/core/flag/flag"
+import { SandboxPolicy } from "@miao/core/sandbox/policy"
+import { SandboxRunner } from "@miao/core/sandbox/runner"
 
 declare global {
   const MIAO_PACKAGED: boolean | undefined
 }
 
-export interface SandboxRunner {
-  program: string
-  /** Arguments inserted before the sandbox arguments (e.g. the hidden command). */
-  prefix: string[]
-}
-
 /**
  * Locate a sandbox runner: `MIAO_RUN`, then a `miao-run` binary next to the
- * executable, then self-exec for a released single-file build whose addon
- * provides the sandbox backends. Without one the sandbox is unavailable and
- * callers fall back.
+ * executable, then self-exec for a released single-file build (or a source
+ * checkout) whose addon provides the sandbox backends. Without one the sandbox
+ * is unavailable and callers fall back.
  */
-export function resolveSandboxRunner(): SandboxRunner | undefined {
-  const fromEnv = process.env.MIAO_RUN
-  if (fromEnv && existsSync(fromEnv)) return { program: fromEnv, prefix: [] }
-  const sibling = path.join(path.dirname(process.execPath), process.platform === "win32" ? "miao-run.exe" : "miao-run")
-  if (existsSync(sibling)) return { program: sibling, prefix: [] }
-  if (typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED && addon?.sandboxSupported()) {
-    return { program: process.execPath, prefix: ["__sandbox-run"] }
-  }
-  return undefined
-}
+export const resolveSandboxRunner = SandboxRunner.resolve
 
 /** Whether process-level sandboxing can run on this host. */
-export function sandboxAvailable(): boolean {
-  if (process.platform !== "darwin" && process.platform !== "linux") return false
-  return resolveSandboxRunner() !== undefined
-}
+export const sandboxAvailable = SandboxRunner.available
 
 /** Whether sandboxing is opted in (`MIAO_SANDBOX`) and possible on this host. */
 export function sandboxEnabled(): boolean {
@@ -60,7 +42,7 @@ export function sandboxEnabled(): boolean {
 
 export interface SandboxRunInput {
   /** Override the resolved runner, used by tests. */
-  runner?: SandboxRunner
+  runner?: SandboxRunner.Runner
   command: string[]
   workdirs: string[]
   allowPaths?: string[]
@@ -82,13 +64,7 @@ export function sandboxArgs(
   allowPaths: string[],
   reportPath: string,
 ) {
-  const args: string[] = []
-  for (const workdir of input.workdirs) args.push("--workdir", workdir)
-  for (const allowPath of allowPaths) args.push("--allow-path", allowPath)
-  if (input.allowNetwork) args.push("--allow-network")
-  if (input.compat) args.push("--compat")
-  args.push("--deny-report", reportPath, "--", ...input.command)
-  return args
+  return SandboxPolicy.args(input, allowPaths, reportPath)
 }
 
 export async function runSandboxed(input: SandboxRunInput): Promise<SandboxRunResult> {
@@ -119,12 +95,4 @@ export async function runSandboxed(input: SandboxRunInput): Promise<SandboxRunRe
   return { code: 1, allowPaths, denied }
 }
 
-async function readDenyReport(reportPath: string): Promise<string[]> {
-  try {
-    const parsed = (await Bun.file(reportPath).json()) as { denied?: unknown }
-    if (!Array.isArray(parsed.denied)) return []
-    return parsed.denied.filter((item): item is string => typeof item === "string")
-  } catch {
-    return []
-  }
-}
+export const readDenyReport = SandboxPolicy.readDenyReport
