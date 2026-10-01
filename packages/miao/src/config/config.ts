@@ -591,6 +591,9 @@ const layer = Layer.effect(
         if (result.autoshare === true && !result.share) {
           result.share = "auto"
         }
+        // miao runs no share backend, so sharing (which uploads to the inherited
+        // opencode share service) stays off unless the user opts in explicitly.
+        if (!result.share) result.share = "disabled"
 
         if (Flag.MIAO_DISABLE_AUTOCOMPACT) {
           result.compaction = { ...result.compaction, auto: false }
