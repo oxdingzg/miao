@@ -48,6 +48,9 @@ function mountReceipt(
     if (url.pathname === `/api/session/${sessionID}/todo` || url.pathname === `/api/session/${sessionID}/diff`)
       return json({ data: [] })
     if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "busy" } })
+    // Sending applies the footer's model and agent to the session first.
+    if (url.pathname === `/api/session/${sessionID}/model` || url.pathname === `/api/session/${sessionID}/agent`)
+      return new Response(null, { status: 204 })
     if (url.pathname === `/api/session/${sessionID}/prompt`) {
       if (!request) throw new Error("Expected SDK request")
       return prompt(request)
