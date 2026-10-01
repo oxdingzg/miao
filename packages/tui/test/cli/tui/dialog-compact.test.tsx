@@ -1,10 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
+import type { BoxRenderable } from "@opentui/core"
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { onCleanup, onMount } from "solid-js"
+import { onCleanup, onMount, Show } from "solid-js"
 import { tmpdir } from "../../fixture/fixture"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import type { TuiKeybind } from "../../../src/config/keybind"
@@ -16,6 +17,8 @@ async function mountSelector(input: {
   onSelect: (value: number) => void
   width?: number
   height?: number
+  current?: number
+  anchor?: { left: number; top: number; width: number }
 }) {
   const state = path.join(input.root, "state")
   await mkdir(state, { recursive: true })
@@ -46,7 +49,7 @@ async function mountSelector(input: {
         <DialogSelect
           compact
           title="Select model"
-          current={20}
+          current={input.current ?? 20}
           options={Array.from({ length: 30 }, (_, value) => ({
             value,
             title: `Model ${value}`,
@@ -60,6 +63,18 @@ async function mountSelector(input: {
     )
     return (
       <box>
+        <Show when={input.anchor}>
+          {(anchor) => (
+            <box
+              position="absolute"
+              left={anchor().left}
+              top={anchor().top}
+              width={anchor().width}
+              height={3}
+              ref={(box: BoxRenderable) => onCleanup(dialog.setAnchor(() => box))}
+            />
+          )}
+        </Show>
         <text>Conversation stays visible</text>
         <text position="absolute" top={input.height ? input.height - 3 : 37}>
           Input stays visible
@@ -174,6 +189,75 @@ test("compact selector stays usable in a narrow terminal and selects with Enter"
     await selector.app.renderOnce()
     expect(selected).toEqual([20])
     expect(selector.app.captureCharFrame()).not.toContain("Select model")
+  } finally {
+    await selector.cleanup()
+  }
+})
+
+test("compact selector sits directly above a registered prompt and matches its width", async () => {
+  await using tmp = await tmpdir()
+  const selector = await mountSelector({
+    root: tmp.path,
+    keybinds: {},
+    onSelect() {},
+    anchor: { left: 10, top: 30, width: 70 },
+  })
+  try {
+    await renderUntil(selector.app, (frame) => frame.split("\n").some((line) => line.indexOf("└") === 10))
+    const lines = selector.app.captureCharFrame().split("\n")
+    const bottom = lines.findIndex((line) => line.indexOf("└") === 10)
+    expect(bottom).toBe(29)
+    expect(lines[bottom].lastIndexOf("┘")).toBe(79)
+    expect(lines.findIndex((line) => line.includes("Select model"))).toBeLessThan(bottom)
+  } finally {
+    await selector.cleanup()
+  }
+})
+
+test("a digit picks a numbered option while the search is empty", async () => {
+  await using tmp = await tmpdir()
+  const selected: number[] = []
+  const selector = await mountSelector({
+    root: tmp.path,
+    keybinds: {},
+    current: 0,
+    onSelect: (value) => selected.push(value),
+  })
+  try {
+    await renderUntil(selector.app, (frame) => frame.includes("3. Model 2") || frame.includes("3.   Model 2"))
+    expect(selector.app.captureCharFrame()).toMatch(/3\.\s+Model 2/)
+    await selector.app.mockInput.typeText("3")
+    await Bun.sleep(30)
+    await selector.app.renderOnce()
+    expect(selected).toEqual([2])
+  } finally {
+    await selector.cleanup()
+  }
+})
+
+test("a pointer resting over the list does not take the selection back from the arrow keys", async () => {
+  await using tmp = await tmpdir()
+  const selected: number[] = []
+  const selector = await mountSelector({ root: tmp.path, keybinds: {}, onSelect: (value) => selected.push(value) })
+  try {
+    await renderUntil(selector.app, (frame) => frame.includes("Model 20"))
+    const lines = selector.app.captureCharFrame().split("\n")
+    const row = lines.findIndex((line) => line.includes("Model 20"))
+    const column = lines[row].indexOf("Model 20")
+    // The terminal reports the parked pointer, the list scrolls under it, and the
+    // terminal reports the same position again.
+    await selector.app.mockMouse.moveTo(column, row)
+    for (const _ of [1, 2, 3]) {
+      await selector.app.mockInput.pressArrow("down")
+      await Bun.sleep(30)
+      await selector.app.renderOnce()
+    }
+    await selector.app.mockMouse.moveTo(column, row)
+    await Bun.sleep(30)
+    await selector.app.renderOnce()
+    await selector.app.mockInput.pressKey("RETURN")
+    await selector.app.renderOnce()
+    expect(selected).toEqual([23])
   } finally {
     await selector.cleanup()
   }
