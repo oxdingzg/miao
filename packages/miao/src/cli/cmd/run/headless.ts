@@ -57,8 +57,11 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     return missing
   }
 
-  const events = await client.event.subscribe()
   const abort = new AbortController()
+  // The signal cancels the SSE read on shutdown. Without it the pending next()
+  // keeps the generator busy, so iterator.return() waits for the next server
+  // event — up to a heartbeat interval when the session has gone quiet.
+  const events = await client.event.subscribe(undefined, { signal: abort.signal })
   const watching = watch()
 
   await applySelection(input)
