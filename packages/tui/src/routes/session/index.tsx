@@ -82,6 +82,7 @@ import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { createTranscriptWindow } from "../../util/transcript-window"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
@@ -218,6 +219,13 @@ export function Session() {
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
   const displayMessages = createMemo(() => sync.prompt.messages(route.sessionID, messages()))
+  const transcript = createTranscriptWindow(displayMessages)
+  createEffect(
+    on(
+      () => route.sessionID,
+      () => transcript.reset(),
+    ),
+  )
   const messagesBeforeRevert = () => {
     const messageID = session()?.revert?.messageID
     if (!messageID) return messages()
@@ -423,6 +431,7 @@ export function Session() {
 
     if (!targetID) {
       scroll.scrollBy(direction === "next" ? scroll.height : -scroll.height)
+      if (direction === "prev") loadOlderAtTop()
       dialog.clear()
       return
     }
@@ -432,7 +441,18 @@ export function Session() {
     dialog.clear()
   }
 
+  function jumpToMessage(id: string) {
+    const move = () => {
+      if (!scroll || scroll.isDestroyed) return
+      const child = scroll.getChildren().find((child) => child.id === id)
+      if (child) scroll.scrollBy(child.y - scroll.y - 1)
+    }
+    if (transcript.reveal(id)) setTimeout(move, 50)
+    else move()
+  }
+
   function toBottom() {
+    transcript.reset()
     setTimeout(() => {
       if (!scroll || scroll.isDestroyed) return
       scroll.scrollTo(scroll.scrollHeight)
@@ -538,10 +558,7 @@ export function Session() {
         dialog.replace(() => (
           <DialogTimeline
             onMove={(messageID) => {
-              const child = scroll.getChildren().find((child) => {
-                return child.id === messageID
-              })
-              if (child) scroll.scrollBy(child.y - scroll.y - 1)
+              jumpToMessage(messageID)
             }}
             sessionID={route.sessionID}
             setPrompt={(promptInfo) => prompt?.set(promptInfo)}
@@ -561,10 +578,7 @@ export function Session() {
           <DialogForkFromTimeline
             onMove={(messageID) => {
               if (!messageID) return
-              const child = scroll.getChildren().find((child) => {
-                return child.id === messageID
-              })
-              if (child) scroll.scrollBy(child.y - scroll.y - 1)
+              jumpToMessage(messageID)
             }}
             sessionID={route.sessionID}
           />
@@ -880,10 +894,7 @@ export function Session() {
           )
 
           if (hasValidTextPart) {
-            const child = scroll.getChildren().find((child) => {
-              return child.id === message.id
-            })
-            if (child) scroll.scrollBy(child.y - scroll.y - 1)
+            jumpToMessage(message.id)
             break
           }
         }
@@ -1187,19 +1198,35 @@ export function Session() {
   // Older history is paged in only when the reader actually reaches the top, so
   // a long session never pays for its whole timeline up front. Prepended rows
   // shift the viewport, so restore the reader's place once layout catches up.
+  createEffect(() => {
+    const id = revertMessageID()
+    if (id) transcript.reveal(id)
+  })
+
+  let loadingHistory = false
   async function loadOlder() {
-    if (!scroll || scroll.isDestroyed) return
+    if (!scroll || scroll.isDestroyed || loadingHistory) return
+    loadingHistory = true
+    const sessionID = route.sessionID
     const height = scroll.scrollHeight
-    const loaded = await sync.session.loadOlder(route.sessionID).catch(() => false)
-    if (!loaded) return
+    const local = transcript.older()
+    const loaded = local || (await sync.session.loadOlder(sessionID).catch(() => false))
+    if (sessionID !== route.sessionID || !loaded) {
+      loadingHistory = false
+      return
+    }
+    if (!local) transcript.older()
     setTimeout(() => {
-      if (!scroll || scroll.isDestroyed) return
+      loadingHistory = false
+      if (!scroll || scroll.isDestroyed || sessionID !== route.sessionID) return
       scroll.scrollBy(scroll.scrollHeight - height)
     }, 50)
   }
 
   function loadOlderAtTop() {
-    if (!scroll || scroll.isDestroyed || scroll.scrollTop > 1) return
+    if (!scroll || scroll.isDestroyed) return
+    transcript.pin()
+    if (scroll.scrollTop > 1) return
     void loadOlder()
   }
 
@@ -1224,7 +1251,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1248,7 +1275,12 @@ export function Session() {
                 }}
               >
                 <box height={1} />
-                <For each={displayMessages()}>
+                <Show when={transcript.start() > 0}>
+                  <box paddingLeft={3} onMouseUp={() => void loadOlder()}>
+                    <text fg={theme.textMuted}>↑ Scroll up or click to load earlier messages</text>
+                  </box>
+                </Show>
+                <For each={transcript.messages()}>
                   {(message, index) => (
                     <Switch>
                       <Match when={message.id === revert()?.messageID}>
@@ -1312,13 +1344,17 @@ export function Session() {
                         })()}
                       </Match>
                       <Match
-                        when={revert()?.messageID && revertMessageIndex() !== -1 && index() >= revertMessageIndex()}
+                        when={
+                          revert()?.messageID &&
+                          revertMessageIndex() !== -1 &&
+                          index() + transcript.start() >= revertMessageIndex()
+                        }
                       >
                         <></>
                       </Match>
                       <Match when={message.role === "user"}>
                         <UserMessage
-                          index={index()}
+                          index={index() + transcript.start()}
                           onMouseUp={() => {
                             if (renderer.getSelection()?.getSelectedText() || sync.prompt.data[message.id]) return
                             dialog.replace(() => (
@@ -1618,19 +1654,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Show>
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
-          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
-              <span
-                style={{
-                  fg:
-                    props.message.error?.name === "MessageAbortedError"
-                      ? theme.textMuted
-                      : local.agent.color(props.message.agent),
-                }}
-              >
-                ▣{" "}
-              </span>{" "}
-              <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
+          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={2}>
+            <text marginTop={1} fg={theme.textMuted}>
+              {Locale.titlecase(props.message.mode)}
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
@@ -1653,7 +1679,7 @@ const PART_MAPPING = {
 }
 
 const INLINE_TOOL_ICON_WIDTH = 2
-const INLINE_TOOL_ICON = "⏺"
+const INLINE_TOOL_ICON = "●"
 
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme } = useTheme()
@@ -1681,7 +1707,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     <Show when={!hidden() && (content() || opaque())}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-        paddingLeft={3}
+        paddingLeft={2}
         marginTop={1}
         flexDirection="column"
         flexShrink={0}
@@ -1697,7 +1723,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
             <code
               filetype="markdown"
               drawUnstyledText={false}
-              streaming={true}
+              streaming={!isDone()}
               syntaxStyle={syntax()}
               content={summary().body}
               conceal={ctx.conceal()}
@@ -1714,7 +1740,7 @@ function ReasoningHeader(props: { done: boolean; title: string | null; duration?
   const { theme } = useTheme()
   // Theme fields are store reads; keep them inside a thunk so a theme switch
   // repaints the header instead of freezing the color it was mounted with.
-  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
+  const fg = () => theme.textMuted
   const completed = () => {
     if (props.encrypted) return `Thought${props.duration ? ` · ${props.duration}` : ""}`
     const detail = [props.title, props.duration].filter(Boolean).join(" · ")
@@ -1769,7 +1795,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
     <Show when={rendered()}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-        paddingLeft={3}
+        paddingLeft={0}
         marginTop={1}
         flexDirection="row"
         flexShrink={0}
@@ -1778,8 +1804,10 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
         <box flexGrow={1} minWidth={0}>
           <markdown
             syntaxStyle={syntax()}
-            streaming={true}
-            internalBlockMode="top-level"
+            streaming={props.message.time.completed === undefined}
+            // Keep incremental blocks while streaming, then coalesce finished
+            // prose so long histories retain fewer native text buffers.
+            internalBlockMode={props.message.time.completed === undefined ? "top-level" : "coalesced"}
             content={rendered()}
             tableOptions={{ style: "grid" }}
             conceal={ctx.conceal()}
@@ -1888,36 +1916,40 @@ function GenericTool(props: ToolProps) {
   const ctx = use()
   const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 3
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
-  const limited = createMemo(() => {
-    if (expanded() || !collapsed().overflow) return output()
-    return collapsed().output
-  })
+  const collapsed = createMemo(() => collapseToolOutput(output(), 3, 3 * Math.max(20, ctx.width - 8)))
+  const args = createMemo(() => input(props.input))
+  const title = createMemo(() =>
+    Locale.truncate(args().replace(/\s+/g, " "), Math.max(20, ctx.width - props.tool.length - 10)),
+  )
+  const details = createMemo(() => collapsed().overflow || title() !== args())
 
   return (
-    <Show
-      when={props.output && ctx.showGenericToolOutput()}
-      fallback={
-        <InlineTool icon={INLINE_TOOL_ICON} pending="Writing command…" complete={true} part={props.part}>
-          {props.tool} {input(props.input)}
-        </InlineTool>
-      }
-    >
-      <BlockTool
-        title={`# ${props.tool} ${input(props.input)}`}
+    <box>
+      <InlineTool
+        icon={INLINE_TOOL_ICON}
+        pending="Preparing tool…"
+        complete={true}
+        spinner={props.part.state.status === "running"}
         part={props.part}
-        onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
+        onClick={details() ? () => setExpanded((value) => !value) : undefined}
       >
-        <box gap={1}>
-          <text fg={theme.text}>{limited()}</text>
-          <Show when={collapsed().overflow}>
-            <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
-          </Show>
+        <b>{props.tool}</b> {title()}
+      </InlineTool>
+      <Show when={expanded() && title() !== args()}>
+        <FileToolResult summary={args()} color={theme.textMuted} />
+      </Show>
+      <Show when={output() && ctx.showGenericToolOutput()}>
+        <FileToolResult
+          summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")}
+          color={theme.textMuted}
+        />
+      </Show>
+      <Show when={details()}>
+        <box paddingLeft={2} onMouseUp={() => setExpanded((value) => !value)}>
+          <text fg={theme.textMuted}>{expanded() ? "Show less" : "… click to expand"}</text>
         </box>
-      </BlockTool>
-    </Show>
+      </Show>
+    </box>
   )
 }
 
@@ -1964,7 +1996,6 @@ function InlineTool(props: {
     if (permission()) return theme.warning
     if (failed()) return theme.error
     if (hover() && props.onClick) return theme.text
-    if (props.complete) return theme.textMuted
     return theme.text
   })
 
@@ -2020,7 +2051,7 @@ export function InlineToolRow(props: {
 }) {
   return (
     <box
-      paddingLeft={3}
+      paddingLeft={0}
       onMouseOver={props.onMouseOver}
       onMouseOut={props.onMouseOut}
       onMouseUp={props.onMouseUp}
@@ -2042,7 +2073,7 @@ export function InlineToolRow(props: {
           <Show
             fallback={
               <text
-                paddingLeft={3}
+                paddingLeft={0}
                 fg={props.color}
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
@@ -2136,124 +2167,115 @@ function Shell(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   const ctx = use()
   const isRunning = createMemo(() => props.part.state.status === "running")
-  const output = createMemo(() => stripAnsi(stringValue(props.metadata.output)?.trim() ?? ""))
+  const command = createMemo(() => stringValue(props.input.command) ?? "")
+  const output = createMemo(() => stripAnsi(stringValue(props.metadata.output) ?? props.output ?? "").trim())
+  const preview = createMemo(() =>
+    output()
+      .replace(/(?:^|\n)Command exited with code 0\.\s*$/, "")
+      .trim(),
+  )
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 10
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
-  const limited = createMemo(() => {
-    if (expanded() || !collapsed().overflow) return output()
-    return collapsed().output
-  })
-
-  const workdirDisplay = createMemo(() => {
-    const workdir = stringValue(props.input.workdir)
-    if (!workdir || workdir === ".") return undefined
-    const formatted = pathFormatter.format(workdir)
-    if (formatted === ".") return undefined
-    return formatted
-  })
-
-  const title = createMemo(() => {
-    const wd = workdirDisplay()
-    if (!wd) return
-    return `# Running in ${wd}`
-  })
+  const collapsed = createMemo(() => collapseToolOutput(preview(), 3, 3 * Math.max(20, ctx.width - 8)))
+  const title = createMemo(() => Locale.truncate(command().split("\n", 1)[0].trim(), Math.max(20, ctx.width - 12)))
+  const details = createMemo(() => command() !== title() || collapsed().overflow || Boolean(props.input.workdir))
 
   return (
-    <Switch>
-      <Match when={stringValue(props.metadata.output) !== undefined}>
-        <BlockTool
-          title={title()}
-          part={props.part}
-          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
-        >
-          <box gap={1}>
-            <Show
-              when={isRunning()}
-              fallback={
-                <code
-                  conceal={false}
-                  fg={theme.text}
-                  filetype="shellscript"
-                  syntaxStyle={syntax()}
-                  content={`$ ${stringValue(props.input.command)}`}
-                />
-              }
-            >
-              <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
-            </Show>
-            <Show when={output()}>
-              <text fg={theme.text}>{limited()}</text>
-            </Show>
-            <Show when={collapsed().overflow}>
-              <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
-            </Show>
-          </box>
-        </BlockTool>
-      </Match>
-      <Match when={true}>
-        <InlineTool
-          icon={INLINE_TOOL_ICON}
-          pending="Writing command…"
-          complete={stringValue(props.input.command)}
-          part={props.part}
-        >
-          {stringValue(props.input.command)}
-        </InlineTool>
-      </Match>
-    </Switch>
+    <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
+      <InlineTool
+        icon="●"
+        iconColor={props.part.state.status === "completed" ? theme.success : undefined}
+        color={theme.text}
+        pending="Preparing command…"
+        complete={command()}
+        spinner={isRunning()}
+        part={props.part}
+        onClick={details() ? () => setExpanded((value) => !value) : undefined}
+      >
+        <b>{isRunning() ? "Running" : "Ran"}</b> {title()}
+      </InlineTool>
+      <Show when={expanded()}>
+        <box paddingLeft={2}>
+          <Show when={stringValue(props.input.workdir)}>
+            <text fg={theme.textMuted}>in {pathFormatter.format(stringValue(props.input.workdir))}</text>
+          </Show>
+          <code conceal={false} fg={theme.text} filetype="shellscript" syntaxStyle={syntax()} content={command()} />
+        </box>
+      </Show>
+      <Show when={expanded() ? output() : preview()}>
+        <FileToolResult
+          summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")}
+          color={theme.textMuted}
+        />
+      </Show>
+      <Show when={details()}>
+        <box paddingLeft={2} onMouseUp={() => setExpanded((value) => !value)}>
+          <text fg={theme.textMuted}>{expanded() ? "Show less" : "… click to view command and output"}</text>
+        </box>
+      </Show>
+    </box>
   )
 }
 
 function Write(props: ToolProps) {
+  const ctx = use()
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
-  const code = createMemo(() => {
-    return stringValue(props.input.content) ?? ""
-  })
+  const [expanded, setExpanded] = createSignal(false)
+  const filePath = createMemo(() => stringValue(props.input.filePath))
+  const code = createMemo(() => stringValue(props.input.content) ?? "")
+  const error = createMemo(() => (props.part.state.status === "error" ? props.part.state.error : undefined))
+  // What a write wrote is the point of the row, so it previews the way a command
+  // previews its output and the click reveals the rest. This used to hang off
+  // `diagnostics`, which the tool only reports when the language server found
+  // errors, so every clean write rendered as a bare line.
+  const collapsed = createMemo(() => collapseToolOutput(code(), 3, 3 * Math.max(20, ctx.width - 8)))
 
   return (
-    <Switch>
-      <Match when={props.metadata.diagnostics !== undefined}>
-        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
-          <InlineTool
-            icon="●"
-            iconColor={props.part.state.status === "completed" ? theme.success : undefined}
-            color={theme.text}
-            pending="Preparing write…"
-            complete={true}
-            part={props.part}
+    <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
+      <InlineTool
+        icon="●"
+        iconColor={props.part.state.status === "completed" ? theme.success : undefined}
+        color={theme.text}
+        pending="Preparing write…"
+        complete={true}
+        spinner={props.part.state.status === "running"}
+        part={props.part}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <b>Write</b>({pathFormatter.format(filePath())})
+      </InlineTool>
+      <FileToolResult
+        summary={error() ?? fileToolSummary("write", props.metadata) ?? "Wrote file"}
+        color={error() ? theme.error : theme.text}
+      >
+        <Show when={!error()}>
+          <Show
+            when={expanded() || !collapsed().overflow}
+            fallback={
+              <text fg={theme.textMuted} onMouseUp={() => setExpanded(true)}>
+                {collapsed().output}
+              </text>
+            }
           >
-            <b>Write</b>({pathFormatter.format(stringValue(props.input.filePath))})
-          </InlineTool>
-          <FileToolResult summary={fileToolSummary("write", props.metadata) ?? "Wrote file"} color={theme.text}>
             <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
               <code
                 conceal={false}
                 fg={theme.text}
-                filetype={filetype(stringValue(props.input.filePath))}
+                filetype={filetype(filePath())}
                 syntaxStyle={syntax()}
                 content={code()}
               />
             </line_number>
-            <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
-          </FileToolResult>
+          </Show>
+        </Show>
+        <Diagnostics diagnostics={props.metadata.diagnostics} filePath={filePath() ?? ""} />
+      </FileToolResult>
+      <Show when={!error() && collapsed().overflow}>
+        <box paddingLeft={2} onMouseUp={() => setExpanded((value) => !value)}>
+          <text fg={theme.textMuted}>{expanded() ? "Show less" : "… click to view file"}</text>
         </box>
-      </Match>
-      <Match when={true}>
-        <InlineTool
-          icon="●"
-          color={theme.text}
-          pending="Preparing write…"
-          complete={stringValue(props.input.filePath)}
-          spinner={props.part.state.status === "running"}
-          part={props.part}
-        >
-          <b>Write</b>({pathFormatter.format(stringValue(props.input.filePath))})
-        </InlineTool>
-      </Match>
-    </Switch>
+      </Show>
+    </box>
   )
 }
 
@@ -2266,7 +2288,7 @@ function Glob(props: ToolProps) {
       complete={stringValue(props.input.pattern)}
       part={props.part}
     >
-      Glob "{stringValue(props.input.pattern)}"{" "}
+      <b>Glob</b> "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.count)}>
         ({numberValue(props.metadata.count)} {numberValue(props.metadata.count) === 1 ? "match" : "matches"})
@@ -2278,6 +2300,10 @@ function Glob(props: ToolProps) {
 function Read(props: ToolProps) {
   const { theme } = useTheme()
   const pathFormatter = usePathFormatter()
+  const ctx = use()
+  const [expanded, setExpanded] = createSignal(false)
+  const filepath = createMemo(() => pathFormatter.format(stringValue(props.input.filePath)))
+  const title = createMemo(() => Locale.truncateMiddle(filepath(), Math.max(20, ctx.width - 24)))
   const isRunning = createMemo(() => props.part.state.status === "running")
   const loaded = createMemo(() => {
     if (props.part.state.status !== "completed") return []
@@ -2296,10 +2322,13 @@ function Read(props: ToolProps) {
         complete={stringValue(props.input.filePath)}
         spinner={isRunning()}
         part={props.part}
+        onClick={filepath() !== title() ? () => setExpanded((value) => !value) : undefined}
       >
-        <b>Read</b>({pathFormatter.format(stringValue(props.input.filePath))})
-        {input(props.input, ["filePath", "path"]) && ` ${input(props.input, ["filePath", "path"])}`}
+        <b>Read</b> {title()}
       </InlineTool>
+      <Show when={expanded()}>
+        <FileToolResult summary={filepath()} color={theme.textMuted} />
+      </Show>
       <Show when={props.part.state.status === "completed" && fileToolSummary("read", props.metadata)}>
         {(summary) => <FileToolResult summary={summary()} color={theme.textMuted} />}
       </Show>
@@ -2556,11 +2585,14 @@ function Execute(props: ToolProps) {
 
 export function FileToolResult(props: { summary: string; color?: RGBA; children?: JSX.Element }) {
   return (
-    <box paddingLeft={5}>
-      <text fg={props.color}>{`⎿  ${props.summary}`}</text>
-      <Show when={props.children}>
-        <box paddingLeft={3}>{props.children}</box>
-      </Show>
+    <box paddingLeft={2} flexDirection="row">
+      <text width={3} fg={props.color}>
+        ⎿{" "}
+      </text>
+      <box flexGrow={1} minWidth={0}>
+        <text fg={props.color}>{props.summary}</text>
+        <Show when={props.children}>{props.children}</Show>
+      </box>
     </box>
   )
 }
@@ -2569,6 +2601,7 @@ function Edit(props: ToolProps) {
   const ctx = use()
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
+  const [expanded, setExpanded] = createSignal(false)
 
   const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
 
@@ -2585,29 +2618,37 @@ function Edit(props: ToolProps) {
             pending="Preparing edit…"
             complete={true}
             part={props.part}
+            onClick={() => setExpanded((value) => !value)}
           >
             <b>Update</b>({pathFormatter.format(stringValue(props.input.filePath))})
           </InlineTool>
           <FileToolResult summary={fileToolSummary("edit", props.metadata) ?? "Updated file"} color={theme.text}>
-            <diff
-              diff={diffContent()}
-              view="unified"
-              filetype={ft()}
-              syntaxStyle={syntax()}
-              showLineNumbers={true}
-              width="100%"
-              wrapMode={ctx.diffWrapMode()}
-              fg={theme.text}
-              addedBg={theme.diffAddedBg}
-              removedBg={theme.diffRemovedBg}
-              contextBg={theme.background}
-              addedSignColor={theme.diffHighlightAdded}
-              removedSignColor={theme.diffHighlightRemoved}
-              lineNumberFg={theme.diffLineNumber}
-              lineNumberBg={theme.background}
-              addedLineNumberBg={theme.diffAddedLineNumberBg}
-              removedLineNumberBg={theme.diffRemovedLineNumberBg}
-            />
+            <Show when={expanded()}>
+              <diff
+                diff={diffContent()}
+                view="unified"
+                filetype={ft()}
+                syntaxStyle={syntax()}
+                showLineNumbers={true}
+                width="100%"
+                wrapMode={ctx.diffWrapMode()}
+                fg={theme.text}
+                addedBg={theme.diffAddedBg}
+                removedBg={theme.diffRemovedBg}
+                contextBg={theme.background}
+                addedSignColor={theme.diffHighlightAdded}
+                removedSignColor={theme.diffHighlightRemoved}
+                lineNumberFg={theme.diffLineNumber}
+                lineNumberBg={theme.background}
+                addedLineNumberBg={theme.diffAddedLineNumberBg}
+                removedLineNumberBg={theme.diffRemovedLineNumberBg}
+              />
+            </Show>
+            <Show when={!expanded()}>
+              <text fg={theme.textMuted} onMouseUp={() => setExpanded(true)}>
+                … click to view diff
+              </text>
+            </Show>
             <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
           </FileToolResult>
         </box>
@@ -2655,11 +2696,11 @@ function ApplyPatch(props: ToolProps) {
           fg={theme.text}
           addedBg={theme.diffAddedBg}
           removedBg={theme.diffRemovedBg}
-          contextBg={theme.diffContextBg}
+          contextBg={theme.background}
           addedSignColor={theme.diffHighlightAdded}
           removedSignColor={theme.diffHighlightRemoved}
           lineNumberFg={theme.diffLineNumber}
-          lineNumberBg={theme.diffContextBg}
+          lineNumberBg={theme.background}
           addedLineNumberBg={theme.diffAddedLineNumberBg}
           removedLineNumberBg={theme.diffRemovedLineNumberBg}
         />
@@ -2667,34 +2708,41 @@ function ApplyPatch(props: ToolProps) {
     )
   }
 
-  function title(file: { type: string; relativePath: string; filePath: string; deletions: number }) {
-    if (file.type === "delete") return "# Deleted " + file.relativePath
-    if (file.type === "add") return "# Created " + file.relativePath
-    if (file.type === "move") return "# Moved " + pathFormatter.format(file.filePath) + " → " + file.relativePath
-    return "← Patched " + file.relativePath
-  }
-
   return (
     <Switch>
       <Match when={files().length > 0}>
         <For each={files()}>
-          {(file) => (
-            <BlockTool title={title(file)} part={props.part}>
-              {/* A deleted file carries its whole removal patch, so it renders like any
-                  other change; only an empty patch falls back to the line count. */}
-              <Show
-                when={file.patch.trim().length > 0}
-                fallback={
-                  <text fg={theme.diffRemoved}>
-                    -{file.deletions} line{file.deletions !== 1 ? "s" : ""}
+          {(file) => {
+            const [expanded, setExpanded] = createSignal(false)
+            return (
+              <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
+                <InlineTool
+                  icon="●"
+                  iconColor={theme.success}
+                  color={theme.text}
+                  pending="Preparing patch…"
+                  complete={true}
+                  part={props.part}
+                  onClick={() => setExpanded((value) => !value)}
+                >
+                  <b>{file.type === "delete" ? "Deleted" : file.type === "add" ? "Created" : "Patched"}</b>{" "}
+                  {file.relativePath}
+                </InlineTool>
+                <FileToolResult
+                  summary={file.type === "delete" ? `Removed ${file.deletions} lines` : "Updated file"}
+                  color={theme.textMuted}
+                >
+                  <Show when={expanded() && file.patch.trim().length > 0}>
+                    <Diff diff={file.patch} filePath={file.filePath} />
+                  </Show>
+                  <text fg={theme.textMuted} onMouseUp={() => setExpanded((value) => !value)}>
+                    {expanded() ? "Click to collapse" : "… click to view diff"}
                   </text>
-                }
-              >
-                <Diff diff={file.patch} filePath={file.filePath} />
-                <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
-              </Show>
-            </BlockTool>
-          )}
+                  <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
+                </FileToolResult>
+              </box>
+            )
+          }}
         </For>
       </Match>
       <Match when={true}>

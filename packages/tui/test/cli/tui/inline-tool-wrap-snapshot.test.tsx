@@ -314,10 +314,10 @@ describe("TUI inline tool wrapping", () => {
       { width: 72, height: 4 },
     )
     expect(frame.split("\n").slice(0, 4)).toEqual([
-      "   ● Update(src/example.ts)",
-      "     ⎿  Added 1 line, removed 1 line",
-      "        810 - old()",
-      "        810 + next()",
+      "● Update(src/example.ts)",
+      "  ⎿  Added 1 line, removed 1 line",
+      "     810 - old()",
+      "     810 + next()",
     ])
   })
 
