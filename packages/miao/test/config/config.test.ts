@@ -166,31 +166,37 @@ const withInstanceDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R>) =
     Effect.provide(LayerNode.compile(CrossSpawnSpawner.node)),
   )
 
-const withGlobalConfigDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R>) =>
+// Global.Path.config is fixed when @miao/core/global is imported (the preload points
+// XDG_CONFIG_HOME at a per-run temp directory), so tests stage global config files
+// in that directory and empty it around each use instead of swapping the path.
+const resetGlobalConfigDir = Effect.gen(function* () {
+  yield* Effect.promise(async () => {
+    const dir = Global.Path.config
+    await Promise.all(
+      (await fs.readdir(dir)).map((entry) => fs.rm(path.join(dir, entry), { recursive: true, force: true })),
+    )
+  })
+  yield* clearEffect(true)
+})
+
+const withGlobalConfigDir = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
-    Effect.gen(function* () {
-      const previous = Global.Path.config
-      ;(Global.Path as { config: string }).config = dir
-      yield* clearEffect(true)
-      return previous
-    }),
+    resetGlobalConfigDir,
     () => effect,
-    (previous) =>
-      Effect.gen(function* () {
-        ;(Global.Path as { config: string }).config = previous
-        yield* clearEffect(true)
-      }),
+    () => resetGlobalConfigDir,
   )
 
 const withGlobalConfig = <A, E, R>(
   input: { config?: object; name?: string },
   fn: (input: { dir: string }) => Effect.Effect<A, E, R>,
 ) =>
-  Effect.gen(function* () {
-    const dir = yield* tmpdirScoped()
-    if (input.config) yield* writeConfigEffect(dir, schemaConfig(input.config), input.name)
-    return yield* withGlobalConfigDir(dir, fn({ dir }))
-  })
+  withGlobalConfigDir(
+    Effect.gen(function* () {
+      const dir = Global.Path.config
+      if (input.config) yield* writeConfigEffect(dir, schemaConfig(input.config), input.name)
+      return yield* fn({ dir })
+    }),
+  )
 
 const withConfigTree = <A, E, R>(
   input: { global?: object; project?: object; local?: object },
@@ -198,17 +204,20 @@ const withConfigTree = <A, E, R>(
 ) =>
   Effect.gen(function* () {
     const root = yield* tmpdirScoped()
-    const global = yield* tmpdirScoped()
     const directory = path.join(root, "project")
-    yield* Effect.all(
-      [
-        input.global ? writeConfigEffect(global, schemaConfig(input.global)) : undefined,
-        input.project ? writeConfigEffect(directory, schemaConfig(input.project)) : undefined,
-        input.local ? writeConfigEffect(path.join(directory, ".miao"), schemaConfig(input.local)) : undefined,
-      ].filter((effect): effect is Effect.Effect<void, FSUtil.Error, FSUtil.Service> => effect !== undefined),
-      { concurrency: "unbounded" },
+    return yield* withGlobalConfigDir(
+      Effect.gen(function* () {
+        yield* Effect.all(
+          [
+            input.global ? writeConfigEffect(Global.Path.config, schemaConfig(input.global)) : undefined,
+            input.project ? writeConfigEffect(directory, schemaConfig(input.project)) : undefined,
+            input.local ? writeConfigEffect(path.join(directory, ".miao"), schemaConfig(input.local)) : undefined,
+          ].filter((effect): effect is Effect.Effect<void, FSUtil.Error, FSUtil.Service> => effect !== undefined),
+          { concurrency: "unbounded" },
+        )
+        return yield* withInstanceDir(directory, effect)
+      }),
     )
-    return yield* withGlobalConfigDir(global, withInstanceDir(directory, effect))
   })
 
 const wellKnown = (input: {
@@ -263,13 +272,10 @@ function withProcessEnvs<A, E, R>(entries: Record<string, string | undefined>, e
 
 async function check(map: (dir: string) => string) {
   if (process.platform !== "win32") return
-  await using globalTmp = await tmpdir()
   await using tmp = await tmpdir({ git: true, config: { snapshot: true } })
-  const prev = Global.Path.config
-  ;(Global.Path as { config: string }).config = globalTmp.path
-  await clear()
+  await Effect.runPromise(resetGlobalConfigDir)
   try {
-    await writeConfig(globalTmp.path, {
+    await writeConfig(Global.Path.config, {
       $schema: "https://mtty.dev/miao/config.json",
       snapshot: false,
     })
@@ -284,8 +290,7 @@ async function check(map: (dir: string) => string) {
     })
   } finally {
     await InstanceRuntime.disposeAllInstances()
-    ;(Global.Path as { config: string }).config = prev
-    await clear()
+    await Effect.runPromise(resetGlobalConfigDir)
   }
 }
 
