@@ -1966,6 +1966,8 @@ function InlineTool(props: {
   spinner?: boolean
   separate?: boolean
   children: JSX.Element
+  /** Highlighted content shown after the label, e.g. the command a shell row ran. */
+  code?: JSX.Element
   part: ToolPart
   onClick?: () => void
 }) {
@@ -2017,6 +2019,7 @@ function InlineTool(props: {
       failure={props.failure}
       spinner={props.spinner}
       separate={props.separate}
+      code={props.code}
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
@@ -2048,6 +2051,7 @@ export function InlineToolRow(props: {
   spinner?: boolean
   separate?: boolean
   children: JSX.Element
+  code?: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
   onMouseUp?: () => void
@@ -2094,12 +2098,17 @@ export function InlineToolRow(props: {
                 {props.icon}
               </text>
               <text
-                flexGrow={1}
+                flexGrow={props.code ? 0 : 1}
                 fg={props.failed ? props.errorColor : props.color}
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
                 {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
               </text>
+              <Show when={props.code && !(props.failed && !props.complete)}>
+                <box flexGrow={1} minWidth={0} paddingLeft={1}>
+                  {props.code}
+                </box>
+              </Show>
             </box>
           </Show>
         </Match>
@@ -2193,8 +2202,15 @@ function Shell(props: ToolProps) {
         spinner={isRunning()}
         part={props.part}
         onClick={details() ? () => setExpanded((value) => !value) : undefined}
+        code={
+          isRunning() ? undefined : (
+            <code conceal={false} fg={theme.text} filetype="bash" syntaxStyle={syntax()} content={title()} />
+          )
+        }
       >
-        <b>{isRunning() ? "Running" : "Ran"}</b> {title()}
+        <Show when={isRunning()} fallback={<b>Ran</b>}>
+          <b>Running</b> {title()}
+        </Show>
       </InlineTool>
       <Show when={expanded()}>
         <box paddingLeft={2}>
@@ -2265,9 +2281,15 @@ function Write(props: ToolProps) {
           <Show
             when={expanded() || !collapsed().overflow}
             fallback={
-              <text fg={theme.textMuted} onMouseUp={() => setExpanded(true)}>
-                {collapsed().output}
-              </text>
+              <box onMouseUp={() => setExpanded(true)}>
+                <code
+                  conceal={false}
+                  fg={theme.text}
+                  filetype={filetype(filePath())}
+                  syntaxStyle={syntax()}
+                  content={collapsed().output.replace(/\n?…$/, "")}
+                />
+              </box>
             }
           >
             <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
@@ -2649,11 +2671,11 @@ function Edit(props: ToolProps) {
   const ctx = use()
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
-  const [expanded, setExpanded] = createSignal(false)
 
   const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
 
   const diffContent = createMemo(() => stringValue(props.metadata.diff) ?? "")
+  const [expanded, setExpanded] = createSignal(diffFitsInline(diffContent()))
   const highlighter = useDiffHighlighter({
     patch: diffContent,
     filePath: () => stringValue(props.input.filePath),
@@ -2771,7 +2793,7 @@ function ApplyPatch(props: ToolProps) {
       <Match when={files().length > 0}>
         <For each={files()}>
           {(file) => {
-            const [expanded, setExpanded] = createSignal(false)
+            const [expanded, setExpanded] = createSignal(diffFitsInline(file.patch))
             return (
               <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
                 <InlineTool
@@ -2926,6 +2948,14 @@ function input(input: Record<string, unknown>, omit?: string[]): string {
   })
   if (primitives.length === 0) return ""
   return `[${primitives.map(([key, value]) => `${key}=${value}`).join(", ")}]`
+}
+
+// The diff is what an edit row is for, so it shows inline like Claude Code and
+// Codex do; only a diff too long to scan stays behind a click.
+const INLINE_DIFF_LINES = 80
+
+function diffFitsInline(diff: string) {
+  return diff.split("\n").length <= INLINE_DIFF_LINES
 }
 
 function stringValue(value: unknown) {
