@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Event } from "@opencode-ai/sdk/v2"
-import { createMiaottyStateTracker } from "@/plugin/miaotty"
+import { createMiaottyStateTracker, terminalTarget } from "@/plugin/miaotty"
 
 const event = (value: object) => value as unknown as Event
 
@@ -37,4 +37,18 @@ test("errors show until the session becomes active again", () => {
   expect(
     tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } })),
   ).toBe("processing")
+})
+
+test("reports through mtty's variables and still understands an older miaotty", () => {
+  expect(terminalTarget({})).toBeUndefined()
+  expect(terminalTarget({ MTTY_PANE_ID: "pane1", MTTY_CLI: "/Apps/mtty.app/mtty-cli" })).toEqual({
+    pane: "pane1",
+    exe: "/Apps/mtty.app/mtty-cli",
+  })
+  expect(terminalTarget({ MTTY_PANE_ID: "pane1" })).toEqual({ pane: "pane1", exe: "mtty-cli" })
+  expect(terminalTarget({ MIAOTTY_PANE_ID: "pane2" })).toEqual({ pane: "pane2", exe: "miaotty-cli" })
+  expect(terminalTarget({ MTTY_PANE_ID: "new", MIAOTTY_PANE_ID: "old", MIAOTTY_CLI: "/x/cli" })).toEqual({
+    pane: "new",
+    exe: "/x/cli",
+  })
 })
