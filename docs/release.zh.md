@@ -5,18 +5,18 @@
 ## 版本方案
 
 - miao 使用**独立版本**，从 `0.0.1` 起，遵循 semver，Git tag 为 `vX.Y.Z`。
-- **权威来源**是 `oxdingzg/miao` 的最新 GitHub release tag；下一个版本 = 该 tag 按 bump（patch/minor/major）递增（`packages/script/src/index.ts`）。
-- **开发/预览构建**版本形如 `0.0.1-<channel>-<timestamp>`（channel 为分支名），**永不发布**；这类构建 `Installation.isPreview()` 为 true，会跳过自更新检查。
-- **正式构建** channel 为 `latest`，版本即 release tag；构建时通过 `MIAO_VERSION` 嵌入二进制，`miao --version` 显示的即是它。
-- `packages/*/package.json` 里的 `version` 只是仓库内占位（当前 `0.0.1`）。发布前可以用 `bun script/set-version.ts <version>` 同步全部包，再 `bun install --lockfile-only` 更新锁文件（推荐，但不是产物必需——产物版本以 release tag 为准）。
+- **唯一权威来源是根 `package.json` 的 `version`**。`bun script/set-version.ts X.Y.Z` 更新它并同步所有 workspace 的 `package.json`；不带参数运行则只做同步。构建与源码运行都读取这个版本，`MIAO_VERSION` 只能断言同一个值，不支持自动 bump 或时间戳版本。
+- **channel 决定是否为正式构建**：发布构建的 channel 为 `latest`；其它构建（`miao-dev` 的 `local`、`miao-preview` 的分支名）是预览构建，`Installation.isPreview()` 为 true，不做自更新检查，也使用独立的数据库文件。
+- 正式构建使用 `miao.db`，预览构建使用 `miao-<channel>.db`。
+- `CHANGELOG.md` 和 GitHub release 记录发布历史，不是当前开发版本的来源。
 
 ## 发布流程
 
-1. **确认 main 是绿的**：`bun typecheck`、对应包的 `bun test`，以及原生 CI `.github/workflows/native.yml`。
-2. **触发发布**：`./script/release patch`（或 `minor` / `major`），等价于 `gh workflow run release.yml -f bump=patch`；也可在 Actions 页面手动 dispatch 并填入版本。
+1. **确认 main 是绿的**：`bun typecheck`、对应包的 `bun test`，以及原生 CI `.github/workflows/native.yml`。发布前用 `./script/install-local.sh` 构建并冒烟测试 `miao-preview`。
+2. **触发发布**：在干净的 main 上运行 `./script/release X.Y.Z`。脚本依次执行 `bun script/set-version.ts X.Y.Z`、提交 `chore: release X.Y.Z`、push，然后 `gh workflow run release.yml --ref main`。工作流**没有输入参数**，版本完全取自根 `package.json`；在 Actions 页面手动 dispatch 也一样。
 3. **工作流 `.github/workflows/release.yml`**：
-   - `version`：运行 `script/version.ts`，按最新 release tag bump，创建**草稿** release `vX.Y.Z`，输出 `version/release/tag/repo`。
-   - `cli`：矩阵 `macos-14`(arm64) / `macos-13`(x64) / `ubuntu-latest`(x64) / `ubuntu-24.04-arm`(arm64) / `windows-2025`(x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
+   - `version`：运行 `script/version.ts`，以根 `package.json` 的版本创建**草稿** release `vX.Y.Z`，并生成 release notes，输出 `version/release/tag/repo`。
+   - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
    - `publish`：所有平台成功后执行 `gh release edit --draft=false`，正式发布。
 4. **产物**：`miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`，命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
 

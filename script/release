@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
+# Cut a release from main: set the version, commit, push, then dispatch the
+# release workflow. The workflow takes no inputs; it builds and tags whatever
+# version the root package.json holds.
+set -euo pipefail
 
-BUMP_TYPE=${1:-patch}
+VERSION=${1:?usage: script/release X.Y.Z}
+cd "${0%/*}/.."
 
-gh workflow run release.yml -f bump="$BUMP_TYPE"
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "working tree has uncommitted changes; commit or stash them first" >&2
+  exit 1
+fi
+
+bun script/set-version.ts "$VERSION"
+git add -u
+git commit -m "chore: release $VERSION"
+git push
+gh workflow run release.yml --ref main

@@ -5,18 +5,18 @@
 ## Version scheme
 
 - miao uses its **own versioning**, starting at `0.0.1`, semver, Git tag `vX.Y.Z`.
-- The **source of truth** is the latest GitHub release tag of `oxdingzg/miao`; the next version is that tag bumped (patch/minor/major) in `packages/script/src/index.ts`.
-- **Dev/preview builds** look like `0.0.1-<channel>-<timestamp>` (channel is the branch name) and are **never released**; `Installation.isPreview()` is true for them, so they skip the self-update check.
-- **Release builds** use channel `latest`; the version is the release tag, embedded at build time via `MIAO_VERSION`, so `miao --version` reports it.
-- The `version` in `packages/*/package.json` is only an in-repo placeholder (currently `0.0.1`). Before releasing you can sync every package with `bun script/set-version.ts <version>` and then `bun install --lockfile-only` (recommended, not required: the artifact version comes from the release tag).
+- **The root `package.json` `version` is the single source of truth.** `bun script/set-version.ts X.Y.Z` updates it and synchronizes every workspace `package.json`; run it without an argument to only synchronize. Builds and source runs read that version; `MIAO_VERSION` may only assert the same value, and automatic bumps or timestamp versions are not supported.
+- **The channel decides whether a build is a release**: release builds use channel `latest`. Every other build (`local` for `miao-dev`, the branch name for `miao-preview`) is a preview: `Installation.isPreview()` is true, it skips the self-update check, and it keeps its own database file.
+- Release builds use `miao.db`; preview builds use `miao-<channel>.db`.
+- `CHANGELOG.md` and GitHub releases record publication history; they are not the source of the current development version.
 
 ## Release process
 
-1. **Make sure main is green**: `bun typecheck`, the relevant `bun test` suites, and the native CI `.github/workflows/native.yml`.
-2. **Trigger**: `./script/release patch` (or `minor` / `major`), equivalent to `gh workflow run release.yml -f bump=patch`. You can also dispatch from the Actions UI with an explicit version.
+1. **Make sure main is green**: `bun typecheck`, the relevant `bun test` suites, and the native CI `.github/workflows/native.yml`. Build and smoke-test `miao-preview` with `./script/install-local.sh` before releasing.
+2. **Trigger**: on a clean main, run `./script/release X.Y.Z`. It runs `bun script/set-version.ts X.Y.Z`, commits `chore: release X.Y.Z`, pushes, then runs `gh workflow run release.yml --ref main`. The workflow takes **no inputs**; the version comes entirely from the root `package.json`, including when dispatched from the Actions UI.
 3. **Workflow `.github/workflows/release.yml`**:
-   - `version`: runs `script/version.ts`, bumps from the latest release tag, creates a **draft** release `vX.Y.Z`, and outputs `version/release/tag/repo`.
-   - `cli`: matrix `macos-14`(arm64) / `macos-13`(x64) / `ubuntu-latest`(x64) / `ubuntu-24.04-arm`(arm64) / `windows-2025`(x64). Each platform runs `bun install` + installs Rust, then `packages/miao/script/build.ts --single` builds the host binary (building and embedding the host native addon first) and uploads `miao-<target>.zip|tar.gz` to the draft release.
+   - `version`: runs `script/version.ts`, creates a **draft** release `vX.Y.Z` for the root `package.json` version with generated release notes, and outputs `version/release/tag/repo`.
+   - `cli`: matrix `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64). Each platform runs `bun install` + installs Rust, then `packages/miao/script/build.ts --single` builds the host binary (building and embedding the host native addon first) and uploads `miao-<target>.zip|tar.gz` to the draft release.
    - `publish`: after all platforms succeed, `gh release edit --draft=false` publishes the release.
 4. **Assets**: `miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`, matching the `install` script and the updater (`Installation.latest` -> `oxdingzg/miao/releases/latest`).
 
