@@ -90,7 +90,12 @@ function serverFetch(
       void serverPath
       Flag.MIAO_SERVER_PASSWORD = input?.password
       Flag.MIAO_SERVER_USERNAME = input?.username
-      const baseUrl = HttpServer.formatAddress(server.address)
+      // The test server listens on 0.0.0.0, which NO_PROXY's loopback entries do
+      // not cover, so a user's HTTP_PROXY would intercept the request (502).
+      const baseUrl =
+        server.address._tag === "TcpAddress"
+          ? `http://127.0.0.1:${server.address.port}`
+          : HttpServer.formatAddress(server.address)
       return Object.assign(
         async (request: RequestInfo | URL, init?: RequestInit) => {
           const source = request instanceof Request ? request : new Request(request, init)
