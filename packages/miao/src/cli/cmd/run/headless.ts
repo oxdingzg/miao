@@ -140,28 +140,31 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     }
   }
 
+  // Part ids come from the provider stream and are only unique within one
+  // message (AI SDK text parts restart at "text-0" every turn), so dedupe keys
+  // are scoped by message id.
   async function printPart(part: Part, settled: boolean) {
     if (part.type === "tool") {
       if (part.state.status === "completed" || part.state.status === "error") {
-        if (!once(`${part.id}:done`)) return
+        if (!once(`${part.messageID}:${part.id}:done`)) return
         if (input.emit("tool_use", { part })) return
         if (part.state.status === "completed") return input.print.tool(part)
         await input.print.toolError(part)
         return input.print.error(part.state.error)
       }
-      if (part.tool === "task" && part.state.status === "running" && !input.json && once(`${part.id}:running`))
+      if (part.tool === "task" && part.state.status === "running" && !input.json && once(`${part.messageID}:${part.id}:running`))
         await input.print.tool(part)
       return
     }
     if (!settled) return
     if (part.type === "text") {
-      if (!once(part.id)) return
+      if (!once(`${part.messageID}:${part.id}`)) return
       if (input.emit("text", { part })) return
       if (part.text.trim()) input.print.text(part.text.trim())
       return
     }
     if (part.type === "reasoning" && input.thinking) {
-      if (!once(part.id)) return
+      if (!once(`${part.messageID}:${part.id}`)) return
       if (input.emit("reasoning", { part })) return
       if (part.text.trim()) input.print.reasoning(part.text.trim())
     }
