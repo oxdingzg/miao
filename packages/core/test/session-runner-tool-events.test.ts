@@ -134,3 +134,18 @@ test("step finish records settlement without publishing step ended", async () =>
   expect(published.some((event) => event.type === "session.next.step.ended.2")).toBe(false)
   expect(publisher.stepSettlement()).toMatchObject({ finish: "stop" })
 })
+
+test("a replayed tool call is dropped instead of failing the turn", async () => {
+  const { published, publisher } = capture()
+  const stream = [
+    LLMEvent.toolInputStart({ id: "call-replay", name: "read" }),
+    LLMEvent.toolInputDelta({ id: "call-replay", name: "read", text: '{"path":"a"}' }),
+    LLMEvent.toolInputEnd({ id: "call-replay", name: "read" }),
+    LLMEvent.toolCall({ id: "call-replay", name: "read", input: { path: "a" } }),
+  ]
+  for (const event of [...stream, ...stream]) await Effect.runPromise(publisher.publish(event))
+
+  expect(published.filter((event) => event.type.startsWith("session.next.tool.called"))).toHaveLength(1)
+  expect(published.filter((event) => event.type.startsWith("session.next.tool.input.started"))).toHaveLength(1)
+  expect(publisher.toolCalled("call-replay")).toBe(true)
+})

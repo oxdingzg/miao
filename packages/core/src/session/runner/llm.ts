@@ -465,8 +465,11 @@ const layer = Layer.effect(
                 return
               }
             }
+            // A replayed call id was already executed by its first copy; the
+            // publisher drops the echo and it must not run a second time.
+            const replay = event.type === "tool-call" && publisher.toolCalled(event.id)
             yield* publish(event)
-            if (event.type !== "tool-call" || event.providerExecuted) return
+            if (replay || event.type !== "tool-call" || event.providerExecuted) return
             if (!toolMaterialization) {
               yield* withPublication(publisher.failUnsettledTools("Tools are disabled after the maximum agent steps"))
               return

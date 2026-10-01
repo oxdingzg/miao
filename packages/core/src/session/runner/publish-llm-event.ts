@@ -66,6 +66,8 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       providerMetadata?: ProviderMetadata
     }
   >()
+  // Call ids a provider started again after the call was already made.
+  const replayed = new Set<string>()
   const timestamp = DateTime.now
   let assistantMessageID: SessionMessage.ID | undefined
   let assistantActive = false
@@ -167,7 +169,14 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   })
 
   const startToolInput = Effect.fnUntraced(function* (event: { readonly id: string; readonly name: string }) {
-    if (tools.has(event.id)) return yield* Effect.die(`Duplicate tool input start: ${event.id}`)
+    const existing = tools.get(event.id)
+    // Some providers resend a finished call whole (start, deltas, end, call) with
+    // the same id. The first copy already ran, so the echo is dropped, not fatal.
+    if (existing?.called) {
+      replayed.add(event.id)
+      return yield* Effect.logWarning("ignoring replayed tool call", { callID: event.id, tool: event.name })
+    }
+    if (existing) return yield* Effect.die(`Duplicate tool input start: ${event.id}`)
     const assistantMessageID = yield* startAssistant()
     tools.set(event.id, {
       assistantMessageID,
@@ -314,6 +323,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* startToolInput(event)
         return
       case "tool-input-delta": {
+        if (replayed.has(event.id)) return
         const tool = tools.get(event.id)
         if (!tool) return yield* Effect.die(`Tool input delta before start: ${event.id}`)
         if (tool.name !== event.name)
@@ -330,6 +340,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         return
       }
       case "tool-input-end":
+        if (replayed.has(event.id)) return
         yield* endToolInput(event)
         return
       case "tool-call": {
@@ -338,7 +349,8 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         if (!tool.inputEnded) yield* endToolInput(event)
         if (tool.name !== event.name)
           return yield* Effect.die(`Tool call name changed for ${event.id}: ${tool.name} -> ${event.name}`)
-        if (tool.called) return yield* Effect.die(`Duplicate tool call: ${event.id}`)
+        if (tool.called)
+          return yield* Effect.logWarning("ignoring replayed tool call", { callID: event.id, tool: event.name })
         tool.called = true
         tool.providerExecuted = event.providerExecuted === true
         tool.providerMetadata = event.providerMetadata
@@ -442,6 +454,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     failUnsettledTools,
     hasActiveAssistant: () => assistantActive,
     hasAssistantStarted: () => assistantMessageID !== undefined,
+    toolCalled: (callID: string) => tools.get(callID)?.called === true,
     hasProviderError: () => providerFailed,
     stepSettlement: () => stepSettlement,
     startAssistant,

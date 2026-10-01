@@ -1671,6 +1671,42 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("runs a tool call the provider replays only once", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo once" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      const call = LLMEvent.toolCall({ id: "call-replayed", name: "echo", input: { text: "once" } })
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          call,
+          call,
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(executions).toEqual(["once"])
+      const context = yield* (yield* SessionStore.Service).context(sessionID)
+      const last = context.at(-1)
+      expect(last?.type === "assistant" ? last.content.at(-1) : undefined).toMatchObject({ type: "text", text: "Done" })
+    }),
+  )
+
   it.effect("runs a subagent through the session-scoped task tool", () =>
     Effect.gen(function* () {
       yield* setup
