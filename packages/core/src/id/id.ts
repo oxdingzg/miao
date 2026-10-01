@@ -1,4 +1,4 @@
-import { create as createIdentifier } from "@miao/schema/identifier"
+import { create as createIdentifier, timestamp as identifierTimestamp } from "@miao/schema/identifier"
 
 const prefixes = {
   job: "job",
@@ -38,10 +38,7 @@ export function create(prefix: string, direction: "descending" | "ascending", ti
 
 /** Extract timestamp from an ascending ID. Does not work with descending IDs. */
 export function timestamp(id: string): number {
-  const prefix = id.split("_")[0]
-  const hex = id.slice(prefix.length + 1, prefix.length + 13)
-  const encoded = BigInt("0x" + hex)
-  return Number(encoded / BigInt(0x1000))
+  return identifierTimestamp(id.slice(id.indexOf("_") + 1))
 }
 
 export * as Identifier from "./id"
