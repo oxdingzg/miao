@@ -126,8 +126,11 @@ export class TransportReason extends Schema.Class<TransportReason>("LLM.Error.Tr
   url: Schema.optional(Schema.String),
   http: Schema.optional(HttpContext),
 }) {
+  // A response body that breaks off mid-read is a dropped connection, not a
+  // bad request; the Session runner only replays it while nothing from the
+  // attempt has been published.
   get retryable() {
-    return false
+    return this.kind === "stream-read"
   }
 }
 

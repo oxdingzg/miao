@@ -5,7 +5,8 @@ import { render as renderEndpoint } from "../endpoint"
 import { Framing, type Framing as FramingDef } from "../framing"
 import type { Transport, TransportPrepareInput } from "./index"
 import * as ProviderShared from "../../protocols/shared"
-import { mergeJsonRecords, type LLMRequest } from "../../schema"
+import { LLMError, mergeJsonRecords, TransportReason, type LLMRequest } from "../../schema"
+import { causeDetail } from "../executor"
 
 export type JsonRequestInput<Body> = TransportPrepareInput<Body>
 
@@ -135,12 +136,16 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
           Effect.map((response) =>
             prepared.framing.frame(
               response.stream.pipe(
-                Stream.mapError((error) =>
-                  ProviderShared.eventError(
-                    `${request.model.provider}/${request.model.route.id}`,
-                    `Failed to read ${request.model.provider}/${request.model.route.id} stream`,
-                    ProviderShared.errorText(error),
-                  ),
+                Stream.mapError(
+                  (error) =>
+                    new LLMError({
+                      module: "ProviderShared",
+                      method: "stream",
+                      reason: new TransportReason({
+                        message: `Failed to read ${request.model.provider}/${request.model.route.id} stream: ${causeDetail(error) ?? "unknown error"}`,
+                        kind: "stream-read",
+                      }),
+                    }),
                 ),
               ),
             ),

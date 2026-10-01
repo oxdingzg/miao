@@ -684,6 +684,19 @@ describe("OpenAI Chat route", () => {
       const error = yield* LLMClient.generate(request).pipe(Effect.provide(layer), Effect.flip)
 
       expect(error.message).toContain("Failed to read openai/openai-chat stream")
+      expect(error.message).toContain("connection reset")
+      expect(error.reason).toMatchObject({ _tag: "Transport", kind: "stream-read" })
+      expect(error.retryable).toBe(true)
+    }),
+  )
+
+  it.effect("reports a stream that breaks before its first event as a retryable transport error", () =>
+    Effect.gen(function* () {
+      const error = yield* LLMClient.generate(request).pipe(Effect.provide(truncatedStream([])), Effect.flip)
+
+      expect(error.message).toContain("connection reset")
+      expect(error.reason).toMatchObject({ _tag: "Transport", kind: "stream-read" })
+      expect(error.retryable).toBe(true)
     }),
   )
 

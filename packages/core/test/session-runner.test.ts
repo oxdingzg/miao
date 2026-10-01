@@ -62,6 +62,7 @@ import { ModelV2 } from "@miao/core/model"
 import { Location } from "@miao/core/location"
 import { ProviderV2 } from "@miao/core/provider"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
@@ -3764,6 +3765,40 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "user", text: "Fail raw stream durably" },
         { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
+      ])
+    }),
+  )
+
+  it.effect("retries a provider stream that breaks before its first event", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a dropped stream" }), resume: false })
+      // A retry resubscribes the same provider stream, which re-sends the HTTP
+      // request; the first subscription drops before any event arrives.
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.fail(
+                new LLMError({
+                  module: "test",
+                  method: "stream",
+                  reason: new TransportReason({ message: "connection reset", kind: "stream-read" }),
+                }),
+              )
+            : Stream.fromIterable(fragmentFixture("text", "text-after-drop", ["Recovered"]).completeEvents),
+        ),
+      )
+
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+
+      expect(attempts).toBe(2)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Survive a dropped stream" },
+        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
       ])
     }),
   )

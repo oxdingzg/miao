@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
-import { AuthenticationReason, InvalidRequestReason, LLMError, RateLimitReason } from "@miao/llm"
+import { AuthenticationReason, InvalidRequestReason, LLMError, RateLimitReason, TransportReason } from "@miao/llm"
 import { DateTime, Effect, Fiber, Ref } from "effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -39,6 +39,11 @@ describe("SessionRunnerProviderRetry", () => {
         providerError(new AuthenticationReason({ message: "expired", kind: "expired" })),
       ),
     ).toBe(true)
+    expect(
+      SessionRunnerProviderRetry.retryable(
+        providerError(new TransportReason({ message: "connection reset", kind: "stream-read" })),
+      ),
+    ).toBe(true)
   })
 
   test("does not retry failures a retry cannot fix", () => {
@@ -48,6 +53,11 @@ describe("SessionRunnerProviderRetry", () => {
     expect(
       SessionRunnerProviderRetry.retryable(
         providerError(new AuthenticationReason({ message: "free tier", kind: "insufficient-permissions" })),
+      ),
+    ).toBe(false)
+    expect(
+      SessionRunnerProviderRetry.retryable(
+        providerError(new TransportReason({ message: "connect refused", kind: "TransportError" })),
       ),
     ).toBe(false)
     expect(SessionRunnerProviderRetry.retryable({ _tag: "SessionRunnerModel.UnsupportedApiError" })).toBe(false)
