@@ -283,3 +283,32 @@ test("a message removed during hydration does not regain stale parts", async () 
     app.renderer.destroy()
   }
 })
+
+test("hydration updates keyed transcript objects without remounting unchanged UI", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const part = { id: partID, sessionID, messageID, type: "text" as const, text: "before" }
+  const { app, emit, sync } = await mount((url) => {
+    if (url.pathname === `/session/${sessionID}`) return json(session)
+    if (url.pathname === `/session/${sessionID}/message`)
+      return json([{ info: { ...assistant, cost: 1 }, parts: [{ ...part, text: "after" }] }])
+    if (url.pathname === `/session/${sessionID}/todo` || url.pathname === `/session/${sessionID}/diff`) return json([])
+    return undefined
+  }, tmp.path)
+
+  try {
+    emit(global({ id: "evt_identity_message", type: "message.updated", properties: { sessionID, info: assistant } }))
+    emit(global({ id: "evt_identity_part", type: "message.part.updated", properties: { sessionID, time: 1, part } }))
+    await wait(() => sync.data.part[messageID]?.length === 1)
+    const message = sync.data.message[sessionID][0]
+    const text = sync.data.part[messageID][0]
+    await sync.session.sync(sessionID)
+
+    expect(sync.data.message[sessionID][0]).toBe(message)
+    expect(sync.data.part[messageID][0]).toBe(text)
+    expect(message).toMatchObject({ cost: 1 })
+    expect(text).toMatchObject({ text: "after" })
+  } finally {
+    app.renderer.destroy()
+  }
+})

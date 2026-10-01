@@ -964,62 +964,63 @@ export const {
                   }))
                 : sdk.client.session.diff({ sessionID }),
             ])
-            setStore(
-              produce((draft) => {
-                const match = search(draft.session, sessionID, (s) => s.id)
-                if (match.found) draft.session[match.index] = session.data!
-                if (!match.found) draft.session.splice(match.index, 0, session.data!)
-                draft.todo[sessionID] = todo.data ?? []
-                const currentMessages = draft.message[sessionID] ?? []
-                const infos = (messages.data ?? []).flatMap((message) => {
-                  if (!tracker.messages.has(message.info.id)) return [message.info]
-                  const current = currentMessages.find((item) => item.id === message.info.id)
-                  return current ? [current] : []
-                })
-                infos.push(
-                  ...currentMessages.filter(
-                    (message) => tracker.messages.has(message.id) && !infos.some((item) => item.id === message.id),
-                  ),
-                )
-                infos.sort(compareMessage)
-                // Render the whole active context (everything since the last
-                // compaction). Windowing this to the newest N messages made the
-                // transcript feel scroll-locked because older history existed
-                // server-side but was never rendered.
-                const visibleIDs = new Set(infos.map((message) => message.id))
-                const removed = currentMessages.filter((message) => !visibleIDs.has(message.id))
-                for (const message of messages.data ?? []) {
-                  if (!visibleIDs.has(message.info.id)) {
-                    delete draft.part[message.info.id]
-                    continue
-                  }
-                  const currentParts = draft.part[message.info.id] ?? []
-                  const parts = message.parts.flatMap((part) => {
-                    const current = currentParts.find((item) => item.id === part.id)
-                    if (tracker.parts.has(part.id)) return current ? [current] : []
-                    if (
-                      current &&
-                      (part.type === "text" || part.type === "reasoning") &&
-                      (current.type === "text" || current.type === "reasoning") &&
-                      part.text.length === 0 &&
-                      current.text.length > 0
-                    ) {
-                      return [current]
-                    }
-                    return [part]
-                  })
-                  parts.push(
-                    ...currentParts.filter(
-                      (part) => tracker.parts.has(part.id) && !parts.some((item) => item.id === part.id),
-                    ),
-                  )
-                  draft.part[message.info.id] = parts
+            batch(() => {
+              const match = search(store.session, sessionID, (s) => s.id)
+              if (match.found) setStore("session", match.index, reconcile(session.data!))
+              if (!match.found) setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data!))
+              setStore("todo", sessionID, reconcile(todo.data ?? []))
+              const currentMessages = store.message[sessionID] ?? []
+              const currentByID = new Map(currentMessages.map((message) => [message.id, message]))
+              const infos = (messages.data ?? []).flatMap((message) => {
+                if (!tracker.messages.has(message.info.id)) return [message.info]
+                const current = currentByID.get(message.info.id)
+                return current ? [current] : []
+              })
+              const hydratedIDs = new Set(infos.map((message) => message.id))
+              infos.push(
+                ...currentMessages.filter(
+                  (message) => tracker.messages.has(message.id) && !hydratedIDs.has(message.id),
+                ),
+              )
+              infos.sort(compareMessage)
+              // Render the whole active context (everything since the last
+              // compaction). Windowing this to the newest N messages made the
+              // transcript feel scroll-locked because older history existed
+              // server-side but was never rendered.
+              const visibleIDs = new Set(infos.map((message) => message.id))
+              const removed = currentMessages.filter((message) => !visibleIDs.has(message.id))
+              for (const message of messages.data ?? []) {
+                if (!visibleIDs.has(message.info.id)) {
+                  setStore("part", message.info.id, undefined!)
+                  continue
                 }
-                for (const message of removed) delete draft.part[message.id]
-                draft.message[sessionID] = infos
-                draft.session_diff[sessionID] = diff.data ?? []
-              }),
-            )
+                const currentParts = store.part[message.info.id] ?? []
+                const currentByID = new Map(currentParts.map((part) => [part.id, part]))
+                const parts = message.parts.flatMap((part) => {
+                  const current = currentByID.get(part.id)
+                  if (tracker.parts.has(part.id)) return current ? [current] : []
+                  if (
+                    current &&
+                    (part.type === "text" || part.type === "reasoning") &&
+                    (current.type === "text" || current.type === "reasoning") &&
+                    part.text.length === 0 &&
+                    current.text.length > 0
+                  ) {
+                    return [current]
+                  }
+                  return [part]
+                })
+                const hydratedIDs = new Set(parts.map((part) => part.id))
+                parts.push(...currentParts.filter((part) => tracker.parts.has(part.id) && !hydratedIDs.has(part.id)))
+                setStore("part", message.info.id, reconcile(parts))
+              }
+              for (const message of removed) setStore("part", message.id, undefined!)
+              // Preserve keyed store proxies so <For> keeps existing UI nodes.
+              // Replacing every object remounts the entire transcript on
+              // each hydration, including completed text and tool output.
+              setStore("message", sessionID, reconcile(infos))
+              setStore("session_diff", sessionID, reconcile(diff.data ?? [], { key: "file" }))
+            })
             pendingPrompts.reconcile(
               sessionID,
               (messages.data ?? []).map((message) => message.info),
