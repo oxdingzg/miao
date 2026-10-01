@@ -1,8 +1,9 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import { SessionID } from "@/session/schema"
+// The core session module drags in the database; the TUI thread only needs the ID schema.
+import { SessionSchema } from "@miao/core/session/schema"
 import { Schema } from "effect"
 
-const decodeSessionID = Schema.decodeUnknownSync(SessionID)
+const decodeSessionID = Schema.decodeUnknownSync(SessionSchema.ID)
 
 export async function validateSession(input: {
   url: string
@@ -13,7 +14,7 @@ export async function validateSession(input: {
 }) {
   if (!input.sessionID) return
 
-  let sessionID: SessionID
+  let sessionID: SessionSchema.ID
   try {
     sessionID = decodeSessionID(input.sessionID)
   } catch (error) {

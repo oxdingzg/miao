@@ -1,7 +1,9 @@
 import { Context, Effect, Layer, LayerMap } from "effect"
 import { LayerNode } from "./effect/layer-node"
 import { Node } from "./effect/app-node"
-import { Location } from "./location"
+// Type-only: a value import pulls Location -> Project -> the database into every
+// AppNodeBuilder user, including the TUI thread.
+import type { Location } from "./location"
 import type { LocationError, LocationServices } from "./location-services"
 
 export class Service extends Context.Service<
