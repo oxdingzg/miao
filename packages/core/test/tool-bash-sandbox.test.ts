@@ -53,6 +53,7 @@ const withSandboxedBash = <A, E>(input: {
   readonly directory: string
   readonly runner: string | undefined
   readonly sandbox?: ConstructorParameters<typeof ConfigSandbox.Info>[0]
+  readonly rules?: PermissionV2.Ruleset
   readonly answer: (request: PermissionV2.Request) => Answer
   readonly body: (tools: {
     readonly run: (command: string, timeout?: number) => Effect.Effect<Settled, unknown>
@@ -82,7 +83,7 @@ const withSandboxedBash = <A, E>(input: {
   return withEnv(
     { MIAO_RUN: input.runner, MIAO_SANDBOX: undefined, MIAO_SANDBOX_DENY_NETWORK: undefined },
     Effect.gen(function* () {
-      yield* seed(input.directory)
+      yield* seed(input.directory, input.rules ?? rules)
       const registry = yield* ToolRegistry.Service
       const permission = yield* PermissionV2.Service
       const events = yield* EventV2.Service
@@ -157,7 +158,7 @@ const settled = (value: ToolRegistry.Settlement): Settled => ({
   structured: value.output?.structured as Record<string, unknown> | undefined,
 })
 
-const seed = Effect.fnUntraced(function* (directory: string) {
+const seed = Effect.fnUntraced(function* (directory: string, permissions: PermissionV2.Ruleset) {
   const database = yield* Database.Service
   yield* database.db
     .insert(ProjectTable)
@@ -182,7 +183,7 @@ const seed = Effect.fnUntraced(function* (directory: string) {
   const agents = yield* AgentV2.Service
   yield* agents.transform((editor) =>
     editor.update(toolIdentity.agent, (agent) => {
-      agent.permissions = [...rules]
+      agent.permissions = [...permissions]
     }),
   )
 })
@@ -306,6 +307,30 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
               const second = yield* tools.run("printf again")
               expect(second.text).toContain("again")
               expect(tools.asked).toHaveLength(1)
+            }),
+        })
+      }),
+    ),
+  )
+
+  it.live("still asks before escalating when the only rule is a catch-all allow", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        const blocked = fakeBlocked()
+        const runner = yield* fakeRunner(directory, blocked)
+        yield* withSandboxedBash({
+          directory,
+          runner: runner.file,
+          rules: [{ action: "*", resource: "*", effect: "allow" }],
+          answer: () => ({ reply: "reject" }),
+          body: (tools) =>
+            Effect.gen(function* () {
+              const result = yield* tools.run("printf sandboxed-ok")
+              expect(tools.asked.map((request) => request.action)).toEqual([
+                "external_directory",
+                BashTool.UNSANDBOXED_ACTION,
+              ])
+              expect(result.structured?.sandbox).toMatchObject({ state: "sandboxed", approved: [] })
             }),
         })
       }),

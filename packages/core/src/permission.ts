@@ -39,6 +39,11 @@ export const AssertInput = Schema.Struct({
   id: ID.pipe(Schema.optional),
   ...RequestFields,
   agent: AgentV2.ID.pipe(Schema.optional),
+  /**
+   * Only rules that name this action decide it; a bare `*` action rule is
+   * skipped. Leaving the OS sandbox must not be granted by a catch-all allow.
+   */
+  explicit: Schema.Boolean.pipe(Schema.optional),
 }).annotate({ identifier: "PermissionV2.AssertInput" })
 export type AssertInput = typeof AssertInput.Type
 
@@ -153,7 +158,8 @@ const layer = Layer.effect(
     }
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
-      const rules = yield* configured(input.sessionID, input.agent)
+      const configuredRules = yield* configured(input.sessionID, input.agent)
+      const rules = input.explicit ? configuredRules.filter((rule) => rule.action !== "*") : configuredRules
       if (denied(input, rules)) return { effect: "deny" as const, rules }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
