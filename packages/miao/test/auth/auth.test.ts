@@ -80,6 +80,9 @@ describe("Auth", () => {
     Effect.gen(function* () {
       const auth = yield* Auth.Service
       const file = path.join(Global.Path.data, "auth.json")
+      // auth.json lives in the run-wide data dir; a leftover anthropic key would
+      // make later files see an "api" connection instead of their env key.
+      yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(file, { force: true })))
       yield* Effect.promise(() =>
         fs.writeFile(file, JSON.stringify({ legacy: { type: "mystery", value: "keep-me" } }), "utf8"),
       )
