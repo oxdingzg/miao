@@ -182,6 +182,40 @@ describe("Config", () => {
     ),
   )
 
+  it.live("loads sandbox settings from V2 and migrated V1 documents", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const sandbox = {
+            mode: "workspace-write",
+            network: false,
+            writable_roots: ["~/.cache"],
+            on_unavailable: "fail",
+          }
+          yield* Effect.promise(() => fs.mkdir(path.join(tmp.path, "global"), { recursive: true }))
+          yield* Effect.promise(() =>
+            fs.writeFile(
+              path.join(tmp.path, "global", "miao.json"),
+              JSON.stringify({ permission: { bash: "ask" }, sandbox: { mode: "off", writable_roots: ["build"] } }),
+            ),
+          )
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "miao.json"), JSON.stringify({ sandbox })))
+          return yield* Effect.gen(function* () {
+            const config = yield* Config.Service
+            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+            expect(documents.map((document) => document.info.sandbox)).toEqual([
+              { mode: "off", writable_roots: ["build"] },
+              sandbox,
+            ])
+          }).pipe(Effect.provide(testLayer(tmp.path)))
+        }),
+      ),
+    ),
+  )
+
   it.live("loads opencode JSON and JSONC files from lowest to highest priority", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

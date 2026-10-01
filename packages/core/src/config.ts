@@ -25,6 +25,7 @@ import { ConfigMCP } from "./config/mcp"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
+import { ConfigSandbox } from "./config/sandbox"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 import { ConfigV1 } from "./v1/config/config"
@@ -102,6 +103,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   cost: ConfigCost.Info.pipe(Schema.optional).annotate({
     description: "Cost guardrails",
+  }),
+  sandbox: ConfigSandbox.Info.pipe(Schema.optional).annotate({
+    description: "OS sandbox for bash commands",
   }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
