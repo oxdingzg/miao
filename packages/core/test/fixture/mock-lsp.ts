@@ -1,4 +1,8 @@
 // Minimal LSP server for tests: answers initialize and publishes one error diagnostic per opened document.
+// `--exit-before-initialize` models a real server crashing on startup, which used to
+// take down any tool that merely touched a file.
+if (process.argv.includes("--exit-before-initialize")) process.exit(1)
+
 const send = (message: unknown) => {
   const body = JSON.stringify(message)
   process.stdout.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`)

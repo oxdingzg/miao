@@ -2,7 +2,7 @@ export * as LSP from "./lsp"
 
 import path from "path"
 import { spawn } from "node:child_process"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Config } from "./config"
 import { Location } from "./location"
 import { FSUtil } from "./fs-util"
@@ -28,6 +28,17 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/LSP") {}
+
+/**
+ * A server that failed a startup request, most often because its process exited.
+ * Language servers are advisory: one that dies must not fail the mutation that
+ * touched the file, so this is a typed failure callers can ignore rather than a
+ * defect, which would tear down the tool and every tool settled alongside it.
+ */
+export class ServerUnavailableError extends Schema.TaggedErrorClass<ServerUnavailableError>()(
+  "LSP.ServerUnavailableError",
+  { server: Schema.String, message: Schema.String },
+) {}
 
 type Resolved = {
   readonly id: string
@@ -106,14 +117,30 @@ const layer = Layer.effect(
         diagnosticsByURI.set(payload.uri, items)
         waiters.get(payload.uri)?.(items)
       })
-      yield* Effect.promise(() =>
-        connection.request("initialize", {
-          processId: process.pid,
-          rootUri: LSPClient.fileURI(location.directory),
-          capabilities: {},
-          initializationOptions: server.initialization,
-        }),
-      )
+      // A server that exits mid-handshake rejects this request. `Effect.promise`
+      // would turn that rejection into a defect, which no caller can ignore and
+      // which fails every tool settled in the same batch, so the rejection is
+      // typed and absorbed here: the touch simply finds no server to use.
+      const initialized = yield* Effect.tryPromise({
+        try: () =>
+          connection.request("initialize", {
+            processId: process.pid,
+            rootUri: LSPClient.fileURI(location.directory),
+            capabilities: {},
+            initializationOptions: server.initialization,
+          }),
+        catch: (cause) =>
+          new ServerUnavailableError({
+            server: server.id,
+            message: cause instanceof Error ? cause.message : String(cause),
+          }),
+      }).pipe(Effect.option)
+      if (initialized._tag === "None") {
+        // Drop the unusable connection so the child process does not outlive it
+        // and the next touch can start a fresh one.
+        connection.close()
+        return undefined
+      }
       connection.notify("initialized", {})
       clients.set(server.id, connection)
       return connection
