@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import { Route } from "../route/client"
 import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
-import { HttpTransport, WebSocketTransport } from "../route/transport"
+import { HttpTransport, WebSocketPool, WebSocketTransport, type Transport } from "../route/transport"
 import { Protocol } from "../route/protocol"
 import {
   LLMEvent,
@@ -1008,6 +1008,37 @@ export const webSocketTransport = WebSocketTransport.jsonTransport.with<
   toMessage: webSocketMessage,
   encodeMessage: encodeWebSocketMessage,
 })
+
+// Codex-style transport: the session's pooled WebSocket when one can serve the
+// request, plain HTTP otherwise. Requests without a `session-id` header have no
+// session to pool by and always use HTTP.
+interface PooledPrepared extends HttpTransport.HttpPrepared<string> {
+  readonly socket?: WebSocketPool.PooledRequest
+}
+
+const isPooled = (prepared: HttpTransport.HttpPrepared<string>): prepared is PooledPrepared => "socket" in prepared
+
+export const pooledTransport: Transport<OpenAIResponsesBody, HttpTransport.HttpPrepared<string>, string> = {
+  id: "http-json/sse+websocket-pool",
+  prepare: (input) =>
+    Effect.gen(function* () {
+      const prepared = yield* httpTransport.prepare(input)
+      const socket = yield* webSocketTransport.prepare(input)
+      const key = socket.headers["session-id"]
+      if (!key) return prepared
+      return {
+        ...prepared,
+        socket: { ...socket, key, headers: { ...socket.headers, "openai-beta": WEBSOCKET_BETA } },
+      } satisfies PooledPrepared
+    }),
+  frames: (prepared, request, runtime) => {
+    const fallback = httpTransport.frames(prepared, request, runtime)
+    if (!isPooled(prepared) || !prepared.socket || !runtime.webSocketPool) return fallback
+    return runtime.webSocketPool.stream(prepared.socket, fallback)
+  },
+}
+
+const WEBSOCKET_BETA = "responses_websockets=2026-02-06"
 
 export const webSocketRoute = Route.make({
   id: `${ADAPTER}-websocket`,

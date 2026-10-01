@@ -1,4 +1,5 @@
 import { Config } from "effect"
+import { InstallationChannel } from "../installation/version"
 
 export function truthy(key: string) {
   const value = process.env[key]?.toLowerCase()
@@ -68,6 +69,12 @@ export const Flag = {
   },
   get MIAO_EXPERIMENTAL_CODE_MODE() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_CODE_MODE")
+  },
+  get MIAO_EXPERIMENTAL_RESPONSES_WS() {
+    // Pooled Responses WebSockets for ChatGPT sign-in; on for source and preview
+    // builds until proven, off for releases unless MIAO_EXPERIMENTAL_RESPONSES_WS=1.
+    const value = process.env["MIAO_EXPERIMENTAL_RESPONSES_WS"]
+    return value === undefined ? InstallationChannel !== "latest" : truthy("MIAO_EXPERIMENTAL_RESPONSES_WS")
   },
   get MIAO_TUI_CONFIG() {
     return process.env["MIAO_TUI_CONFIG"]

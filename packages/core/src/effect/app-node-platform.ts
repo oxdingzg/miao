@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
-import { LLMClient, RequestExecutor } from "@miao/llm/route"
-import { FileSystem, Path } from "effect"
+import { LLMClient, RequestExecutor, WebSocketPool } from "@miao/llm/route"
+import { FileSystem, Layer, Path } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { HttpClient } from "effect/unstable/http"
 import { makeGlobalNode } from "./app-node"
@@ -13,6 +13,12 @@ export const requestExecutor = makeGlobalNode({
   layer: RequestExecutor.layer,
   deps: [httpClient],
 })
-export const llmClient = makeGlobalNode({ service: LLMClient.Service, layer: LLMClient.layer, deps: [requestExecutor] })
+// The pool is the client's own state (one socket per session), so it lives inside
+// the client layer rather than as a separately addressable node.
+export const llmClient = makeGlobalNode({
+  service: LLMClient.Service,
+  layer: LLMClient.layer.pipe(Layer.provide(WebSocketPool.layer)),
+  deps: [requestExecutor],
+})
 
 export * as LayerNodePlatform from "./app-node-platform"
