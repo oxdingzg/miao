@@ -51,11 +51,12 @@ import { SessionRunnerModel } from "./model"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
-import { materializeBlobFiles } from "./materialize-files"
+import { inlineTextFiles, materializeBlobFiles } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { SessionRunnerMetrics } from "./metrics"
 import { Snapshot } from "../../snapshot"
 import { Blob } from "../../blob"
+import { FSUtil } from "../../fs-util"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 
@@ -153,6 +154,7 @@ const layer = Layer.effect(
     const todos = yield* SessionTodo.Service
     const permission = yield* PermissionV2.Service
     const blob = yield* Blob.Service
+    const fs = yield* FSUtil.Service
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -304,7 +306,10 @@ const layer = Layer.effect(
           createLLMEventPublisher(events, {
             sessionID: session.id,
             agent: agent.id,
-            model: session.model ?? { id: ModelV2.ID.make("unavailable"), providerID: ProviderV2.ID.make("unavailable") },
+            model: session.model ?? {
+              id: ModelV2.ID.make("unavailable"),
+              providerID: ProviderV2.ID.make("unavailable"),
+            },
           }).failAssistant(error.message),
         ),
       )
@@ -354,7 +359,9 @@ const layer = Layer.effect(
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
       const requestBuildStartedAt = Date.now()
-      const materialized = yield* materializeBlobFiles(blob, context)
+      const materialized = yield* materializeBlobFiles(blob, context).pipe(
+        Effect.flatMap((messages) => inlineTextFiles(fs, messages)),
+      )
       const messages = [
         ...toLLMMessages(materialized, model, resolved.info.capabilities.input),
         ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
@@ -401,7 +408,13 @@ const layer = Layer.effect(
       const requestBuildMs = Date.now() - requestBuildStartedAt
       const compactStartedAt = Date.now()
       if (SessionCompactRequest.consume(session.id)) {
-        const compacted = yield* compaction.compactAfterOverflow({ sessionID: session.id, entries, model, summarizeModel, request })
+        const compacted = yield* compaction.compactAfterOverflow({
+          sessionID: session.id,
+          entries,
+          model,
+          summarizeModel,
+          request,
+        })
         if (compacted) turns.set(session.id, { at: Date.now(), afterCompaction: true })
         yield* Effect.logInfo("session.compaction", {
           sessionID: session.id,
@@ -589,9 +602,7 @@ const layer = Layer.effect(
             // The event carries the same figure the log line reports, so the two
             // can never disagree about how long the provider took to start.
             const ttftMs =
-              requestStartedAt !== undefined && firstEventAt !== undefined
-                ? firstEventAt - requestStartedAt
-                : undefined
+              requestStartedAt !== undefined && firstEventAt !== undefined ? firstEventAt - requestStartedAt : undefined
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -623,8 +634,7 @@ const layer = Layer.effect(
                 startSnapshotMs,
                 endSnapshotMs,
                 filesMs,
-                preRequestMs:
-                  requestStartedAt === undefined ? undefined : requestStartedAt - attemptStartedAt,
+                preRequestMs: requestStartedAt === undefined ? undefined : requestStartedAt - attemptStartedAt,
               },
               warm,
               expectedRebuild,
@@ -704,7 +714,12 @@ const layer = Layer.effect(
 
     const runSubagent = Effect.fnUntraced(function* (
       parentSessionID: SessionSchema.ID,
-      request: { readonly agent: string; readonly prompt: string; readonly description: string; readonly taskId?: string },
+      request: {
+        readonly agent: string
+        readonly prompt: string
+        readonly description: string
+        readonly taskId?: string
+      },
     ) {
       const parent = yield* getSession(parentSessionID)
       if (parent.parentID !== undefined)
@@ -713,7 +728,8 @@ const layer = Layer.effect(
       if (!selection.info) return yield* new ToolFailure({ message: `Unknown agent type: ${request.agent}` })
       const resumed = request.taskId ? yield* store.get(SessionSchema.ID.make(request.taskId)) : undefined
       const child =
-        resumed ?? (yield* creation.create({ parentID: parentSessionID, agent: selection.id, location: parent.location }))
+        resumed ??
+        (yield* creation.create({ parentID: parentSessionID, agent: selection.id, location: parent.location }))
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: child.id,
@@ -783,7 +799,11 @@ const layer = Layer.effect(
     const runSendMessage = Effect.fnUntraced(function* (
       senderSessionID: SessionSchema.ID,
       request: { readonly to: string; readonly message: string },
-      context: { readonly agent: AgentV2.ID; readonly assistantMessageID: SessionMessage.ID; readonly toolCallID: string },
+      context: {
+        readonly agent: AgentV2.ID
+        readonly assistantMessageID: SessionMessage.ID
+        readonly toolCallID: string
+      },
       wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
     ) {
       const sender = yield* getSession(senderSessionID)
@@ -842,9 +862,7 @@ const layer = Layer.effect(
                 send_message: SendMessageTool.make((request, context) =>
                   runSendMessage(input.sessionID, request, context, input.wake).pipe(
                     Effect.mapError((error) =>
-                      error instanceof ToolFailure
-                        ? error
-                        : new ToolFailure({ message: "Session messaging failed" }),
+                      error instanceof ToolFailure ? error : new ToolFailure({ message: "Session messaging failed" }),
                     ),
                   ),
                 ),
@@ -852,87 +870,90 @@ const layer = Layer.effect(
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
-      for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
-      const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
-      const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
-      if (!input.force && !hasSteer && !hasQueue) return
-      // Refuse to run a provider turn on a session whose history is still only
-      // in the legacy V1 tables: the projected context would be empty and the
-      // turn would silently drop everything recorded before the V2 runtime.
-      const historyState = yield* store.historyState(input.sessionID)
-      if (historyState === "legacy" || historyState === "mixed")
-        return yield* new LegacyNotMigratedError({ sessionID: input.sessionID, state: historyState })
-      const settings = yield* readSettings()
-      let loopIterations = 0
-      let lastTodoSignature: string | undefined
-      let loopStalls = 0
-      const exceeded = (session: SessionSchema.Info) =>
-        settings.budget !== undefined && session.cost >= settings.budget
-      const initial = yield* getSession(input.sessionID)
-      if (exceeded(initial)) {
-        yield* Effect.logWarning("session.budget-exceeded", {
-          sessionID: input.sessionID,
-          cost: initial.cost,
-          budget: settings.budget,
-        })
-        return
-      }
-      yield* failInterruptedTools(input.sessionID)
-      let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
-      let shouldRun = input.force || hasSteer || hasQueue
-      while (shouldRun) {
-        const current = yield* getSession(input.sessionID)
-        if (exceeded(current)) {
-          yield* Effect.logWarning("session.budget-exceeded", {
-            sessionID: input.sessionID,
-            cost: current.cost,
-            budget: settings.budget,
-          })
-          break
-        }
-        let needsContinuation = true
-        let step = 1
-        while (needsContinuation) {
-          const result = yield* runTurn(input.sessionID, promotion, step)
-          needsContinuation = result.needsContinuation
-          step = result.step + 1
-          promotion = "steer"
-          if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
-        }
-        shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
-        if (!shouldRun && settings.loop !== undefined) {
-          const current = yield* getSession(input.sessionID)
-          if (exceeded(current)) {
-            yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "budget" })
-          } else if (loopIterations >= settings.loop.maxIterations) {
-            yield* Effect.logWarning("session.loop-stopped", {
+          for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
+          const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+          const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
+          if (!input.force && !hasSteer && !hasQueue) return
+          // Refuse to run a provider turn on a session whose history is still only
+          // in the legacy V1 tables: the projected context would be empty and the
+          // turn would silently drop everything recorded before the V2 runtime.
+          const historyState = yield* store.historyState(input.sessionID)
+          if (historyState === "legacy" || historyState === "mixed")
+            return yield* new LegacyNotMigratedError({ sessionID: input.sessionID, state: historyState })
+          const settings = yield* readSettings()
+          let loopIterations = 0
+          let lastTodoSignature: string | undefined
+          let loopStalls = 0
+          const exceeded = (session: SessionSchema.Info) =>
+            settings.budget !== undefined && session.cost >= settings.budget
+          const initial = yield* getSession(input.sessionID)
+          if (exceeded(initial)) {
+            yield* Effect.logWarning("session.budget-exceeded", {
               sessionID: input.sessionID,
-              reason: "max-iterations",
+              cost: initial.cost,
+              budget: settings.budget,
             })
-          } else {
-            const list = yield* todos.get(input.sessionID)
-            const open = list.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled")
-            if (list.length > 0 && open.length > 0) {
-              const signature = JSON.stringify(list)
-              loopStalls = signature === lastTodoSignature ? loopStalls + 1 : 0
-              lastTodoSignature = signature
-              if (loopStalls >= LOOP_STALL_LIMIT) {
-                yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "no-progress" })
-              } else {
-                loopIterations += 1
-                yield* SessionInput.admit(db, events, {
-                  id: SessionMessage.ID.create(),
+            return
+          }
+          yield* failInterruptedTools(input.sessionID)
+          let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
+          let shouldRun = input.force || hasSteer || hasQueue
+          while (shouldRun) {
+            const current = yield* getSession(input.sessionID)
+            if (exceeded(current)) {
+              yield* Effect.logWarning("session.budget-exceeded", {
+                sessionID: input.sessionID,
+                cost: current.cost,
+                budget: settings.budget,
+              })
+              break
+            }
+            let needsContinuation = true
+            let step = 1
+            while (needsContinuation) {
+              const result = yield* runTurn(input.sessionID, promotion, step)
+              needsContinuation = result.needsContinuation
+              step = result.step + 1
+              promotion = "steer"
+              if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+            }
+            shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+            if (!shouldRun && settings.loop !== undefined) {
+              const current = yield* getSession(input.sessionID)
+              if (exceeded(current)) {
+                yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "budget" })
+              } else if (loopIterations >= settings.loop.maxIterations) {
+                yield* Effect.logWarning("session.loop-stopped", {
                   sessionID: input.sessionID,
-                  prompt: Prompt.make({ text: settings.loop.continuePrompt }),
-                  delivery: "queue",
+                  reason: "max-iterations",
                 })
-                shouldRun = true
+              } else {
+                const list = yield* todos.get(input.sessionID)
+                const open = list.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled")
+                if (list.length > 0 && open.length > 0) {
+                  const signature = JSON.stringify(list)
+                  loopStalls = signature === lastTodoSignature ? loopStalls + 1 : 0
+                  lastTodoSignature = signature
+                  if (loopStalls >= LOOP_STALL_LIMIT) {
+                    yield* Effect.logWarning("session.loop-stopped", {
+                      sessionID: input.sessionID,
+                      reason: "no-progress",
+                    })
+                  } else {
+                    loopIterations += 1
+                    yield* SessionInput.admit(db, events, {
+                      id: SessionMessage.ID.create(),
+                      sessionID: input.sessionID,
+                      prompt: Prompt.make({ text: settings.loop.continuePrompt }),
+                      delivery: "queue",
+                    })
+                    shouldRun = true
+                  }
+                }
               }
             }
+            promotion = shouldRun ? "queue" : undefined
           }
-        }
-        promotion = shouldRun ? "queue" : undefined
-      }
         }),
       )
     })
@@ -965,5 +986,6 @@ export const node = makeLocationNode({
     SessionTodo.node,
     PermissionV2.node,
     Blob.node,
+    FSUtil.node,
   ],
 })
