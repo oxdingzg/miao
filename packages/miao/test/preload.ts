@@ -49,6 +49,13 @@ process.env["MIAO_TEST_HOME"] = testHome
 const testManagedConfigDir = path.join(dir, "managed")
 process.env["MIAO_TEST_MANAGED_CONFIG_DIR"] = testManagedConfigDir
 
+// Keep the user's npm config out of tests: NpmConfig reads ~/.npmrc and the
+// global npmrc, so a personal `registry=` mirror would change resolved URLs.
+process.env["NPM_CONFIG_USERCONFIG"] = path.join(dir, "npmrc")
+process.env["NPM_CONFIG_GLOBALCONFIG"] = path.join(dir, "global-npmrc")
+delete process.env["NPM_CONFIG_REGISTRY"]
+delete process.env["npm_config_registry"]
+
 // Write the cache version file to prevent global/index.ts from clearing the cache
 const cacheDir = path.join(dir, "cache", "opencode")
 await fs.mkdir(cacheDir, { recursive: true })
