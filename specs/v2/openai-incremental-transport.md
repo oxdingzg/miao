@@ -2,8 +2,35 @@
 
 ## Status (2026-10-01)
 
-Design only. Nothing implemented. Codex citations refer to the sparse clone of `openai/codex`
-(`codex-rs/...`) taken on 2026-10-01; miao citations refer to `main` at `3e489920e`.
+Phase 0 measured; the plan is reordered by its result. **Step 1 (pooled WebSocket, full payload,
+HTTP fallback) is implemented** in `packages/llm/src/route/transport/websocket-pool.ts` and
+`OpenAIResponses.pooledTransport`, used for ChatGPT OAuth when `MIAO_EXPERIMENTAL_RESPONSES_WS` is on
+(default on for non-`latest` channels). Incremental sending (`previous_response_id`) is deferred:
+see "Phase 0 result". Codex citations refer to the sparse clone of `openai/codex` (`codex-rs/...`)
+taken on 2026-10-01; miao citations refer to `main` at `3e489920e`.
+
+### Phase 0 result
+
+Standalone spike, ChatGPT backend, `gpt-6.1-sol` medium, `store: false`, a 7-call tool chain,
+three variants interleaved in rotating order (small: 4 rounds, ~0.2-0.4k input tokens; large: 3
+rounds, ~50k input tokens, 99% cached):
+
+| Median per call          | small  | large  | large p75 |
+| ------------------------ | ------ | ------ | --------- |
+| HTTP, fresh request      | 3.28s  | 3.54s  | 5.03s     |
+| WS, full payload         | 2.46s  | 2.83s  | 3.84s     |
+| WS, incremental          | 2.45s  | 2.67s  | 2.77s     |
+
+- The persistent socket is the win: 0.7-0.8s per call at any context size. That matches the gap to
+  Codex measured above, so the "re-ingestion" explanation below was wrong for small context and
+  overstated for large.
+- Incremental sending adds ~0.16s median at ~50k tokens and trims the tail; nothing at small
+  context. `previous_response_id` with `store: false` over the socket was accepted in all 42
+  incremental calls.
+- Opening a socket costs ~1s once per session (paid on the first turn).
+
+Therefore: ship the pool first, measure it on real miao sessions, and treat incremental sending as
+an optimisation for long contexts whose fallback complexity must earn its ~0.2s.
 
 ## Problem
 
@@ -344,13 +371,16 @@ Extend the `session.turn` log (`llm.ts:608`) and add a transport event from the 
 - Phase 0 (spike, before any production code): standalone Bun script that replays a recorded miao
   conversation on the ChatGPT path over WS v2 with and without `previous_response_id`, interleaved
   with HTTP. Go/no-go on measured gain.
-- Phase 1: pool + incremental rule + fallback, behind `MIAO_EXPERIMENTAL_RESPONSES_WS` (core
-  `Flag`), default on for `local`/`dev`/`beta`, off for `latest`. ChatGPT OAuth only.
+- Phase 1a (done): pool + HTTP fallback, full payload, behind `MIAO_EXPERIMENTAL_RESPONSES_WS`
+  (core `Flag`), default on for non-`latest` channels. ChatGPT OAuth only.
+- Phase 1b: incremental rule + same-socket fallback, only if long-context sessions show it pays.
 - Phase 2: preconnect/prewarm, API-key path after live probe.
 - Phase 3: default on for `latest` once telemetry shows hit rate and no regressions; keep the flag as
   a kill switch. Retire `webSocketRoute`'s per-request socket or make it use the pool.
 
 ## Expected benefit (honest)
+
+Superseded by "Phase 0 result" above; kept as the pre-measurement estimate.
 
 - Gap to close: ~0.8s/call small context, ~2.1s/call large context.
 - Connection reuse alone (V1 data): ~0 small, ~0.5s large.
