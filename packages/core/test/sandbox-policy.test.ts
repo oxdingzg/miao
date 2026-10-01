@@ -56,22 +56,38 @@ describe("SandboxPolicy denial parsing", () => {
       "/home/me/cache/f.txt",
     )
     expect(SandboxPolicy.parseDeniedLine("curl: (6) Could not resolve host")).toBeUndefined()
+    // An absolute shell path in the prefix is not the blocked path.
+    expect(SandboxPolicy.parseDeniedLine("/bin/sh: /Users/me/.cache/x: Operation not permitted")).toBe(
+      "/Users/me/.cache/x",
+    )
+    expect(SandboxPolicy.parseDeniedLine("touch: cannot touch '/home/me/f.txt': Permission denied")).toBe(
+      "/home/me/f.txt",
+    )
+    expect(SandboxPolicy.parseDeniedLine("PermissionError: [Errno 1] Operation not permitted")).toBeUndefined()
   })
 
   test("reports denial lines that name no path", () => {
-    expect(
-      SandboxPolicy.unmappedDenials(
-        [
-          "sh: /Users/me/f.txt: Operation not permitted",
-          "connect: Operation not permitted",
-          "everything else is fine",
-        ].join("\n"),
-      ),
-    ).toEqual(["connect: Operation not permitted"])
+    const output = [
+      "sh: /Users/me/f.txt: Operation not permitted",
+      "connect: Operation not permitted",
+      "curl: (7) Failed to connect to 127.0.0.1 port 80 after 0 ms: Couldn't connect to server",
+      "everything else is fine",
+    ].join("\n")
+    expect(SandboxPolicy.unmappedDenials(output, { network: true })).toEqual(["connect: Operation not permitted"])
+    // Client network errors only count when the sandbox denies the network.
+    expect(SandboxPolicy.unmappedDenials(output, { network: false })).toEqual([
+      "connect: Operation not permitted",
+      "curl: (7) Failed to connect to 127.0.0.1 port 80 after 0 ms: Couldn't connect to server",
+    ])
   })
 
   test("parses deny reports and tolerates malformed ones", () => {
     expect(SandboxPolicy.parseDenyReport(JSON.stringify({ denied: ["/a", "/b"], exitCode: 1 }))).toEqual(["/a", "/b"])
+    // Reports from older miao-run binaries keep the shell path prefix.
+    expect(SandboxPolicy.parseDenyReport(JSON.stringify({ denied: ["/bin/sh: /Users/me/f.txt", "/a"] }))).toEqual([
+      "/Users/me/f.txt",
+      "/a",
+    ])
     expect(SandboxPolicy.parseDenyReport("")).toEqual([])
     expect(SandboxPolicy.parseDenyReport("{not json")).toEqual([])
     expect(SandboxPolicy.parseDenyReport(JSON.stringify({ denied: "nope" }))).toEqual([])
