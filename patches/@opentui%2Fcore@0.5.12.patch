@@ -1,0 +1,61 @@
+diff --git a/index.bun.js b/index.bun.js
+index 6ed0b0f9b3438c58cfbb06996c18927d8b893f7b..22e943f68fb3d784ae28f318b3969a2d3645d3b2 100644
+--- a/index.bun.js
++++ b/index.bun.js
+@@ -8062,6 +8062,19 @@ class DiffRenderable extends Renderable2 {
+     this.createOrUpdateSide("left", leftCodeRenderable, leftLineColors, leftLineSigns, leftLineNumbers, leftHideLineNumbers, "50%");
+     this.createOrUpdateSide("right", rightCodeRenderable, rightLineColors, rightLineSigns, rightLineNumbers, rightHideLineNumbers, "50%");
+   }
++  get treeSitterClient() {
++    return this._treeSitterClient;
++  }
++  set treeSitterClient(value) {
++    if (this._treeSitterClient === value)
++      return;
++    this._treeSitterClient = value;
++    const client = value ?? getTreeSitterClient2();
++    if (this.leftCodeRenderable)
++      this.leftCodeRenderable.treeSitterClient = client;
++    if (this.rightCodeRenderable)
++      this.rightCodeRenderable.treeSitterClient = client;
++  }
+   get diff() {
+     return this._diff;
+   }
+diff --git a/index.node.js b/index.node.js
+index 5b29cee090875da343cff8167d1bc65c1f8039b8..20c93e2ce5ce289fbaf04d518d783a93b98e2fd6 100644
+--- a/index.node.js
++++ b/index.node.js
+@@ -8061,6 +8061,19 @@ class DiffRenderable extends Renderable2 {
+     this.createOrUpdateSide("left", leftCodeRenderable, leftLineColors, leftLineSigns, leftLineNumbers, leftHideLineNumbers, "50%");
+     this.createOrUpdateSide("right", rightCodeRenderable, rightLineColors, rightLineSigns, rightLineNumbers, rightHideLineNumbers, "50%");
+   }
++  get treeSitterClient() {
++    return this._treeSitterClient;
++  }
++  set treeSitterClient(value) {
++    if (this._treeSitterClient === value)
++      return;
++    this._treeSitterClient = value;
++    const client = value ?? getTreeSitterClient2();
++    if (this.leftCodeRenderable)
++      this.leftCodeRenderable.treeSitterClient = client;
++    if (this.rightCodeRenderable)
++      this.rightCodeRenderable.treeSitterClient = client;
++  }
+   get diff() {
+     return this._diff;
+   }
+diff --git a/renderables/Diff.d.ts b/renderables/Diff.d.ts
+index 1659547060b33401d51e3bc609d245e6b069434d..b0376f29b3b1572aab22a526d62ce2524b09a2f7 100644
+--- a/renderables/Diff.d.ts
++++ b/renderables/Diff.d.ts
+@@ -89,6 +89,8 @@ export declare class DiffRenderable extends Renderable {
+     private createOrUpdateSide;
+     private buildUnifiedView;
+     private buildSplitView;
++    get treeSitterClient(): TreeSitterClient | undefined;
++    set treeSitterClient(value: TreeSitterClient | undefined);
+     get diff(): string;
+     set diff(value: string);
+     get syncScroll(): boolean;
