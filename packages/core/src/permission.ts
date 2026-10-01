@@ -243,13 +243,19 @@ const layer = Layer.effect(
           })
 
           if (input.reply === "reject") {
+            // Reject only the requests that were pending alongside this one. The
+            // rejected caller resumes while this sweep still runs, and a
+            // follow-up request it raises must not be swept as well.
+            const siblings = [...pending].filter(
+              ([id, item]) => id !== input.requestID && item.request.sessionID === existing.request.sessionID,
+            )
             yield* Deferred.fail(
               existing.deferred,
               input.message ? new CorrectedError({ feedback: input.message }) : new DeclinedError(),
             )
             pending.delete(input.requestID)
-            for (const [id, item] of pending) {
-              if (item.request.sessionID !== existing.request.sessionID) continue
+            for (const [id, item] of siblings) {
+              if (!pending.has(id)) continue
               yield* events.publish(Event.Replied, {
                 sessionID: item.request.sessionID,
                 requestID: item.request.id,
