@@ -56,6 +56,12 @@ process.env["NPM_CONFIG_GLOBALCONFIG"] = path.join(dir, "global-npmrc")
 delete process.env["NPM_CONFIG_REGISTRY"]
 delete process.env["npm_config_registry"]
 
+// Color is decided from FORCE_COLOR/NO_COLOR before the TTY check, and the CLI
+// subprocess tests inherit this environment, so a caller's FORCE_COLOR would
+// switch help output to the ANSI logo and break the plain-text snapshots.
+delete process.env["FORCE_COLOR"]
+delete process.env["NO_COLOR"]
+
 // Write the cache version file to prevent global/index.ts from clearing the cache
 const cacheDir = path.join(dir, "cache", "opencode")
 await fs.mkdir(cacheDir, { recursive: true })
