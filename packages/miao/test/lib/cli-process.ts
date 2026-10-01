@@ -63,6 +63,9 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
   return {
     MIAO_TEST_HOME: home,
     HOME: home,
+    // The child runs with cwd = home; without this it inherits the test runner's
+    // PWD, which miao trusts over cwd, and the session lands in this repository.
+    PWD: home,
     XDG_CONFIG_HOME: path.join(home, ".config"),
     XDG_DATA_HOME: path.join(home, ".local/share"),
     XDG_STATE_HOME: path.join(home, ".local/state"),
