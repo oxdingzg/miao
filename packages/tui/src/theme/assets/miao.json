@@ -1,21 +1,18 @@
 {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
-    "darkStep1": "#1e1e2e",
-    "darkStep1Clear": "#1e1e2e00",
-    "darkStep2": "#181825",
-    "darkStep3": "#232336",
-    "darkPanelBg": "#18182599",
-    "darkElementBg": "#232336b3",
-    "darkStep4": "#2a2a3f",
-    "darkStep5": "#313244",
-    "darkStep6": "#45475a",
-    "darkStep7": "#585b70",
-    "darkStep8": "#6c7086",
-    "darkStep9": "#fab283",
-    "darkStep10": "#ffc09f",
-    "darkStep11": "#a6adc8",
-    "darkStep12": "#cdd6f4",
+    "darkStep1": "#1c1c1a",
+    "darkStep2": "#222220",
+    "darkStep3": "#2a2a27",
+    "darkStep4": "#32322f",
+    "darkStep5": "#3b3b37",
+    "darkStep6": "#4a4a45",
+    "darkStep7": "#5f5f59",
+    "darkStep8": "#7d7d75",
+    "darkStep9": "#d97757",
+    "darkStep10": "#e58f6e",
+    "darkStep11": "#a9a59c",
+    "darkStep12": "#eae8e3",
     "darkSecondary": "#5c9cf5",
     "darkAccent": "#9d7cd8",
     "darkRed": "#e06c75",
@@ -31,17 +28,17 @@
     "lightStep6": "#d4d4d4",
     "lightStep7": "#b8b8b8",
     "lightStep8": "#a0a0a0",
-    "lightStep9": "#3b7dd8",
-    "lightStep10": "#2968c3",
+    "lightStep9": "#bf5b38",
+    "lightStep10": "#a84a2b",
     "lightStep11": "#8a8a8a",
     "lightStep12": "#1a1a1a",
-    "lightSecondary": "#7b5bb6",
-    "lightAccent": "#d68c27",
-    "lightRed": "#d1383d",
-    "lightOrange": "#d68c27",
+    "lightSecondary": "#2f6fd0",
+    "lightAccent": "#7b5bb6",
+    "lightRed": "#c4373f",
+    "lightOrange": "#c26a1e",
     "lightGreen": "#3d9a57",
     "lightCyan": "#318795",
-    "lightYellow": "#b0851f"
+    "lightYellow": "#9c7414"
   },
   "theme": {
     "primary": {
@@ -61,8 +58,8 @@
       "light": "lightRed"
     },
     "warning": {
-      "dark": "darkOrange",
-      "light": "lightOrange"
+      "dark": "darkYellow",
+      "light": "lightYellow"
     },
     "success": {
       "dark": "darkGreen",
@@ -85,15 +82,15 @@
       "light": "lightStep1"
     },
     "background": {
-      "dark": "darkStep1Clear",
+      "dark": "darkStep1",
       "light": "lightStep1"
     },
     "backgroundPanel": {
-      "dark": "darkPanelBg",
+      "dark": "darkStep2",
       "light": "lightStep2"
     },
     "backgroundElement": {
-      "dark": "darkElementBg",
+      "dark": "darkStep3",
       "light": "lightStep3"
     },
     "border": {
