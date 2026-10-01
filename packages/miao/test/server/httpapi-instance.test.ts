@@ -262,4 +262,37 @@ describe("instance HttpApi", () => {
       )
     }),
   )
+
+  it.live("lists commands without template bodies when template=false", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+
+      const [full, summary] = yield* Effect.all(
+        [
+          HttpClientRequest.get(InstancePaths.command).pipe(directoryHeader(dir), HttpClient.execute),
+          HttpClientRequest.get(InstancePaths.command).pipe(
+            HttpClientRequest.setUrlParam("template", "false"),
+            directoryHeader(dir),
+            HttpClient.execute,
+          ),
+        ],
+        { concurrency: "unbounded" },
+      )
+
+      expect(full.status).toBe(200)
+      expect(yield* full.json).toContainEqual(
+        expect.objectContaining({ name: "review", template: expect.any(String), subtask: true }),
+      )
+
+      expect(summary.status).toBe(200)
+      expect(yield* summary.json).toContainEqual({
+        name: "review",
+        description: expect.any(String),
+        source: "command",
+        template: null,
+        subtask: true,
+        hints: expect.any(Array),
+      })
+    }),
+  )
 })

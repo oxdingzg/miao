@@ -2041,6 +2041,7 @@ export type Config = {
     max_lines?: number
     max_bytes?: number
   }
+  sandbox?: ConfigV2Sandbox
   compaction?: {
     auto?: boolean
     prune?: boolean
@@ -3932,6 +3933,13 @@ export type ConfigV2ReferenceLocal = {
   path: string
   description?: string
   hidden?: boolean
+}
+
+export type ConfigV2Sandbox = {
+  mode?: "off" | "workspace-write"
+  network?: boolean
+  writable_roots?: Array<string>
+  on_unavailable?: "warn" | "fail"
 }
 
 export type PolicyEffect = "allow" | "deny"
@@ -8449,6 +8457,7 @@ export type CommandListData = {
   query?: {
     directory?: string
     workspace?: string
+    template?: "true" | "false"
   }
   url: "/command"
 }
