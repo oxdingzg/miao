@@ -79,6 +79,7 @@ export function sessionContextToMessages(input: {
           parentID: lastUserID,
           modelID: message.model.id,
           providerID: message.model.providerID,
+          variant: message.model.variant,
           mode: message.agent,
           agent: message.agent,
           path: { cwd: input.cwd, root: input.root },

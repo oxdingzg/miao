@@ -54,6 +54,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@miao/core/session/projector"
+import { SessionStore } from "@miao/core/session/store"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
@@ -78,6 +79,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Todo.node,
     Session.node,
     SessionProjector.node,
+    SessionStore.node,
     SessionStatus.node,
     BackgroundJob.node,
     RuntimeFlags.node,

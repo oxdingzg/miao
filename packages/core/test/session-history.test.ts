@@ -194,4 +194,58 @@ describe("SessionV2.history", () => {
       expect(error._tag).toBe("Session.NotFoundError")
     }),
   )
+
+  it.effect("keeps the timeline behind the latest compaction that the context window drops", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const store = yield* SessionStore.Service
+      const events = yield* EventV2.Service
+      const created = yield* session.create({ location })
+      const answer = Effect.fnUntraced(function* (text: string) {
+        const base = {
+          sessionID: created.id,
+          assistantMessageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(0),
+        }
+        yield* events.publish(SessionEvent.Step.Started, {
+          ...base,
+          agent: "build",
+          model: { id: ModelV2.ID.make("gpt-6.1-sol"), providerID: ProviderV2.ID.openai },
+        })
+        yield* events.publish(SessionEvent.Text.Started, { ...base, textID: "text" })
+        yield* events.publish(SessionEvent.Text.Ended, { ...base, textID: "text", text })
+        yield* events.publish(SessionEvent.Step.Ended, {
+          ...base,
+          finish: "stop",
+          cost: 0,
+          tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        })
+        return base.assistantMessageID
+      })
+      const before = yield* answer("before")
+      const compactionID = SessionMessage.ID.create()
+      yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID: created.id,
+        messageID: compactionID,
+        timestamp: DateTime.makeUnsafe(1),
+        reason: "manual",
+      })
+      yield* events.publish(SessionEvent.Compaction.Ended, {
+        sessionID: created.id,
+        messageID: compactionID,
+        timestamp: DateTime.makeUnsafe(1),
+        reason: "manual",
+        text: "summary",
+        recent: "recent context",
+      })
+      const after = yield* answer("after")
+
+      expect((yield* store.context(created.id)).map((message) => message.id)).not.toContain(before)
+      expect(
+        (yield* store.timeline(created.id))
+          .filter((message) => message.type === "assistant" || message.type === "compaction")
+          .map((message) => message.id),
+      ).toEqual([before, compactionID, after])
+    }),
+  )
 })
