@@ -1,12 +1,17 @@
 import { Session } from "@/session/session"
 import { SessionV1 } from "@miao/core/v1/session"
 import { MessageV2 } from "../../session/message-v2"
+import { Database } from "@miao/core/database/database"
+import { SessionLegacyTables } from "@miao/core/session/legacy-tables"
+import { SessionMessage } from "@miao/core/session/message"
+import { SessionStore } from "@miao/core/session/store"
+import { sessionContextToMessages } from "@miao/tui/context/session-v2"
 import { SessionID } from "../../session/schema"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { EOL } from "os"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 
 function redact(kind: string, id: string, value: string) {
   return value.trim() ? `[redacted:${kind}:${id}]` : value
@@ -288,20 +293,105 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     prompts.outro("Exporting session...", { output: process.stderr })
   }
 
-  // Match legacy try/catch — catches both typed failures and defects
-  // (Session.Service.get throws NotFoundError as a defect, not a typed E).
-  return yield* Effect.gen(function* () {
-    const sessionInfo = yield* svc.get(sessionID!)
-    const messages = yield* svc.messages({ sessionID: sessionInfo.id })
+  // Only a missing session reads as "not found"; a transcript that cannot be
+  // read must surface its own cause instead of hiding behind that message.
+  const sessionInfo = yield* svc.get(sessionID).pipe(Effect.catchCause(() => fail(`Session not found: ${sessionID}`)))
+  const messages = yield* transcript(sessionInfo).pipe(Effect.catch((error) => fail(error.message)))
+  const exportData = { info: sessionInfo, messages }
 
-    const exportData = { info: sessionInfo, messages }
-
-    const payload = args.sanitize ? sanitize(exportData) : exportData
-    if (args.format === "jsonl") {
-      for (const message of payload.messages) process.stdout.write(JSON.stringify(message) + EOL)
-      return
-    }
-    process.stdout.write(JSON.stringify(payload, null, 2))
-    process.stdout.write(EOL)
-  }).pipe(Effect.catchCause(() => fail(`Session not found: ${sessionID!}`)))
+  const payload = args.sanitize ? sanitize(exportData) : exportData
+  if (args.format === "jsonl") {
+    for (const message of payload.messages) process.stdout.write(JSON.stringify(message) + EOL)
+    return
+  }
+  process.stdout.write(JSON.stringify(payload, null, 2))
+  process.stdout.write(EOL)
 })
+
+const encodeMessage = Schema.encodeSync(SessionMessage.Message)
+const decodeMessage = Schema.decodeUnknownSync(SessionV1.WithParts)
+
+/**
+ * The archive keeps the V1 `{ info, parts }` shape that `miao import` reads.
+ * Legacy rows are exported verbatim while the V1 tables exist. History only the
+ * V2 projection holds — every session once `miao db compact` dropped those
+ * tables, and turns the V2 runner appended — is converted to the same shape. A
+ * backfill preserves message ids, so the projected copy of a legacy message is
+ * skipped instead of exported twice.
+ */
+export const transcript = Effect.fn("Cli.export.transcript")(function* (info: Session.Info) {
+  const database = yield* Database.Service
+  const store = yield* SessionStore.Service
+  const svc = yield* Session.Service
+  const legacy = (yield* SessionLegacyTables.present(database.db)) ? yield* svc.messages({ sessionID: info.id }) : []
+  const exported = new Set<string>(legacy.map((message) => message.info.id))
+  const converted = withUserSelections(
+    sessionContextToMessages({
+      sessionID: info.id,
+      cwd: info.directory,
+      // `path` is the session directory relative to its worktree.
+      root:
+        info.path && info.directory.endsWith(`/${info.path}`)
+          ? info.directory.slice(0, -info.path.length - 1)
+          : info.directory,
+      // The encoded schema is the JSON the V2 API serves; it differs from the
+      // generated SDK type only in readonly modifiers.
+      messages: (yield* store.timeline(info.id)).map((message) => encodeMessage(message)) as Parameters<
+        typeof sessionContextToMessages
+      >[0]["messages"],
+    }),
+  )
+  const projected = converted.flatMap((message) =>
+    exported.has(message.info.id)
+      ? []
+      : [
+          // Decoding checks the converted message against the schema `miao
+          // import` applies. The cast only drops the schema's readonly modifiers.
+          decodeMessage({
+            info: message.info,
+            // V2 content ids are provider call or block ids, not V1 part ids. V1
+            // storage requires the `prt` prefix and reads a message's parts back
+            // in id order, so derive ids that keep the content order.
+            parts: message.parts.map((part, partIndex) => ({
+              ...part,
+              id: `prt_${message.info.id.replace(/^msg_/, "")}${String(partIndex).padStart(4, "0")}`,
+            })),
+          }) as SessionV1.WithParts,
+        ],
+  )
+  return [...legacy, ...projected].toSorted((a, b) => a.info.time.created - b.info.time.created)
+})
+
+/**
+ * History backfilled from V1 records no agent or model switches, so the
+ * converter leaves user messages without the agent and model they were sent
+ * with. The assistant that answered a message ran with that selection; the
+ * compaction agent answers on the user's behalf and an unanswered message never
+ * ran, so both keep the selection of the user message before them.
+ */
+function withUserSelections(converted: ReturnType<typeof sessionContextToMessages>) {
+  const replies = new Map(
+    // The first reply of a turn carries the selection it was sent with.
+    converted
+      .toReversed()
+      .flatMap((entry) =>
+        entry.info.role === "assistant" && entry.info.agent !== "compaction" ? [[entry.info.parentID, entry.info]] : [],
+      ),
+  )
+  let previous: { agent: string; model: { providerID: string; modelID: string; variant?: string } } | undefined
+  return converted.map((entry) => {
+    if (entry.info.role !== "user") return entry
+    const reply = replies.get(entry.info.id)
+    const selected =
+      entry.info.agent && entry.info.model.providerID
+        ? { agent: entry.info.agent, model: entry.info.model }
+        : reply
+          ? {
+              agent: reply.agent ?? reply.mode,
+              model: { providerID: reply.providerID, modelID: reply.modelID, variant: reply.variant },
+            }
+          : previous
+    previous = selected ?? previous
+    return selected ? { ...entry, info: { ...entry.info, ...selected } } : entry
+  })
+}
