@@ -4,10 +4,14 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { Currency } from "../../util/currency"
 import { cacheEconomy } from "../../util/cache-economy"
 import { CachePricing, isOffPeak, isTimeOfDayPriced, priceMultiplier } from "../../util/cache-pricing"
+import { cacheTtl } from "../../util/cache-ttl"
 import { Locale } from "../../util/locale"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
+
+/** Cache freshness reads as a health signal, so it borrows the theme's status colors. */
+const TTL_COLOR = { fresh: "success", aging: "warning", stale: "error" } as const
 
 /** Sidebar rows are 42 columns wide, so cache counts stay abbreviated. */
 function compact(value: number) {
@@ -62,9 +66,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // The turn above reports the current context; this reports what caching has
   // earned over the whole session, which is only visible across turns.
   const offPeakProviders = createMemo(() => props.api.kv.get(CachePricing.KV, CachePricing.DEFAULT))
+  const assistants = createMemo(() => msg().filter((item): item is AssistantMessage => item.role === "assistant"))
   const economy = createMemo(() =>
     cacheEconomy(
-      msg().filter((item): item is AssistantMessage => item.role === "assistant"),
+      assistants(),
       props.api.state.provider,
       (message) =>
         priceMultiplier(message.time.created, message.providerID, message.modelID, {
@@ -76,11 +81,19 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // The badge names the rate the saved figure was billed at, so it only shows
   // for a model whose price actually moves with the clock.
   const pricing = createMemo(() => {
-    const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant")
+    const last = assistants().at(-1)
     if (!last) return
     if (!isTimeOfDayPriced(last.providerID, last.modelID, { providers: offPeakProviders() })) return
     return isOffPeak(last.time.created) ? "off-peak" : "peak"
   })
+
+  // No provider reports an expiry, so the age is counted locally and the row has
+  // to tick for it to stay true. This is the sidebar's only timer, and it costs
+  // one signal write per second.
+  const [now, setNow] = createSignal(Date.now())
+  const timer = setInterval(() => setNow(Date.now()), 1000)
+  onCleanup(() => clearInterval(timer))
+  const ttl = createMemo(() => cacheTtl(assistants(), now()))
 
   // A parent's cost already folds in every descendant step, so the agent rows
   // break down that same spend rather than adding to it.
@@ -102,6 +115,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         {economy().saved < 0 ? `${money(-economy().saved)} cache cost` : `${money(economy().saved)} saved`}
         {pricing() ? ` · ${pricing()}` : ""}
       </text>
+      <Show when={ttl()}>
+        {(cache) => (
+          <text fg={theme()[TTL_COLOR[cache().state]]}>
+            cache {Locale.duration(cache().elapsed)} / {Locale.duration(cache().ttl)}
+          </text>
+        )}
+      </Show>
       <text fg={theme().textMuted}>{money(cost())} spent</text>
       <Show when={children().length > 0}>
         <text fg={theme().text}>
