@@ -33,6 +33,7 @@ const CUSTOMIZE_MIAO_SKILL_NAME = "customize-miao"
 const CUSTOMIZE_MIAO_SKILL_DESCRIPTION =
   "Use ONLY when the user is editing or creating miao's own configuration: miao.json, miao.jsonc, files under .miao/, or files under ~/.config/miao/. Also use when creating or fixing miao agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring miao itself."
 const CUSTOMIZE_MIAO_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
+const OFFICE_DOCUMENTS_SKILL_NAME = "office-documents"
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -280,6 +281,12 @@ const layer = Layer.effect(
           description: CUSTOMIZE_MIAO_SKILL_DESCRIPTION,
           location: "<built-in>",
           content: CUSTOMIZE_MIAO_SKILL_BODY,
+        }
+        s.skills[OFFICE_DOCUMENTS_SKILL_NAME] = {
+          name: OFFICE_DOCUMENTS_SKILL_NAME,
+          description: SkillPlugin.OfficeDocumentsDescription,
+          location: "<built-in>",
+          content: SkillPlugin.OfficeDocumentsContent,
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
