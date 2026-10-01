@@ -310,7 +310,7 @@ const statusError =
 // underlying failure only exists on `cause`. Flatten it into one readable
 // fragment: the error message, its errno-style code, and the wrapped cause that
 // undici attaches (`TypeError: fetch failed` -> `Error: connect ECONNRESET`).
-const causeDetail = (cause: unknown): string | undefined => {
+export const causeDetail = (cause: unknown): string | undefined => {
   if (cause === undefined || cause === null) return undefined
   if (!(cause instanceof Error)) return String(cause)
   const code = "code" in cause && typeof cause.code === "string" ? cause.code : undefined
