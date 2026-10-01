@@ -89,6 +89,37 @@ describe("SessionRunnerModel", () => {
     }),
   )
 
+  it.effect("asks ChatGPT reasoning models for replayable encrypted reasoning", () =>
+    Effect.gen(function* () {
+      const base = model({ type: "aisdk", package: "@ai-sdk/openai" })
+      const catalog = ModelV2.Info.make({
+        ...base,
+        providerID: ProviderV2.ID.openai,
+        api: { ...base.api, id: ModelV2.ID.make("gpt-6.1-sol") },
+        request: { headers: {}, body: { reasoningEffort: "high" } },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        catalog,
+        Credential.OAuth.make({
+          type: "oauth",
+          access: "test-access",
+          refresh: "test-refresh",
+          expires: Date.now() + 60000,
+          methodID: Integration.MethodID.make("chatgpt-browser"),
+          metadata: {},
+        }),
+      )
+      const prepared = yield* LLMClient.prepare(LLM.request({ model: resolved, prompt: "Hello" }))
+      // store: false keeps no server-side reasoning, so the include is the only way
+      // a later turn can carry this turn's reasoning forward.
+      expect(prepared.body).toMatchObject({
+        store: false,
+        include: ["reasoning.encrypted_content"],
+        reasoning: { summary: "auto" },
+      })
+    }),
+  )
+
   it.effect("maps catalog OpenAI AI SDK models into native Responses routes", () =>
     Effect.gen(function* () {
       const resolved = yield* SessionRunnerModel.fromCatalogModel(

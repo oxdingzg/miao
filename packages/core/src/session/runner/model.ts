@@ -6,6 +6,7 @@ import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
 import * as Gemini from "@miao/llm/protocols/gemini"
 import * as OpenAICompatibleChat from "@miao/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@miao/llm/protocols/openai-responses"
+import { openAIDefaultOptions } from "@miao/llm/providers/openai"
 import { Auth, type AnyRoute } from "@miao/llm/route"
 import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
@@ -177,7 +178,14 @@ export const fromCatalogModel = (
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.api.package === "@ai-sdk/openai") {
-    const route = withDefaults(resolved, OpenAIResponses.route).with({ auth: bearer })
+    // The llm OpenAI facade applies these defaults; building the route directly
+    // skipped them, so reasoning models ran without the encrypted reasoning
+    // include that is the only way a stateless (store: false) turn carries its
+    // reasoning into the next one.
+    const route = withDefaults(resolved, OpenAIResponses.route).with({
+      auth: bearer,
+      providerOptions: openAIDefaultOptions(resolved.api.id),
+    })
     if (resolved.providerID === ProviderV2.ID.openai && credential?.type === "oauth") {
       const accountID = credential.metadata?.accountID
       return Effect.succeed(
