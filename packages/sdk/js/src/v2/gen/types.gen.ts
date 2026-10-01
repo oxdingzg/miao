@@ -967,6 +967,7 @@ export type GlobalEvent = {
           }
           snapshot?: string
           files?: Array<string>
+          ttft?: number
         }
       }
     | {
@@ -3594,6 +3595,7 @@ export type SyncEventSessionNextStepEnded = {
       }
       snapshot?: string
       files?: Array<string>
+      ttft?: number
     }
   }
 }
@@ -4204,6 +4206,7 @@ export type SessionMessageAssistant = {
       write: number
     }
   }
+  ttft?: number
   error?: SessionErrorUnknown
 }
 
@@ -4506,6 +4509,7 @@ export type SessionNextStepEnded = {
     }
     snapshot?: string
     files?: Array<string>
+    ttft?: number
   }
 }
 
@@ -6538,6 +6542,7 @@ export type EventSessionNextStepEnded = {
     }
     snapshot?: string
     files?: Array<string>
+    ttft?: number
   }
 }
 

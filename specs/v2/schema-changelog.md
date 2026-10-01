@@ -1,5 +1,11 @@
 # V2 Schema Changelog
 
+## 2026-10-01: Record Time to First Token
+
+- Add an optional `ttft` to `session.next.step.ended.2`, holding milliseconds from issuing the request to the provider's first streamed event.
+- Keep the durable version at 2: an added optional field leaves previously recorded events decodable, and an attempt that never streamed an event legitimately reports none.
+- Project it onto `Session.Message.Assistant` as an optional field, so a reloaded session reports the same figure a live turn does.
+
 ## 2026-09-30: Session Creation Uses a Current Event
 
 - Add `session.next.created.1` carrying the current `Session.Info` plus `slug`/`version`, and register the already-defined `session.next.info.updated.1` in the durable Session manifest.

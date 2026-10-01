@@ -1,5 +1,5 @@
-import type { AssistantMessage, Session } from "@opencode-ai/sdk/v2"
-import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
+import type { Session } from "@opencode-ai/sdk/v2"
+import type { TuiPlugin, TuiPluginApi, TuiTranscriptAssistant } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { Currency } from "../../util/currency"
 import { cacheEconomy } from "../../util/cache-economy"
@@ -46,7 +46,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   }
 
   const state = createMemo(() => {
-    const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
+    const last = msg().findLast((item): item is TuiTranscriptAssistant => item.role === "assistant" && item.tokens.output > 0)
     if (!last) {
       return {
         tokens: 0,
@@ -69,7 +69,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // The turn above reports the current context; this reports what caching has
   // earned over the whole session, which is only visible across turns.
   const offPeakProviders = createMemo(() => props.api.kv.get(CachePricing.KV, CachePricing.DEFAULT))
-  const assistants = createMemo(() => msg().filter((item): item is AssistantMessage => item.role === "assistant"))
+  const assistants = createMemo(() => msg().filter((item): item is TuiTranscriptAssistant => item.role === "assistant"))
   const economy = createMemo(() =>
     cacheEconomy(
       assistants(),
@@ -106,12 +106,19 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return direction ? `${hit} ${TREND_ARROW[direction]}` : hit
   })
 
-  // Labelled as the whole turn rather than as generation: the span includes the
-  // tool calls the turn made, so it reads slower than the model's output rate.
+  // Throughput is labelled as the whole turn rather than as generation: its span
+  // includes the tool calls the turn made, so it reads slower than the model's
+  // own output rate. Time to first token answers the other half of the question,
+  // so the two share a row rather than competing for the sidebar's width.
   const speed = createMemo(() => {
     const last = assistants().at(-1)
     const rate = last ? turnSpeed(last) : undefined
-    return rate ? `turn ${rate.tps.toFixed(1)} tok/s` : ""
+    return [
+      last?.ttft === undefined ? undefined : `ttft ${Locale.duration(last.ttft)}`,
+      rate ? `turn ${rate.tps.toFixed(1)} tok/s` : undefined,
+    ]
+      .filter((part) => part !== undefined)
+      .join(" · ")
   })
 
   // A parent's cost already folds in every descendant step, so the agent rows

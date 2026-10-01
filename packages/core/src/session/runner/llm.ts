@@ -582,6 +582,12 @@ const layer = Layer.effect(
                     .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
             const filesMs = Date.now() - filesStartedAt
+            // The event carries the same figure the log line reports, so the two
+            // can never disagree about how long the provider took to start.
+            const ttftMs =
+              requestStartedAt !== undefined && firstEventAt !== undefined
+                ? firstEventAt - requestStartedAt
+                : undefined
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -592,13 +598,13 @@ const layer = Layer.effect(
                 tokens: stepSettlement.tokens,
                 snapshot: endSnapshot,
                 files,
+                ttft: ttftMs,
               }),
             )
             yield* Effect.logInfo("session.turn", {
               sessionID: session.id,
               model: `${model.provider}/${model.id}`,
-              ttftMs:
-                requestStartedAt !== undefined && firstEventAt !== undefined ? firstEventAt - requestStartedAt : undefined,
+              ttftMs,
               turnMs: Date.now() - attemptStartedAt,
               local: {
                 sessionMs,

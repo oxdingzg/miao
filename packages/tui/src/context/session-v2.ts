@@ -1,4 +1,5 @@
-import type { Message, Part, SessionMessage } from "@opencode-ai/sdk/v2"
+import type { Part, SessionMessage } from "@opencode-ai/sdk/v2"
+import type { TuiTranscriptMessage } from "@opencode-ai/plugin/tui"
 
 /**
  * A V2 durable session event that changes the transcript and therefore needs a
@@ -39,8 +40,8 @@ export function sessionContextToMessages(input: {
   cwd: string
   root: string
   messages: SessionMessage[]
-}): { info: Message; parts: Part[] }[] {
-  const result: { info: Message; parts: Part[] }[] = []
+}): { info: TuiTranscriptMessage; parts: Part[] }[] {
+  const result: { info: TuiTranscriptMessage; parts: Part[] }[] = []
   let lastAgent = ""
   let lastModel: { providerID: string; modelID: string; variant?: string } = { providerID: "", modelID: "" }
   let lastUserID = ""
@@ -83,6 +84,7 @@ export function sessionContextToMessages(input: {
           path: { cwd: input.cwd, root: input.root },
           cost: message.cost ?? 0,
           tokens: message.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          ttft: message.ttft,
           finish: message.finish,
           error: message.error ? { name: "UnknownError", data: { message: message.error.message } } : undefined,
         },

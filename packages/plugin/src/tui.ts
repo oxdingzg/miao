@@ -1,12 +1,12 @@
 import type {
   AgentPart,
+  AssistantMessage,
   OpencodeClient,
   Event,
   FilePart,
   LspStatus,
   McpStatus,
   Todo,
-  Message,
   Part,
   Provider,
   PermissionRequest,
@@ -14,6 +14,7 @@ import type {
   Session,
   SessionStatus,
   TextPart,
+  UserMessage,
   Config as SdkConfig,
 } from "@opencode-ai/sdk/v2"
 import type { CliRenderer, KeyEvent, RGBA, Renderable, SlotMode } from "@opentui/core"
@@ -389,7 +390,7 @@ export type TuiState = {
     children: (sessionID: string) => ReadonlyArray<Session>
     diff: (sessionID: string) => ReadonlyArray<TuiSidebarFileItem>
     todo: (sessionID: string) => ReadonlyArray<TuiSidebarTodoItem>
-    messages: (sessionID: string) => ReadonlyArray<Message>
+    messages: (sessionID: string) => ReadonlyArray<TuiTranscriptMessage>
     status: (sessionID: string) => SessionStatus | undefined
     permission: (sessionID: string) => ReadonlyArray<PermissionRequest>
     question: (sessionID: string) => ReadonlyArray<QuestionRequest>
@@ -452,6 +453,15 @@ export type TuiSidebarFileItem = {
   additions: number
   deletions: number
 }
+
+/**
+ * A transcript message as the TUI holds it. The TUI rebuilds V1 messages from
+ * the current session events, and a step reports how long the provider took to
+ * start, which V1 has no field for.
+ */
+export type TuiTranscriptAssistant = AssistantMessage & { ttft?: number }
+
+export type TuiTranscriptMessage = UserMessage | TuiTranscriptAssistant
 
 export type TuiHostSlotMap = {
   app: {}

@@ -181,6 +181,8 @@ export const Assistant = Schema.Struct({
     reasoning: Schema.Finite,
     cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
   }).pipe(optional),
+  /** Milliseconds from issuing the request to the provider's first streamed event. */
+  ttft: Schema.Finite.pipe(optional),
   error: UnknownError.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,

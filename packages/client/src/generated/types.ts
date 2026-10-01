@@ -678,6 +678,7 @@ export type SessionsContextOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttft?: number
         readonly error?: { readonly type: "unknown"; readonly message: string }
       }
     | {
@@ -1074,6 +1075,7 @@ export type SessionsHistoryOutput = {
           }
           readonly snapshot?: string
           readonly files?: ReadonlyArray<string>
+          readonly ttft?: number
         }
       }
     | {
@@ -1589,6 +1591,7 @@ export type SessionsEventsOutput =
         }
         readonly snapshot?: string
         readonly files?: ReadonlyArray<string>
+        readonly ttft?: number
       }
     }
   | {
@@ -2006,6 +2009,7 @@ export type SessionsMessageOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttft?: number
         readonly error?: { readonly type: "unknown"; readonly message: string }
       }
     | {
@@ -2178,6 +2182,7 @@ export type MessagesListOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttft?: number
         readonly error?: { readonly type: "unknown"; readonly message: string }
       }
     | {

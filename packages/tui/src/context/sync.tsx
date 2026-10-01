@@ -21,6 +21,7 @@ import type {
   SnapshotFileDiff,
   ConsoleState,
 } from "@opencode-ai/sdk/v2"
+import type { TuiTranscriptMessage } from "@opencode-ai/plugin/tui"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "./project"
 import { useEvent } from "./event"
@@ -113,7 +114,7 @@ export const {
         [sessionID: string]: Todo[]
       }
       message: {
-        [sessionID: string]: Message[]
+        [sessionID: string]: TuiTranscriptMessage[]
       }
       part: {
         [messageID: string]: Part[]
