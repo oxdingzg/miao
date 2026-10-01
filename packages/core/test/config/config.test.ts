@@ -194,7 +194,7 @@ describe("Config", () => {
             network: false,
             writable_roots: ["~/.cache"],
             on_unavailable: "fail",
-          }
+          } as const
           yield* Effect.promise(() => fs.mkdir(path.join(tmp.path, "global"), { recursive: true }))
           yield* Effect.promise(() =>
             fs.writeFile(
