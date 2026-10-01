@@ -1,4 +1,4 @@
-import { CliRenderEvents, SyntaxStyle, type TerminalColors } from "@opentui/core"
+import { CliRenderEvents, RGBA, SyntaxStyle, type TerminalColors } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import {
   DEFAULT_THEMES,
@@ -26,7 +26,7 @@ import { useKV } from "./kv"
 import { useTuiConfig } from "../config"
 import { Global } from "@miao/core/global"
 import { Glob } from "@miao/core/util/glob"
-import { readFile } from "node:fs/promises"
+import { appendFile, readFile } from "node:fs/promises"
 import path from "node:path"
 
 export type ThemeSource = Readonly<{
@@ -254,16 +254,40 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     const values = createMemo(() => {
-      const active = store.themes[store.active]
-      if (active) return resolveTheme(active, store.mode)
+      const resolved = resolveActive()
+      const missing = uncoloredKeys(resolved)
+      if (missing.length === 0) return resolved
+      // A session once rendered entirely in terminal default colors while its
+      // theme was still selected. Keep that from ever going colorless again and
+      // record what the theme resolved to, so the cause can be traced.
+      themeLog("theme resolved without colors; falling back to miao", {
+        active: store.active,
+        mode: store.mode,
+        missing,
+      })
+      return resolveTheme(DEFAULT_THEMES.miao, store.mode)
+    })
 
-      const saved = kv.get("theme")
-      if (typeof saved === "string") {
-        const theme = store.themes[saved]
-        if (theme) return resolveTheme(theme, store.mode)
+    function resolveActive() {
+      try {
+        const active = store.themes[store.active]
+        if (active) return resolveTheme(active, store.mode)
+
+        const saved = kv.get("theme")
+        if (typeof saved === "string") {
+          const theme = store.themes[saved]
+          if (theme) return resolveTheme(theme, store.mode)
+        }
+
+        return resolveTheme(store.themes.miao, store.mode)
+      } catch (error) {
+        themeLog("theme failed to resolve; falling back to miao", { active: store.active, mode: store.mode, error: String(error) })
+        return resolveTheme(DEFAULT_THEMES.miao, store.mode)
       }
+    }
 
-      return resolveTheme(store.themes.miao, store.mode)
+    createEffect(() => {
+      themeLog("theme active", { active: store.active, mode: store.mode, ready: store.ready })
     })
 
     createEffect(() => renderer.setBackgroundColor(values().background))
@@ -329,4 +353,24 @@ export function createSyntaxStyleMemo(factory: () => SyntaxStyle) {
     if (previous) release(previous)
     return current
   })
+}
+
+// Colors every screen depends on. A theme whose resolution leaves any of them
+// unset or at the terminal default renders the whole TUI without color.
+const KEY_COLORS = ["text", "textMuted", "primary", "background", "border", "success", "error"] as const
+
+function uncoloredKeys(theme: ReturnType<typeof resolveTheme>) {
+  return KEY_COLORS.filter((key) => {
+    const color = theme[key]
+    if (!(color instanceof RGBA)) return true
+    if (key === "background") return false
+    return color.intent === "default"
+  })
+}
+
+// The TUI thread's console goes to the in-app console, not the log file; theme
+// diagnostics need to survive the session, so they append to their own file.
+function themeLog(message: string, data: Record<string, unknown>) {
+  const line = `${new Date().toISOString()} pid=${process.pid} ${message} ${JSON.stringify(data)}\n`
+  void appendFile(path.join(Global.Path.log, "tui.log"), line).catch(() => {})
 }
