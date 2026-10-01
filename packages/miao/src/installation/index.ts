@@ -3,7 +3,7 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { httpClient } from "@miao/core/effect/app-node-platform"
 import { Effect, Layer, Schema, Context, Stream } from "effect"
 import { serviceUse } from "@miao/core/effect/service-use"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { errorMessage } from "@/util/error"
 import { ChildProcess } from "effect/unstable/process"
@@ -257,6 +257,19 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
           return data.version
         }
 
+        // The REST API allows 60 unauthenticated requests an hour per IP, which a
+        // few sessions checking on startup use up, after which every update check
+        // and `miao upgrade` fails with 403. The web redirect to the latest release
+        // tag is not rate limited, so read the tag from it and keep the API only as
+        // a fallback.
+        const redirect = yield* http
+          .execute(HttpClientRequest.get(`https://github.com/${REPO}/releases/latest`))
+          .pipe(
+            Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+            Effect.map((response) => /\/releases\/tag\/v?([^/?#]+)$/.exec(response.headers.location ?? "")?.[1]),
+            Effect.orElseSucceed(() => undefined),
+          )
+        if (redirect) return redirect
         const response = yield* httpOk.execute(
           HttpClientRequest.get(`https://api.github.com/repos/${REPO}/releases/latest`).pipe(
             HttpClientRequest.acceptJson,

@@ -86,6 +86,25 @@ describe("installation", () => {
         }),
     )
 
+    const redirectCalls: string[] = []
+    testEffect(
+      testLayer((request) => {
+        redirectCalls.push(request.url)
+        if (request.url.startsWith("https://github.com/"))
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://github.com/oxdingzg/miao/releases/tag/v0.0.28" },
+          })
+        return jsonResponse({ tag_name: "v9.9.9" })
+      }),
+    ).effect("reads the latest tag from the release redirect without the rate-limited API", () =>
+      Effect.gen(function* () {
+        const result = yield* Installation.use.latest("curl")
+        expect(result).toBe("0.0.28")
+        expect(redirectCalls.some((url) => url.includes("api.github.com"))).toBe(false)
+      }),
+    )
+
     const npmCalls: string[] = []
     testEffect(
       testLayer((request) => {
