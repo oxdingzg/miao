@@ -3086,13 +3086,13 @@ export type ProjectCopiesRefreshInput = {
 
 export type ProjectCopiesRefreshOutput = void
 
-export type ServerProjectCurrentInput = {
+export type ProjectsCurrentInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
 }
 
-export type ServerProjectCurrentOutput = {
+export type ProjectsCurrentOutput = {
   readonly location: {
     readonly directory: string
     readonly workspaceID?: string
@@ -3101,14 +3101,14 @@ export type ServerProjectCurrentOutput = {
   readonly data: { readonly id: string; readonly directory: string }
 }
 
-export type ServerProjectDirectoriesInput = {
+export type ProjectsDirectoriesInput = {
   readonly projectID: { readonly projectID: string }["projectID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
 }
 
-export type ServerProjectDirectoriesOutput = {
+export type ProjectsDirectoriesOutput = {
   readonly location: {
     readonly directory: string
     readonly workspaceID?: string
