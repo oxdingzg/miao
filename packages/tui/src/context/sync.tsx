@@ -814,6 +814,29 @@ export const {
       void bootstrap()
     })
 
+    // A V2 prompt carries only its text: the session runs with the agent and model
+    // stored on it. Apply what the footer has selected before sending, or a model
+    // picked after the session started never takes effect. switchModel is a no-op
+    // on the server when nothing changed; switchAgent records an event, so it is
+    // only sent when the agent differs.
+    async function applySelection(input: { sessionID: string; agent: string; model: UserMessage["model"] }) {
+      const match = search(store.session, input.sessionID, (s) => s.id)
+      const session = match.found ? store.session[match.index] : undefined
+      if (input.agent && session?.agent !== input.agent)
+        await sdk.client.v2.session.switchAgent(
+          { sessionID: input.sessionID, agent: input.agent },
+          { throwOnError: true },
+        )
+      if (!input.model.providerID || !input.model.modelID) return
+      await sdk.client.v2.session.switchModel(
+        {
+          sessionID: input.sessionID,
+          model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.model.variant },
+        },
+        { throwOnError: true },
+      )
+    }
+
     const result = {
       data: store,
       prompt: {
@@ -843,10 +866,12 @@ export const {
             state: "sending",
             delivery: "steer",
           })
-          return sdk.client.v2.session
-            .prompt(
-              { id, sessionID: input.sessionID, prompt: promptInputFromParts(input.parts) },
-              { throwOnError: true },
+          return applySelection(input)
+            .then(() =>
+              sdk.client.v2.session.prompt(
+                { id, sessionID: input.sessionID, prompt: promptInputFromParts(input.parts) },
+                { throwOnError: true },
+              ),
             )
             .then(
               (response) => {
