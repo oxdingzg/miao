@@ -174,7 +174,7 @@ const layer = Layer.effectDiscard(
     // tool failure: the caller keeps the sandboxed result. Interruption and
     // every other defect still propagate.
     const decide = (input: PermissionV2.AssertInput) =>
-      permission.assert(input).pipe(
+      permission.assert({ ...input, explicit: true }).pipe(
         Effect.as<Approval>({ approved: true }),
         Effect.catchTags({
           "PermissionV2.BlockedError": () => Effect.succeed<Approval>({ approved: false }),
