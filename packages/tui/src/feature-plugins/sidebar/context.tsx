@@ -4,14 +4,17 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { Currency } from "../../util/currency"
 import { cacheEconomy } from "../../util/cache-economy"
 import { CachePricing, isOffPeak, isTimeOfDayPriced, priceMultiplier } from "../../util/cache-pricing"
+import { cacheTrend } from "../../util/cache-trend"
 import { cacheTtl } from "../../util/cache-ttl"
 import { Locale } from "../../util/locale"
+import { turnSpeed } from "../../util/turn-speed"
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
 
 /** Cache freshness reads as a health signal, so it borrows the theme's status colors. */
 const TTL_COLOR = { fresh: "success", aging: "warning", stale: "error" } as const
+const TREND_ARROW = { up: "↑", down: "↓", flat: "-" } as const
 
 /** Sidebar rows are 42 columns wide, so cache counts stay abbreviated. */
 function compact(value: number) {
@@ -95,6 +98,22 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   onCleanup(() => clearInterval(timer))
   const ttl = createMemo(() => cacheTtl(assistants(), now()))
 
+  // The hit rate alone says nothing about whether caching is still working, so
+  // it carries the direction the recent turns moved in.
+  const cached = createMemo(() => {
+    const hit = `${state().cacheHit ?? 0}% cached`
+    const direction = cacheTrend(assistants())
+    return direction ? `${hit} ${TREND_ARROW[direction]}` : hit
+  })
+
+  // Labelled as the whole turn rather than as generation: the span includes the
+  // tool calls the turn made, so it reads slower than the model's output rate.
+  const speed = createMemo(() => {
+    const last = assistants().at(-1)
+    const rate = last ? turnSpeed(last) : undefined
+    return rate ? `turn ${rate.tps.toFixed(1)} tok/s` : ""
+  })
+
   // A parent's cost already folds in every descendant step, so the agent rows
   // break down that same spend rather than adding to it.
   const children = createMemo(() => props.api.state.session.children(props.session_id))
@@ -107,7 +126,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </text>
       <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
       <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
-      <text fg={theme().textMuted}>{state().cacheHit ?? 0}% cached</text>
+      <text fg={theme().textMuted}>{cached()}</text>
       <text fg={theme().textMuted}>
         read {compact(economy().read)} · write {compact(economy().write)}
       </text>
@@ -121,6 +140,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
             cache {Locale.duration(cache().elapsed)} / {Locale.duration(cache().ttl)}
           </text>
         )}
+      </Show>
+      <Show when={speed()}>
+        <text fg={theme().textMuted}>{speed()}</text>
       </Show>
       <text fg={theme().textMuted}>{money(cost())} spent</text>
       <Show when={children().length > 0}>
