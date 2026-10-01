@@ -12,6 +12,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
+import { Flag } from "../../flag/flag"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { ModelVariants } from "../../model-variants"
@@ -197,6 +198,7 @@ export const fromCatalogModel = (
               ...(typeof accountID === "string" ? { "ChatGPT-Account-Id": accountID } : {}),
             },
             http: { body: { ...route.defaults.http?.body, store: false } },
+            ...(Flag.MIAO_EXPERIMENTAL_RESPONSES_WS ? { transport: OpenAIResponses.pooledTransport } : {}),
           })
           .model({ id: resolved.api.id }),
       )

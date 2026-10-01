@@ -3,11 +3,13 @@ import type { Endpoint } from "../endpoint"
 import type { Auth } from "../auth"
 import type { Interface as RequestExecutorInterface } from "../executor"
 import type { Interface as WebSocketExecutorInterface } from "./websocket"
+import type { Interface as WebSocketPoolInterface } from "./websocket-pool"
 import type { LLMError, LLMRequest } from "../../schema"
 
 export interface TransportRuntime {
   readonly http: RequestExecutorInterface
   readonly webSocket?: WebSocketExecutorInterface
+  readonly webSocketPool?: WebSocketPoolInterface
 }
 
 export interface Transport<Body, Prepared, Frame> {
@@ -31,3 +33,4 @@ export interface TransportPrepareInput<Body> {
 
 export * as HttpTransport from "./http"
 export { WebSocketExecutor, WebSocketTransport } from "./websocket"
+export { WebSocketPool } from "./websocket-pool"

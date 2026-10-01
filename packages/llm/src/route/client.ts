@@ -6,7 +6,7 @@ import { RequestExecutor } from "./executor"
 import type { Framing } from "./framing"
 import { HttpTransport } from "./transport"
 import type { Transport, TransportRuntime } from "./transport"
-import { WebSocketExecutor } from "./transport"
+import { WebSocketExecutor, WebSocketPool } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
 import * as ProviderShared from "../protocols/shared"
@@ -450,6 +450,7 @@ export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer
     const stream = streamRequestWith({
       http: yield* RequestExecutor.Service,
       webSocket: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketExecutor.Service)),
+      webSocketPool: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketPool.Service)),
     })
     return Service.of({ prepare: prepareWith as Interface["prepare"], stream, generate: generateWith(stream) })
   }),
