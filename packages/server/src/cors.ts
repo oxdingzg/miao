@@ -1,8 +1,8 @@
 import { Context } from "effect"
 
-// opencode.ai is kept alongside miao.dtee.top: the hosted web app on either
-// domain talks to a local server, and both must pass the origin check.
-const trustedOrigin = /^https:\/\/([a-z0-9-]+\.)*(opencode\.ai|miao\.dtee\.top)$/
+// The hosted miao web app talks to a local server, so its origin must pass the
+// origin check. opencode's hosted app is not trusted: it is a different product.
+const trustedOrigin = /^https:\/\/([a-z0-9-]+\.)*miao\.dtee\.top$/
 
 export type CorsOptions = { readonly cors?: ReadonlyArray<string> }
 
