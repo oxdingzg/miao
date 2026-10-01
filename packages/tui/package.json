@@ -21,6 +21,8 @@
     "./context/runtime": "./src/context/runtime.tsx",
     "./context/sdk": "./src/context/sdk.tsx",
     "./context/sync": "./src/context/sync.tsx",
+    "./context/session-v2": "./src/context/session-v2.ts",
+    "./context/session-v2-write": "./src/context/session-v2-write.ts",
     "./context/theme": "./src/context/theme.tsx",
     "./context/editor": "./src/context/editor.ts",
     "./context/clipboard": "./src/context/clipboard.tsx",

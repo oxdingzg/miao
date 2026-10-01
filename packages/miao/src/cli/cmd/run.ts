@@ -25,6 +25,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import { Flag } from "@miao/core/flag/flag"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -271,6 +272,8 @@ export const RunCommand = effectCmd({
     yield* Effect.promise(async () => {
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
       const interactive = args.mini
+      // The interactive --mini mode still renders V1 events; headless runs use V2.
+      const headlessV2 = !interactive && Flag.MIAO_TUI_V2
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
@@ -454,6 +457,7 @@ export const RunCommand = effectCmd({
       }
 
       async function session(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
+        if (headlessV2) return sessionV2(sdk)
         if (args.session) {
           const current = await sdk.session
             .get({
@@ -530,6 +534,44 @@ export const RunCommand = effectCmd({
           title: result.data?.title ?? name,
           directory: result.data?.directory,
         }
+      }
+
+      // V2 counterpart of session(): the V1 session routes write the retired V1
+      // tables, which fail once a database has been compacted.
+      async function sessionV2(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
+        const where = directory ?? root
+        const pick = async (id: string) => {
+          if (!args.fork) {
+            const found = await sdk.v2.session.get({ sessionID: id }).then((result) => result.data?.data)
+            return found && { id: found.id, title: found.title, directory: found.location.directory }
+          }
+          const forked = await sdk.v2.session.fork({ sessionID: id }).then((result) => result.data?.data)
+          return forked && { id: forked.id, title: forked.title, directory: forked.location.directory }
+        }
+        if (args.session) {
+          const found = await sdk.v2.session
+            .get({ sessionID: args.session })
+            .then((result) => result.data?.data)
+            .catch(() => undefined)
+          if (!found) {
+            UI.error("Session not found")
+            process.exit(1)
+          }
+          return pick(found.id)
+        }
+        const base = args.continue
+          ? await sdk.v2.session
+              .list({ order: "desc", limit: 50, directory: where })
+              .then((result) => result.data?.data.find((item) => !item.parentID))
+          : undefined
+        if (base) return pick(base.id)
+        const created = await sdk.v2.session
+          .create({ location: { directory: where } })
+          .then((result) => result.data?.data)
+        if (!created) return
+        const name = title()
+        if (name) await sdk.v2.session.rename({ sessionID: created.id, title: name })
+        return { id: created.id, title: name ?? created.title, directory: created.location.directory }
       }
 
       async function share(sdk: OpencodeClient, sessionID: string) {
@@ -828,7 +870,61 @@ export const RunCommand = effectCmd({
         // Validate agent if specified
         const agent = await pickAgent(client)
 
-        await share(client, sessionID)
+        if (!headlessV2) await share(client, sessionID)
+        if (headlessV2 && args.share)
+          UI.println(
+            UI.Style.TEXT_WARNING_BOLD + "!",
+            UI.Style.TEXT_NORMAL + "sharing is not available for V2 sessions yet",
+          )
+
+        if (headlessV2) {
+          const { runHeadless } = await import("./run/headless")
+          const error = await runHeadless({
+            client,
+            sessionID,
+            directory: cwd,
+            agent,
+            model: pick(args.model),
+            variant: args.variant,
+            message,
+            files,
+            command: args.command,
+            thinking,
+            json: args.format === "json",
+            auto: Boolean(auto),
+            emit,
+            print: {
+              header(agentName, modelID) {
+                UI.empty()
+                UI.println(`> ${agentName} · ${modelID}`)
+                UI.empty()
+              },
+              tool,
+              toolError,
+              text(text) {
+                if (!process.stdout.isTTY) return void process.stdout.write(text + EOL)
+                UI.empty()
+                UI.println(text)
+                UI.empty()
+              },
+              reasoning(text) {
+                const line = `Thinking: ${text}`
+                if (!process.stdout.isTTY) return void process.stdout.write(line + EOL)
+                UI.empty()
+                UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
+                UI.empty()
+              },
+              warning(text) {
+                UI.println(UI.Style.TEXT_WARNING_BOLD + "!", UI.Style.TEXT_NORMAL + text)
+              },
+              error(text) {
+                UI.error(text)
+              },
+            },
+          })
+          if (error) process.exitCode = 1
+          return
+        }
 
         if (!interactive) {
           const events = await client.event.subscribe()
