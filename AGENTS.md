@@ -162,7 +162,7 @@ entry points so a work-in-progress change can never break the tool you rely on.
 
 - `miao` is the stable command: the official release binary, installed from GitHub with
   `curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash`. It
-  lands at `~/.miao/bin/miao`, runs channel `latest` (DB `miao-latest.db`), and
+  lands at `~/.miao/bin/miao`, runs channel `latest` (DB `miao.db`), and
   auto-updates from `oxdingzg/miao` releases in the background.
 - `miao-dev` runs from source for fast iteration. It is the only entry point that
   reflects uncommitted edits (channel `local`, DB `miao-local.db`).
