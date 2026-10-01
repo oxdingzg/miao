@@ -106,6 +106,8 @@ export const Plugin = define({
     const defaults: PermissionV2.Ruleset = [
       { action: "*", resource: "*", effect: "allow" },
       ...readonlyExternalDirectory,
+      // Leaving the OS sandbox always asks unless a config rule says otherwise.
+      { action: "bash_unsandboxed", resource: "*", effect: "ask" },
       { action: "question", resource: "*", effect: "deny" },
       { action: "plan_enter", resource: "*", effect: "deny" },
       { action: "plan_exit", resource: "*", effect: "deny" },
