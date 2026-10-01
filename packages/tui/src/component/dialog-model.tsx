@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal } from "solid-js"
 import { useLocal } from "../context/local"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -9,15 +9,23 @@ import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
 import { useSync } from "../context/sync"
+import { useToast } from "../ui/toast"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
+  const toast = useToast()
   const [query, setQuery] = createSignal("")
 
   const connected = useConnected()
   const providers = createDialogProviderOptions()
+  // Popular providers come from the provider catalog, which is only needed (and
+  // loaded) while nothing is connected yet.
+  createEffect(() => {
+    if (connected()) return
+    sync.loadProviderCatalog().catch(toast.error)
+  })
 
   const showExtra = createMemo(() => connected() && !props.providerID)
 

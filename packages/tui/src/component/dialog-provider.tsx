@@ -222,7 +222,12 @@ export function createDialogProviderOptions() {
 }
 
 export function DialogProvider() {
+  const sync = useSync()
+  const toast = useToast()
   const options = createDialogProviderOptions()
+  onMount(() => {
+    sync.loadProviderCatalog().catch(toast.error)
+  })
   return <DialogSelect compact title="Connect a provider" options={options()} />
 }
 
@@ -389,6 +394,7 @@ function ApiMethod(props: ApiMethodProps) {
         })
         await sdk.client.instance.dispose()
         await sync.bootstrap()
+        if (props.custom) await sync.loadProviderCatalog()
         if (props.custom && !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)) {
           toast.show({
             variant: "info",
