@@ -6,7 +6,7 @@
   <a href="README.md">English</a> | <a href="README.zh.md">简体中文</a>
 </p>
 <p align="center">
-  <a href="#quick-start">Quick start</a> · <a href="#why-miao">Why miao</a> · <a href="docs/guide.en.md">Guide</a> · <a href="https://github.com/oxdingzg/miao/releases">Releases</a>
+  <a href="https://mtty.dev/miao">Website</a> · <a href="#quick-start">Quick start</a> · <a href="#why-miao">Why miao</a> · <a href="docs/guide.en.md">Guide</a> · <a href="https://github.com/oxdingzg/miao/releases">Releases</a> · <a href="#related-projects">Related projects</a>
 </p>
 
 ---
@@ -60,7 +60,7 @@ Durable history does **not** imply automatic execution recovery after a crash: u
 Use macOS or Linux for the documented installation flow. Windows builds exist; see the [Windows verification notes](docs/windows-vt-verification.en.md).
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash
+curl -fsSL https://mtty.dev/miao/install | bash   # redirects to this repo's install script
 
 miao providers login          # choose a provider and connect your account / API key
 cd /path/to/project
@@ -116,6 +116,16 @@ miao is pre-1.0. V2 is the default for the terminal UI and supported browser con
 | Generated clients and embedded Effect host                                     | Private workspace packages; API still evolving                 |
 
 Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for compiled checkout validation. New source features may not yet be in the installed release.
+
+## Related projects
+
+| Project | What it is | Links |
+|---|---|---|
+| **miao** (this repository) | AI coding agent for the terminal | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **mtty** | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term) |
+| **mtty.dev** | The website and documentation for both | [mtty.dev](https://mtty.dev) |
+
+miao and mtty are separate projects, and each works without the other. Run miao inside an mtty pane and it reports its state (working, waiting for you, done, error) to mtty, which badges the pane, notifies you when the agent needs you, and sends your queued prompt when it goes idle. Outside mtty the report does nothing. `miaotty` was a personal macOS prototype of that terminal and has been replaced by mtty.
 
 ## Documentation and development
 
