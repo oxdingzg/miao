@@ -597,10 +597,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             <input
               onInput={(e) => {
                 if (props.locked) return
-                // Pickers number their first nine options; a digit typed into an empty
-                // search picks that option, as in Codex.
+                // A digit typed into an empty search picks that numbered option, as in
+                // Codex, but only when one keypress is unambiguous: in a longer list a
+                // digit starts a search, so "302" still finds 302.AI.
                 const shortcut =
-                  props.compact && store.filter === "" && /^[1-9]$/.test(e) ? flat()[Number(e) - 1] : undefined
+                  props.compact && store.filter === "" && flat().length <= 9 && /^[1-9]$/.test(e)
+                    ? flat()[Number(e) - 1]
+                    : undefined
                 if (shortcut) {
                   input.value = ""
                   moveTo(Number(e) - 1)
@@ -726,10 +729,10 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                               </text>
                               <text
                                 flexShrink={0}
-                                width={2}
+                                width={String(flat().length).length + 1}
                                 fg={active() ? selectedForeground(theme) : theme.textMuted}
                               >
-                                {store.filter === "" && position() < 9 ? `${position() + 1}.` : ""}
+                                {store.filter === "" ? `${position() + 1}.` : ""}
                               </text>
                             </Show>
                             <Show when={!current() && option.margin}>

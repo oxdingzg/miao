@@ -18,6 +18,7 @@ async function mountSelector(input: {
   width?: number
   height?: number
   current?: number
+  count?: number
   anchor?: { left: number; top: number; width: number }
 }) {
   const state = path.join(input.root, "state")
@@ -50,7 +51,7 @@ async function mountSelector(input: {
           compact
           title="Select model"
           current={input.current ?? 20}
-          options={Array.from({ length: 30 }, (_, value) => ({
+          options={Array.from({ length: input.count ?? 30 }, (_, value) => ({
             value,
             title: `Model ${value}`,
             onSelect() {
@@ -214,22 +215,39 @@ test("compact selector sits directly above a registered prompt and matches its w
   }
 })
 
-test("a digit picks a numbered option while the search is empty", async () => {
+test("a digit picks a numbered option in a short list", async () => {
   await using tmp = await tmpdir()
   const selected: number[] = []
   const selector = await mountSelector({
     root: tmp.path,
     keybinds: {},
     current: 0,
+    count: 5,
     onSelect: (value) => selected.push(value),
   })
   try {
-    await renderUntil(selector.app, (frame) => frame.includes("3. Model 2") || frame.includes("3.   Model 2"))
-    expect(selector.app.captureCharFrame()).toMatch(/3\.\s+Model 2/)
+    await renderUntil(selector.app, (frame) => /3\.\s+Model 2/.test(frame))
     await selector.app.mockInput.typeText("3")
     await Bun.sleep(30)
     await selector.app.renderOnce()
     expect(selected).toEqual([2])
+  } finally {
+    await selector.cleanup()
+  }
+})
+
+test("a long list numbers every option and lets digits search", async () => {
+  await using tmp = await tmpdir()
+  const selected: number[] = []
+  const selector = await mountSelector({ root: tmp.path, keybinds: {}, onSelect: (value) => selected.push(value) })
+  try {
+    await renderUntil(selector.app, (frame) => /21\.\s+. Model 20/.test(frame))
+    await selector.app.mockInput.typeText("27")
+    await renderUntil(selector.app, (frame) => !frame.includes("Model 20"))
+    const frame = selector.app.captureCharFrame()
+    expect(selected).toEqual([])
+    expect(frame).toContain("Model 27")
+    expect(frame).not.toContain("Model 20")
   } finally {
     await selector.cleanup()
   }
