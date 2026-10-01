@@ -21,10 +21,15 @@ type CachePrice = {
  * nets the reads' discount against the writes' premium. A model that quotes no
  * price for one direction bills it at the input rate, which makes that term
  * zero instead of a guess.
+ *
+ * `multiplier` scales each message's rate, which is how a provider that bills
+ * by time of day (see cache-pricing.ts) reaches the figures without this
+ * function knowing about any particular provider.
  */
 export function cacheEconomy(
   messages: ReadonlyArray<AssistantMessage>,
   providers: ReadonlyArray<ProviderLike>,
+  multiplier: (message: AssistantMessage) => number = () => 1,
 ): CacheEconomy {
   return messages.reduce(
     (total, message) => {
@@ -39,12 +44,13 @@ export function cacheEconomy(
       if (!price) return total
       const read = tokens.cache.read
       const write = tokens.cache.write
+      // A discounted rate moves both endpoints of the spread, so the factor
+      // scales the difference rather than either side of it.
+      const net = read * (price.input - price.cache_read) - write * (price.cache_write - price.input)
       return {
         read: total.read + read,
         write: total.write + write,
-        saved:
-          total.saved +
-          (read * (price.input - price.cache_read) - write * (price.cache_write - price.input)) / 1_000_000,
+        saved: total.saved + (net * multiplier(message)) / 1_000_000,
       }
     },
     { read: 0, write: 0, saved: 0 },
