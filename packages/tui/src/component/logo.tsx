@@ -1,6 +1,6 @@
 import { BoxRenderable, MouseButton, MouseEvent, RGBA, TextAttributes } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import { For, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+import { For, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { useTheme, tint } from "../context/theme"
 import { banner, logo, wordmarkColumns } from "../logo"
 
@@ -169,6 +169,12 @@ const NEAR = [
   [0, -1],
   [1, -1],
 ] as const
+
+type Cell = {
+  char: string
+  fg: RGBA
+  bg?: RGBA
+}
 
 type Trace = {
   glyph: number
@@ -736,31 +742,22 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
   const idleState = createMemo(() => (shimmering() ? buildIdleState(frame().t, ctx) : undefined))
   const useSubpixelBlocks = () => renderer.capabilities?.rgb === true
 
-  const renderLine = (
+  const paintLine = (
     line: string,
     y: number,
     base: RGBA,
-    bold: boolean,
     off: number,
     frame: Frame,
     dusk: Frame,
     state: IdleState | undefined,
-  ): JSX.Element[] => {
-    const attrs = bold ? TextAttributes.BOLD : undefined
-
+  ): Cell[] => {
     return Array.from(line).map((char, i) => {
       // The banner art carries its own inks so the cat and every wordmark letter can match
       // the exit epilogue; without them the line ink applies.
       const ink = props.shape?.inks?.find((span) => off + i >= span.from && off + i <= span.to)?.ink ?? base
       const shadow = tint(theme.background, ink, 0.25)
 
-      if (char === " ") {
-        return (
-          <text fg={ink} attributes={attrs} selectable={false}>
-            {char}
-          </text>
-        )
-      }
+      if (char === " ") return { char, fg: ink }
 
       const h = field(off + i, y, frame, ctx)
       const charLit = lit(char)
@@ -801,87 +798,65 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
       const b = charLit ? bloom(off + i, y, frame, ctx) : 0
       const q = shimmer(off + i, y, frame, ctx)
 
-      if (char === "_") {
-        return (
-          <text
-            fg={shade(inkTinted, theme, s * 0.08)}
-            bg={shade(shadowTinted, theme, ghost(s, 0.24) + ghost(q, 0.06))}
-            attributes={attrs}
-            selectable={false}
-          >
-            {" "}
-          </text>
-        )
-      }
+      if (char === "_")
+        return {
+          char: " ",
+          fg: shade(inkTinted, theme, s * 0.08),
+          bg: shade(shadowTinted, theme, ghost(s, 0.24) + ghost(q, 0.06)),
+        }
 
-      if (char === "^") {
-        return (
-          <text
-            fg={shade(inkTop, theme, n + p + e + b)}
-            bg={shade(shadowBot, theme, ghost(s, 0.18) + ghost(q, 0.05) + ghost(b, 0.08))}
-            attributes={attrs}
-            selectable={false}
-          >
-            ▀
-          </text>
-        )
-      }
+      if (char === "^")
+        return {
+          char: "▀",
+          fg: shade(inkTop, theme, n + p + e + b),
+          bg: shade(shadowBot, theme, ghost(s, 0.18) + ghost(q, 0.05) + ghost(b, 0.08)),
+        }
 
-      if (char === "~") {
-        return (
-          <text fg={shade(shadowTop, theme, ghost(s, 0.22) + ghost(q, 0.05))} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
+      if (char === "~") return { char: "▀", fg: shade(shadowTop, theme, ghost(s, 0.22) + ghost(q, 0.05)) }
 
-      if (char === ",") {
-        return (
-          <text fg={shade(shadowBot, theme, ghost(s, 0.22) + ghost(q, 0.05))} attributes={attrs} selectable={false}>
-            ▄
-          </text>
-        )
-      }
+      if (char === ",") return { char: "▄", fg: shade(shadowBot, theme, ghost(s, 0.22) + ghost(q, 0.05)) }
 
       // Solid █: render as ▀ so the top pixel (fg) and bottom pixel (bg) can carry independent shimmer values
-      if (char === "█" && useSubpixelBlocks()) {
-        return (
-          <text
-            fg={shade(inkTop, theme, n + p + e + b)}
-            bg={shade(inkBot, theme, n + p + e + b)}
-            attributes={attrs}
-            selectable={false}
-          >
-            ▀
-          </text>
-        )
-      }
+      if (char === "█" && useSubpixelBlocks())
+        return { char: "▀", fg: shade(inkTop, theme, n + p + e + b), bg: shade(inkBot, theme, n + p + e + b) }
 
       // ▀ top-half-lit: fg uses top-pixel sample, bg stays transparent/panel
-      if (char === "▀") {
-        return (
-          <text fg={shade(inkTop, theme, n + p + e + b)} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
+      if (char === "▀") return { char, fg: shade(inkTop, theme, n + p + e + b) }
 
       // ▄ bottom-half-lit: fg uses bottom-pixel sample
-      if (char === "▄") {
-        return (
-          <text fg={shade(inkBot, theme, n + p + e + b)} attributes={attrs} selectable={false}>
-            ▄
-          </text>
-        )
-      }
+      if (char === "▄") return { char, fg: shade(inkBot, theme, n + p + e + b) }
 
+      return { char, fg: shade(inkTinted, theme, n + p + e + b) }
+    })
+  }
+
+  // Colors for every cell of every line, recomputed once per frame. The text nodes
+  // below are created once and only read their colors from here: rebuilding the
+  // nodes each frame re-ran yoga layout for the whole logo and dominated CPU.
+  const cells = createMemo(() => {
+    const now = frame()
+    const late = dusk()
+    const state = idleState()
+    return ctx.shape.left.map((line, y) => [
+      paintLine(line, y, props.ink ?? theme.textMuted, 0, now, late, state),
+      paintLine(ctx.shape.right[y], y, props.ink ?? theme.text, ctx.LEFT + GAP, now, late, state),
+    ])
+  })
+
+  const renderLine = (line: string, y: () => number, side: 0 | 1, bold: () => boolean) =>
+    Array.from(line).map((_, i) => {
+      const cell = () => cells()[y()][side][i]
       return (
-        <text fg={shade(inkTinted, theme, n + p + e + b)} attributes={attrs} selectable={false}>
-          {char}
+        <text
+          fg={cell().fg}
+          bg={cell().bg}
+          attributes={bold() ? TextAttributes.BOLD : undefined}
+          selectable={false}
+        >
+          {cell().char}
         </text>
       )
     })
-  }
 
   const mouse = (evt: MouseEvent) => {
     if (!box) return
@@ -919,21 +894,8 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
       <For each={ctx.shape.left}>
         {(line, index) => (
           <box flexDirection="row" gap={1}>
-            <box flexDirection="row">
-              {renderLine(line, index(), props.ink ?? theme.textMuted, !!props.ink, 0, frame(), dusk(), idleState())}
-            </box>
-            <box flexDirection="row">
-              {renderLine(
-                ctx.shape.right[index()],
-                index(),
-                props.ink ?? theme.text,
-                true,
-                ctx.LEFT + GAP,
-                frame(),
-                dusk(),
-                idleState(),
-              )}
-            </box>
+            <box flexDirection="row">{renderLine(line, index, 0, () => !!props.ink)}</box>
+            <box flexDirection="row">{renderLine(ctx.shape.right[index()], index, 1, () => true)}</box>
           </box>
         )}
       </For>
