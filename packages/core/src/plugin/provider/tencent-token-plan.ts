@@ -4,7 +4,7 @@ import { EventV2 } from "../../event"
 import { Integration } from "../../integration"
 import { ProviderV2 } from "../../provider"
 import { TencentTokenPlan } from "../../tencent-token-plan"
-import { define } from "../internal"
+import { define } from "../define"
 
 /**
  * Hides the catalog models a Token Plan key cannot call.

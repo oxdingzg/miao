@@ -3,7 +3,7 @@ export * as PluginInternal from "./internal"
 import { makeLocationNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
-import { Deferred, Effect, Layer, Scope } from "effect"
+import { Deferred, Effect, Layer } from "effect"
 import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"
 import { CommandV2 } from "../command"
@@ -33,32 +33,10 @@ import { ModelsDevPlugin } from "./models-dev"
 import { ProviderPlugins } from "./provider"
 import { SkillPlugin } from "./skill"
 import { VariantPlugin } from "./variant"
+import type { Plugin } from "./define"
 
-export type Requirements =
-  | AgentV2.Service
-  | Catalog.Service
-  | CommandV2.Service
-  | Config.Service
-  | EventV2.Service
-  | FileSystem.Service
-  | FSUtil.Service
-  | Global.Service
-  | HttpClient.HttpClient
-  | Integration.Service
-  | Location.Service
-  | ModelsDev.Service
-  | Npm.Service
-  | Reference.Service
-  | SkillV2.Service
-
-export interface Plugin<R = never> {
-  readonly id: string
-  readonly effect: (context: PluginContext) => Effect.Effect<void, never, R | Scope.Scope>
-}
-
-export function define<R>(plugin: Plugin<R>) {
-  return plugin
-}
+export { define } from "./define"
+export type { Plugin, Requirements } from "./define"
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
