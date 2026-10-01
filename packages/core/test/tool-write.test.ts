@@ -3,6 +3,8 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
+import { Config } from "@miao/core/config"
+import { ConfigLSP } from "@miao/core/config/lsp"
 import { FileMutation } from "@miao/core/file-mutation"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -48,6 +50,20 @@ const reset = () => {
   denyAction = undefined
 }
 
+const config = (lsp: ConfigLSP.Server) =>
+  Layer.succeed(
+    Config.Service,
+    Config.Service.of({
+      entries: () =>
+        Effect.succeed([
+          new Config.Document({
+            type: "document",
+            info: new Config.Info({ lsp: { mock: lsp } }),
+          }),
+        ]),
+    }),
+  )
+
 const filesystem = Layer.effect(
   FSUtil.Service,
   Effect.gen(function* () {
@@ -60,11 +76,24 @@ const filesystem = Layer.effect(
   }),
 ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
 
-const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>) => {
+// `lsp` wires one language server into the Location. Every case that omits it
+// keeps the default empty LSP configuration, where `touchFile` finds no matching
+// server and returns without starting anything.
+const withTool = <A, E, R>(
+  directory: string,
+  body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
+  lsp?: ConfigLSP.Server,
+) => {
   const activeLocation = Layer.succeed(
     Location.Service,
     Location.Service.of(location({ directory: AbsolutePath.make(directory) })),
   )
+  const replacements: LayerNode.Replacements = [
+    [FSUtil.node, filesystem],
+    [Location.node, activeLocation],
+    [PermissionV2.node, permission],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+  ]
   return Effect.gen(function* () {
     return yield* body(yield* ToolRegistry.Service)
   }).pipe(
@@ -77,12 +106,7 @@ const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Inte
           FileMutation.node,
           WriteTool.node,
         ]),
-        [
-          [FSUtil.node, filesystem],
-          [Location.node, activeLocation],
-          [PermissionV2.node, permission],
-          [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-        ],
+        lsp ? replacements.concat([[Config.node, config(lsp)]]) : replacements,
       ),
     ),
   )
@@ -279,6 +303,38 @@ describe("WriteTool", () => {
         Effect.promise(() =>
           Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()]).then(() => undefined),
         ),
+    ),
+  )
+
+  // A server that exits during `initialize` rejects its pending request. That
+  // rejection used to reach the caller as a defect, and the `Effect.ignore` the
+  // write leaf applies to `touchFile` cannot absorb a defect — so the tool
+  // failed after its file had already landed on disk, and the runner failed
+  // every other tool settled alongside it in the same batch.
+  it.live("writes the file when its language server exits before initialize", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const content = "export const a = 1\nexport const b = 2\n"
+          reset()
+          const settled = yield* withTool(
+            tmp.path,
+            (registry) => settleTool(registry, call({ path: "added.ts", content })),
+            new ConfigLSP.Server({
+              command: ["bun", path.resolve(import.meta.dir, "fixture/mock-lsp.ts"), "--exit-before-initialize"],
+              extensions: [".ts"],
+            }),
+          )
+
+          expect(settled.output?.structured).toMatchObject({
+            operation: "write",
+            existed: false,
+            files: [{ status: "added", additions: 2, deletions: 0 }],
+          })
+          expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "added.ts"), "utf8"))).toBe(content)
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
 })
