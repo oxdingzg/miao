@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   Match,
@@ -83,6 +84,7 @@ import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode 
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { createTranscriptWindow } from "../../util/transcript-window"
+import { createDiffContextHighlighter } from "../../util/diff-context-highlight"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
@@ -2583,6 +2585,41 @@ function Execute(props: ToolProps) {
   )
 }
 
+// The diff renderer highlights the visible hunk lines in isolation, so a hunk
+// that opens inside a block comment or multi-line string loses highlighting.
+// Read the file as it is now and highlight against it; the diff waits for that
+// read because its renderer cannot swap highlighters after mounting, and any
+// failure or mismatch falls back to the default highlighter.
+function useDiffHighlighter(input: {
+  patch: () => string
+  filePath: () => string | undefined
+  enabled: () => boolean
+}) {
+  const sdk = useSDK()
+  const [current] = createResource(
+    () => {
+      const file = input.filePath()
+      if (!input.enabled() || !file || !sdk.directory) return undefined
+      const relative = path.relative(sdk.directory, path.resolve(sdk.directory, file))
+      if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined
+      return relative
+    },
+    (relative) =>
+      sdk.client.file
+        .read({ path: relative }, { throwOnError: true })
+        .then((result) => (result.data.type === "text" ? result.data.content : undefined))
+        .catch(() => undefined),
+  )
+  return {
+    ready: () => !current.loading,
+    client: createMemo(() => {
+      const text = current()
+      if (text === undefined) return undefined
+      return createDiffContextHighlighter({ patch: input.patch(), current: text })
+    }),
+  }
+}
+
 export function FileToolResult(props: { summary: string; color?: RGBA; children?: JSX.Element }) {
   return (
     <box paddingLeft={2} flexDirection="row">
@@ -2606,6 +2643,11 @@ function Edit(props: ToolProps) {
   const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
 
   const diffContent = createMemo(() => stringValue(props.metadata.diff) ?? "")
+  const highlighter = useDiffHighlighter({
+    patch: diffContent,
+    filePath: () => stringValue(props.input.filePath),
+    enabled: expanded,
+  })
 
   return (
     <Switch>
@@ -2623,10 +2665,11 @@ function Edit(props: ToolProps) {
             <b>Update</b>({pathFormatter.format(stringValue(props.input.filePath))})
           </InlineTool>
           <FileToolResult summary={fileToolSummary("edit", props.metadata) ?? "Updated file"} color={theme.text}>
-            <Show when={expanded()}>
+            <Show when={expanded() && highlighter.ready()}>
               <diff
                 diff={diffContent()}
                 view="unified"
+                treeSitterClient={highlighter.client()}
                 filetype={ft()}
                 syntaxStyle={syntax()}
                 showLineNumbers={true}
@@ -2683,28 +2726,32 @@ function ApplyPatch(props: ToolProps) {
   })
 
   function Diff(p: { diff: string; filePath: string }) {
+    const highlighter = useDiffHighlighter({ patch: () => p.diff, filePath: () => p.filePath, enabled: () => true })
     return (
-      <box paddingLeft={1}>
-        <diff
-          diff={p.diff}
-          view={view()}
-          filetype={filetype(p.filePath)}
-          syntaxStyle={syntax()}
-          showLineNumbers={true}
-          width="100%"
-          wrapMode={ctx.diffWrapMode()}
-          fg={theme.text}
-          addedBg={theme.diffAddedBg}
-          removedBg={theme.diffRemovedBg}
-          contextBg={theme.background}
-          addedSignColor={theme.diffHighlightAdded}
-          removedSignColor={theme.diffHighlightRemoved}
-          lineNumberFg={theme.diffLineNumber}
-          lineNumberBg={theme.background}
-          addedLineNumberBg={theme.diffAddedLineNumberBg}
-          removedLineNumberBg={theme.diffRemovedLineNumberBg}
-        />
-      </box>
+      <Show when={highlighter.ready()}>
+        <box paddingLeft={1}>
+          <diff
+            diff={p.diff}
+            view={view()}
+            treeSitterClient={highlighter.client()}
+            filetype={filetype(p.filePath)}
+            syntaxStyle={syntax()}
+            showLineNumbers={true}
+            width="100%"
+            wrapMode={ctx.diffWrapMode()}
+            fg={theme.text}
+            addedBg={theme.diffAddedBg}
+            removedBg={theme.diffRemovedBg}
+            contextBg={theme.background}
+            addedSignColor={theme.diffHighlightAdded}
+            removedSignColor={theme.diffHighlightRemoved}
+            lineNumberFg={theme.diffLineNumber}
+            lineNumberBg={theme.background}
+            addedLineNumberBg={theme.diffAddedLineNumberBg}
+            removedLineNumberBg={theme.diffRemovedLineNumberBg}
+          />
+        </box>
+      </Show>
     )
   }
 
