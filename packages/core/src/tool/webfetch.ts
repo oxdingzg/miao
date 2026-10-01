@@ -4,7 +4,6 @@ import { ToolFailure } from "@miao/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { Parser } from "htmlparser2"
-import TurndownService from "turndown"
 import { makeLocationNode } from "../effect/app-node"
 import { LayerNodePlatform } from "../effect/app-node-platform"
 import { PermissionV2 } from "../permission"
@@ -108,7 +107,7 @@ const isTextualMime = (mime: string) =>
   mime.endsWith("+xml") ||
   mime === "application/javascript" ||
   mime === "application/x-javascript"
-const convert = (content: string, contentType: string, format: Format) => {
+const convert = async (content: string, contentType: string, format: Format) => {
   if (!contentType.includes("text/html")) return content
   if (format === "markdown") return convertHTMLToMarkdown(content)
   if (format === "text") return extractTextFromHTML(content)
@@ -163,7 +162,7 @@ const layer = Layer.effectDiscard(
                 }),
               )
               const content = new TextDecoder().decode(body)
-              const output = yield* Effect.try({
+              const output = yield* Effect.tryPromise({
                 try: () => convert(content, contentType, input.format),
                 catch: (error) => error,
               })
@@ -205,7 +204,10 @@ export function extractTextFromHTML(html: string) {
   return text.trim()
 }
 
-export function convertHTMLToMarkdown(html: string) {
+export async function convertHTMLToMarkdown(html: string) {
+  // turndown carries a DOM implementation (domino); load it only once a fetch
+  // actually converts HTML instead of with every tool registry.
+  const { default: TurndownService } = await import("turndown")
   const turndown = new TurndownService({
     headingStyle: "atx",
     hr: "---",
