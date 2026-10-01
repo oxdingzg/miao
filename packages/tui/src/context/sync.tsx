@@ -700,15 +700,33 @@ export const {
     const exit = useExit()
     const args = useArgs()
 
+    // `provider.list` carries the whole models.dev catalog (several MB) while
+    // startup only needs the connected providers from `config.providers`, so the
+    // catalog loads when something like the connect dialog first asks for it.
+    let providerCatalog: Promise<void> | undefined
+    function loadProviderCatalog() {
+      providerCatalog ??= sdk.client.provider
+        .list({ workspace: project.workspace.current() }, { throwOnError: true })
+        .then((x) => setStore("provider_next", reconcile(x.data)))
+        .catch((error) => {
+          providerCatalog = undefined
+          throw error
+        })
+      return providerCatalog
+    }
+
     async function bootstrap(input: { fatal?: boolean } = {}) {
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
+      // A loaded catalog may be stale after a reconnect or workspace switch;
+      // refresh it in the background instead of fetching one nobody asked for.
+      const reloadProviderCatalog = providerCatalog !== undefined
+      providerCatalog = undefined
       const projectPromise = project.sync()
       const sessionListPromise = projectPromise.then(() => listSessions())
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
-      const providerListPromise = sdk.client.provider.list({ workspace }, { throwOnError: true })
       const capabilitiesPromise = sdk.client.experimental.capabilities
         .get({ workspace }, { throwOnError: true })
         .then((x) => x.data)
@@ -721,7 +739,6 @@ export const {
       const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
       await Promise.all([
         providersPromise,
-        providerListPromise,
         capabilitiesPromise,
         agentsPromise,
         configPromise,
@@ -730,7 +747,6 @@ export const {
       ])
         .then(async () => {
           const providersResponse = providersPromise.then((x) => x.data!)
-          const providerListResponse = providerListPromise.then((x) => x.data!)
           const capabilitiesResponse = capabilitiesPromise
           const consoleStateResponse = consoleStatePromise
           const agentsResponse = agentsPromise.then((x) => x.data ?? [])
@@ -739,7 +755,6 @@ export const {
 
           return Promise.all([
             providersResponse,
-            providerListResponse,
             capabilitiesResponse,
             consoleStateResponse,
             agentsResponse,
@@ -747,17 +762,15 @@ export const {
             ...(sessionListResponse ? [sessionListResponse] : []),
           ]).then((responses) => {
             const providers = responses[0]
-            const providerList = responses[1]
-            const capabilities = responses[2]
-            const consoleState = responses[3]
-            const agents = responses[4]
-            const config = responses[5]
-            const sessions = responses[6]
+            const capabilities = responses[1]
+            const consoleState = responses[2]
+            const agents = responses[3]
+            const config = responses[4]
+            const sessions = responses[5]
 
             batch(() => {
               setStore("provider", reconcile(providers.providers))
               setStore("provider_default", reconcile(providers.default))
-              setStore("provider_next", reconcile(providerList))
               setStore("capabilities", "experimentalBackgroundSubagents", capabilities?.backgroundSubagents === true)
               setStore("console_state", reconcile(consoleState))
               setStore("agent", reconcile(agents))
@@ -790,6 +803,13 @@ export const {
               setStore("session_status", reconcile(x.data ?? {}))
             }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
+            ...(reloadProviderCatalog
+              ? [
+                  loadProviderCatalog().catch((error) =>
+                    console.error("provider catalog refresh failed", { error: errorMessage(error) }),
+                  ),
+                ]
+              : []),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
           ]).then(() => {
@@ -1090,6 +1110,7 @@ export const {
         },
       },
       bootstrap,
+      loadProviderCatalog,
       dismissQuestion(sessionID: string, requestID: string) {
         const requests = store.question[sessionID]
         if (!requests) return
