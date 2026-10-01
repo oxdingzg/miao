@@ -16,4 +16,5 @@ bun script/set-version.ts "$VERSION"
 git add -u
 git commit -m "chore: release $VERSION"
 git push
-gh workflow run release.yml --ref main
+# origin points at upstream opencode, so name the fork explicitly.
+gh workflow run release.yml --ref main --repo oxdingzg/miao
