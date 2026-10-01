@@ -196,7 +196,6 @@ export const TuiThreadCommand = cmd({
     const unguard =
       process.platform === "win32" ? (await import("@miao/tui/terminal-win32")).win32InstallCtrlCGuard() : undefined
     try {
-      const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")
         process.exitCode = 1
@@ -236,6 +235,10 @@ export const TuiThreadCommand = cmd({
       }
 
       const prompt = await input(args.prompt)
+      // Import the TUI config graph only after the worker is spawned: evaluating it
+      // costs hundreds of milliseconds, and the worker can load the server graph
+      // on its own thread meanwhile.
+      const { TuiConfig } = await import("@/config/tui")
       const config = await TuiConfig.get()
 
       const network = resolveNetworkOptionsNoConfig(args)
