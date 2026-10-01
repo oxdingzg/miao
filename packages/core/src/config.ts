@@ -6,6 +6,7 @@ import { type ParseError, parse } from "jsonc-parser"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Permission } from "@miao/schema/permission"
 import { FSUtil } from "./fs-util"
+import { Flag } from "./flag/flag"
 import { Global } from "./global"
 import { Location } from "./location"
 import { Policy } from "./policy"
@@ -162,7 +163,10 @@ const layer = Layer.effect(
     const loadFile = Effect.fnUntraced(function* (filepath: string) {
       const text = yield* fs.readFileStringSafe(filepath)
       if (!text) return
+      return parseDocument(text, filepath)
+    })
 
+    const parseDocument = (text: string, filepath?: string) => {
       const errors: ParseError[] = []
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
       if (errors.length) return
@@ -174,7 +178,7 @@ const layer = Layer.effect(
       )
       if (!info) return
       return new Document({ type: "document", path: filepath, info })
-    })
+    }
 
     const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
       return [
@@ -189,21 +193,30 @@ const layer = Layer.effect(
     const locationIsGlobal = path.resolve(location.directory) === path.resolve(global.config)
     // Read configuration once when this location opens. Later calls reuse these
     // values until the location is reopened.
-    const discovered = locationIsGlobal
-      ? []
-      : yield* fs
-          .up({
-            targets: [".miao", ".opencode", ...names.toReversed()],
-            start: location.directory,
-            stop: location.project.directory,
-          })
-          .pipe(Effect.orDie)
+    // Environment overrides, in the order V1 applies them: MIAO_CONFIG after the
+    // global config, MIAO_CONFIG_DIR as the last config directory, and
+    // MIAO_CONFIG_CONTENT above everything. MIAO_DISABLE_PROJECT_CONFIG skips the
+    // project's files and directories.
+    const customFile = process.env.MIAO_CONFIG
+    const customDirectory = process.env.MIAO_CONFIG_DIR
+    const customContent = process.env.MIAO_CONFIG_CONTENT
+    const discovered =
+      locationIsGlobal || Flag.MIAO_DISABLE_PROJECT_CONFIG
+        ? []
+        : yield* fs
+            .up({
+              targets: [".miao", ".opencode", ...names.toReversed()],
+              start: location.directory,
+              stop: location.project.directory,
+            })
+            .pipe(Effect.orDie)
     const directories = [
       globalDirectory,
       ...discovered
         .filter((item) => [".miao", ".opencode"].includes(path.basename(item)))
         .toReversed()
         .map((directory) => AbsolutePath.make(directory)),
+      ...(customDirectory ? [AbsolutePath.make(path.resolve(customDirectory))] : []),
     ]
     // A config closer to the opened directory should win over one higher up.
     // Search starts nearby, so reverse the results before applying them.
@@ -215,7 +228,15 @@ const layer = Layer.effect(
     const supplementary = yield* Effect.forEach(directories, loadDirectory).pipe(Effect.orDie)
     // Apply general settings first and more specific settings last:
     // global config, project files, then `.miao` files.
-    const configs = [...(supplementary[0] ?? []), ...direct, ...supplementary.slice(1).flat()]
+    const custom = customFile ? yield* loadFile(path.resolve(customFile)).pipe(Effect.orDie) : undefined
+    const content = customContent ? parseDocument(customContent) : undefined
+    const configs = [
+      ...(supplementary[0] ?? []),
+      ...(custom ? [custom] : []),
+      ...direct,
+      ...supplementary.slice(1).flat(),
+      ...(content ? [content] : []),
+    ]
     // Rules use the opposite order so a user-global rule can override a
     // repository rule. Statement order inside each file stays unchanged.
     yield* policy.load(
