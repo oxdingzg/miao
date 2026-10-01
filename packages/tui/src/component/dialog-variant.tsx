@@ -30,6 +30,7 @@ export function DialogVariant() {
 
   return (
     <DialogSelect<string>
+      compact
       options={options()}
       title={"Select variant"}
       current={local.model.variant.selected()}

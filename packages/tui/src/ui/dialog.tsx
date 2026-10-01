@@ -11,6 +11,7 @@ import { useClipboard } from "../context/clipboard"
 export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge"
+    placement?: "center" | "bottom"
     onClose: () => void
   }>,
 ) {
@@ -39,13 +40,17 @@ export function Dialog(
       }}
       width={dimensions().width}
       height={dimensions().height}
-      alignItems="center"
+      alignItems={props.placement === "bottom" ? "flex-start" : "center"}
+      justifyContent={props.placement === "bottom" ? "flex-end" : "flex-start"}
+      flexDirection="column"
       position="absolute"
       zIndex={3000}
-      paddingTop={dimensions().height / 4}
+      paddingTop={props.placement === "bottom" ? 0 : Math.floor(dimensions().height / 4)}
+      paddingBottom={props.placement === "bottom" ? Math.min(7, Math.floor(dimensions().height / 4)) : 0}
+      paddingLeft={props.placement === "bottom" ? 1 : 0}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromValues(theme.background.r, theme.background.g, theme.background.b, 1)}
+      backgroundColor={RGBA.fromInts(0, 0, 0, 0)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -58,6 +63,8 @@ export function Dialog(
         width={width()}
         maxWidth={dimensions().width - 2}
         backgroundColor={theme.backgroundPanel}
+        border={props.placement === "bottom" ? true : undefined}
+        borderColor={theme.border}
         paddingTop={1}
       >
         {props.children}
@@ -72,6 +79,7 @@ function init() {
       element: JSX.Element
       onClose?: () => void
     }[],
+    placement: "center" as "center" | "bottom",
     size: "medium" as "medium" | "large" | "xlarge",
   })
 
@@ -142,6 +150,7 @@ function init() {
         if (item.onClose) item.onClose()
       }
       batch(() => {
+        setStore("placement", "center")
         setStore("size", "medium")
         setStore("stack", [])
       })
@@ -155,6 +164,7 @@ function init() {
       for (const item of store.stack) {
         if (item.onClose) item.onClose()
       }
+      setStore("placement", "center")
       setStore("size", "medium")
       setStore("stack", [
         {
@@ -168,6 +178,12 @@ function init() {
     },
     get size() {
       return store.size
+    },
+    get placement() {
+      return store.placement
+    },
+    setPlacement(placement: "center" | "bottom") {
+      setStore("placement", placement)
     },
     setSize(size: "medium" | "large" | "xlarge") {
       setStore("size", size)
@@ -213,7 +229,7 @@ export function DialogProvider(props: ParentProps) {
         onMouseUp={!Flag.MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size}>
+          <Dialog onClose={() => value.clear()} size={value.size} placement={value.placement}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

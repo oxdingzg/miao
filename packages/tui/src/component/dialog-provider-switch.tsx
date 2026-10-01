@@ -29,6 +29,7 @@ export function DialogProviderSwitch() {
 
   return (
     <DialogSelect
+      compact
       title="Switch provider"
       options={options()}
       current={local.model.current()?.providerID}

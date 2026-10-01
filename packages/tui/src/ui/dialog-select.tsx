@@ -22,6 +22,7 @@ import { formatKeyBindings, useBindings, useKeymapSelector } from "../keymap"
 
 export interface DialogSelectProps<T> {
   title: string
+  compact?: boolean
   titleView?: JSX.Element
   placeholder?: string
   footer?: JSX.Element
@@ -83,6 +84,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   type VisibleAction = (Action & { label: string }) | FooterHint
 
   const dialog = useDialog()
+  createEffect(() => dialog.setPlacement(props.compact ? "bottom" : "center"))
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -210,7 +212,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   const dimensions = useTerminalDimensions()
-  const height = createMemo(() => Math.min(rows(), Math.floor(dimensions().height / 2) - 6))
+  const height = createMemo(() =>
+    Math.max(
+      1,
+      Math.min(rows(), props.compact ? 8 : Infinity, Math.floor(dimensions().height / 2) - (props.compact ? 9 : 6)),
+    ),
+  )
 
   const selected = createMemo(() => flat()[store.selected])
 
@@ -308,8 +315,15 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     scrollToSelection(center)
   }
 
-  function scrollToSelection(center: boolean) {
-    if (!scroll) return
+  function scrollToSelection(center: boolean, attempts = 10) {
+    if (!scroll || scroll.isDestroyed) return
+    // A selector opened from a timer can run before its first layout pass, when
+    // every row still reports y=0 in a zero-height viewport and scrolling is a
+    // no-op. Retry on the next frame until layout lands.
+    if (scroll.height === 0) {
+      if (attempts > 0) requestAnimationFrame(() => scrollToSelection(center, attempts - 1))
+      return
+    }
     let remaining = store.selected
     let index = 0
     // Locate the row by position because a unique renderable ID cannot currently be ensured.

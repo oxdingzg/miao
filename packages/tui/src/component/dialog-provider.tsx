@@ -95,9 +95,7 @@ export function createDialogProviderOptions() {
     const value = await DialogPrompt.show(dialog, "Other", {
       placeholder: "Provider id",
       description: () => (
-        <text fg={theme.textMuted}>
-          This only stores a credential. Configure the provider in miao.json to use it.
-        </text>
+        <text fg={theme.textMuted}>This only stores a credential. Configure the provider in miao.json to use it.</text>
       ),
     })
     if (value === null) return
@@ -227,7 +225,7 @@ export function createDialogProviderOptions() {
 
 export function DialogProvider() {
   const options = createDialogProviderOptions()
-  return <DialogSelect title="Connect a provider" options={options()} />
+  return <DialogSelect compact title="Connect a provider" options={options()} />
 }
 
 interface AutoMethodProps {

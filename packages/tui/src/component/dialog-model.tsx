@@ -157,6 +157,7 @@ export function DialogModel(props: { providerID?: string }) {
 
   return (
     <DialogSelect<ReturnType<typeof options>[number]["value"]>
+      compact
       options={options()}
       actions={[
         {
