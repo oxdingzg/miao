@@ -36,6 +36,7 @@ const BODY_LIMIT = 16_384
 const MAX_RETRIES = 2
 const BASE_DELAY_MS = 500
 const MAX_DELAY_MS = 10_000
+const MIN_RETRY_AFTER_MS = 250
 const REDACTED = "<redacted>"
 
 // One source of truth for what counts as a sensitive name across headers,
@@ -365,7 +366,10 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
 }
 
 const retryDelay = (error: LLMError, attempt: number) => {
-  if (error.retryAfterMs !== undefined) return Effect.succeed(Math.min(error.retryAfterMs, MAX_DELAY_MS))
+  // A provider's retry hint is honoured but floored: `Retry-After: 0` from an
+  // overloaded backend would otherwise retry back to back with no pause at all.
+  if (error.retryAfterMs !== undefined)
+    return Effect.succeed(Math.min(Math.max(error.retryAfterMs, MIN_RETRY_AFTER_MS), MAX_DELAY_MS))
   return Random.nextBetween(
     Math.min(BASE_DELAY_MS * 2 ** attempt * 0.8, MAX_DELAY_MS),
     Math.min(BASE_DELAY_MS * 2 ** attempt * 1.2, MAX_DELAY_MS),
