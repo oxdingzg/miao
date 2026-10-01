@@ -101,7 +101,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
 
   meta = {
     description = "The open source coding agent";
-    homepage = "https://opencode.ai";
+    homepage = "https://mtty.dev/miao/";
     license = lib.licenses.mit;
     mainProgram = "miao";
     inherit (node_modules.meta) platforms;
