@@ -2186,12 +2186,13 @@ export class Command extends HeyApiClient {
   /**
    * List commands
    *
-   * Get a list of all available commands in the OpenCode system.
+   * Get a list of all available commands in the OpenCode system. Pass `template=false` to omit template bodies (returned as null).
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
       workspace?: string
+      template?: "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2202,6 +2203,7 @@ export class Command extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "template" },
           ],
         },
       ],

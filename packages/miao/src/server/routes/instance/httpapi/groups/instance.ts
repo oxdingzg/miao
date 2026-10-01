@@ -14,6 +14,7 @@ import {
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { QueryBoolean } from "./query"
 
 const PathInfo = Schema.Struct({
   home: Schema.String,
@@ -27,6 +28,13 @@ export const VcsDiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   mode: Vcs.Mode,
   context: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
+})
+
+export const CommandListQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  // `template=false` returns `template: null`: skill bodies make the full
+  // listing over a megabyte, and MCP templates resolve a prompt per request.
+  template: Schema.optional(QueryBoolean),
 })
 
 export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsApplyError")(
@@ -137,13 +145,14 @@ export const InstanceApi = HttpApi.make("instance")
           }),
         ),
         HttpApiEndpoint.get("command", InstancePaths.command, {
-          query: WorkspaceRoutingQuery,
+          query: CommandListQuery,
           success: described(Schema.Array(Command.Info), "List of commands"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "command.list",
             summary: "List commands",
-            description: "Get a list of all available commands in the OpenCode system.",
+            description:
+              "Get a list of all available commands in the OpenCode system. Pass `template=false` to omit template bodies (returned as null).",
           }),
         ),
         HttpApiEndpoint.get("agent", InstancePaths.agent, {

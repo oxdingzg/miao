@@ -7,6 +7,7 @@ import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Effect } from "effect"
+import { pick } from "remeda"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
@@ -73,8 +74,15 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       )
     })
 
-    const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
-      return yield* command.list()
+    const getCommand = Effect.fn("InstanceHttpApi.command")(function* (ctx: { query: { template?: boolean } }) {
+      const list = yield* command.list()
+      if (ctx.query.template !== false) return list
+      // Pick fields instead of spreading: a spread would evaluate the lazy
+      // `template` getters, which read skill bodies and resolve MCP prompts.
+      return list.map((item) => ({
+        ...pick(item, ["name", "description", "agent", "model", "source", "subtask", "hints"]),
+        template: null,
+      }))
     })
 
     const getAgent = Effect.fn("InstanceHttpApi.agent")(function* () {
