@@ -8,7 +8,7 @@ import { cacheTrend } from "../../util/cache-trend"
 import { cacheTtl } from "../../util/cache-ttl"
 import { Locale } from "../../util/locale"
 import { turnSpeed } from "../../util/turn-speed"
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
 
@@ -91,12 +91,21 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   })
 
   // No provider reports an expiry, so the age is counted locally and the row has
-  // to tick for it to stay true. This is the sidebar's only timer, and it costs
-  // one signal write per second.
+  // to tick for it to stay true. A tick is not one signal write: it repaints the
+  // whole screen, transcript included, which on a long session idled at 15-25%
+  // CPU for hours. So the clock runs only while the cache can still be saved;
+  // once stale the row reads "expired" and the clock stops until a new turn
+  // touches the cache, which makes the age negative against the frozen clock
+  // and therefore fresh, restarting it.
   const [now, setNow] = createSignal(Date.now())
-  const timer = setInterval(() => setNow(Date.now()), 1000)
-  onCleanup(() => clearInterval(timer))
   const ttl = createMemo(() => cacheTtl(assistants(), now()))
+  const ticking = createMemo(() => ttl()?.state === "fresh" || ttl()?.state === "aging")
+  createEffect(() => {
+    if (!ticking()) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   // The hit rate alone says nothing about whether caching is still working, so
   // it carries the direction the recent turns moved in.
@@ -144,7 +153,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <Show when={ttl()}>
         {(cache) => (
           <text fg={theme()[TTL_COLOR[cache().state]]}>
-            cache {Locale.duration(cache().elapsed)} / {Locale.duration(cache().ttl)}
+            {cache().state === "stale"
+              ? "cache expired"
+              : `cache ${Locale.duration(cache().elapsed)} / ${Locale.duration(cache().ttl)}`}
           </text>
         )}
       </Show>
