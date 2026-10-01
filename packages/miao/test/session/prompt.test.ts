@@ -1022,9 +1022,12 @@ noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>
     const sessions = yield* Session.Service
     const session = yield* sessions.create({ title: "Prompt tools" })
 
+    // Pin a model: this layer configures no provider, so resolving a default
+    // model fails with "No providers are available" when the file runs alone.
     yield* prompt.prompt({
       sessionID: session.id,
       agent: "build",
+      model: ref,
       noReply: true,
       tools: { bash: false },
       parts: [{ type: "text", text: "first" }],
