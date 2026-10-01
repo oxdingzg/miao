@@ -16,7 +16,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { monitorEventLoopDelay } from "perf_hooks"
-import { Database } from "@miao/core/database/database"
+import { DatabaseFile } from "@miao/core/database/file"
 import { Global } from "@miao/core/global"
 import { InstallationChannel, InstallationVersion } from "@miao/core/installation/version"
 
@@ -88,7 +88,7 @@ function header() {
     platform: process.platform,
     arch: process.arch,
     cpus: os.cpus().length,
-    db: Database.path(),
+    db: DatabaseFile.path(),
   }
 }
 
@@ -98,7 +98,7 @@ function sample() {
   // Ticks start at 1, so `=== 1` puts thread/swap in the very first sample
   // rather than making the report wait out a full heavy interval.
   const heavy = ticks === 1 || ticks % HEAVY_EVERY === 0
-  const db = Database.path()
+  const db = DatabaseFile.path()
   const ms = (nanos: number) => Math.round(nanos / 1e5) / 10
 
   return {

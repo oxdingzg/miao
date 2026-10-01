@@ -3,11 +3,8 @@ export * as Database from "./database"
 import { EffectDrizzleSqlite } from "@miao/effect-drizzle-sqlite"
 import { layer as sqliteLayer } from "#sqlite"
 import { Context, Effect, Layer } from "effect"
-import { Global } from "../global"
-import { Flag } from "../flag/flag"
-import { isAbsolute, join } from "path"
 import { DatabaseMigration } from "./migration"
-import { InstallationChannel } from "../installation/version"
+import { DatabaseFile } from "./file"
 import { makeGlobalNode } from "../effect/app-node"
 
 const makeDatabase = EffectDrizzleSqlite.makeWithDefaults()
@@ -40,18 +37,6 @@ export function layerFromPath(filename: string) {
   return layer.pipe(Layer.provide(sqliteLayer({ filename })))
 }
 
-export function path() {
-  if (Flag.MIAO_DB) {
-    if (Flag.MIAO_DB === ":memory:" || isAbsolute(Flag.MIAO_DB)) return Flag.MIAO_DB
-    return join(Global.Path.data, Flag.MIAO_DB)
-  }
-  if (
-    ["latest", "beta", "prod"].includes(InstallationChannel) ||
-    process.env.MIAO_DISABLE_CHANNEL_DB === "1" ||
-    process.env.MIAO_DISABLE_CHANNEL_DB === "true"
-  )
-    return join(Global.Path.data, "miao.db")
-  return join(Global.Path.data, `miao-${InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`)
-}
+export const path = DatabaseFile.path
 
 export const node = makeGlobalNode({ service: Service, layer: layerFromPath(path()), deps: [] })
