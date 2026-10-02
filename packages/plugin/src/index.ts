@@ -71,6 +71,12 @@ export type Config = Omit<SDKConfig, "plugin"> & {
   plugin?: Array<string | [string, PluginOptions]>
 }
 
+/**
+ * @deprecated V1 plugin entry point. V2 sessions (the default runtime) do not load
+ * V1 plugins, so none of their `Hooks` run there; configuring one logs a one-time
+ * warning. Write a V2 plugin with `define` from `@opencode-ai/plugin/v2/promise` or
+ * `@opencode-ai/plugin/v2/effect` instead.
+ */
 export type Plugin = (input: PluginInput, options?: PluginOptions) => Promise<Hooks>
 
 export type PluginModule = {
@@ -219,6 +225,20 @@ export type ProviderHook = {
 /** @deprecated Use AuthOAuthResult instead. */
 export type AuthOuathResult = AuthOAuthResult
 
+/**
+ * @deprecated V1 hooks. Third-party hooks are not triggered by V2 sessions.
+ *
+ * V2 equivalents (`PluginContext` from `@opencode-ai/plugin/v2/*`):
+ * - `tool.execute.before` / `tool.execute.after` / `tool.definition` -> `ctx.tool.before` / `ctx.tool.after` / `ctx.tool.definition`
+ * - `tool` -> `ctx.tool.register`, or a `{tool,tools}/*.ts` file in a config directory
+ * - `auth` / `provider` -> `ctx.integration` and `ctx.catalog`
+ * - `config` -> the `agent`, `command`, `reference` and `skill` transforms
+ *
+ * No V2 equivalent (deprecated without replacement): `chat.message`, `chat.params`,
+ * `chat.headers`, `permission.ask`, `command.execute.before`, `shell.env`,
+ * `experimental.*`, `event` (V2 publishes `session.next.*` events instead of
+ * `message.part.updated`) and `dispose` (use the plugin Scope).
+ */
 export interface Hooks {
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>

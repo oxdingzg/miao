@@ -46,6 +46,8 @@ The registry has no `PermissionV2.Service` dependency and performs no execution 
 
 MCP tools assert their registered name (`mcp__<server>__<tool>`) before calling the server. They also carry the V1 name (`<server>_<tool>`) as a permission alias, so existing rules for it still hide, allow, or deny the tool.
 
+Custom (`{tool,tools}/*.ts`) and plugin-provided tools assert their registered name before running, and map the definition's `context.ask(...)` to the same `PermissionV2.assert`.
+
 Definition filtering is catalog visibility, not execution authorization. A call still executes the captured leaf policy if it reaches settlement.
 
 ## Output
@@ -56,6 +58,6 @@ Producer capture limits are separate. For example, Bash keeps `AppProcess.maxOut
 
 ## Current Gaps
 
-- Plugin boot has not been redesigned to register canonical tools through `Tools.Service`; do not redesign it as part of leaf migrations.
+- Plugins reach tools only through `ToolPlugins` (`plugins.ts`): `before`/`after`/`definition` hooks and provided `tool({ ... })` definitions, which `custom.ts` turns into canonical tools. Keep `ToolPlugins` dependency-free so the plugin host never depends on the registry.
 - MCP and future Session-scoped registrations still need an explicit canonical registration design.
 - The public Session result shape currently exposes managed `outputPaths`; full storage encapsulation requires a future opaque managed-output reference design.

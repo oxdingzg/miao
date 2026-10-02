@@ -81,6 +81,41 @@ yield *
 
 Hooks run sequentially in registration order. Later hooks observe mutations made by earlier hooks.
 
+## Tool Hooks
+
+`ctx.tool` is the V2 replacement for the legacy `tool.execute.before`, `tool.execute.after`, `tool.definition` and `tool` entries of `Hooks`:
+
+```ts
+// Rewrite or reject a call. Failing (or throwing) rejects it with a model-visible error.
+yield *
+  ctx.tool.before((event) => {
+    if (event.tool === "read" && String(event.args.filePath).endsWith(".env"))
+      return Effect.fail(new Error("Reading .env files is not allowed"))
+    event.args = { ...event.args }
+  })
+
+// Rewrite the model-facing text (`output`) or structured result (`metadata`) of a successful call.
+yield *
+  ctx.tool.after((event) => {
+    event.output = event.output.replaceAll(process.env.SECRET ?? "", "[redacted]")
+  })
+
+// Rewrite the description or input JSON Schema the model sees.
+yield *
+  ctx.tool.definition((event) => {
+    if (event.tool === "bash") event.description += "\nNever run `rm -rf /`."
+  })
+
+// Register `tool({ ... })` definitions from `@opencode-ai/plugin/tool`.
+yield * ctx.tool.register({ "my-tool": myTool })
+```
+
+Events carry `tool`, `sessionID`, `callID` and `agent`. A failing `before`/`after` hook settles the call as a tool error; it never fails the session. A failing `definition` hook is logged and skipped. Registered tools go through the same permission checks as built-ins: every call asks `PermissionV2` under the tool name, and `context.ask(...)` inside the tool maps to the same check.
+
+## Legacy `Hooks` Plugins
+
+Plugins written against the V1 `Hooks` API (a function returning hooks, exported from `@opencode-ai/plugin`) are deprecated. V2 sessions do not load them and none of their hooks run; configuring one logs a single warning. V2 supports the domains listed above (`agent`, `aisdk`, `catalog`, `command`, `integration`, `reference`, `skill`) plus `tool`. Custom tool files in `{tool,tools}/*.{js,ts}` keep working unchanged.
+
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:

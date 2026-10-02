@@ -167,12 +167,30 @@ V2 插件上下文（`core/src/plugin/host.ts:28-218`）只有 `agent`、`aisdk`
 | `chat.headers` | `session/llm/request.ts:135` | 只在 `runner/llm.ts:372-380` 硬编码了 `session-id`（b70bbcb44） | 内置实现方有 codex（originator、UA、title 回落标记，`plugin/openai/codex.ts:559-567`）和 copilot（`X-GitHub-Api-Version`、`X-Interaction-Id`、anthropic-beta，`copilot.ts:360-372`）：迁成 V2 provider plugin 的请求头选项，S。V2 请求现在是否已带 originator【未核实】（`core/src/plugin/provider/openai.ts:271` 写的是 `"opencode"`） |
 | `chat.params` | `request.ts:115` | 缺失 | 内置只有 codex（去掉 `maxOutputTokens`）和 cerebras：S |
 | `chat.message`、`experimental.chat.system/messages.transform`、`experimental.session.compacting`、`compaction.autocontinue`、`text.complete`、`command.execute.before` | `prompt.ts`、`compaction.ts`、`processor.ts`、`agent.ts:382` | 缺失 | 内置插件都没用到。要么在 V2 插件 API 里正式设计 transform 钩子（L），要么宣布废弃（S）。**需决策（§5-2）** |
-| `tool.execute.before/after`、`tool.definition` | `session/tools.ts:107-421`、`tool/registry.ts:318` | 缺失 | 在 V2 `ToolRegistry.settle` 前后加钩子：M |
+| `tool.execute.before/after`、`tool.definition` | `session/tools.ts:107-421`、`tool/registry.ts:318` | **已补（P1-C）**：`ctx.tool.before/after/definition`（`core/src/tool/plugins.ts`，在 `ToolRegistry` settle 前后、materialize 时触发） | before 可改参数或抛错拒绝，after 可改输出；钩子出错只让该次调用变成工具错误，不让会话失败 |
 | `shell.env` | V1 bash、`!cmd`、PTY | PTY 已支持；V2 bash 缺失（`core/src/tool/bash.ts:133` 有 TODO） | S |
-| 插件 `tool` 与 `{tool,tools}/*.ts` 自定义工具 | `tool/registry.ts:181-202` | 缺失（`specs/v2/tools.md:184` 标为 pending） | M。本仓库的 `.miao/tool/github-pr-search.ts`、`github-triage.ts` 在 V2 下就没有加载 |
+| 插件 `tool` 与 `{tool,tools}/*.ts` 自定义工具 | `tool/registry.ts:181-202` | **已补（P1-C）**：`core/src/tool/custom.ts` 按 V1 规则加载，插件用 `ctx.tool.register` 提供；每次调用先走 PermissionV2（动作名 = 工具名），首次 materialize 时才导入 | 本仓库 `.miao/tool/github-pr-search.ts`、`github-triage.ts` 已在 V2 下加载（`core/test/tool-custom.test.ts`） |
 | `event` | `plugin/index.ts:260` | 能收到 V2 事件，但类型是 `session.next.*`，没有 `message.part.updated` | 语义变化，写进变更说明即可 |
 | `permission.ask` | 声明了但从未触发（V1 也没有） | — | 直接删 |
-| 旧式插件加载（函数返回 `Hooks`） | `project/bootstrap.ts:38` | V2 loader 只接受 `{id, effect\|setup}` 形状 | 见决策 §5-2 |
+| 旧式插件加载（函数返回 `Hooks`） | `project/bootstrap.ts:38` | V2 loader 只接受 `{id, effect\|setup}` 形状 | 按决策 2 废弃：V2 不加载，配置时记一次 warning（`config/plugin/external.ts`），`@opencode-ai/plugin` 的 `Plugin`/`Hooks` 标 `@deprecated` |
+
+**V2 支持的插件钩子**（决策 2 落地后）：`agent`、`catalog`、`command`、`integration`、`reference`、`skill` 的
+transform / reload，`aisdk.sdk` / `aisdk.language`，以及 `tool.before` / `tool.after` / `tool.definition` / `tool.register`。
+旧式 `Hooks` 里其余的第三方钩子在 V2 下不触发，视为废弃；内置插件用到的部分迁移情况见下。
+
+内置插件（`miao/src/plugin/index.ts` 的 `internalPlugins`）用到的 V1 钩子与去向：
+
+| 内置插件 | V1 钩子 | V2 去向 |
+|---|---|---|
+| codex（openai） | `auth`、`provider`、`chat.headers`、`chat.params` | ChatGPT OAuth 与模型已在 `core/src/plugin/provider/openai.ts`（V2 integration）；`chat.*` 由 P1-D 迁进 provider |
+| copilot | `auth`、`provider`、`chat.headers`、`chat.params`、`experimental.provider.small_model` | 模型/SDK 在 `provider/github-copilot.ts`；但 V2 integration 没有 Copilot 的 OAuth 登录方法（只有 openai、opencode、tencent-token-plan 注册了 OAuth），属决策 9 / P1-D；`chat.*` 由 P1-D 负责；`small_model` 只用于标题生成，随 P1「标题生成」一起做 |
+| cerebras | `chat.params` | P1-D |
+| azure、cloudflare（两个）、snowflake-cortex、xai、gitlab（npm） | `auth`、`provider` | V2 已有同名 provider 插件（模型/SDK）；登录依赖 models-dev 的 env/key 方法，V1 `auth` 钩子里的自定义提示与 OAuth 是否齐全【未核实】，属 provider 范围，本任务未改 |
+| modal、digitalocean、poe（npm） | `auth`、`provider` | V2 **没有**对应 provider 插件，属 provider 范围（P1-D / §2.4），本任务未改 |
+| miaotty | `event` | 只认 `session.status` / `session.idle` / `session.error` 和 `permission.*` / `question.*`；V2 runner 还不发 status 事件，busy/idle 依赖 P1「status / retry / error 推送事件」，暂时只能报告权限与提问状态 |
+
+没有内置插件用到 `tool.*`、`shell.env`、`chat.message`、`command.execute.before`、`permission.ask` 或 `experimental.*`（除 copilot 的 `small_model`），
+所以这些钩子废弃后内置功能不受影响。
 
 用户本机全局 `~/.config/miao` 只装了 `@opencode-ai/plugin`，没有第三方服务端插件（实测）。
 所以短期影响主要来自内置插件，以及本仓库 `.miao/tool` 下的两个自定义工具。
