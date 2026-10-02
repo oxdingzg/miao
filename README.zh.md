@@ -140,23 +140,43 @@ miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对
 
 miao 处于 pre-1.0。终端界面和受支持的浏览器连接默认使用 V2，V1 保留用于兼容。V2 核心采用 Effect 服务、按 Location 限定的工具、持久化输入箱、事件记录与 Context Epoch。执行协调目前限于本进程，尚未实现集群执行和崩溃后自动续跑。
 
-| 能力                                               | 可用状态                             |
-| -------------------------------------------------- | ------------------------------------ |
-| V2 会话、持久化输入、Context Epoch、项目内会话消息 | 已实现                               |
-| 自治续跑、费用预算、输出裁剪与压缩调优             | 按需开启；各设置行为不同             |
-| Code Mode（`MIAO_EXPERIMENTAL_CODE_MODE=1`）       | 实验功能                             |
-| 原生 edit／patch、内核沙箱                         | 兼容运行时；启用方法和限制见对比文档 |
-| 生成的客户端与内嵌 Effect host                     | 私有工作区包，API 仍在演进           |
+| 能力                                               | 可用状态                                 |
+| -------------------------------------------------- | ---------------------------------------- |
+| V2 会话、持久化输入、Context Epoch、项目内会话消息 | 已实现                                   |
+| 自治续跑、费用预算、输出裁剪与压缩调优             | 按需开启；各设置行为不同                 |
+| Code Mode（`MIAO_EXPERIMENTAL_CODE_MODE=1`）       | 实验功能                                 |
+| 原生 edit／patch                                   | 兼容运行时；启用方法和限制见对比文档     |
+| bash 的 OS 沙箱                                    | V2 与兼容运行时；通过 `sandbox` 配置开启 |
+| 生成的客户端与内嵌 Effect host                     | 私有工作区包，API 仍在演进               |
+
+### V1 与 V2 的区别
+
+V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内核。两者共用同一个数据库和配置，但会话的执行方式不同。V1 正在退役，见 [specs/architecture.md](specs/architecture.md)。
+
+| 方面        | V1（继承自 opencode）                                      | V2（miao 内核）                                                          |
+| ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 代码位置    | `packages/miao/src/session` 与旧工具                       | `packages/core`，按 Schema → Core / Protocol → Server 分层               |
+| 发送 prompt | 收到即执行                                                 | 先写入持久化输入箱再执行，进程崩溃也不丢                                 |
+| 运行中插话  | 先保存，正在运行的循环在下一步读到它；不区分 steer / queue | steer（在下一个安全点并入当前回合）或 queue（等本回合结束再执行）        |
+| 回合循环    | 一个大循环包住工具调用                                     | 每个模型回合只调用一次 `llm.stream`，续跑前从存储重新加载历史            |
+| 存储        | `message` / `part` 表                                      | 事件日志加投影，每个会话有递增的 `seq`，可从任意位置回放                 |
+| 上下文      | 每次请求重新拼装                                           | Context Epoch：稳定基线加按时间追加的更新，缓存前缀保持稳定              |
+| API         | 旧的 `/session/*` 路由与旧版 JS SDK                        | 用 Effect Schema 定义的 `/api/session/*`，客户端由 schema 生成           |
+| 工具与权限  | 旧工具；bash 权限按子命令前缀匹配                          | 按 Location 限定的工具与权限；bash 支持 OS 沙箱、执行前语法检查、`stdin` |
+| 插件        | 支持全部插件钩子                                           | 部分 `chat.*` 钩子尚未调用                                               |
+| 费用与缓存  | 基本用量                                                   | 每回合用量与费用、TTFT、缓存命中率与未命中原因、费用预算                 |
+| 跨会话协作  | 无                                                         | 子会话（`task`）、`list_sessions` / `send_message`                       |
+| 使用方      | `--mini`、ACP、`MIAO_TUI_V2=0`、旧版 JS SDK                | 默认 TUI、`miao run`、Web 应用、`miao remote`                            |
 
 日常用 `miao` 正式版，源码迭代用 `miao-dev`，编译验证用 `miao-preview`。源码中的新能力可能尚未包含在已安装的发行版里。
 
 ## 相关项目
 
-| 项目 | 是什么 | 链接 |
-|---|---|---|
-| **miao**(本仓库) | 在终端里运行的 AI 编程代理 | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
-| **mtty** | 用 Rust 编写、GPU 渲染的终端(macOS、Linux、Windows),能看出每个窗格里的代理正在工作、在等你,还是已完成 | [mtty.dev/mtty](https://mtty.dev/zh/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term) |
-| **mtty.dev** | 两者的官网与文档站 | [mtty.dev](https://mtty.dev/zh/) |
+| 项目             | 是什么                                                                                                | 链接                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **miao**(本仓库) | 在终端里运行的 AI 编程代理                                                                            | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **mtty**         | 用 Rust 编写、GPU 渲染的终端(macOS、Linux、Windows),能看出每个窗格里的代理正在工作、在等你,还是已完成 | [mtty.dev/mtty](https://mtty.dev/zh/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term)                               |
+| **mtty.dev**     | 两者的官网与文档站                                                                                    | [mtty.dev](https://mtty.dev/zh/)                                                                                                      |
 
 miao 与 mtty 是两个独立项目,任意一个都可以单独使用。在 mtty 的窗格里运行 miao 时,miao 会把自己的状态(工作中、等待你、已完成、出错)上报给 mtty;mtty 据此给窗格加徽章、在代理需要你时通知你,并在它空闲时发出你排队的提示。离开 mtty,上报不产生任何作用。`miaotty` 是这个终端的个人 macOS 原型,已由 mtty 取代。
 
