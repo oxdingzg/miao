@@ -15,6 +15,7 @@ import { Npm } from "@miao/core/npm"
 import { PluginV2 } from "@miao/core/plugin"
 import { Reference } from "@miao/core/reference"
 import { SkillV2 } from "@miao/core/skill"
+import { ToolPlugins } from "@miao/core/tool/plugins"
 import { Effect, Layer } from "effect"
 import { tempLocationLayer } from "../fixture/location"
 
@@ -45,6 +46,7 @@ export const pluginTestLayer = (replacements: LayerNode.Replacements = []) =>
       Integration.node,
       Reference.node,
       SkillV2.node,
+      ToolPlugins.node,
     ]),
     [[Location.node, tempLocationLayer], [Npm.node, npmLayer], ...replacements],
   )
