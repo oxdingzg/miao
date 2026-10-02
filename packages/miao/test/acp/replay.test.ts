@@ -68,14 +68,15 @@ describe("acp V2 replay", () => {
         const legacyID = "ses_legacyacpreplay0001"
         seedLegacy(original, { sessionID: legacyID, projectID: modern.projectID, directory: fixture.home })
 
-        // Not backfilled yet: V2 reads the legacy tables through its fallback.
+        // Startup backfills legacy sessions automatically, so the server replays it from the V2 projection.
         const second = yield* start(fixture, original)
         yield* expectLegacyReplay(second.url, fixture.home, legacyID)
         yield* stop(second)
 
         const backfill = yield* fixture.opencode.spawn(["db", "backfill"], { env: { MIAO_DB: original } })
         fixture.opencode.expectExit(backfill, 0, "db backfill")
-        expect(backfill.stdout).toContain("backfilled 1 session(s)")
+        // The automatic startup backfill already migrated the session, so the manual run has nothing left.
+        expect(backfill.stdout).toContain("backfilled 0 session(s)")
 
         checkpoint(original)
         yield* Effect.promise(() => copyFile(original, compacted))
