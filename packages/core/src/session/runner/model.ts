@@ -194,7 +194,11 @@ export const fromCatalogModel = (
           Object.assign(draft.request.body, credential.metadata)
         }),
   )
-  const key = apiKey(resolved, credential)
+  // Azure AI Foundry models (Claude, DeepSeek) use the generic routes below with the Azure key.
+  const key =
+    resolved.providerID === ProviderV2.ID.azure
+      ? cloudKey(resolved, credential, ["AZURE_RESOURCE_NAME"], "AZURE_API_KEY")
+      : apiKey(resolved, credential)
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
