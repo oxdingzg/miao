@@ -1,10 +1,6 @@
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
-import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
-import { ServerAuth } from "@/server/auth"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
-import { ACPProfile } from "@/acp/profile"
 
 export const AcpCommand = effectCmd({
   command: "acp",
@@ -18,47 +14,33 @@ export const AcpCommand = effectCmd({
   },
   handler: Effect.fn("Cli.acp")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("@/server/server"))
-    const { ACP } = yield* Effect.promise(() => import("@/acp/agent"))
-    ACPProfile.mark("cli.acp.handler")
+    const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
+    const { OpenCode } = yield* Effect.promise(() => import("@miao/client"))
+    const { serve } = yield* Effect.promise(() => import("@miao/acp"))
+    const { InstallationVersion } = yield* Effect.promise(() => import("@miao/core/installation/version"))
     process.env.MIAO_CLIENT = "acp"
     const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => ACPProfile.measure("cli.acp.server.listen", () => Server.listen(opts)))
+    const server = yield* Effect.promise(() => Server.listen(opts))
 
-    const sdk = createOpencodeClient({
+    // The adapter only speaks the V2 protocol to this process's server, like any other client.
+    const client = OpenCode.make({
       baseUrl: `http://${server.hostname}:${server.port}`,
       headers: ServerAuth.headers(),
     })
 
-    const input = new WritableStream<Uint8Array>({
-      write(chunk) {
-        return new Promise<void>((resolve, reject) => {
-          process.stdout.write(chunk, (err) => {
-            if (err) {
-              reject(err)
-            } else {
-              resolve()
-            }
-          })
-        })
-      },
+    const output = new WritableStream<Uint8Array>({
+      write: (chunk) =>
+        new Promise<void>((resolve, reject) => process.stdout.write(chunk, (err) => (err ? reject(err) : resolve()))),
     })
-    const output = new ReadableStream<Uint8Array>({
+    const input = new ReadableStream<Uint8Array>({
       start(controller) {
-        process.stdin.on("data", (chunk: Buffer) => {
-          controller.enqueue(new Uint8Array(chunk))
-        })
+        process.stdin.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)))
         process.stdin.on("end", () => controller.close())
         process.stdin.on("error", (err) => controller.error(err))
       },
     })
 
-    const stream = ndJsonStream(input, output)
-    const agent = ACP.init({ sdk })
-
-    new AgentSideConnection((conn) => {
-      ACPProfile.mark("cli.acp.connection.create")
-      return agent.create(conn)
-    }, stream)
+    serve({ client, version: InstallationVersion, output, input })
 
     yield* Effect.logInfo("setup connection")
     process.stdin.resume()
