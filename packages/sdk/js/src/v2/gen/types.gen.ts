@@ -44,6 +44,8 @@ export type Event =
   | EventSessionNextToolSuccess
   | EventSessionNextToolFailed
   | EventSessionNextRetried
+  | EventSessionNextStatus
+  | EventSessionNextFailed
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
@@ -1155,6 +1157,25 @@ export type GlobalEvent = {
           sessionID: string
           attempt: number
           error: SessionNextRetryError
+        }
+      }
+    | {
+        id: string
+        type: "session.next.status"
+        properties: {
+          timestamp: number
+          sessionID: string
+          status: SessionNextStatusInfo
+        }
+      }
+    | {
+        id: string
+        type: "session.next.failed"
+        properties: {
+          timestamp: number
+          sessionID: string
+          error: SessionErrorUnknown
+          name?: string
         }
       }
     | {
@@ -2579,13 +2600,6 @@ export type NotFoundError = {
   }
 }
 
-export type ShareDisabledError = {
-  name: "ShareDisabledError"
-  data: {
-    message: string
-  }
-}
-
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -2933,6 +2947,8 @@ export type V2Event =
   | SessionNextToolSuccess
   | SessionNextToolFailed
   | SessionNextRetried
+  | SessionNextStatus
+  | SessionNextFailed
   | SessionNextCompactionStarted
   | SessionNextCompactionDelta
   | SessionNextCompactionEnded
@@ -3342,6 +3358,10 @@ export type SessionNextRetryError = {
   metadata?: {
     [key: string]: string
   }
+}
+
+export type SessionNextStatusInfo = {
+  type: "idle" | "busy"
 }
 
 export type PermissionV2Source = {
@@ -5591,6 +5611,45 @@ export type SessionNextToolInputDelta = {
   }
 }
 
+export type SessionNextStatus = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.status"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    status: SessionNextStatusInfo
+  }
+}
+
+export type SessionNextFailed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.failed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+    name?: string
+  }
+}
+
 export type SessionNextCompactionDelta = {
   id: string
   metadata?: {
@@ -6941,6 +7000,27 @@ export type EventSessionNextRetried = {
     sessionID: string
     attempt: number
     error: SessionNextRetryError
+  }
+}
+
+export type EventSessionNextStatus = {
+  id: string
+  type: "session.next.status"
+  properties: {
+    timestamp: number
+    sessionID: string
+    status: SessionNextStatusInfo
+  }
+}
+
+export type EventSessionNextFailed = {
+  id: string
+  type: "session.next.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+    name?: string
   }
 }
 
@@ -9211,42 +9291,6 @@ export type ProjectDirectoriesResponses = {
 
 export type ProjectDirectoriesResponse = ProjectDirectoriesResponses[keyof ProjectDirectoriesResponses]
 
-export type ExperimentalProjectCopyGenerateNameData = {
-  body?: {
-    context?: string
-  }
-  path: {
-    projectID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/project/{projectID}/copy/generate-name"
-}
-
-export type ExperimentalProjectCopyGenerateNameErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalProjectCopyGenerateNameError =
-  ExperimentalProjectCopyGenerateNameErrors[keyof ExperimentalProjectCopyGenerateNameErrors]
-
-export type ExperimentalProjectCopyGenerateNameResponses = {
-  /**
-   * Success
-   */
-  200: {
-    name: string
-  }
-}
-
-export type ExperimentalProjectCopyGenerateNameResponse =
-  ExperimentalProjectCopyGenerateNameResponses[keyof ExperimentalProjectCopyGenerateNameResponses]
-
 export type PtyShellsData = {
   body?: never
   path?: never
@@ -10380,86 +10424,6 @@ export type SessionInitResponses = {
 }
 
 export type SessionInitResponse = SessionInitResponses[keyof SessionInitResponses]
-
-export type SessionUnshareData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/share"
-}
-
-export type SessionUnshareErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-  /**
-   * InternalServerError
-   */
-  500: EffectHttpApiErrorInternalServerError
-}
-
-export type SessionUnshareError = SessionUnshareErrors[keyof SessionUnshareErrors]
-
-export type SessionUnshareResponses = {
-  /**
-   * Successfully unshared session
-   */
-  200: Session
-}
-
-export type SessionUnshareResponse = SessionUnshareResponses[keyof SessionUnshareResponses]
-
-export type SessionShareData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/share"
-}
-
-export type SessionShareErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * ShareDisabledError
-   */
-  403: ShareDisabledError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-  /**
-   * InternalServerError
-   */
-  500: EffectHttpApiErrorInternalServerError
-}
-
-export type SessionShareError = SessionShareErrors[keyof SessionShareErrors]
-
-export type SessionShareResponses = {
-  /**
-   * Successfully shared session
-   */
-  200: Session
-}
-
-export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
 
 export type SessionSummarizeData = {
   body?: {
@@ -12537,7 +12501,9 @@ export type V2SessionDiffData = {
   path: {
     sessionID: string
   }
-  query?: never
+  query?: {
+    messageID?: string
+  }
   url: "/api/session/{sessionID}/diff"
 }
 
@@ -12604,9 +12570,7 @@ export type V2SessionStatusResponses = {
    * Success
    */
   200: {
-    data: {
-      type: "idle" | "busy"
-    }
+    data: SessionNextStatusInfo
   }
 }
 

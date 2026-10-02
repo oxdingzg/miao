@@ -61,14 +61,6 @@ describe("project directories and copies endpoints", () => {
         expect(initial.status).toBe(200)
         expect(yield* json<ProjectDirectory[]>(initial)).toEqual([{ directory: test.directory }])
 
-        const generated = yield* request(test.directory, `/experimental/project/${projectID}/copy/generate-name`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ context: undefined }),
-        })
-        expect(generated.status).toBe(200)
-        expect((yield* json<{ name: string }>(generated)).name).toBeString()
-
         const create = yield* request(test.directory, copies, {
           method: "POST",
           headers: { "content-type": "application/json" },

@@ -14,7 +14,6 @@ const enabledByExperimental = (name: string) =>
   )
 
 export class Service extends ConfigService.Service<Service>()("@miao/RuntimeFlags", {
-  autoShare: bool("MIAO_AUTO_SHARE"),
   pure: bool("MIAO_PURE"),
   disableDefaultPlugins: bool("MIAO_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("MIAO_DISABLE_EMBEDDED_WEB_UI"),

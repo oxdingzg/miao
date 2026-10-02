@@ -221,18 +221,6 @@ const scenarios: Scenario[] = [
     }))
     .json(200, array, "status"),
   http.protected
-    .post("/experimental/project/{projectID}/copy/generate-name", "experimental.projectCopy.generateName")
-    .seeded((ctx) => ctx.project())
-    .at((ctx) => ({
-      path: route("/experimental/project/{projectID}/copy/generate-name", { projectID: ctx.state.id }),
-      headers: ctx.headers(),
-      body: {},
-    }))
-    .json(200, (body) => {
-      object(body)
-      check(typeof body.name === "string" && body.name.length > 0, "generated copy name should be non-empty")
-    }),
-  http.protected
     .post("/experimental/project/{projectID}/copy", "experimental.projectCopy.create")
     .seeded((ctx) => ctx.project())
     .at((ctx) => ({
@@ -1866,51 +1854,6 @@ const scenarios: Scenario[] = [
       body: { response: "once" },
     }))
     .json(404, object, "status"),
-  http.protected
-    .post("/session/{sessionID}/share", "session.share")
-    .mutating()
-    // miao defaults `share` to "disabled" (no share backend), so opt in to exercise the route.
-    .inProject({ git: true, config: { share: "manual" } })
-    .seeded((ctx) => ctx.session({ title: "Share session" }))
-    .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .json(
-      200,
-      (body, ctx) => {
-        object(body)
-        check(body.id === ctx.state.id, "share should return the session")
-      },
-      "status",
-    ),
-  http.protected
-    .post("/session/{sessionID}/share", "session.share.disabled")
-    .mutating()
-    .seeded((ctx) => ctx.session({ title: "Share disabled session" }))
-    .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .json(
-      403,
-      (body) => {
-        object(body)
-        check(body.name === "ShareDisabledError", "disabled sharing should be a typed refusal")
-        check(
-          isRecord(body.data) && typeof body.data.message === "string" && body.data.message.includes("miao.json"),
-          "disabled sharing should tell the client how to enable it",
-        )
-      },
-      "status",
-    ),
-  http.protected
-    .delete("/session/{sessionID}/share", "session.unshare")
-    .mutating()
-    .seeded((ctx) => ctx.session({ title: "Unshare session" }))
-    .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .json(
-      200,
-      (body, ctx) => {
-        object(body)
-        check(body.id === ctx.state.id, "unshare should return the session")
-      },
-      "status",
-    ),
   http.protected
     .post("/tui/append-prompt", "tui.appendPrompt")
     .at((ctx) => ({ path: "/tui/append-prompt", headers: ctx.headers(), body: { text: "hello" } }))

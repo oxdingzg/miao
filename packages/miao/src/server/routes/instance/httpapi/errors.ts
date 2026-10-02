@@ -185,16 +185,6 @@ export class ApiNotFoundError extends Schema.ErrorClass<ApiNotFoundError>("NotFo
   { httpApiStatus: 404 },
 ) {}
 
-export class ShareDisabledError extends Schema.ErrorClass<ShareDisabledError>("ShareDisabledError")(
-  {
-    name: Schema.Literal("ShareDisabledError"),
-    data: Schema.Struct({
-      message: Schema.String,
-    }),
-  },
-  { httpApiStatus: 403 },
-) {}
-
 export function notFound(message: string) {
   return new ApiNotFoundError({
     name: "NotFoundError",

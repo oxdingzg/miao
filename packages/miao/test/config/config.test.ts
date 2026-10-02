@@ -880,32 +880,21 @@ it.instance("handles command configuration", () =>
   }),
 )
 
-it.instance("migrates autoshare to share field", () =>
+// Sharing was removed; configs written for it must still load.
+it.instance("accepts the removed share keys without acting on them", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://mtty.dev/miao/config.json",
       autoshare: true,
+      share: "auto",
+      enterprise: { url: "https://share.example.com" },
+      model: "test/model",
     })
     const config = yield* Config.use.get()
+    expect(config.model).toBe("test/model")
     expect(config.share).toBe("auto")
-    expect(config.autoshare).toBe(true)
-  }),
-)
-
-it.instance("defaults share to disabled", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, { $schema: "https://mtty.dev/miao/config.json" })
-    expect((yield* Config.use.get()).share).toBe("disabled")
-  }),
-)
-
-it.instance("keeps an explicit manual share setting", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, { $schema: "https://mtty.dev/miao/config.json", share: "manual" })
-    expect((yield* Config.use.get()).share).toBe("manual")
+    expect(config.enterprise).toEqual({ url: "https://share.example.com" })
   }),
 )
 
