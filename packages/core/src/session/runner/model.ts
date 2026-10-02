@@ -4,6 +4,7 @@ import os from "os"
 import { makeLocationNode } from "../../effect/app-node"
 import { type Model } from "@miao/llm"
 import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
+import * as BedrockConverse from "@miao/llm/protocols/bedrock-converse"
 import * as Gemini from "@miao/llm/protocols/gemini"
 import * as OpenAIChat from "@miao/llm/protocols/openai-chat"
 import * as OpenAICompatibleChat from "@miao/llm/protocols/openai-compatible-chat"
@@ -13,6 +14,7 @@ import { openAIDefaultOptions } from "@miao/llm/providers/openai"
 import { Auth, type AnyRoute } from "@miao/llm/route"
 import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
+import { AwsCredentials } from "../../aws-credentials"
 import { AzureEntra } from "../../azure-entra"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
@@ -23,6 +25,7 @@ import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { ModelVariants } from "../../model-variants"
+import { resolveBedrockModelID } from "../../plugin/provider/amazon-bedrock"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
 
@@ -197,6 +200,7 @@ export const fromCatalogModel = (
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
   if (resolved.api.package === "@ai-sdk/azure") return azure(resolved, credential)
   if (isVertex(resolved)) return vertex(resolved, credential)
+  if (resolved.api.package.startsWith("@ai-sdk/amazon-bedrock")) return bedrock(resolved, credential)
   if (resolved.api.package === "@ai-sdk/openai") {
     // The llm OpenAI facade applies these defaults; building the route directly
     // skipped them, so reasoning models ran without the encrypted reasoning
@@ -442,6 +446,69 @@ const vertexSetting = (model: ModelV2.Info, key: string, env: ReadonlyArray<stri
   return env.map((name) => process.env[name]).find((item) => item !== undefined && item !== "")
 }
 
+const BEDROCK_SETTINGS = [
+  "region",
+  "profile",
+  "endpoint",
+  "bearerToken",
+  "credentialProvider",
+  "accessKeyId",
+  "secretAccessKey",
+  "sessionToken",
+]
+
+/**
+ * Amazon Bedrock Converse. A Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`, a
+ * stored key, or `bearerToken`) is sent as a bearer token; otherwise each
+ * request is SigV4-signed with credentials from the AWS provider chain for
+ * the configured profile. Model IDs gain the cross-region inference prefix
+ * their region requires, as V1 did.
+ */
+const bedrock = (model: ModelV2.Info, credential?: Credential.Value) => {
+  const configured = setting(model, "region")
+  const region = typeof configured === "string" ? configured : (process.env.AWS_REGION ?? "us-east-1")
+  const profileSetting = setting(model, "profile")
+  const profile = typeof profileSetting === "string" ? profileSetting : process.env.AWS_PROFILE
+  const bearerToken = setting(model, "bearerToken")
+  const key =
+    cloudKey(
+      model,
+      credential,
+      ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "AWS_PROFILE"],
+      "AWS_BEARER_TOKEN_BEDROCK",
+    ) ?? (typeof bearerToken === "string" ? Auth.value(bearerToken) : undefined)
+  const auth =
+    key !== undefined
+      ? Auth.bearer(key)
+      : Auth.custom((input) =>
+          AwsCredentials.resolve(profile).pipe(
+            Effect.flatMap((identity) =>
+              Auth.toEffect(BedrockConverse.sigV4Auth({ region, ...identity }))(input),
+            ),
+          ),
+        )
+  if (model.api.type === "aisdk" && model.api.package === "@ai-sdk/amazon-bedrock/mantle") {
+    // Bedrock Mantle serves OpenAI-style models over Responses (Chat for the
+    // safeguard models). Only its API-key auth is wired here, not SigV4.
+    if (key === undefined || !model.api.url) return Effect.fail(unsupported(model))
+    const chat = model.api.id === "openai.gpt-oss-safeguard-20b" || model.api.id === "openai.gpt-oss-safeguard-120b"
+    return Effect.succeed(
+      withDefaults(model, chat ? OpenAIChat.route : OpenAIResponses.route, BEDROCK_SETTINGS)
+        .with({
+          endpoint: { baseURL: model.api.url.replaceAll("${AWS_REGION}", region) },
+          auth: Auth.bearer(key),
+          providerOptions: chat ? undefined : openAIDefaultOptions(model.api.id),
+        })
+        .model({ id: model.api.id }),
+    )
+  }
+  return Effect.succeed(
+    withDefaults(model, BedrockConverse.route, BEDROCK_SETTINGS)
+      .with({ endpoint: { baseURL: model.api.url ?? `https://bedrock-runtime.${region}.amazonaws.com` }, auth })
+      .model({ id: resolveBedrockModelID(model.api.id, region) }),
+  )
+}
+
 export const resolveWithInfo = (
   session: SessionSchema.Info,
   model: ModelV2.Info,
@@ -459,6 +526,7 @@ export const supported = (model: ModelV2.Info) => {
   if (model.providerID === ProviderV2.ID.githubCopilot) return true
   if (model.api.package === "@ai-sdk/azure") return model.api.url !== undefined || azureResource(model) !== undefined
   if (isVertex(model)) return true
+  if (model.api.package.startsWith("@ai-sdk/amazon-bedrock")) return true
   if (
     model.api.package === "@ai-sdk/openai" ||
     model.api.package === "@ai-sdk/anthropic" ||
