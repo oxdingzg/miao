@@ -170,7 +170,7 @@ describe("SessionV1Read.map", () => {
     const parts = [stepStart("tree-a"), text("hi"), bash({}), stepFinish("tree-b"), patch("tree-a", [])]
     const message = first([assistant(parts)])
     expect(message.content.map((item) => item.type)).toEqual(["text", "tool"])
-    expect(SessionV1Read.preserved(message)?.parts).toEqual([
+    expect(SessionV1Read.preserved(message)?.parts as unknown).toEqual([
       { index: 0, part: { id: "prt_start", type: "step-start", snapshot: "tree-a" } },
       {
         index: 3,
@@ -217,7 +217,7 @@ describe("SessionV1Read.map", () => {
       "text",
       "step-finish",
     ])
-    expect(SessionV1Read.preserved(messages[1]!)?.parts).toEqual([
+    expect(SessionV1Read.preserved(messages[1]!)?.parts as unknown).toEqual([
       { index: 0, part: { id: "prt_compaction", type: "compaction", auto: false } },
     ])
   })
