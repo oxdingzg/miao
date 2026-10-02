@@ -78,4 +78,27 @@ describe("v2 SDK error shape", () => {
     // Whatever the server put in data.message must be what the user sees.
     expect(err.message).toBe(cause.body.data.message)
   })
+
+  test("403 when sharing is disabled: the TUI and run see how to enable it", async () => {
+    // miao defaults `share` to "disabled"; the refusal used to surface as a 500 UnknownError.
+    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    const sdk = client(tmp.path)
+    const session = await sdk.session.create({}, { throwOnError: true })
+
+    let caught: unknown
+    try {
+      await sdk.session.share({ sessionID: session.data.id }, { throwOnError: true })
+    } catch (e) {
+      caught = e
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    const err = caught as Error
+    const cause = err.cause as { body?: any; status?: number }
+    expect(cause.status).toBe(403)
+    expect(cause.body).toEqual({ name: "ShareDisabledError", data: { message: err.message } })
+    expect(err.message).toContain("disabled")
+    expect(err.message).toContain("miao.json")
+    expect((await sdk.session.get({ sessionID: session.data.id }, { throwOnError: true })).data.share).toBeUndefined()
+  })
 })

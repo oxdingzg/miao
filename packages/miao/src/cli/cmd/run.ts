@@ -578,13 +578,14 @@ export const RunCommand = effectCmd({
         const cfg = await sdk.config.get()
         if (!cfg.data) return
         if (cfg.data.share !== "auto" && !flags.autoShare && !args.share) return
-        const res = await sdk.session.share({ sessionID }).catch((error) => {
+        // throwOnError turns the server's refusal (e.g. sharing disabled, 403) into an Error carrying its reason.
+        const res = await sdk.session.share({ sessionID }, { throwOnError: true }).catch((error) => {
           if (error instanceof Error && error.message.includes("disabled")) {
             UI.println(UI.Style.TEXT_DANGER_BOLD + "!  " + error.message)
           }
-          return { error }
+          return undefined
         })
-        if (!res.error && "data" in res && res.data?.share?.url) {
+        if (res?.data.share?.url) {
           UI.println(UI.Style.TEXT_INFO_BOLD + "~  " + res.data.share.url)
         }
       }

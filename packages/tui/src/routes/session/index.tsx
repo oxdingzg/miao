@@ -534,10 +534,8 @@ export function Session() {
           kv.set("share_consent", true)
         }
         await sdk.client.session
-          .share({
-            sessionID: route.sessionID,
-          })
-          .then((res) => copy(res.data!.share!.url))
+          .share({ sessionID: route.sessionID }, { throwOnError: true })
+          .then((res) => copy(res.data.share!.url))
           .catch((error) => {
             toast.show({
               message: error instanceof Error ? error.message : "Failed to share session",
