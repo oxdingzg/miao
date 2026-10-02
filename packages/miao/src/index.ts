@@ -52,6 +52,7 @@ const commandLoaders: Array<[string, CommandLoader]> = [
   ["upgrade", () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand)],
   ["uninstall", () => import("./cli/cmd/uninstall").then((m) => m.UninstallCommand)],
   ["serve", () => import("./cli/cmd/serve").then((m) => m.ServeCommand)],
+  ["remote", () => import("./cli/cmd/remote").then((m) => m.RemoteCommand)],
   ["web", () => import("./cli/cmd/web").then((m) => m.WebCommand)],
   ["models", () => import("./cli/cmd/models").then((m) => m.ModelsCommand)],
   ["stats", () => import("./cli/cmd/stats").then((m) => m.StatsCommand)],
