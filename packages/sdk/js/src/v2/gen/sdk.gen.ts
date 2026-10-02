@@ -261,6 +261,8 @@ import type {
   TuiSubmitPromptResponses,
   V2AgentListErrors,
   V2AgentListResponses,
+  V2CapabilitiesGetErrors,
+  V2CapabilitiesGetResponses,
   V2CommandListErrors,
   V2CommandListResponses,
   V2ConfigCatalogErrors,
@@ -5001,6 +5003,30 @@ export class Health extends HeyApiClient {
   }
 }
 
+export class Capabilities2 extends HeyApiClient {
+  /**
+   * Get server capabilities
+   *
+   * Retrieve server capabilities for the requested location.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2CapabilitiesGetResponses, V2CapabilitiesGetErrors, ThrowOnError>({
+      url: "/api/capabilities",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Formatter2 extends HeyApiClient {
   /**
    * Get formatter status
@@ -8085,6 +8111,11 @@ export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
     return (this._health ??= new Health({ client: this.client }))
+  }
+
+  private _capabilities?: Capabilities2
+  get capabilities(): Capabilities2 {
+    return (this._capabilities ??= new Capabilities2({ client: this.client }))
   }
 
   private _formatter?: Formatter2
