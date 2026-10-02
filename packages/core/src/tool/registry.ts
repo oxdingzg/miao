@@ -1,6 +1,6 @@
 export * as ToolRegistry from "./registry"
 
-import { ToolOutput, type ToolCall, type ToolDefinition, type ToolResultValue } from "@miao/llm"
+import { ToolDefinition, ToolOutput, type ToolCall, type ToolResultValue } from "@miao/llm"
 import { Context, Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
 import { PermissionV2 } from "../permission"
@@ -19,6 +19,7 @@ import {
   type Progress,
   type RegistrationError,
 } from "./tool"
+import { ToolPlugins } from "./plugins"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
@@ -87,6 +88,7 @@ const registryLayer = Layer.effect(
   Effect.gen(function* () {
     const applications = yield* ApplicationTools.Service
     const resources = yield* ToolOutputStore.Service
+    const plugins = yield* ToolPlugins.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
     const sessionLocal = new Map<
@@ -127,13 +129,17 @@ const registryLayer = Layer.effect(
     ) {
       if (advertised && registration.identity !== advertised)
         return { result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } }
-      const pending = yield* settle(registration.tool, input.call, {
+      const prepared = yield* runBefore(input)
+      if ("result" in prepared) return prepared
+      const call = prepared.call
+      const pending = yield* settle(registration.tool, call, {
         sessionID: input.sessionID,
         agent: input.agent,
         assistantMessageID: input.assistantMessageID,
         toolCallID: input.call.id,
         ...(onProgress === undefined ? {} : { progress: (update) => onProgress(input, update) }),
       }).pipe(
+        Effect.flatMap((output) => runAfter(input, call, output)),
         Effect.map((output) => ({ output })),
         Effect.catchTag("LLM.ToolFailure", (failure) =>
           Effect.succeed({ result: { type: "error" as const, value: failure.message } }),
@@ -149,6 +155,86 @@ const registryLayer = Layer.effect(
         ? { result, output: bounded.output, outputPaths: bounded.outputPaths }
         : { result, output: bounded.output }
     })
+
+    // V2 `tool.execute.before`: hooks may replace the raw input or reject the call.
+    const runBefore = (input: ExecuteInput) => {
+      if (!plugins.has("before")) return Effect.succeed({ call: input.call })
+      return plugins
+        .runBefore({
+          tool: input.call.name,
+          sessionID: input.sessionID,
+          callID: input.call.id,
+          agent: input.agent,
+          args: input.call.input,
+        })
+        .pipe(
+          Effect.map((event) => ({
+            call: event.args === input.call.input ? input.call : { ...input.call, input: event.args },
+          })),
+          Effect.catchTag("LLM.ToolFailure", (failure) =>
+            Effect.succeed({ result: { type: "error" as const, value: failure.message } }),
+          ),
+        )
+    }
+
+    // V2 `tool.execute.after`: hooks see the model-facing text and the structured
+    // output, and may replace either before the output is bounded and persisted.
+    const runAfter = (input: ExecuteInput, call: ToolCall, output: ToolOutput) => {
+      if (!plugins.has("after")) return Effect.succeed(output)
+      const text =
+        output.content.length === 0
+          ? (JSON.stringify(output.structured) ?? "")
+          : output.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+      return plugins
+        .runAfter({
+          tool: call.name,
+          sessionID: input.sessionID,
+          callID: call.id,
+          agent: input.agent,
+          args: call.input,
+          title: "",
+          output: text,
+          metadata: output.structured,
+        })
+        .pipe(
+          Effect.map((event) =>
+            event.output === text && event.metadata === output.structured
+              ? output
+              : ToolOutput.make(
+                  event.metadata,
+                  event.output === text
+                    ? output.content
+                    : [
+                        { type: "text" as const, text: event.output },
+                        ...output.content.filter((part) => part.type !== "text"),
+                      ],
+                ),
+          ),
+        )
+    }
+
+    // V2 `tool.definition`: hooks may rewrite the description and input schema
+    // the model sees. Without hooks the cached definition is reused unchanged.
+    const hookDefinition = (definition: ToolDefinition) => {
+      if (!plugins.has("definition")) return Effect.succeed(definition)
+      return plugins
+        .runDefinition({
+          tool: definition.name,
+          description: definition.description,
+          parameters: definition.inputSchema,
+        })
+        .pipe(
+          Effect.map((event) =>
+            event.description === definition.description && event.parameters === definition.inputSchema
+              ? definition
+              : new ToolDefinition({
+                  ...definition,
+                  description: event.description,
+                  inputSchema: event.parameters as ToolDefinition["inputSchema"],
+                }),
+          ),
+        )
+    }
 
     return Service.of({
       register: Effect.fn("ToolRegistry.register")(function* (tools) {
@@ -171,6 +257,8 @@ const registryLayer = Layer.effect(
         })
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (rules = [], options?: MaterializeOptions) {
+        // Custom tools load on first demand rather than during Location boot.
+        yield* plugins.ready
         const registrations = new Map(applications.entries())
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
@@ -188,10 +276,13 @@ const registryLayer = Layer.effect(
         const orderKey = options?.sessionID ?? "@location"
         const ordered = stableToolOrder(advertisedOrder.get(orderKey) ?? [], Array.from(registrations.keys()))
         advertisedOrder.set(orderKey, ordered)
-        const definitions = ordered.flatMap((name) => {
-          const registration = registrations.get(name)
-          return registration ? [definition(name, registration.tool)] : []
-        })
+        const definitions = yield* Effect.forEach(
+          ordered.flatMap((name) => {
+            const registration = registrations.get(name)
+            return registration ? [definition(name, registration.tool)] : []
+          }),
+          hookDefinition,
+        )
         const inner: Materialization = {
           definitions,
           settle: (input) => {
@@ -241,11 +332,11 @@ function whollyDisabled(actions: ReadonlyArray<string>, rules: PermissionV2.Rule
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [ApplicationTools.node, ToolOutputStore.node],
+  deps: [ApplicationTools.node, ToolOutputStore.node, ToolPlugins.node],
 })
 
 export const toolsNode = makeLocationNode({
   service: Tools.Service,
   layer,
-  deps: [ApplicationTools.node, ToolOutputStore.node],
+  deps: [ApplicationTools.node, ToolOutputStore.node, ToolPlugins.node],
 })

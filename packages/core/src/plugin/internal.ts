@@ -26,6 +26,7 @@ import { PluginV2 } from "../plugin"
 import { Reference } from "../reference"
 import { SkillV2 } from "../skill"
 import { State } from "../state"
+import { ToolPlugins } from "../tool/plugins"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { AgentPlugin } from "./agent"
 import { CommandPlugin } from "./command"
@@ -56,6 +57,10 @@ const layer = Layer.effectDiscard(
     const http = yield* HttpClient.HttpClient
     const skill = yield* SkillV2.Service
     const reference = yield* Reference.Service
+    const toolPlugins = yield* ToolPlugins.Service
+    // Tools that built-in plugins register during boot must be visible to the
+    // first provider turn, so materialization waits for the boot to finish.
+    yield* toolPlugins.defer(Deferred.await(plugin.booted))
     const add = <R>(input: Plugin<R>) => {
       const loaded = {
         id: input.id,
@@ -134,5 +139,6 @@ export const node = makeLocationNode({
     httpClient,
     SkillV2.node,
     Reference.node,
+    ToolPlugins.node,
   ],
 })
