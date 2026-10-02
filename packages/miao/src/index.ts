@@ -102,12 +102,17 @@ async function buildCli(selection: "all" | "default" | readonly string[]) {
       process.env.AGENT = "1"
       process.env.MIAO = "1"
       process.env.MIAO_PID = String(process.pid)
+
+      // `db` keeps backfill and compact explicit; the rest never touch sessions.
+      if (!["db", "upgrade", "uninstall", "completion"].includes(String(opts._[0]))) {
+        const { migrateLegacySessions } = await import("./cli/legacy-migration")
+        await migrateLegacySessions()
+      }
     })
     .usage("")
     .completion("completion", "generate shell completion script")
 
-  const register = async (loader: CommandLoader) =>
-    cli.command((await loader()) as CommandModule<any, any>)
+  const register = async (loader: CommandLoader) => cli.command((await loader()) as CommandModule<any, any>)
 
   if (selection === "all") {
     for (const [, load] of commandLoaders) await register(load)
@@ -142,15 +147,7 @@ const wantsHelp = args.includes("-h") || args.includes("--help")
 const wantsVersion = args.includes("-v") || args.includes("--version")
 const known = positional !== undefined && commandLoaders.some(([name]) => name === positional)
 const selection: "all" | "default" | readonly string[] =
-  positional !== undefined
-    ? known
-      ? [positional]
-      : "all"
-    : wantsVersion
-      ? []
-      : wantsHelp
-        ? "all"
-        : "default"
+  positional !== undefined ? (known ? [positional] : "all") : wantsVersion ? [] : wantsHelp ? "all" : "default"
 
 try {
   if (process.platform === "win32") {
