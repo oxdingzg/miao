@@ -233,7 +233,7 @@ describe("plugin.xai", () => {
         "Bearer new-access",
       ])
       expect(setCalls).toHaveLength(1)
-      expect((setCalls[0].body as any).refresh).toBe("rt-new")
+      expect((setCalls[0].auth as any).refresh).toBe("rt-new")
     })
 
     test("does not share refresh single-flight across loader instances", async () => {
@@ -315,7 +315,7 @@ describe("plugin.xai", () => {
       const resp = await opts.fetch!(new URL("/chat/completions", server.url), { headers: {} })
       expect(resp.status).toBe(200)
       expect(captured[0].get("authorization")).toBe("Bearer new-access")
-      expect((setCalls[0].body as any).refresh).toBe("rt-old")
+      expect((setCalls[0].auth as any).refresh).toBe("rt-old")
     })
 
     test("refreshes based on stored expiry or JWT expiry and skips refresh when both are fresh", async () => {

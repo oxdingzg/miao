@@ -22,7 +22,7 @@ function makeInput() {
         auth: {
           set: async (request: any) => {
             setCalls.push(request)
-            auth = request.body
+            auth = request.auth
           },
         },
       },
@@ -128,7 +128,7 @@ describe("plugin.snowflake-cortex", () => {
     expect(refreshCalls).toBe(1)
     expect(apiAuthHeaders).toEqual(["Bearer access-new", "Bearer access-new"])
     expect(setCalls).toHaveLength(1)
-    expect((setCalls[0] as any).body).toMatchObject({
+    expect((setCalls[0] as any).auth).toMatchObject({
       type: "oauth",
       access: "access-new",
       refresh: "refresh-new",
@@ -178,7 +178,7 @@ describe("plugin.snowflake-cortex", () => {
     expect(apiCalls).toBe(2)
     expect(seenAuth).toEqual(["Bearer access-stale", "Bearer access-fresh"])
     expect(setCalls).toHaveLength(1)
-    expect((setCalls[0] as any).body).toMatchObject({
+    expect((setCalls[0] as any).auth).toMatchObject({
       type: "oauth",
       access: "access-fresh",
       refresh: "refresh-fresh",
