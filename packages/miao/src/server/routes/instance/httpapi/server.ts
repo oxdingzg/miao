@@ -15,6 +15,7 @@ import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { Git } from "@/git"
+import { Git as CoreGit } from "@miao/core/git"
 import { Installation } from "@/installation"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
@@ -220,6 +221,9 @@ const app = LayerNode.group([
   Config.node,
   Env.node,
   Git.node,
+  // The location middleware resolves Core's Git service, which is distinct from
+  // the V1 `@/git` service above.
+  CoreGit.node,
   Ripgrep.node,
   Storage.node,
   Snapshot.node,
