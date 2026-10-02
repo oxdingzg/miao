@@ -808,6 +808,18 @@ export async function createRouter(options: RouterOptions) {
   }
 }
 
+/** What `miao remote status` reports from the state file, without a running server. */
+export async function routerStatus(file: string, now = Date.now()) {
+  const state = parseState(await readJson(file))
+  return Object.entries(state.users).map(([key, user]) => ({
+    key,
+    current: user.current,
+    pending: user.pending.length,
+    pushesToday: user.pushes.day === day(now) ? user.pushes.count : 0,
+    approvals: Object.values(user.approvals).filter((approval) => approval.expires > now).length,
+  }))
+}
+
 export function parseAnswers(questions: ReadonlyArray<Question>, body: string): string[][] | string {
   const parts = questions.length === 1 ? [body] : body.split(/[;；]/)
   if (parts.length !== questions.length) return `有 ${questions.length} 个问题，请用 ; 分开每个问题的回答`
