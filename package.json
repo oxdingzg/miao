@@ -10,7 +10,6 @@
     "dev": "bun run --cwd packages/miao src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop dev",
     "dev:web": "bun --cwd packages/app dev",
-    "dev:stats": "bun sst shell --stage=production -- bun run --cwd packages/stats/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
@@ -25,7 +24,6 @@
   "workspaces": {
     "packages": [
       "packages/*",
-      "packages/stats/*",
       "packages/sdk/js",
       "packages/slack"
     ],
