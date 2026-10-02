@@ -1,2 +1,8 @@
+# Check text files out with LF everywhere. Git for Windows defaults to
+# core.autocrlf=true, which turns prompt templates imported as text (for example
+# packages/core/src/system-context/persona/*.txt) into CRLF and breaks recorded
+# request fixtures and string comparisons on Windows.
+* text=auto eol=lf
+
 packages/core/migration/**/snapshot.json linguist-generated
 packages/core/src/database/migration.gen.ts linguist-generated
