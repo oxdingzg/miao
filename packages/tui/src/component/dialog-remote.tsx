@@ -1,12 +1,13 @@
 // /remote: manage the `miao remote` daemon's IM connectors from the TUI. The
 // dialog talks to the daemon's control routes on 127.0.0.1:<remote.port>, which
 // may be a different server than the one this TUI is attached to. It renders
-// login steps (QR codes as half-block characters, inputs, pairing codes) and
-// never starts, installs, or stops anything by itself.
+// login steps (QR codes as half-block characters, inputs, pairing codes). When
+// no daemon answers, logins run in this process (the host injects RemoteLocal)
+// and the daemon starts or stops only after the user confirms the shown commands.
 import { RGBA, TextAttributes } from "@opentui/core"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { createOpencodeClient, type Config } from "@opencode-ai/sdk/v2"
 import { Flag } from "@miao/core/flag/flag"
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js"
 import { renderUnicodeCompact } from "uqr"
 import { useTheme } from "../context/theme"
 import { useSync } from "../context/sync"
@@ -95,6 +96,38 @@ export type RemoteApi = {
   readonly test: (connector: string, account: string) => Promise<{ readonly ok: boolean; readonly error?: string }>
 }
 
+export type DaemonMode = "launchd" | "detached"
+export type DaemonPlan = { readonly mode: DaemonMode; readonly commands: ReadonlyArray<string> }
+export type DaemonResult = { readonly ok: true; readonly log: string } | { readonly ok: false; readonly error: string }
+
+/**
+ * This machine's side of /remote when no daemon answers, injected by the host
+ * (miao): logins run in this process through the same connector host and
+ * credentials file as `miao remote login`, and the daemon is started or stopped
+ * only after the user confirms the shown commands.
+ */
+export type RemoteLocal = {
+  /** Connectors and the accounts saved on this machine, without a daemon. */
+  readonly status: () => Promise<ReadonlyArray<ConnectorStatus>>
+  readonly login: RemoteApi["login"]
+  readonly events: RemoteApi["events"]
+  readonly input: RemoteApi["input"]
+  readonly cancel: RemoteApi["cancel"]
+  readonly remove: RemoteApi["remove"]
+  readonly daemon: {
+    readonly startPlan: (mode: DaemonMode) => Promise<DaemonPlan>
+    readonly start: (mode: DaemonMode) => Promise<DaemonResult>
+    readonly stopPlan: (pid: number) => Promise<DaemonPlan>
+    readonly stop: (pid: number) => Promise<DaemonResult>
+  }
+}
+
+/** Builds the local side from the `remote` config section; loaded lazily on first use. */
+export type RemoteLocalFactory = (settings: Config["remote"]) => Promise<RemoteLocal>
+
+const RemoteLocalContext = createContext<RemoteLocalFactory>()
+export const RemoteLocalProvider = RemoteLocalContext.Provider
+
 export type RemoteEnvironment = {
   readonly api: RemoteApi
   readonly port: number
@@ -102,7 +135,14 @@ export type RemoteEnvironment = {
   readonly attached: boolean
   readonly sessionID?: string
   readonly uid: number
+  readonly platform: string
+  /** Absent when the host cannot log in or start a daemon here; the dialog then only shows commands. */
+  readonly local?: RemoteLocal
+  /** How often to poll while waiting for a started or stopped daemon. */
+  readonly waitMs?: number
 }
+
+type ApiFlow = Pick<RemoteApi, "login" | "events" | "input" | "cancel">
 
 /** Control routes over the generated SDK; any failure to reach the daemon reads as "not running". */
 export function createRemoteApi(input: {
@@ -151,6 +191,7 @@ export function DialogRemote() {
   const sync = useSync()
   const sdk = useSDK()
   const route = useRoute()
+  const factory = useContext(RemoteLocalContext)
   const port = sync.data.config.remote?.port ?? DefaultPort
   const url = `http://127.0.0.1:${port}`
   const password = Flag.MIAO_SERVER_PASSWORD
@@ -167,9 +208,41 @@ export function DialogRemote() {
         attached: sameServer(sdk.url, url),
         sessionID: route.data.type === "session" ? route.data.sessionID : undefined,
         uid: process.getuid?.() ?? 0,
+        platform: process.platform,
+        local: factory ? lazyLocal(() => factory(sync.data.config.remote)) : undefined,
       }}
     />
   )
+}
+
+/** Defers loading the connector host until the dialog first needs it, then reuses it. */
+function lazyLocal(load: () => Promise<RemoteLocal>): RemoteLocal {
+  const cache = { value: undefined as Promise<RemoteLocal> | undefined }
+  // A failed load is retried on the next use instead of being remembered.
+  const get = () =>
+    (cache.value ??= load().catch((error: unknown) => {
+      cache.value = undefined
+      throw error
+    }))
+  return {
+    status: () => get().then((local) => local.status()),
+    login: (connector) => get().then((local) => local.login(connector)),
+    events: (flow, signal) => ({
+      [Symbol.asyncIterator]: async function* () {
+        const local = await get()
+        yield* local.events(flow, signal)
+      },
+    }),
+    input: (flow, value) => get().then((local) => local.input(flow, value)),
+    cancel: (flow) => get().then((local) => local.cancel(flow)),
+    remove: (connector, account) => get().then((local) => local.remove(connector, account)),
+    daemon: {
+      startPlan: (mode) => get().then((local) => local.daemon.startPlan(mode)),
+      start: (mode) => get().then((local) => local.daemon.start(mode)),
+      stopPlan: (pid) => get().then((local) => local.daemon.stopPlan(pid)),
+      stop: (pid) => get().then((local) => local.daemon.stop(pid)),
+    },
+  }
 }
 
 export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
@@ -177,13 +250,18 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
   const toast = useToast()
   const { theme } = useTheme()
   const environment = props.environment
+  const local = environment.local
   const [status, setStatus] = createSignal<DaemonStatus | undefined | "loading">("loading")
+  // Accounts saved on this machine, read only while no daemon answers.
+  const [saved, setSaved] = createSignal<ReadonlyArray<ConnectorStatus> | undefined>()
   // Polling replaces the options only when something changed, so the highlighted row stays put.
-  const refresh = () =>
-    environment.api.status().then((value) => {
-      const current = status()
-      if (current === "loading" || JSON.stringify(current) !== JSON.stringify(value)) setStatus(value)
-    })
+  const refresh = async () => {
+    const value = await environment.api.status()
+    const accounts = value === undefined && local ? await local.status().catch(() => undefined) : undefined
+    if (JSON.stringify(saved()) !== JSON.stringify(accounts)) setSaved(accounts)
+    const current = status()
+    if (current === "loading" || JSON.stringify(current) !== JSON.stringify(value)) setStatus(value)
+  }
   onMount(() => void refresh())
   const timer = setInterval(() => void refresh(), 3000)
   onCleanup(() => clearInterval(timer))
@@ -193,6 +271,54 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
     const current = status()
     if (current === "loading")
       return [{ value: "daemon", title: "守护进程", description: "◌ 正在检查…", category: "守护进程" }]
+    if (!current && local)
+      return [
+        {
+          value: "daemon",
+          title: "守护进程",
+          description: `○ 未运行（${address}）`,
+          category: "守护进程",
+          onSelect: () => void refresh(),
+        },
+        ...(environment.platform === "darwin"
+          ? [
+              {
+                value: "start:launchd",
+                title: "启动守护进程（launchd 常驻）",
+                description: "写入 launchd plist 并加载，登录后自动运行；先显示命令，确认后执行",
+                category: "守护进程",
+                onSelect: () => void startDaemon(local, "launchd"),
+              },
+            ]
+          : []),
+        {
+          value: "start:detached",
+          title: environment.platform === "darwin" ? "仅本次启动（后台）" : "启动守护进程（后台）",
+          description: "在后台运行 miao remote，日志写到 remote.log；先显示命令，确认后执行",
+          category: "守护进程",
+          onSelect: () => void startDaemon(local, "detached"),
+        },
+        ...(saved() ?? []).flatMap((connector): DialogSelectOption<string>[] =>
+          connector.accounts.length === 0
+            ? [
+                {
+                  value: `login:${connector.id}`,
+                  title: connector.name,
+                  description: "○ 未接入",
+                  footer: "回车 接入（在本机登录）",
+                  category: "连接器",
+                  onSelect: () => login(connector, local),
+                },
+              ]
+            : connector.accounts.map((account) => ({
+                value: `account:${connector.id}/${account.account}`,
+                title: `${connector.name} ${account.account}`,
+                description: account.state === "needs-login" ? stateText(account) : "● 已登录（守护进程未运行）",
+                category: "连接器",
+                onSelect: () => manageSaved(connector, account, local),
+              })),
+        ),
+      ]
     if (!current)
       return [
         {
@@ -232,6 +358,17 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
         category: "守护进程",
         onSelect: () => void refresh(),
       },
+      ...(local
+        ? [
+            {
+              value: "stop",
+              title: "停止守护进程",
+              description: "先显示命令，确认后执行",
+              category: "守护进程",
+              onSelect: () => void stopDaemon(local, current.pid),
+            },
+          ]
+        : []),
       ...current.connectors.flatMap((connector): DialogSelectOption<string>[] =>
         connector.accounts.length === 0
           ? [
@@ -269,8 +406,84 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
 
   const reopen = () => dialog.replace(() => <DialogRemoteView environment={environment} />)
 
-  function login(connector: ConnectorStatus) {
-    void runLogin({ dialog, toast, environment, connector, back: reopen })
+  /** Logs in through the daemon, or in this process when `here` is given (no daemon running). */
+  function login(connector: ConnectorStatus, here?: RemoteLocal) {
+    void runLogin({ dialog, toast, api: here ?? environment.api, local: here !== undefined, connector, back: reopen })
+  }
+
+  function manageSaved(connector: ConnectorStatus, account: AccountStatus, here: RemoteLocal) {
+    dialog.replace(() => (
+      <DialogSelect
+        title={`${connector.name} ${account.account}`}
+        options={[
+          {
+            value: "login",
+            title: "重新登录",
+            description: account.state === "needs-login" ? "登录已失效，需要重新扫码" : "用新的扫码或凭证替换当前登录",
+            onSelect: () => login(connector, here),
+          },
+          {
+            value: "remove",
+            title: "断开",
+            description: "删除这个账号的凭证",
+            onSelect: () =>
+              void DialogConfirm.show(dialog, "断开", `断开 ${connector.name} ${account.account} 并删除凭证？`).then(
+                (confirmed) =>
+                  confirmed
+                    ? here.remove(connector.id, account.account).then(
+                        () => {
+                          toast.show({ message: "已断开", variant: "success" })
+                          reopen()
+                        },
+                        (error: unknown) => toast.show({ message: errorText(error), variant: "error" }),
+                      )
+                    : reopen(),
+              ),
+          },
+        ]}
+      />
+    ))
+  }
+
+  async function startDaemon(here: RemoteLocal, mode: DaemonMode) {
+    const plan = await here.daemon.startPlan(mode).catch((error: unknown) => {
+      toast.show({ message: errorText(error), variant: "error" })
+      return undefined
+    })
+    if (!plan) return
+    const confirmed = await confirm(dialog, "启动守护进程", confirmText(plan, mode))
+    if (!confirmed) return reopen()
+    const waiting = wait(dialog, "启动守护进程", "正在启动…")
+    const result = await here.daemon.start(mode)
+    if (!result.ok) return show(dialog, "启动失败", failureText(result.error, plan))
+    waiting.update(`正在等待 ${address} 就绪… 日志：${result.log}`)
+    const ready = await poll(environment, waiting, async () => (await environment.api.status()) !== undefined)
+    if (waiting.closed()) return
+    if (!ready) return show(dialog, "守护进程没有就绪", `30 秒内 ${address} 没有响应。\n\n查看日志：${result.log}`)
+    toast.show({ message: `守护进程已启动，日志：${result.log}`, variant: "success" })
+    reopen()
+  }
+
+  async function stopDaemon(here: RemoteLocal, pid: number) {
+    const plan = await here.daemon.stopPlan(pid).catch((error: unknown) => {
+      toast.show({ message: errorText(error), variant: "error" })
+      return undefined
+    })
+    if (!plan) return
+    const confirmed = await confirm(
+      dialog,
+      "停止守护进程",
+      ["将要运行：", "", ...plan.commands.map((command) => `  ${command}`), "", "手机上的 IM 将不再响应。"].join("\n"),
+    )
+    if (!confirmed) return reopen()
+    const waiting = wait(dialog, "停止守护进程", "正在停止…")
+    const result = await here.daemon.stop(pid)
+    if (!result.ok) return show(dialog, "停止失败", failureText(result.error, plan))
+    const stopped = await poll(environment, waiting, async () => (await environment.api.status()) === undefined)
+    if (waiting.closed()) return
+    if (!stopped) return show(dialog, "守护进程仍在运行", `30 秒后 ${address} 仍有响应。\n\n查看日志：${result.log}`)
+    toast.show({ message: "守护进程已停止", variant: "success" })
+    reopen()
   }
 
   function manage(connector: ConnectorStatus, account: AccountStatus) {
@@ -344,11 +557,13 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
 export async function runLogin(input: {
   readonly dialog: DialogContext
   readonly toast: ReturnType<typeof useToast>
-  readonly environment: RemoteEnvironment
+  readonly api: ApiFlow
+  /** The login runs in this process because no daemon is running. */
+  readonly local?: boolean
   readonly connector: ConnectorStatus
   readonly back: () => void
 }) {
-  const api = input.environment.api
+  const api = input.api
   const flow = await api.login(input.connector.id).catch((error: unknown) => {
     input.toast.show({ message: errorText(error), variant: "error" })
     return undefined
@@ -379,7 +594,9 @@ export async function runLogin(input: {
     if (next.type === "done") {
       state.finished = true
       input.toast.show({
-        message: `已接入${input.connector.name}（${next.account.id}）${next.message ? `：${next.message}` : ""}`,
+        message:
+          `已接入${input.connector.name}（${next.account.id}）${next.message ? `：${next.message}` : ""}` +
+          (input.local ? "。启动守护进程后即可在手机上使用" : ""),
         variant: "success",
       })
       input.back()
@@ -571,6 +788,53 @@ export function attachHelp(environment: Pick<RemoteEnvironment, "port" | "sessio
     "",
     "之后在手机上就能驱动这个会话。",
   ].join("\n")
+}
+
+export function confirmText(plan: DaemonPlan, mode: DaemonMode) {
+  return [
+    "将要运行：",
+    "",
+    ...plan.commands.map((command) => `  ${command}`),
+    "",
+    mode === "launchd"
+      ? "miao remote 将常驻后台，登录系统后自动运行；以后在这里选「停止守护进程」停止。"
+      : "miao remote 将在后台运行，直到你在这里停止它或重启电脑。",
+  ].join("\n")
+}
+
+/** A confirmation wide enough that commands with full paths stay on one line. */
+function confirm(dialog: DialogContext, title: string, message: string) {
+  const answer = DialogConfirm.show(dialog, title, message)
+  dialog.setSize("xlarge")
+  return answer
+}
+
+function failureText(error: string, plan: DaemonPlan) {
+  return [error, "", "可以在终端里手动执行：", "", ...plan.commands.map((command) => `  ${command}`)].join("\n")
+}
+
+/** A progress view for start and stop; closing it (esc) stops the waiting, not the action. */
+function wait(dialog: DialogContext, title: string, message: string) {
+  const [text, setText] = createSignal(message)
+  const state = { closed: false }
+  dialog.replace(
+    () => <LoginStepView step={{ type: "progress", message: text() }} title={title} />,
+    () => {
+      state.closed = true
+    },
+  )
+  return { update: setText, closed: () => state.closed }
+}
+
+/** Polls the daemon's control route until `check` holds, for up to 30 seconds. */
+async function poll(environment: RemoteEnvironment, waiting: { closed: () => boolean }, check: () => Promise<boolean>) {
+  const interval = environment.waitMs ?? 500
+  for (const _ of Array.from({ length: Math.ceil(30_000 / interval) })) {
+    if (waiting.closed()) return false
+    if (await check()) return true
+    await Bun.sleep(interval)
+  }
+  return false
 }
 
 function show(dialog: DialogContext, title: string, message: string) {
