@@ -347,12 +347,16 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
   Service,
   Effect.gen(function* () {
     const http = yield* HttpClient.HttpClient
+    // Resolved once, where the layer is built, for the same reason `LLMClient`
+    // does it: the archive is a deployment decision, not a per-request one, and
+    // reading it here keeps a disabled archive entirely off the request path.
+    const archive = Option.getOrUndefined(yield* Effect.serviceOption(ProviderWireArchive.Service))
     const executeOnce = (request: HttpClientRequest.HttpClientRequest) =>
       Effect.gen(function* () {
         const redactedNames = yield* Headers.CurrentRedactedNames
         const trace = tracerFor({
           exchange: yield* ProviderWireArchive.CurrentExchange,
-          archive: Option.getOrUndefined(yield* Effect.serviceOption(ProviderWireArchive.Service)),
+          archive,
           request,
           redactedNames,
         })
