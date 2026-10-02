@@ -112,7 +112,14 @@ const layer = Layer.effect(
           return fs.globUp(instruction, start, insideProject ? stop : start)
         },
       ).pipe(
-        Effect.map((matches) => matches.flat()),
+        // Glob order follows the filesystem, which differs across platforms. Sort
+        // so the rendered instructions (and the cached prompt prefix) are stable:
+        // deeper paths first keeps globUp's nearer-directory-first order.
+        Effect.map((matches) =>
+          matches.flatMap((items) =>
+            items.toSorted((a, b) => b.split(sep).length - a.split(sep).length || a.localeCompare(b)),
+          ),
+        ),
         Effect.catch(() => Effect.succeed([] as string[])),
       )
       const paths = Array.dedupe(
