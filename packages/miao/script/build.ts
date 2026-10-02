@@ -224,6 +224,12 @@ for (const item of targets) {
     },
   }).finally(() => restore?.())
 
+  // Embedding the bundle invalidates the linker's ad-hoc signature, and macOS 27+
+  // SIGKILLs binaries with invalid pages. Re-sign ad-hoc after every local darwin compile.
+  if (item.os === "darwin" && process.platform === "darwin") {
+    await $`codesign --force --sign - dist/${name}/bin/miao`
+  }
+
   // Ship the catalog next to the binary so a fresh install works offline; the
   // runtime reads it before falling back to a network fetch.
   if (generated.modelsData) {
