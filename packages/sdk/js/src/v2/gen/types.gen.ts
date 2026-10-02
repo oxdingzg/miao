@@ -2042,6 +2042,7 @@ export type Config = {
     max_bytes?: number
   }
   sandbox?: ConfigV2Sandbox
+  remote?: ConfigV2Remote
   compaction?: {
     auto?: boolean
     prune?: boolean
@@ -3940,6 +3941,18 @@ export type ConfigV2Sandbox = {
   network?: boolean
   writable_roots?: Array<string>
   on_unavailable?: "warn" | "fail"
+}
+
+export type ConfigV2RemoteWeChat = {
+  push_budget_per_day?: number
+}
+
+export type ConfigV2Remote = {
+  port?: number
+  projects?: {
+    [key: string]: string
+  }
+  wechat?: ConfigV2RemoteWeChat
 }
 
 export type PolicyEffect = "allow" | "deny"
