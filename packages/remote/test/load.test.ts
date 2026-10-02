@@ -17,7 +17,7 @@ test("loads connectors from a local module path and installs npm specs through t
       throw new Error(`cannot install ${spec} offline`)
     },
   })
-  expect(result.connectors.map((connector) => connector.id)).toEqual(["wechat", "echo"])
+  expect(result.connectors.map((connector) => connector.id)).toEqual(["wechat", "qq", "echo"])
   expect(installs).toEqual(["miao-connector-missing"])
   expect(result.errors).toEqual([
     { spec: "miao-connector-missing", error: "cannot install miao-connector-missing offline" },
@@ -32,7 +32,7 @@ test("refuses duplicate ids and modules without connectors", async () => {
       throw new Error("unused")
     },
   })
-  expect(result.connectors.map((connector) => connector.id)).toEqual(["wechat", "echo"])
+  expect(result.connectors.map((connector) => connector.id)).toEqual(["wechat", "qq", "echo"])
   expect(result.errors.map((error) => error.error)).toEqual([
     '连接器 id "echo" 已被占用，已跳过',
     "模块没有导出 defineConnector(...) 定义的连接器",

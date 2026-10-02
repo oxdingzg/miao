@@ -8,6 +8,7 @@ import path from "node:path"
 import type { Channel, Inbound, SendResult } from "../../channel"
 import { readJson, writer } from "../../file"
 import { acquireLock, type Lock } from "../../lock"
+import { split } from "../../text"
 import { createIlinkApi, ItemType, MessageType, StaleTokenCode, ThrottledCode, type WeixinMessage } from "./ilink"
 import { saveCredentials, type Credentials } from "./login"
 
@@ -286,16 +287,6 @@ export function createWechatChannel(options: WechatChannelOptions) {
       )
     })
   }
-}
-
-/** Splits on code points, preferring a line break in the last fifth of each piece. */
-export function split(text: string, limit: number): string[] {
-  const characters = [...text]
-  if (characters.length <= limit) return [text]
-  const window = characters.slice(0, limit)
-  const lineBreak = window.lastIndexOf("\n")
-  const cut = lineBreak >= limit * 0.8 ? lineBreak + 1 : limit
-  return [characters.slice(0, cut).join(""), ...split(characters.slice(cut).join(""), limit)]
 }
 
 function field(value: unknown, key: string): unknown {
