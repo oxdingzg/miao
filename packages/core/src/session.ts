@@ -629,6 +629,9 @@ const layer = Layer.effect(
           Effect.gen(function* () {
             yield* result.get(input.sessionID)
             yield* requireMigrated(input.sessionID)
+            // Image attachments arrive already shrunk: `session.prompt` in the
+            // server owns that boundary, because the image limits come from
+            // Location config and this service is not Location-scoped.
             const prompt = yield* SessionBlobStorage.externalizePromptAttachments(blob, resolvePrompt(input.prompt))
             const messageID = input.id ?? SessionMessage.ID.create()
             const delivery = input.delivery ?? "steer"
