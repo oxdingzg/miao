@@ -24,6 +24,9 @@
   （protocol 组 + handler）。因为 `Config.Info` 定义在 core、protocol 不能依赖 core，成功类型暂用
   `Schema.Record(String, Unknown)` 宽松对象，TUI 用 `toConfig` 直接接收——**待 config schema 下沉到
   `@miao/schema` 后再收紧**。`config.providers` 仍需一个“已连接 provider”的轻量 V2 端点，未做。
+- `command` / `skill` / `project.current`：TUI 的 `sdk.client.command.list`、`app.skills`、
+  `project.current` → `client.v2.command.list` / `v2.skill.list` / `v2.project.current`（`sync.tsx` 用
+  `toCommand` 把 `CommandV2Info` 映射回 V1 `Command`，`model` 拼成 `provider/model`）。无需新端点。
 - `experimental.session.background`：V2 下 `foregroundTasks` 恒为空，`session.background` 命令与快捷键
   永远禁用，已连同 `foregroundTasks` 一并删除。
 - `app` / `project`：`app.agents` → `v2.agent.list`，`sync.tsx` 用 `toAgent` 把 `AgentV2Info` 映射回
