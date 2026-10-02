@@ -8,7 +8,16 @@ import { onCleanup, onMount } from "solid-js"
 import { tmpdir } from "../../fixture/fixture"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { TestTuiContexts } from "../../fixture/tui-environment"
-import type { DaemonStatus, LoginStep, RemoteApi, RemoteEnvironment } from "../../../src/component/dialog-remote"
+import type {
+  ConnectorStatus,
+  DaemonPlan,
+  DaemonResult,
+  DaemonStatus,
+  LoginStep,
+  RemoteApi,
+  RemoteEnvironment,
+  RemoteLocal,
+} from "../../../src/component/dialog-remote"
 
 const wechat = {
   id: "wechat",
@@ -37,8 +46,9 @@ const qq = {
 }
 const telegram = { id: "telegram", name: "Telegram", pairing: true, accounts: [] }
 
-/** An in-memory daemon: records calls and lets the test push login steps. */
-function daemon(status: DaemonStatus | undefined) {
+/** An in-memory daemon: records calls and lets the test push login steps and change its status. */
+function daemon(initial: DaemonStatus | undefined) {
+  const state = { status: initial }
   const calls: Array<{ readonly name: string; readonly args: ReadonlyArray<unknown> }> = []
   const steps: LoginStep[] = []
   const waiters = new Set<() => void>()
@@ -47,7 +57,7 @@ function daemon(status: DaemonStatus | undefined) {
     waiters.forEach((wake) => wake())
   }
   const api: RemoteApi = {
-    status: async () => status,
+    status: async () => state.status,
     login: async (connector) => {
       calls.push({ name: "login", args: [connector] })
       return "flow-1"
@@ -73,7 +83,7 @@ function daemon(status: DaemonStatus | undefined) {
       return { ok: true }
     },
   }
-  return { api, calls, push }
+  return { api, calls, push, set: (next: DaemonStatus | undefined) => void (state.status = next) }
 }
 
 async function mount(root: string, environment: RemoteEnvironment) {
@@ -158,6 +168,8 @@ const environment = (api: RemoteApi, extra: Partial<RemoteEnvironment> = {}): Re
   attached: false,
   sessionID: "ses_current",
   uid: 501,
+  platform: "darwin",
+  waitMs: 20,
   ...extra,
 })
 
@@ -337,4 +349,161 @@ test("the SDK-backed api reads status, follows login steps over SSE, and treats 
     server.stop(true)
   }
   expect(await createRemoteApi({ url: `http://127.0.0.1:${server.port}` }).status()).toBeUndefined()
+})
+
+const running: DaemonStatus = { pid: 42, port: 4097, version: "0.0.33", connectors: [wechat] }
+const plist = "/home/me/Library/LaunchAgents/dev.mtty.miao.remote.plist"
+
+/**
+ * This machine's side without a daemon: logins reuse the in-memory flow fake,
+ * and start/stop return scripted plans and results. Nothing is executed.
+ */
+function machine(input: {
+  readonly remote: ReturnType<typeof daemon>
+  readonly saved: ReadonlyArray<ConnectorStatus>
+  readonly start?: DaemonResult
+}) {
+  const flows = daemon(undefined)
+  const state = { saved: input.saved }
+  const plans: Record<"launchd" | "detached", DaemonPlan> = {
+    launchd: { mode: "launchd", commands: [`# 写入 ${plist}`, `launchctl bootstrap gui/501 ${plist}`] },
+    detached: { mode: "detached", commands: ["/usr/local/bin/miao remote >> /home/me/remote.log 2>&1 &"] },
+  }
+  const local: RemoteLocal = {
+    status: async () => state.saved,
+    login: flows.api.login,
+    events: flows.api.events,
+    input: flows.api.input,
+    cancel: flows.api.cancel,
+    remove: flows.api.remove,
+    daemon: {
+      startPlan: async (mode) => plans[mode],
+      start: async (mode) => {
+        flows.calls.push({ name: "start", args: [mode] })
+        const result = input.start ?? { ok: true, log: "/home/me/remote.log" }
+        if (result.ok) input.remote.set(running)
+        return result
+      },
+      stopPlan: async (pid) => ({ mode: "detached", commands: [`kill -TERM ${pid}`] }),
+      stop: async (pid) => {
+        flows.calls.push({ name: "stop", args: [pid] })
+        input.remote.set(undefined)
+        return { ok: true, log: "/home/me/remote.log" }
+      },
+    },
+  }
+  return {
+    local,
+    calls: flows.calls,
+    push: flows.push,
+    save: (next: ReadonlyArray<ConnectorStatus>) => void (state.saved = next),
+  }
+}
+
+test("without a daemon, logs in on this machine and lists the account as logged in but not running", async () => {
+  await using tmp = await tmpdir()
+  const remote = daemon(undefined)
+  const here = machine({ remote, saved: [{ ...wechat, accounts: [] }, qq] })
+  const view = await mount(tmp.path, environment(remote.api, { local: here.local }))
+  try {
+    const frame = await view.until((value) => value.includes("○ 未接入") && value.includes("QQ 机器人"))
+    expect(frame).toContain("○ 未运行（127.0.0.1:4097）")
+    expect(frame).toContain("启动守护进程（launchd 常驻）")
+    expect(frame).toContain("仅本次启动（后台）")
+    expect(frame).not.toContain("前台启动")
+
+    // Rows: daemon, launchd start, detached start, WeChat, QQ.
+    await view.select(4)
+    await view.until(() => here.calls.some((call) => call.name === "login"))
+    expect(here.calls.find((call) => call.name === "login")?.args).toEqual(["qq"])
+    here.push({
+      type: "qr",
+      content: "https://q.qq.com/qqbot/openclaw/connect.html?task_id=t1",
+      hint: "用手机 QQ 扫码",
+    })
+    const qr = await view.until((value) => value.includes("扫不了时用手机打开"))
+    expect(qr).toContain("接入 QQ 机器人")
+    expect(qr).toMatch(/[▀▄█]{8}/)
+
+    here.save([
+      { ...wechat, accounts: [] },
+      { ...qq, accounts: [{ ...wechat.accounts[0], connector: "qq", account: "102000001", state: "offline" }] },
+    ])
+    here.push({ type: "done", connector: "qq", account: { id: "102000001", label: "QQ 机器人" } })
+    // The toast wraps, so match its first line.
+    await view.until((value) => value.includes("已接入QQ 机器人（102000001）。启动守护进程后即可在手机"))
+    const list = await view.until((value) => value.includes("● 已登录（守护进程未运行）"))
+    expect(list).toContain("QQ 机器人 102000001")
+    expect(remote.calls).toEqual([])
+    expect(here.calls.some((call) => call.name === "start")).toBe(false)
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("starting the daemon shows the launchctl command, runs nothing until confirmed, then follows the daemon", async () => {
+  await using tmp = await tmpdir()
+  const remote = daemon(undefined)
+  const here = machine({ remote, saved: [qq] })
+  const view = await mount(tmp.path, environment(remote.api, { local: here.local }))
+  try {
+    await view.until((value) => value.includes("启动守护进程（launchd 常驻）"))
+    await view.select(1)
+    const confirm = await view.until((value) => value.includes("将要运行"))
+    expect(confirm).toContain(`launchctl bootstrap gui/501 ${plist}`)
+    expect(confirm).toContain("登录系统后自动运行")
+    await view.app.mockInput.pressEscape()
+    await view.until((value) => value.includes("○ 未运行"))
+    expect(here.calls.some((call) => call.name === "start")).toBe(false)
+
+    await view.select(1)
+    await view.until((value) => value.includes("将要运行"))
+    await view.app.mockInput.pressEnter()
+    const daemonView = await view.until((value) => value.includes("● 运行中 127.0.0.1:4097（pid 42）"))
+    expect(daemonView).toContain("停止守护进程")
+    expect(daemonView).toContain("微信 bot@im.bot")
+    expect(here.calls.filter((call) => call.name === "start")).toEqual([{ name: "start", args: ["launchd"] }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("off macOS only the detached start is offered, and a failed start shows the error and the manual command", async () => {
+  await using tmp = await tmpdir()
+  const remote = daemon(undefined)
+  const here = machine({ remote, saved: [qq], start: { ok: false, error: "spawn ENOENT" } })
+  const view = await mount(tmp.path, environment(remote.api, { local: here.local, platform: "linux" }))
+  try {
+    const frame = await view.until((value) => value.includes("启动守护进程（后台）"))
+    expect(frame).not.toContain("launchd")
+    await view.select(1)
+    const confirm = await view.until((value) => value.includes("将要运行"))
+    expect(confirm).toContain("miao remote >> /home/me/remote.log 2>&1 &")
+    await view.app.mockInput.pressEnter()
+    const failed = await view.until((value) => value.includes("启动失败"))
+    expect(failed).toContain("spawn ENOENT")
+    expect(failed).toContain("可以在终端里手动执行")
+    expect(here.calls.filter((call) => call.name === "start")).toEqual([{ name: "start", args: ["detached"] }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("stopping the daemon asks first, then signals the pid it reported", async () => {
+  await using tmp = await tmpdir()
+  const remote = daemon(running)
+  const here = machine({ remote, saved: [] })
+  const view = await mount(tmp.path, environment(remote.api, { local: here.local }))
+  try {
+    await view.until((value) => value.includes("停止守护进程"))
+    await view.select(1)
+    const confirm = await view.until((value) => value.includes("kill -TERM 42"))
+    expect(confirm).toContain("手机上的 IM 将不再响应")
+    expect(here.calls).toEqual([])
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("○ 未运行（127.0.0.1:4097）"))
+    expect(here.calls).toEqual([{ name: "stop", args: [42] }])
+  } finally {
+    view.cleanup()
+  }
 })
