@@ -663,6 +663,23 @@ const scenarios: Scenario[] = [
     check(body.healthy === true, "v2 server should report healthy")
   }),
   http.protected.get("/api/location", "v2.location.get").json(200, object),
+  http.protected.get("/api/project/current", "v2.project.current").json(
+    200,
+    (body, ctx) =>
+      locationData((project) => {
+        object(project)
+        check(project.directory === ctx.directory, "current project should resolve from scenario directory")
+      })(body),
+    "none",
+  ),
+  http.protected
+    .get("/api/project/{projectID}/directories", "v2.project.directories")
+    .seeded((ctx) => ctx.project())
+    .at((ctx) => ({
+      path: route("/api/project/{projectID}/directories", { projectID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, locationData(array), "none"),
   http.protected.get("/api/agent", "v2.agent.list").json(200, locationData(array)),
   http.protected.get("/api/model", "v2.model.list").json(200, locationData(array)),
   http.protected.get("/api/provider", "v2.provider.list").json(200, locationData(array)),
@@ -1193,6 +1210,160 @@ const scenarios: Scenario[] = [
     }))
     .status(404, undefined, "status"),
   http.protected
+    .get("/api/session/{sessionID}/todo", "v2.session.todo")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Session todo" })
+        yield* ctx.todos(session.id, [{ content: "Exercise todo", status: "pending", priority: "high" }])
+        return session
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/todo", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(
+      200,
+      data((todos) => {
+        array(todos)
+        check(todos.some((item) => isRecord(item) && item.content === "Exercise todo"), "seeded todo should be listed")
+      }),
+      "none",
+    ),
+  http.protected
+    .get("/api/session/{sessionID}/status", "v2.session.status")
+    .seeded((ctx) => ctx.session({ title: "Session status" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/status", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(
+      200,
+      data((status) => {
+        object(status)
+        check(status.type === "idle", "a fresh session should be idle")
+      }),
+      "none",
+    ),
+  http.protected
+    .get("/api/session/{sessionID}/children", "v2.session.children")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Session parent" })
+        const child = yield* ctx.session({ title: "Session child", parentID: parent.id })
+        return { parent, child }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/children", { sessionID: ctx.state.parent.id }),
+      headers: ctx.headers(),
+    }))
+    .json(
+      200,
+      (body, ctx) =>
+        data((children) => {
+          array(children)
+          check(
+            children.some((item) => isRecord(item) && item.id === ctx.state.child.id),
+            "seeded child session should be listed",
+          )
+        })(body),
+      "none",
+    ),
+  http.protected
+    .get("/api/session/{sessionID}/diff", "v2.session.diff")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/diff", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/api/session/{sessionID}/rename", "v2.session.rename")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Before V2 rename" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/rename", { sessionID: ctx.state.id }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { title: "After V2 rename" },
+    }))
+    .status(
+      204,
+      (ctx) =>
+        Effect.gen(function* () {
+          const session = yield* ctx.sessionGet(ctx.state.id)
+          check(session?.title === "After V2 rename", "renamed session should keep the new title")
+        }),
+      "none",
+    ),
+  http.protected
+    .post("/api/session/{sessionID}/archive", "v2.session.archive")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Archive me" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/archive", { sessionID: ctx.state.id }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { archived: true },
+    }))
+    .status(204, undefined, "none"),
+  http.protected
+    .post("/api/session/{sessionID}/remove", "v2.session.remove")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Remove me" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/remove", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .status(
+      204,
+      (ctx) =>
+        Effect.gen(function* () {
+          check((yield* ctx.sessionGet(ctx.state.id)) === undefined, "removed session should not remain in storage")
+        }),
+      "none",
+    ),
+  http.protected
+    .post("/api/session/{sessionID}/fork", "v2.session.fork")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Fork source" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/fork", { sessionID: ctx.state.id }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: {},
+    }))
+    .json(
+      200,
+      (body, ctx) =>
+        data((session) => {
+          object(session)
+          check(typeof session.id === "string" && session.id !== ctx.state.id, "fork should create a new session")
+        })(body),
+      "none",
+    ),
+  http.protected
+    .post("/api/session/{sessionID}/command", "v2.session.command")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/command", { sessionID: "ses_httpapi_missing" }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { command: "init", arguments: "" },
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/api/session/{sessionID}/shell", "v2.session.shell")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/shell", { sessionID: "ses_httpapi_missing" }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { command: "echo httpapi" },
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/api/session/{sessionID}/skill", "v2.session.skill")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/skill", { sessionID: "ses_httpapi_missing" }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { skill: "httpapi-missing" },
+    }))
+    .json(404, object, "status"),
+  http.protected
     .get("/session", "session.list")
     .seeded((ctx) => ctx.session({ title: "List me" }))
     .at((ctx) => ({ path: "/session?roots=true", headers: ctx.headers() }))
@@ -1697,6 +1868,8 @@ const scenarios: Scenario[] = [
   http.protected
     .post("/session/{sessionID}/share", "session.share")
     .mutating()
+    // miao defaults `share` to "disabled" (no share backend), so opt in to exercise the route.
+    .inProject({ git: true, config: { share: "manual" } })
     .seeded((ctx) => ctx.session({ title: "Share session" }))
     .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
     .json(
