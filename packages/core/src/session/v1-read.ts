@@ -82,7 +82,11 @@ export interface Preserved {
 }
 
 /** A legacy part without the ids its message already supplies. */
-export type StoredPart = Omit<SessionV1.Part, "sessionID" | "messageID">
+export type StoredPart = SessionV1.Part extends infer Part
+  ? Part extends SessionV1.Part
+    ? Omit<Part, "sessionID" | "messageID">
+    : never
+  : never
 
 export const METADATA_KEY = "v1"
 
@@ -94,7 +98,7 @@ export const preserved = (message: { readonly metadata?: Record<string, unknown>
 
 const strip = (part: SessionV1.Part): StoredPart => {
   const { sessionID: _sessionID, messageID: _messageID, ...rest } = part
-  return rest
+  return rest as StoredPart
 }
 
 const withPreserved = (value: Preserved) => {
