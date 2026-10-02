@@ -84,17 +84,22 @@ function toLspStatus(items: ReadonlyArray<{ id: string; connected: boolean }>): 
   }))
 }
 
+// The V2 integration method carries the id, but the V1 provider-auth shape the
+// TUI store keeps does not; preserve it so OAuth connect can target the method.
+type TuiAuthMethod = ProviderAuthMethod & { id?: string }
+
 // The V2 integration list replaces the V1 provider-auth map; env methods are
 // discovery-only, so only oauth and key methods become connectable entries.
-function toProviderAuth(integrations: ReadonlyArray<IntegrationInfo>): Record<string, ProviderAuthMethod[]> {
-  const result: Record<string, ProviderAuthMethod[]> = {}
+function toProviderAuth(integrations: ReadonlyArray<IntegrationInfo>): Record<string, TuiAuthMethod[]> {
+  const result: Record<string, TuiAuthMethod[]> = {}
   for (const integration of integrations) {
-    result[integration.id] = integration.methods.flatMap((method): ProviderAuthMethod[] => {
+    result[integration.id] = integration.methods.flatMap((method): TuiAuthMethod[] => {
       if (method.type === "env") return []
       if (method.type === "oauth")
         return [
           {
             type: "oauth" as const,
+            id: method.id,
             label: method.label,
             ...(method.prompts ? { prompts: method.prompts } : {}),
           },
@@ -141,7 +146,7 @@ export const {
       capabilities: {
         experimentalBackgroundSubagents: boolean
       }
-      provider_auth: Record<string, ProviderAuthMethod[]>
+      provider_auth: Record<string, TuiAuthMethod[]>
       agent: Agent[]
       command: Command[]
       permission: {
