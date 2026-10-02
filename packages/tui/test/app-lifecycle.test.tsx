@@ -136,7 +136,7 @@ test("fatal startup errors set a nonzero exit after scoped cleanup", async () =>
   await mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
   const events = createEventSource()
   const calls = createFetch((url) => {
-    if (url.pathname === "/config")
+    if (url.pathname === "/config" || url.pathname === "/api/config")
       return json(
         {
           name: "ConfigRemoteAuthError",

@@ -17,7 +17,7 @@ import type {
   AuthSetResponses,
   CommandListErrors,
   CommandListResponses,
-  Config as Config3,
+  Config as Config4,
   ConfigGetErrors,
   ConfigGetResponses,
   ConfigProvidersErrors,
@@ -262,6 +262,8 @@ import type {
   V2AgentListResponses,
   V2CommandListErrors,
   V2CommandListResponses,
+  V2ConfigGetErrors,
+  V2ConfigGetResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -1290,7 +1292,7 @@ export class Config extends HeyApiClient {
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
-      config?: Config3
+      config?: Config4
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1447,7 +1449,7 @@ export class Config2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      config?: Config3
+      config?: Config4
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4990,6 +4992,30 @@ export class Formatter2 extends HeyApiClient {
   }
 }
 
+export class Config3 extends HeyApiClient {
+  /**
+   * Get config
+   *
+   * Retrieve the merged configuration for the requested location.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2ConfigGetResponses, V2ConfigGetErrors, ThrowOnError>({
+      url: "/api/config",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Lsp2 extends HeyApiClient {
   /**
    * Get LSP status
@@ -7602,6 +7628,11 @@ export class V2 extends HeyApiClient {
   private _formatter?: Formatter2
   get formatter(): Formatter2 {
     return (this._formatter ??= new Formatter2({ client: this.client }))
+  }
+
+  private _config?: Config3
+  get config(): Config3 {
+    return (this._config ??= new Config3({ client: this.client }))
   }
 
   private _lsp?: Lsp2

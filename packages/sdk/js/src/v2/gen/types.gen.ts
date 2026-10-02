@@ -956,6 +956,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           assistantMessageID: string
+          model?: ModelRef
           finish: string
           cost: number
           tokens: {
@@ -3767,6 +3768,7 @@ export type SyncEventSessionNextStepEnded = {
       timestamp: number
       sessionID: string
       assistantMessageID: string
+      model?: ModelRef
       finish: string
       cost: number
       tokens: {
@@ -4714,6 +4716,7 @@ export type SessionNextStepEnded = {
     timestamp: number
     sessionID: string
     assistantMessageID: string
+    model?: ModelRef
     finish: string
     cost: number
     tokens: {
@@ -6786,6 +6789,7 @@ export type EventSessionNextStepEnded = {
     timestamp: number
     sessionID: string
     assistantMessageID: string
+    model?: ModelRef
     finish: string
     cost: number
     tokens: {
@@ -11627,6 +11631,45 @@ export type V2FormatterStatusResponses = {
 }
 
 export type V2FormatterStatusResponse = V2FormatterStatusResponses[keyof V2FormatterStatusResponses]
+
+export type V2ConfigGetData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/config"
+}
+
+export type V2ConfigGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ConfigGetError = V2ConfigGetErrors[keyof V2ConfigGetErrors]
+
+export type V2ConfigGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type V2ConfigGetResponse = V2ConfigGetResponses[keyof V2ConfigGetResponses]
 
 export type V2LspStatusData = {
   body?: never

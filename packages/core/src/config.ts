@@ -143,6 +143,29 @@ export class Directory extends Schema.Class<Directory>("Config.Directory")({
 
 export type Entry = Document | Directory
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/** Deep-merge plain objects; arrays and scalars from `patch` replace the base. */
+const mergeConfig = (base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> => {
+  const result = { ...base }
+  for (const [key, value] of Object.entries(patch)) {
+    const current = result[key]
+    result[key] = isRecord(current) && isRecord(value) ? mergeConfig(current, value) : value
+  }
+  return result
+}
+
+/** Merge config documents from lowest to highest priority into one object. */
+export const merge = (entries: readonly Entry[]): Record<string, unknown> => {
+  let merged: Record<string, unknown> = {}
+  for (const entry of entries) {
+    if (entry.type !== "document") continue
+    merged = mergeConfig(merged, entry.info as unknown as Record<string, unknown>)
+  }
+  return merged
+}
+
 export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
   return entries
     .filter((entry): entry is Document => entry.type === "document")

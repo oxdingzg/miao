@@ -20,6 +20,10 @@
   （返回 `Attempt{attemptID,url,instructions,mode}`）→ code 用 `attempt.complete({attemptID,code})`、
   auto 用 `attempt.status({attemptID})` 每秒轮询；`toProviderAuth` 保留 V2 `method.id` 供 `methodID`；
   成功后只 `sync.bootstrap()`（不再 `instance.dispose`），并加 `onCleanup` 停止轮询。
+- `config.get`：core 新增独立 `Config.merge(entries)`（深合并文档），加 `GET /api/config`
+  （protocol 组 + handler）。因为 `Config.Info` 定义在 core、protocol 不能依赖 core，成功类型暂用
+  `Schema.Record(String, Unknown)` 宽松对象，TUI 用 `toConfig` 直接接收——**待 config schema 下沉到
+  `@miao/schema` 后再收紧**。`config.providers` 仍需一个“已连接 provider”的轻量 V2 端点，未做。
 - `experimental.session.background`：V2 下 `foregroundTasks` 恒为空，`session.background` 命令与快捷键
   永远禁用，已连同 `foregroundTasks` 一并删除。
 - `app` / `project`：`app.agents` → `v2.agent.list`，`sync.tsx` 用 `toAgent` 把 `AgentV2Info` 映射回

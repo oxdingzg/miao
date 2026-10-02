@@ -127,6 +127,12 @@ function toAgent(agent: AgentV2Info): Agent {
   }
 }
 
+// Config is served as a permissive object until its V2 schema moves into
+// Schema; keep the store shape the TUI already reads.
+function toConfig(raw: Record<string, unknown>): Config {
+  return raw as unknown as Config
+}
+
 export const {
   context: SyncContext,
   use: useSync,
@@ -634,7 +640,7 @@ export const {
         .then((x) => x.data)
         .catch(() => emptyConsoleState)
       const agentsPromise = sdk.client.v2.agent.list({ location: { workspace } }, { throwOnError: true })
-      const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
+      const configPromise = sdk.client.v2.config.get({ location: { workspace } }, { throwOnError: true })
       await Promise.all([
         providersPromise,
         capabilitiesPromise,
@@ -648,7 +654,7 @@ export const {
           const capabilitiesResponse = capabilitiesPromise
           const consoleStateResponse = consoleStatePromise
           const agentsResponse = agentsPromise.then((x) => (x.data?.data ?? []).map(toAgent))
-          const configResponse = configPromise.then((x) => x.data!)
+          const configResponse = configPromise.then((x) => toConfig(x.data?.data ?? {}))
           const sessionListResponse = args.continue ? sessionListPromise : undefined
 
           return Promise.all([
