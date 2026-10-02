@@ -19,6 +19,8 @@ import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { ReadTool } from "@miao/core/tool/read"
 import { ReadToolFileSystem } from "@miao/core/tool/read-filesystem"
+import { ReadToolPdf } from "@miao/core/tool/read-pdf"
+import type { ChildProcess } from "effect/unstable/process"
 import { testEffect } from "./lib/effect"
 import { toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
 
@@ -55,6 +57,35 @@ const reader = Layer.succeed(
         listCalls.push(input)
         return new ReadToolFileSystem.ListPage({ entries: [], truncated: false })
       }),
+  }),
+)
+// A fake poppler for PDF routing: `null` pages have no text layer.
+let pdfPages: Array<string | null> = []
+let pdfRender = Buffer.alloc(0)
+const pdfCalls: string[][] = []
+const pdf = Layer.succeed(
+  ReadToolPdf.Service,
+  ReadToolPdf.make((command) => {
+    const standard = command as ChildProcess.StandardCommand
+    pdfCalls.push([standard.command, ...standard.args])
+    const flag = (name: string) => Number(standard.args[standard.args.indexOf(name) + 1])
+    const stdout =
+      standard.command === "pdfinfo"
+        ? `Pages: ${pdfPages.length}\n`
+        : standard.command === "pdftotext"
+          ? pdfPages
+              .slice(flag("-f") - 1, flag("-l"))
+              .map((text) => `${text ?? ""}\f`)
+              .join("")
+          : pdfRender
+    return Effect.succeed({
+      command: standard.command,
+      exitCode: 0,
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.alloc(0),
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    })
   }),
 )
 let allow = true
@@ -132,6 +163,7 @@ const unavailableImage = Layer.succeed(
 const readLayer = (imageLayer: Layer.Layer<Image.Service>) =>
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ReadTool.node]), [
     [ReadToolFileSystem.node, reader],
+    [ReadToolPdf.node, pdf],
     [PermissionV2.node, permission],
     [Config.node, config],
     [Image.node, imageLayer],
@@ -162,7 +194,87 @@ describe("ReadTool", () => {
     }
     readFailure = undefined
     configEntries = []
+    pdfPages = []
+    pdfRender = Buffer.alloc(0)
+    pdfCalls.length = 0
   })
+
+  it.effect("routes a PDF to the PDF reader and returns text and page images", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(4 * 4 * 4).fill(200), 4, 4)
+      pdfRender = Buffer.from(source.get_bytes_jpeg(80))
+      source.free()
+      pdfPages = ["This page has a real text layer to extract.", null]
+      readFailure = new ReadToolFileSystem.PdfFileError({ resource: "doc.pdf" })
+      const registry = yield* ToolRegistry.Service
+
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-pdf", name: "read", input: { path: "doc.pdf" } },
+      })
+
+      expect(result).toMatchObject({
+        type: "content",
+        value: [
+          {
+            type: "text",
+            text: expect.stringContaining("--- Page 1 ---\nThis page has a real text layer to extract."),
+          },
+          { type: "text", text: "\n\n[Page 2 image]" },
+          { type: "file", mime: "image/jpeg", name: "doc.pdf#page=2" },
+        ],
+      })
+      expect(assertions).toMatchObject([{ action: "read", resources: ["doc.pdf"] }])
+      expect(pdfCalls.map((call) => call[0])).toEqual(["pdfinfo", "pdftotext", "pdfinfo", "pdftoppm"])
+      expect(pdfCalls[0]).toEqual(["pdfinfo", path.join(process.cwd(), "doc.pdf")])
+    }),
+  )
+
+  it.effect("passes pages to the PDF reader", () =>
+    Effect.gen(function* () {
+      pdfPages = ["First page text layer content.", "Second page text layer content.", "Third page text."]
+      readFailure = new ReadToolFileSystem.PdfFileError({ resource: "doc.pdf" })
+      const registry = yield* ToolRegistry.Service
+
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-pdf-pages", name: "read", input: { path: "doc.pdf", pages: "2" } },
+      })
+
+      expect(result).toEqual({
+        type: "text",
+        value: "PDF doc.pdf: 3 pages. Returned page 2.\n\n--- Page 2 ---\nSecond page text layer content.",
+      })
+    }),
+  )
+
+  it.effect("rejects pages for non-PDF files and directories, and offset for PDFs", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const call = (id: string, input: Record<string, unknown>) =>
+        executeTool(registry, { sessionID, ...toolIdentity, call: { type: "tool-call", id, name: "read", input } })
+
+      expect(yield* call("call-text-pages", { path: "README.md", pages: "1" })).toEqual({
+        type: "error",
+        value: "pages only applies to PDF files; use offset and limit for text files and directories.",
+      })
+      resolvedType = "directory"
+      expect(yield* call("call-dir-pages", { path: "src", pages: "1" })).toEqual({
+        type: "error",
+        value: "pages only applies to PDF files; use offset and limit for text files and directories.",
+      })
+      resolvedType = "file"
+      readFailure = new ReadToolFileSystem.PdfFileError({ resource: "doc.pdf" })
+      expect(yield* call("call-pdf-offset", { path: "doc.pdf", offset: 2 })).toEqual({
+        type: "error",
+        value: "offset and limit do not apply to PDF files; select PDF pages with pages instead.",
+      })
+      expect(pdfCalls).toEqual([])
+    }),
+  )
 
   it.effect("registers, authorizes, and reads through the location filesystem", () =>
     Effect.gen(function* () {

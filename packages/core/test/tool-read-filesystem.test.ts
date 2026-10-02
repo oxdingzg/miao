@@ -69,6 +69,18 @@ describe("ReadToolFileSystem", () => {
     }),
   )
 
+  it.effect("reports PDF content as a PDF error so the read tool can route it", () =>
+    Effect.gen(function* () {
+      const { fs, files, directory } = yield* fixture
+      const file = path.join(directory, "scan.bin")
+      yield* files.writeFileString(file, "%PDF-1.4\n%\xe2\xe3\n")
+
+      const error = yield* ReadToolFileSystem.read(fs, file, "scan.bin").pipe(Effect.flip)
+
+      expect(error).toBeInstanceOf(ReadToolFileSystem.PdfFileError)
+    }),
+  )
+
   it.effect("reports out-of-range pagination as a typed error", () =>
     Effect.gen(function* () {
       const { fs, files, directory } = yield* fixture

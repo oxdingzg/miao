@@ -22,6 +22,15 @@ export class BinaryFileError extends Schema.TaggedErrorClass<BinaryFileError>()(
   }
 }
 
+// Raised instead of BinaryFileError so the read tool can route PDFs to its PDF reader.
+export class PdfFileError extends Schema.TaggedErrorClass<PdfFileError>()("ReadTool.PdfFileError", {
+  resource: Schema.String,
+}) {
+  override get message() {
+    return `Cannot read PDF file as text: ${this.resource}`
+  }
+}
+
 export class MediaIngestLimitError extends Schema.TaggedErrorClass<MediaIngestLimitError>()(
   "ReadTool.MediaIngestLimitError",
   {
@@ -64,6 +73,7 @@ export type InspectError = FSUtil.Error | PathKindError
 export type ReadError =
   | FSUtil.Error
   | BinaryFileError
+  | PdfFileError
   | MediaIngestLimitError
   | MalformedUtf8Error
   | OffsetOutOfRangeError
@@ -216,7 +226,8 @@ export const read = Effect.fn("ReadTool.read")(function* (
           mime,
         }
       }
-      if (startsWith(first, [0x25, 0x50, 0x44, 0x46]) || extensions.has(path.extname(resource).toLowerCase()))
+      if (startsWith(first, [0x25, 0x50, 0x44, 0x46])) return yield* Effect.fail(new PdfFileError({ resource }))
+      if (extensions.has(path.extname(resource).toLowerCase()))
         return yield* Effect.fail(new BinaryFileError({ resource }))
       const paged = info.size > MAX_READ_BYTES || page.offset !== undefined || page.limit !== undefined
       if (!paged) {
