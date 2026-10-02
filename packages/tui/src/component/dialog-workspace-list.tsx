@@ -64,7 +64,7 @@ export function DialogWorkspaceList() {
 
     setDeleting(undefined)
     setRemoving(workspace.id)
-    const result = await sdk.client.experimental.workspace.remove({ id: workspace.id }).catch((err) => ({
+    const result = await sdk.client.v2.workspace.remove({ id: workspace.id }).catch((err) => ({
       error: err,
     }))
     if (result?.error) {
@@ -88,7 +88,7 @@ export function DialogWorkspaceList() {
 
   onMount(() => {
     dialog.setSize("large")
-    void sdk.client.experimental.workspace.syncList().catch(() => undefined)
+    void sdk.client.v2.workspace.syncList().catch(() => undefined)
     void project.workspace.sync()
   })
 

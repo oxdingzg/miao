@@ -67,15 +67,16 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
     }
 
     async function syncWorkspace() {
-      const listed = await sdk.client.experimental.workspace.list().catch(() => undefined)
+      const listed = await sdk.client.v2.workspace.list().catch(() => undefined)
       if (!listed?.data) return
-      const status = await sdk.client.experimental.workspace.status().catch(() => undefined)
-      const next = Object.fromEntries((status?.data ?? []).map((item) => [item.workspaceID, item.status]))
+      const status = await sdk.client.v2.workspace.status().catch(() => undefined)
+      const next = Object.fromEntries((status?.data?.data ?? []).map((item) => [item.workspaceID, item.status]))
+      const workspaces = (listed.data.data ?? []) as Workspace[]
 
       batch(() => {
-        setStore("workspace", "list", reconcile(listed.data))
+        setStore("workspace", "list", reconcile(workspaces))
         setStore("workspace", "status", reconcile(next))
-        if (!listed.data.some((item) => item.id === store.workspace.current)) {
+        if (!workspaces.some((item) => item.id === store.workspace.current)) {
           setStore("workspace", "current", undefined)
         }
       })

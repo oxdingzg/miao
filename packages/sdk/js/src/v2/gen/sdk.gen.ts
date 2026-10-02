@@ -444,6 +444,20 @@ import type {
   V2VcsGetResponses,
   V2VcsStatusErrors,
   V2VcsStatusResponses,
+  V2WorkspaceAdaptersErrors,
+  V2WorkspaceAdaptersResponses,
+  V2WorkspaceCreateErrors,
+  V2WorkspaceCreateResponses,
+  V2WorkspaceListErrors,
+  V2WorkspaceListResponses,
+  V2WorkspaceRemoveErrors,
+  V2WorkspaceRemoveResponses,
+  V2WorkspaceStatusErrors,
+  V2WorkspaceStatusResponses,
+  V2WorkspaceSyncListErrors,
+  V2WorkspaceSyncListResponses,
+  V2WorkspaceWarpErrors,
+  V2WorkspaceWarpResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -454,6 +468,8 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WorkspaceCreateInput,
+  WorkspaceWarpInput,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -7587,6 +7603,207 @@ export class Vcs2 extends HeyApiClient {
   }
 }
 
+export class Workspace2 extends HeyApiClient {
+  /**
+   * List workspaces
+   *
+   * List the workspaces registered for the requested location's project.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2WorkspaceListResponses, V2WorkspaceListErrors, ThrowOnError>({
+      url: "/api/workspace",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create workspace
+   *
+   * Create a workspace for the requested location's project.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      workspaceCreateInput: WorkspaceCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { key: "workspaceCreateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkspaceCreateResponses, V2WorkspaceCreateErrors, ThrowOnError>({
+      url: "/api/workspace",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Workspace status
+   *
+   * Report the connection status of workspaces in the requested location's project.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2WorkspaceStatusResponses, V2WorkspaceStatusErrors, ThrowOnError>({
+      url: "/api/workspace/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List workspace adapters
+   *
+   * List the workspace adapters available to the requested location's project.
+   */
+  public adapters<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2WorkspaceAdaptersResponses, V2WorkspaceAdaptersErrors, ThrowOnError>({
+      url: "/api/workspace/adapter",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Sync workspace list
+   *
+   * Register workspaces returned by the project's workspace adapters.
+   */
+  public syncList<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).post<V2WorkspaceSyncListResponses, V2WorkspaceSyncListErrors, ThrowOnError>(
+      {
+        url: "/api/workspace/sync",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Warp session into workspace
+   *
+   * Move a session's sync history into a workspace, or detach it to the local project.
+   */
+  public warp<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      workspaceWarpInput: WorkspaceWarpInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { key: "workspaceWarpInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkspaceWarpResponses, V2WorkspaceWarpErrors, ThrowOnError>({
+      url: "/api/workspace/warp",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Remove workspace
+   *
+   * Remove an existing workspace.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2WorkspaceRemoveResponses, V2WorkspaceRemoveErrors, ThrowOnError>({
+      url: "/api/workspace/{id}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Login extends HeyApiClient {
   /**
    * Start a connector login
@@ -7927,6 +8144,11 @@ export class V2 extends HeyApiClient {
   private _vcs?: Vcs2
   get vcs(): Vcs2 {
     return (this._vcs ??= new Vcs2({ client: this.client }))
+  }
+
+  private _workspace?: Workspace2
+  get workspace(): Workspace2 {
+    return (this._workspace ??= new Workspace2({ client: this.client }))
   }
 
   private _remote?: Remote

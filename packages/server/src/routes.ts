@@ -13,6 +13,7 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
+import { WorkspaceLive } from "@miao/core/workspace-live"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Layer, Option } from "effect"
@@ -38,6 +39,7 @@ const applicationServices = LayerNode.group([
   LocationServiceMap.node,
   Project.node,
   Git.node,
+  WorkspaceLive.node,
 ])
 
 export function createRoutes(password?: string) {

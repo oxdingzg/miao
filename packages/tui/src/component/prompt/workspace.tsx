@@ -28,14 +28,14 @@ export function usePromptWorkspace(sessionID?: string) {
     setCreating(true)
     let result
     try {
-      result = await sdk.client.experimental.workspace.create({ type: selection.workspaceType, branch: null })
+      result = await sdk.client.v2.workspace.create({ workspaceCreateInput: { type: selection.workspaceType } })
     } catch (err) {
       setSelection(undefined)
       setCreating(false)
       toast.show({ title: "Creating workspace failed", message: errorMessage(err), variant: "error" })
       return
     }
-    if (result.error || !result.data) {
+    if (result.error || !result.data?.data) {
       setSelection(undefined)
       setCreating(false)
       toast.show({
@@ -47,7 +47,7 @@ export function usePromptWorkspace(sessionID?: string) {
     }
 
     await project.workspace.sync()
-    const workspace = result.data
+    const workspace = result.data.data
     setSelection({
       type: "existing",
       workspaceID: workspace.id,

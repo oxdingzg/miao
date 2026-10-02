@@ -234,6 +234,44 @@ describe("workspace HttpApi", () => {
     }),
   )
 
+  it.live("serves the V2 workspace routes", () =>
+    Effect.gen(function* () {
+      Flag.MIAO_EXPERIMENTAL_WORKSPACES = true
+      const dir = yield* tmpdirScoped({ git: true })
+      const project = yield* Project.use.fromDirectory(dir)
+      registerAdapter(project.project.id, "v2-local", localAdapter(path.join(dir, ".v2-workspace")))
+
+      const adapters = yield* request("/api/workspace/adapter", dir)
+      expect(adapters.status).toBe(200)
+      const adaptersBody = (yield* adapters.json) as { data: { type: string }[] }
+      expect(adaptersBody.data).toContainEqual(expect.objectContaining({ type: "v2-local" }))
+
+      const created = yield* request("/api/workspace", dir, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "v2-local", branch: null }),
+      })
+      expect(created.status).toBe(200)
+      const createdBody = (yield* created.json) as { data: Workspace.Info }
+      expect(createdBody.data).toMatchObject({ type: "v2-local", name: "local-test" })
+
+      const listed = yield* request("/api/workspace", dir)
+      expect(listed.status).toBe(200)
+      const listedBody = (yield* listed.json) as { data: Workspace.Info[] }
+      expect(listedBody.data).toMatchObject([{ id: createdBody.data.id }])
+
+      const status = yield* request("/api/workspace/status", dir)
+      expect(status.status).toBe(200)
+
+      const synced = yield* request("/api/workspace/sync", dir, { method: "POST" })
+      expect(synced.status).toBe(200)
+      expect(yield* synced.json).toMatchObject({ data: true })
+
+      const removed = yield* request(`/api/workspace/${createdBody.data.id}`, dir, { method: "DELETE" })
+      expect(removed.status).toBe(200)
+    }),
+  )
+
   it.live("serves list sync endpoint", () =>
     Effect.gen(function* () {
       Flag.MIAO_EXPERIMENTAL_WORKSPACES = true

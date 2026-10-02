@@ -64,7 +64,8 @@ export type FetchHandler = (url: URL, request?: Request) => Response | Promise<R
 export function createFetch(override?: FetchHandler, events?: ReturnType<typeof createEventSource>) {
   const session = [] as URL[]
   const fetch = (async (input: RequestInfo | URL) => {
-    const url = new URL(input instanceof Request ? input.url : String(input))
+    const request = input instanceof Request ? input : undefined
+    const url = new URL(request ? request.url : String(input))
     if (url.pathname === "/api/session") session.push(url)
     const overridden = await override?.(url, input instanceof Request ? input : undefined)
     if (overridden) return overridden
@@ -97,6 +98,43 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree } },
         data: [],
+      })
+    if (url.pathname === "/api/workspace")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data:
+          request?.method === "POST"
+            ? {
+                id: "wrk_test",
+                type: "worktree",
+                name: "test",
+                branch: null,
+                directory,
+                extra: null,
+                projectID: "proj_test",
+                timeUsed: 0,
+              }
+            : [],
+      })
+    if (url.pathname === "/api/workspace/status")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: [],
+      })
+    if (url.pathname === "/api/workspace/adapter")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: [],
+      })
+    if (url.pathname === "/api/workspace/sync" || url.pathname === "/api/workspace/warp")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: true,
+      })
+    if (/^\/api\/workspace\/[^/]+$/.test(url.pathname))
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: undefined,
       })
     if (url.pathname === "/api/config")
       return json({ location: { directory, project: { id: "proj_test", directory: worktree } }, data: {} })

@@ -1,4 +1,4 @@
-import type { ExperimentalWorkspaceAdapterListResponse, Workspace } from "@opencode-ai/sdk/v2"
+import type { Workspace, WorkspaceAdapterEntry } from "@opencode-ai/sdk/v2"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { useSync } from "../context/sync"
@@ -11,7 +11,7 @@ import { useToast } from "../ui/toast"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogWorkspaceFileChanges } from "./dialog-workspace-file-changes"
 
-type Adapter = ExperimentalWorkspaceAdapterListResponse[number]
+type Adapter = WorkspaceAdapterEntry
 
 export type WorkspaceSelection =
   | {
@@ -56,9 +56,9 @@ async function loadWorkspaceAdapters(input: {
 }) {
   const dir = input.sync.path.directory || input.sdk.directory
   try {
-    const response = await input.sdk.client.experimental.workspace.adapter.list({ directory: dir })
+    const response = await input.sdk.client.v2.workspace.adapters({ location: { directory: dir } })
     if (response.error) throw response.error
-    return response.data
+    return response.data?.data
   } catch (err) {
     input.toast.show({
       title: "Failed to load workspace adapters",
@@ -78,7 +78,7 @@ export async function openWorkspaceSelect(input: {
   onSelect: (selection: WorkspaceSelection) => Promise<void> | void
 }) {
   input.dialog.clear()
-  await input.sdk.client.experimental.workspace.syncList().catch(() => undefined)
+  await input.sdk.client.v2.workspace.syncList().catch(() => undefined)
   await input.project.workspace.sync().catch(() => undefined)
   const adapters = await loadWorkspaceAdapters(input)
   if (!adapters) return
@@ -99,10 +99,12 @@ export async function warpWorkspaceSession(input: {
 }): Promise<boolean> {
   let result
   try {
-    result = await input.sdk.client.experimental.workspace.warp({
-      id: input.workspaceID,
-      sessionID: input.sessionID,
-      copyChanges: input.copyChanges,
+    result = await input.sdk.client.v2.workspace.warp({
+      workspaceWarpInput: {
+        id: input.workspaceID,
+        sessionID: input.sessionID,
+        copyChanges: input.copyChanges,
+      },
     })
   } catch (err) {
     input.toast.show({
