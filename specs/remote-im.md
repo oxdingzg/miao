@@ -1,6 +1,6 @@
 # miao remote：用 IM 遥控会话（设计稿）
 
-状态：方案稿，2026-10-02，待确认。依据：`specs/architecture.md`（Phase 4 的 IM 客户端提前做最小版）、
+状态：已定稿，2026-10-02。依据：`specs/architecture.md`（Phase 4 的 IM 客户端提前做最小版）、
 微信 ClawBot / iLink 协议调研（`@tencent-weixin/openclaw-weixin@2.4.9` 源码与官方
 `docs/protocol_zh_CN.md`）。
 
@@ -128,9 +128,13 @@ miao remote status               # 通道连接状态、今日主动推送用量
 3. **`miao remote` 命令与常驻**：launchd 安装、`miao attach` 联动、文档。验收：真机微信端到端走一遍上面的全部操作。
 4. **飞书、Telegram**：复用 Router，它们有按钮和可靠推送，审批改用按钮，结束通知不受预算限制。
 
-## 待确认
+## 已定决策（参照同类产品）
 
-1. 会话忙时的默认行为：steer（插入，建议）还是 queue（排队）？
-2. 主动推送哪些事件：需要审批、这一轮结束、出错（建议三项都推，审批优先占预算）？每日预算 4 条是否合适？
-3. 可遥控的项目用白名单（建议），还是允许数据库里的全部项目？
-4. 是否接受「要从微信驱动的会话必须开在 `miao remote` 的服务里，桌面用 `miao attach`」这个约束？
+1. **会话忙时默认 steer**，`/queue` 改为排队。Claude Code Remote Control 与 Codex 都把运行中的新消息插入当前一轮，
+   miao TUI 的默认也是 steer，遥控端保持一致。
+2. **主动推送三类事件**：需要审批、这一轮结束、出错；审批优先占预算。Claude Code Remote Control 与 Happy 都在
+   「需要审批」和「完成」时推送。微信每日预算 4 条（iLink 社区实测 5–6 条即限流）；飞书和 Telegram 不设预算。
+3. **项目白名单**：只能遥控 `remote.projects` 里配置的目录，`/new` 只能在这些目录里建会话。cc-connect 也是按配置的
+   `work_dir` 管项目，切到任意目录要 `admin_from` 授权。
+4. **单写者**：要从 IM 驱动的会话必须开在 `miao remote` 的服务里，桌面用 `miao attach`。Claude Code Remote Control
+   连的是本地 CLI 进程里的会话，Codex 是单个 app-server 进程，Happy 包住 CLI 进程，都是一个会话只归一个进程执行。
