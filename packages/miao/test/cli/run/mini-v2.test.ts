@@ -207,6 +207,7 @@ const writeLegacySession = (directory: string) =>
     ),
   )
 
+// Cases that boot an in-process server get 30s: a cold first boot on Linux has taken ~5s.
 describe("mini on the V2 session API", () => {
   it.live("replays a backfilled legacy session the way the V1 replay did", () =>
     Effect.gen(function* () {
@@ -245,197 +246,208 @@ describe("mini on the V2 session API", () => {
     }),
   )
 
-  it.live("streams a V2 turn with a tool call and replays it the same way", () =>
-    Effect.gen(function* () {
-      const llm = yield* TestLLMServer
-      const directory = yield* tmpdirScoped({ git: false, config: testProviderConfig(llm.url) })
-      const sdk = yield* client(directory)
-      const created = yield* Effect.promise(() =>
-        sdk.v2.session.create({ location: { directory } }, { throwOnError: true }).then((result) => result.data.data),
-      )
-      yield* llm.tool("bash", { command: "echo mini-v2" })
-      yield* llm.text("all done", { usage: { input: 3, output: 2 } })
+  it.live(
+    "streams a V2 turn with a tool call and replays it the same way",
+    () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        const directory = yield* tmpdirScoped({ git: false, config: testProviderConfig(llm.url) })
+        const sdk = yield* client(directory)
+        const created = yield* Effect.promise(() =>
+          sdk.v2.session.create({ location: { directory } }, { throwOnError: true }).then((result) => result.data.data),
+        )
+        yield* llm.tool("bash", { command: "echo mini-v2" })
+        yield* llm.text("all done", { usage: { input: 3, output: 2 } })
 
-      const asked: string[] = []
-      const ui = footer((event) => {
-        if (event.type !== "stream.view" || event.view.type !== "permission") return
-        const request = event.view.request
-        asked.push(request.permission)
-        void sdk.v2.session.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply: "once" })
-      })
-      const transport = yield* Effect.promise(() =>
-        createSessionTransport({
-          sdk,
-          directory,
-          sessionID: created.id,
-          thinking: true,
-          replay: true,
-          limits: () => ({}),
-          footer: ui.api,
-        }),
-      )
-
-      yield* Effect.promise(() =>
-        transport.runPromptTurn({
-          agent: "build",
-          model: { providerID: "test", modelID: "test-model" },
-          variant: undefined,
-          prompt: { text: "run the check", parts: [] },
-          files: [],
-          includeFiles: false,
-        }),
-      )
-      yield* Effect.promise(() => transport.close())
-
-      const live = ui.commits.filter((commit) => commit.kind !== "user" && commit.kind !== "system")
-      expect(live.map((commit) => [commit.kind, commit.tool, commit.toolState, commit.text.trim()])).toEqual([
-        ["tool", "bash", "running", "running bash"],
-        ["tool", "bash", "completed", "mini-v2"],
-        ["assistant", undefined, undefined, "all done"],
-      ])
-      const done = live[1]?.part
-      expect(done?.state.status === "completed" ? done.state.metadata.exit : undefined).toBe(0)
-
-      const messages = yield* Effect.promise(() => loadTranscript(sdk, created.id))
-      const replayed = replaySession({
-        sessionID: created.id,
-        entries: transcriptEntries({ sessionID: created.id, directory, messages }),
-        permissions: [],
-        questions: [],
-        thinking: true,
-        limits: {},
-      })
-      expect(replayed.commits[0]).toEqual(expect.objectContaining({ kind: "user", text: "run the check" }))
-      expect(visible(replayed.commits.filter((commit) => commit.kind !== "user" && commit.kind !== "system"))).toEqual(
-        visible(live),
-      )
-      expect(replayed.commits.at(-1)).toEqual(
-        expect.objectContaining({ kind: "system", text: expect.stringContaining("Build") }),
-      )
-      // The bash call may or may not ask, depending on the default rules; either way it was answered.
-      expect(asked.every((action) => action === "bash")).toBe(true)
-      expect(requested).toContain(`/api/session/${created.id}/prompt`)
-      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
-    }).pipe(Effect.provide(TestLLMServer.layer)),
-  )
-
-  it.live("answers a V2 question and settles the question tool", () =>
-    Effect.gen(function* () {
-      const llm = yield* TestLLMServer
-      const directory = yield* tmpdirScoped({ git: false, config: testProviderConfig(llm.url) })
-      const sdk = yield* client(directory)
-      const created = yield* Effect.promise(() =>
-        sdk.v2.session.create({ location: { directory } }, { throwOnError: true }).then((result) => result.data.data),
-      )
-      yield* llm.tool("question", {
-        questions: [
-          {
-            question: "Which mode?",
-            header: "Mode",
-            options: [
-              { label: "fast", description: "Quick pass" },
-              { label: "slow", description: "Careful pass" },
-            ],
-          },
-        ],
-      })
-      yield* llm.text("picked fast")
-
-      const ui = footer((event) => {
-        if (event.type !== "stream.view" || event.view.type !== "question") return
-        const request = event.view.request
-        void sdk.v2.session.question.reply({
-          sessionID: request.sessionID,
-          requestID: request.id,
-          questionV2Reply: { answers: [["fast"]] },
+        const asked: string[] = []
+        const ui = footer((event) => {
+          if (event.type !== "stream.view" || event.view.type !== "permission") return
+          const request = event.view.request
+          asked.push(request.permission)
+          void sdk.v2.session.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply: "once" })
         })
-      })
-      const transport = yield* Effect.promise(() =>
-        createSessionTransport({
-          sdk,
-          directory,
+        const transport = yield* Effect.promise(() =>
+          createSessionTransport({
+            sdk,
+            directory,
+            sessionID: created.id,
+            thinking: true,
+            replay: true,
+            limits: () => ({}),
+            footer: ui.api,
+          }),
+        )
+
+        yield* Effect.promise(() =>
+          transport.runPromptTurn({
+            agent: "build",
+            model: { providerID: "test", modelID: "test-model" },
+            variant: undefined,
+            prompt: { text: "run the check", parts: [] },
+            files: [],
+            includeFiles: false,
+          }),
+        )
+        yield* Effect.promise(() => transport.close())
+
+        const live = ui.commits.filter((commit) => commit.kind !== "user" && commit.kind !== "system")
+        expect(live.map((commit) => [commit.kind, commit.tool, commit.toolState, commit.text.trim()])).toEqual([
+          ["tool", "bash", "running", "running bash"],
+          ["tool", "bash", "completed", "mini-v2"],
+          ["assistant", undefined, undefined, "all done"],
+        ])
+        const done = live[1]?.part
+        expect(done?.state.status === "completed" ? done.state.metadata.exit : undefined).toBe(0)
+
+        const messages = yield* Effect.promise(() => loadTranscript(sdk, created.id))
+        const replayed = replaySession({
           sessionID: created.id,
+          entries: transcriptEntries({ sessionID: created.id, directory, messages }),
+          permissions: [],
+          questions: [],
           thinking: true,
-          limits: () => ({}),
-          footer: ui.api,
-        }),
-      )
-      yield* Effect.promise(() =>
-        transport.runPromptTurn({
+          limits: {},
+        })
+        expect(replayed.commits[0]).toEqual(expect.objectContaining({ kind: "user", text: "run the check" }))
+        expect(
+          visible(replayed.commits.filter((commit) => commit.kind !== "user" && commit.kind !== "system")),
+        ).toEqual(visible(live))
+        expect(replayed.commits.at(-1)).toEqual(
+          expect.objectContaining({ kind: "system", text: expect.stringContaining("Build") }),
+        )
+        // The bash call may or may not ask, depending on the default rules; either way it was answered.
+        expect(asked.every((action) => action === "bash")).toBe(true)
+        expect(requested).toContain(`/api/session/${created.id}/prompt`)
+        expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
+      }).pipe(Effect.provide(TestLLMServer.layer)),
+    30_000,
+  )
+
+  it.live(
+    "answers a V2 question and settles the question tool",
+    () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        const directory = yield* tmpdirScoped({ git: false, config: testProviderConfig(llm.url) })
+        const sdk = yield* client(directory)
+        const created = yield* Effect.promise(() =>
+          sdk.v2.session.create({ location: { directory } }, { throwOnError: true }).then((result) => result.data.data),
+        )
+        yield* llm.tool("question", {
+          questions: [
+            {
+              question: "Which mode?",
+              header: "Mode",
+              options: [
+                { label: "fast", description: "Quick pass" },
+                { label: "slow", description: "Careful pass" },
+              ],
+            },
+          ],
+        })
+        yield* llm.text("picked fast")
+
+        const ui = footer((event) => {
+          if (event.type !== "stream.view" || event.view.type !== "question") return
+          const request = event.view.request
+          void sdk.v2.session.question.reply({
+            sessionID: request.sessionID,
+            requestID: request.id,
+            questionV2Reply: { answers: [["fast"]] },
+          })
+        })
+        const transport = yield* Effect.promise(() =>
+          createSessionTransport({
+            sdk,
+            directory,
+            sessionID: created.id,
+            thinking: true,
+            limits: () => ({}),
+            footer: ui.api,
+          }),
+        )
+        yield* Effect.promise(() =>
+          transport.runPromptTurn({
+            agent: "build",
+            model: { providerID: "test", modelID: "test-model" },
+            variant: undefined,
+            prompt: { text: "ask me", parts: [] },
+            files: [],
+            includeFiles: false,
+          }),
+        )
+        yield* Effect.promise(() => transport.close())
+
+        const settled = ui.commits.find((commit) => commit.tool === "question" && commit.phase === "final")
+        expect(settled?.toolState).toBe("completed")
+        expect(settled?.part?.state.status === "completed" ? settled.part.state.metadata.answers : undefined).toEqual([
+          ["fast"],
+        ])
+        expect(ui.commits.some((commit) => commit.kind === "assistant" && commit.text.includes("picked fast"))).toBe(
+          true,
+        )
+        expect(ui.events.findLast((event) => event.type === "stream.view")).toEqual({
+          type: "stream.view",
+          view: { type: "prompt" },
+        })
+        expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
+      }).pipe(Effect.provide(TestLLMServer.layer)),
+    30_000,
+  )
+
+  it.live(
+    "ends a turn interrupted through the V2 interrupt route without an error row",
+    () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        const directory = yield* tmpdirScoped({ git: false, config: testProviderConfig(llm.url) })
+        const sdk = yield* client(directory)
+        const created = yield* Effect.promise(() =>
+          sdk.v2.session.create({ location: { directory } }, { throwOnError: true }).then((result) => result.data.data),
+        )
+        yield* llm.hang
+
+        const ui = footer()
+        const transport = yield* Effect.promise(() =>
+          createSessionTransport({
+            sdk,
+            directory,
+            sessionID: created.id,
+            thinking: true,
+            limits: () => ({}),
+            footer: ui.api,
+          }),
+        )
+        const running = transport.runPromptTurn({
           agent: "build",
           model: { providerID: "test", modelID: "test-model" },
           variant: undefined,
-          prompt: { text: "ask me", parts: [] },
+          prompt: { text: "take your time", parts: [] },
           files: [],
           includeFiles: false,
-        }),
-      )
-      yield* Effect.promise(() => transport.close())
+        })
+        yield* llm.wait(1)
+        yield* Effect.promise(() => sdk.v2.session.interrupt({ sessionID: created.id }, { throwOnError: true }))
+        yield* Effect.promise(() => running)
+        yield* Effect.promise(() => transport.close())
 
-      const settled = ui.commits.find((commit) => commit.tool === "question" && commit.phase === "final")
-      expect(settled?.toolState).toBe("completed")
-      expect(settled?.part?.state.status === "completed" ? settled.part.state.metadata.answers : undefined).toEqual([
-        ["fast"],
-      ])
-      expect(ui.commits.some((commit) => commit.kind === "assistant" && commit.text.includes("picked fast"))).toBe(true)
-      expect(ui.events.findLast((event) => event.type === "stream.view")).toEqual({
-        type: "stream.view",
-        view: { type: "prompt" },
-      })
-      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
-    }).pipe(Effect.provide(TestLLMServer.layer)),
-  )
-
-  it.live("ends a turn interrupted through the V2 interrupt route without an error row", () =>
-    Effect.gen(function* () {
-      const llm = yield* TestLLMServer
-      const directory = yield* tmpdirScoped({ git: false, config: testProviderConfig(llm.url) })
-      const sdk = yield* client(directory)
-      const created = yield* Effect.promise(() =>
-        sdk.v2.session.create({ location: { directory } }, { throwOnError: true }).then((result) => result.data.data),
-      )
-      yield* llm.hang
-
-      const ui = footer()
-      const transport = yield* Effect.promise(() =>
-        createSessionTransport({
-          sdk,
-          directory,
+        expect(ui.commits.filter((commit) => commit.kind === "error")).toEqual([])
+        const messages = yield* Effect.promise(() => loadTranscript(sdk, created.id))
+        const replayed = replaySession({
           sessionID: created.id,
+          entries: transcriptEntries({ sessionID: created.id, directory, messages }),
+          permissions: [],
+          questions: [],
           thinking: true,
-          limits: () => ({}),
-          footer: ui.api,
-        }),
-      )
-      const running = transport.runPromptTurn({
-        agent: "build",
-        model: { providerID: "test", modelID: "test-model" },
-        variant: undefined,
-        prompt: { text: "take your time", parts: [] },
-        files: [],
-        includeFiles: false,
-      })
-      yield* llm.wait(1)
-      yield* Effect.promise(() => sdk.v2.session.interrupt({ sessionID: created.id }, { throwOnError: true }))
-      yield* Effect.promise(() => running)
-      yield* Effect.promise(() => transport.close())
-
-      expect(ui.commits.filter((commit) => commit.kind === "error")).toEqual([])
-      const messages = yield* Effect.promise(() => loadTranscript(sdk, created.id))
-      const replayed = replaySession({
-        sessionID: created.id,
-        entries: transcriptEntries({ sessionID: created.id, directory, messages }),
-        permissions: [],
-        questions: [],
-        thinking: true,
-        limits: {},
-      })
-      expect(replayed.commits.filter((commit) => commit.kind === "error")).toEqual([])
-      const status = yield* Effect.promise(() =>
-        sdk.v2.session.status({ sessionID: created.id }, { throwOnError: true }).then((result) => result.data.data),
-      )
-      expect(status).toEqual({ type: "idle" })
-      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
-    }).pipe(Effect.provide(TestLLMServer.layer)),
+          limits: {},
+        })
+        expect(replayed.commits.filter((commit) => commit.kind === "error")).toEqual([])
+        const status = yield* Effect.promise(() =>
+          sdk.v2.session.status({ sessionID: created.id }, { throwOnError: true }).then((result) => result.data.data),
+        )
+        expect(status).toEqual({ type: "idle" })
+        expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
+      }).pipe(Effect.provide(TestLLMServer.layer)),
+    30_000,
   )
 })
