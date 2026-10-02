@@ -19,14 +19,18 @@ const it = testEffect(Layer.empty)
 
 const instructionLayer = (input: {
   config: string
+  home?: string
   locationServiceLayer: Layer.Layer<Location.Service>
   filesystemLayer?: Layer.Layer<FSUtil.Service>
 }) =>
   AppNodeBuilder.build(LayerNode.group([SystemContextRegistry.node, InstructionContext.node]), [
-    [Global.node, Global.layerWith({ config: input.config })],
+    [Global.node, Global.layerWith({ config: input.config, ...(input.home ? { home: input.home } : {}) })],
     [Location.node, input.locationServiceLayer],
     ...(input.filesystemLayer ? [[FSUtil.node, input.filesystemLayer] as const] : []),
   ])
+
+// Config discovery also scans upward; only intercept the instruction scan.
+const instructionScan = (options: { targets: string[] }) => options.targets.includes("AGENTS.md")
 
 describe("InstructionContext", () => {
   it.live("loads global and upward project AGENTS.md files as one aggregate context", () =>
@@ -143,7 +147,13 @@ describe("InstructionContext", () => {
         FSUtil.Service,
         FSUtil.Service.pipe(
           Effect.map((fs) =>
-            FSUtil.Service.of({ ...fs, up: () => Effect.fail(new FSUtil.FileSystemError({ method: "up" })) }),
+            FSUtil.Service.of({
+              ...fs,
+              up: (options) =>
+                instructionScan(options)
+                  ? Effect.fail(new FSUtil.FileSystemError({ method: "up" }))
+                  : fs.up(options),
+            }),
           ),
         ),
       ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
@@ -181,7 +191,7 @@ describe("InstructionContext", () => {
           Effect.map((fs) =>
             FSUtil.Service.of({
               ...fs,
-              up: () => Effect.succeed([file]),
+              up: (options) => (instructionScan(options) ? Effect.succeed([file]) : fs.up(options)),
               readFileStringSafe: () => Effect.succeed(undefined),
             }),
           ),
@@ -222,10 +232,12 @@ describe("InstructionContext", () => {
             FSUtil.Service.of({
               ...fs,
               up: (options) =>
-                Effect.sync(() => {
-                  observed = options
-                  return []
-                }),
+                instructionScan(options)
+                  ? Effect.sync(() => {
+                      observed = options
+                      return []
+                    })
+                  : fs.up(options),
             }),
           ),
         ),
@@ -248,7 +260,7 @@ describe("InstructionContext", () => {
       )
 
       expect(observed).toEqual({
-        targets: ["AGENTS.md"],
+        targets: ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"],
         start: FSUtil.resolve("/repo"),
         stop: FSUtil.resolve("/repo"),
       })
@@ -269,7 +281,11 @@ describe("InstructionContext", () => {
             filesystemLayer: Layer.effect(
               FSUtil.Service,
               FSUtil.Service.pipe(
-                Effect.map((fs) => FSUtil.Service.of({ ...fs, up: () => Effect.sync(() => ((scanned = true), [])) })),
+                Effect.map((fs) => FSUtil.Service.of({
+                    ...fs,
+                    up: (options) =>
+                      instructionScan(options) ? Effect.sync(() => ((scanned = true), [])) : fs.up(options),
+                  })),
               ),
             ).pipe(Layer.provide(LayerNode.compile(FSUtil.node))),
             locationServiceLayer: Layer.succeed(
@@ -301,7 +317,11 @@ describe("InstructionContext", () => {
             filesystemLayer: Layer.effect(
               FSUtil.Service,
               FSUtil.Service.pipe(
-                Effect.map((fs) => FSUtil.Service.of({ ...fs, up: () => Effect.sync(() => ((scanned = true), [])) })),
+                Effect.map((fs) => FSUtil.Service.of({
+                    ...fs,
+                    up: (options) =>
+                      instructionScan(options) ? Effect.sync(() => ((scanned = true), [])) : fs.up(options),
+                  })),
               ),
             ).pipe(Layer.provide(LayerNode.compile(FSUtil.node))),
             locationServiceLayer: Layer.succeed(
@@ -320,4 +340,185 @@ describe("InstructionContext", () => {
       expect(scanned).toBe(false)
     }),
   )
+
+  describe("sources", () => {
+    const withTmp = <A, E, R>(body: (root: string) => Effect.Effect<A, E, R>) =>
+      Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ).pipe(Effect.flatMap((tmp) => body(tmp.path)))
+
+    const write = (files: Record<string, string>) =>
+      Effect.promise(() =>
+        Promise.all(
+          Object.entries(files).map(async ([file, content]) => {
+            await fs.mkdir(path.dirname(file), { recursive: true })
+            await fs.writeFile(file, content)
+          }),
+        ),
+      )
+
+    const layerFor = (root: string, directory = path.join(root, "project")) =>
+      instructionLayer({
+        config: path.join(root, "global"),
+        home: path.join(root, "home"),
+        locationServiceLayer: Layer.succeed(
+          Location.Service,
+          Location.Service.of(
+            location(
+              { directory: AbsolutePath.make(directory) },
+              { projectDirectory: AbsolutePath.make(path.join(root, "project")) },
+            ),
+          ),
+        ),
+      })
+
+    const baseline = (layer: ReturnType<typeof layerFor>) =>
+      SystemContextRegistry.Service.pipe(
+        Effect.flatMap((service) => service.load()),
+        Effect.flatMap(SystemContext.initialize),
+        Effect.map((initialized) => initialized.baseline),
+        Effect.provide(layer),
+      )
+
+    const withEnv = <A, E, R>(key: string, value: string, effect: Effect.Effect<A, E, R>) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const previous = process.env[key]
+          process.env[key] = value
+          return previous
+        }),
+        () => effect,
+        (previous) =>
+          Effect.sync(() => {
+            if (previous === undefined) delete process.env[key]
+            else process.env[key] = previous
+          }),
+      )
+
+    it.live("falls back to ~/.claude/CLAUDE.md only when the global AGENTS.md is missing", () =>
+      withTmp((root) =>
+        Effect.gen(function* () {
+          const claude = path.join(root, "home", ".claude", "CLAUDE.md")
+          const agents = path.join(root, "global", "AGENTS.md")
+          yield* write({ [claude]: "claude global", [path.join(root, "project", ".keep")]: "" })
+          expect(yield* baseline(layerFor(root))).toBe(`Instructions from: ${claude}\nclaude global`)
+
+          yield* write({ [agents]: "miao global" })
+          expect(yield* baseline(layerFor(root))).toBe(`Instructions from: ${agents}\nmiao global`)
+        }),
+      ),
+    )
+
+    it.live("uses only the first project file name found on the upward path", () =>
+      withTmp((root) =>
+        Effect.gen(function* () {
+          const project = path.join(root, "project")
+          const directory = path.join(project, "packages", "app")
+          yield* write({
+            [path.join(directory, "CLAUDE.md")]: "near claude",
+            [path.join(directory, "CONTEXT.md")]: "near context",
+            [path.join(project, "AGENTS.md")]: "root agents",
+          })
+          // AGENTS.md wins over a nearer CLAUDE.md, as in V1.
+          expect(yield* baseline(layerFor(root, directory))).toBe(
+            `Instructions from: ${path.join(project, "AGENTS.md")}\nroot agents`,
+          )
+
+          yield* Effect.promise(() => fs.rm(path.join(project, "AGENTS.md")))
+          yield* write({ [path.join(project, "CLAUDE.md")]: "root claude" })
+          expect(yield* baseline(layerFor(root, directory))).toBe(
+            [
+              `Instructions from: ${path.join(directory, "CLAUDE.md")}\nnear claude`,
+              `Instructions from: ${path.join(project, "CLAUDE.md")}\nroot claude`,
+            ].join("\n\n"),
+          )
+
+          // MIAO_DISABLE_CLAUDE_CODE_PROMPT skips CLAUDE.md and falls through to CONTEXT.md.
+          expect(yield* withEnv("MIAO_DISABLE_CLAUDE_CODE_PROMPT", "1", baseline(layerFor(root, directory)))).toBe(
+            `Instructions from: ${path.join(directory, "CONTEXT.md")}\nnear context`,
+          )
+        }),
+      ),
+    )
+
+    it.live("appends configured globs and URLs after discovered files without duplicates", () =>
+      withTmp((root) =>
+        Effect.gen(function* () {
+          const project = path.join(root, "project")
+          let requests = 0
+          const server = Bun.serve({
+            port: 0,
+            fetch: (request) => {
+              requests++
+              return new URL(request.url).pathname === "/ok"
+                ? new Response("remote rules")
+                : new Response("missing", { status: 404 })
+            },
+          })
+          yield* Effect.addFinalizer(() => Effect.promise(() => server.stop(true)))
+          const ok = `http://127.0.0.1:${server.port}/ok`
+          const missing = `http://127.0.0.1:${server.port}/missing`
+          const absolute = path.join(root, "shared", "team.md")
+          yield* write({
+            [path.join(project, "AGENTS.md")]: "project",
+            [path.join(project, "docs", "a.md")]: "doc a",
+            [path.join(project, "docs", "b.md")]: "doc b",
+            [path.join(root, "home", "notes", "me.md")]: "home note",
+            [absolute]: "team",
+            [path.join(root, "global", "miao.json")]: JSON.stringify({
+              instructions: [missing, "docs/*.md", "AGENTS.md", absolute, "~/notes/me.md", ok],
+            }),
+          })
+
+          const expected = [
+            `Instructions from: ${path.join(project, "AGENTS.md")}\nproject`,
+            `Instructions from: ${path.join(project, "docs", "a.md")}\ndoc a`,
+            `Instructions from: ${path.join(project, "docs", "b.md")}\ndoc b`,
+            `Instructions from: ${absolute}\nteam`,
+            `Instructions from: ${path.join(root, "home", "notes", "me.md")}\nhome note`,
+            `Instructions from: ${ok}\nremote rules`,
+          ].join("\n\n")
+          yield* Effect.gen(function* () {
+            const registry = yield* SystemContextRegistry.Service
+            expect((yield* SystemContext.initialize(yield* registry.load())).baseline).toBe(expected)
+            const fetched = requests
+            // Every provider turn re-observes context; cached URLs keep the prefix stable without refetching.
+            expect((yield* SystemContext.initialize(yield* registry.load())).baseline).toBe(expected)
+            expect(requests).toBe(fetched)
+          }).pipe(Effect.provide(layerFor(root)))
+        }),
+      ).pipe(Effect.scoped),
+    )
+
+    it.live("attaches nested instruction files once per session and skips ambient ones", () =>
+      withTmp((root) =>
+        Effect.gen(function* () {
+          const project = path.join(root, "project")
+          const nested = path.join(project, "packages", "app", "src")
+          const appAgents = path.join(project, "packages", "app", "AGENTS.md")
+          const srcClaude = path.join(nested, "CLAUDE.md")
+          const file = path.join(nested, "index.ts")
+          yield* write({
+            [path.join(project, "AGENTS.md")]: "ambient",
+            [appAgents]: "app rules",
+            [srcClaude]: "src rules",
+            [file]: "export {}",
+          })
+
+          yield* Effect.gen(function* () {
+            const instructions = yield* InstructionContext.Service
+            expect(yield* instructions.nearby({ sessionID: "ses_a", path: file })).toEqual([
+              new InstructionContext.File({ path: srcClaude, content: "src rules" }),
+              new InstructionContext.File({ path: appAgents, content: "app rules" }),
+            ])
+            expect(yield* instructions.nearby({ sessionID: "ses_a", path: file })).toEqual([])
+            expect(yield* instructions.nearby({ sessionID: "ses_b", path: srcClaude })).toEqual([
+              new InstructionContext.File({ path: appAgents, content: "app rules" }),
+            ])
+          }).pipe(Effect.provide(layerFor(root)))
+        }),
+      ),
+    )
+  })
 })

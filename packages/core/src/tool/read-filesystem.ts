@@ -75,6 +75,12 @@ export const PageInput = Schema.Struct({
 })
 export type PageInput = typeof PageInput.Type
 
+// Nested instruction files (AGENTS.md, CLAUDE.md, CONTEXT.md) found between a read
+// file and the Location directory, attached once per Session by the read tool.
+export const Instructions = Schema.Array(Schema.Struct({ path: Schema.String, content: Schema.String })).pipe(
+  Schema.optional,
+)
+
 export class TextPage extends Schema.Class<TextPage>("ReadTool.TextPage")({
   type: Schema.Literal("text-page"),
   content: Schema.String,
@@ -82,6 +88,7 @@ export class TextPage extends Schema.Class<TextPage>("ReadTool.TextPage")({
   offset: PositiveInt,
   truncated: Schema.Boolean,
   next: PositiveInt.pipe(Schema.optional),
+  instructions: Instructions,
 }) {}
 
 export class ListPage extends Schema.Class<ListPage>("ReadTool.ListPage")({
