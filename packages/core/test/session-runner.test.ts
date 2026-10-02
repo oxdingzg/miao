@@ -3806,6 +3806,16 @@ describe("SessionRunnerLLM", () => {
         { type: "user", text: "Survive a dropped stream" },
         { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
       ])
+      const { db } = yield* Database.Service
+      const retried = yield* db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(retried.map((row) => row.data)).toMatchObject([
+        { sessionID, attempt: 1, error: { message: "test.stream: connection reset", isRetryable: true } },
+      ])
     }),
   )
 
@@ -4202,6 +4212,69 @@ describe("SessionRunnerLLM", () => {
         expect(titleRequests()).toHaveLength(1)
         expect(yield* currentTitle).toBe(defaultTitle)
         expect((yield* session.messages({ sessionID })).some((message) => message.type === "assistant")).toBe(true)
+      }),
+    )
+  })
+
+  describe("session failure events", () => {
+    const collectFailures = Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const failures: SessionEvent.Failed["data"][] = []
+      yield* events.subscribe(SessionEvent.Failed).pipe(
+        Stream.runForEach((event) => Effect.sync(() => failures.push(event.data))),
+        Effect.forkScoped,
+      )
+      yield* Effect.yieldNow
+      return failures
+    })
+
+    it.effect("reports a drain that fails before any provider step", () =>
+      Effect.gen(function* () {
+        yield* setup
+        const failures = yield* collectFailures
+        const { db } = yield* Database.Service
+        yield* db
+          .insert(MessageTable)
+          .values({
+            id: "msg_legacy_failure",
+            session_id: sessionID,
+            time_created: 1,
+            time_updated: 1,
+            data: { role: "user", time: { created: 1 }, agent: "build", model: { providerID: "fake", modelID: "fake-model" } },
+          } as never)
+          .run()
+          .pipe(Effect.orDie)
+
+        const runner = yield* SessionRunner.Service
+        yield* runner.run({ sessionID, force: true }).pipe(Effect.flip)
+        yield* Effect.yieldNow
+
+        expect(failures).toMatchObject([
+          { sessionID, name: "Session.LegacyNotMigratedError", error: { type: "unknown", message: expect.any(String) } },
+        ])
+      }),
+    )
+
+    it.effect("leaves provider failures to step.failed", () =>
+      Effect.gen(function* () {
+        yield* setup
+        const failures = yield* collectFailures
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail at the provider" }), resume: false })
+        streamFailure = new LLMError({
+          module: "test",
+          method: "stream",
+          reason: new InvalidRequestReason({ message: "bad request" }),
+        })
+
+        yield* session.resume(sessionID).pipe(Effect.exit)
+        yield* Effect.yieldNow
+
+        expect(failures).toEqual([])
+        expect(yield* session.context(sessionID)).toMatchObject([
+          { type: "user" },
+          { type: "assistant", finish: "error", error: { message: "bad request" } },
+        ])
       }),
     )
   })

@@ -398,6 +398,39 @@ export const Retried = Event.define({
 })
 export type Retried = typeof Retried.Type
 
+/** Whether this process is draining the Session; the same shape `GET /api/session/:sessionID/status` returns. */
+export const StatusInfo = Schema.Struct({
+  type: Schema.Literals(["idle", "busy"]),
+}).annotate({
+  identifier: "session.next.status_info",
+})
+export interface StatusInfo extends Schema.Schema.Type<typeof StatusInfo> {}
+
+// Live process state, published on each busy/idle transition and never stored.
+// A client that (re)subscribes reads the current value from the status route.
+export const Status = Event.define({
+  type: "session.next.status",
+  schema: {
+    ...Base,
+    status: StatusInfo,
+  },
+})
+export type Status = typeof Status.Type
+
+// A drain failed outside any provider step. Provider and model-resolution
+// failures are already recorded on the assistant message as `step.failed`, so
+// they never produce this event; everything else that ends a drain does.
+export const Failed = Event.define({
+  type: "session.next.failed",
+  schema: {
+    ...Base,
+    error: UnknownError,
+    /** Tag of the underlying error when it has one, e.g. `Session.LegacyNotMigratedError`. */
+    name: Schema.String.pipe(optional),
+  },
+})
+export type Failed = typeof Failed.Type
+
 export namespace Compaction {
   export const Started = Event.define({
     type: "session.next.compaction.started",
@@ -535,6 +568,8 @@ export const Definitions = Event.inventory(
   Tool.Success,
   Tool.Failed,
   Retried,
+  Status,
+  Failed,
   Compaction.Started,
   Compaction.Delta,
   Compaction.Ended,

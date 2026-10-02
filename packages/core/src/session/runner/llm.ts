@@ -61,6 +61,7 @@ import { SessionRunnerMetrics } from "./metrics"
 import { Snapshot } from "../../snapshot"
 import { Blob } from "../../blob"
 import { FSUtil } from "../../fs-util"
+import { Integration } from "../../integration"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 
@@ -564,6 +565,10 @@ const layer = Layer.effect(
         Effect.ensuring(withPublication(publisher.flush())),
       )
 
+      // The failure the next attempt retries; announced durably when that attempt starts,
+      // so a retry the schedule declines is never reported.
+      let retrying: LLMError | SessionRunnerModel.Error | undefined
+      let attempt = 0
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const stream = yield* Effect.suspend(() => {
@@ -571,19 +576,49 @@ const layer = Layer.effect(
             // the previous attempt's overflow capture nor reports its latency.
             overflowFailure = undefined
             firstEventAt = undefined
-            requestStartedAt = Date.now()
-            return restore(providerStream)
+            const retried = retrying
+            retrying = undefined
+            if (retried) attempt++
+            return (
+              retried
+                ? events.publish(SessionEvent.Retried, {
+                    sessionID: session.id,
+                    timestamp: DateTime.makeUnsafe(Date.now()),
+                    attempt,
+                    error: {
+                      message: retried.message,
+                      isRetryable: true,
+                      ...(retried instanceof LLMError && "status" in retried.reason && retried.reason.status !== undefined
+                        ? { statusCode: retried.reason.status }
+                        : {}),
+                    },
+                  })
+                : Effect.void
+            ).pipe(
+              Effect.andThen(
+                Effect.suspend(() => {
+                  requestStartedAt = Date.now()
+                  return restore(providerStream)
+                }),
+              ),
+            )
           }).pipe(
             // Retry only while the attempt failed before publishing anything:
             // once text, reasoning, or a tool call is visible, replaying the
             // turn would duplicate it. Interrupts never retry.
             Effect.tapError((error) =>
               SessionRunnerProviderRetry.retryable(error)
-                ? Effect.logWarning("retrying provider attempt", {
-                    sessionID: session.id,
-                    model: `${model.provider}/${model.id}`,
-                    tag: error._tag,
-                  })
+                ? Effect.sync(() => {
+                    retrying = error
+                  }).pipe(
+                    Effect.andThen(
+                      Effect.logWarning("retrying provider attempt", {
+                        sessionID: session.id,
+                        model: `${model.provider}/${model.id}`,
+                        tag: error._tag,
+                      }),
+                    ),
+                  )
                 : Effect.void,
             ),
             Effect.retry({
@@ -892,6 +927,24 @@ const layer = Layer.effect(
       return { sessionID: target.id }
     })
 
+    // Provider and model-resolution failures are settled on the assistant message as
+    // `step.failed`; any other drain failure would otherwise end the drain silently.
+    const reportFailure = (sessionID: SessionSchema.ID, cause: Cause.Cause<RunError>) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.void
+      const error = Cause.squash(cause)
+      if (stepFailure(error)) return Effect.void
+      return events
+        .publish(SessionEvent.Failed, {
+          sessionID,
+          timestamp: DateTime.makeUnsafe(Date.now()),
+          error: { type: "unknown", message: error instanceof Error ? error.message : String(error) },
+          ...(typeof error === "object" && error !== null && "_tag" in error && typeof error._tag === "string"
+            ? { name: error._tag }
+            : {}),
+        })
+        .pipe(Effect.asVoid)
+    }
+
     const run = Effect.fn("SessionRunner.run")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
@@ -1008,7 +1061,7 @@ const layer = Layer.effect(
           }
         }),
       )
-    })
+    }, (effect, input) => effect.pipe(Effect.tapCause((cause) => reportFailure(input.sessionID, cause))))
     runDrain = run
 
     return Service.of({
@@ -1041,3 +1094,11 @@ export const node = makeLocationNode({
     FSUtil.node,
   ],
 })
+
+const stepFailure = (error: unknown) =>
+  error instanceof LLMError ||
+  error instanceof SessionRunnerModel.ModelNotSelectedError ||
+  error instanceof SessionRunnerModel.ModelUnavailableError ||
+  error instanceof SessionRunnerModel.VariantUnavailableError ||
+  error instanceof SessionRunnerModel.UnsupportedApiError ||
+  error instanceof Integration.AuthorizationError
