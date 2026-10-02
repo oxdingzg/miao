@@ -90,6 +90,7 @@ import {
 } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { stdinPreview } from "../../util/stdin-preview"
 import { createTranscriptWindow } from "../../util/transcript-window"
 import { createDiffContextHighlighter } from "../../util/diff-context-highlight"
 import { shellSegments } from "../../util/shell-highlight"
@@ -2205,7 +2206,13 @@ function Shell(props: ToolProps) {
   const [expanded, setExpanded] = createSignal(false)
   const collapsed = createMemo(() => collapseToolOutput(preview(), 3, 3 * Math.max(20, ctx.width - 8)))
   const title = createMemo(() => Locale.truncate(command().split("\n", 1)[0].trim(), Math.max(20, ctx.width - 12)))
-  const details = createMemo(() => command() !== title() || collapsed().overflow || Boolean(props.input.workdir))
+  const stdin = createMemo(() => {
+    const value = stringValue(props.input.stdin)
+    return value === undefined ? undefined : stdinPreview(value, 3, 3 * Math.max(20, ctx.width - 8))
+  })
+  const details = createMemo(
+    () => command() !== title() || collapsed().overflow || Boolean(props.input.workdir) || stdin() !== undefined,
+  )
 
   return (
     <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
@@ -2245,6 +2252,14 @@ function Shell(props: ToolProps) {
             )}
           </For>
         </box>
+      </Show>
+      <Show when={stdin()}>
+        {(item) => (
+          <box paddingLeft={2}>
+            <text fg={theme.textMuted}>{item().heading}</text>
+            <text fg={theme.text}>{expanded() ? stringValue(props.input.stdin) : item().output}</text>
+          </box>
+        )}
       </Show>
       <Show when={expanded() ? output() : preview()}>
         <FileToolResult

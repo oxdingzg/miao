@@ -12,7 +12,22 @@ import { createEventSource, createFetch, directory, json } from "../../fixture/t
 
 const replyPath = "/permission/per_test/reply"
 
-async function mountPermission(root: string, status: number, onSettled: () => void, delay = 0) {
+const webfetchRequest = {
+  id: "per_test",
+  sessionID: "ses_test",
+  permission: "webfetch",
+  patterns: ["https://example.com"],
+  metadata: { url: "https://example.com" } as Record<string, unknown>,
+  always: ["*"],
+}
+
+async function mountPermission(
+  root: string,
+  status: number,
+  onSettled: () => void,
+  delay = 0,
+  request = webfetchRequest,
+) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
@@ -62,15 +77,6 @@ async function mountPermission(root: string, status: number, onSettled: () => vo
           ),
     )
   })
-  const request = {
-    id: "per_test",
-    sessionID: "ses_test",
-    permission: "webfetch",
-    patterns: ["https://example.com"],
-    metadata: { url: "https://example.com" },
-    always: ["*"],
-  }
-
   function Harness() {
     const renderer = useRenderer()
     const keymap = createDefaultOpenTuiKeymap(renderer)
@@ -163,6 +169,47 @@ test("a permission reply for a request that no longer exists dismisses the promp
     await Bun.sleep(60)
     expect(calls).toEqual([replyPath])
     expect(settled).toBe(1)
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("a bash permission prompt shows the stdin script in a scrollable body", async () => {
+  await using tmp = await tmpdir()
+  const stdin = [
+    "echo first-line",
+    "echo second-line",
+    ...Array.from({ length: 20 }, (_, index) => `echo line-${index}`),
+    "echo last-line",
+  ].join("\n")
+  const { app } = await mountPermission(tmp.path, 200, () => {}, 0, {
+    ...webfetchRequest,
+    permission: "bash",
+    patterns: [`ssh host 'bash -s' \n<<stdin\n${stdin}`],
+    metadata: { command: "ssh host 'bash -s'", stdin },
+    always: [`ssh host 'bash -s' \n<<stdin\n${stdin}`],
+  })
+  try {
+    await app.renderOnce()
+    const compact = app.captureCharFrame()
+    expect(compact).toContain("$ ssh host 'bash -s'")
+    expect(compact).toContain("stdin (23 lines, 297 bytes)")
+    expect(compact).toContain("echo first-line")
+    expect(compact).toContain("echo second-line")
+    // The rest of the script stays inside the scrollbox instead of overflowing the prompt.
+    expect(compact).not.toContain("echo last-line")
+    expect(compact).toContain("Allow once")
+
+    // "Allow always" lists the saved pattern, script included, folded to a few lines.
+    await app.mockInput.pressArrow("right")
+    app.mockInput.pressEnter()
+    await Bun.sleep(20)
+    await app.renderOnce()
+    const always = app.captureCharFrame()
+    expect(always).toContain("- ssh host 'bash -s'")
+    expect(always).toContain("<<stdin")
+    expect(always).toContain("echo first-line")
+    expect(always).not.toContain("echo line-0")
   } finally {
     app.renderer.destroy()
   }

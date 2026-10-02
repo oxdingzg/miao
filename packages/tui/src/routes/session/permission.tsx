@@ -12,6 +12,8 @@ import { useProject } from "../../context/project"
 import { filetype } from "../../util/filetype"
 import { Locale } from "../../util/locale"
 import { webSearchProviderLabel } from "../../util/tool-display"
+import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { stdinPreview } from "../../util/stdin-preview"
 import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiConfig } from "../../config"
 import { MIAO_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
@@ -86,6 +88,44 @@ function EditBody(props: { request: PermissionRequest }) {
           <text fg={theme.textMuted}>No diff provided</text>
         </box>
       </Show>
+    </box>
+  )
+}
+
+/**
+ * A command that runs with stdin: the command, then the script in a scrollbox
+ * so it stays readable in the compact prompt and fills the fullscreen one.
+ * Only the first lines of a very large script are rendered, folded like tool
+ * output; the heading still gives its full size.
+ */
+function BashStdinBody(props: { command: string; stdin: string }) {
+  const { theme } = useTheme()
+  const config = useTuiConfig()
+  const preview = createMemo(() => stdinPreview(props.stdin, 500, 500 * 200))
+  const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
+
+  return (
+    <box paddingLeft={1} gap={1} flexGrow={1}>
+      <Show when={props.command}>
+        <text fg={theme.text} flexShrink={0}>
+          {"$ " + props.command}
+        </text>
+      </Show>
+      <text fg={theme.textMuted} flexShrink={0}>
+        {preview().heading}
+      </text>
+      <scrollbox
+        height="100%"
+        scrollAcceleration={scrollAcceleration()}
+        verticalScrollbarOptions={{
+          trackOptions: {
+            backgroundColor: theme.background,
+            foregroundColor: theme.borderActive,
+          },
+        }}
+      >
+        <text fg={theme.text}>{preview().output}</text>
+      </scrollbox>
     </box>
   )
 }
@@ -176,10 +216,11 @@ export function PermissionPrompt(props: {
                   <text fg={theme.textMuted}>This will allow the following patterns until miao is restarted</text>
                   <box>
                     <For each={props.request.always}>
+                      {/* A bash pattern can carry a whole stdin script; fold it like tool output. */}
                       {(pattern) => (
                         <text fg={theme.text}>
                           {"- "}
-                          {pattern}
+                          {collapseToolOutput(pattern, 3, 3 * 200).output}
                         </text>
                       )}
                     </For>
@@ -330,7 +371,15 @@ export function PermissionPrompt(props: {
             }
 
             if (permission === "bash") {
-              const command = typeof data.command === "string" ? data.command : ""
+              // The tool call's input is preferred; the request metadata carries
+              // the same command and stdin when the call is not in sync yet.
+              const meta = props.request.metadata ?? {}
+              const command =
+                typeof data.command === "string" ? data.command : typeof meta.command === "string" ? meta.command : ""
+              const stdin =
+                typeof data.stdin === "string" ? data.stdin : typeof meta.stdin === "string" ? meta.stdin : undefined
+              if (stdin !== undefined)
+                return { icon: "#", title: "Shell command", body: <BashStdinBody command={command} stdin={stdin} /> }
               return {
                 icon: "#",
                 title: "Shell command",
