@@ -5,8 +5,10 @@ import { makeLocationNode } from "../../effect/app-node"
 import { type Model } from "@miao/llm"
 import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
 import * as Gemini from "@miao/llm/protocols/gemini"
+import * as OpenAIChat from "@miao/llm/protocols/openai-chat"
 import * as OpenAICompatibleChat from "@miao/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@miao/llm/protocols/openai-responses"
+import { GitHubCopilot } from "@miao/llm/providers"
 import { openAIDefaultOptions } from "@miao/llm/providers/openai"
 import { Auth, type AnyRoute } from "@miao/llm/route"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -14,6 +16,7 @@ import { produce } from "immer"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Flag } from "../../flag/flag"
+import { CopilotModels } from "../../github-copilot/models"
 import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
@@ -182,6 +185,7 @@ export const fromCatalogModel = (
   const key = apiKey(resolved, credential)
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
+  if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
   if (resolved.api.package === "@ai-sdk/openai") {
     // The llm OpenAI facade applies these defaults; building the route directly
     // skipped them, so reasoning models ran without the encrypted reasoning
@@ -242,6 +246,43 @@ export const fromCatalogModel = (
   return Effect.fail(unsupported(resolved))
 }
 
+/**
+ * GitHub Copilot serves three wire APIs behind one token: Anthropic Messages at
+ * `{base}/v1` for Claude, Responses for GPT-5 class models, and Chat for the
+ * rest. The account's `/models` answer (see `CopilotModels.apply`) names the
+ * endpoint; models.dev entries fall back to the same model-ID rule V1 used.
+ */
+const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
+  const enterpriseUrl = credential?.type === "oauth" ? credential.metadata?.enterpriseUrl : undefined
+  const base =
+    typeof enterpriseUrl === "string"
+      ? CopilotModels.baseURL(enterpriseUrl)
+      : (model.api.url?.replace(/\/v1\/?$/, "") ?? CopilotModels.DEFAULT_URL)
+  // The GitHub OAuth token itself authorizes Copilot; V1 sent the stored `refresh`.
+  const token = credential?.type === "oauth" ? credential.refresh : apiKey(model, credential)
+  const auth = token === undefined ? Auth.none : Auth.bearer(token)
+  const settings = model.api.type === "aisdk" ? model.api.settings : undefined
+  const endpoint =
+    settings?.endpoint ?? (model.api.type === "aisdk" && model.api.package === "@ai-sdk/anthropic" ? "messages" : undefined)
+  const headers = { ...CopilotModels.headers(), "Openai-Intent": "conversation-edits" }
+  if (endpoint === "messages")
+    return withDefaults(model, AnthropicMessages.route)
+      .with({
+        endpoint: { baseURL: `${base}/v1` },
+        auth,
+        headers: { ...headers, "anthropic-beta": "interleaved-thinking-2025-05-14" },
+      })
+      .model({ id: model.api.id })
+  const responses =
+    endpoint === "responses" || (endpoint !== "chat" && GitHubCopilot.shouldUseResponsesApi(model.api.id))
+  // Responses runs stateless (store: false) with encrypted reasoning, as V1 did;
+  // V1's Copilot chat model sent neither `store` nor a default effort.
+  const route = responses
+    ? GitHubCopilot.configure({ baseURL: base }).responses(model.api.id).route
+    : OpenAIChat.route
+  return withDefaults(model, route).with({ endpoint: { baseURL: base }, auth, headers }).model({ id: model.api.id })
+}
+
 export const resolveWithInfo = (
   session: SessionSchema.Info,
   model: ModelV2.Info,
@@ -256,6 +297,7 @@ export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, creden
 
 export const supported = (model: ModelV2.Info) => {
   if (model.api.type !== "aisdk") return false
+  if (model.providerID === ProviderV2.ID.githubCopilot) return true
   if (
     model.api.package === "@ai-sdk/openai" ||
     model.api.package === "@ai-sdk/anthropic" ||
