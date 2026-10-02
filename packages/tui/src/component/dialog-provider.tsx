@@ -1,4 +1,4 @@
-import { createMemo, createSignal, onMount, Show } from "solid-js"
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useSync } from "../context/sync"
 import { map, pipe, sortBy } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -8,7 +8,7 @@ import { DialogPrompt } from "../ui/dialog-prompt"
 import { Link } from "../ui/link"
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
-import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
+import type { IntegrationAttempt, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 import { DialogModel } from "./dialog-model"
 import { useToast } from "../ui/toast"
 import { isConsoleManagedProvider } from "../util/provider-origin"
@@ -178,9 +178,10 @@ export function createDialogProviderOptions() {
                 inputs = value
               }
 
-              const result = await sdk.client.provider.oauth.authorize({
-                providerID,
-                method: index,
+              const result = await sdk.client.v2.integration.connect.oauth({
+                integrationID: providerID,
+                location: { directory: sdk.directory },
+                ...(method.id ? { methodID: method.id } : {}),
                 inputs,
               })
               if (result.error) {
@@ -191,15 +192,20 @@ export function createDialogProviderOptions() {
                 dialog.clear()
                 return
               }
-              if (result.data?.method === "code") {
-                dialog.replace(() => (
-                  <CodeMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
-                ))
+              const attempt = result.data?.data
+              if (!attempt) {
+                toast.show({
+                  variant: "error",
+                  message: "OAuth authorization failed. Try /connect again.",
+                })
+                dialog.clear()
+                return
               }
-              if (result.data?.method === "auto") {
-                dialog.replace(() => (
-                  <AutoMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
-                ))
+              if (attempt.mode === "code") {
+                dialog.replace(() => <CodeMethod providerID={providerID} title={method.label} attempt={attempt} />)
+              }
+              if (attempt.mode === "auto") {
+                dialog.replace(() => <AutoMethod providerID={providerID} title={method.label} attempt={attempt} />)
               }
             }
             if (method.type === "api") {
@@ -231,19 +237,23 @@ export function DialogProvider() {
   return <DialogSelect compact title="Connect a provider" options={options()} />
 }
 
-interface AutoMethodProps {
-  index: number
+interface OAuthMethodProps {
   providerID: string
   title: string
-  authorization: ProviderAuthAuthorization
+  attempt: IntegrationAttempt
 }
-function AutoMethod(props: AutoMethodProps) {
+function AutoMethod(props: OAuthMethodProps) {
   const { theme } = useTheme()
   const sdk = useSDK()
   const dialog = useDialog()
   const sync = useSync()
   const toast = useToast()
   const clipboard = useClipboard()
+
+  const alive = { value: true }
+  onCleanup(() => {
+    alive.value = false
+  })
 
   useBindings(() => ({
     bindings: [
@@ -252,8 +262,7 @@ function AutoMethod(props: AutoMethodProps) {
         desc: "Copy provider code",
         group: "Dialog",
         cmd: () => {
-          const code =
-            props.authorization.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.authorization.url
+          const code = props.attempt.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.attempt.url
           clipboard
             .write?.(code)
             .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
@@ -263,25 +272,46 @@ function AutoMethod(props: AutoMethodProps) {
     ],
   }))
 
-  onMount(async () => {
-    const result = await sdk.client.provider.oauth.callback({
-      providerID: props.providerID,
-      method: props.index,
-    })
-    if (result.error) {
+  onMount(() => {
+    const poll = async (): Promise<void> => {
+      const result = await sdk.client.v2.integration.attempt.status({
+        attemptID: props.attempt.attemptID,
+        location: { directory: sdk.directory },
+      })
+      if (!alive.value) return
+      if (result.error) {
+        toast.show({
+          variant: "error",
+          message: JSON.stringify(result.error),
+        })
+        dialog.clear()
+        return
+      }
+      const status = result.data?.data
+      if (!status) {
+        toast.show({
+          variant: "error",
+          message: "OAuth authorization failed. Try /connect again.",
+        })
+        dialog.clear()
+        return
+      }
+      if (status.status === "pending") {
+        setTimeout(() => void poll(), 1000)
+        return
+      }
+      if (status.status === "complete") {
+        await sync.bootstrap()
+        dialog.replace(() => <DialogModel providerID={props.providerID} />)
+        return
+      }
       toast.show({
         variant: "error",
-        message:
-          "name" in result.error && result.error.name === "ProviderAuthOauthCallbackFailed"
-            ? "OAuth authorization failed. Try /connect again."
-            : JSON.stringify(result.error),
+        message: status.status === "failed" ? status.message : "OAuth authorization failed. Try /connect again.",
       })
       dialog.clear()
-      return
     }
-    await sdk.client.instance.dispose()
-    await sync.bootstrap()
-    dialog.replace(() => <DialogModel providerID={props.providerID} />)
+    void poll()
   })
 
   return (
@@ -295,8 +325,8 @@ function AutoMethod(props: AutoMethodProps) {
         </text>
       </box>
       <box gap={1}>
-        <Link href={props.authorization.url} fg={theme.primary} />
-        <text fg={theme.textMuted}>{props.authorization.instructions}</text>
+        <Link href={props.attempt.url} fg={theme.primary} />
+        <text fg={theme.textMuted}>{props.attempt.instructions}</text>
       </box>
       <text fg={theme.textMuted}>Waiting for authorization…</text>
       <text fg={theme.text}>
@@ -306,13 +336,7 @@ function AutoMethod(props: AutoMethodProps) {
   )
 }
 
-interface CodeMethodProps {
-  index: number
-  title: string
-  providerID: string
-  authorization: ProviderAuthAuthorization
-}
-function CodeMethod(props: CodeMethodProps) {
+function CodeMethod(props: OAuthMethodProps) {
   const { theme } = useTheme()
   const sdk = useSDK()
   const sync = useSync()
@@ -324,13 +348,18 @@ function CodeMethod(props: CodeMethodProps) {
       title={props.title}
       placeholder="Authorization code"
       onConfirm={async (value) => {
-        const { error } = await sdk.client.provider.oauth.callback({
-          providerID: props.providerID,
-          method: props.index,
-          code: value,
-        })
-        if (!error) {
-          await sdk.client.instance.dispose()
+        const ok = await sdk.client.v2.integration.attempt
+          .complete(
+            {
+              attemptID: props.attempt.attemptID,
+              location: { directory: sdk.directory },
+              code: value,
+            },
+            { throwOnError: true },
+          )
+          .then(() => true)
+          .catch(() => false)
+        if (ok) {
           await sync.bootstrap()
           dialog.replace(() => <DialogModel providerID={props.providerID} />)
           return
@@ -339,8 +368,8 @@ function CodeMethod(props: CodeMethodProps) {
       }}
       description={() => (
         <box gap={1}>
-          <text fg={theme.textMuted}>{props.authorization.instructions}</text>
-          <Link href={props.authorization.url} fg={theme.primary} />
+          <text fg={theme.textMuted}>{props.attempt.instructions}</text>
+          <Link href={props.attempt.url} fg={theme.primary} />
           <Show when={error()}>
             <text fg={theme.error}>Invalid code</text>
           </Show>
