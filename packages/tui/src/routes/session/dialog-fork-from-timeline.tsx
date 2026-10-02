@@ -4,7 +4,6 @@ import { DialogSelect, type DialogSelectOption } from "../../ui/dialog-select"
 import type { TextPart } from "@opencode-ai/sdk/v2"
 import { Locale } from "../../util/locale"
 import { useSDK } from "../../context/sdk"
-import { Flag } from "@miao/core/flag/flag"
 import { useRoute } from "../../context/route"
 import { useDialog, type DialogContext } from "../../ui/dialog"
 import type { PromptInfo } from "../../component/prompt/history"
@@ -26,9 +25,9 @@ export function DialogForkFromTimeline(props: { sessionID: string; onMove: (mess
       title: "Full session",
       value: undefined,
       onSelect: async (dialog: DialogContext) => {
-        const forked = Flag.MIAO_TUI_V2
-          ? await sdk.client.v2.session.fork({ sessionID: props.sessionID }).then((r) => ({ data: r.data?.data }))
-          : await sdk.client.session.fork({ sessionID: props.sessionID })
+        const forked = await sdk.client.v2.session
+          .fork({ sessionID: props.sessionID })
+          .then((r) => ({ data: r.data?.data }))
         route.navigate({
           sessionID: forked.data!.id,
           type: "session",
@@ -48,14 +47,9 @@ export function DialogForkFromTimeline(props: { sessionID: string; onMove: (mess
         value: message.id,
         footer: Locale.time(message.time.created),
         onSelect: async (dialog) => {
-          const forked = Flag.MIAO_TUI_V2
-            ? await sdk.client.v2.session
-                .fork({ sessionID: props.sessionID, messageID: message.id })
-                .then((r) => ({ data: r.data?.data }))
-            : await sdk.client.session.fork({
-                sessionID: props.sessionID,
-                messageID: message.id,
-              })
+          const forked = await sdk.client.v2.session
+            .fork({ sessionID: props.sessionID, messageID: message.id })
+            .then((r) => ({ data: r.data?.data }))
           const parts = sync.data.part[message.id] ?? []
           const prompt = parts.reduce(
             (agg, part) => {

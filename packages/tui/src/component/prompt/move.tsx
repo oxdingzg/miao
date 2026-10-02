@@ -10,7 +10,6 @@ import { DialogMoveSession, type MoveSessionSelection } from "../dialog-move-ses
 import { DialogWorkspaceFileChanges } from "../dialog-workspace-file-changes"
 import { useHomeSessionDestination } from "../../routes/home/session-destination"
 import { useProject } from "../../context/project"
-import { Flag } from "@miao/core/flag/flag"
 
 function moveReminderText(directory: string) {
   return `<system-reminder>The user has changed the current working directory to "${directory}". This is still the same project but at a possibly new location; take this into account when working with any files from now on.</system-reminder>`
@@ -49,7 +48,7 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
 
       // Call a location-based route to make sure it's bootstrapped
       // before moving on
-      await sdk.client.path.get({ directory }, { throwOnError: true })
+      await sdk.client.v2.location.get({ location: { directory } }, { throwOnError: true })
 
       setProgress("Creating session")
       return directory
@@ -121,15 +120,9 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
         { throwOnError: true },
       )
       // Admit the reminder without running a turn: the model reads it with the next prompt.
-      await (Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session.prompt({ sessionID, prompt: { text: moveReminderText(directory) }, resume: false })
-        : sdk.client.session.promptAsync({
-            sessionID,
-            directory,
-            noReply: true,
-            parts: [{ type: "text", text: moveReminderText(directory), synthetic: true }],
-          })
-      ).catch(() => undefined)
+      await sdk.client.v2.session
+        .prompt({ sessionID, prompt: { text: moveReminderText(directory) }, resume: false })
+        .catch(() => undefined)
       dialog.clear()
     } catch (error) {
       toast.error(error)

@@ -27,8 +27,6 @@ function global(payload: GlobalEvent["payload"]): GlobalEvent {
 test("V2 stream deltas append in place instead of re-hydrating", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const previous = process.env["MIAO_TUI_V2"]
-  process.env["MIAO_TUI_V2"] = "1"
   let contextRequests = 0
   let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
 
@@ -93,16 +91,12 @@ test("V2 stream deltas append in place instead of re-hydrating", async () => {
     expect(contextRequests).toBe(hydrated)
   } finally {
     app?.renderer.destroy()
-    if (previous === undefined) delete process.env["MIAO_TUI_V2"]
-    else process.env["MIAO_TUI_V2"] = previous
   }
 })
 
 test("V2 stream deltas request a refresh when the part is not projected yet", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const previous = process.env["MIAO_TUI_V2"]
-  process.env["MIAO_TUI_V2"] = "1"
   let contextRequests = 0
   let contextData: unknown[] = []
   let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
@@ -150,7 +144,5 @@ test("V2 stream deltas request a refresh when the part is not projected yet", as
     expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "hello world" })
   } finally {
     app?.renderer.destroy()
-    if (previous === undefined) delete process.env["MIAO_TUI_V2"]
-    else process.env["MIAO_TUI_V2"] = previous
   }
 })

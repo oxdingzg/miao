@@ -125,10 +125,12 @@ async function renderDiffViewer(vcsDiff: unknown[], height = 20, initialRoute?: 
             return { data: vcsDiff }
           },
         },
-        session: {
-          diff: async (input: unknown) => {
-            sessionDiffInput = input
-            return { data: [] }
+        v2: {
+          session: {
+            diff: async (input: unknown) => {
+              sessionDiffInput = input
+              return { data: { data: [] } }
+            },
           },
         },
       } as unknown as TuiPluginApi["client"],
@@ -235,7 +237,7 @@ test("last-turn diff source requests session diff", async () => {
       name: "diff",
       params: { mode: "last-turn", sessionID: "session-1", messageID: "message-1", returnRoute: startRoute },
     })
-    expect(viewer.sessionDiffInput()).toEqual({ sessionID: "session-1", messageID: "message-1" })
+    expect(viewer.sessionDiffInput()).toEqual({ sessionID: "session-1" })
     expect(viewer.vcsDiffInput()).toBeUndefined()
   } finally {
     viewer.app.renderer.destroy()

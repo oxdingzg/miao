@@ -42,7 +42,6 @@ import { promptInputFromParts } from "./session-v2-write"
 import { SessionMessage } from "@miao/core/session/message"
 import type { PromptInfo } from "../prompt/history"
 import { errorMessage } from "../util/error"
-import { Flag } from "@miao/core/flag/flag"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -71,8 +70,6 @@ function search<T>(items: T[], target: string, key: (item: T) => string) {
 function compareMessage(a: Message, b: Message) {
   return a.time.created - b.time.created || a.id.localeCompare(b.id)
 }
-
-const messageKey = (message: Message) => message.time.created + message.id
 
 export const {
   context: SyncContext,
@@ -191,11 +188,9 @@ export const {
 
     function listSessions() {
       const query = sessionListQuery()
-      const promise = Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session
-            .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
-            .then((x) => ({ data: (x.data?.data ?? []).map(sessionInfo) }))
-        : sdk.client.session.list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...query })
+      const promise = sdk.client.v2.session
+        .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
+        .then((x) => ({ data: (x.data?.data ?? []).map(sessionInfo) }))
       return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
@@ -236,15 +231,14 @@ export const {
       )
     }
 
-    event.subscribe((event, { directory, workspace }) => {
-      if (Flag.MIAO_TUI_V2 && isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
+    event.subscribe((event, { workspace }) => {
+      if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
         if (sessionID) v2Refresh.schedule(sessionID)
       }
       switch (event.type) {
         case "session.next.prompt.admitted":
         case "session.next.prompted": {
-          if (!Flag.MIAO_TUI_V2) break
           const input = event.properties
           // A promoted prompt is visible history now, so its local receipt has to
           // go either way. `send` schedules a refresh that can hydrate the message
@@ -296,93 +290,22 @@ export const {
           break
         case "permission.replied": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          const requests = store.permission[event.properties.sessionID]
-          if (!requests) break
-          const match = search(requests, event.properties.requestID, (r) => r.id)
-          if (!match.found) break
-          setStore(
-            "permission",
-            event.properties.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 1)
-            }),
-          )
           break
         }
 
         case "permission.asked": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          const request = event.properties
-          if (permission.mode === "auto") {
-            void sdk.client.permission.reply({
-              requestID: request.id,
-              reply: "once",
-              directory,
-              workspace,
-            })
-            break
-          }
-          const requests = store.permission[request.sessionID]
-          if (!requests) {
-            setStore("permission", request.sessionID, [request])
-            break
-          }
-          const match = search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("permission", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "permission",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
           break
         }
 
         case "question.replied":
         case "question.rejected": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          const requests = store.question[event.properties.sessionID]
-          if (!requests) break
-          const match = search(requests, event.properties.requestID, (r) => r.id)
-          if (!match.found) break
-          setStore(
-            "question",
-            event.properties.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 1)
-            }),
-          )
           break
         }
 
         case "question.asked": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          const request = event.properties
-          const requests = store.question[request.sessionID]
-          if (!requests) {
-            setStore("question", request.sessionID, [request])
-            break
-          }
-          const match = search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("question", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "question",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
           break
         }
 
@@ -536,7 +459,6 @@ export const {
         }
 
         case "session.next.text.delta": {
-          if (!Flag.MIAO_TUI_V2) break
           appendV2StreamText(
             event.properties.sessionID,
             event.properties.assistantMessageID,
@@ -547,7 +469,6 @@ export const {
         }
 
         case "session.next.reasoning.delta": {
-          if (!Flag.MIAO_TUI_V2) break
           appendV2StreamText(
             event.properties.sessionID,
             event.properties.assistantMessageID,
@@ -575,130 +496,29 @@ export const {
 
         case "session.status": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          setStore("session_status", event.properties.sessionID, event.properties.status)
           break
         }
 
         case "message.updated": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          touchMessage(event.properties.info.sessionID, event.properties.info.id)
-          const messages = store.message[event.properties.info.sessionID]
-          if (!messages) {
-            setStore("message", event.properties.info.sessionID, [event.properties.info])
-            break
-          }
-          const result = search(messages, messageKey(event.properties.info), messageKey)
-          if (result.found) {
-            setStore("message", event.properties.info.sessionID, result.index, reconcile(event.properties.info))
-            break
-          }
-          setStore(
-            "message",
-            event.properties.info.sessionID,
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.info)
-            }),
-          )
-          const updated = store.message[event.properties.info.sessionID]
-          if (updated.length > 100) {
-            const oldest = updated[0]
-            batch(() => {
-              setStore(
-                "message",
-                event.properties.info.sessionID,
-                produce((draft) => {
-                  draft.shift()
-                }),
-              )
-              setStore(
-                "part",
-                produce((draft) => {
-                  delete draft[oldest.id]
-                }),
-              )
-            })
-          }
           break
         }
         case "message.removed": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          touchMessage(event.properties.sessionID, event.properties.messageID)
-          const messages = store.message[event.properties.sessionID]
-          const index = messages.findIndex((message) => message.id === event.properties.messageID)
-          if (index !== -1) {
-            setStore(
-              "message",
-              event.properties.sessionID,
-              produce((draft) => {
-                draft.splice(index, 1)
-              }),
-            )
-          }
           break
         }
         case "message.part.updated": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          touchPart(event.properties.part.sessionID, event.properties.part.id)
-          const parts = store.part[event.properties.part.messageID]
-          if (!parts) {
-            setStore("part", event.properties.part.messageID, [event.properties.part])
-            break
-          }
-          const result = search(parts, event.properties.part.id, (part) => part.id)
-          if (result.found) {
-            setStore("part", event.properties.part.messageID, result.index, reconcile(event.properties.part))
-            break
-          }
-          setStore(
-            "part",
-            event.properties.part.messageID,
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.part)
-            }),
-          )
           break
         }
 
         case "message.part.delta": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          const parts = store.part[event.properties.messageID]
-          if (!parts) break
-          const result = search(parts, event.properties.partID, (part) => part.id)
-          if (!result.found) break
-          touchPart(event.properties.sessionID, event.properties.partID)
-          setStore(
-            "part",
-            event.properties.messageID,
-            produce((draft) => {
-              const part = draft[result.index]
-              const field = event.properties.field as keyof typeof part
-              const existing = part[field] as string | undefined
-              ;(part[field] as string) = (existing ?? "") + event.properties.delta
-            }),
-          )
           break
         }
 
         case "message.part.removed": {
           // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          if (Flag.MIAO_TUI_V2) break
-          touchPart(event.properties.sessionID, event.properties.partID)
-          const parts = store.part[event.properties.messageID]
-          const result = search(parts, event.properties.partID, (part) => part.id)
-          if (result.found) {
-            setStore(
-              "part",
-              event.properties.messageID,
-              produce((draft) => {
-                draft.splice(result.index, 1)
-              }),
-            )
-          }
           break
         }
 
@@ -816,16 +636,14 @@ export const {
               .list({ workspace })
               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
             sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
-            (Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session.active().then((x) => ({
-                  data: Object.fromEntries(
-                    Object.keys(x.data?.data ?? {}).map((id) => [id, { type: "busy" as const }]),
-                  ),
-                }))
-              : sdk.client.session.status({ workspace })
-            ).then((x) => {
-              setStore("session_status", reconcile(x.data ?? {}))
-            }),
+            sdk.client.v2.session
+              .active()
+              .then((x) => ({
+                data: Object.fromEntries(Object.keys(x.data?.data ?? {}).map((id) => [id, { type: "busy" as const }])),
+              }))
+              .then((x) => {
+                setStore("session_status", reconcile(x.data ?? {}))
+              }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             ...(reloadProviderCatalog
               ? [
@@ -955,7 +773,6 @@ export const {
           setStore("session", reconcile(list))
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
-          if (!Flag.MIAO_TUI_V2) return store.session_status[sessionID]?.type === "busy" ? "busy" : "idle"
           const response = await sdk.client.v2.session.status({ sessionID }, { throwOnError: true, signal })
           const status = response.data.data.type
           if (signal?.aborted) return status
@@ -970,7 +787,7 @@ export const {
           const session = result.session.get(sessionID)
           if (!session) return "idle"
           if (session.time.compacting) return "compacting"
-          if (Flag.MIAO_TUI_V2 && store.session_status[sessionID])
+          if (store.session_status[sessionID])
             return store.session_status[sessionID].type === "idle" ? "idle" : "working"
           const messages = store.message[sessionID] ?? []
           const last = messages.at(-1)
@@ -985,53 +802,45 @@ export const {
           const tracker = { messages: new Set<string>(), parts: new Set<string>() }
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
-            const sessionPromise = Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session
-                  .get({ sessionID }, { throwOnError: true })
-                  .then((x) => ({ data: sessionInfo(x.data.data) }))
-              : sdk.client.session.get({ sessionID }, { throwOnError: true })
-            const messagesPromise = Flag.MIAO_TUI_V2
-              ? sessionPromise.then((session) =>
-                  Promise.all([
-                    sdk.client.v2.session.context({ sessionID }, { throwOnError: true }),
-                    // `context` stops at the last compaction, so also read a page
-                    // of the projected timeline to keep older history reachable.
-                    sdk.client.v2.session.messages({ sessionID, limit: 200, order: "desc" }, { throwOnError: true }),
-                  ]).then(([context, history]) => {
-                    // Seed the older-history walk once. Later re-hydrations must
-                    // not reset it to the newest page, or every scroll to the
-                    // top would refetch a page that is already loaded.
-                    const seeded = olderHistory.get(sessionID)
-                    const older = seeded ?? { messages: [], cursor: history.data.cursor.next }
-                    if (!seeded) olderHistory.set(sessionID, older)
-                    return {
-                      data: sessionContextToMessages({
-                        sessionID,
-                        cwd: session.data!.directory,
-                        root: session.data!.directory,
-                        messages: mergeTranscript(context.data.data, [...older.messages, ...history.data.data]),
-                      }),
-                    }
+            const sessionPromise = sdk.client.v2.session
+              .get({ sessionID }, { throwOnError: true })
+              .then((x) => ({ data: sessionInfo(x.data.data) }))
+            const messagesPromise = sessionPromise.then((session) =>
+              Promise.all([
+                sdk.client.v2.session.context({ sessionID }, { throwOnError: true }),
+                // `context` stops at the last compaction, so also read a page
+                // of the projected timeline to keep older history reachable.
+                sdk.client.v2.session.messages({ sessionID, limit: 200, order: "desc" }, { throwOnError: true }),
+              ]).then(([context, history]) => {
+                // Seed the older-history walk once. Later re-hydrations must
+                // not reset it to the newest page, or every scroll to the
+                // top would refetch a page that is already loaded.
+                const seeded = olderHistory.get(sessionID)
+                const older = seeded ?? { messages: [], cursor: history.data.cursor.next }
+                if (!seeded) olderHistory.set(sessionID, older)
+                return {
+                  data: sessionContextToMessages({
+                    sessionID,
+                    cwd: session.data!.directory,
+                    root: session.data!.directory,
+                    messages: mergeTranscript(context.data.data, [...older.messages, ...history.data.data]),
                   }),
-                )
-              : sdk.client.session.messages({ sessionID, limit: 100 })
+                }
+              }),
+            )
             const [session, messages, todo, diff] = await Promise.all([
               sessionPromise,
               messagesPromise,
-              Flag.MIAO_TUI_V2
-                ? sdk.client.v2.session.todo({ sessionID }).then((x) => ({ data: x.data?.data }))
-                : sdk.client.session.todo({ sessionID }),
-              Flag.MIAO_TUI_V2
-                ? sdk.client.v2.session.diff({ sessionID }).then((x) => ({
-                    data: (x.data?.data ?? []).map((file) => ({
-                      file: file.path,
-                      patch: file.patch,
-                      additions: file.additions,
-                      deletions: file.deletions,
-                      status: file.status,
-                    })),
-                  }))
-                : sdk.client.session.diff({ sessionID }),
+              sdk.client.v2.session.todo({ sessionID }).then((x) => ({ data: x.data?.data })),
+              sdk.client.v2.session.diff({ sessionID }).then((x) => ({
+                data: (x.data?.data ?? []).map((file) => ({
+                  file: file.path,
+                  patch: file.patch,
+                  additions: file.additions,
+                  deletions: file.deletions,
+                  status: file.status,
+                })),
+              })),
             ])
             batch(() => {
               const match = search(store.session, sessionID, (s) => s.id)
@@ -1108,7 +917,6 @@ export const {
          * false once the session's oldest page has been reached.
          */
         async loadOlder(sessionID: string) {
-          if (!Flag.MIAO_TUI_V2) return false
           const older = olderHistory.get(sessionID)
           if (!older?.cursor || loadingOlder.has(sessionID)) return false
           loadingOlder.add(sessionID)
@@ -1172,7 +980,6 @@ export const {
     // Execution can be busy before any provider frame arrives, or idle after
     // an interrupted user prompt. The transcript is not an ownership signal.
     refreshStatus = async (sessionID) => {
-      if (!Flag.MIAO_TUI_V2) return
       await result.session.syncStatus(sessionID)
     }
     return result

@@ -10,7 +10,7 @@ import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { createEventSource, createFetch, directory, json } from "../../fixture/tui-sdk"
 
-const replyPath = "/permission/per_test/reply"
+const replyPath = "/api/session/ses_test/permission/per_test/reply"
 
 const webfetchRequest = {
   id: "per_test",

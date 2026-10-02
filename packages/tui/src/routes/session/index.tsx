@@ -25,7 +25,6 @@ import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
-import { Flag } from "@miao/core/flag/flag"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -241,20 +240,8 @@ export function Session() {
     const index = messages().findIndex((message) => message.id === messageID)
     return index === -1 ? messages() : messages().slice(0, index)
   }
-  // Backgrounding subagents is a V1 runner feature; V2 runs task tools synchronously.
-  const foregroundTasks = createMemo(() =>
-    !Flag.MIAO_TUI_V2 && sync.data.capabilities.experimentalBackgroundSubagents
-      ? messages().flatMap((message) =>
-          (sync.data.part[message.id] ?? []).filter(
-            (part): part is ToolPart =>
-              part.type === "tool" &&
-              part.tool === "task" &&
-              part.state.status === "running" &&
-              part.state.metadata?.background !== true,
-          ),
-        )
-      : [],
-  )
+  // V2 runs task tools synchronously.
+  const foregroundTasks = createMemo(() => [])
   const permissions = createMemo(() => {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.permission[x.id] ?? [])
@@ -313,11 +300,9 @@ export function Session() {
     const sessionID = route.sessionID
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
-      const result = Flag.MIAO_TUI_V2
-        ? await sdk.client.v2.session
-            .get({ sessionID }, { throwOnError: true })
-            .then((x) => ({ data: sessionInfo(x.data.data) }))
-        : await sdk.client.session.get({ sessionID }, { throwOnError: true })
+      const result = await sdk.client.v2.session
+        .get({ sessionID }, { throwOnError: true })
+        .then((x) => ({ data: sessionInfo(x.data.data) }))
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
@@ -572,13 +557,7 @@ export function Session() {
           })
           return
         }
-        void (Flag.MIAO_TUI_V2
-          ? sdk.client.v2.session.compact({ sessionID: route.sessionID })
-          : sdk.client.session.summarize({
-              sessionID: route.sessionID,
-              modelID: selectedModel.modelID,
-              providerID: selectedModel.providerID,
-            }))
+        void sdk.client.v2.session.compact({ sessionID: route.sessionID })
         dialog.clear()
       },
     },
@@ -592,21 +571,10 @@ export function Session() {
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
         if (status?.type !== "idle")
-          await (
-            Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session.interrupt({ sessionID: route.sessionID })
-              : sdk.client.session.abort({ sessionID: route.sessionID })
-          ).catch(() => {})
+          await sdk.client.v2.session.interrupt({ sessionID: route.sessionID }).catch(() => {})
         const message = messagesBeforeRevert().findLast((item) => item.role === "user")
         if (!message) return
-        void (
-          Flag.MIAO_TUI_V2
-            ? sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
-            : sdk.client.session.revert({
-                sessionID: route.sessionID,
-                messageID: message.id,
-              })
-        ).then(() => {
+        void sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id }).then(() => {
           toBottom()
         })
         const parts = sync.data.part[message.id]
@@ -639,20 +607,11 @@ export function Session() {
         if (!messageID) return
         const message = messages().find((x) => x.role === "user" && x.id > messageID)
         if (!message) {
-          void (Flag.MIAO_TUI_V2
-            ? sdk.client.v2.session.revert.clear({ sessionID: route.sessionID })
-            : sdk.client.session.unrevert({
-                sessionID: route.sessionID,
-              }))
+          void sdk.client.v2.session.revert.clear({ sessionID: route.sessionID })
           prompt?.set({ input: "", parts: [] })
           return
         }
-        void (Flag.MIAO_TUI_V2
-          ? sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
-          : sdk.client.session.revert({
-              sessionID: route.sessionID,
-              messageID: message.id,
-            }))
+        void sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
       },
     },
     {
@@ -985,14 +944,17 @@ export function Session() {
             await writeExport(filepath, transcript)
 
             // Open with EDITOR if available
-            const result = process.env.VISUAL || process.env.EDITOR ? await openEditor({
-              renderer,
-              value: transcript,
-              cwd:
-                (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
-                project.instance.directory() ||
-                paths.cwd,
-            }) : undefined
+            const result =
+              process.env.VISUAL || process.env.EDITOR
+                ? await openEditor({
+                    renderer,
+                    value: transcript,
+                    cwd:
+                      (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
+                      project.instance.directory() ||
+                      paths.cwd,
+                  })
+                : undefined
             if (result !== undefined) {
               await writeExport(filepath, result)
             }

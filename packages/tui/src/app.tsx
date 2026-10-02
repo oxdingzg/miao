@@ -173,7 +173,6 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const global = yield* Global.Service
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
@@ -512,16 +511,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (match) {
       continued = true
       if (args.fork) {
-        void (Flag.MIAO_TUI_V2
-          ? sdk.client.v2.session.fork({ sessionID: match }).then((forked) => ({ data: forked.data?.data }))
-          : sdk.client.session.fork({ sessionID: match })
-        ).then((result) => {
-          if (result.data?.id) {
-            route.navigate({ type: "session", sessionID: result.data.id })
-          } else {
-            toast.show({ message: "Failed to fork session", variant: "error" })
-          }
-        })
+        void sdk.client.v2.session
+          .fork({ sessionID: match })
+          .then((forked) => ({ data: forked.data?.data }))
+          .then((result) => {
+            if (result.data?.id) {
+              route.navigate({ type: "session", sessionID: result.data.id })
+            } else {
+              toast.show({ message: "Failed to fork session", variant: "error" })
+            }
+          })
       } else {
         route.navigate({ type: "session", sessionID: match })
       }
@@ -535,16 +534,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   createEffect(() => {
     if (forked || sync.status !== "complete" || !args.sessionID || !args.fork) return
     forked = true
-    void (Flag.MIAO_TUI_V2
-      ? sdk.client.v2.session.fork({ sessionID: args.sessionID }).then((forked) => ({ data: forked.data?.data }))
-      : sdk.client.session.fork({ sessionID: args.sessionID })
-    ).then((result) => {
-      if (result.data?.id) {
-        route.navigate({ type: "session", sessionID: result.data.id })
-      } else {
-        toast.show({ message: "Failed to fork session", variant: "error" })
-      }
-    })
+    void sdk.client.v2.session
+      .fork({ sessionID: args.sessionID })
+      .then((forked) => ({ data: forked.data?.data }))
+      .then((result) => {
+        if (result.data?.id) {
+          route.navigate({ type: "session", sessionID: result.data.id })
+        } else {
+          toast.show({ message: "Failed to fork session", variant: "error" })
+        }
+      })
   })
 
   createEffect(
@@ -1103,9 +1102,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         evt.stopPropagation()
       }}
       onMouseUp={
-        !Flag.MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT
-          ? () => Selection.copy(renderer, toast, clipboard)
-          : undefined
+        !Flag.MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? () => Selection.copy(renderer, toast, clipboard) : undefined
       }
     >
       <Show when={Flag.MIAO_SHOW_TTFD}>
