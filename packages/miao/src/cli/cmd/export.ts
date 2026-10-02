@@ -382,7 +382,7 @@ export function transcript(info: SessionV1.SessionInfo, projection: ReadonlyArra
   )
   const result: SessionV1.WithParts[] = []
   let lastUser = ""
-  let lastAssistant: Record<string, unknown> | undefined
+  let lastAssistant: { modelID: string; providerID: string; path: { cwd: string; root: string } } | undefined
   for (const message of projection) {
     const kept = SessionV1Read.preserved(message)
     if (message.type === "compaction") {
@@ -403,16 +403,19 @@ export function transcript(info: SessionV1.SessionInfo, projection: ReadonlyArra
           info.id,
           message.id,
           {
-            ...lastAssistant,
             role: "assistant",
-            parentID: lastUser,
+            // The summary answers the turn before it; a compaction that opens the
+            // session has no such turn, so it stands in as its own parent.
+            parentID: lastUser || message.id,
+            modelID: lastAssistant?.modelID ?? "",
+            providerID: lastAssistant?.providerID ?? "",
+            path: lastAssistant?.path ?? { cwd: info.directory, root: info.directory },
             agent: "compaction",
             mode: "compaction",
             summary: true,
             cost: 0,
             tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
             finish: "stop",
-            error: undefined,
             time: { created: DateTime.toEpochMillis(message.time.created) },
           },
           [{ type: "text", text: message.summary } as { readonly type: string }],
