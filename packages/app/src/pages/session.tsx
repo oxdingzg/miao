@@ -891,6 +891,8 @@ export default function Page() {
 
   const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
 
+  // Not deferred: after a reload the Session can already be running when the page mounts, and
+  // the persisted todo list must still be read because no todo.updated event will replay it.
   createEffect(
     on(
       () => {
@@ -922,7 +924,6 @@ export default function Page() {
           }, 0)
         })
       },
-      { defer: true },
     ),
   )
 

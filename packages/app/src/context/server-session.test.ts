@@ -163,6 +163,39 @@ function setup(sessions: Record<string, Session>) {
 }
 
 describe("server session", () => {
+  test("restores the persisted V2 todo list after a reload", async () => {
+    const todos = [
+      { content: "Write the fix", status: "completed", priority: "high" },
+      { content: "Verify it", status: "in_progress", priority: "medium" },
+    ]
+    const requests: unknown[] = []
+    const client = {
+      v2: {
+        session: {
+          todo: async (input: unknown) => {
+            requests.push(input)
+            return { data: { data: todos } }
+          },
+        },
+      },
+    } as unknown as OpencodeClient
+    // A fresh store models the page after a refresh: nothing is cached and no todo.updated event replays.
+    const store = createServerSession(client)
+
+    await store.todo("child")
+
+    expect(requests).toEqual([{ sessionID: "child" }])
+    expect(store.data.todo.child).toEqual(todos)
+
+    await store.todo("child")
+    expect(requests).toHaveLength(1)
+
+    todos.splice(0, 1)
+    await store.todo("child", { force: true })
+    expect(requests).toHaveLength(2)
+    expect(store.data.todo.child).toEqual([{ content: "Verify it", status: "in_progress", priority: "medium" }])
+  })
+
   test("projects V2 session events into current and legacy message state", () => {
     const ctx = setup({ child: session("child") })
     ctx.store.remember(session("child"))
@@ -200,7 +233,13 @@ describe("server session", () => {
       id: "evt_text_delta",
       type: "session.next.text.delta",
       location: { directory: "/repo" },
-      data: { timestamp: 4, sessionID: "child", assistantMessageID: "msg_2_assistant", textID: "txt_1", delta: "world" },
+      data: {
+        timestamp: 4,
+        sessionID: "child",
+        assistantMessageID: "msg_2_assistant",
+        textID: "txt_1",
+        delta: "world",
+      },
     })
 
     expect(ctx.store.data.session_message.child?.at(-1)).toMatchObject({

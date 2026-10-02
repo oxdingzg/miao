@@ -210,3 +210,49 @@ test("embedded client is available as a Layer service", async () => {
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test("embedded client reads the todo list a V2 writer persisted", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-todo-"))
+  const database = Flag.MIAO_DB
+  Flag.MIAO_DB = join(directory, "opencode.sqlite")
+  const { AbsolutePath, Location, OpenCode, Session } = await import("../src")
+  const { AppNodeBuilder } = await import("@miao/core/effect/app-node-builder")
+  const { SessionTodo } = await import("@miao/core/session/todo")
+  const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
+  const todos = [
+    { content: "Persist the plan", status: "completed", priority: "high" },
+    { content: "Read it after a reload", status: "in_progress", priority: "medium" },
+  ]
+  // The todowrite tool persists through this V2 service; a fresh client read must see its rows.
+  const write = (next: typeof todos) =>
+    SessionTodo.Service.use((service) => service.update({ sessionID, todos: next })).pipe(
+      Effect.provide(AppNodeBuilder.build(SessionTodo.node)),
+    )
+
+  try {
+    const program = Effect.gen(function* () {
+      const opencode = yield* OpenCode.create()
+      yield* opencode.sessions.create({
+        id: sessionID,
+        location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
+      })
+      const empty = yield* opencode.sessions.todo({ sessionID })
+      yield* write(todos)
+      const written = yield* opencode.sessions.todo({ sessionID })
+      yield* write(todos.slice(1))
+      const replaced = yield* opencode.sessions.todo({ sessionID })
+      const missing = yield* Effect.flip(
+        opencode.sessions.todo({ sessionID: Session.ID.make(`ses_missing_${crypto.randomUUID()}`) }),
+      )
+
+      expect(empty).toEqual([])
+      expect(written).toEqual(todos)
+      expect(replaced).toEqual([todos[1]])
+      expect(missing._tag).toBe("SessionNotFoundError")
+    })
+    await Effect.runPromise(Effect.scoped(program))
+  } finally {
+    Flag.MIAO_DB = database
+    await rm(directory, { recursive: true, force: true })
+  }
+})

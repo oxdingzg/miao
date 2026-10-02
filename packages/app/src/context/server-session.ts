@@ -1374,7 +1374,13 @@ export function createServerSession(
     async todo(sessionID: string, request?: { force?: boolean }) {
       touch(sessionID)
       if (data.todo[sessionID] !== undefined && !request?.force) return
-      setData("todo", sessionID, [])
+      return runInflight(inflightTodo, sessionID, () => {
+        const active = generation(sessionID)
+        return (options?.retry ?? retry)(() => client.v2.session.todo({ sessionID })).then((result) => {
+          if (generations.get(sessionID) !== active) return
+          setData("todo", sessionID, reconcile(result.data?.data ?? [], { key: "id" }))
+        })
+      })
     },
     history: {
       more: (sessionID: string) =>

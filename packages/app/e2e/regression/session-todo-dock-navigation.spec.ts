@@ -1,6 +1,6 @@
 import { base64Encode } from "@miao/core/util/encode"
 import { expect, test, type Page } from "@playwright/test"
-import { LEGACY_V1_FIXTURE, mockOpenCodeServer } from "../utils/mock-server"
+import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
 const directory = "C:/OpenCode/TodoDockNavigation"
@@ -24,7 +24,6 @@ type EventPayload = {
 test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" })
 
 test("animates todo lifecycle without replaying it across session tabs", async ({ page }) => {
-  test.fixme(true, LEGACY_V1_FIXTURE)
   test.setTimeout(90_000)
   const events: EventPayload[] = []
   const todos: Record<string, typeof activeTodos> = { [sourceID]: [], [otherID]: [] }
@@ -109,6 +108,44 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   await switchSession(page, sourceID, sourceTitle)
   await expect(dock).toHaveCount(0)
   expect((await returningEmpty).every((sample) => !sample.present)).toBe(true)
+})
+
+test("restores the todo dock from the server after a reload", async ({ page }) => {
+  const todoRequests: string[] = []
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.endsWith("/todo")) todoRequests.push(path)
+  })
+  await mockOpenCodeServer(page, {
+    directory,
+    project: {
+      id: projectID,
+      worktree: directory,
+      vcs: "git",
+      name: "todo-dock-navigation",
+      time: { created: 1700000000000, updated: 1700000000000 },
+      sandboxes: [],
+    },
+    provider: { all: [], connected: [], default: {} },
+    sessions: [session(sourceID, sourceTitle, 1700000000000), session(otherID, otherTitle, 1700000001000)],
+    pageMessages: () => ({ items: [] }),
+    sessionStatus: { [sourceID]: { type: "busy" } },
+    // No todo.updated event is replayed: the dock can only come from the persisted todo list.
+    todos: (sessionID) => (sessionID === sourceID ? activeTodos : []),
+  })
+  await configurePage(page)
+
+  await page.goto(sessionHref(sourceID))
+  await expectSessionTitle(page, sourceTitle)
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  await expect(dock).toBeVisible()
+  await expect(dock.locator('[data-state="in_progress"]')).toHaveCount(1)
+
+  await page.reload()
+  await expectSessionTitle(page, sourceTitle)
+  await expect(dock).toBeVisible()
+  await expect(dock.locator('[data-state="in_progress"]')).toHaveCount(1)
+  expect(todoRequests.filter((path) => path === `/api/session/${sourceID}/todo`).length).toBeGreaterThanOrEqual(2)
 })
 
 function session(id: string, title: string, created: number) {
