@@ -6,6 +6,8 @@ import type {
   ConfigGetOutput,
   ConfigProvidersInput,
   ConfigProvidersOutput,
+  ConfigCatalogInput,
+  ConfigCatalogOutput,
   LspStatusInput,
   LspStatusOutput,
   LocationGetInput,
@@ -337,6 +339,18 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/config/providers`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      catalog: (input?: ConfigCatalogInput, requestOptions?: RequestOptions) =>
+        request<ConfigCatalogOutput>(
+          {
+            method: "GET",
+            path: `/api/config/catalog`,
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],

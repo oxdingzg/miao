@@ -35,7 +35,16 @@ type Endpoint2_1Input = { readonly location?: Endpoint2_1Request["query"]["locat
 const Endpoint2_1 = (raw: RawClient["server.config"]) => (input?: Endpoint2_1Input) =>
   raw["config.providers"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup2 = (raw: RawClient["server.config"]) => ({ get: Endpoint2_0(raw), providers: Endpoint2_1(raw) })
+type Endpoint2_2Request = Parameters<RawClient["server.config"]["config.catalog"]>[0]
+type Endpoint2_2Input = { readonly location?: Endpoint2_2Request["query"]["location"] }
+const Endpoint2_2 = (raw: RawClient["server.config"]) => (input?: Endpoint2_2Input) =>
+  raw["config.catalog"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+const adaptGroup2 = (raw: RawClient["server.config"]) => ({
+  get: Endpoint2_0(raw),
+  providers: Endpoint2_1(raw),
+  catalog: Endpoint2_2(raw),
+})
 
 type Endpoint3_0Request = Parameters<RawClient["server.lsp"]["lsp.status"]>[0]
 type Endpoint3_0Input = { readonly location?: Endpoint3_0Request["query"]["location"] }
