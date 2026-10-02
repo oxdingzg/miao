@@ -1,4 +1,5 @@
 import { Catalog } from "@miao/core/catalog"
+import { Git } from "@miao/core/git"
 import { Location } from "@miao/core/location"
 import { LocationServiceMap } from "@miao/core/location-services"
 import { PermissionSaved } from "@miao/core/permission/saved"
@@ -84,6 +85,7 @@ export const layer = Layer.effect(
     const locations = yield* LocationServiceMap.Service
     const project = yield* Project.Service
     const permissions = yield* PermissionSaved.Service
+    const git = yield* Git.Service
     return LocationMiddleware.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
@@ -91,6 +93,7 @@ export const layer = Layer.effect(
           Effect.provide(locations.get(ref(request))),
           Effect.provideService(Project.Service, project),
           Effect.provideService(PermissionSaved.Service, permissions),
+          Effect.provideService(Git.Service, git),
         )
       }),
     )

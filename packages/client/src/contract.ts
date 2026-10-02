@@ -37,6 +37,7 @@ export const groupNames = {
   "server.reference": "references",
   "server.projectCopy": "projectCopies",
   "server.project": "projects",
+  "server.vcs": "vcs",
   "server.remote": "remote",
 } as const
 

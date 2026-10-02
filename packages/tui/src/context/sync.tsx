@@ -755,7 +755,9 @@ export const {
                   ),
                 ]
               : []),
-            sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
+            sdk.client.v2.vcs
+              .get({ location: { workspace } }, { throwOnError: true })
+              .then((x) => setStore("vcs", reconcile(x.data?.data))),
             project.workspace.sync(),
           ]).then(() => {
             setStore("status", "complete")

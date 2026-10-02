@@ -162,3 +162,41 @@ describe("Git trees", () => {
     }),
   )
 })
+
+describe("Git status", () => {
+  it.live("reports structured working tree entries", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      yield* Effect.promise(async () => {
+        await initRepo(root.path)
+        await fs.writeFile(path.join(root.path, "tracked.txt"), "one\n")
+        await fs.writeFile(path.join(root.path, "deleted.txt"), "gone\n")
+        await $`git add .`.cwd(root.path).quiet()
+        await $`git commit -m initial`.cwd(root.path).quiet()
+        await fs.writeFile(path.join(root.path, "tracked.txt"), "one\ntwo\n")
+        await fs.writeFile(path.join(root.path, "added.txt"), "new\n")
+        await fs.rm(path.join(root.path, "deleted.txt"))
+      })
+      const git = yield* Git.Service
+      const repository = yield* git.repo.discover(AbsolutePath.make(root.path))
+      if (!repository) throw new Error("Repository not found")
+      const entries = yield* git.status.entries(repository)
+      const mapped = entries
+        .map((entry) => ({
+          path: entry.path,
+          status: entry.status,
+          additions: entry.additions,
+          deletions: entry.deletions,
+        }))
+        .toSorted((a, b) => a.path.localeCompare(b.path))
+      expect(mapped).toEqual([
+        { path: RelativePath.make("added.txt"), status: "added", additions: 1, deletions: 0 },
+        { path: RelativePath.make("deleted.txt"), status: "deleted", additions: 0, deletions: 1 },
+        { path: RelativePath.make("tracked.txt"), status: "modified", additions: 1, deletions: 0 },
+      ])
+    }),
+  )
+})

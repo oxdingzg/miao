@@ -3288,6 +3288,41 @@ export type ProjectsDirectoriesOutput = {
   readonly data: ReadonlyArray<{ readonly directory: string; readonly strategy?: string | null }>
 }
 
+export type VcsGetInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type VcsGetOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly branch?: string; readonly default_branch?: string }
+}
+
+export type VcsStatusInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type VcsStatusOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{
+    readonly file: string
+    readonly additions: number
+    readonly deletions: number
+    readonly status: "added" | "deleted" | "modified"
+  }>
+}
+
 export type RemoteGetOutput = {
   readonly pid: number
   readonly port: number

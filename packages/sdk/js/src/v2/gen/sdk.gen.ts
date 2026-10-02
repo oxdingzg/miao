@@ -434,6 +434,10 @@ import type {
   V2SessionWaitResponses,
   V2SkillListErrors,
   V2SkillListResponses,
+  V2VcsGetErrors,
+  V2VcsGetResponses,
+  V2VcsStatusErrors,
+  V2VcsStatusResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -7441,6 +7445,52 @@ export class Project2 extends HeyApiClient {
   }
 }
 
+export class Vcs2 extends HeyApiClient {
+  /**
+   * Get VCS info
+   *
+   * Retrieve version control info such as the current branch for the requested location.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2VcsGetResponses, V2VcsGetErrors, ThrowOnError>({
+      url: "/api/vcs",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get VCS status
+   *
+   * Retrieve changed files in the working tree without patches for the requested location.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2VcsStatusResponses, V2VcsStatusErrors, ThrowOnError>({
+      url: "/api/vcs/status",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Login extends HeyApiClient {
   /**
    * Start a connector login
@@ -7771,6 +7821,11 @@ export class V2 extends HeyApiClient {
   private _project?: Project2
   get project(): Project2 {
     return (this._project ??= new Project2({ client: this.client }))
+  }
+
+  private _vcs?: Vcs2
+  get vcs(): Vcs2 {
+    return (this._vcs ??= new Vcs2({ client: this.client }))
   }
 
   private _remote?: Remote

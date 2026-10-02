@@ -150,6 +150,10 @@ import type {
   ProjectsCurrentOutput,
   ProjectsDirectoriesInput,
   ProjectsDirectoriesOutput,
+  VcsGetInput,
+  VcsGetOutput,
+  VcsStatusInput,
+  VcsStatusOutput,
   RemoteGetOutput,
   RemoteLoginInput,
   RemoteLoginOutput,
@@ -1265,6 +1269,32 @@ export function make(options: ClientOptions) {
             method: "GET",
             path: `/api/project/${encodeURIComponent(input.projectID)}/directories`,
             query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    vcs: {
+      get: (input?: VcsGetInput, requestOptions?: RequestOptions) =>
+        request<VcsGetOutput>(
+          {
+            method: "GET",
+            path: `/api/vcs`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      status: (input?: VcsStatusInput, requestOptions?: RequestOptions) =>
+        request<VcsStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/vcs/status`,
+            query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
             empty: false,
