@@ -11,7 +11,7 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
-import { detectServerProtocol, protocolOverride, type ServerProtocol } from "@/utils/server-protocol"
+import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
 
 const isAbortError = (error: unknown) =>
@@ -211,11 +211,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   })()
 
   const eventApi = createApiForServer({ server: server.http, fetch: eventFetch })
-  const protocol = detectServerProtocol(
-    server.http,
-    platform.fetch ?? globalThis.fetch,
-    protocolOverride((globalThis as { location?: { search?: string } }).location?.search),
-  )
+  const protocol = detectServerProtocol(server.http, platform.fetch ?? globalThis.fetch)
   const [protocolKind] = createResource(
     () => protocol,
     (value) => value,
@@ -346,14 +342,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     throwOnError: true,
   })
   const currentApi: ServerApi = createApiForServer({ server: server.http, fetch: platform.fetch })
-  const legacy = (directory?: string) =>
-    createSdkForServer({
-      server: server.http,
-      fetch: platform.fetch,
-      throwOnError: true,
-      directory,
-    })
-  const api = createCompatibleApi({ protocol, current: currentApi, legacy })
+  const api = createCompatibleApi({ current: currentApi })
 
   return {
     server,
@@ -447,12 +436,7 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase): Direc
     protocol: serverSDK.protocol,
     directory,
     client,
-    api: createCompatibleApi({
-      protocol: serverSDK.protocol,
-      current: serverSDK.currentApi,
-      legacy: (next) => serverSDK.createClient({ directory: next ?? directory, throwOnError: true }),
-      directory,
-    }),
+    api: createCompatibleApi({ current: serverSDK.currentApi }),
     event: emitter,
     get url() {
       return serverSDK.url

@@ -168,10 +168,6 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     await input.api.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
-      agent: input.draft.agent,
-      model: input.draft.model,
-      variant: input.draft.variant,
-      legacyParts: requestParts,
       text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
       files: requestParts.flatMap((part) => {
         if (part.type !== "file") return []
@@ -496,8 +492,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           sessionID: session.id,
           id: eventID,
           command: text,
-          agent,
-          model,
         })
         .catch((err) => {
           showToast({
