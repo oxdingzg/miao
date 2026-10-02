@@ -431,6 +431,10 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
     .add(
       HttpApiEndpoint.get("session.diff", "/api/session/:sessionID/diff", {
         params: { sessionID: Session.ID },
+        query: {
+          /** Limit the diff to the turn that answered this user message (per-turn DiffSummary). */
+          messageID: SessionMessage.ID.pipe(Schema.optional),
+        },
         success: Schema.Struct({ data: Schema.Array(Revert.FileDiff) }),
         error: [SessionNotFoundError, UnknownError],
       })
@@ -439,7 +443,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           OpenApi.annotations({
             identifier: "v2.session.diff",
             summary: "Get session diff",
-            description: "Files changed by the session since its first recorded snapshot.",
+            description:
+              "Files changed by the session since its first recorded snapshot, or within the turn that answered `messageID`.",
           }),
         ),
     )

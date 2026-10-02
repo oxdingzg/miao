@@ -168,8 +168,10 @@ export interface Interface {
   readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
   readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
+  /** Files changed since the Session's first snapshot, or within one user turn when `messageID` names it. */
   readonly diff: (
     sessionID: SessionSchema.ID,
+    options?: { readonly messageID?: SessionMessage.ID },
   ) => Effect.Effect<ReadonlyArray<typeof Revert.FileDiff.Type>, NotFoundError>
   readonly fork: (input: {
     sessionID: SessionSchema.ID
@@ -564,11 +566,12 @@ const layer = Layer.effect(
         }
         return child
       }),
-      diff: Effect.fn("V2Session.diff")(function* (sessionID) {
+      diff: Effect.fn("V2Session.diff")(function* (sessionID, options) {
         const session = yield* result.get(sessionID)
+        const cacheKey = options?.messageID ? `${sessionID}:${options.messageID}` : sessionID
         return yield* Effect.gen(function* () {
           const seq = yield* EventV2.latestSequence(db, sessionID)
-          const cached = diffCache.get(sessionID)
+          const cached = diffCache.get(cacheKey)
           if (cached && cached.seq === seq && Date.now() - cached.at < diffCacheTTL) return cached.result
           const snapshots = yield* Snapshot.Service
           const history = yield* EventV2.readAggregate(db, {
@@ -577,22 +580,26 @@ const layer = Layer.effect(
             after: 0,
             limit: 100_000,
           })
-          const baseline = SessionDiff.baselineSnapshot(history.events)
-          if (baseline === undefined) {
-            diffCache.set(sessionID, { seq, at: Date.now(), result: [] })
+          const bounds = options?.messageID
+            ? SessionDiff.turnSnapshots(history.events, options.messageID)
+            : { from: SessionDiff.baselineSnapshot(history.events), to: undefined }
+          if (bounds?.from === undefined) {
+            diffCache.set(cacheKey, { seq, at: Date.now(), result: [] })
             return []
           }
-          const current = yield* snapshots.capture()
+          // A finished turn ends at its last step snapshot; an open turn or the
+          // whole Session compares against the live worktree.
+          const current = bounds.to === undefined ? yield* snapshots.capture() : Snapshot.ID.make(bounds.to)
           if (current === undefined) {
-            diffCache.set(sessionID, { seq, at: Date.now(), result: [] })
+            diffCache.set(cacheKey, { seq, at: Date.now(), result: [] })
             return []
           }
-          const diff = yield* snapshots.diff({ from: Snapshot.ID.make(baseline), to: current })
+          const diff = yield* snapshots.diff({ from: Snapshot.ID.make(bounds.from), to: current })
           if (diffCache.size > diffCacheLimit) {
             const oldest = diffCache.keys().next().value
             if (oldest !== undefined) diffCache.delete(oldest)
           }
-          diffCache.set(sessionID, { seq, at: Date.now(), result: diff })
+          diffCache.set(cacheKey, { seq, at: Date.now(), result: diff })
           return diff
         }).pipe(
           Effect.provide(locations.get(session.location)),

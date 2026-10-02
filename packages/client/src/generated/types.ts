@@ -781,7 +781,10 @@ export type SessionsForkOutput = {
   }
 }["data"]
 
-export type SessionsDiffInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsDiffInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly messageID?: { readonly messageID?: string | undefined }["messageID"]
+}
 
 export type SessionsDiffOutput = {
   readonly data: ReadonlyArray<{
