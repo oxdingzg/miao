@@ -13,11 +13,17 @@ export type Wire = {
  * Sends `request` through the real route pipeline against an in-process fake
  * provider: the captured request is what would have gone on the wire, and the
  * canned `response` body exercises the route's stream parser. No network.
+ *
+ * `extra` reaches both sites that read their context while being built — the
+ * executor and the client — because each resolves such services on its own, so
+ * handing it to one of them leaves the other blind. That is how the host's
+ * provider wire archive gets into a real request.
  */
 export const exchange = (
   request: LLMRequest,
   response: ConstructorParameters<typeof Response>[0],
   init: ResponseInit = { headers: { "content-type": "text/event-stream" } },
+  extra: Layer.Layer<never, never, never> = Layer.empty,
 ) =>
   Effect.gen(function* () {
     const captured: Wire[] = []
@@ -36,7 +42,9 @@ export const exchange = (
         }),
       ),
     )
-    const client = LLMClient.layer.pipe(Layer.provide(RequestExecutor.layer.pipe(Layer.provide(http))))
+    const client = LLMClient.layer.pipe(
+      Layer.provide(Layer.mergeAll(RequestExecutor.layer.pipe(Layer.provide(Layer.mergeAll(http, extra))), extra)),
+    )
     const result: LLMResponse = yield* LLMClient.generate(request).pipe(Effect.provide(client))
     return { wire: captured[0]!, response: result }
   })
