@@ -246,7 +246,6 @@ const TIPS: Tip[] = [
   "Run {highlight}miao auth list{/highlight} to see all configured providers",
   "Run {highlight}miao agent create{/highlight} for guided agent creation",
   "Use {highlight}/miao{/highlight} in GitHub issues/PRs to trigger AI actions",
-  "Run {highlight}miao github install{/highlight} to set up the GitHub workflow",
   "Comment {highlight}/miao fix this{/highlight} on issues to auto-create PRs",
   "Comment {highlight}/oc{/highlight} on PR code lines for targeted code reviews",
   'Use {highlight}"theme": "system"{/highlight} to match your terminal\'s colors',
