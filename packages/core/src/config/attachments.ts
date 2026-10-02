@@ -8,6 +8,7 @@ export class Image extends Schema.Class<Image>("ConfigV2.Attachments.Image")({
   max_width: PositiveInt.pipe(Schema.optional),
   max_height: PositiveInt.pipe(Schema.optional),
   max_base64_bytes: PositiveInt.pipe(Schema.optional),
+  target_raw_bytes: PositiveInt.pipe(Schema.optional),
 }) {}
 
 export class Info extends Schema.Class<Info>("ConfigV2.Attachments")({
