@@ -446,7 +446,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
     .add(
       HttpApiEndpoint.get("session.status", "/api/session/:sessionID/status", {
         params: { sessionID: Session.ID },
-        success: Schema.Struct({ data: Schema.Struct({ type: Schema.Literals(["idle", "busy"]) }) }),
+        success: Schema.Struct({ data: SessionEvent.StatusInfo }),
         error: SessionNotFoundError,
       })
         .middleware(sessionLocationMiddleware)

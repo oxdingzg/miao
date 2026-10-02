@@ -1,5 +1,12 @@
 # V2 Schema Changelog
 
+## 2026-10-02: Session Status and Failure Events
+
+- Add live `session.next.status` (`{ status: { type: "busy" | "idle" } }`) and `session.next.failed` (`{ error: Session.Error.Unknown, name? }`) to the public event stream. Neither is durable.
+- Share `session.next.status_info` between `session.next.status` and `GET /api/session/:sessionID/status`; the route's response shape is unchanged.
+- Publish the already-defined durable `session.next.retried.1` when the runner retries a provider attempt, and project it (a no-op for message rows) instead of leaving the projector commented out.
+- No database migration; no durable event version changes. See `specs/v2/session.md` "Status, Retry, and Failure Events".
+
 ## 2026-10-02: Align Instruction Sources With V1
 
 - Ambient instructions read the global `AGENTS.md`, falling back to `~/.claude/CLAUDE.md`; then, from the Location directory up to the project root, every file of the first name found among `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`; then configured `instructions` globs/paths; then `instructions` URLs. Duplicates keep their first position. `MIAO_DISABLE_CLAUDE_CODE[_PROMPT]` skips both CLAUDE.md sources.

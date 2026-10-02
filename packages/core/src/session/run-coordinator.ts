@@ -1,6 +1,6 @@
 export * as SessionRunCoordinator from "./run-coordinator"
 
-import { Deferred, Effect, Exit, Fiber, FiberSet, Scope } from "effect"
+import { Deferred, Effect, Exit, Fiber, FiberSet, Scope, Semaphore } from "effect"
 
 /** Serializes execution for each key while allowing different keys to run concurrently. */
 export interface Coordinator<Key, E> {
@@ -28,10 +28,29 @@ type Entry<E> = {
 
 export const make = <Key, E>(options: {
   readonly drain: (key: Key, force: boolean) => Effect.Effect<void, E>
+  /**
+   * Observes busy/idle transitions. Successor drains for coalesced wakes stay
+   * busy, so one burst of work reports exactly one busy and one idle.
+   */
+  readonly status?: (key: Key, status: "busy" | "idle") => Effect.Effect<void>
 }): Effect.Effect<Coordinator<Key, E>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const active = new Map<Key, Entry<E>>()
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
+    // Reports read the live state under one lock and skip repeats, so reports
+    // from overlapping owners can never leave a stale busy or idle behind.
+    const reported = new Set<Key>()
+    const reporting = Semaphore.makeUnsafe(1)
+    const report = (key: Key) =>
+      reporting.withPermit(
+        Effect.suspend(() => {
+          const busy = active.has(key)
+          if (busy === reported.has(key) || !options.status) return Effect.void
+          if (busy) reported.add(key)
+          else reported.delete(key)
+          return options.status(key, busy ? "busy" : "idle")
+        }),
+      )
 
     const makeEntry = (): Entry<E> => ({
       done: Deferred.makeUnsafe<void, E>(),
@@ -43,8 +62,9 @@ export const make = <Key, E>(options: {
       const ready = Deferred.makeUnsafe<void>()
       const owner = fork(
         (successor ? Effect.yieldNow : Deferred.await(ready)).pipe(
+          Effect.andThen(report(key)),
           Effect.andThen(Effect.suspend(() => options.drain(key, force))),
-          Effect.onExit((exit) => Effect.sync(() => settle(key, entry, exit))),
+          Effect.onExit((exit) => settle(key, entry, exit)),
           Effect.exit,
           Effect.asVoid,
         ),
@@ -53,21 +73,26 @@ export const make = <Key, E>(options: {
       if (!successor) Deferred.doneUnsafe(ready, Effect.void)
     }
 
-    const settle = (key: Key, entry: Entry<E>, exit: Exit.Exit<void, E>) => {
-      if (Exit.isSuccess(exit) && !entry.stopping && entry.pendingWake) {
-        entry.pendingWake = false
-        start(key, entry, false, true)
-        return
-      }
+    const settle = (key: Key, entry: Entry<E>, exit: Exit.Exit<void, E>) =>
+      Effect.suspend(() => {
+        if (Exit.isSuccess(exit) && !entry.stopping && entry.pendingWake) {
+          entry.pendingWake = false
+          start(key, entry, false, true)
+          return Effect.void
+        }
 
-      const successor = entry.pendingWake ? makeEntry() : undefined
-      if (successor === undefined) active.delete(key)
-      else {
-        active.set(key, successor)
-        start(key, successor, false, true)
-      }
-      Deferred.doneUnsafe(entry.done, exit)
-    }
+        const successor = entry.pendingWake ? makeEntry() : undefined
+        if (successor === undefined) active.delete(key)
+        else {
+          active.set(key, successor)
+          start(key, successor, false, true)
+        }
+        // Report idle before waiters resume, so a caller that awaited the drain
+        // has already seen the idle transition.
+        return (successor === undefined ? report(key) : Effect.void).pipe(
+          Effect.ensuring(Effect.sync(() => Deferred.doneUnsafe(entry.done, exit))),
+        )
+      })
 
     const run = (key: Key): Effect.Effect<void, E> =>
       Effect.uninterruptibleMask((restore) => {

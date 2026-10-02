@@ -100,7 +100,6 @@ Ambient project discovery canonicalizes and contains traversal within the projec
 
 Current Context Epoch follow-ups:
 
-- Add configured, remote, and nested instruction sources with explicit precedence and removal semantics.
 - Add durable post-crash continuation recovery for promoted or provider-dispatched work.
 - Add explicit manual compaction on top of automatic request-budget compaction.
 - Add operational metrics for observation latency, unavailable sources, contention, baseline size, and chronological-update growth.
@@ -119,6 +118,33 @@ Compaction keeps the full transcript durable while replacing its active model re
 Repeated compactions update the previous structured summary with newly compacted messages. The runner then reloads projected history and executes the original pending turn.
 
 When a provider rejects a request as context overflow before durable assistant output or tool execution, the runner attempts one overflow-triggered compaction even when the local estimate did not predict pressure. A completed checkpoint rebuilds the same logical provider turn with one remaining physical attempt. A second overflow, unavailable compaction, or overflow after durable output becomes the ordinary terminal failure; recovery never loops or replays partial side effects. Deterministic old tool-result pruning remains a separate follow-up.
+
+## Status, Retry, and Failure Events
+
+Clients such as `--mini`, ACP, and the app follow a running Session through three event families. All are published on the server event stream with the Session's Location.
+
+| Event | Durable | Published when | Payload |
+|---|---|---|---|
+| `session.next.status` | no | the process starts or stops draining the Session | `{ sessionID, timestamp, status: { type: "busy" \| "idle" } }` |
+| `session.next.retried.1` | yes | a provider attempt that failed before any visible output is retried | `{ sessionID, timestamp, attempt, error: { message, isRetryable, statusCode? } }` |
+| `session.next.failed` | no | a drain ends with a failure outside any provider step | `{ sessionID, timestamp, error: { type: "unknown", message }, name? }` |
+
+Status:
+
+- `SessionRunCoordinator` reports the transitions; `SessionExecutionLocal` publishes them. Successor drains for coalesced wakes stay busy, so one burst of work reports exactly one `busy` and one `idle`.
+- Reports read the live state under one lock and skip repeats, so overlapping drains never leave a stale value. `idle` is published before callers awaiting the drain resume.
+- `status` uses the same `{ type }` shape as `GET /api/session/:sessionID/status` (`session.next.status_info`). It is process state, so it is not stored: a client that (re)subscribes reads the route once and then follows the events.
+
+Retry:
+
+- `attempt` counts retries within one provider turn, starting at 1. The event is published when the retried attempt starts, so a retry the schedule declines (budget exhausted, or output already visible) is never announced.
+- The retry is not addressed to a message. A client shows it on the open turn and clears it at the next step, text, or failure event for that Session.
+
+Failure:
+
+- Provider failures and model-resolution failures settle the turn as `session.next.step.failed` on the assistant message and never produce `session.next.failed`.
+- Everything else that ends a drain does: a Session whose history is still V1-only (`name: "Session.LegacyNotMigratedError"`), a blocked Context Epoch, undecodable history or snapshots, tool output store failures, and defects. `name` is the error tag when there is one, so clients can offer a specific remedy (for example `miao db backfill`). Interruption is not a failure.
+- `session.next.failed` is followed by `session.next.status` `idle`.
 
 ## V1 Runtime Context Parity
 

@@ -479,4 +479,38 @@ describe("SessionRunCoordinator", () => {
       }),
     ),
   )
+
+  it.effect("reports one busy and one idle per burst of coalesced work", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>()
+        const statuses: string[] = []
+        let runs = 0
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: () => Effect.suspend(() => (++runs === 1 ? Deferred.await(gate) : Effect.void)),
+          status: (key, status) => Effect.sync(() => statuses.push(`${key}:${status}`)),
+        })
+
+        const first = yield* coordinator.run("session").pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* coordinator.wake("session")
+        yield* coordinator.wake("session")
+        expect(statuses).toEqual(["session:busy"])
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(first)
+        yield* coordinator.awaitIdle("session")
+
+        expect(runs).toBe(2)
+        expect(statuses).toEqual(["session:busy", "session:idle"])
+
+        // A failed drain still settles to idle before its caller resumes.
+        const failing = yield* SessionRunCoordinator.make<string, string>({
+          drain: () => Effect.fail("boom"),
+          status: (key, status) => Effect.sync(() => statuses.push(`${key}:${status}`)),
+        })
+        yield* failing.run("other").pipe(Effect.exit)
+        expect(statuses).toEqual(["session:busy", "session:idle", "other:busy", "other:idle"])
+      }),
+    ),
+  )
 })

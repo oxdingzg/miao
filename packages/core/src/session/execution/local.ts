@@ -1,6 +1,8 @@
-import { Cause, Effect, Layer } from "effect"
+import { Cause, DateTime, Effect, Layer } from "effect"
+import { EventV2 } from "../../event"
 import { LocationServiceMap } from "../../location-service-map"
 import { makeGlobalNode } from "../../effect/app-node"
+import { SessionEvent } from "../event"
 import { SessionRunCoordinator } from "../run-coordinator"
 import { SessionRunner } from "../runner"
 import { SessionSchema } from "../schema"
@@ -13,6 +15,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
+    const events = yield* EventV2.Service
     // Declared before the coordinator so the drain closure can wake peer Sessions
     // without a circular type reference.
     let wake: (sessionID: SessionSchema.ID) => Effect.Effect<void> = () => Effect.void
@@ -29,6 +32,17 @@ const layer = Layer.effect(
           ),
         )
       }),
+      status: Effect.fnUntraced(
+        function* (sessionID: SessionSchema.ID, status: "busy" | "idle") {
+          const session = yield* store.get(sessionID)
+          yield* events.publish(
+            SessionEvent.Status,
+            { sessionID, timestamp: yield* DateTime.now, status: { type: status } },
+            session ? { location: session.location } : undefined,
+          )
+        },
+        Effect.catchDefect((defect) => Effect.logWarning("failed to publish session status", { defect })),
+      ),
     })
     wake = coordinator.wake
 
@@ -45,7 +59,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: SessionExecution.Service,
   layer,
-  deps: [SessionStore.node, LocationServiceMap.node],
+  deps: [SessionStore.node, LocationServiceMap.node, EventV2.node],
 })
 
 export * as SessionExecutionLocal from "./local"
