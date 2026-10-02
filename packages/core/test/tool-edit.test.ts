@@ -148,8 +148,18 @@ describe("EditTool", () => {
                   ],
                 })
                 expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("after\nrest\n")
-                expect(assertions).toMatchObject([{ sessionID, action: "edit", resources: ["hello.txt"], save: ["*"] }])
-                expect(writes).toEqual([yield* Effect.promise(() => fs.realpath(target))])
+                const canonical = yield* Effect.promise(() => fs.realpath(target))
+                // The prompt carries the file and its diff, as V1 did.
+                expect(assertions).toMatchObject([
+                  {
+                    sessionID,
+                    action: "edit",
+                    resources: ["hello.txt"],
+                    save: ["*"],
+                    metadata: { filepath: canonical, diff: expect.stringContaining("-before\n+after") },
+                  },
+                ])
+                expect(writes).toEqual([canonical])
               }),
             ),
           ),
@@ -245,7 +255,8 @@ describe("EditTool", () => {
             value: `Unable to edit ${external}`,
           })
           expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
-          expect(reads).toBe(0)
+          // External content is read only after external_directory approval, to build the prompt diff.
+          expect(reads).toBe(1)
           expect(writes).toEqual([])
           expect(yield* Effect.promise(() => fs.readFile(external, "utf8"))).toBe("before")
         }),
@@ -256,7 +267,7 @@ describe("EditTool", () => {
     ),
   )
 
-  it.live("denied edit reads no target content and does not disclose whether oldString matches", () =>
+  it.live("denied edit does not disclose whether oldString matches", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -279,7 +290,6 @@ describe("EditTool", () => {
                 expect(matching).toEqual({ type: "error", value: "Unable to edit secret.txt" })
                 expect(missing).toEqual(matching)
                 expect(assertions.map((input) => input.action)).toEqual(["edit", "edit"])
-                expect(reads).toBe(0)
                 expect(writes).toEqual([])
               }),
             ),
@@ -319,6 +329,8 @@ describe("EditTool", () => {
                   value:
                     "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
                 })
+                // A failed match is reported only after approval, which then carries no diff.
+                expect(assertions.at(-1)?.metadata).toEqual({ filepath: expect.stringContaining("matches.txt") })
                 expect(
                   yield* executeTool(registry, call({ path: "matches.txt", oldString: "same", newString: "after" })),
                 ).toEqual({
@@ -409,6 +421,12 @@ describe("EditTool", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+})
+
+test("trimDiff removes the indentation every diff line shares, as the V1 prompt did", () => {
+  const diff = "--- a\n+++ a\n@@ -1,2 +1,2 @@\n     keep\n-    before\n+    after"
+  expect(EditTool.trimDiff(diff)).toBe("--- a\n+++ a\n@@ -1,2 +1,2 @@\n keep\n-before\n+after")
+  expect(EditTool.trimDiff("--- a\n+++ a\n-x\n+  y")).toBe("--- a\n+++ a\n-x\n+  y")
 })
 
 test("keeps the locked edit schema, semantics docstring, and deferred TODOs visible", async () => {

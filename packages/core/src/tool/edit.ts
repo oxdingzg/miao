@@ -9,7 +9,7 @@ export * as EditTool from "./edit"
 import { ToolFailure } from "@miao/llm"
 import { FileDiff } from "@miao/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
@@ -156,45 +156,35 @@ const layer = Layer.effectDiscard(
                   )
                 }
 
-                yield* unableToEdit(
-                  permission.assert({
-                    action: "edit",
-                    resources: [target.resource],
-                    save: ["*"],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: permissionSource,
-                  }),
-                )
-                const source = decodeUtf8(yield* unableToEdit(fs.readFile(target.canonical)))
-                const ending = detectLineEnding(source.text)
-                let oldString = convertToLineEnding(input.oldString, ending)
-                const newString = convertToLineEnding(input.newString, ending)
-                let replacements = countOccurrences(source.text, oldString)
-                if (replacements === 0) {
-                  const fuzzy = EditFuzzy.matchFuzzy(source.text, oldString)
-                  if (fuzzy !== undefined) {
-                    oldString = fuzzy
-                    replacements = countOccurrences(source.text, oldString)
-                  }
+                const approve = (diff?: string) =>
+                  unableToEdit(
+                    permission.assert({
+                      action: "edit",
+                      resources: [target.resource],
+                      save: ["*"],
+                      metadata: { filepath: target.canonical, ...(diff === undefined ? {} : { diff }) },
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: permissionSource,
+                    }),
+                  )
+                // The diff is computed before asking so the prompt can show it. A
+                // read or match failure is still reported only after approval, so
+                // a caller without edit permission cannot probe file contents.
+                const read = yield* fs.readFile(target.canonical).pipe(Effect.option)
+                if (Option.isNone(read)) {
+                  yield* approve()
+                  return yield* new ToolFailure({ message: `Unable to edit ${input.path}` })
                 }
-                if (replacements === 0) {
-                  return yield* new ToolFailure({
-                    message:
-                      "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
-                  })
+                const source = decodeUtf8(read.value)
+                const planned = plan(source.text, input)
+                if (planned instanceof ToolFailure) {
+                  yield* approve()
+                  return yield* planned
                 }
-                if (replacements > 1 && input.replaceAll !== true) {
-                  return yield* new ToolFailure({
-                    message:
-                      "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
-                  })
-                }
-
-                const replaced =
-                  input.replaceAll === true
-                    ? source.text.replaceAll(oldString, newString)
-                    : source.text.replace(oldString, newString)
+                const replaced = planned.replaced
+                const replacements = planned.replacements
+                yield* approve(trimDiff(createTwoFilesPatch(target.canonical, target.canonical, source.text, replaced)))
                 const counts = diffLines(source.text, replaced).reduce(
                   (result, item) => ({
                     additions: result.additions + (item.added ? (item.count ?? 0) : 0),
@@ -244,3 +234,43 @@ export const node = makeLocationNode({
   layer,
   deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
 })
+
+/** The replaced text and match count, or the failure the model should see. */
+function plan(text: string, input: typeof Input.Type) {
+  const ending = detectLineEnding(text)
+  const newString = convertToLineEnding(input.newString, ending)
+  const exact = convertToLineEnding(input.oldString, ending)
+  const oldString = countOccurrences(text, exact) === 0 ? (EditFuzzy.matchFuzzy(text, exact) ?? exact) : exact
+  const replacements = countOccurrences(text, oldString)
+  if (replacements === 0)
+    return new ToolFailure({
+      message: "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
+    })
+  if (replacements > 1 && input.replaceAll !== true)
+    return new ToolFailure({
+      message:
+        "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
+    })
+  const replaced = input.replaceAll === true ? text.replaceAll(oldString, newString) : text.replace(oldString, newString)
+  return { replaced, replacements }
+}
+
+/**
+ * Removes the indentation every changed or context line shares, so a deeply
+ * nested edit reads well in a permission prompt. Matches the V1 prompt diff.
+ */
+export function trimDiff(diff: string) {
+  const lines = diff.split("\n")
+  const body = (line: string) =>
+    (line.startsWith("+") || line.startsWith("-") || line.startsWith(" ")) &&
+    !line.startsWith("---") &&
+    !line.startsWith("+++")
+  const indents = lines
+    .filter(body)
+    .map((line) => line.slice(1))
+    .filter((content) => content.trim().length > 0)
+    .map((content) => content.match(/^\s*/)![0].length)
+  const min = Math.min(...indents)
+  if (indents.length === 0 || min === 0) return diff
+  return lines.map((line) => (body(line) ? line[0] + line.slice(1 + min) : line)).join("\n")
+}

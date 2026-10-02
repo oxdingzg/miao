@@ -146,6 +146,7 @@ describe("WriteTool", () => {
             expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "src", "new.txt"), "utf8"))).toBe(
               "created",
             )
+            expect(String(assertions[0]?.metadata?.diff)).toContain("+created")
             expect(assertions).toMatchObject([{ sessionID, action: "edit", resources: ["src/new.txt"], save: ["*"] }])
             expect(writes).toEqual([path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt")])
           }),
@@ -172,6 +173,12 @@ describe("WriteTool", () => {
                 "after",
               )
               expect(writes).toHaveLength(1)
+              // The prompt shows the change against the current content, as V1 did.
+              expect(String(assertions[0]?.metadata?.diff)).toContain("-before")
+              expect(String(assertions[0]?.metadata?.diff)).toContain("+after")
+              expect(assertions[0]?.metadata?.filepath).toBe(
+                path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "existing.txt"),
+              )
             }),
           ),
         )
