@@ -59,8 +59,16 @@ const layer = Layer.effectDiscard(
     const reference = yield* Reference.Service
     const toolPlugins = yield* ToolPlugins.Service
     // Tools that built-in plugins register during boot must be visible to the
-    // first provider turn, so materialization waits for the boot to finish.
-    yield* toolPlugins.defer(Deferred.await(plugin.booted))
+    // first provider turn, so materialization waits for the boot to finish. The
+    // wait is bounded so a hung plugin cannot stall every session in this Location.
+    yield* toolPlugins.defer(
+      Deferred.await(plugin.booted).pipe(
+        Effect.timeoutOrElse({
+          duration: "10 seconds",
+          orElse: () => Effect.logWarning("plugin boot still running; materializing tools without it"),
+        }),
+      ),
+    )
     const add = <R>(input: Plugin<R>) => {
       const loaded = {
         id: input.id,
