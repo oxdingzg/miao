@@ -335,9 +335,19 @@ export function withCliFixture<A, E>(
           }),
         ),
         (p) =>
-          Effect.promise(() => {
-            p.kill()
-            return p.exited
+          Effect.gen(function* () {
+            yield* Effect.sync(() => p.kill())
+            yield* Effect.promise(() => p.exited).pipe(
+              Effect.timeoutOrElse({
+                duration: Duration.seconds(2),
+                orElse: () => Effect.sync(() => p.kill("SIGKILL")),
+              }),
+            )
+            // Never let the scope close hang on a child that ignores the
+            // signal; bun test would report the whole case as a 120s timeout.
+            yield* Effect.promise(() => p.exited).pipe(
+              Effect.timeoutOrElse({ duration: Duration.seconds(2), orElse: () => Effect.void }),
+            )
           }).pipe(Effect.ignore),
       )
 
@@ -421,7 +431,9 @@ export function withCliFixture<A, E>(
                   }),
               }),
             )
-            yield* Effect.promise(() => p.exited)
+            yield* Effect.promise(() => p.exited).pipe(
+              Effect.timeoutOrElse({ duration: Duration.seconds(2), orElse: () => Effect.void }),
+            )
           }).pipe(Effect.ignore),
       )
 
