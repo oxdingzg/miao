@@ -23,7 +23,11 @@
 - `config.get`：core 新增独立 `Config.merge(entries)`（深合并文档），加 `GET /api/config`
   （protocol 组 + handler）。因为 `Config.Info` 定义在 core、protocol 不能依赖 core，成功类型暂用
   `Schema.Record(String, Unknown)` 宽松对象，TUI 用 `toConfig` 直接接收——**待 config schema 下沉到
-  `@miao/schema` 后再收紧**。`config.providers` 仍需一个“已连接 provider”的轻量 V2 端点，未做。
+  `@miao/schema` 后再收紧**。`config.providers` 见下条。
+- `config.providers`：新增 `GET /api/config/providers`，**服务端**把 core `provider.available()` + `model.available()`
+  投影回 V1 的 `{ providers: Provider[], default: Record<providerID, modelID> }` 形状（`default` 用全局
+  `model.default()`，其余 provider 取最新可用模型），TUI 只改一行、store 形状不变，避免动 ~15 个消费点。
+  成功类型同样先用宽松 `Schema`，待 provider/model schema 下沉后收紧。
 - `command` / `skill` / `project.current`：TUI 的 `sdk.client.command.list`、`app.skills`、
   `project.current` → `client.v2.command.list` / `v2.skill.list` / `v2.project.current`（`sync.tsx` 用
   `toCommand` 把 `CommandV2Info` 映射回 V1 `Command`，`model` 拼成 `provider/model`）。无需新端点。

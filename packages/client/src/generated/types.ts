@@ -141,6 +141,21 @@ export type ConfigGetOutput = {
   readonly data: { readonly [x: string]: JsonValue }
 }
 
+export type ConfigProvidersInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type ConfigProvidersOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly providers: ReadonlyArray<JsonValue>; readonly default: { readonly [x: string]: string } }
+}
+
 export type LspStatusInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

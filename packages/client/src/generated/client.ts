@@ -4,6 +4,8 @@ import type {
   FormattersStatusOutput,
   ConfigGetInput,
   ConfigGetOutput,
+  ConfigProvidersInput,
+  ConfigProvidersOutput,
   LspStatusInput,
   LspStatusOutput,
   LocationGetInput,
@@ -323,6 +325,18 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/config`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      providers: (input?: ConfigProvidersInput, requestOptions?: RequestOptions) =>
+        request<ConfigProvidersOutput>(
+          {
+            method: "GET",
+            path: `/api/config/providers`,
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
