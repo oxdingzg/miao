@@ -312,7 +312,7 @@ const lowerUserContent = Effect.fn("OpenAIResponses.lowerUserContent")(function*
   if (part.type === "text") return { type: "input_text" as const, text: part.text }
   if (part.type === "media") {
     const media = yield* ProviderShared.validateMedia("OpenAI Responses", part, IMAGE_MIMES)
-    return { type: "input_image" as const, image_url: media.dataUrl }
+    return { type: "input_image" as const, image_url: ProviderShared.mediaDataUrl(media) }
   }
   return yield* ProviderShared.unsupportedContent("OpenAI Responses", "user", ["text", "media"])
 })
@@ -324,7 +324,7 @@ const lowerToolResultContentItem = Effect.fn("OpenAIResponses.lowerToolResultCon
 ) {
   if (item.type === "text") return { type: "input_text" as const, text: item.text }
   const media = yield* ProviderShared.validateToolFile("OpenAI Responses", item, IMAGE_MIMES)
-  return { type: "input_image" as const, image_url: media.dataUrl }
+  return { type: "input_image" as const, image_url: ProviderShared.mediaDataUrl(media) }
 })
 
 const lowerToolResultOutput = Effect.fn("OpenAIResponses.lowerToolResultOutput")(function* (part: ToolResultPart) {

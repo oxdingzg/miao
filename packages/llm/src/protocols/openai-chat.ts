@@ -204,7 +204,7 @@ const lowerToolCall = (part: ToolCallPart): OpenAIChatAssistantToolCall => ({
 
 const lowerMedia = Effect.fn("OpenAIChat.lowerMedia")(function* (part: MediaPart) {
   const media = yield* ProviderShared.validateMedia("OpenAI Chat", part, IMAGE_MIMES)
-  return { type: "image_url" as const, image_url: { url: media.dataUrl } }
+  return { type: "image_url" as const, image_url: { url: ProviderShared.mediaDataUrl(media) } }
 })
 
 const openAICompatibleReasoningContent = (native: unknown) =>

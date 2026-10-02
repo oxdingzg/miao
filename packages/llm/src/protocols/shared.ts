@@ -162,14 +162,22 @@ export const MEDIA_MIMES = [...IMAGE_MIMES, ...VIDEO_MIMES, ...AUDIO_MIMES] as c
 export const MAX_MEDIA_ENCODED_BYTES = 28 * 1024 * 1024
 export const MAX_MEDIA_DECODED_BYTES = 20 * 1024 * 1024
 
-const base64Pattern = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+/** Alphabet position by character code, or -1 for anything outside the alphabet. */
+const base64Values = new Int8Array(128).fill(-1)
+for (let index = 0; index < base64Alphabet.length; index++) base64Values[base64Alphabet.charCodeAt(index)] = index
 
 export interface ValidatedMedia {
   readonly mime: string
   readonly base64: string
-  readonly dataUrl: string
-  readonly bytes: Uint8Array
 }
+
+/**
+ * Rebuilds the data URL for a validated part. Routes that only ever send base64
+ * (Anthropic, Gemini, Bedrock) never call this, so they don't copy a payload
+ * they would not read.
+ */
+export const mediaDataUrl = (media: ValidatedMedia) => `data:${media.mime};base64,${media.base64}`
 
 export const validateMedia = Effect.fn("ProviderShared.validateMedia")(function* (
   route: string,
@@ -196,14 +204,50 @@ export const validateMedia = Effect.fn("ProviderShared.validateMedia")(function*
 
   if (Buffer.byteLength(base64, "utf8") > MAX_MEDIA_ENCODED_BYTES)
     return yield* invalidRequest(`${route} media exceeds the ${MAX_MEDIA_ENCODED_BYTES} byte encoded limit`)
-  if (!base64 || base64.length % 4 !== 0 || !base64Pattern.test(base64))
-    return yield* invalidRequest(`${route} media must contain valid base64`)
-  const bytes = Buffer.from(base64, "base64")
-  if (bytes.byteLength > MAX_MEDIA_DECODED_BYTES)
+  if (!isBase64(base64)) return yield* invalidRequest(`${route} media must contain valid base64`)
+  // Both remaining questions are answerable without decoding, which for media is
+  // a payload-sized copy: the decoded size follows from the length and padding,
+  // and canonicality from the unused bits of the last group.
+  const padding = base64Padding(base64)
+  if ((base64.length / 4) * 3 - padding > MAX_MEDIA_DECODED_BYTES)
     return yield* invalidRequest(`${route} media exceeds the ${MAX_MEDIA_DECODED_BYTES} byte decoded limit`)
-  if (bytes.toString("base64") !== base64) return yield* invalidRequest(`${route} media must contain canonical base64`)
-  return { mime, base64, dataUrl: `data:${mime};base64,${base64}`, bytes } satisfies ValidatedMedia
+  if (!canonicalTail(base64, padding)) return yield* invalidRequest(`${route} media must contain canonical base64`)
+  return { mime, base64 } satisfies ValidatedMedia
 })
+
+const base64Padding = (base64: string) => (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0)
+
+const isBase64Char = (code: number) => code < base64Values.length && base64Values[code] !== -1
+
+/**
+ * One linear pass over the alphabet. The pattern this replaces —
+ * `(?:[A-Za-z0-9+/]{4})*` with a trailing alternative — nests a quantifier, and
+ * the engine's match limit makes it stop matching, without an error, above
+ * roughly 5.5M characters. Every payload over 4.2MB decoded was therefore
+ * rejected as malformed, well inside this file's own 28MB encoded and 20MB
+ * decoded limits. A scan is bounded, allocates nothing, and returns the
+ * pattern's verdict everywhere the pattern returned one at all.
+ */
+const isBase64 = (base64: string) => {
+  if (base64.length === 0 || base64.length % 4 !== 0) return false
+  // `=` only ever trails, so the padding count is the size of the data region.
+  const data = base64.length - base64Padding(base64)
+  for (let index = 0; index < data; index++) if (!isBase64Char(base64.charCodeAt(index))) return false
+  return true
+}
+
+/**
+ * A decoder ignores the unused bits of the last group, so `AB==` and `AA==`
+ * decode to the same byte and only re-encoding the payload distinguishes them.
+ * Two characters hold one byte, leaving four unused bits in the second; three
+ * characters hold two bytes, leaving two unused bits in the third. Checking
+ * those bits directly is equivalent to the round trip at a constant cost.
+ */
+const canonicalTail = (base64: string, padding: number) => {
+  if (padding === 0) return true
+  const value = base64Values[base64.charCodeAt(base64.length - padding - 1)]!
+  return padding === 2 ? (value & 0b1111) === 0 : (value & 0b11) === 0
+}
 
 export const validateToolFile = (route: string, part: ToolFileContent, supportedMimes: ReadonlySet<string>) =>
   validateMedia(route, { type: "media", mediaType: part.mime, data: part.uri, filename: part.name }, supportedMimes)
