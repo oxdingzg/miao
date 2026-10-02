@@ -6,7 +6,8 @@ import { Effect } from "effect"
 import { Flag } from "@miao/core/flag/flag"
 import { Global } from "@miao/core/global"
 import { InstallationVersion } from "@miao/core/installation/version"
-import type { AccountStatus, ConnectorStatus, FlowStep, LoginInput } from "@miao/remote"
+import type { AccountStatus, ConnectorStatus, FlowStep, Host, LoginInput } from "@miao/remote"
+import type { RemoteControl } from "@miao/server/remote-control"
 import { effectCmd, fail } from "../effect-cmd"
 
 const DefaultPort = 4097
@@ -100,8 +101,9 @@ const RunCommand = effectCmd({
 
     const port = config.remote.port ?? DefaultPort
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
+    const remote = control(host, port)
     const server = yield* Effect.tryPromise({
-      try: () => Server.listen({ hostname: "127.0.0.1", port, mdns: false, cors: [] }),
+      try: () => Server.listen({ hostname: "127.0.0.1", port, mdns: false, cors: [], remote }),
       catch: (error) => error,
     }).pipe(Effect.catch((error) => fail(`无法在 127.0.0.1:${port} 启动服务（端口被占用？）：${String(error)}`)))
     const url = `http://127.0.0.1:${server.port}`
@@ -122,6 +124,8 @@ const RunCommand = effectCmd({
         log,
       }),
     )
+    // Logins through the control routes add their channel to the Router from here on.
+    host.bind({ add: router.add, remove: router.remove })
     const started = yield* Effect.promise(() =>
       router.start().then(
         () => undefined,
@@ -133,7 +137,6 @@ const RunCommand = effectCmd({
       yield* Effect.promise(() => server.stop(true))
       return yield* fail(started)
     }
-    host.bind({ add: router.add, remove: router.remove })
     console.log(`miao remote 已启动：${opened.channels.map((channel) => channel.id).join("、")}，服务 ${url}`)
     console.log(`桌面查看或操作这些会话：${attach}`)
 
@@ -164,6 +167,30 @@ const LoginCommand = effectCmd({
   handler: Effect.fn("Cli.remote.login")(function* (args: { connector: string }) {
     const log = (message: string) => console.error(message)
     const config = yield* loadRemoteConfig()
+    // A running daemon owns the credentials file and the channels; log in through it so the account goes live at once.
+    const daemon = yield* Effect.promise(() => probeDaemon(config.remote.port ?? DefaultPort))
+    if (daemon) {
+      const connector = daemon.status.connectors.find((item) => item.id === args.connector)
+      if (!connector)
+        return yield* fail(
+          `没有名为 ${args.connector} 的连接器；可用：${daemon.status.connectors.map((item) => item.id).join("、")}`,
+        )
+      console.log(`通过正在运行的 miao remote（pid ${daemon.status.pid}）登录，完成后立即生效`)
+      if (connector.notice) console.log(`${connector.notice}\n`)
+      const remote = daemon.client.remote
+      const started = yield* Effect.promise(() => remote.login({ connector: connector.id }))
+      const last = yield* Effect.promise(() =>
+        renderLogin(remote.loginEvents({ flow: started.flow }), (value) =>
+          remote.loginInput({ flow: started.flow, value }).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      )
+      if (last?.type !== "done") return yield* fail(last?.type === "error" ? last.message : "登录没有完成")
+      console.log(`已连接${connector.name}（${last.account.id}）${last.message ? `，${last.message}` : ""}`)
+      return
+    }
     const host = yield* Effect.promise(() => createLocalHost(config.remote, log))
     const connector = host.connector(args.connector)
     if (!connector)
@@ -185,6 +212,48 @@ const LoginCommand = effectCmd({
     console.log("运行 miao remote 启动；如果它已经在运行，请重启它以使用新凭证")
   }),
 })
+
+/** The `miao remote` daemon on this machine, if one answers its control route. */
+async function probeDaemon(port: number) {
+  const { OpenCode } = await import("@miao/client")
+  const { ServerAuth } = await import("@/server/auth")
+  const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}`, headers: ServerAuth.headers() })
+  const status = await client.remote.get({ signal: AbortSignal.timeout(2000) }).catch(() => undefined)
+  return status ? { client, status } : undefined
+}
+
+/** The daemon's control routes, backed by its connector host. */
+function control(host: Host, port: number): RemoteControl.Interface {
+  const startedAt = Date.now()
+  return {
+    status: async () => ({
+      pid: process.pid,
+      port,
+      version: InstallationVersion,
+      startedAt,
+      connectors: await host.status(),
+    }),
+    login: async (connector) => (host.connector(connector) ? { flow: host.login(connector).id } : undefined),
+    events: (flow) => host.flow(flow)?.events(),
+    input: (id, value) => {
+      const flow = host.flow(id)
+      if (!flow) return "unknown"
+      return flow.input(value) ? "accepted" : "idle"
+    },
+    cancel: (id) => {
+      const flow = host.flow(id)
+      flow?.cancel()
+      return flow !== undefined
+    },
+    remove: (connector, account) => host.remove(connector, account),
+    pair: async (connector, account) => {
+      const result = await host.pair(connector, account)
+      if (result.ok) return result.step
+      return result.unknown ? undefined : { error: result.message }
+    },
+    test: (connector, account) => host.test(connector, account),
+  }
+}
 
 /** Prints login steps in a terminal and answers code and form steps from stdin. Returns the last step. */
 export async function renderLogin(steps: AsyncIterable<FlowStep>, answer: (value: LoginInput) => Promise<boolean>) {
@@ -234,12 +303,18 @@ const StatusCommand = effectCmd({
     const { Label } = yield* Effect.promise(() => import("@miao/remote/launchd"))
     const files = paths()
     const config = yield* loadRemoteConfig()
-    const host = yield* Effect.promise(() => createLocalHost(config.remote, (message) => console.error(message)))
-    const status = yield* Effect.promise(() => host.status())
+    const port = config.remote.port ?? DefaultPort
+    const daemon = yield* Effect.promise(() => probeDaemon(port))
+    const status = daemon
+      ? daemon.status.connectors
+      : yield* Effect.promise(() =>
+          createLocalHost(config.remote, (message) => console.error(message)).then((host) => host.status()),
+        )
     const installed = yield* Effect.promise(() => Bun.file(path.join(files.agents, `${Label}.plist`)).exists())
     console.log(
       [
-        `服务端口：127.0.0.1:${config.remote.port ?? DefaultPort}`,
+        `服务端口：127.0.0.1:${port}`,
+        daemon ? `守护进程：运行中（pid ${daemon.status.pid}，版本 ${daemon.status.version}）` : "守护进程：未运行",
         ...statusLines(status),
         `launchd：${installed ? "已安装" : "未安装"}`,
       ].join("\n"),

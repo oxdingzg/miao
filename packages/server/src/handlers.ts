@@ -18,6 +18,7 @@ import { IntegrationHandler } from "./handlers/integration"
 import { CredentialHandler } from "./handlers/credential"
 import { ProjectCopyHandler } from "./handlers/project-copy"
 import { ProjectHandler } from "./handlers/project"
+import { RemoteHandler } from "./handlers/remote"
 
 export const handlers = Layer.mergeAll(
   HealthHandler,
@@ -39,4 +40,5 @@ export const handlers = Layer.mergeAll(
   ReferenceHandler,
   ProjectCopyHandler,
   ProjectHandler,
+  RemoteHandler,
 )

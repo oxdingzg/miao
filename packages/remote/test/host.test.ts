@@ -130,7 +130,8 @@ describe("login flows and pairing", () => {
       if (step.type === "pair") network().deliver({ from: owner, text: step.code, id: "pair-1" })
     })
 
-    const second = await remote.pair("echo", "bot-t")
+    expect(await remote.pair("echo", "missing")).toEqual({ ok: false, unknown: true, message: "账号不存在" })
+    const second = await pairCode(remote.pair("echo", "bot-t"))
     network().deliver({ from: owner, text: "still mine", id: "o2" })
     await eventually(() => target.received.some((message) => message.text === "still mine"))
     const wrong = second.code === "123456" ? "654321" : "123456"
@@ -140,7 +141,7 @@ describe("login flows and pairing", () => {
     await Bun.sleep(30)
     expect((await readAccounts(authFile())).echo["bot-t"].owner).toBe(owner)
 
-    const third = await remote.pair("echo", "bot-t")
+    const third = await pairCode(remote.pair("echo", "bot-t"))
     network().deliver({ from: stranger, text: third.code, id: "takeover" })
     await eventually(async () => (await readAccounts(authFile())).echo["bot-t"].owner === stranger)
     await target.remove("echo/bot-t")
@@ -204,3 +205,9 @@ describe("login flows and pairing", () => {
     expect(opened.failures).toEqual([])
   })
 })
+
+async function pairCode(result: ReturnType<ReturnType<typeof createHost>["pair"]>) {
+  const settled = await result
+  if (!settled.ok) throw new Error(settled.message)
+  return settled.step
+}

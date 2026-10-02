@@ -104,6 +104,7 @@ import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location
 import { layer as locationLayer } from "@miao/server/location"
 import { sessionLocationLayer } from "@miao/server/middleware/session-location"
 import { PtyEnvironment } from "@miao/server/pty-environment"
+import { RemoteControl } from "@miao/server/remote-control"
 import { schemaErrorLayer as v2SchemaErrorLayer } from "@miao/server/middleware/schema-error"
 import { workspaceHandlers } from "./handlers/workspace"
 import { instanceContextLayer } from "./middleware/instance-context"
@@ -174,11 +175,14 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
 const instanceRoutes = instanceApiRoutes.pipe(
   Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
 )
-const serverRoutes = HttpApiBuilder.layer(Api).pipe(
-  Layer.provide(handlers),
-  Layer.provide(PluginPtyEnvironment.layer),
-  Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
-)
+// The /api/remote routes answer only when `miao remote` hands in its control; elsewhere they are 404.
+const serverRoutes = (remote: RemoteControl.Interface | undefined) =>
+  HttpApiBuilder.layer(Api).pipe(
+    Layer.provide(handlers),
+    Layer.provide(remote ? RemoteControl.layer(remote) : Layer.empty),
+    Layer.provide(PluginPtyEnvironment.layer),
+    Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
+  )
 
 // `OpenApi.fromApi` is non-trivial; defer until /doc is actually hit so
 // processes that never serve it (CLI, scripts) don't pay at module load.
@@ -270,6 +274,7 @@ const app = LayerNode.group([
 
 export function createRoutes(
   corsOptions?: CorsOptions,
+  remote?: RemoteControl.Interface,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = buildLocationServiceMap()
 
@@ -278,7 +283,7 @@ export function createRoutes(
     eventApiRoutes,
     ptyConnectApiRoutes,
     instanceRoutes,
-    serverRoutes,
+    serverRoutes(remote),
     docRoute,
     uiRoute,
   ).pipe(

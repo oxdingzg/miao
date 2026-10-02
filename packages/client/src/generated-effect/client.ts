@@ -818,6 +818,80 @@ const adaptGroup18 = (raw: RawClient["server.project"]) => ({
   directories: Endpoint18_1(raw),
 })
 
+const Endpoint19_0 = (raw: RawClient["server.remote"]) => () =>
+  raw["remote.get"]({}).pipe(Effect.mapError(mapClientError))
+
+type Endpoint19_1Request = Parameters<RawClient["server.remote"]["remote.login.start"]>[0]
+type Endpoint19_1Input = { readonly connector: Endpoint19_1Request["params"]["connector"] }
+const Endpoint19_1 = (raw: RawClient["server.remote"]) => (input: Endpoint19_1Input) =>
+  raw["remote.login.start"]({ params: { connector: input["connector"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint19_2Request = Parameters<RawClient["server.remote"]["remote.login.events"]>[0]
+type Endpoint19_2Input = { readonly flow: Endpoint19_2Request["params"]["flow"] }
+const Endpoint19_2 = (raw: RawClient["server.remote"]) => (input: Endpoint19_2Input) =>
+  Stream.unwrap(
+    raw["remote.login.events"]({ params: { flow: input["flow"] } }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((stream) => stream.pipe(Stream.mapError(mapClientError))),
+    ),
+  )
+
+type Endpoint19_3Request = Parameters<RawClient["server.remote"]["remote.login.input"]>[0]
+type Endpoint19_3Input = {
+  readonly flow: Endpoint19_3Request["params"]["flow"]
+  readonly value: Endpoint19_3Request["payload"]["value"]
+}
+const Endpoint19_3 = (raw: RawClient["server.remote"]) => (input: Endpoint19_3Input) =>
+  raw["remote.login.input"]({ params: { flow: input["flow"] }, payload: { value: input["value"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint19_4Request = Parameters<RawClient["server.remote"]["remote.login.cancel"]>[0]
+type Endpoint19_4Input = { readonly flow: Endpoint19_4Request["params"]["flow"] }
+const Endpoint19_4 = (raw: RawClient["server.remote"]) => (input: Endpoint19_4Input) =>
+  raw["remote.login.cancel"]({ params: { flow: input["flow"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint19_5Request = Parameters<RawClient["server.remote"]["remote.account.remove"]>[0]
+type Endpoint19_5Input = {
+  readonly connector: Endpoint19_5Request["params"]["connector"]
+  readonly account: Endpoint19_5Request["params"]["account"]
+}
+const Endpoint19_5 = (raw: RawClient["server.remote"]) => (input: Endpoint19_5Input) =>
+  raw["remote.account.remove"]({ params: { connector: input["connector"], account: input["account"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint19_6Request = Parameters<RawClient["server.remote"]["remote.account.pair"]>[0]
+type Endpoint19_6Input = {
+  readonly connector: Endpoint19_6Request["params"]["connector"]
+  readonly account: Endpoint19_6Request["params"]["account"]
+}
+const Endpoint19_6 = (raw: RawClient["server.remote"]) => (input: Endpoint19_6Input) =>
+  raw["remote.account.pair"]({ params: { connector: input["connector"], account: input["account"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint19_7Request = Parameters<RawClient["server.remote"]["remote.account.test"]>[0]
+type Endpoint19_7Input = {
+  readonly connector: Endpoint19_7Request["params"]["connector"]
+  readonly account: Endpoint19_7Request["params"]["account"]
+}
+const Endpoint19_7 = (raw: RawClient["server.remote"]) => (input: Endpoint19_7Input) =>
+  raw["remote.account.test"]({ params: { connector: input["connector"], account: input["account"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+const adaptGroup19 = (raw: RawClient["server.remote"]) => ({
+  get: Endpoint19_0(raw),
+  login: Endpoint19_1(raw),
+  loginEvents: Endpoint19_2(raw),
+  loginInput: Endpoint19_3(raw),
+  loginCancel: Endpoint19_4(raw),
+  remove: Endpoint19_5(raw),
+  pair: Endpoint19_6(raw),
+  test: Endpoint19_7(raw),
+})
+
 const adaptClient = (raw: RawClient) => ({
   health: adaptGroup0(raw["server.health"]),
   location: adaptGroup1(raw["server.location"]),
@@ -838,6 +912,7 @@ const adaptClient = (raw: RawClient) => ({
   references: adaptGroup16(raw["server.reference"]),
   projectCopies: adaptGroup17(raw["server.projectCopy"]),
   projects: adaptGroup18(raw["server.project"]),
+  remote: adaptGroup19(raw["server.remote"]),
 })
 
 export const make = (options?: { readonly baseUrl?: URL | string }) =>

@@ -727,6 +727,49 @@ const scenarios: Scenario[] = [
       body: { label: "Work" },
     }))
     .status(204, undefined, "status"),
+  // Remote control routes exist only on the `miao remote` daemon; any other server answers 404.
+  http.protected.get("/api/remote", "v2.remote.get").json(404, object, "status"),
+  http.protected
+    .post("/api/remote/login/{connector}", "v2.remote.login.start")
+    .at((ctx) => ({ path: route("/api/remote/login/{connector}", { connector: "qq" }), headers: ctx.headers() }))
+    .json(404, object, "status"),
+  http.protected
+    .get("/api/remote/login/{flow}/event", "v2.remote.login.events")
+    .at((ctx) => ({ path: route("/api/remote/login/{flow}/event", { flow: "missing" }), headers: ctx.headers() }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/api/remote/login/{flow}/input", "v2.remote.login.input")
+    .at((ctx) => ({
+      path: route("/api/remote/login/{flow}/input", { flow: "missing" }),
+      headers: ctx.headers(),
+      body: { value: "123456" },
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .delete("/api/remote/login/{flow}", "v2.remote.login.cancel")
+    .at((ctx) => ({ path: route("/api/remote/login/{flow}", { flow: "missing" }), headers: ctx.headers() }))
+    .json(404, object, "status"),
+  http.protected
+    .delete("/api/remote/account/{connector}/{account}", "v2.remote.account.remove")
+    .at((ctx) => ({
+      path: route("/api/remote/account/{connector}/{account}", { connector: "qq", account: "1" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/api/remote/account/{connector}/{account}/pair", "v2.remote.account.pair")
+    .at((ctx) => ({
+      path: route("/api/remote/account/{connector}/{account}/pair", { connector: "qq", account: "1" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/api/remote/account/{connector}/{account}/test", "v2.remote.account.test")
+    .at((ctx) => ({
+      path: route("/api/remote/account/{connector}/{account}/test", { connector: "qq", account: "1" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
   http.protected.get("/api/command", "v2.command.list").json(200, locationData(array)),
   http.protected.get("/api/skill", "v2.skill.list").json(200, locationData(array)),
   http.protected

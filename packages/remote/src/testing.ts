@@ -144,7 +144,7 @@ export function connectorConformance(
         const long = Array.from({ length: limit * 2 + 10 }, (_, index) => String(index % 10)).join("")
         const before = fake().sent().length
         const result = await channel.send(fake().owner, long, inbound?.reply)
-        expect(result.ok).toBe(true)
+        expect(result?.ok).toBe(true)
         expect(result.sent).toBeGreaterThanOrEqual(3)
         const pieces = fake()
           .sent()
@@ -179,7 +179,7 @@ export function connectorConformance(
         const done = fixture.steps.at(-1)
         if (done?.type !== "done") throw new Error("login did not finish")
         const result = await host().test(connector.id, done.account.id)
-        expect(result.ok).toBe(true)
+        expect(result?.ok).toBe(true)
         expect(
           fake()
             .sent()

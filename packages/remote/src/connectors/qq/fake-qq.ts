@@ -56,6 +56,7 @@ export function createFakeQQ(input: { appId?: string; secret?: string; heartbeat
         counter.task += 1
         const task = `task-${counter.task}`
         tasks.set(task, { key: String(body.key ?? ""), results: [] })
+        if (fake.autoBind !== undefined) await fake.completeBind(fake.autoBind || undefined, task)
         return Response.json({ retcode: 0, msg: "ok", data: { task_id: task } })
       }
       if (url.pathname === "/lite/poll_bind_result") {
@@ -149,6 +150,8 @@ export function createFakeQQ(input: { appId?: string; secret?: string; heartbeat
 
   const fake = {
     url: `http://127.0.0.1:${server.port}`,
+    /** When set, every new bind task completes at once for this owner ("" binds without an owner). */
+    autoBind: undefined as string | undefined,
     /** When true, heartbeats go unanswered (a half-open connection). */
     silent: false,
     appId,

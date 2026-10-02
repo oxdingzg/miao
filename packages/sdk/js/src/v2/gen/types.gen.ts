@@ -2993,6 +2993,161 @@ export type ProjectCopyError = {
   }
 }
 
+export type RemoteAccountStatus = {
+  connector: string
+  account: string
+  label: string
+  state: "connected" | "connecting" | "retrying" | "needs-login" | "unpaired" | "offline" | "error"
+  detail?: string
+  owner?: string
+  pairing?: {
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  error?: string
+  lastActivityAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pushesToday: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pushBudget?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pending: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  approvals: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type RemoteConnectorStatus = {
+  id: string
+  name: string
+  description?: string
+  transport?: "poll" | "socket" | "webhook"
+  pairing: boolean
+  notice?: string
+  accounts: Array<RemoteAccountStatus>
+}
+
+export type RemoteStatus = {
+  pid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  port: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  version: string
+  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  connectors: Array<RemoteConnectorStatus>
+}
+
+export type RemoteNotFoundError = {
+  _tag: "RemoteNotFoundError"
+  message: string
+}
+
+export type RemoteLoginField = {
+  key: string
+  label: string
+  secret?: boolean
+  optional?: boolean
+  placeholder?: string
+}
+
+export type RemoteAccountInfo = {
+  id: string
+  label: string
+}
+
+export type RemoteLoginStep =
+  | {
+      type: "qr"
+      content: string
+      hint?: string
+    }
+  | {
+      type: "code"
+      prompt: string
+    }
+  | {
+      type: "form"
+      title: string
+      fields: Array<RemoteLoginField>
+    }
+  | {
+      type: "open"
+      url: string
+      hint?: string
+    }
+  | {
+      type: "progress"
+      message: string
+    }
+  | {
+      type: "pair"
+      code: string
+      expiresAt: number | "NaN" | "Infinity" | "-Infinity"
+      link?: string
+      hint: string
+    }
+  | {
+      type: "done"
+      connector: string
+      account: RemoteAccountInfo
+      message?: string
+    }
+  | {
+      type: "error"
+      message: string
+    }
+
+export type RemoteLoginStepStream = string
+
+export type RemoteLoginAnswer = {
+  value:
+    | string
+    | {
+        [key: string]: string
+      }
+}
+
+export type RemoteLoginStep1 =
+  | {
+      type: "qr"
+      content: string
+      hint?: string
+    }
+  | {
+      type: "code"
+      prompt: string
+    }
+  | {
+      type: "form"
+      title: string
+      fields: Array<RemoteLoginField>
+    }
+  | {
+      type: "open"
+      url: string
+      hint?: string
+    }
+  | {
+      type: "progress"
+      message: string
+    }
+  | {
+      type: "pair"
+      code: string
+      expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      link?: string
+      hint: string
+    }
+  | {
+      type: "done"
+      connector: string
+      account: RemoteAccountInfo
+      message?: string
+    }
+  | {
+      type: "error"
+      message: string
+    }
+
+export type RemoteSendResult = {
+  ok: boolean
+  sent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  error?: string
+}
+
 export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
 }
@@ -14310,6 +14465,297 @@ export type V2ProjectDirectoriesResponses = {
 }
 
 export type V2ProjectDirectoriesResponse = V2ProjectDirectoriesResponses[keyof V2ProjectDirectoriesResponses]
+
+export type V2RemoteGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/remote"
+}
+
+export type V2RemoteGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteGetError = V2RemoteGetErrors[keyof V2RemoteGetErrors]
+
+export type V2RemoteGetResponses = {
+  /**
+   * RemoteStatus
+   */
+  200: RemoteStatus
+}
+
+export type V2RemoteGetResponse = V2RemoteGetResponses[keyof V2RemoteGetResponses]
+
+export type V2RemoteLoginStartData = {
+  body?: never
+  path: {
+    connector: string
+  }
+  query?: never
+  url: "/api/remote/login/{connector}"
+}
+
+export type V2RemoteLoginStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteLoginStartError = V2RemoteLoginStartErrors[keyof V2RemoteLoginStartErrors]
+
+export type V2RemoteLoginStartResponses = {
+  /**
+   * Success
+   */
+  200: {
+    flow: string
+  }
+}
+
+export type V2RemoteLoginStartResponse = V2RemoteLoginStartResponses[keyof V2RemoteLoginStartResponses]
+
+export type V2RemoteLoginEventsData = {
+  body?: never
+  path: {
+    flow: string
+  }
+  query?: never
+  url: "/api/remote/login/{flow}/event"
+}
+
+export type V2RemoteLoginEventsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteLoginEventsError = V2RemoteLoginEventsErrors[keyof V2RemoteLoginEventsErrors]
+
+export type V2RemoteLoginEventsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    id: string
+    event: string
+    data: RemoteLoginStepStream
+  }
+}
+
+export type V2RemoteLoginEventsResponse = V2RemoteLoginEventsResponses[keyof V2RemoteLoginEventsResponses]
+
+export type V2RemoteLoginInputData = {
+  body: RemoteLoginAnswer
+  path: {
+    flow: string
+  }
+  query?: never
+  url: "/api/remote/login/{flow}/input"
+}
+
+export type V2RemoteLoginInputErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2RemoteLoginInputError = V2RemoteLoginInputErrors[keyof V2RemoteLoginInputErrors]
+
+export type V2RemoteLoginInputResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2RemoteLoginInputResponse = V2RemoteLoginInputResponses[keyof V2RemoteLoginInputResponses]
+
+export type V2RemoteLoginCancelData = {
+  body?: never
+  path: {
+    flow: string
+  }
+  query?: never
+  url: "/api/remote/login/{flow}"
+}
+
+export type V2RemoteLoginCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteLoginCancelError = V2RemoteLoginCancelErrors[keyof V2RemoteLoginCancelErrors]
+
+export type V2RemoteLoginCancelResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2RemoteLoginCancelResponse = V2RemoteLoginCancelResponses[keyof V2RemoteLoginCancelResponses]
+
+export type V2RemoteAccountRemoveData = {
+  body?: never
+  path: {
+    connector: string
+    account: string
+  }
+  query?: never
+  url: "/api/remote/account/{connector}/{account}"
+}
+
+export type V2RemoteAccountRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteAccountRemoveError = V2RemoteAccountRemoveErrors[keyof V2RemoteAccountRemoveErrors]
+
+export type V2RemoteAccountRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2RemoteAccountRemoveResponse = V2RemoteAccountRemoveResponses[keyof V2RemoteAccountRemoveResponses]
+
+export type V2RemoteAccountPairData = {
+  body?: never
+  path: {
+    connector: string
+    account: string
+  }
+  query?: never
+  url: "/api/remote/account/{connector}/{account}/pair"
+}
+
+export type V2RemoteAccountPairErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteAccountPairError = V2RemoteAccountPairErrors[keyof V2RemoteAccountPairErrors]
+
+export type V2RemoteAccountPairResponses = {
+  /**
+   * RemoteLoginStep
+   */
+  200: RemoteLoginStep1
+}
+
+export type V2RemoteAccountPairResponse = V2RemoteAccountPairResponses[keyof V2RemoteAccountPairResponses]
+
+export type V2RemoteAccountTestData = {
+  body?: never
+  path: {
+    connector: string
+    account: string
+  }
+  query?: never
+  url: "/api/remote/account/{connector}/{account}/test"
+}
+
+export type V2RemoteAccountTestErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * RemoteNotFoundError
+   */
+  404: RemoteNotFoundError
+}
+
+export type V2RemoteAccountTestError = V2RemoteAccountTestErrors[keyof V2RemoteAccountTestErrors]
+
+export type V2RemoteAccountTestResponses = {
+  /**
+   * RemoteSendResult
+   */
+  200: RemoteSendResult
+}
+
+export type V2RemoteAccountTestResponse = V2RemoteAccountTestResponses[keyof V2RemoteAccountTestResponses]
 
 export type PtyConnectData = {
   body?: never
