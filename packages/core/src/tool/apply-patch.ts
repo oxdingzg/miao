@@ -9,6 +9,9 @@ import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
+import { LSP } from "../lsp"
+import { LSPClient } from "../lsp/client"
+import { Diagnostic } from "../lsp/diagnostic"
 import { Patch } from "../patch"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
@@ -33,6 +36,7 @@ export const Applied = Schema.Struct({
 export const Output = Schema.Struct({
   applied: Schema.Array(Applied),
   files: Schema.Array(FileDiff.Info),
+  diagnostics: Schema.String.pipe(Schema.optional),
 })
 export type Output = typeof Output.Type
 
@@ -42,7 +46,9 @@ export const toModelOutput = (output: Output) =>
     ...output.applied.map(
       (item) => `${item.type === "add" ? "A" : item.type === "delete" ? "D" : "M"} ${item.resource}`,
     ),
-  ].join("\n")
+  ]
+    .concat(output.diagnostics ? ["", "LSP errors detected in the patched files, please fix:", output.diagnostics] : [])
+    .join("\n")
 
 type Prepared =
   | (Extract<Patch.Hunk, { readonly type: "add" | "delete" }> & {
@@ -66,6 +72,7 @@ const layer = Layer.effectDiscard(
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
     const format = yield* Format.Service
+    const lsp = yield* LSP.Service
 
     yield* tools
       .register({
@@ -214,7 +221,25 @@ const layer = Layer.effectDiscard(
                     }).pipe(Effect.mapError(() => fail(change.path))),
                   { discard: true },
                 )
-                return { applied, files: patchFiles }
+                // Like write and edit, report the errors language servers see in the
+                // files the patch left behind.
+                const changed = prepared.filter((change) => change.type !== "delete")
+                yield* Effect.forEach(
+                  changed,
+                  (change) => lsp.touchFile(change.target.canonical, "document").pipe(Effect.ignore),
+                  { discard: true },
+                )
+                const diagnostics = changed.length === 0 ? {} : yield* lsp.diagnostics()
+                const report = changed
+                  .map((change) =>
+                    Diagnostic.report(
+                      change.target.resource,
+                      diagnostics[LSPClient.fileURI(change.target.canonical)] ?? [],
+                    ),
+                  )
+                  .filter((item) => item !== "")
+                  .join("\n")
+                return { applied, files: patchFiles, ...(report ? { diagnostics: report } : {}) }
               }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail("patch"))))
             },
           }),
@@ -228,7 +253,7 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/apply-patch",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
 })
 
 function patchFile(change: Prepared): typeof FileDiff.Info.Type {

@@ -3,6 +3,8 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
+import { Config } from "@miao/core/config"
+import { ConfigLSP } from "@miao/core/config/lsp"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { FileMutation } from "@miao/core/file-mutation"
@@ -76,11 +78,31 @@ const filesystem = Layer.effect(
   }),
 ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
 
-const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>) => {
+const config = (lsp: ConfigLSP.Server) =>
+  Layer.succeed(
+    Config.Service,
+    Config.Service.of({
+      entries: () =>
+        Effect.succeed([new Config.Document({ type: "document", info: new Config.Info({ lsp: { mock: lsp } }) })]),
+    }),
+  )
+
+// `lsp` wires one language server into the Location; without it touchFile finds no server.
+const withTool = <A, E, R>(
+  directory: string,
+  body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
+  lsp?: ConfigLSP.Server,
+) => {
   const activeLocation = Layer.succeed(
     Location.Service,
     Location.Service.of(location({ directory: AbsolutePath.make(directory) })),
   )
+  const replacements: LayerNode.Replacements = [
+    [FSUtil.node, filesystem],
+    [Location.node, activeLocation],
+    [PermissionV2.node, permission],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+  ]
   return Effect.gen(function* () {
     return yield* body(yield* ToolRegistry.Service)
   }).pipe(
@@ -93,12 +115,7 @@ const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Inte
           FileMutation.node,
           EditTool.node,
         ]),
-        [
-          [FSUtil.node, filesystem],
-          [Location.node, activeLocation],
-          [PermissionV2.node, permission],
-          [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-        ],
+        lsp ? replacements.concat([[Config.node, config(lsp)]]) : replacements,
       ),
     ),
   )
@@ -165,6 +182,33 @@ describe("EditTool", () => {
           ),
         )
       },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("reports language server errors in the edited file", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          reset()
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const a = 1\n"))
+          const settled = yield* withTool(
+            tmp.path,
+            (registry) => settleTool(registry, call({ path: "code.ts", oldString: "a = 1", newString: "a = 2" })),
+            new ConfigLSP.Server({
+              command: ["bun", path.resolve(import.meta.dir, "fixture/mock-lsp.ts")],
+              extensions: [".ts"],
+            }),
+          )
+          expect(String((settled.output?.structured as EditTool.Output | undefined)?.diagnostics)).toContain(
+            "MOCK_ERROR",
+          )
+          expect(settled.result).toMatchObject({
+            type: "text",
+            value: expect.stringContaining("LSP errors detected in this file, please fix:"),
+          })
+        }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
