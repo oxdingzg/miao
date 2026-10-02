@@ -55,8 +55,9 @@ export async function loadTranscript(sdk: OpencodeClient, sessionID: string, lim
 async function timeline(sdk: OpencodeClient, sessionID: string, limit: number | undefined) {
   const pages: SessionMessage[] = []
   const read = async (cursor: string | undefined): Promise<SessionMessage[]> => {
+    // A cursor carries its page order; the route refuses it alongside `order`.
     const page = await sdk.v2.session.messages(
-      { sessionID, order: "desc", limit: PAGE_LIMIT, ...(cursor ? { cursor } : {}) },
+      cursor ? { sessionID, limit: PAGE_LIMIT, cursor } : { sessionID, order: "desc", limit: PAGE_LIMIT },
       { throwOnError: true },
     )
     pages.push(...page.data.data)
@@ -106,7 +107,10 @@ export function transcriptEntries(input: {
     return [
       {
         type: "message",
-        message: { info: found.info, parts: found.parts.map((part) => settleText(scopePart(part), completed)) },
+        message: {
+          info: found.info,
+          parts: found.parts.map((part) => settleText(scopePart(part), message.time.created, completed)),
+        },
       },
     ]
   })
@@ -116,11 +120,11 @@ export function transcriptEntries(input: {
 // projected text or reasoning item is either still empty because it is
 // streaming, or final. Backfilled legacy items carry no times at all. The
 // reducer needs the end marker to stop treating the part as active.
-function settleText(part: Part, completed: number | undefined): Part {
+function settleText(part: Part, created: number, completed: number | undefined): Part {
   if (part.type !== "text" && part.type !== "reasoning") return part
   if (part.time?.end !== undefined) return part
   if (completed === undefined && part.text === "") return part
-  const end = completed ?? part.time?.start ?? 0
+  const end = completed ?? part.time?.start ?? created
   return { ...part, time: { start: part.time?.start ?? end, end } }
 }
 
