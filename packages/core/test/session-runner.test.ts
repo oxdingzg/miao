@@ -70,6 +70,9 @@ const requests: LLMRequest[] = []
 let response: LLMEvent[] = []
 let responses: LLMEvent[][] | undefined
 let responseStream: Stream.Stream<LLMEvent, LLMError> | undefined
+// Title requests run on their own fiber; answering them separately keeps ordering deterministic.
+const TITLE_SYSTEM = "You generate titles"
+let titleResponse: LLMEvent[] | undefined
 let streamGate: Deferred.Deferred<void> | undefined
 let streamStarted: Deferred.Deferred<void> | undefined
 let streamFailure: LLMError | undefined
@@ -84,6 +87,8 @@ const client = Layer.succeed(
     prepare: () => Effect.die("unused"),
     stream: ((request: LLMRequest) => {
       requests.push(request)
+      if (titleResponse && request.system.some((part) => part.text === TITLE_SYSTEM))
+        return Stream.fromIterable(titleResponse)
       if (responseStream) {
         const stream = responseStream
         responseStream = undefined
@@ -342,6 +347,7 @@ const setup = Effect.gen(function* () {
   responses = undefined
   streamFailure = undefined
   responseStream = undefined
+  titleResponse = undefined
   streamGate = undefined
   streamStarted = undefined
   toolExecutionGate = undefined
@@ -4086,4 +4092,117 @@ describe("SessionRunnerLLM", () => {
       expect(requests).toHaveLength(0)
     }),
   )
+
+  describe("title generation", () => {
+    const defaultTitle = "New session - 2026-10-02T00:00:00.000Z"
+    const setTitle = (title: string, parentID?: SessionV2.ID) =>
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        yield* db
+          .update(SessionTable)
+          .set({ title, parent_id: parentID ?? null })
+          .where(eq(SessionTable.id, sessionID))
+          .run()
+          .pipe(Effect.orDie)
+      })
+    const titleAgent = AgentV2.Service.pipe(
+      Effect.flatMap((agents) =>
+        agents.transform((editor) =>
+          editor.update(AgentV2.ID.make("title"), (agent) => {
+            agent.mode = "primary"
+            agent.hidden = true
+            agent.system = TITLE_SYSTEM
+          }),
+        ),
+      ),
+    )
+    const titleRequests = () =>
+      requests.filter((request) => request.system.some((part) => part.text === TITLE_SYSTEM))
+    // The title fiber runs beside the drain; give it scheduler turns to finish.
+    const settle = Effect.gen(function* () {
+      for (let index = 0; index < 200; index++) yield* Effect.yieldNow
+    })
+    const currentTitle = SessionV2.Service.pipe(
+      Effect.flatMap((sessions) => sessions.get(sessionID)),
+      Effect.map((session) => session.title),
+    )
+
+    it.effect("titles a root Session with a placeholder title after its first prompt", () =>
+      Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const session = yield* SessionV2.Service
+        requests.length = 0
+        response = fragmentFixture("text", "text-main", ["Answer"]).completeEvents
+        titleResponse = fragmentFixture("text", "text-title", ["<think>hmm</think>\nFix the login bug\nextra"]).completeEvents
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Login fails on submit" }), resume: false })
+        yield* session.resume(sessionID)
+        yield* settle
+
+        expect(titleRequests()).toHaveLength(1)
+        expect(userTexts(titleRequests()[0])).toEqual([
+          "Generate a title for this conversation:\n",
+          "Login fails on submit",
+        ])
+        expect(yield* currentTitle).toBe("Fix the login bug")
+
+        // A second prompt never retitles.
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Another" }), resume: false })
+        yield* session.resume(sessionID)
+        yield* settle
+        expect(titleRequests()).toHaveLength(1)
+      }),
+    )
+
+    it.effect("keeps manual titles, skips child Sessions, and survives title failures", () =>
+      Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        const session = yield* SessionV2.Service
+        response = fragmentFixture("text", "text-title-skip", ["Generated"]).completeEvents
+        titleResponse = response
+
+        yield* setTitle("My own title")
+        requests.length = 0
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(sessionID)
+        yield* settle
+        expect(titleRequests()).toHaveLength(0)
+        expect(yield* currentTitle).toBe("My own title")
+
+        yield* insertSession(otherSessionID)
+        const { db } = yield* Database.Service
+        yield* db
+          .update(SessionTable)
+          .set({ title: defaultTitle, parent_id: otherSessionID })
+          .where(eq(SessionTable.id, otherSessionID))
+          .run()
+          .pipe(Effect.orDie)
+        yield* session.prompt({ sessionID: otherSessionID, prompt: Prompt.make({ text: "Child" }), resume: false })
+        yield* session.resume(otherSessionID)
+        yield* settle
+        expect(titleRequests()).toHaveLength(0)
+      }),
+    )
+
+    it.effect("leaves the Session usable when the title model fails", () =>
+      Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const session = yield* SessionV2.Service
+        requests.length = 0
+        response = fragmentFixture("text", "text-main", ["Answer"]).completeEvents
+        titleResponse = [LLMEvent.providerError({ message: "title model down" })]
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Question" }), resume: false })
+        yield* session.resume(sessionID)
+        yield* settle
+
+        expect(titleRequests()).toHaveLength(1)
+        expect(yield* currentTitle).toBe(defaultTitle)
+        expect((yield* session.messages({ sessionID })).some((message) => message.type === "assistant")).toBe(true)
+      }),
+    )
+  })
 })

@@ -7,6 +7,8 @@ import {
   SystemPart,
   ToolFailure,
   isContextOverflowFailure,
+  type LLMRequest,
+  type Model,
   type ProviderErrorEvent,
 } from "@miao/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
@@ -45,6 +47,7 @@ import { SessionSchema } from "../schema"
 import { SessionTable } from "../sql"
 import { SessionStore } from "../store"
 import { SessionTodo } from "../todo"
+import { SessionTitle } from "../title"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
@@ -184,6 +187,43 @@ const layer = Layer.effect(
       }
       return { ttl, prune, budget, loop, disabledTools }
     })
+    // Title generation runs beside the first provider turn and outlives the drain.
+    // One attempt per Session per process, like V1's single first-step attempt.
+    const titleFibers = yield* FiberSet.make<void>()
+    const titled = new Set<string>()
+    const generateTitle = Effect.fn("SessionRunner.generateTitle")(
+      function* (input: {
+        readonly session: SessionSchema.Info
+        readonly prompt: string
+        readonly model: Model
+        readonly small: Model | undefined
+        readonly http: LLMRequest["http"]
+      }) {
+        const agent = yield* agents.get(AgentV2.ID.make("title"))
+        if (!agent) return
+        const model = agent.model
+          ? (yield* models.resolve({ ...input.session, model: agent.model })).model
+          : (input.small ?? input.model)
+        const title = yield* SessionTitle.generate({
+          llm,
+          model,
+          http: input.http,
+          system: agent.system,
+          prompt: input.prompt,
+        })
+        if (!title) return
+        // The user may have renamed the Session while the title model ran.
+        const current = yield* store.get(input.session.id)
+        if (!current || !SessionTitle.isDefault(current.title)) return
+        yield* events.publish(SessionEvent.Info.Updated, {
+          sessionID: input.session.id,
+          timestamp: yield* DateTime.now,
+          title,
+        })
+      },
+      Effect.catch((error) => Effect.logWarning("failed to generate title", { error })),
+      Effect.catchDefect((defect) => Effect.logWarning("failed to generate title", { defect })),
+    )
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
@@ -405,6 +445,16 @@ const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
       })
       const requestBuildMs = Date.now() - requestBuildStartedAt
+      // Like V1: title a root Session that still has its placeholder title once
+      // its first real user prompt reaches the model.
+      const users = context.filter((message) => message.type === "user")
+      if (!session.parentID && users.length === 1 && SessionTitle.isDefault(session.title) && !titled.has(session.id)) {
+        titled.add(session.id)
+        yield* FiberSet.run(
+          titleFibers,
+          generateTitle({ session, prompt: users[0].text, model, small: summarizeModel, http: request.http }),
+        )
+      }
       const compactStartedAt = Date.now()
       if (SessionCompactRequest.consume(session.id)) {
         const compacted = yield* compaction.compactAfterOverflow({
