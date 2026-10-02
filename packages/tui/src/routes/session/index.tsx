@@ -243,8 +243,9 @@ export function Session() {
     const index = messages().findIndex((message) => message.id === messageID)
     return index === -1 ? messages() : messages().slice(0, index)
   }
+  // Backgrounding subagents is a V1 runner feature; V2 runs task tools synchronously.
   const foregroundTasks = createMemo(() =>
-    sync.data.capabilities.experimentalBackgroundSubagents
+    !Flag.MIAO_TUI_V2 && sync.data.capabilities.experimentalBackgroundSubagents
       ? messages().flatMap((message) =>
           (sync.data.part[message.id] ?? []).filter(
             (part): part is ToolPart =>

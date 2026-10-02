@@ -295,6 +295,8 @@ export const {
           void bootstrap()
           break
         case "permission.replied": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           const requests = store.permission[event.properties.sessionID]
           if (!requests) break
           const match = search(requests, event.properties.requestID, (r) => r.id)
@@ -310,6 +312,8 @@ export const {
         }
 
         case "permission.asked": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           const request = event.properties
           if (permission.mode === "auto") {
             void sdk.client.permission.reply({
@@ -342,6 +346,8 @@ export const {
 
         case "question.replied":
         case "question.rejected": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           const requests = store.question[event.properties.sessionID]
           if (!requests) break
           const match = search(requests, event.properties.requestID, (r) => r.id)
@@ -357,6 +363,8 @@ export const {
         }
 
         case "question.asked": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           const request = event.properties
           const requests = store.question[request.sessionID]
           if (!requests) {
@@ -566,11 +574,15 @@ export const {
         }
 
         case "session.status": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           setStore("session_status", event.properties.sessionID, event.properties.status)
           break
         }
 
         case "message.updated": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           touchMessage(event.properties.info.sessionID, event.properties.info.id)
           const messages = store.message[event.properties.info.sessionID]
           if (!messages) {
@@ -611,6 +623,8 @@ export const {
           break
         }
         case "message.removed": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           touchMessage(event.properties.sessionID, event.properties.messageID)
           const messages = store.message[event.properties.sessionID]
           const index = messages.findIndex((message) => message.id === event.properties.messageID)
@@ -626,6 +640,8 @@ export const {
           break
         }
         case "message.part.updated": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           touchPart(event.properties.part.sessionID, event.properties.part.id)
           const parts = store.part[event.properties.part.messageID]
           if (!parts) {
@@ -648,6 +664,8 @@ export const {
         }
 
         case "message.part.delta": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           const parts = store.part[event.properties.messageID]
           if (!parts) break
           const result = search(parts, event.properties.partID, (part) => part.id)
@@ -667,6 +685,8 @@ export const {
         }
 
         case "message.part.removed": {
+          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
+          if (Flag.MIAO_TUI_V2) break
           touchPart(event.properties.sessionID, event.properties.partID)
           const parts = store.part[event.properties.messageID]
           const result = search(parts, event.properties.partID, (part) => part.id)
