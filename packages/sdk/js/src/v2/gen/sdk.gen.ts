@@ -262,6 +262,8 @@ import type {
   V2AgentListResponses,
   V2CommandListErrors,
   V2CommandListResponses,
+  V2ConfigCatalogErrors,
+  V2ConfigCatalogResponses,
   V2ConfigGetErrors,
   V2ConfigGetResponses,
   V2ConfigProvidersErrors,
@@ -5034,6 +5036,28 @@ export class Config3 extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ConfigProvidersResponses, V2ConfigProvidersErrors, ThrowOnError>({
       url: "/api/config/providers",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List provider catalog
+   *
+   * Retrieve the full provider catalog and its default models for the requested location.
+   */
+  public catalog<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2ConfigCatalogResponses, V2ConfigCatalogErrors, ThrowOnError>({
+      url: "/api/config/catalog",
       ...options,
       ...params,
     })

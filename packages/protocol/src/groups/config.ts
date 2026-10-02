@@ -15,6 +15,15 @@ const Providers = Schema.Struct({
   default: Schema.Record(Schema.String, Schema.String),
 })
 
+// The full provider catalog in the legacy V1 shape the TUI store consumes.
+// Keep it permissive until the V2 provider/model schemas move from Core into
+// Schema, then tighten `all` to the public provider info array.
+const Catalog = Schema.Struct({
+  all: Schema.Array(Schema.Unknown),
+  default: Schema.Record(Schema.String, Schema.String),
+  connected: Schema.Array(Schema.String),
+})
+
 export const ConfigGroup = HttpApiGroup.make("server.config")
   .add(
     HttpApiEndpoint.get("config.get", "/api/config", {
@@ -41,6 +50,20 @@ export const ConfigGroup = HttpApiGroup.make("server.config")
           identifier: "v2.config.providers",
           summary: "List providers",
           description: "Retrieve available providers and their default models for the requested location.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.get("config.catalog", "/api/config/catalog", {
+      query: LocationQuery,
+      success: Location.response(Catalog),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.config.catalog",
+          summary: "List provider catalog",
+          description: "Retrieve the full provider catalog and its default models for the requested location.",
         }),
       ),
   )

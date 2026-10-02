@@ -24,6 +24,10 @@
   （protocol 组 + handler）。因为 `Config.Info` 定义在 core、protocol 不能依赖 core，成功类型暂用
   `Schema.Record(String, Unknown)` 宽松对象，TUI 用 `toConfig` 直接接收——**待 config schema 下沉到
   `@miao/schema` 后再收紧**。`config.providers` 见下条。
+- `provider.list`（catalog）：新增 `GET /api/config/catalog`，服务端用 core `provider.all()` + `model.all()` +
+  `provider.available()` 投影回 V1 的 `{all, default, connected}`，TUI 的 `loadProviderCatalog` 改走
+  `client.v2.config.catalog`，`provider_next` 形状不变。投影逻辑抽到
+  `packages/server/src/handlers/provider-projection.ts`，与 `config.providers` 共用。
 - `config.providers`：新增 `GET /api/config/providers`，**服务端**把 core `provider.available()` + `model.available()`
   投影回 V1 的 `{ providers: Provider[], default: Record<providerID, modelID> }` 形状（`default` 用全局
   `model.default()`，其余 provider 取最新可用模型），TUI 只改一行、store 形状不变，避免动 ~15 个消费点。

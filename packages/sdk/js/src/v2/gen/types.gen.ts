@@ -11713,6 +11713,49 @@ export type V2ConfigProvidersResponses = {
 
 export type V2ConfigProvidersResponse = V2ConfigProvidersResponses[keyof V2ConfigProvidersResponses]
 
+export type V2ConfigCatalogData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/config/catalog"
+}
+
+export type V2ConfigCatalogErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ConfigCatalogError = V2ConfigCatalogErrors[keyof V2ConfigCatalogErrors]
+
+export type V2ConfigCatalogResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      all: Array<unknown>
+      default: {
+        [key: string]: string
+      }
+      connected: Array<string>
+    }
+  }
+}
+
+export type V2ConfigCatalogResponse = V2ConfigCatalogResponses[keyof V2ConfigCatalogResponses]
+
 export type V2LspStatusData = {
   body?: never
   path?: never

@@ -141,6 +141,17 @@ function toProviderList(raw: { providers: unknown[]; default: Record<string, str
   return raw as unknown as { providers: Provider[]; default: Record<string, string> }
 }
 
+// V2 serves the full catalog as the legacy V1 provider-list shape but with a
+// permissive schema until the V2 provider/model schemas move into Schema; keep
+// the store shape the TUI already reads.
+function toProviderCatalog(raw: {
+  all: unknown[]
+  default: Record<string, string>
+  connected: string[]
+}): ProviderListResponse {
+  return raw as unknown as ProviderListResponse
+}
+
 // V2 commands carry a model ref and no hints; the TUI store still keeps the V1
 // Command shape and renders no hints.
 function toCommand(command: CommandV2Info): Command {
@@ -631,9 +642,9 @@ export const {
     // catalog loads when something like the connect dialog first asks for it.
     let providerCatalog: Promise<void> | undefined
     function loadProviderCatalog() {
-      providerCatalog ??= sdk.client.provider
-        .list({ workspace: project.workspace.current() }, { throwOnError: true })
-        .then((x) => setStore("provider_next", reconcile(x.data)))
+      providerCatalog ??= sdk.client.v2.config
+        .catalog({ location: { workspace: project.workspace.current() } }, { throwOnError: true })
+        .then((x) => setStore("provider_next", reconcile(toProviderCatalog(x.data!.data))))
         .catch((error) => {
           providerCatalog = undefined
           throw error
