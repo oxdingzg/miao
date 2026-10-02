@@ -175,6 +175,7 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  RemoteLoginAnswer,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -337,6 +338,22 @@ import type {
   V2QuestionRequestListResponses,
   V2ReferenceListErrors,
   V2ReferenceListResponses,
+  V2RemoteAccountPairErrors,
+  V2RemoteAccountPairResponses,
+  V2RemoteAccountRemoveErrors,
+  V2RemoteAccountRemoveResponses,
+  V2RemoteAccountTestErrors,
+  V2RemoteAccountTestResponses,
+  V2RemoteGetErrors,
+  V2RemoteGetResponses,
+  V2RemoteLoginCancelErrors,
+  V2RemoteLoginCancelResponses,
+  V2RemoteLoginEventsErrors,
+  V2RemoteLoginEventsResponses,
+  V2RemoteLoginInputErrors,
+  V2RemoteLoginInputResponses,
+  V2RemoteLoginStartErrors,
+  V2RemoteLoginStartResponses,
   V2SessionActiveErrors,
   V2SessionActiveResponses,
   V2SessionArchiveErrors,
@@ -7383,6 +7400,232 @@ export class Project2 extends HeyApiClient {
   }
 }
 
+export class Login extends HeyApiClient {
+  /**
+   * Start a connector login
+   *
+   * Start logging in to an IM connector. Follow the returned flow with the event route.
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      connector: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "connector" }] }])
+    return (options?.client ?? this.client).post<V2RemoteLoginStartResponses, V2RemoteLoginStartErrors, ThrowOnError>({
+      url: "/api/remote/login/{connector}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Follow a connector login
+   *
+   * Server-sent login steps (QR code, input requests, pairing code, done, error); ends with the flow.
+   */
+  public events<ThrowOnError extends boolean = false>(
+    parameters: {
+      flow: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "flow" }] }])
+    return (options?.client ?? this.client).sse.get<
+      V2RemoteLoginEventsResponses,
+      V2RemoteLoginEventsErrors,
+      ThrowOnError
+    >({
+      url: "/api/remote/login/{flow}/event",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Answer a login step
+   *
+   * Answer the pending code (string) or form (record) step of a login flow.
+   */
+  public input<ThrowOnError extends boolean = false>(
+    parameters: {
+      flow: string
+      remoteLoginAnswer: RemoteLoginAnswer
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "flow" },
+            { key: "remoteLoginAnswer", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2RemoteLoginInputResponses, V2RemoteLoginInputErrors, ThrowOnError>({
+      url: "/api/remote/login/{flow}/input",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel a connector login
+   *
+   * Cancel a login flow that has not finished.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      flow: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "flow" }] }])
+    return (options?.client ?? this.client).delete<
+      V2RemoteLoginCancelResponses,
+      V2RemoteLoginCancelErrors,
+      ThrowOnError
+    >({
+      url: "/api/remote/login/{flow}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Account extends HeyApiClient {
+  /**
+   * Disconnect an IM account
+   *
+   * Stop an account's channel and delete its credentials.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      connector: string
+      account: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "connector" },
+            { in: "path", key: "account" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      V2RemoteAccountRemoveResponses,
+      V2RemoteAccountRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/remote/account/{connector}/{account}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Issue a new pairing code
+   *
+   * Issue a one-time pairing code; the first person to send it to the bot becomes its owner. Only for connectors whose login cannot name an owner.
+   */
+  public pair<ThrowOnError extends boolean = false>(
+    parameters: {
+      connector: string
+      account: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "connector" },
+            { in: "path", key: "account" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2RemoteAccountPairResponses, V2RemoteAccountPairErrors, ThrowOnError>(
+      {
+        url: "/api/remote/account/{connector}/{account}/pair",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Send a test message
+   *
+   * Send a short test message to the account's owner.
+   */
+  public test<ThrowOnError extends boolean = false>(
+    parameters: {
+      connector: string
+      account: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "connector" },
+            { in: "path", key: "account" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2RemoteAccountTestResponses, V2RemoteAccountTestErrors, ThrowOnError>(
+      {
+        url: "/api/remote/account/{connector}/{account}/test",
+        ...options,
+        ...params,
+      },
+    )
+  }
+}
+
+export class Remote extends HeyApiClient {
+  /**
+   * Get remote daemon status
+   *
+   * Status of the `miao remote` daemon: connectors, accounts, push usage, and held results. Other servers answer 404.
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2RemoteGetResponses, V2RemoteGetErrors, ThrowOnError>({
+      url: "/api/remote",
+      ...options,
+    })
+  }
+
+  private _login?: Login
+  get login(): Login {
+    return (this._login ??= new Login({ client: this.client }))
+  }
+
+  private _account?: Account
+  get account(): Account {
+    return (this._account ??= new Account({ client: this.client }))
+  }
+}
+
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -7472,6 +7715,11 @@ export class V2 extends HeyApiClient {
   private _project?: Project2
   get project(): Project2 {
     return (this._project ??= new Project2({ client: this.client }))
+  }
+
+  private _remote?: Remote
+  get remote(): Remote {
+    return (this._remote ??= new Remote({ client: this.client }))
   }
 }
 

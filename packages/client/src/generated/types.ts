@@ -101,6 +101,10 @@ export type ProjectCopyError = {
 export const isProjectCopyError = (value: unknown): value is ProjectCopyError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "ProjectCopyError"
 
+export type RemoteNotFoundError = { readonly _tag: "RemoteNotFoundError"; readonly message: string }
+export const isRemoteNotFoundError = (value: unknown): value is RemoteNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "RemoteNotFoundError"
+
 export type HealthGetOutput = { readonly healthy: true; readonly version: string; readonly pid: number }
 
 export type LocationGetInput = {
@@ -3116,3 +3120,132 @@ export type ProjectsDirectoriesOutput = {
   }
   readonly data: ReadonlyArray<{ readonly directory: string; readonly strategy?: string | null }>
 }
+
+export type RemoteGetOutput = {
+  readonly pid: number
+  readonly port: number
+  readonly version: string
+  readonly startedAt: number
+  readonly connectors: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly description?: string | undefined
+    readonly transport?: "poll" | "socket" | "webhook" | undefined
+    readonly pairing: boolean
+    readonly notice?: string | undefined
+    readonly accounts: ReadonlyArray<{
+      readonly connector: string
+      readonly account: string
+      readonly label: string
+      readonly state: "connected" | "connecting" | "retrying" | "needs-login" | "unpaired" | "offline" | "error"
+      readonly detail?: string | undefined
+      readonly owner?: string | undefined
+      readonly pairing?: { readonly expiresAt: number } | undefined
+      readonly error?: string | undefined
+      readonly lastActivityAt?: number | undefined
+      readonly pid?: number | undefined
+      readonly pushesToday: number
+      readonly pushBudget?: number | undefined
+      readonly pending: number
+      readonly approvals: number
+    }>
+  }>
+}
+
+export type RemoteLoginInput = { readonly connector: { readonly connector: string }["connector"] }
+
+export type RemoteLoginOutput = { readonly flow: string }
+
+export type RemoteLoginEventsInput = { readonly flow: { readonly flow: string }["flow"] }
+
+export type RemoteLoginEventsOutput =
+  | { readonly type: "qr"; readonly content: string; readonly hint?: string | undefined }
+  | { readonly type: "code"; readonly prompt: string }
+  | {
+      readonly type: "form"
+      readonly title: string
+      readonly fields: ReadonlyArray<{
+        readonly key: string
+        readonly label: string
+        readonly secret?: boolean | undefined
+        readonly optional?: boolean | undefined
+        readonly placeholder?: string | undefined
+      }>
+    }
+  | { readonly type: "open"; readonly url: string; readonly hint?: string | undefined }
+  | { readonly type: "progress"; readonly message: string }
+  | {
+      readonly type: "pair"
+      readonly code: string
+      readonly expiresAt: number
+      readonly link?: string | undefined
+      readonly hint: string
+    }
+  | {
+      readonly type: "done"
+      readonly connector: string
+      readonly account: { readonly id: string; readonly label: string }
+      readonly message?: string | undefined
+    }
+  | { readonly type: "error"; readonly message: string }
+
+export type RemoteLoginInputInput = {
+  readonly flow: { readonly flow: string }["flow"]
+  readonly value: { readonly value: string | { readonly [x: string]: string } }["value"]
+}
+
+export type RemoteLoginInputOutput = void
+
+export type RemoteLoginCancelInput = { readonly flow: { readonly flow: string }["flow"] }
+
+export type RemoteLoginCancelOutput = void
+
+export type RemoteRemoveInput = {
+  readonly connector: { readonly connector: string; readonly account: string }["connector"]
+  readonly account: { readonly connector: string; readonly account: string }["account"]
+}
+
+export type RemoteRemoveOutput = void
+
+export type RemotePairInput = {
+  readonly connector: { readonly connector: string; readonly account: string }["connector"]
+  readonly account: { readonly connector: string; readonly account: string }["account"]
+}
+
+export type RemotePairOutput =
+  | { readonly type: "qr"; readonly content: string; readonly hint?: string | undefined }
+  | { readonly type: "code"; readonly prompt: string }
+  | {
+      readonly type: "form"
+      readonly title: string
+      readonly fields: ReadonlyArray<{
+        readonly key: string
+        readonly label: string
+        readonly secret?: boolean | undefined
+        readonly optional?: boolean | undefined
+        readonly placeholder?: string | undefined
+      }>
+    }
+  | { readonly type: "open"; readonly url: string; readonly hint?: string | undefined }
+  | { readonly type: "progress"; readonly message: string }
+  | {
+      readonly type: "pair"
+      readonly code: string
+      readonly expiresAt: number
+      readonly link?: string | undefined
+      readonly hint: string
+    }
+  | {
+      readonly type: "done"
+      readonly connector: string
+      readonly account: { readonly id: string; readonly label: string }
+      readonly message?: string | undefined
+    }
+  | { readonly type: "error"; readonly message: string }
+
+export type RemoteTestInput = {
+  readonly connector: { readonly connector: string; readonly account: string }["connector"]
+  readonly account: { readonly connector: string; readonly account: string }["account"]
+}
+
+export type RemoteTestOutput = { readonly ok: boolean; readonly sent: number; readonly error?: string | undefined }

@@ -516,29 +516,39 @@ export function createHost(options: HostOptions) {
   }
 
   /** Issues a new pairing code. The current owner keeps access until someone sends it. */
-  async function pair(connectorID: string, accountID: string) {
+  async function pair(
+    connectorID: string,
+    accountID: string,
+  ): Promise<
+    | { readonly ok: true; readonly step: Extract<FlowStep, { type: "pair" }> }
+    | { readonly ok: false; readonly unknown: boolean; readonly message: string }
+  > {
     const connector = connectors.get(connectorID)
-    if (!connector) throw new Error(`没有名为 ${connectorID} 的连接器`)
+    const existing = (await readAccounts(options.authFile))[connectorID]?.[accountID]
+    if (!connector || !existing) return { ok: false, unknown: true, message: "账号不存在" }
+    if (existing.owner && connector.pairing !== true)
+      return {
+        ok: false,
+        unknown: false,
+        message: `${connector.name}在登录时已经确定主人，不需要配对；换主人请重新登录`,
+      }
     const pairing = newPair()
-    const record = await updateAccount(options.authFile, connectorID, accountID, (current) => {
-      if (!current) return undefined
-      if (current.owner && connector.pairing !== true) return current
-      return { ...current, pair: pairing }
-    })
-    if (!record) throw new Error("账号不存在")
-    if (!record.pair || record.pair.code !== pairing.code)
-      throw new Error(`${connector.name}在登录时已经确定主人，不需要配对；换主人请重新登录`)
-    const id = channelID(connectorID, accountID)
-    const item = live.get(id)
+    const record = await updateAccount(options.authFile, connectorID, accountID, (current) =>
+      current ? { ...current, pair: pairing } : undefined,
+    )
+    if (!record) return { ok: false, unknown: true, message: "账号不存在" }
+    const item = live.get(channelID(connectorID, accountID))
     if (!item) await restart(connector, { id: accountID, label: record.label }, record)
     if (item) {
       item.record = record
       item.wrongCodes = 0
     }
-    return pairStep(connector, record, pairing)
+    return { ok: true, step: pairStep(connector, record, pairing) }
   }
 
-  async function test(connectorID: string, accountID: string): Promise<SendResult> {
+  /** Sends the test message to the owner; undefined when the account does not exist. */
+  async function test(connectorID: string, accountID: string): Promise<SendResult | undefined> {
+    if (!(await readAccounts(options.authFile))[connectorID]?.[accountID]) return undefined
     const item = live.get(channelID(connectorID, accountID))
     if (!item || item.pairingOnly) return { ok: false, sent: 0, error: "这个账号没有在本进程里运行" }
     const owner = item.record.owner
