@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "miao",
-  "version": "0.0.33",
+  "version": "0.0.34",
   "description": "miao — same results, faster and cheaper. A terminal AI coding agent forked from opencode, engineered for latency, token efficiency, and cost.",
   "private": true,
   "type": "module",
