@@ -48,6 +48,7 @@ import { SessionTodo } from "../todo"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
@@ -369,15 +370,13 @@ const layer = Layer.effect(
       const request = LLM.request({
         model,
         http: {
-          headers: {
-            "x-session-affinity": session.id,
-            "X-Session-Id": session.id,
-            ...(session.parentID ? { "x-parent-session-id": session.parentID } : {}),
-            // ChatGPT's Codex backend derives prompt-cache affinity from this header,
-            // not from prompt_cache_key; without it each request lands on an arbitrary
-            // cache server and only hits whatever older prefix that server holds.
-            ...(model.provider === "openai" ? { "session-id": promptCacheKey } : {}),
-          },
+          headers: SessionRunnerProviderHeaders.forTurn({
+            providerID: model.provider,
+            sessionID: session.id,
+            parentID: session.parentID,
+            promptCacheKey,
+            messages,
+          }),
         },
         providerOptions: { openai: { promptCacheKey } },
         cache: settings.ttl
