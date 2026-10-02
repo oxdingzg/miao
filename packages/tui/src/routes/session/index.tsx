@@ -82,6 +82,7 @@ import { useTuiConfig } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import {
   nextThinkingMode,
+  reasoningDone,
   reasoningHeadline,
   reasoningSummary,
   useThinkingMode,
@@ -1711,12 +1712,12 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     if (!content()) return false
     return !(sync.data.part[props.message.id] ?? []).some((part) => part.type === "text" && part.text.trim())
   })
-  // Reasoning is finalized when the server sets `time.end` (see processor.ts).
-  // Flips independently of the parent message completing.
-  const isDone = createMemo(() => props.part.time.end !== undefined)
+  const isDone = createMemo(() =>
+    reasoningDone(props.part, props.message, sync.data.session_status[props.message.sessionID]),
+  )
   const duration = createMemo(() => {
     const end = props.part.time.end
-    return end === undefined ? 0 : Math.max(0, end - props.part.time.start)
+    return end === undefined ? undefined : Locale.duration(Math.max(0, end - props.part.time.start))
   })
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
@@ -1733,7 +1734,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         <ReasoningHeader
           done={isDone()}
           title={hidden() ? reasoningHeadline(content()) : summary().title}
-          duration={isDone() ? Locale.duration(duration()) : undefined}
+          duration={isDone() ? duration() : undefined}
           encrypted={opaque()}
         />
         <Show when={!hidden() && !opaque() && summary().body}>

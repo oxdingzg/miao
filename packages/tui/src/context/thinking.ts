@@ -1,4 +1,5 @@
 import { createMemo, type Setter } from "solid-js"
+import type { AssistantMessage, ReasoningPart, SessionStatus } from "@opencode-ai/sdk/v2"
 import { useKV } from "./kv"
 
 export type ThinkingMode = "show" | "hide"
@@ -37,6 +38,25 @@ export function reasoningHeadline(text: string) {
   if (!sentence) return null
   if (sentence.length <= HEADLINE_LENGTH) return sentence
   return sentence.slice(0, HEADLINE_LENGTH - 1).trimEnd() + "…"
+}
+
+// Reasoning is finalized when the server sets `time.end` (see processor.ts),
+// which usually happens before the parent message completes. A part can also
+// never get one: V2 history written before reasoning carried timestamps, or a
+// turn interrupted mid-thought. Its spinner would then animate forever and
+// repaint the whole screen every frame, so a finished message or an idle
+// session also ends it.
+export function reasoningDone(
+  part: Pick<ReasoningPart, "time">,
+  message: Pick<AssistantMessage, "time" | "error">,
+  status?: SessionStatus,
+) {
+  return (
+    part.time.end !== undefined ||
+    message.time.completed !== undefined ||
+    message.error !== undefined ||
+    status?.type === "idle"
+  )
 }
 
 export function isThinkingMode(value: unknown): value is ThinkingMode {
