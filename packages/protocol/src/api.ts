@@ -14,6 +14,7 @@ import type { Definition } from "@miao/schema/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
 import { FormatterGroup } from "./groups/formatter"
+import { LspGroup } from "./groups/lsp"
 import { PtyGroup } from "./groups/pty"
 import { makeQuestionGroup } from "./groups/question"
 import { ReferenceGroup } from "./groups/reference"
@@ -40,6 +41,7 @@ const makeApiFromGroup = <
   HttpApi.make("server")
     .add(HealthGroup)
     .add(FormatterGroup.middleware(locationMiddleware))
+    .add(LspGroup.middleware(locationMiddleware))
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
     .add(makeSessionGroup(sessionLocationMiddleware))

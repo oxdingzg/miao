@@ -11628,6 +11628,47 @@ export type V2FormatterStatusResponses = {
 
 export type V2FormatterStatusResponse = V2FormatterStatusResponses[keyof V2FormatterStatusResponses]
 
+export type V2LspStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/lsp"
+}
+
+export type V2LspStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2LspStatusError = V2LspStatusErrors[keyof V2LspStatusErrors]
+
+export type V2LspStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<{
+      id: string
+      extensions: Array<string>
+      connected: boolean
+    }>
+  }
+}
+
+export type V2LspStatusResponse = V2LspStatusResponses[keyof V2LspStatusResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never

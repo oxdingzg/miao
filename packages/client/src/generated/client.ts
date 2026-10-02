@@ -2,6 +2,8 @@ import type {
   HealthGetOutput,
   FormattersStatusInput,
   FormattersStatusOutput,
+  LspStatusInput,
+  LspStatusOutput,
   LocationGetInput,
   LocationGetOutput,
   AgentsListInput,
@@ -305,6 +307,20 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/formatter`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    lsp: {
+      status: (input?: LspStatusInput, requestOptions?: RequestOptions) =>
+        request<LspStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/lsp`,
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],

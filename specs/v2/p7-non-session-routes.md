@@ -9,6 +9,9 @@
   重新生成 `packages/client` 与 legacy SDK；TUI `sync.tsx` 改走 `client.v2.formatter.status`。
   加组后必须重生成两套客户端：`packages/client`（纯 codegen）与 legacy SDK
   （`packages/sdk/js/script/build.ts`，内部 `bun dev generate` 起服务导出 OpenAPI）。
+- `lsp`：core `LSP.status()` 已有，加 `GET /api/lsp`（protocol 组 + server handler）+ 生成；
+  TUI 改走 `client.v2.lsp.status`，并在 `sync.tsx` 用 `toLspStatus` 把 core 的 `{id,extensions,connected}`
+  投影回现有 `{id,name,root,status}` 形状（`root` 置空），渲染点与插件 API 不变。
 - TUI：`sdk.client.find.files` → `client.v2.fs.find`；`sdk.client.path.get` → `client.v2.location.get`；
   `sdk.client.project.current/directories` → `client.v2.project.*`（`context/project.tsx` 把
   `LocationInfo.project.directory` 映射回 `instance.path.worktree`）。`packages/tui` 367 测试通过、typecheck 通过。
@@ -33,6 +36,12 @@ app 侧：`packages/app/src` 仍有 `protocol === "v1"` 守护的 `client.sessio
 `layout.tsx`、`directory-sync.ts`、`home-sessions-controller.tsx`、`server-session.ts`）与 V1 事件兼容层
 （`server-sdk.tsx` 的 `adaptServerEvent`、`server-session.ts`）。V2 已有 archive/rename/get/message/context，
 可逐点去掉 V1 分支。
+
+## 下一步
+
+顺序：`config`（core 需下沉合并逻辑）→ `vcs`（core 无 VCS，需下沉）→ `mcp`（core `MCP`）→
+`experimental/workspace`（core `WorkspaceV2`）→ `instance/app` → `sync`。每步固定：core 下沉 →
+协议组 → handler → 生成两套客户端 → 迁 TUI/app → 删 V1 分支 → typecheck/测试 → commit & push。
 
 ## 服务端拆除（P7 收尾，P4 之前或并行）
 

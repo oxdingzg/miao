@@ -97,6 +97,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
         "/api/command",
         "/api/skill",
         "/api/formatter",
+        "/api/lsp",
       ].includes(url.pathname)
     )
       return json({
