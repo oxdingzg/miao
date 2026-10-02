@@ -12,7 +12,7 @@ type MantleSDK = {
 // Bedrock cross-region inference profiles require regional prefixes only for
 // specific model/region combinations. Keep the mapping narrow and avoid
 // double-prefixing model IDs that models.dev already marks as global/us/eu/etc.
-function resolveModelID(modelID: string, region: string | undefined) {
+export function resolveBedrockModelID(modelID: string, region: string | undefined) {
   if (modelID.startsWith("arn:")) return modelID
 
   const crossRegionPrefixes = ["global.", "us.", "eu.", "jp.", "apac.", "au."]
@@ -127,7 +127,7 @@ export const AmazonBedrockPlugin = define({
           return
         }
         const region = typeof evt.options.region === "string" ? evt.options.region : process.env.AWS_REGION
-        evt.language = evt.sdk.languageModel(resolveModelID(evt.model.api.id, region))
+        evt.language = evt.sdk.languageModel(resolveBedrockModelID(evt.model.api.id, region))
       }),
     )
   }),
