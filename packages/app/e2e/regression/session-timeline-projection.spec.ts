@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
 import {
   assistantMessage,
   setupTimeline,
@@ -69,6 +70,7 @@ test.describe("session timeline projection", () => {
   })
 
   test("projects gaps, dividers, assistant parts, and errors together", async ({ page }) => {
+    test.fixme(true, LEGACY_V1_FIXTURE)
     const firstUser = userMessage(
       [
         userText("The user made the following comment regarding lines 4 through 8 of src/a.ts: Keep this stable", {
@@ -129,6 +131,7 @@ test.describe("session timeline projection", () => {
   })
 
   test("renders inline comments and historical diff summary overflow", async ({ page }) => {
+    test.fixme(true, LEGACY_V1_FIXTURE)
     const user = userMessage(
       [
         userText("The user made the following comment regarding lines 4 through 8 of src/a.ts: Keep this stable", {
@@ -181,6 +184,7 @@ test.describe("session timeline projection", () => {
   })
 
   test("renders user image, file attachment, file reference, and agent reference", async ({ page }) => {
+    test.fixme(true, LEGACY_V1_FIXTURE)
     const text = "Use @explore with @src/a.ts and inspect the attachments"
     const parts: PartSeed<"user">[] = [
       userText(text, { id: "prt_user_rich" }),

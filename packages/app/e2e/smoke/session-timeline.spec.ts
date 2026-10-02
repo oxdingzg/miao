@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { base64Encode } from "@miao/core/util/encode"
 import { fixture, pageMessages } from "./session-timeline.fixture"
 import { trackPageErrors, expectNoSmokeErrors } from "../utils/errors"
-import { mockOpenCodeServer } from "../utils/mock-server"
+import { LEGACY_V1_FIXTURE, mockOpenCodeServer } from "../utils/mock-server"
 import { APP_READY_TIMEOUT, expectAppVisible, expectSessionTitle } from "../utils/waits"
 
 const forbiddenText = ["Load details", "Show earlier steps"]
@@ -320,6 +320,7 @@ test.describe("smoke: session timeline", () => {
   })
 
   test("renders seeded timeline in order while paging through history", async ({ page }) => {
+    test.fixme(true, LEGACY_V1_FIXTURE)
     const errors = trackPageErrors(page)
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,

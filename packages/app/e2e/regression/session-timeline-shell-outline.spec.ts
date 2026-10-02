@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
 import {
   assistantMessage,
   setupTimeline,
@@ -121,6 +122,7 @@ test("keeps the patch card inside a fractionally short virtual row", async ({ pa
 })
 
 test("allows paint rounding for every framed row but not fixed turn gaps", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   const secondUserID = "msg_outline_second_user"
   await setupTimeline(page, {
     messages: [

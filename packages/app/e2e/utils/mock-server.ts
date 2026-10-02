@@ -3,6 +3,13 @@ import type { Page, Route } from "@playwright/test"
 const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status", "/vcs/diff"])
 const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp", "/experimental/resource"])
 
+// The app reads session history and live events through the V2 API only (Stage 5:
+// d7abcfdcd, ddc72cf81, 5adff3598), but some fixtures still describe V1 messages and events:
+// V1 part IDs, compaction/file/patch parts, message summaries, `/session/:id/todo`, and the V1
+// permission routes. The V1->V2 translation in this mock cannot express them, so the affected
+// specs are parked with `test.fixme` until their fixtures are rewritten in V2 terms.
+export const LEGACY_V1_FIXTURE = "fixture still models the V1 session API; needs a V2 rewrite"
+
 export interface MockServerConfig {
   protocol?: "v1" | "v2"
   provider: unknown | (() => unknown)
@@ -79,6 +86,15 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (path === "/experimental/capabilities") return json(route, { backgroundSubagents: true })
     if (path === "/provider")
       return json(route, typeof config.provider === "function" ? config.provider() : config.provider)
+    // The app bootstraps providers through the V2 catalog routes; normalizeProviderList still
+    // accepts the legacy `{ all, connected, default }` payload, so serve the fixture as-is.
+    if (path === "/api/provider")
+      return json(route, {
+        location: location(config),
+        data: typeof config.provider === "function" ? config.provider() : config.provider,
+      })
+    if (path === "/api/model") return json(route, { location: location(config), data: [] })
+    if (path === "/api/model/default") return json(route, { location: location(config), data: null })
     if (path === "/provider/auth") return json(route, config.integrationMethods ?? {})
     const legacyAuth = path.match(/^\/auth\/([^/]+)$/)?.[1]
     if (legacyAuth && route.request().method() === "PUT") {
@@ -387,7 +403,7 @@ function currentMessage(value: unknown) {
     model: { id: item.info.modelID ?? "model", providerID: item.info.providerID ?? "provider" },
     cost: item.info.cost,
     tokens: item.info.tokens,
-    error: item.info.error,
+    error: currentError(item.info.error),
     content: item.parts.flatMap<unknown>((part) => {
       if (part.type === "text" || part.type === "reasoning") return [{ type: part.type, text: part.text ?? "" }]
       if (part.type !== "tool") return []
@@ -420,6 +436,16 @@ function currentMessage(value: unknown) {
         },
       ]
     }),
+  }
+}
+
+// Legacy fixtures describe errors as `{ name, data: { message } }`; V2 messages carry `{ type, message }`.
+function currentError(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const error = value as { name?: unknown; data?: { message?: unknown } }
+  return {
+    type: typeof error.name === "string" ? error.name : "unknown",
+    message: typeof error.data?.message === "string" ? error.data.message : "",
   }
 }
 

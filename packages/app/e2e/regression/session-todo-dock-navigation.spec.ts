@@ -1,6 +1,6 @@
 import { base64Encode } from "@miao/core/util/encode"
 import { expect, test, type Page } from "@playwright/test"
-import { mockOpenCodeServer } from "../utils/mock-server"
+import { LEGACY_V1_FIXTURE, mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
 const directory = "C:/OpenCode/TodoDockNavigation"
@@ -24,6 +24,7 @@ type EventPayload = {
 test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" })
 
 test("animates todo lifecycle without replaying it across session tabs", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   test.setTimeout(90_000)
   const events: EventPayload[] = []
   const todos: Record<string, typeof activeTodos> = { [sourceID]: [], [otherID]: [] }

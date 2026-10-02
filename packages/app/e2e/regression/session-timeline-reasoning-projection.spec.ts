@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
 import {
   assistantMessage,
   reasoningPart,
@@ -56,6 +57,7 @@ const profiles = [
 
 for (const profile of profiles) {
   test(`projects busy reasoning profile ${profile.name}`, async ({ page }) => {
+    test.fixme(profile.name === "summaries on visible reasoning", LEGACY_V1_FIXTURE)
     const reasoningID = `prt_reasoning_matrix_${profiles.indexOf(profile)}`
     const parts = [
       ...(profile.reasoning ? [reasoningPart(reasoningID, profile.reasoning)] : []),
@@ -78,6 +80,7 @@ for (const profile of profiles) {
 }
 
 test("does not infer reasoning visibility from provider identity", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
