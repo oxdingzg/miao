@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@miao/acp",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test --timeout 30000",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "0.21.0",
+    "@miao/client": "workspace:*",
+    "diff": "catalog:"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@typescript/native-preview": "catalog:"
+  }
+}
