@@ -275,6 +275,29 @@ export type McpDisconnectOutput = {
   readonly data: boolean
 }
 
+export type McpResourcesInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpResourcesOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly [x: string]: {
+      readonly name: string
+      readonly uri: string
+      readonly description?: string
+      readonly mimeType?: string
+      readonly client: string
+    }
+  }
+}
+
 export type LocationGetInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

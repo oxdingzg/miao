@@ -85,10 +85,16 @@ const Endpoint5_2 = (raw: RawClient["server.mcp"]) => (input: Endpoint5_2Input) 
     Effect.mapError(mapClientError),
   )
 
+type Endpoint5_3Request = Parameters<RawClient["server.mcp"]["mcp.resources"]>[0]
+type Endpoint5_3Input = { readonly location?: Endpoint5_3Request["query"]["location"] }
+const Endpoint5_3 = (raw: RawClient["server.mcp"]) => (input?: Endpoint5_3Input) =>
+  raw["mcp.resources"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
 const adaptGroup5 = (raw: RawClient["server.mcp"]) => ({
   status: Endpoint5_0(raw),
   connect: Endpoint5_1(raw),
   disconnect: Endpoint5_2(raw),
+  resources: Endpoint5_3(raw),
 })
 
 type Endpoint6_0Request = Parameters<RawClient["server.location"]["location.get"]>[0]

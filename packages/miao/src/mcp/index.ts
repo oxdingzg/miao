@@ -34,6 +34,7 @@ import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
 import { McpEvent } from "@miao/schema/mcp-event"
 import { McpBrowser } from "./browser"
+import { Resource } from "@miao/schema/mcp"
 
 const DEFAULT_TIMEOUT = 30_000
 const CLIENT_OPTIONS = {
@@ -49,14 +50,7 @@ const CLIENT_OPTIONS = {
   },
 } satisfies ClientOptions
 
-export const Resource = Schema.Struct({
-  name: Schema.String,
-  uri: Schema.String,
-  description: Schema.optional(Schema.String),
-  mimeType: Schema.optional(Schema.String),
-  client: Schema.String,
-}).annotate({ identifier: "McpResource" })
-export type Resource = Schema.Schema.Type<typeof Resource>
+export { Resource }
 
 export const ToolsChanged = McpEvent.ToolsChanged
 

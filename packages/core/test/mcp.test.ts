@@ -391,6 +391,42 @@ describe("MCP", () => {
     ),
   )
 
+  it.live("lists resources from connected servers keyed by client and uri", () =>
+    withMCPService([server()], (mcp) =>
+      Effect.gen(function* () {
+        expect(yield* mcp.resources()).toEqual({
+          "mock:file:///mock/readme.txt": {
+            name: "readme.txt",
+            uri: "file:///mock/readme.txt",
+            description: "Mock readme",
+            mimeType: "text/plain",
+            client: "mock",
+          },
+        })
+      }),
+    ),
+  )
+
+  it.live("drops resources on disconnect and restores them on connect", () =>
+    withMCPService([server()], (mcp) =>
+      Effect.gen(function* () {
+        expect(Object.keys(yield* mcp.resources())).toEqual(["mock:file:///mock/readme.txt"])
+        yield* mcp.disconnect("mock")
+        expect(yield* mcp.resources()).toEqual({})
+        yield* mcp.connect("mock")
+        expect(Object.keys(yield* mcp.resources())).toEqual(["mock:file:///mock/readme.txt"])
+      }),
+    ),
+  )
+
+  it.live("reports no resources for disabled servers", () =>
+    withMCPService([disabledServer()], (mcp) =>
+      Effect.gen(function* () {
+        expect(yield* mcp.resources()).toEqual({})
+      }),
+    ),
+  )
+
   it.live("add connects a runtime server and remove drops it", () =>
     withMCPService([], (mcp) =>
       Effect.gen(function* () {

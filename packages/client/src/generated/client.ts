@@ -18,6 +18,8 @@ import type {
   McpConnectOutput,
   McpDisconnectInput,
   McpDisconnectOutput,
+  McpResourcesInput,
+  McpResourcesOutput,
   LocationGetInput,
   LocationGetOutput,
   AgentsListInput,
@@ -448,6 +450,18 @@ export function make(options: ClientOptions) {
             query: { location: input["location"] },
             successStatus: 200,
             declaredStatuses: [404, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      resources: (input?: McpResourcesInput, requestOptions?: RequestOptions) =>
+        request<McpResourcesOutput>(
+          {
+            method: "GET",
+            path: `/api/mcp/resources`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
             empty: false,
           },
           requestOptions,

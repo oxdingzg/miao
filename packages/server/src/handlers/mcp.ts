@@ -15,6 +15,13 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
       }),
     )
     .handle(
+      "mcp.resources",
+      Effect.fn(function* () {
+        const mcp = yield* MCP.Service
+        return yield* response(mcp.resources())
+      }),
+    )
+    .handle(
       "mcp.connect",
       Effect.fn(function* (ctx) {
         const mcp = yield* MCP.Service
