@@ -2,6 +2,7 @@ import type {
   Message,
   UserMessage,
   Agent,
+  AgentV2Info,
   Provider,
   Session,
   Part,
@@ -80,6 +81,23 @@ function toLspStatus(items: ReadonlyArray<{ id: string; connected: boolean }>): 
     root: "",
     status: item.connected ? "connected" : "error",
   }))
+}
+
+// The V2 agent shape carries `id` and `permissions`; the TUI store still keeps
+// the V1 Agent shape, and no consumer reads the ruleset, so map the fields used.
+function toAgent(agent: AgentV2Info): Agent {
+  return {
+    name: agent.id,
+    description: agent.description,
+    mode: agent.mode,
+    hidden: agent.hidden,
+    color: agent.color,
+    steps: agent.steps,
+    model: agent.model ? { modelID: agent.model.id, providerID: agent.model.providerID } : undefined,
+    variant: agent.model?.variant,
+    permission: [],
+    options: {},
+  }
 }
 
 export const {
@@ -588,7 +606,7 @@ export const {
         .get({ workspace }, { throwOnError: true })
         .then((x) => x.data)
         .catch(() => emptyConsoleState)
-      const agentsPromise = sdk.client.app.agents({ workspace }, { throwOnError: true })
+      const agentsPromise = sdk.client.v2.agent.list({ location: { workspace } }, { throwOnError: true })
       const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
       await Promise.all([
         providersPromise,
@@ -602,7 +620,7 @@ export const {
           const providersResponse = providersPromise.then((x) => x.data!)
           const capabilitiesResponse = capabilitiesPromise
           const consoleStateResponse = consoleStatePromise
-          const agentsResponse = agentsPromise.then((x) => x.data ?? [])
+          const agentsResponse = agentsPromise.then((x) => (x.data?.data ?? []).map(toAgent))
           const configResponse = configPromise.then((x) => x.data!)
           const sessionListResponse = args.continue ? sessionListPromise : undefined
 

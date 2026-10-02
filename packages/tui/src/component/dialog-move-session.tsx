@@ -78,9 +78,12 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
           { projectID, location: { directory: sdk.directory } },
           { throwOnError: true },
         )
-        const directories = await sdk.client.project.directories({ projectID }, { throwOnError: true })
+        const directories = await sdk.client.v2.project.directories(
+          { projectID, location: { directory: sdk.directory } },
+          { throwOnError: true },
+        )
         setLoadError(undefined)
-        return directories.data ?? []
+        return directories.data?.data ?? []
       } catch (error) {
         setLoadError(error)
         // An initial load with no data surfaces the inline error view below. A
