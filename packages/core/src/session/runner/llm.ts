@@ -58,7 +58,7 @@ import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
-import { inlineTextFiles, materializeBlobFiles } from "./materialize-files"
+import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { SessionRunnerMetrics } from "./metrics"
 import { Snapshot } from "../../snapshot"
@@ -406,7 +406,7 @@ const layer = Layer.effect(
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
       const requestBuildStartedAt = Date.now()
-      const materialized = yield* materializeBlobFiles(blob, context).pipe(
+      const materialized = yield* materializeBlobRefs(blob, context).pipe(
         Effect.flatMap((messages) => inlineTextFiles(fs, messages)),
       )
       const messages = [

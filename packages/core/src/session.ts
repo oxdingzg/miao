@@ -44,7 +44,7 @@ import { Revert } from "@miao/schema/revert"
 import { FSUtil } from "./fs-util"
 import { Blob } from "./blob"
 import { SessionBlobStorage } from "./session/blob-storage"
-import { materializeBlobFiles } from "./session/runner/materialize-files"
+import { materializeBlobRefs } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
 import { EventSequenceTable, EventTable } from "./event/sql"
 
@@ -349,7 +349,10 @@ const layer = Layer.effect(
         const state = yield* store.historyState(input.sessionID)
         // Un-migrated (or stranded) legacy history has no projection to page
         // over, so read it through the same fallback `context` uses.
-        if (state === "legacy" || state === "mixed") return paginateLegacy(yield* store.context(input.sessionID), input)
+        if (state === "legacy" || state === "mixed") {
+          const legacy = yield* store.context(input.sessionID)
+          return paginateLegacy(yield* materializeBlobRefs(blob, legacy), input)
+        }
         const direction = input.cursor?.direction ?? "next"
         const requestedOrder = input.order ?? "desc"
         const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder
@@ -380,11 +383,14 @@ const layer = Layer.effect(
         const rows = yield* (input.limit === undefined ? query.all() : query.limit(input.limit).all()).pipe(
           Effect.orDie,
         )
-        return yield* Effect.forEach(direction === "previous" ? rows.toReversed() : rows, decode)
+        const ordered = direction === "previous" ? rows.toReversed() : rows
+        return yield* materializeBlobRefs(blob, yield* Effect.forEach(ordered, decode))
       }),
       message: Effect.fn("V2Session.message")(function* (input) {
         const stored = yield* store.message(input.messageID)
-        return stored?.sessionID === input.sessionID ? stored.message : undefined
+        if (stored?.sessionID !== input.sessionID) return undefined
+        const [message] = yield* materializeBlobRefs(blob, [stored.message])
+        return message
       }),
       todo: Effect.fn("V2Session.todo")(function* (sessionID) {
         yield* result.get(sessionID)
@@ -608,7 +614,7 @@ const layer = Layer.effect(
       }),
       context: Effect.fn("V2Session.context")(function* (sessionID) {
         yield* result.get(sessionID)
-        return yield* materializeBlobFiles(blob, yield* store.context(sessionID))
+        return yield* materializeBlobRefs(blob, yield* store.context(sessionID))
       }),
       events: (input) =>
         Stream.unwrap(

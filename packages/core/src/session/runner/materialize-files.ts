@@ -11,37 +11,127 @@ const TEXT_LIMIT = 100_000
 const DIRECTORY_LIMIT = 200
 
 /**
- * Resolves `blob://<hash>` attachment references to inline data URIs before the
- * request is built. The model always receives materialized bytes; only storage
- * holds the content-addressed reference. A missing blob is replaced with a text
- * note instead of sending a broken media part, and the displaced text is kept
- * on the user message.
+ * Resolves `blob://<hash>` references to inline data URIs before a message is
+ * read. Storage holds the content-addressed reference; the model, the clients
+ * and the TUI always see bytes. A reference whose blob is gone is replaced with
+ * a text note rather than a broken media part — on a user message the displaced
+ * text is appended to `message.text`, on a tool result it becomes a text part of
+ * that tool's content, so the information survives either way.
  */
-export const materializeBlobFiles = (blob: Blob.Interface, messages: readonly SessionMessage.Message[]) =>
+export const materializeBlobRefs = (blob: Blob.Interface, messages: readonly SessionMessage.Message[]) =>
+  Effect.forEach(messages, (message) => materializeMessage(blob, message))
+
+/**
+ * The callback keeps an explicit return type: without it the three branches
+ * widen to a union that `Effect.forEach` cannot infer through, and it falls back
+ * to its curried overload.
+ */
+const materializeMessage = (
+  blob: Blob.Interface,
+  message: SessionMessage.Message,
+): Effect.Effect<SessionMessage.Message> => {
+  if (message.type === "user") return materializeUser(blob, message)
+  if (message.type === "assistant") return materializeAssistant(blob, message)
+  return Effect.succeed(message)
+}
+
+/**
+ * Derived from `SessionMessage` rather than imported from `@miao/llm`: the two
+ * modules declare structurally identical names, and TS treats them as unrelated.
+ */
+type AssistantContent = SessionMessage.Assistant["content"][number]
+type ToolPart = Extract<SessionMessage.AssistantTool["state"], { status: "completed" }>["content"][number]
+
+const materializeUser = (
+  blob: Blob.Interface,
+  message: SessionMessage.User,
+): Effect.Effect<SessionMessage.User> =>
   Effect.gen(function* () {
-    return yield* Effect.forEach(messages, (message) => {
-      if (message.type !== "user" || message.files === undefined || message.files.length === 0)
-        return Effect.succeed(message)
-      return Effect.forEach(message.files, (file) =>
-        Effect.gen(function* () {
-          const hash = Blob.hashOf(file.uri)
-          if (hash === undefined) return { file }
-          const base64 = yield* blob.getBase64(hash).pipe(Effect.orElseSucceed(() => undefined))
-          if (base64 === undefined) return { note: `[attachment unavailable: ${file.name ?? hash}]` }
-          return { file: { ...file, uri: `data:${file.mime};base64,${base64}` } }
-        }),
-      ).pipe(
-        Effect.map((resolved) => {
-          const files = resolved.flatMap((item) => (item.file ? [item.file] : []))
-          const notes = resolved.flatMap((item) => (item.note ? [item.note] : []))
-          return SessionMessage.User.make({
-            ...message,
-            text: notes.length === 0 ? message.text : `${message.text}\n${notes.join("\n")}`,
-            files: files.length === 0 ? undefined : files,
-          })
-        }),
-      )
+    if (message.files === undefined || message.files.length === 0) return message
+    const resolved = yield* Effect.forEach(message.files, (file) =>
+      Effect.gen(function* () {
+        const uri = yield* resolve(blob, file.uri, file.mime)
+        if (uri !== undefined) return { file: { ...file, uri } }
+        return { note: `[attachment unavailable: ${file.name ?? Blob.hashOf(file.uri)}]` }
+      }),
+    )
+    const files = resolved.flatMap((item) => (item.file ? [item.file] : []))
+    const notes = resolved.flatMap((item) => (item.note ? [item.note] : []))
+    return SessionMessage.User.make({
+      ...message,
+      text: notes.length === 0 ? message.text : `${message.text}\n${notes.join("\n")}`,
+      files: files.length === 0 ? undefined : files,
     })
+  })
+
+const materializeAssistant = (
+  blob: Blob.Interface,
+  message: SessionMessage.Assistant,
+): Effect.Effect<SessionMessage.Assistant> =>
+  Effect.gen(function* () {
+    const content = yield* Effect.forEach(
+      message.content,
+      (item): Effect.Effect<AssistantContent> =>
+        item.type !== "tool" ? Effect.succeed(item) : materializeTool(blob, item),
+    )
+    return SessionMessage.Assistant.make({ ...message, content })
+  })
+
+const materializeTool = (
+  blob: Blob.Interface,
+  tool: SessionMessage.AssistantTool,
+): Effect.Effect<SessionMessage.AssistantTool> =>
+  Effect.gen(function* () {
+    const state = tool.state
+    // A pending call has no result yet, so there is nothing to resolve.
+    if (state.status === "pending") return tool
+    const content = yield* materializeToolContent(blob, state.content)
+    if (state.status !== "completed" || state.attachments === undefined || state.attachments.length === 0)
+      return { ...tool, state: { ...state, content } }
+    const resolved = yield* Effect.forEach(state.attachments, (file) =>
+      Effect.gen(function* () {
+        const uri = yield* resolve(blob, file.uri, file.mime)
+        if (uri !== undefined) return { file: { ...file, uri } }
+        return { note: `[attachment unavailable: ${file.name ?? Blob.hashOf(file.uri)}]` }
+      }),
+    )
+    const attachments = resolved.flatMap((item) => (item.file ? [item.file] : []))
+    const notes = resolved.flatMap((item) => (item.note ? [item.note] : []))
+    return {
+      ...tool,
+      state: {
+        ...state,
+        content: notes.length === 0 ? content : [...content, ...notes.map((text) => ({ type: "text" as const, text }))],
+        attachments: attachments.length === 0 ? undefined : attachments,
+      },
+    }
+  })
+
+const materializeToolContent = (
+  blob: Blob.Interface,
+  content: readonly ToolPart[],
+): Effect.Effect<readonly ToolPart[]> =>
+  Effect.forEach(
+    content,
+    (part): Effect.Effect<ToolPart> =>
+      part.type !== "file"
+        ? Effect.succeed(part)
+        : resolve(blob, part.uri, part.mime).pipe(
+            Effect.map((uri): ToolPart =>
+              uri !== undefined
+                ? { ...part, uri }
+                : { type: "text", text: `[attachment unavailable: ${part.name ?? Blob.hashOf(part.uri)}]` },
+            ),
+          ),
+  )
+
+/** The data URI for a stored reference, or undefined when the blob is missing. */
+const resolve = (blob: Blob.Interface, uri: string, mime: string) =>
+  Effect.gen(function* () {
+    const hash = Blob.hashOf(uri)
+    if (hash === undefined) return uri
+    const base64 = yield* blob.getBase64(hash).pipe(Effect.orElseSucceed(() => undefined))
+    return base64 === undefined ? undefined : `data:${mime};base64,${base64}`
   })
 
 /**
