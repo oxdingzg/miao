@@ -69,18 +69,15 @@ app 侧：`packages/app/src` 仍有 `protocol === "v1"` 守护的 `client.sessio
 （`server-sdk.tsx` 的 `adaptServerEvent`、`server-session.ts`）。V2 已有 archive/rename/get/message/context，
 可逐点去掉 V1 分支。
 
-## 下一步
+## 剩余（无 V2 支撑，需新服务/协议，非客户端迁移）
 
-剩余组都需要 core/schema 层工作，不是纯客户端迁移：
+- `experimental.console.*`（`sync.tsx`、`dialog-console-org.tsx`）：console/账户管理仅 V1 `/experimental/console*`，无 V2 group。
+- `instance.dispose()`（`dialog-console-org.tsx`）：仅 V1 `/instance/dispose`，且与 console 切换绑定。
+- `experimental.resource.list`（`sync.tsx`）：MCP resources，Core MCP 未暴露 resources。
+- `file.read`（`routes/session/index.tsx`）：V2 `fs.read` 为 wildcard、生成客户端无 path 参数，且返回字节而非 `{type,content}`。
 
-- `config`：core 的 `Config.Info` 定义在 `packages/core/src/config.ts`，**不在 `@miao/schema`**，protocol 无法引用；
-  需要先把 config schema 落到 `@miao/schema`（或暴露 schema-safe 子集），再补 core 合并（变量替换 V1 有、core 无）。
-- `mcp`：core `MCP` 只做“连接并注册工具”，没有 status/connect/disconnect；需把 `packages/miao/src/mcp` 的运行时状态下沉。
-- `vcs`：core 无 VCS；core `Git` 只有 repo/change，需补 status/diff 的 V2 语义。
-- `experimental/workspace`：需要 WorkspaceV2 的 list/status/create/remove + adapter + warp + console/controlPlane。
-
-顺序：`config` → `vcs` → `mcp` → `experimental/workspace`（含 `instance`/`console`，因为 `instance.dispose` 与 console 切换绑定）。
-每步固定：core 下沉/schema → 协议组 → handler → 生成两套客户端 → 迁 TUI/app → 删 V1 分支 → typecheck/测试 → commit & push。
+这些要有 V2 端点/服务后才能迁移。此前所有能借现有或新加 V2 端点收口的 TUI V1 调用都已完成：
+session/formatter/lsp/app/project/provider/config/command/skill/auth/vcs/mcp/workspace/controlPlane/capabilities。
 
 ## 服务端拆除（P7 收尾，P4 之前或并行）
 
