@@ -1,6 +1,7 @@
 import { createMemo, createSignal } from "solid-js"
 import { useLocal } from "../context/local"
-import { useSync } from "../context/sync"
+import { useSync, toMcpStatus } from "../context/sync"
+import { useProject } from "../context/project"
 import { map, pipe, entries, sortBy } from "remeda"
 import { DialogSelect, type DialogSelectRef, type DialogSelectOption } from "../ui/dialog-select"
 import { useTheme } from "../context/theme"
@@ -21,6 +22,7 @@ function Status(props: { enabled: boolean; loading: boolean }) {
 export function DialogMcp() {
   const local = useLocal()
   const sync = useSync()
+  const project = useProject()
   const sdk = useSDK()
   const [, setRef] = createSignal<DialogSelectRef<unknown>>()
   const [loading, setLoading] = createSignal<string | null>(null)
@@ -56,9 +58,9 @@ export function DialogMcp() {
         try {
           await local.mcp.toggle(option.value)
           // Refresh MCP status from server
-          const status = await sdk.client.mcp.status()
+          const status = await sdk.client.v2.mcp.status({ location: { workspace: project.workspace.current() } })
           if (status.data) {
-            sync.set("mcp", status.data)
+            sync.set("mcp", toMcpStatus(status.data.data))
           } else {
             console.error("Failed to refresh MCP status: no data returned")
           }

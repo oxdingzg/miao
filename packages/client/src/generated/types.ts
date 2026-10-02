@@ -21,6 +21,14 @@ export type InvalidRequestError = {
 export const isInvalidRequestError = (value: unknown): value is InvalidRequestError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "InvalidRequestError"
 
+export type McpServerNotFoundError = {
+  readonly _tag: "McpServerNotFoundError"
+  readonly server: string
+  readonly message: string
+}
+export const isMcpServerNotFoundError = (value: unknown): value is McpServerNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "McpServerNotFoundError"
+
 export type InvalidCursorError = { readonly _tag: "InvalidCursorError"; readonly message: string }
 export const isInvalidCursorError = (value: unknown): value is InvalidCursorError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "InvalidCursorError"
@@ -192,6 +200,60 @@ export type LspStatusOutput = {
     readonly extensions: ReadonlyArray<string>
     readonly connected: boolean
   }>
+}
+
+export type McpStatusInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpStatusOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly [x: string]:
+      | { readonly status: "connected" }
+      | { readonly status: "disabled" }
+      | { readonly status: "failed"; readonly error: string }
+      | { readonly status: "needs_auth" }
+      | { readonly status: "needs_client_registration"; readonly error: string }
+  }
+}
+
+export type McpConnectInput = {
+  readonly name: { readonly name: string }["name"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpConnectOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
+}
+
+export type McpDisconnectInput = {
+  readonly name: { readonly name: string }["name"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpDisconnectOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
 }
 
 export type LocationGetInput = {

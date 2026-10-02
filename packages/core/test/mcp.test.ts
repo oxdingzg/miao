@@ -33,17 +33,13 @@ const sessionID = SessionV2.ID.make("ses_mcp")
 const agent = AgentV2.ID.make("mcp-test")
 const allowAll: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }]
 
-const withMCP = <A, E, R>(
-  entries: Config.Entry[],
-  body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
-  rules = allowAll,
-) => {
+const build = (entries: Config.Entry[]) => {
   const config = Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed(entries) }))
   const current = Layer.succeed(
     Location.Service,
     Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
   )
-  const built = AppNodeBuilder.build(
+  return AppNodeBuilder.build(
     LayerNode.group([
       Database.node,
       EventV2.node,
@@ -62,11 +58,27 @@ const withMCP = <A, E, R>(
       [Location.node, current],
     ],
   )
-  return Effect.gen(function* () {
+}
+
+const withMCP = <A, E, R>(
+  entries: Config.Entry[],
+  body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
+  rules = allowAll,
+) =>
+  Effect.gen(function* () {
     yield* setup(rules)
     return yield* body(yield* ToolRegistry.Service)
-  }).pipe(Effect.provide(built))
-}
+  }).pipe(Effect.provide(build(entries)))
+
+const withMCPService = <A, E, R>(
+  entries: Config.Entry[],
+  body: (mcp: MCP.Interface, registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
+  rules = allowAll,
+) =>
+  Effect.gen(function* () {
+    yield* setup(rules)
+    return yield* body(yield* MCP.Service, yield* ToolRegistry.Service)
+  }).pipe(Effect.provide(build(entries)))
 
 const setup = (rules: PermissionV2.Ruleset) =>
   Effect.gen(function* () {
@@ -105,6 +117,16 @@ const server = (environment?: Record<string, string>) =>
     info: new Config.Info({
       mcp: new ConfigMCP.Info({
         servers: { mock: new ConfigMCP.Local({ type: "local", command: ["bun", fixture], environment }) },
+      }),
+    }),
+  })
+
+const disabledServer = () =>
+  new Config.Document({
+    type: "document",
+    info: new Config.Info({
+      mcp: new ConfigMCP.Info({
+        servers: { mock: new ConfigMCP.Local({ type: "local", command: ["bun", fixture], disabled: true }) },
       }),
     }),
   })
@@ -324,6 +346,60 @@ describe("MCP", () => {
           }),
         [],
       ),
+    ),
+  )
+
+  it.live("reports disabled servers without connecting or registering tools", () =>
+    withMCPService([disabledServer()], (mcp, registry) =>
+      Effect.gen(function* () {
+        expect(yield* mcp.status()).toEqual({ mock: { status: "disabled" } })
+        const materialized = yield* registry.materialize()
+        expect(materialized.definitions.some((definition) => definition.name.startsWith("mcp__"))).toBe(false)
+      }),
+    ),
+  )
+
+  it.live("disconnect disables a connected server and connect restores its tools", () =>
+    withMCPService([server()], (mcp, registry) =>
+      Effect.gen(function* () {
+        const advertised = registry
+          .materialize()
+          .pipe(
+            Effect.map((materialized) =>
+              materialized.definitions.map((definition) => definition.name).filter((name) => name.startsWith("mcp__")),
+            ),
+          )
+        expect((yield* mcp.status()).mock).toEqual({ status: "connected" })
+        expect(yield* advertised).toContain("mcp__mock__echo")
+        yield* mcp.disconnect("mock")
+        expect((yield* mcp.status()).mock).toEqual({ status: "disabled" })
+        expect(yield* advertised).not.toContain("mcp__mock__echo")
+        yield* mcp.connect("mock")
+        expect((yield* mcp.status()).mock).toEqual({ status: "connected" })
+        expect(yield* advertised).toContain("mcp__mock__echo")
+      }),
+    ),
+  )
+
+  it.live("connect fails with NotFoundError for an unknown server", () =>
+    withMCPService([], (mcp) =>
+      Effect.gen(function* () {
+        const error = yield* mcp.connect("missing").pipe(Effect.flip)
+        expect(error).toBeInstanceOf(MCP.NotFoundError)
+        expect(error.name).toBe("missing")
+      }),
+    ),
+  )
+
+  it.live("add connects a runtime server and remove drops it", () =>
+    withMCPService([], (mcp) =>
+      Effect.gen(function* () {
+        expect(yield* mcp.status()).toEqual({})
+        yield* mcp.add("extra", new ConfigMCP.Local({ type: "local", command: ["bun", fixture] }))
+        expect((yield* mcp.status()).extra).toEqual({ status: "connected" })
+        yield* mcp.remove("extra")
+        expect(yield* mcp.status()).toEqual({})
+      }),
     ),
   )
 })

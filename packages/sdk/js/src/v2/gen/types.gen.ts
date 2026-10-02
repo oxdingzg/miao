@@ -2736,6 +2736,41 @@ export type UnauthorizedError = {
   message: string
 }
 
+export type McpServerStatusConnected = {
+  status: "connected"
+}
+
+export type McpServerStatusDisabled = {
+  status: "disabled"
+}
+
+export type McpServerStatusFailed = {
+  status: "failed"
+  error: string
+}
+
+export type McpServerStatusNeedsAuth = {
+  status: "needs_auth"
+}
+
+export type McpServerStatusNeedsClientRegistration = {
+  status: "needs_client_registration"
+  error: string
+}
+
+export type McpServerStatus =
+  | McpServerStatusConnected
+  | McpServerStatusDisabled
+  | McpServerStatusFailed
+  | McpServerStatusNeedsAuth
+  | McpServerStatusNeedsClientRegistration
+
+export type McpServerNotFoundError1 = {
+  _tag: "McpServerNotFoundError"
+  server: string
+  message: string
+}
+
 export type SessionsResponse = {
   data: Array<SessionV2Info>
   cursor: {
@@ -11796,6 +11831,131 @@ export type V2LspStatusResponses = {
 }
 
 export type V2LspStatusResponse = V2LspStatusResponses[keyof V2LspStatusResponses]
+
+export type V2McpStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp"
+}
+
+export type V2McpStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2McpStatusError = V2McpStatusErrors[keyof V2McpStatusErrors]
+
+export type V2McpStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      [key: string]: McpServerStatus
+    }
+  }
+}
+
+export type V2McpStatusResponse = V2McpStatusResponses[keyof V2McpStatusResponses]
+
+export type V2McpConnectData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{name}/connect"
+}
+
+export type V2McpConnectErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+}
+
+export type V2McpConnectError = V2McpConnectErrors[keyof V2McpConnectErrors]
+
+export type V2McpConnectResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2McpConnectResponse = V2McpConnectResponses[keyof V2McpConnectResponses]
+
+export type V2McpDisconnectData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{name}/disconnect"
+}
+
+export type V2McpDisconnectErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+}
+
+export type V2McpDisconnectError = V2McpDisconnectErrors[keyof V2McpDisconnectErrors]
+
+export type V2McpDisconnectResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2McpDisconnectResponse = V2McpDisconnectResponses[keyof V2McpDisconnectResponses]
 
 export type V2LocationGetData = {
   body?: never

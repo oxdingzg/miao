@@ -13,6 +13,7 @@ import { HealthHandler } from "./handlers/health"
 import { FormatterHandler } from "./handlers/formatter"
 import { ConfigHandler } from "./handlers/config"
 import { LspHandler } from "./handlers/lsp"
+import { McpHandler } from "./handlers/mcp"
 import { PtyHandler } from "./handlers/pty"
 import { QuestionHandler } from "./handlers/question"
 import { ReferenceHandler } from "./handlers/reference"
@@ -29,6 +30,7 @@ export const handlers = Layer.mergeAll(
   FormatterHandler,
   ConfigHandler,
   LspHandler,
+  McpHandler,
   LocationHandler,
   AgentHandler,
   SessionHandler,

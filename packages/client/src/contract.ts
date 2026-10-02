@@ -19,6 +19,7 @@ export const groupNames = {
   "server.formatter": "formatters",
   "server.config": "config",
   "server.lsp": "lsp",
+  "server.mcp": "mcp",
   "server.location": "location",
   "server.agent": "agents",
   "server.session": "sessions",

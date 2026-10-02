@@ -16,6 +16,7 @@ import { HealthGroup } from "./groups/health"
 import { FormatterGroup } from "./groups/formatter"
 import { ConfigGroup } from "./groups/config"
 import { LspGroup } from "./groups/lsp"
+import { McpGroup } from "./groups/mcp"
 import { PtyGroup } from "./groups/pty"
 import { makeQuestionGroup } from "./groups/question"
 import { ReferenceGroup } from "./groups/reference"
@@ -45,6 +46,7 @@ const makeApiFromGroup = <
     .add(FormatterGroup.middleware(locationMiddleware))
     .add(ConfigGroup.middleware(locationMiddleware))
     .add(LspGroup.middleware(locationMiddleware))
+    .add(McpGroup.middleware(locationMiddleware))
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
     .add(makeSessionGroup(sessionLocationMiddleware))

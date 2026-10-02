@@ -1,21 +1,32 @@
 export * as MCP from "./mcp"
 
 import { Client } from "@modelcontextprotocol/sdk/client"
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ToolFailure } from "@miao/llm"
-import { Effect, JsonSchema, Layer } from "effect"
+import { Status } from "@miao/schema/mcp"
+import { Context, Effect, Exit, JsonSchema, Layer, Schema, Scope } from "effect"
+import path from "node:path"
 import { Config } from "./config"
 import type { ConfigMCP } from "./config/mcp"
 import { makeLocationNode } from "./effect/app-node"
+import { InstallationVersion } from "./installation/version"
+import { Location } from "./location"
 import { PermissionV2 } from "./permission"
 import { ToolRegistry } from "./tool/registry"
 import { Tool } from "./tool/tool"
 import type { AnyTool } from "./tool/tool"
 import { Tools } from "./tool/tools"
 
+export { Status }
+
+export type Server = ConfigMCP.Local | ConfigMCP.Remote
+
 const MAX_TOOL_NAME = 64
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
+const DEFAULT_TIMEOUT = 30_000
 
 /**
  * Memory guard, not a content policy: a server must not be able to make us copy
@@ -42,26 +53,6 @@ type Connected = {
   readonly tools: ReadonlyArray<{ name: string; description?: string; inputSchema?: unknown }>
 }
 
-const connect = (server: ConfigMCP.Local | ConfigMCP.Remote): Effect.Effect<Connected, unknown> =>
-  Effect.gen(function* () {
-    const client = new Client({ name: "miao", version: "1.0.0" }, { capabilities: {} })
-    const transport =
-      server.type === "local"
-        ? new StdioClientTransport({
-            command: server.command[0],
-            args: server.command.slice(1),
-            cwd: server.cwd,
-            env: Object.assign({}, process.env, server.environment) as Record<string, string>,
-            stderr: "ignore",
-          })
-        : new StreamableHTTPClientTransport(new URL(server.url), {
-            requestInit: server.headers ? { headers: server.headers } : undefined,
-          })
-    yield* Effect.tryPromise({ try: () => client.connect(transport), catch: (error) => error })
-    const listed = yield* Effect.tryPromise({ try: () => client.listTools(), catch: (error) => error })
-    return { client, tools: listed.tools }
-  })
-
 export const resultContent = (result: { content?: ReadonlyArray<unknown> }): ReadonlyArray<Tool.Content> =>
   (result.content ?? []).flatMap((item): Tool.Content[] => {
     if (typeof item !== "object" || item === null) return []
@@ -81,83 +72,294 @@ export const resultContent = (result: { content?: ReadonlyArray<unknown> }): Rea
     return []
   })
 
-const layer = Layer.effectDiscard(
+export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP.NotFoundError", {
+  name: Schema.String,
+}) {}
+
+export interface Interface {
+  readonly status: () => Effect.Effect<Record<string, Status>>
+  readonly connect: (name: string) => Effect.Effect<void, NotFoundError>
+  readonly disconnect: (name: string) => Effect.Effect<void, NotFoundError>
+  readonly add: (name: string, server: Server) => Effect.Effect<Record<string, Status>, NotFoundError>
+  readonly remove: (name: string) => Effect.Effect<Record<string, Status>>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@miao/v2/MCP") {}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label?: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(label ?? `Operation timed out after ${ms}ms`)), ms)
+    }),
+  ])
+}
+
+function message(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function connectLocal(server: ConfigMCP.Local, directory: string): Effect.Effect<{ status: Status; connected?: Connected }> {
+  const [command, ...args] = server.command
+  return Effect.gen(function* () {
+    if (command === undefined)
+      return { status: { status: "failed", error: "MCP local server has no command" } satisfies Status }
+    const cwd = server.cwd ? path.resolve(directory, server.cwd) : undefined
+    const transport = new StdioClientTransport({
+      command,
+      args,
+      cwd,
+      env: Object.assign({}, process.env, server.environment) as Record<string, string>,
+      stderr: "ignore",
+    })
+    const client = new Client({ name: "miao", version: InstallationVersion }, { capabilities: {} })
+    const outcome = yield* Effect.tryPromise({
+      try: async () => {
+        await withTimeout(client.connect(transport), server.timeout?.startup ?? DEFAULT_TIMEOUT)
+        const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
+        return { client, tools: listed.tools } satisfies Connected
+      },
+      catch: (error) => error,
+    }).pipe(
+      Effect.match({
+        onFailure: (error) => ({ ok: false as const, error }),
+        onSuccess: (connected) => ({ ok: true as const, connected }),
+      }),
+    )
+    if (outcome.ok) return { status: { status: "connected" } satisfies Status, connected: outcome.connected }
+    yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+    return { status: { status: "failed", error: message(outcome.error) } satisfies Status }
+  })
+}
+
+function connectRemote(server: ConfigMCP.Remote): Effect.Effect<{ status: Status; connected?: Connected }> {
+  return Effect.gen(function* () {
+    const url = URL.canParse(server.url) ? new URL(server.url) : undefined
+    if (!url) return { status: { status: "failed", error: `Invalid MCP URL "${server.url}"` } satisfies Status }
+    const requestInit = server.headers ? { headers: server.headers } : undefined
+    const transports = [
+      { name: "StreamableHTTP", transport: new StreamableHTTPClientTransport(url, { requestInit }) },
+      { name: "SSE", transport: new SSEClientTransport(url, { requestInit }) },
+    ]
+    let last: Status = { status: "failed", error: "Unknown error" }
+    for (const { transport } of transports) {
+      const client = new Client({ name: "miao", version: InstallationVersion }, { capabilities: {} })
+      const outcome = yield* Effect.tryPromise({
+        try: async () => {
+          await withTimeout(client.connect(transport), server.timeout?.startup ?? DEFAULT_TIMEOUT)
+          const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
+          return { client, tools: listed.tools } satisfies Connected
+        },
+        catch: (error) => error,
+      }).pipe(
+        Effect.match({
+          onFailure: (error) => ({ ok: false as const, error }),
+          onSuccess: (connected) => ({ ok: true as const, connected }),
+        }),
+      )
+      if (outcome.ok) return { status: { status: "connected" } satisfies Status, connected: outcome.connected }
+      yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+      last = classifyRemoteFailure(outcome.error)
+      // An auth failure is terminal for this connection attempt: retrying the
+      // fallback transport cannot succeed without credentials.
+      if (last.status === "needs_auth" || last.status === "needs_client_registration") break
+    }
+    return { status: last }
+  })
+}
+
+function classifyRemoteFailure(error: unknown): Status {
+  const text = message(error)
+  if (error instanceof UnauthorizedError || text.includes("OAuth")) {
+    if (text.includes("registration") || text.includes("client_id"))
+      return {
+        status: "needs_client_registration",
+        error: "Server does not support dynamic client registration. Please provide clientId in config.",
+      }
+    return { status: "needs_auth" }
+  }
+  return { status: "failed", error: text }
+}
+
+function connectServer(server: Server, directory: string) {
+  return server.type === "local" ? connectLocal(server, directory) : connectRemote(server)
+}
+
+const compareNames = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+function buildTools(
+  serverID: string,
+  connected: Connected,
+  permission: PermissionV2.Interface,
+  registered: Set<string>,
+): Record<string, AnyTool> {
+  const registrations: Record<string, AnyTool> = {}
+  for (const tool of [...connected.tools].toSorted((a, b) => compareNames(a.name, b.name))) {
+    // Canonical names are registered in a deterministic order so a reconnect or a
+    // server listing the same tool twice cannot change the advertised tool set.
+    const name = toolName(serverID, tool.name)
+    if (!NAME_PATTERN.test(name) || registered.has(name)) continue
+    registered.add(name)
+    const legacy = legacyToolName(serverID, tool.name)
+    registrations[name] = Tool.makeExternal({
+      description: tool.description ?? `MCP tool ${tool.name} from ${serverID}`,
+      inputSchema: (tool.inputSchema as JsonSchema.JsonSchema | undefined) ?? { type: "object" },
+      permissionAliases: [legacy],
+      execute: (input, context) =>
+        permission
+          .assert({
+            action: name,
+            aliases: [legacy],
+            resources: ["*"],
+            save: ["*"],
+            metadata: { server: serverID, tool: tool.name, input },
+            sessionID: context.sessionID,
+            agent: context.agent,
+            source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+          })
+          .pipe(
+            Effect.catchTags({
+              "PermissionV2.BlockedError": (error) =>
+                Effect.fail(
+                  new ToolFailure({
+                    message: `The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules ${JSON.stringify(error.rules)}`,
+                  }),
+                ),
+              "PermissionV2.CorrectedError": (error) =>
+                Effect.fail(
+                  new ToolFailure({
+                    message: `The user rejected permission to use this specific tool call with the following feedback: ${error.feedback}`,
+                  }),
+                ),
+              "Session.NotFoundError": () =>
+                Effect.fail(new ToolFailure({ message: `MCP call ${tool.name} failed: session not found` })),
+            }),
+            Effect.andThen(
+              Effect.tryPromise({
+                try: () => connected.client.callTool({ name: tool.name, arguments: input }),
+                catch: (error) => new ToolFailure({ message: `MCP call ${tool.name} failed: ${String(error)}` }),
+              }),
+            ),
+            Effect.map((result) => resultContent(result as { content?: ReadonlyArray<unknown> })),
+          ),
+    })
+  }
+  return registrations
+}
+
+const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
+    const location = yield* Location.Service
+
+    const scope = yield* Scope.make()
+    const servers = new Map<string, Server>()
+    const statuses = new Map<string, Status>()
+    const clients = new Map<string, Client>()
+    const scopes = new Map<string, Scope.Closeable>()
+    const toolNames = new Map<string, string[]>()
+    const registered = new Set<string>()
 
     const entries = yield* config.entries()
-    let mcp: ConfigMCP.Info | undefined
-    for (const entry of entries) if (entry.type === "document" && entry.info.mcp !== undefined) mcp = entry.info.mcp
-    if (mcp?.servers === undefined) return
+    let info: ConfigMCP.Info | undefined
+    for (const entry of entries) if (entry.type === "document" && entry.info.mcp !== undefined) info = entry.info.mcp
+    for (const [name, server] of Object.entries(info?.servers ?? {})) servers.set(name, server)
 
-    // Canonical names are registered in a deterministic order so a reconnect or a
-    // server listing the same tool twice cannot change the advertised tool set.
-    const compareNames = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-    const registered = new Set<string>()
-    for (const [serverID, server] of Object.entries(mcp.servers).toSorted(([a], [b]) => compareNames(a, b))) {
-      if (server.disabled === true) continue
-      const connected = yield* connect(server as ConfigMCP.Local | ConfigMCP.Remote).pipe(
-        Effect.orElseSucceed(() => undefined as Connected | undefined),
-      )
-      if (connected === undefined) continue
-      const registrations: Record<string, AnyTool> = {}
-      for (const tool of [...connected.tools].toSorted((a, b) => compareNames(a.name, b.name))) {
-        const name = toolName(serverID, tool.name)
-        if (!NAME_PATTERN.test(name) || registered.has(name)) continue
-        registered.add(name)
-        const legacy = legacyToolName(serverID, tool.name)
-        registrations[name] = Tool.makeExternal({
-          description: tool.description ?? `MCP tool ${tool.name} from ${serverID}`,
-          inputSchema: (tool.inputSchema as JsonSchema.JsonSchema | undefined) ?? { type: "object" },
-          permissionAliases: [legacy],
-          execute: (input, context) =>
-            permission
-              .assert({
-                action: name,
-                aliases: [legacy],
-                resources: ["*"],
-                save: ["*"],
-                metadata: { server: serverID, tool: tool.name, input },
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-              })
-              .pipe(
-                Effect.catchTags({
-                  "PermissionV2.BlockedError": (error) =>
-                    Effect.fail(
-                      new ToolFailure({
-                        message: `The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules ${JSON.stringify(error.rules)}`,
-                      }),
-                    ),
-                  "PermissionV2.CorrectedError": (error) =>
-                    Effect.fail(
-                      new ToolFailure({
-                        message: `The user rejected permission to use this specific tool call with the following feedback: ${error.feedback}`,
-                      }),
-                    ),
-                  "Session.NotFoundError": () =>
-                    Effect.fail(new ToolFailure({ message: `MCP call ${tool.name} failed: session not found` })),
-                }),
-                Effect.andThen(
-                  Effect.tryPromise({
-                    try: () => connected.client.callTool({ name: tool.name, arguments: input }),
-                    catch: (error) => new ToolFailure({ message: `MCP call ${tool.name} failed: ${String(error)}` }),
-                  }),
-                ),
-                Effect.map((result) => resultContent(result as { content?: ReadonlyArray<unknown> })),
-              ),
-        })
+    const closeServer = Effect.fnUntraced(function* (name: string, exit: Exit.Exit<unknown, unknown>) {
+      const child = scopes.get(name)
+      scopes.delete(name)
+      const client = clients.get(name)
+      clients.delete(name)
+      for (const tool of toolNames.get(name) ?? []) registered.delete(tool)
+      toolNames.delete(name)
+      if (child) yield* Scope.close(child, exit).pipe(Effect.ignore)
+      if (client) yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+    })
+
+    const connect = Effect.fn("MCP.connect")(function* (name: string) {
+      const server = servers.get(name)
+      if (server === undefined) return yield* new NotFoundError({ name })
+      const result = yield* connectServer(server, location.directory)
+      yield* closeServer(name, Exit.void)
+      statuses.set(name, result.status)
+      if (result.connected === undefined) return
+      const registrations = buildTools(name, result.connected, permission, registered)
+      if (Object.keys(registrations).length > 0) {
+        const child = yield* Scope.fork(scope)
+        yield* tools.register(registrations).pipe(Scope.provide(child), Effect.orDie)
+        scopes.set(name, child)
+        toolNames.set(name, Object.keys(registrations))
       }
-      if (Object.keys(registrations).length > 0) yield* tools.register(registrations).pipe(Effect.orDie)
+      clients.set(name, result.connected.client)
+    })
+
+    for (const [name, server] of servers) {
+      if (server.disabled === true) {
+        statuses.set(name, { status: "disabled" })
+        continue
+      }
+      const result = yield* connectServer(server, location.directory)
+      statuses.set(name, result.status)
+      if (result.connected === undefined) continue
+      const registrations = buildTools(name, result.connected, permission, registered)
+      if (Object.keys(registrations).length > 0) {
+        const child = yield* Scope.fork(scope)
+        yield* tools.register(registrations).pipe(Scope.provide(child), Effect.orDie)
+        scopes.set(name, child)
+        toolNames.set(name, Object.keys(registrations))
+      }
+      clients.set(name, result.connected.client)
     }
+
+    yield* Effect.addFinalizer((exit) =>
+      Effect.gen(function* () {
+        const names = [...clients.keys()]
+        yield* Effect.forEach(names, (name) => closeServer(name, exit), { discard: true })
+        yield* Scope.close(scope, exit).pipe(Effect.ignore)
+      }),
+    )
+
+    const status = Effect.fn("MCP.status")(function* () {
+      const result: Record<string, Status> = {}
+      for (const name of servers.keys()) result[name] = statuses.get(name) ?? { status: "disabled" }
+      return result
+    })
+
+    const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
+      if (servers.get(name) === undefined) return yield* new NotFoundError({ name })
+      yield* closeServer(name, Exit.void)
+      statuses.set(name, { status: "disabled" })
+    })
+
+    const add = Effect.fn("MCP.add")(function* (name: string, server: Server) {
+      servers.set(name, server)
+      yield* connect(name)
+      return yield* status()
+    })
+
+    const remove = Effect.fn("MCP.remove")(function* (name: string) {
+      yield* closeServer(name, Exit.void)
+      servers.delete(name)
+      statuses.delete(name)
+      return yield* status()
+    })
+
+    return Service.of({
+      status,
+      connect,
+      disconnect,
+      add,
+      remove,
+    })
   }),
 )
 
 export const node = makeLocationNode({
-  name: "mcp/tools",
+  service: Service,
   layer,
-  deps: [Config.node, ToolRegistry.toolsNode, PermissionV2.node],
+  deps: [Config.node, Location.node, ToolRegistry.toolsNode, PermissionV2.node],
 })
