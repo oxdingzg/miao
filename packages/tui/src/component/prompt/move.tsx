@@ -114,7 +114,7 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
     }
     setProgress("Moving session")
     try {
-      await sdk.client.experimental.controlPlane.moveSession(
+      await sdk.client.v2.controlPlane.moveSession(
         {
           sessionID,
           destination: { directory },

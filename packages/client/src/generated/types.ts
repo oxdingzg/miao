@@ -109,6 +109,10 @@ export type ProjectCopyError = {
 export const isProjectCopyError = (value: unknown): value is ProjectCopyError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "ProjectCopyError"
 
+export type ControlPlaneError = { readonly name: "ControlPlaneError"; readonly data: { readonly message: string } }
+export const isControlPlaneError = (value: unknown): value is ControlPlaneError =>
+  typeof value === "object" && value !== null && "name" in value && value["name"] === "ControlPlaneError"
+
 export type RemoteNotFoundError = { readonly _tag: "RemoteNotFoundError"; readonly message: string }
 export const isRemoteNotFoundError = (value: unknown): value is RemoteNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "RemoteNotFoundError"
@@ -3541,6 +3545,36 @@ export type WorkspaceRemoveOutput = {
     readonly projectID: string
     readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
   } | null
+}
+
+export type ControlPlaneMoveSessionInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly sessionID: {
+    readonly sessionID: string
+    readonly destination: { readonly directory: string }
+    readonly moveChanges?: boolean
+  }["sessionID"]
+  readonly destination: {
+    readonly sessionID: string
+    readonly destination: { readonly directory: string }
+    readonly moveChanges?: boolean
+  }["destination"]
+  readonly moveChanges?: {
+    readonly sessionID: string
+    readonly destination: { readonly directory: string }
+    readonly moveChanges?: boolean
+  }["moveChanges"]
+}
+
+export type ControlPlaneMoveSessionOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: null
 }
 
 export type RemoteGetOutput = {
