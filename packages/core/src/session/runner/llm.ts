@@ -487,14 +487,17 @@ const layer = Layer.effect(
       const startSnapshotStartedAt = Date.now()
       const startSnapshot = yield* snapshots.capture()
       const startSnapshotMs = Date.now() - startSnapshotStartedAt
+      // The step's own model identity, shared by the publisher's `Started` event
+      // and the settlement below so both name the same model.
+      const stepModel = {
+        id: ModelV2.ID.make(model.id),
+        providerID: ProviderV2.ID.make(model.provider),
+        ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+      }
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
         agent: agent.id,
-        model: {
-          id: ModelV2.ID.make(model.id),
-          providerID: ProviderV2.ID.make(model.provider),
-          ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-        },
+        model: stepModel,
         cost: resolved.info.cost,
         snapshot: startSnapshot,
       })
@@ -585,13 +588,7 @@ const layer = Layer.effect(
                     sessionID: session.id,
                     timestamp: DateTime.makeUnsafe(Date.now()),
                     attempt,
-                    error: {
-                      message: retried.message,
-                      isRetryable: true,
-                      ...(retried instanceof LLMError && "status" in retried.reason && retried.reason.status !== undefined
-                        ? { statusCode: retried.reason.status }
-                        : {}),
-                    },
+                    error: retryDetail(retried),
                   })
                 : Effect.void
             ).pipe(
@@ -616,6 +613,7 @@ const layer = Layer.effect(
                         sessionID: session.id,
                         model: `${model.provider}/${model.id}`,
                         tag: error._tag,
+                        ...retryLog(error),
                       }),
                     ),
                   )
@@ -695,6 +693,7 @@ const layer = Layer.effect(
                 sessionID: session.id,
                 timestamp: yield* DateTime.now,
                 assistantMessageID: yield* publisher.startAssistant(),
+                model: stepModel,
                 finish: stepSettlement.finish,
                 cost: stepSettlement.cost,
                 tokens: stepSettlement.tokens,
@@ -1102,3 +1101,49 @@ const stepFailure = (error: unknown) =>
   error instanceof SessionRunnerModel.VariantUnavailableError ||
   error instanceof SessionRunnerModel.UnsupportedApiError ||
   error instanceof Integration.AuthorizationError
+
+/**
+ * What a retry is retrying, in the shape both the durable `Retried` event and
+ * the retry warning report.
+ *
+ * An HTTP-derived reason keeps its status on the captured response rather than
+ * on itself, and a rate limit — the case this exists for — has no `status` of
+ * its own at all, so reading only the reason's own field left every retried
+ * turn recorded with no status code and no vendor request id.
+ */
+const retryDetail = (error: LLMError | SessionRunnerModel.Error) => {
+  const reason = error instanceof LLMError ? error.reason : undefined
+  const http = reason !== undefined && "http" in reason ? reason.http : undefined
+  const rateLimit = reason !== undefined && "rateLimit" in reason ? reason.rateLimit : undefined
+  const retryAfterMs = reason !== undefined && "retryAfterMs" in reason ? reason.retryAfterMs : undefined
+  const metadata = {
+    ...(http?.requestId === undefined ? {} : { requestId: http.requestId }),
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs: String(retryAfterMs) }),
+    ...Object.fromEntries(
+      (["limit", "remaining", "reset"] as const).flatMap((group) =>
+        Object.entries(rateLimit?.[group] ?? {}).map(([name, value]) => [`rateLimit.${group}.${name}`, value]),
+      ),
+    ),
+  }
+  return {
+    message: error.message,
+    // The retry policy already accepted this error, so the attempt is worth another.
+    isRetryable: true,
+    statusCode: (reason !== undefined && "status" in reason ? reason.status : undefined) ?? http?.response?.status,
+    responseHeaders: http?.response?.headers,
+    responseBody: http?.body,
+    metadata: Object.keys(metadata).length === 0 ? undefined : metadata,
+  }
+}
+
+/** The subset of a retry worth one warning line; the response body stays in the event, not the log. */
+const retryLog = (error: LLMError | SessionRunnerModel.Error) => {
+  const detail = retryDetail(error)
+  return {
+    reason: detail.message,
+    status: detail.statusCode,
+    requestId: detail.metadata?.requestId,
+    retryAfterMs: detail.metadata?.retryAfterMs,
+    bodyLength: detail.responseBody?.length,
+  }
+}

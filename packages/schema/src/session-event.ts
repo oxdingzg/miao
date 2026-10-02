@@ -166,6 +166,8 @@ export namespace Step {
     schema: {
       ...Base,
       assistantMessageID: SessionMessage.ID,
+      /** Absent on events settled before the model was recorded here; the step's `Started` event carries it. */
+      model: Model.Ref.pipe(optional),
       finish: Schema.String,
       cost: Schema.Finite,
       tokens: Schema.Struct({
