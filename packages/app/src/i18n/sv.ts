@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao är installerat men kunde inte köras",
   "desktop.wsl.error.miaoNotInstalled": "Miao är inte installerat i {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode-uppdateringen slutfördes, men {{distro}} rapporterar fortfarande {{installed}}. {{expected}} förväntades",
+    "Miao-uppdateringen slutfördes, men {{distro}} rapporterar fortfarande {{installed}}. {{expected}} förväntades",
   "desktop.wsl.error.noVersion": "ingen version",
   "desktop.wsl.error.serverExited": "WSL-servern avslutades efter start (kod={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -222,7 +222,7 @@ export const dict = {
   "provider.connect.status.waiting": "Väntar på auktorisering...",
   "provider.connect.status.failed": "Auktorisering misslyckades: {{error}}",
   "provider.connect.apiKey.description":
-    "Ange din {{provider}}-API-nyckel för att ansluta ditt konto och använda {{provider}}-modeller i OpenCode.",
+    "Ange din {{provider}}-API-nyckel för att ansluta ditt konto och använda {{provider}}-modeller i Miao.",
   "provider.connect.apiKey.label": "{{provider}}-API-nyckel",
   "provider.connect.apiKey.placeholder": "API-nyckel",
   "provider.connect.apiKey.required": "API-nyckel krävs",
@@ -236,7 +236,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Besök ",
   "provider.connect.oauth.code.visit.link": "denna länk",
   "provider.connect.oauth.code.visit.suffix":
-    " för att hämta auktoriseringskoden som ansluter ditt konto och låter dig använda {{provider}}-modeller i OpenCode.",
+    " för att hämta auktoriseringskoden som ansluter ditt konto och låter dig använda {{provider}}-modeller i Miao.",
   "provider.connect.oauth.code.label": "Auktoriseringskod för {{method}}",
   "provider.connect.oauth.code.placeholder": "Auktoriseringskod",
   "provider.connect.oauth.code.required": "Auktoriseringskod krävs",
@@ -244,7 +244,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Besök ",
   "provider.connect.oauth.auto.visit.link": "denna länk",
   "provider.connect.oauth.auto.visit.suffix":
-    " och ange koden nedan för att ansluta ditt konto och använda {{provider}}-modeller i OpenCode.",
+    " och ange koden nedan för att ansluta ditt konto och använda {{provider}}-modeller i Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Bekräftelsekod",
   "provider.connect.toast.connected.title": "{{provider}} ansluten",
   "provider.connect.toast.connected.description": "{{provider}}-modeller är nu tillgängliga.",
@@ -486,12 +486,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Installera en Linux-distribution från WSL-katalogen",
   "wsl.onboarding.wslNotInstalled.title": "WSL är inte installerat",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) krävs innan OpenCode kan lägga till en WSL-server",
+    "WSL (Windows Subsystem for Linux) krävs innan Miao kan lägga till en WSL-server",
   "wsl.onboarding.wslUnavailable.title": "WSL är inte tillgängligt",
   "wsl.onboarding.wslUnavailable.description": "Miao kunde inte verifiera WSL på den här maskinen.",
   "wsl.onboarding.installWsl": "Installera WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Starta om Windows för att slutföra installationen av WSL och öppna sedan OpenCode igen.",
+    "Starta om Windows för att slutföra installationen av WSL och öppna sedan Miao igen.",
   "wsl.onboarding.next": "Nästa",
   "wsl.onboarding.refresh": "Uppdatera",
   "wsl.onboarding.allDistrosAdded": "Alla installerade distros har redan lagts till.",
@@ -667,7 +667,7 @@ export const dict = {
   "error.chain.didYouMean": "Menade du: {{suggestions}}",
   "error.chain.modelNotFound": "Modellen hittades inte: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Kontrollera leverantörs- och modellnamnen i konfigurationen (miao.json)",
-  "error.chain.mcpFailed": 'MCP-servern "{{name}}" misslyckades. Obs, OpenCode stöder inte MCP-autentisering ännu.',
+  "error.chain.mcpFailed": 'MCP-servern "{{name}}" misslyckades. Obs, Miao stöder inte MCP-autentisering ännu.',
   "error.chain.providerAuthFailed": "Leverantörsautentisering misslyckades ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Det gick inte att initiera leverantören "{{provider}}". Kontrollera autentiseringsuppgifter och konfiguration.',

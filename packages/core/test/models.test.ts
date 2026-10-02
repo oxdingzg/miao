@@ -17,17 +17,20 @@ import path from "path"
 // the suite — never leak the mutation to subsequent test files in the same
 // bun process.
 const ORIGINAL_MODELS_PATH = Flag.MIAO_MODELS_PATH
+const ORIGINAL_MODELS_URL = Flag.MIAO_MODELS_URL
 const ORIGINAL_DISABLE_FETCH = Flag.MIAO_DISABLE_MODELS_FETCH
 beforeAll(() => {
   Flag.MIAO_MODELS_PATH = undefined
+  Flag.MIAO_MODELS_URL = undefined
   Flag.MIAO_DISABLE_MODELS_FETCH = true
 })
 afterAll(() => {
   Flag.MIAO_MODELS_PATH = ORIGINAL_MODELS_PATH
+  Flag.MIAO_MODELS_URL = ORIGINAL_MODELS_URL
   Flag.MIAO_DISABLE_MODELS_FETCH = ORIGINAL_DISABLE_FETCH
 })
 
-const cacheFile = path.join(Global.Path.cache, "models.json")
+const cacheFile = path.join(Global.Path.cache, "models-dev.json")
 
 const fixture: Record<string, ModelsDev.Provider> = {
   acme: {

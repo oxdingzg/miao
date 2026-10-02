@@ -134,7 +134,8 @@ class TokenRefreshRequest extends Schema.Class<TokenRefreshRequest>("TokenRefres
   client_id: Schema.String,
 }) {}
 
-const clientId = "opencode-cli"
+// OpenCode's registered client ID is used only for an explicitly selected Console.
+const clientId = process.env.MIAO_CONSOLE_CLIENT_ID || "opencode-cli"
 const eagerRefreshThreshold = Duration.minutes(5)
 const eagerRefreshThresholdMs = Duration.toMillis(eagerRefreshThreshold)
 

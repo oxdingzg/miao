@@ -128,7 +128,7 @@ export const dict = {
   "provider.connect.status.waiting": "Odotetaan valtuutusta...",
   "provider.connect.status.failed": "Valtuutus epäonnistui: {{error}}",
   "provider.connect.apiKey.description":
-    "Anna {{provider}}-API-avaimesi yhdistääksesi tilisi ja käyttääksesi {{provider}}-malleja OpenCodessa.",
+    "Anna {{provider}}-API-avaimesi yhdistääksesi tilisi ja käyttääksesi {{provider}}-malleja Miaossa.",
   "provider.connect.apiKey.label": "{{provider}}-API-avain",
   "provider.connect.apiKey.placeholder": "API-avain",
   "provider.connect.apiKey.required": "API-avain vaaditaan",
@@ -142,7 +142,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Avaa ",
   "provider.connect.oauth.code.visit.link": "tämä linkki",
   "provider.connect.oauth.code.visit.suffix":
-    " ja hae valtuutuskoodi, jolla voit yhdistää tilisi ja käyttää {{provider}}-malleja OpenCodessa.",
+    " ja hae valtuutuskoodi, jolla voit yhdistää tilisi ja käyttää {{provider}}-malleja Miaossa.",
   "provider.connect.oauth.code.label": "Palvelun {{method}} valtuutuskoodi",
   "provider.connect.oauth.code.placeholder": "Valtuutuskoodi",
   "provider.connect.oauth.code.required": "Valtuutuskoodi vaaditaan",
@@ -150,7 +150,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Avaa ",
   "provider.connect.oauth.auto.visit.link": "tämä linkki",
   "provider.connect.oauth.auto.visit.suffix":
-    " ja anna alla oleva koodi yhdistääksesi tilisi ja käyttääksesi {{provider}}-malleja OpenCodessa.",
+    " ja anna alla oleva koodi yhdistääksesi tilisi ja käyttääksesi {{provider}}-malleja Miaossa.",
   "provider.connect.oauth.auto.confirmationCode": "Vahvistuskoodi",
   "provider.connect.toast.connected.title": "{{provider}} yhdistetty",
   "provider.connect.toast.connected.description": "{{provider}}-mallit ovat nyt käytettävissä.",
@@ -392,12 +392,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Asenna Linux-jakelu WSL-luettelosta",
   "wsl.onboarding.wslNotInstalled.title": "WSL:ää ei ole asennettu",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) vaaditaan ennen kuin OpenCode voi lisätä WSL-palvelimen",
+    "WSL (Windows Subsystem for Linux) vaaditaan ennen kuin Miao voi lisätä WSL-palvelimen",
   "wsl.onboarding.wslUnavailable.title": "WSL ei ole käytettävissä",
   "wsl.onboarding.wslUnavailable.description": "Miao ei voinut vahvistaa WSL:ää tällä koneella.",
   "wsl.onboarding.installWsl": "Asenna WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Viimeistele WSL:n asennus käynnistämällä Windows uudelleen ja avaa sitten OpenCode uudelleen.",
+    "Viimeistele WSL:n asennus käynnistämällä Windows uudelleen ja avaa sitten Miao uudelleen.",
   "wsl.onboarding.next": "Seuraava",
   "wsl.onboarding.refresh": "Päivitä",
   "wsl.onboarding.allDistrosAdded": "Kaikki asennetut jakelut on jo lisätty.",
@@ -559,7 +559,7 @@ export const dict = {
   "error.chain.didYouMean": "Tarkoititko: {{suggestions}}",
   "error.chain.modelNotFound": "Mallia ei löydy: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Tarkista määritysten (miao.json) palveluntarjoajien ja mallien nimet",
-  "error.chain.mcpFailed": 'MCP-palvelin "{{name}}" epäonnistui. Huomaa, että OpenCode ei vielä tue MCP-todennusta.',
+  "error.chain.mcpFailed": 'MCP-palvelin "{{name}}" epäonnistui. Huomaa, että Miao ei vielä tue MCP-todennusta.',
   "error.chain.providerAuthFailed": "Palveluntarjoajan todennus epäonnistui ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Palveluntarjoajan "{{provider}}" alustaminen epäonnistui. Tarkista tunnistetiedot ja määritykset.',
@@ -832,7 +832,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Mukauta, miltä Miao näyttää laitteellasi",
   "settings.general.row.colorScheme.title": "Värimalli",
   "settings.general.row.colorScheme.description":
-    "Valitse, käyttääkö OpenCode järjestelmän mukaista, vaaleaa vai tummaa teemaa",
+    "Valitse, käyttääkö Miao järjestelmän mukaista, vaaleaa vai tummaa teemaa",
   "settings.general.row.theme.title": "Teema",
   "settings.general.row.theme.description": "Mukauta Miaon teemaa.",
   "settings.general.row.font.title": "Koodifontti",
@@ -1138,7 +1138,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao on asennettu, mutta sitä ei voitu suorittaa",
   "desktop.wsl.error.miaoNotInstalled": "Miaoa ei ole asennettu jakeluun {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCoden päivitys valmistui, mutta {{distro}} ilmoittaa yhä version {{installed}}; odotettu versio on {{expected}}",
+    "Miaon päivitys valmistui, mutta {{distro}} ilmoittaa yhä version {{installed}}; odotettu versio on {{expected}}",
   "desktop.wsl.error.noVersion": "ei versiota",
   "desktop.wsl.error.serverExited": "WSL-palvelin sulkeutui käynnistyksen jälkeen (koodi={{code}} signaali={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":

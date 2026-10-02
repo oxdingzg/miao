@@ -783,10 +783,17 @@ const accountTokenIt = configIt({
 })
 
 accountTokenIt.instance("resolves env templates in account config with account token", () =>
-  Effect.gen(function* () {
+  withProcessEnv("MIAO_CONSOLE_URL", "https://control.example.com", Effect.gen(function* () {
     const config = yield* Config.use.get()
     expect(config.provider?.["opencode"]?.options?.apiKey).toBe("st_test_token")
-  }),
+  })),
+)
+
+accountTokenIt.instance("ignores saved Console organization config unless explicitly enabled", () =>
+  withProcessEnv("MIAO_CONSOLE_URL", undefined, Effect.gen(function* () {
+    const config = yield* Config.use.get()
+    expect(config.provider?.["opencode"]).toBeUndefined()
+  })),
 )
 
 it.instance("validates config schema and throws on invalid values", () =>

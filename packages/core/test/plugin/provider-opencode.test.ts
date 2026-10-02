@@ -21,11 +21,11 @@ const addPlugin = Effect.fn(function* (http?: HttpClient.HttpClient) {
   const events = yield* EventV2.Service
   const integration = yield* Integration.Service
   const client = yield* HttpClient.HttpClient
-  yield* OpencodePlugin.effect(host).pipe(
+  yield* withEnv({ MIAO_CONSOLE_URL: "https://opencode.ai/console" }, () => OpencodePlugin.effect(host).pipe(
     Effect.provideService(EventV2.Service, events),
     Effect.provideService(Integration.Service, integration),
     Effect.provideService(HttpClient.HttpClient, http ?? client),
-  )
+  ))
 })
 
 function required<T>(value: T | undefined): T {
@@ -71,6 +71,18 @@ function withEnv<A, E, R>(vars: Record<string, string | undefined>, effect: () =
 const cost = (input: number, output = 0) => [{ input, output, cache: { read: 0, write: 0 } }]
 
 describe("OpencodePlugin", () => {
+  it.effect("does not offer Console OAuth without an explicit server", () =>
+    withEnv({ MIAO_CONSOLE_URL: undefined }, () => Effect.gen(function* () {
+      const plugin = yield* PluginV2.Service
+      const host = yield* PluginHost.make(plugin)
+      yield* OpencodePlugin.effect(host)
+      const integration = yield* Integration.Service
+      expect((yield* integration.get(Integration.ID.make("opencode")))?.methods).toEqual([
+        { type: "key", label: "API key (service account)" },
+      ])
+    })),
+  )
+
   it.effect("registers account and service account methods", () =>
     Effect.gen(function* () {
       yield* addPlugin()

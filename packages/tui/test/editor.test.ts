@@ -5,8 +5,10 @@ const editor = process.env.EDITOR
 const visual = process.env.VISUAL
 
 afterEach(() => {
-  process.env.EDITOR = editor
-  process.env.VISUAL = visual
+  if (editor === undefined) delete process.env.EDITOR
+  else process.env.EDITOR = editor
+  if (visual === undefined) delete process.env.VISUAL
+  else process.env.VISUAL = visual
 })
 
 test("rejects when the external editor cannot start", async () => {
@@ -20,6 +22,21 @@ test("rejects when the external editor cannot start", async () => {
   }
 
   await expect(openEditor({ value: "original", renderer: renderer as never })).rejects.toThrow()
+})
+
+test("rejects when no editor is configured", async () => {
+  delete process.env.VISUAL
+  delete process.env.EDITOR
+  const renderer = {
+    suspend() {},
+    resume() {},
+    requestRender() {},
+    currentRenderBuffer: { clear() {} },
+  }
+
+  await expect(openEditor({ value: "original", renderer: renderer as never })).rejects.toThrow(
+    "No editor configured",
+  )
 })
 
 test("normalizes a single trailing editor newline for one-line prompts", () => {

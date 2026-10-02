@@ -82,7 +82,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.miaoCannotRun": "miao स्थापित छ तर चलाउन सकिएन",
   "desktop.wsl.error.miaoNotInstalled": "Miao {{distro}} मा स्थापित छैन",
   "desktop.wsl.error.updateVersion":
-    "OpenCode अद्यावधिक समाप्त भयो तर {{distro}} ले अझै पनि रिपोर्ट गर्छ {{installed}}; अपेक्षित {{expected}}",
+    "Miao अद्यावधिक समाप्त भयो तर {{distro}} ले अझै पनि रिपोर्ट गर्छ {{installed}}; अपेक्षित {{expected}}",
   "desktop.wsl.error.noVersion": "कुनै संस्करण छैन",
   "desktop.wsl.error.serverExited": "WSL सर्भर स्टार्टअप पछि बाहिर निस्कियो (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict: Record<string, string> = {
   "provider.connect.status.waiting": "प्राधिकरणको लागि पर्खँदै...",
   "provider.connect.status.failed": "प्राधिकरण असफल भयो: {{error}}",
   "provider.connect.apiKey.description":
-    "आफ्नो खाता जडान गर्न आफ्नो {{provider}} API कुञ्जी प्रविष्ट गर्नुहोस् र OpenCode मा {{provider}} मोडेलहरू प्रयोग गर्नुहोस्।",
+    "आफ्नो खाता जडान गर्न आफ्नो {{provider}} API कुञ्जी प्रविष्ट गर्नुहोस् र Miao मा {{provider}} मोडेलहरू प्रयोग गर्नुहोस्।",
   "provider.connect.apiKey.label": "{{provider}} API कुञ्जी",
   "provider.connect.apiKey.placeholder": "API कुञ्जी",
   "provider.connect.apiKey.required": "API कुञ्जी आवश्यक छ",
@@ -235,7 +235,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.code.visit.prefix": "भ्रमण गर्नुहोस्",
   "provider.connect.oauth.code.visit.link": "यो लिङ्क",
   "provider.connect.oauth.code.visit.suffix":
-    "आफ्नो खाता जडान गर्न र OpenCode मा {{provider}} मोडेलहरू प्रयोग गर्न आफ्नो प्राधिकरण कोड सङ्कलन गर्न।",
+    "आफ्नो खाता जडान गर्न र Miao मा {{provider}} मोडेलहरू प्रयोग गर्न आफ्नो प्राधिकरण कोड सङ्कलन गर्न।",
   "provider.connect.oauth.code.label": "{{method}} प्राधिकरण कोड",
   "provider.connect.oauth.code.placeholder": "प्राधिकरण कोड",
   "provider.connect.oauth.code.required": "प्राधिकरण कोड आवश्यक छ",
@@ -243,7 +243,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.auto.visit.prefix": "भ्रमण गर्नुहोस्",
   "provider.connect.oauth.auto.visit.link": "यो लिङ्क",
   "provider.connect.oauth.auto.visit.suffix":
-    "र आफ्नो खाता जडान गर्न तलको कोड प्रविष्ट गर्नुहोस् र {{provider}} मोडेलहरू OpenCode मा प्रयोग गर्नुहोस्।",
+    "र आफ्नो खाता जडान गर्न तलको कोड प्रविष्ट गर्नुहोस् र {{provider}} मोडेलहरू Miao मा प्रयोग गर्नुहोस्।",
   "provider.connect.oauth.auto.confirmationCode": "पुष्टि कोड",
   "provider.connect.toast.connected.title": "{{provider}} जडान भयो",
   "provider.connect.toast.connected.description": "{{provider}} मोडेलहरू अब प्रयोग गर्न उपलब्ध छन्।",
@@ -486,12 +486,12 @@ export const dict: Record<string, string> = {
   "wsl.onboarding.needAnotherDistroHint": "WSL क्याटलगबाट Linux वितरण स्थापना गर्नुहोस्",
   "wsl.onboarding.wslNotInstalled.title": "WSL स्थापित छैन",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Linux को लागि सबसिस्टम) OpenCode ले WSL सर्भर थप्न अघि आवश्यक छ।",
+    "WSL (Windows Linux को लागि सबसिस्टम) Miao ले WSL सर्भर थप्न अघि आवश्यक छ।",
   "wsl.onboarding.wslUnavailable.title": "WSL उपलब्ध छैन",
   "wsl.onboarding.wslUnavailable.description": "Miao ले यो मेसिनमा WSL प्रमाणित गर्न सकेन।",
   "wsl.onboarding.installWsl": "WSL स्थापना गर्नुहोस्",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL स्थापना पूरा गर्न Windows पुन: सुरु गर्नुहोस्, त्यसपछि OpenCode पुन: खोल्नुहोस्।",
+    "WSL स्थापना पूरा गर्न Windows पुन: सुरु गर्नुहोस्, त्यसपछि Miao पुन: खोल्नुहोस्।",
   "wsl.onboarding.next": "अर्को",
   "wsl.onboarding.refresh": "रिफ्रेस गर्नुहोस्",
   "wsl.onboarding.allDistrosAdded": "सबै स्थापित distros पहिले नै थपिएको छ।",
@@ -663,7 +663,7 @@ export const dict: Record<string, string> = {
   "error.chain.modelNotFound": "मोडेल फेला परेन: {{provider}}/{{model}}",
   "error.chain.checkConfig": "आफ्नो कन्फिगरेसन (miao.json) प्रदायक/मोडेल नामहरू जाँच गर्नुहोस्",
   "error.chain.mcpFailed":
-    'MCP सर्भर "{{name}}" असफल भयो। नोट गर्नुहोस्, OpenCode ले अझै पनि MCP प्रमाणीकरणलाई समर्थन गर्दैन।',
+    'MCP सर्भर "{{name}}" असफल भयो। नोट गर्नुहोस्, Miao ले अझै पनि MCP प्रमाणीकरणलाई समर्थन गर्दैन।',
   "error.chain.providerAuthFailed": "प्रदायक प्रमाणीकरण असफल भयो ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'प्रदायक "{{provider}}" प्रारम्भ गर्न असफल भयो। प्रमाण र कन्फिगरेसन जाँच गर्नुहोस्।',
@@ -932,7 +932,7 @@ export const dict: Record<string, string> = {
   "settings.general.row.appearance.description": "आफ्नो यन्त्रमा Miao कस्तो देखिन्छ अनुकूलित गर्नुहोस्",
   "settings.general.row.colorScheme.title": "रंग योजना",
   "settings.general.row.colorScheme.description":
-    "OpenCode ले प्रणाली, उज्यालो वा गाढा विषयवस्तुलाई फलो गर्छ कि गर्दैन भन्ने छनौट गर्नुहोस्",
+    "Miao ले प्रणाली, उज्यालो वा गाढा विषयवस्तुलाई फलो गर्छ कि गर्दैन भन्ने छनौट गर्नुहोस्",
   "settings.general.row.theme.title": "विषयवस्तु",
   "settings.general.row.theme.description": "कसरी Miao विषयवस्तुलाई अनुकूलित गर्नुहोस्।",
   "settings.general.row.font.title": "कोड फन्ट",

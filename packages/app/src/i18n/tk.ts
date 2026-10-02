@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao guruldy, ýöne işledip bilmedi",
   "desktop.wsl.error.miaoNotInstalled": "Miao {{distro}} gurulmady",
   "desktop.wsl.error.updateVersion":
-    "OpenCode täzelenmesi gutardy, ýöne {{distro}} henizem {{installed}} habar berýär; garaşylýan {{expected}}",
+    "Miao täzelenmesi gutardy, ýöne {{distro}} henizem {{installed}} habar berýär; garaşylýan {{expected}}",
   "desktop.wsl.error.noVersion": "wersiýasy ýok",
   "desktop.wsl.error.serverExited": "WSL serweri işe başlandan soň çykdy (kod = {{code}} signal = {{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "Ygtyýarnama garaşýarys ...",
   "provider.connect.status.failed": "Ygtyýarnama şowsuz: {{error}}",
   "provider.connect.apiKey.description":
-    "Hasabyňyzy birikdirmek we OpenCode-da {{provider}} modellerini ulanmak üçin {{provider}} API açaryňyzy giriziň.",
+    "Hasabyňyzy birikdirmek we Miao-da {{provider}} modellerini ulanmak üçin {{provider}} API açaryňyzy giriziň.",
   "provider.connect.apiKey.label": "{{provider}} API açary",
   "provider.connect.apiKey.placeholder": "API açary",
   "provider.connect.apiKey.required": "API açary talap edilýär",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Sapar ",
   "provider.connect.oauth.code.visit.link": "Bu baglanyşyk",
   "provider.connect.oauth.code.visit.suffix":
-    " hasabyňyzy birikdirmek we {{provider}} modellerini OpenCode-de ulanmak üçin ygtyýarnama koduňyzy ýygnamak.",
+    " hasabyňyzy birikdirmek we {{provider}} modellerini Miao-de ulanmak üçin ygtyýarnama koduňyzy ýygnamak.",
   "provider.connect.oauth.code.label": "{{method}} ygtyýarnama kody",
   "provider.connect.oauth.code.placeholder": "Awtorizasiýa kody",
   "provider.connect.oauth.code.required": "Awtorizasiýa kody talap edilýär",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Sapar ",
   "provider.connect.oauth.auto.visit.link": "Bu baglanyşyk",
   "provider.connect.oauth.auto.visit.suffix":
-    " hasabyňyzy birikdirmek we {{provider}} modellerini OpenCode-de ulanmak üçin aşakdaky kody giriziň.",
+    " hasabyňyzy birikdirmek we {{provider}} modellerini Miao-de ulanmak üçin aşakdaky kody giriziň.",
   "provider.connect.oauth.auto.confirmationCode": "Tassyklama kody",
   "provider.connect.toast.connected.title": "{{provider}} birikdirildi",
   "provider.connect.toast.connected.description": "{{provider}} modelleri indi ulanylyp bilner.",
@@ -485,7 +485,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL katalogyndan Linux paýlanyşyny guruň",
   "wsl.onboarding.wslNotInstalled.title": "WSL gurulmady",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Linux üçin Windows kiçi ulgamy) OpenCode WSL serwerini goşmazdan ozal talap edilýär",
+    "WSL (Linux üçin Windows kiçi ulgamy) Miao WSL serwerini goşmazdan ozal talap edilýär",
   "wsl.onboarding.wslUnavailable.title": "WSL elýeterli däl",
   "wsl.onboarding.wslUnavailable.description": "Miao bu enjamda WSL barlap bilmedi.",
   "wsl.onboarding.installWsl": "WSL guruň",
@@ -662,7 +662,7 @@ export const dict = {
   "error.chain.didYouMean": "Diýjek bolduňmy: {{suggestions}}",
   "error.chain.modelNotFound": "Model tapylmady: {{provider}} / {{model}}",
   "error.chain.checkConfig": "Konfigurasiýaňyzy (miao.json) üpjün edijiniň / model atlaryny barlaň",
-  "error.chain.mcpFailed": 'MCP serweri "{{name}}" şowsuz. Üns beriň, OpenCode entek MCP tassyklamasyny goldamaýar.',
+  "error.chain.mcpFailed": 'MCP serweri "{{name}}" şowsuz. Üns beriň, Miao entek MCP tassyklamasyny goldamaýar.',
   "error.chain.providerAuthFailed": "Prowaýderiň tassyklamasy şowsuz ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" üpjün edijini işe girizip bilmedi. Şahsyýetnamalary we konfigurasiýany barlaň.',
@@ -933,7 +933,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Miao enjamyňyzda nähili görünýändigini düzüň",
   "settings.general.row.colorScheme.title": "Reňk shemasy",
   "settings.general.row.colorScheme.description":
-    "OpenCode ulgamy, ýagtylygy ýa-da garaňky temany yzarlaýandygyny saýlaň",
+    "Miao ulgamy, ýagtylygy ýa-da garaňky temany yzarlaýandygyny saýlaň",
   "settings.general.row.theme.title": "Mowzuk",
   "settings.general.row.theme.description": "Miao-iň mowzuklydygyny düzüň.",
   "settings.general.row.font.title": "Kod şrifti",

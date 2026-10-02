@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao està instal·lat però no s'ha pogut executar",
   "desktop.wsl.error.miaoNotInstalled": "Miao no està instal·lat a {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode actualització acabada però {{distro}} encara informa {{installed}}; esperat {{expected}}",
+    "Miao actualització acabada però {{distro}} encara informa {{installed}}; esperat {{expected}}",
   "desktop.wsl.error.noVersion": "cap versió",
   "desktop.wsl.error.serverExited":
     "El servidor WSL s'ha tancat després d'iniciar-se (code={{code}} signal={{signal}})",
@@ -222,7 +222,7 @@ export const dict = {
   "provider.connect.status.waiting": "Esperant l'autorització...",
   "provider.connect.status.failed": "L'autorització ha fallat: {{error}}",
   "provider.connect.apiKey.description":
-    "Introduïu la clau API de {{provider}} per connectar el compte i utilitzar els models de {{provider}} a OpenCode.",
+    "Introduïu la clau API de {{provider}} per connectar el compte i utilitzar els models de {{provider}} a Miao.",
   "provider.connect.apiKey.label": "Tecla {{provider}} API.",
   "provider.connect.apiKey.placeholder": "tecla API.",
   "provider.connect.apiKey.required": "La clau API és necessària",
@@ -236,7 +236,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Visita ",
   "provider.connect.oauth.code.visit.link": "aquest enllaç",
   "provider.connect.oauth.code.visit.suffix":
-    " per recollir el vostre codi d'autorització per connectar el vostre compte i utilitzar {{provider}} models a OpenCode.",
+    " per recollir el vostre codi d'autorització per connectar el vostre compte i utilitzar {{provider}} models a Miao.",
   "provider.connect.oauth.code.label": "{{method}} codi d'autorització",
   "provider.connect.oauth.code.placeholder": "Codi d'autorització",
   "provider.connect.oauth.code.required": "Cal un codi d'autorització",
@@ -244,7 +244,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Visita ",
   "provider.connect.oauth.auto.visit.link": "aquest enllaç",
   "provider.connect.oauth.auto.visit.suffix":
-    " i introduïu el codi següent per connectar el vostre compte i utilitzar {{provider}} models a OpenCode.",
+    " i introduïu el codi següent per connectar el vostre compte i utilitzar {{provider}} models a Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Codi de confirmació",
   "provider.connect.toast.connected.title": "{{provider}} connectat",
   "provider.connect.toast.connected.description": "{{provider}} ara es poden utilitzar models.",
@@ -487,12 +487,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Instal·leu una distribució Linux del catàleg WSL.",
   "wsl.onboarding.wslNotInstalled.title": "WSL no instal·lat",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsistema per a Linux) és necessari abans que OpenCode pugui afegir un WSL servidor",
+    "WSL (Windows Subsistema per a Linux) és necessari abans que Miao pugui afegir un WSL servidor",
   "wsl.onboarding.wslUnavailable.title": "WSL no disponible",
   "wsl.onboarding.wslUnavailable.description": "Miao no ha pogut verificar WSL en aquesta màquina.",
   "wsl.onboarding.installWsl": "Instal·la WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Reinicieu Windows per acabar d'instal·lar WSL i, a continuació, torneu a obrir OpenCode.",
+    "Reinicieu Windows per acabar d'instal·lar WSL i, a continuació, torneu a obrir Miao.",
   "wsl.onboarding.next": "A continuació",
   "wsl.onboarding.refresh": "Actualitza",
   "wsl.onboarding.allDistrosAdded": "Totes les distribucions instal·lades ja s'han afegit.",
@@ -667,7 +667,7 @@ export const dict = {
   "error.chain.modelNotFound": "No s'ha trobat el model: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Comproveu els noms del vostre proveïdor/model de configuració (miao.json).",
   "error.chain.mcpFailed":
-    'El servidor MCP "{{name}}" ha fallat. Tingueu en compte que OpenCode encara no admet l\'autenticació MCP.',
+    'El servidor MCP "{{name}}" ha fallat. Tingueu en compte que Miao encara no admet l\'autenticació MCP.',
   "error.chain.providerAuthFailed": "L'autenticació del proveïdor ha fallat ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'No s\'ha pogut inicialitzar el proveïdor "{{provider}}". Comproveu les credencials i la configuració.',
@@ -999,7 +999,7 @@ export const dict = {
     "Mostra les finestres emergents Novetats després de les actualitzacions",
   "settings.updates.row.startup.title": "Comproveu si hi ha actualitzacions a l'inici",
   "settings.updates.row.startup.description":
-    "Comprova automàticament si hi ha actualitzacions quan s'iniciï OpenCode.",
+    "Comprova automàticament si hi ha actualitzacions quan s'iniciï Miao.",
   "settings.updates.row.check.title": "Comproveu si hi ha actualitzacions",
   "settings.updates.row.check.description":
     "Comproveu manualment si hi ha actualitzacions i instal·leu si està disponible",

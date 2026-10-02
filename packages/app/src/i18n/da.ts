@@ -140,7 +140,7 @@ export const dict = {
   "provider.connect.status.waiting": "Venter på godkendelse...",
   "provider.connect.status.failed": "Godkendelse mislykkedes: {{error}}",
   "provider.connect.apiKey.description":
-    "Indtast din API-nøgle til {{provider}} for at forbinde din konto og bruge modeller fra {{provider}} i OpenCode.",
+    "Indtast din API-nøgle til {{provider}} for at forbinde din konto og bruge modeller fra {{provider}} i Miao.",
   "provider.connect.apiKey.label": "API-nøgle til {{provider}}",
   "provider.connect.apiKey.placeholder": "API-nøgle",
   "provider.connect.apiKey.required": "API-nøgle er påkrævet",
@@ -154,7 +154,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Besøg ",
   "provider.connect.oauth.code.visit.link": "dette link",
   "provider.connect.oauth.code.visit.suffix":
-    " for at hente din godkendelseskode, forbinde din konto og bruge modeller fra {{provider}} i OpenCode.",
+    " for at hente din godkendelseskode, forbinde din konto og bruge modeller fra {{provider}} i Miao.",
   "provider.connect.oauth.code.label": "{{method}} godkendelseskode",
   "provider.connect.oauth.code.placeholder": "Godkendelseskode",
   "provider.connect.oauth.code.required": "Godkendelseskode er påkrævet",
@@ -162,7 +162,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Besøg ",
   "provider.connect.oauth.auto.visit.link": "dette link",
   "provider.connect.oauth.auto.visit.suffix":
-    " og indtast koden nedenfor for at forbinde din konto og bruge modeller fra {{provider}} i OpenCode.",
+    " og indtast koden nedenfor for at forbinde din konto og bruge modeller fra {{provider}} i Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Bekræftelseskode",
   "provider.connect.toast.connected.title": "{{provider}} forbundet",
   "provider.connect.toast.connected.description": "Modeller fra {{provider}} er nu tilgængelige.",
@@ -412,12 +412,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Installer en Linux-distribution fra WSL-kataloget",
   "wsl.onboarding.wslNotInstalled.title": "WSL er ikke installeret",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) er påkrævet, før OpenCode kan tilføje en WSL-server",
+    "WSL (Windows Subsystem for Linux) er påkrævet, før Miao kan tilføje en WSL-server",
   "wsl.onboarding.wslUnavailable.title": "WSL er ikke tilgængelig",
   "wsl.onboarding.wslUnavailable.description": "Miao kunne ikke bekræfte WSL på denne maskine.",
   "wsl.onboarding.installWsl": "Installer WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Genstart Windows for at fuldføre installationen af WSL, og åbn derefter OpenCode igen.",
+    "Genstart Windows for at fuldføre installationen af WSL, og åbn derefter Miao igen.",
   "wsl.onboarding.next": "Næste",
   "wsl.onboarding.refresh": "Opdater",
   "wsl.onboarding.allDistrosAdded": "Alle installerede distributioner er allerede tilføjet.",
@@ -584,7 +584,7 @@ export const dict = {
   "error.chain.didYouMean": "Mente du: {{suggestions}}",
   "error.chain.modelNotFound": "Model ikke fundet: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Kontrollér udbyder- og modelnavnene i din konfiguration (miao.json)",
-  "error.chain.mcpFailed": 'MCP-server "{{name}}" fejlede. Bemærk, OpenCode understøtter ikke MCP-godkendelse endnu.',
+  "error.chain.mcpFailed": 'MCP-server "{{name}}" fejlede. Bemærk, Miao understøtter ikke MCP-godkendelse endnu.',
   "error.chain.providerAuthFailed": "Udbydergodkendelse mislykkedes ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Kunne ikke initialisere udbyder "{{provider}}". Tjek legitimationsoplysninger og konfiguration.',
@@ -797,7 +797,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Tilpas hvordan Miao ser ud på din enhed",
   "settings.general.row.colorScheme.title": "Farveskema",
   "settings.general.row.colorScheme.description":
-    "Vælg, om OpenCode skal følge systemtemaet eller bruge et lyst eller mørkt tema",
+    "Vælg, om Miao skal følge systemtemaet eller bruge et lyst eller mørkt tema",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Tilpas Miaos tema.",
   "settings.general.row.font.title": "Kode-skrifttype",
@@ -1215,7 +1215,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao er installeret, men kunne ikke køre",
   "desktop.wsl.error.miaoNotInstalled": "Miao er ikke installeret i {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Opdateringen af OpenCode er fuldført, men {{distro}} rapporterer stadig {{installed}}. Forventet: {{expected}}",
+    "Opdateringen af Miao er fuldført, men {{distro}} rapporterer stadig {{installed}}. Forventet: {{expected}}",
   "desktop.wsl.error.noVersion": "ingen version",
   "desktop.wsl.error.serverExited": "WSL-serveren blev afsluttet efter opstart (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":

@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao je nainstalován, ale nelze jej spustit",
   "desktop.wsl.error.miaoNotInstalled": "Miao není nainstalován v {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode aktualizace dokončena, ale {{distro}} stále hlásí {{installed}}; očekává se {{expected}}",
+    "Miao aktualizace dokončena, ale {{distro}} stále hlásí {{installed}}; očekává se {{expected}}",
   "desktop.wsl.error.noVersion": "žádná verze",
   "desktop.wsl.error.serverExited": "Server WSL byl po spuštění ukončen (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Čekání na autorizaci...",
   "provider.connect.status.failed": "Autorizace se nezdařila: {{error}}",
   "provider.connect.apiKey.description":
-    "Zadejte klíč API služby {{provider}}, připojte účet a používejte modely {{provider}} v OpenCode.",
+    "Zadejte klíč API služby {{provider}}, připojte účet a používejte modely {{provider}} v Miao.",
   "provider.connect.apiKey.label": "{{provider}} API klíč",
   "provider.connect.apiKey.placeholder": "API klíč",
   "provider.connect.apiKey.required": "Je vyžadováno tlačítko API",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Návštěva ",
   "provider.connect.oauth.code.visit.link": "tento odkaz",
   "provider.connect.oauth.code.visit.suffix":
-    " k vyzvednutí autorizačního kódu pro připojení vašeho účtu a používání {{provider}} modelů v OpenCode.",
+    " k vyzvednutí autorizačního kódu pro připojení vašeho účtu a používání {{provider}} modelů v Miao.",
   "provider.connect.oauth.code.label": "{{method}} autorizační kód",
   "provider.connect.oauth.code.placeholder": "Autorizační kód",
   "provider.connect.oauth.code.required": "Je vyžadován autorizační kód",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Návštěva ",
   "provider.connect.oauth.auto.visit.link": "tento odkaz",
   "provider.connect.oauth.auto.visit.suffix":
-    " a zadejte níže uvedený kód pro připojení svého účtu a používání {{provider}} modelů v OpenCode.",
+    " a zadejte níže uvedený kód pro připojení svého účtu a používání {{provider}} modelů v Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Potvrzovací kód",
   "provider.connect.toast.connected.title": "{{provider}} připojeno",
   "provider.connect.toast.connected.description": "Nyní jsou k dispozici modely {{provider}}.",
@@ -485,12 +485,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Nainstalujte distribuci Linux z katalogu WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL není nainstalováno",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystém pro Linux) je vyžadován předtím, než OpenCode může přidat server WSL",
+    "WSL (Windows Subsystém pro Linux) je vyžadován předtím, než Miao může přidat server WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL není k dispozici",
   "wsl.onboarding.wslUnavailable.description": "Miao nemohl ověřit WSL na tomto počítači.",
   "wsl.onboarding.installWsl": "Instalovat WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Restartujte Windows pro dokončení instalace WSL a poté znovu otevřete OpenCode.",
+    "Restartujte Windows pro dokončení instalace WSL a poté znovu otevřete Miao.",
   "wsl.onboarding.next": "Další",
   "wsl.onboarding.refresh": "Obnovit",
   "wsl.onboarding.allDistrosAdded": "Všechny nainstalované distribuce jsou již přidány.",
@@ -662,7 +662,7 @@ export const dict = {
   "error.chain.didYouMean": "Měli jste na mysli: {{suggestions}}",
   "error.chain.modelNotFound": "Model nenalezen: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Zkontrolujte název poskytovatele/modelu konfigurace (miao.json).",
-  "error.chain.mcpFailed": 'MCP server "{{name}}" selhal. Poznámka: OpenCode zatím nepodporuje ověřování MCP.',
+  "error.chain.mcpFailed": 'MCP server "{{name}}" selhal. Poznámka: Miao zatím nepodporuje ověřování MCP.',
   "error.chain.providerAuthFailed": "Ověření poskytovatele se nezdařilo ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Nepodařilo se inicializovat poskytovatele "{{provider}}". Zkontrolujte přihlašovací údaje a konfiguraci.',
@@ -938,7 +938,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Přizpůsobte si vzhled Miao na vašem zařízení",
   "settings.general.row.colorScheme.title": "Barevné schéma",
   "settings.general.row.colorScheme.description":
-    "Zvolte, zda bude OpenCode následovat systémové, světlé nebo tmavé téma",
+    "Zvolte, zda bude Miao následovat systémové, světlé nebo tmavé téma",
   "settings.general.row.theme.title": "téma",
   "settings.general.row.theme.description": "Přizpůsobte, jak je téma Miao.",
   "settings.general.row.font.title": "Písmo kódu",

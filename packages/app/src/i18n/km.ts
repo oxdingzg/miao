@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao ត្រូវបានដំឡើង ប៉ុន្តែមិនអាចដំណើរការបានទេ។",
   "desktop.wsl.error.miaoNotInstalled": "Miao មិនត្រូវបានដំឡើងនៅក្នុង {{distro}} ទេ។",
   "desktop.wsl.error.updateVersion":
-    "ការធ្វើបច្ចុប្បន្នភាព OpenCode បានបញ្ចប់ ប៉ុន្តែ {{distro}} នៅតែរាយការណ៍ {{installed}}; {{expected}} រំពឹងទុក",
+    "ការធ្វើបច្ចុប្បន្នភាព Miao បានបញ្ចប់ ប៉ុន្តែ {{distro}} នៅតែរាយការណ៍ {{installed}}; {{expected}} រំពឹងទុក",
   "desktop.wsl.error.noVersion": "គ្មានកំណែ",
   "desktop.wsl.error.serverExited": "ម៉ាស៊ីនមេ WSL បានចាកចេញបន្ទាប់ពីការចាប់ផ្ដើម (កូដ={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "រង់ចាំការអនុញ្ញាត...",
   "provider.connect.status.failed": "ការអនុញ្ញាតបានបរាជ័យ៖ {{error}}",
   "provider.connect.apiKey.description":
-    "បញ្ចូល {{provider}} API key របស់អ្នក ដើម្បីភ្ជាប់គណនីរបស់អ្នក ហើយប្រើម៉ូដែល {{provider}} នៅក្នុង OpenCode។",
+    "បញ្ចូល {{provider}} API key របស់អ្នក ដើម្បីភ្ជាប់គណនីរបស់អ្នក ហើយប្រើម៉ូដែល {{provider}} នៅក្នុង Miao។",
   "provider.connect.apiKey.label": "សោ API {{provider}}",
   "provider.connect.apiKey.placeholder": "សោ API",
   "provider.connect.apiKey.required": "ត្រូវការសោ API",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ទស្សនា",
   "provider.connect.oauth.code.visit.link": "តំណនេះ។",
   "provider.connect.oauth.code.visit.suffix":
-    "ដើម្បីប្រមូលលេខកូដអនុញ្ញាតរបស់អ្នកដើម្បីភ្ជាប់គណនីរបស់អ្នក និងប្រើម៉ូដែល {{provider}} នៅក្នុង OpenCode ។",
+    "ដើម្បីប្រមូលលេខកូដអនុញ្ញាតរបស់អ្នកដើម្បីភ្ជាប់គណនីរបស់អ្នក និងប្រើម៉ូដែល {{provider}} នៅក្នុង Miao ។",
   "provider.connect.oauth.code.label": "លេខកូដអនុញ្ញាត {{method}}",
   "provider.connect.oauth.code.placeholder": "លេខកូដអនុញ្ញាត",
   "provider.connect.oauth.code.required": "ទាមទារលេខកូដអនុញ្ញាត",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "ទស្សនា",
   "provider.connect.oauth.auto.visit.link": "តំណនេះ។",
   "provider.connect.oauth.auto.visit.suffix":
-    "ហើយបញ្ចូលលេខកូដខាងក្រោមដើម្បីភ្ជាប់គណនីរបស់អ្នក ហើយប្រើម៉ូដែល {{provider}} នៅក្នុង OpenCode។",
+    "ហើយបញ្ចូលលេខកូដខាងក្រោមដើម្បីភ្ជាប់គណនីរបស់អ្នក ហើយប្រើម៉ូដែល {{provider}} នៅក្នុង Miao។",
   "provider.connect.oauth.auto.confirmationCode": "លេខកូដបញ្ជាក់",
   "provider.connect.toast.connected.title": "{{provider}} បានភ្ជាប់",
   "provider.connect.toast.connected.description": "ម៉ូដែល {{provider}} ឥឡូវអាចប្រើបាន។",
@@ -484,12 +484,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "ដំឡើងការចែកចាយលីនុចពីកាតាឡុក WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL មិនត្រូវបានដំឡើងទេ។",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (ប្រព័ន្ធរងវីនដូសម្រាប់លីនុច) ត្រូវបានទាមទារ មុនពេល OpenCode អាចបន្ថែមម៉ាស៊ីនមេ WSL",
+    "WSL (ប្រព័ន្ធរងវីនដូសម្រាប់លីនុច) ត្រូវបានទាមទារ មុនពេល Miao អាចបន្ថែមម៉ាស៊ីនមេ WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL មិនអាចប្រើបានទេ។",
   "wsl.onboarding.wslUnavailable.description": "Miao មិនអាចផ្ទៀងផ្ទាត់ WSL នៅលើម៉ាស៊ីននេះបានទេ។",
   "wsl.onboarding.installWsl": "ដំឡើង WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "ចាប់ផ្ដើម Windows ឡើងវិញ ដើម្បីបញ្ចប់ការដំឡើង WSL បន្ទាប់មកបើក OpenCode ឡើងវិញ។",
+    "ចាប់ផ្ដើម Windows ឡើងវិញ ដើម្បីបញ្ចប់ការដំឡើង WSL បន្ទាប់មកបើក Miao ឡើងវិញ។",
   "wsl.onboarding.next": "បន្ទាប់",
   "wsl.onboarding.refresh": "ធ្វើឱ្យស្រស់",
   "wsl.onboarding.allDistrosAdded": "ការចែកចាយដែលបានដំឡើងទាំងអស់ត្រូវបានបន្ថែមរួចហើយ។",
@@ -660,7 +660,7 @@ export const dict = {
   "error.chain.didYouMean": "តើអ្នកមានន័យថា៖ {{suggestions}}",
   "error.chain.modelNotFound": "រកមិនឃើញម៉ូដែល៖ {{provider}}/{{model}}",
   "error.chain.checkConfig": "ពិនិត្យការកំណត់រចនាសម្ព័ន្ធរបស់អ្នក (miao.json) អ្នកផ្តល់សេវា/ឈ្មោះម៉ូដែល",
-  "error.chain.mcpFailed": 'ម៉ាស៊ីនមេ MCP "{{name}}" បានបរាជ័យ។ ចំណាំ OpenCode មិនគាំទ្រការផ្ទៀងផ្ទាត់ MCP នៅឡើយទេ។',
+  "error.chain.mcpFailed": 'ម៉ាស៊ីនមេ MCP "{{name}}" បានបរាជ័យ។ ចំណាំ Miao មិនគាំទ្រការផ្ទៀងផ្ទាត់ MCP នៅឡើយទេ។',
   "error.chain.providerAuthFailed": "ការផ្ទៀងផ្ទាត់អ្នកផ្តល់សេវាបានបរាជ័យ ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'បានបរាជ័យក្នុងការចាប់ផ្តើមអ្នកផ្តល់សេវា "{{provider}}" ។ ពិនិត្យអត្តសញ្ញាណ និងការកំណត់រចនាសម្ព័ន្ធ។',

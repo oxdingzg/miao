@@ -35,7 +35,7 @@ Du kan tilpasse base-URL-en for enhver leverandør ved å angi alternativet `bas
 
 ```json title="miao.json" {6}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "anthropic": {
       "options": {
@@ -196,7 +196,7 @@ Slik bruker du Amazon Bedrock med Miao:
 
    ```json title="miao.json"
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "amazon-bedrock": {
          "options": {
@@ -223,7 +223,7 @@ Slik bruker du Amazon Bedrock med Miao:
 
    ```json title="miao.json"
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "amazon-bedrock": {
          "options": {
@@ -267,7 +267,7 @@ For egendefinerte slutningsprofiler, bruk modellen og leverandørnavnet i nøkke
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "amazon-bedrock": {
       // ...
@@ -329,7 +329,7 @@ Du kan konfigurere miao til å bruke lokale modeller via [Atomic Chat](https://a
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "atomic-chat": {
       "npm": "@ai-sdk/openai-compatible",
@@ -557,7 +557,7 @@ Cloudflare AI Gateway lar deg få tilgang til modeller fra OpenAI, Anthropic, Wo
 
    ```json title="miao.json"
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "cloudflare-ai-gateway": {
          "models": {
@@ -763,7 +763,7 @@ for kun å bruke din egen GitLab-hostede forekomst, legg til følgende i din
 
 ```json
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "small_model": "gitlab/duo-chat-haiku-4-5",
   "share": "disabled"
 }
@@ -825,7 +825,7 @@ Tilpass gjennom `miao.json`:
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "gitlab": {
       "options": {
@@ -842,7 +842,7 @@ For å få tilgang til GitLab-verktøy (sammenslåingsforespørsler, problemer, 
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "plugin": ["opencode-gitlab-plugin"]
 }
 ```
@@ -1025,7 +1025,7 @@ Her er [Helicone's Model Directory](https://helicone.ai/models), du trenger denn
 
 ```jsonc title="~/.config/miao/miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "helicone": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1053,7 +1053,7 @@ Helicone støtter tilpassede headere for funksjoner som bufring, brukersporing o
 
 ```jsonc title="~/.config/miao/miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "helicone": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1107,7 +1107,7 @@ Du kan konfigurere Miao for å bruke lokale modeller gjennom [llama.cpp](https:/
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "llama.cpp": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1174,7 +1174,7 @@ Du kan konfigurere Miao for å bruke lokale modeller gjennom LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "lmstudio": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1295,7 +1295,7 @@ Ollama kan automatisk konfigurere seg selv for Miao. Se [Ollama-integrasjonsdoku
 
 ```json title="miao.json" "ollama" {5, 6, 8, 10-14}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1457,7 +1457,7 @@ OpenCode Zen er en liste over testede og verifiserte modeller levert av Miao-tea
 
    ```json title="miao.json" {6}
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "openrouter": {
          "models": {
@@ -1472,7 +1472,7 @@ OpenCode Zen er en liste over testede og verifiserte modeller levert av Miao-tea
 
    ```json title="miao.json"
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "openrouter": {
          "models": {
@@ -1688,7 +1688,7 @@ Du kan også tilpasse modeller gjennom Miao-konfigurasjonen. Her er et eksempel 
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "vercel": {
       "models": {
@@ -1798,7 +1798,7 @@ Noen nyttige rutealternativer:
 
    ```json title="miao.json" {6}
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "zenmux": {
          "models": {
@@ -1866,7 +1866,7 @@ Du kan bruke hvilken som helst OpenAI-kompatibel leverandør med Miao. De fleste
 
    ```json title="miao.json" ""myprovider"" {5-15}
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "provider": {
        "myprovider": {
          "npm": "@ai-sdk/openai-compatible",
@@ -1904,7 +1904,7 @@ Her er et eksempel på innstilling av alternativene `apiKey`, `headers` og model
 
 ```json title="miao.json" {9,11,17-20}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "myprovider": {
       "npm": "@ai-sdk/openai-compatible",

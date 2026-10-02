@@ -45,7 +45,7 @@ You can set permissions globally (with `*`), and override specific tools.
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "permission": {
     "*": "ask",
     "bash": "allow",
@@ -58,7 +58,7 @@ You can also set all permissions at once:
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "permission": "allow"
 }
 ```
@@ -71,7 +71,7 @@ For most permissions, you can use an object to apply different actions based on 
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "permission": {
     "bash": {
       "*": "ask",
@@ -116,7 +116,7 @@ For example, this allows access to everything under `~/projects/personal/`:
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "permission": {
     "external_directory": {
       "~/projects/personal/**": "allow"
@@ -129,7 +129,7 @@ Any directory allowed here inherits the same defaults as the current workspace. 
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "permission": {
     "external_directory": {
       "~/projects/personal/**": "allow"
@@ -210,7 +210,7 @@ Refer to the [Granular Rules (Object Syntax)](#granular-rules-object-syntax) sec
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "permission": {
     "bash": {
       "*": "ask",

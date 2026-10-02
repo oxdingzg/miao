@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao o'rnatilgan, lekin ishga tushirilmadi",
   "desktop.wsl.error.miaoNotInstalled": "Miao {{distro}} da o'rnatilmagan",
   "desktop.wsl.error.updateVersion":
-    "OpenCode yangilanishi tugallandi, lekin {{distro}} hali ham {{installed}} haqida xabar beradi; kutilgan {{expected}}",
+    "Miao yangilanishi tugallandi, lekin {{distro}} hali ham {{installed}} haqida xabar beradi; kutilgan {{expected}}",
   "desktop.wsl.error.noVersion": "versiya yo'q",
   "desktop.wsl.error.serverExited": "WSL server ishga tushirilgandan so'ng chiqdi (kod = {{code}} signal = {{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -222,7 +222,7 @@ export const dict = {
   "provider.connect.status.waiting": "Avtorizatsiya kutilmoqda...",
   "provider.connect.status.failed": "Avtorizatsiya amalga oshmadi: {{error}}",
   "provider.connect.apiKey.description":
-    "Hisobingizni ulash va OpenCode’da {{provider}} modellaridan foydalanish uchun {{provider}} API kalitini kiriting.",
+    "Hisobingizni ulash va Miao’da {{provider}} modellaridan foydalanish uchun {{provider}} API kalitini kiriting.",
   "provider.connect.apiKey.label": "{{provider}} API kaliti",
   "provider.connect.apiKey.placeholder": "API kaliti",
   "provider.connect.apiKey.required": "API kaliti talab qilinadi",
@@ -236,7 +236,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Tashrif buyuring ",
   "provider.connect.oauth.code.visit.link": "bu havola",
   "provider.connect.oauth.code.visit.suffix":
-    " hisobingizni ulash va OpenCode da {{provider}} modellaridan foydalanish uchun avtorizatsiya kodingizni yig'ish.",
+    " hisobingizni ulash va Miao da {{provider}} modellaridan foydalanish uchun avtorizatsiya kodingizni yig'ish.",
   "provider.connect.oauth.code.label": "{{method}} avtorizatsiya kodi",
   "provider.connect.oauth.code.placeholder": "Avtorizatsiya kodi",
   "provider.connect.oauth.code.required": "Avtorizatsiya kodi talab qilinadi",
@@ -244,7 +244,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Tashrif buyuring ",
   "provider.connect.oauth.auto.visit.link": "bu havola",
   "provider.connect.oauth.auto.visit.suffix":
-    " va hisobingizni ulash uchun quyidagi kodni kiriting va OpenCode da {{provider}} modellaridan foydalaning.",
+    " va hisobingizni ulash uchun quyidagi kodni kiriting va Miao da {{provider}} modellaridan foydalaning.",
   "provider.connect.oauth.auto.confirmationCode": "Tasdiqlash kodi",
   "provider.connect.toast.connected.title": "{{provider}} ulandi",
   "provider.connect.toast.connected.description": "{{provider}} modellaridan endi foydalanish mumkin.",
@@ -487,12 +487,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL katalogidan Linux distributivini o'rnating",
   "wsl.onboarding.wslNotInstalled.title": "WSL o'rnatilmagan",
   "wsl.onboarding.wslNotInstalled.description":
-    "OpenCode WSL serverini qoʻshishdan oldin WSL (Linux uchun Windows quyi tizimi) talab qilinadi.",
+    "Miao WSL serverini qoʻshishdan oldin WSL (Linux uchun Windows quyi tizimi) talab qilinadi.",
   "wsl.onboarding.wslUnavailable.title": "WSL mavjud emas",
   "wsl.onboarding.wslUnavailable.description": "Miao WSL ni ushbu mashinada tasdiqlay olmadi.",
   "wsl.onboarding.installWsl": "WSL-ni o'rnating",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL-ni o'rnatishni tugatish uchun Windows-ni qayta ishga tushiring, so'ngra OpenCode-ni qayta oching.",
+    "WSL-ni o'rnatishni tugatish uchun Windows-ni qayta ishga tushiring, so'ngra Miao-ni qayta oching.",
   "wsl.onboarding.next": "Keyingi",
   "wsl.onboarding.refresh": "Yangilash",
   "wsl.onboarding.allDistrosAdded": "Barcha o'rnatilgan tarqatishlar allaqachon qo'shilgan.",
@@ -665,7 +665,7 @@ export const dict = {
   "error.chain.modelNotFound": "Model topilmadi: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Konfiguratsiya (miao.json) provayder/model nomlarini tekshiring",
   "error.chain.mcpFailed":
-    "MCP \"{{name}}\" serveri muvaffaqiyatsiz tugadi. E'tibor bering, OpenCode hali MCP autentifikatsiyasini qo'llab-quvvatlamaydi.",
+    "MCP \"{{name}}\" serveri muvaffaqiyatsiz tugadi. E'tibor bering, Miao hali MCP autentifikatsiyasini qo'llab-quvvatlamaydi.",
   "error.chain.providerAuthFailed": "Provayder autentifikatsiyasi amalga oshmadi ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" provayderini ishga tushirib boʻlmadi. Hisob ma\'lumotlari va konfiguratsiyani tekshiring.',
@@ -876,7 +876,7 @@ export const dict = {
   "sidebar.workspaces.disable": "Ish joylarini o'chirib qo'ying",
   "sidebar.gettingStarted.title": "Boshlanmoqda",
   "sidebar.gettingStarted.line1":
-    "OpenCode bepul modellarni o'z ichiga oladi, shuning uchun siz darhol boshlashingiz mumkin.",
+    "Miao bepul modellarni o'z ichiga oladi, shuning uchun siz darhol boshlashingiz mumkin.",
   "sidebar.gettingStarted.line2":
     "Modellardan foydalanish uchun har qanday provayderni ulang, inc. Claude, GPT, Gemini va boshqalar.",
   "sidebar.project.recentSessions": "Oxirgi sessiyalar",
@@ -940,7 +940,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Miao qurilmangizda qanday koʻrinishini sozlang",
   "settings.general.row.colorScheme.title": "Rang sxemasi",
   "settings.general.row.colorScheme.description":
-    "OpenCode tizimga, yorugʻlik yoki qorongʻi mavzuga amal qilishini tanlang",
+    "Miao tizimga, yorugʻlik yoki qorongʻi mavzuga amal qilishini tanlang",
   "settings.general.row.theme.title": "Mavzu",
   "settings.general.row.theme.description": "Miao mavzusini sozlash.",
   "settings.general.row.font.title": "Kod shrifti",

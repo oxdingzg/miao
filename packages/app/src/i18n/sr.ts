@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao је инсталиран, али не може да се покрене",
   "desktop.wsl.error.miaoNotInstalled": "Miao није инсталиран у {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode ажурирање је завршено, али {{distro}} и даље извештава {{installed}}; очекивано {{expected}}",
+    "Miao ажурирање је завршено, али {{distro}} и даље извештава {{installed}}; очекивано {{expected}}",
   "desktop.wsl.error.noVersion": "нема верзије",
   "desktop.wsl.error.serverExited": "WSL сервер је изашао након покретања (код={{code}} сигнал={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "Чека се ауторизација...",
   "provider.connect.status.failed": "Ауторизација није успела: {{error}}",
   "provider.connect.apiKey.description":
-    "Унесите свој {{provider}} API кључ да бисте повезали свој налог и користили {{provider}} моделе у OpenCode.",
+    "Унесите свој {{provider}} API кључ да бисте повезали свој налог и користили {{provider}} моделе у Miao.",
   "provider.connect.apiKey.label": "{{provider}} API кључ",
   "provider.connect.apiKey.placeholder": "API кључ",
   "provider.connect.apiKey.required": "API кључ је неопходан",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Посетите",
   "provider.connect.oauth.code.visit.link": "ова веза",
   "provider.connect.oauth.code.visit.suffix":
-    "да бисте прикупили ваш ауторизациони код за повезивање налога и коришћење {{provider}} модела у OpenCode.",
+    "да бисте прикупили ваш ауторизациони код за повезивање налога и коришћење {{provider}} модела у Miao.",
   "provider.connect.oauth.code.label": "{{method}} ауторизациони код",
   "provider.connect.oauth.code.placeholder": "Ауторизациони код",
   "provider.connect.oauth.code.required": "Потребан је код за ауторизацију",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Посетите",
   "provider.connect.oauth.auto.visit.link": "ова веза",
   "provider.connect.oauth.auto.visit.suffix":
-    "и унесите код испод да бисте повезали свој налог и користили {{provider}} моделе у OpenCode.",
+    "и унесите код испод да бисте повезали свој налог и користили {{provider}} моделе у Miao.",
   "provider.connect.oauth.auto.confirmationCode": "код за потврду",
   "provider.connect.toast.connected.title": "{{provider}} повезан",
   "provider.connect.toast.connected.description": "{{provider}} модела је сада доступно за коришћење.",
@@ -485,12 +485,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Инсталирајте Linux дистрибуцију из каталога WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL није инсталиран",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) је потребан да би OpenCode могао да дода WSL сервер",
+    "WSL (Windows Subsystem for Linux) је потребан да би Miao могао да дода WSL сервер",
   "wsl.onboarding.wslUnavailable.title": "WSL недоступан",
   "wsl.onboarding.wslUnavailable.description": "Miao није могао да потврди WSL на овој машини.",
   "wsl.onboarding.installWsl": "Инсталирај WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Поново покрените Windows да бисте завршили инсталирање WSL, а затим поново отворите OpenCode.",
+    "Поново покрените Windows да бисте завршили инсталирање WSL, а затим поново отворите Miao.",
   "wsl.onboarding.next": "Следеће",
   "wsl.onboarding.refresh": "Освежи",
   "wsl.onboarding.allDistrosAdded": "Све инсталиране дистрибуције су већ додате.",
@@ -663,7 +663,7 @@ export const dict = {
   "error.chain.modelNotFound": "Модел није пронађен: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Проверите имена добављача/модела конфигурације (miao.json).",
   "error.chain.mcpFailed":
-    "MCP сервер „{{name}}“ није успео. Напомена, OpenCode још увек не подржава MCP аутентификацију.",
+    "MCP сервер „{{name}}“ није успео. Напомена, Miao још увек не подржава MCP аутентификацију.",
   "error.chain.providerAuthFailed": "аутентификација добављача није успела ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "Иницијализација добављача „{{provider}}“ није успела. Проверите акредитиве и конфигурацију.",

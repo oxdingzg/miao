@@ -86,7 +86,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao انسٹال ہے لیکن چل نہیں سکا",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}} میں Miao انسٹال نہیں ہے",
   "desktop.wsl.error.updateVersion":
-    "OpenCode کی اپ ڈیٹ مکمل ہو گئی لیکن {{distro}} اب بھی {{installed}} کی اطلاع دے رہا ہے؛ متوقع ورژن {{expected}} ہے",
+    "Miao کی اپ ڈیٹ مکمل ہو گئی لیکن {{distro}} اب بھی {{installed}} کی اطلاع دے رہا ہے؛ متوقع ورژن {{expected}} ہے",
   "desktop.wsl.error.noVersion": "کوئی ورژن نہیں",
   "desktop.wsl.error.serverExited": "WSL سرور شروع ہونے کے بعد بند ہو گیا (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.status.waiting": "اجازت کا انتظار ہے...",
   "provider.connect.status.failed": "اجازت حاصل نہیں ہو سکی: {{error}}",
   "provider.connect.apiKey.description":
-    "اپنا اکاؤنٹ منسلک کرنے اور OpenCode میں {{provider}} ماڈلز استعمال کرنے کے لیے اپنی {{provider}} API کلید درج کریں۔",
+    "اپنا اکاؤنٹ منسلک کرنے اور Miao میں {{provider}} ماڈلز استعمال کرنے کے لیے اپنی {{provider}} API کلید درج کریں۔",
   "provider.connect.apiKey.label": "{{provider}} API کلید",
   "provider.connect.apiKey.placeholder": "API کلید",
   "provider.connect.apiKey.required": "API کلید درکار ہے۔",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ملاحظہ کریں ",
   "provider.connect.oauth.code.visit.link": "یہ لنک",
   "provider.connect.oauth.code.visit.suffix":
-    "، اپنا اجازت نامہ حاصل کریں، اکاؤنٹ منسلک کریں اور OpenCode میں {{provider}} ماڈلز استعمال کریں۔",
+    "، اپنا اجازت نامہ حاصل کریں، اکاؤنٹ منسلک کریں اور Miao میں {{provider}} ماڈلز استعمال کریں۔",
   "provider.connect.oauth.code.label": "{{method}} اجازت کا کوڈ",
   "provider.connect.oauth.code.placeholder": "اجازت کا کوڈ",
   "provider.connect.oauth.code.required": "اجازت کا کوڈ درکار ہے۔",
@@ -251,7 +251,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "ملاحظہ کریں ",
   "provider.connect.oauth.auto.visit.link": "یہ لنک",
   "provider.connect.oauth.auto.visit.suffix":
-    " اور نیچے دیا گیا کوڈ درج کرکے اپنا اکاؤنٹ منسلک کریں اور OpenCode میں {{provider}} ماڈلز استعمال کریں۔",
+    " اور نیچے دیا گیا کوڈ درج کرکے اپنا اکاؤنٹ منسلک کریں اور Miao میں {{provider}} ماڈلز استعمال کریں۔",
   "provider.connect.oauth.auto.confirmationCode": "تصدیقی کوڈ",
   "provider.connect.toast.connected.title": "{{provider}} منسلک ہے۔",
   "provider.connect.toast.connected.description": "{{provider}} ماڈل اب استعمال کے لیے دستیاب ہیں۔",
@@ -494,12 +494,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL کیٹلاگ سے Linux ڈسٹری بیوشن انسٹال کریں۔",
   "wsl.onboarding.wslNotInstalled.title": "WSL انسٹال نہیں ہے۔",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows سب سسٹم برائے Linux) کی ضرورت ہے اس سے پہلے کہ OpenCode WSL سرور شامل کر سکے۔",
+    "WSL (Windows سب سسٹم برائے Linux) کی ضرورت ہے اس سے پہلے کہ Miao WSL سرور شامل کر سکے۔",
   "wsl.onboarding.wslUnavailable.title": "WSL دستیاب نہیں ہے۔",
   "wsl.onboarding.wslUnavailable.description": "Miao اس مشین پر WSL کی تصدیق نہیں کر سکا۔",
   "wsl.onboarding.installWsl": "WSL انسٹال کریں۔",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL انسٹال کرنے کے لیے Windows کو دوبارہ شروع کریں، پھر OpenCode کو دوبارہ کھولیں۔",
+    "WSL انسٹال کرنے کے لیے Windows کو دوبارہ شروع کریں، پھر Miao کو دوبارہ کھولیں۔",
   "wsl.onboarding.next": "اگلا",
   "wsl.onboarding.refresh": "ریفریش کریں۔",
   "wsl.onboarding.allDistrosAdded": "تمام انسٹال شدہ ڈسٹرو پہلے ہی شامل کر دیے گئے ہیں۔",
@@ -674,7 +674,7 @@ export const dict = {
   "error.chain.didYouMean": "کیا آپ کا مطلب ہے: {{suggestions}}؟",
   "error.chain.modelNotFound": "ماڈل نہیں ملا: {{provider}}/{{model}}",
   "error.chain.checkConfig": "اپنی تشکیل (miao.json) فراہم کنندہ/ماڈل کے نام چیک کریں۔",
-  "error.chain.mcpFailed": 'MCP سرور "{{name}}" ناکام ہو گیا۔ نوٹ، OpenCode ابھی تک MCP تصدیق کو سپورٹ نہیں کرتا ہے۔',
+  "error.chain.mcpFailed": 'MCP سرور "{{name}}" ناکام ہو گیا۔ نوٹ، Miao ابھی تک MCP تصدیق کو سپورٹ نہیں کرتا ہے۔',
   "error.chain.providerAuthFailed": "فراہم کنندہ کی توثیق ناکام ہوگئی ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'فراہم کنندہ "{{provider}}" کو شروع کرنے میں ناکام۔ اسناد اور کنفیگریشن چیک کریں۔',
   "error.chain.configJsonInvalid": "{{path}} پر کنفگ فائل درست نہیں ہے JSON(C)",
@@ -942,7 +942,7 @@ export const dict = {
   "settings.general.row.appearance.description": "اپنی مرضی کے مطابق بنائیں کہ آپ کے آلے پر Miao کیسا لگتا ہے۔",
   "settings.general.row.colorScheme.title": "رنگ سکیم",
   "settings.general.row.colorScheme.description":
-    "منتخب کریں کہ آیا OpenCode سسٹم، لائٹ یا ڈارک تھیم کی پیروی کرتا ہے۔",
+    "منتخب کریں کہ آیا Miao سسٹم، لائٹ یا ڈارک تھیم کی پیروی کرتا ہے۔",
   "settings.general.row.theme.title": "تھیم",
   "settings.general.row.theme.description": "Miao کی تھیم حسب ضرورت بنائیں۔",
   "settings.general.row.font.title": "کوڈ فونٹ",

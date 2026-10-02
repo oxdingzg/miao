@@ -35,3 +35,7 @@ tsconfig.tsbuildinfo
 # Local research notes (not committed)
 docs/research/
 .gstack/
+
+# Local agent tooling and heap snapshots
+.claude/
+*.heapsnapshot

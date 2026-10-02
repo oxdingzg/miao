@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "Opencode është instaluar por nuk mund të ekzekutohet",
   "desktop.wsl.error.miaoNotInstalled": "Miao nuk është i instaluar në {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Përditësimi i OpenCode përfundoi, por {{distro}} ende raporton {{installed}}; pritet {{expected}}",
+    "Përditësimi i Miao përfundoi, por {{distro}} ende raporton {{installed}}; pritet {{expected}}",
   "desktop.wsl.error.noVersion": "asnjë version",
   "desktop.wsl.error.serverExited": "Serveri WSL doli pas nisjes (kodi={{code}} sinjal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "Në pritje të autorizimit...",
   "provider.connect.status.failed": "Autorizimi dështoi: {{error}}",
   "provider.connect.apiKey.description":
-    "Futni çelësin API të {{provider}} për të lidhur llogarinë dhe për të përdorur modelet {{provider}} në OpenCode.",
+    "Futni çelësin API të {{provider}} për të lidhur llogarinë dhe për të përdorur modelet {{provider}} në Miao.",
   "provider.connect.apiKey.label": "{{provider}} Tasti API",
   "provider.connect.apiKey.placeholder": "Tasti API",
   "provider.connect.apiKey.required": "Kërkohet çelësi API",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Vizitoni ",
   "provider.connect.oauth.code.visit.link": "kjo lidhje",
   "provider.connect.oauth.code.visit.suffix":
-    " për të mbledhur kodin tuaj të autorizimit për të lidhur llogarinë tuaj dhe për të përdorur modelet {{provider}} në OpenCode.",
+    " për të mbledhur kodin tuaj të autorizimit për të lidhur llogarinë tuaj dhe për të përdorur modelet {{provider}} në Miao.",
   "provider.connect.oauth.code.label": "Kodi i autorizimit {{method}}",
   "provider.connect.oauth.code.placeholder": "Kodi i autorizimit",
   "provider.connect.oauth.code.required": "Kërkohet kodi i autorizimit",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Vizitoni ",
   "provider.connect.oauth.auto.visit.link": "kjo lidhje",
   "provider.connect.oauth.auto.visit.suffix":
-    " dhe futni kodin më poshtë për të lidhur llogarinë tuaj dhe për të përdorur modelet {{provider}} në OpenCode.",
+    " dhe futni kodin më poshtë për të lidhur llogarinë tuaj dhe për të përdorur modelet {{provider}} në Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Kodi i konfirmimit",
   "provider.connect.toast.connected.title": "{{provider}} i lidhur",
   "provider.connect.toast.connected.description": "Modelet {{provider}} tani janë në dispozicion për t'u përdorur.",
@@ -486,7 +486,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Instaloni një shpërndarje Linux nga katalogu WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL nuk është i instaluar",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Nënsistemi Windows për Linux) kërkohet përpara se OpenCode të shtojë një server WSL",
+    "WSL (Nënsistemi Windows për Linux) kërkohet përpara se Miao të shtojë një server WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL i padisponueshëm",
   "wsl.onboarding.wslUnavailable.description": "Miao nuk mund ta verifikonte WSL në këtë makinë.",
   "wsl.onboarding.installWsl": "Instaloni WSL",
@@ -664,7 +664,7 @@ export const dict = {
   "error.chain.didYouMean": "A do të thuash: {{suggestions}}",
   "error.chain.modelNotFound": "Modeli nuk u gjet: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Kontrolloni emrat e ofruesit/modelit tuaj të konfigurimit (miao.json).",
-  "error.chain.mcpFailed": 'Serveri MCP "{{name}}" dështoi. Shënim, OpenCode nuk e mbështet ende vërtetimin MCP.',
+  "error.chain.mcpFailed": 'Serveri MCP "{{name}}" dështoi. Shënim, Miao nuk e mbështet ende vërtetimin MCP.',
   "error.chain.providerAuthFailed": "Autentifikimi i ofruesit dështoi ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Inicializimi i ofruesit "{{provider}}" dështoi. Kontrolloni kredencialet dhe konfigurimin.',
@@ -936,7 +936,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Personalizojeni se si duket Miao në pajisjen tuaj",
   "settings.general.row.colorScheme.title": "Skema e ngjyrave",
   "settings.general.row.colorScheme.description":
-    "Zgjidhni nëse OpenCode ndjek temën e sistemit, të lehtë ose të errët",
+    "Zgjidhni nëse Miao ndjek temën e sistemit, të lehtë ose të errët",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Personalizojeni se si është tema e Miao.",
   "settings.general.row.font.title": "Fonti i kodit",

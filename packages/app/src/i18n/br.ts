@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "O miao está instalado, mas não pôde ser executado",
   "desktop.wsl.error.miaoNotInstalled": "O Miao não está instalado em {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "A atualização do OpenCode foi concluída, mas {{distro}} ainda informa a versão {{installed}}; a versão esperada é {{expected}}",
+    "A atualização do Miao foi concluída, mas {{distro}} ainda informa a versão {{installed}}; a versão esperada é {{expected}}",
   "desktop.wsl.error.noVersion": "sem versão",
   "desktop.wsl.error.serverExited":
     "O servidor WSL foi encerrado após a inicialização (código={{code}} sinal={{signal}})",
@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.status.waiting": "Aguardando autorização...",
   "provider.connect.status.failed": "Autorização falhou: {{error}}",
   "provider.connect.apiKey.description":
-    "Digite sua chave de API do {{provider}} para conectar sua conta e usar modelos do {{provider}} no OpenCode.",
+    "Digite sua chave de API do {{provider}} para conectar sua conta e usar modelos do {{provider}} no Miao.",
   "provider.connect.apiKey.label": "Chave de API do {{provider}}",
   "provider.connect.apiKey.placeholder": "Chave de API",
   "provider.connect.apiKey.required": "A chave de API é obrigatória",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Visite ",
   "provider.connect.oauth.code.visit.link": "este link",
   "provider.connect.oauth.code.visit.suffix":
-    " para obter seu código de autorização e conectar sua conta para usar modelos do {{provider}} no OpenCode.",
+    " para obter seu código de autorização e conectar sua conta para usar modelos do {{provider}} no Miao.",
   "provider.connect.oauth.code.label": "Código de autorização {{method}}",
   "provider.connect.oauth.code.placeholder": "Código de autorização",
   "provider.connect.oauth.code.required": "O código de autorização é obrigatório",
@@ -251,7 +251,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Visite ",
   "provider.connect.oauth.auto.visit.link": "este link",
   "provider.connect.oauth.auto.visit.suffix":
-    " e digite o código abaixo para conectar sua conta e usar modelos do {{provider}} no OpenCode.",
+    " e digite o código abaixo para conectar sua conta e usar modelos do {{provider}} no Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Código de confirmação",
   "provider.connect.toast.connected.title": "{{provider}} conectado",
   "provider.connect.toast.connected.description": "Modelos do {{provider}} agora estão disponíveis para uso.",
@@ -487,12 +487,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Instale uma distribuição Linux pelo catálogo do WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL não instalado",
   "wsl.onboarding.wslNotInstalled.description":
-    "O WSL (Windows Subsystem for Linux) é necessário para que o OpenCode possa adicionar um servidor WSL",
+    "O WSL (Windows Subsystem for Linux) é necessário para que o Miao possa adicionar um servidor WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL indisponível",
   "wsl.onboarding.wslUnavailable.description": "O Miao não conseguiu verificar o WSL neste computador.",
   "wsl.onboarding.installWsl": "Instalar o WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Reinicie o Windows para concluir a instalação do WSL e abra o OpenCode novamente.",
+    "Reinicie o Windows para concluir a instalação do WSL e abra o Miao novamente.",
   "wsl.onboarding.next": "Próximo",
   "wsl.onboarding.refresh": "Atualizar",
   "wsl.onboarding.allDistrosAdded": "Todas as distribuições instaladas já foram adicionadas.",
@@ -654,7 +654,7 @@ export const dict = {
   "error.chain.didYouMean": "Você quis dizer: {{suggestions}}",
   "error.chain.modelNotFound": "Modelo não encontrado: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Verifique os nomes de provedor/modelo na sua configuração (miao.json)",
-  "error.chain.mcpFailed": 'Servidor MCP "{{name}}" falhou. Nota: OpenCode ainda não suporta autenticação MCP.',
+  "error.chain.mcpFailed": 'Servidor MCP "{{name}}" falhou. Nota: Miao ainda não suporta autenticação MCP.',
   "error.chain.providerAuthFailed": "Autenticação do provedor falhou ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Falha ao inicializar provedor "{{provider}}". Verifique credenciais e configuração.',

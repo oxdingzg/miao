@@ -51,7 +51,7 @@ Miao は [AI SDK](https://ai-sdk.dev/) および [Models.dev](https://models.dev
 
 ```json title="miao.json" {3}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "model": "lmstudio/google/gemma-3n-e4b"
 }
 ```
@@ -68,7 +68,7 @@ config を通じてモデルのオプションをグローバルに設定でき�
 
 ```jsonc title="miao.json" {7-12,19-24}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "openai": {
       "models": {
@@ -107,7 +107,7 @@ config を通じてモデルのオプションをグローバルに設定でき�
 
 ```jsonc title="miao.json" {6-21}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "miao": {
       "models": {
@@ -172,7 +172,7 @@ Miao には、多くのプロバイダーのデフォルトのバリアントが
 
 ```jsonc title="miao.json" {7-18}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "provider": {
     "openai": {
       "models": {
@@ -209,7 +209,7 @@ Miao が起動すると、次の優先順位でモデルがチェックされま
 
    ```json title="miao.json"
    {
-     "$schema": "https://opencode.ai/config.json",
+     "$schema": "https://mtty.dev/miao/config.json",
      "model": "anthropic/claude-sonnet-4-20250514"
    }
    ```

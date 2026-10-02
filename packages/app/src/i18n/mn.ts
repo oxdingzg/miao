@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao суулгасан боловч ажиллуулж чадсангүй",
   "desktop.wsl.error.miaoNotInstalled": "Miao-г {{distro}}-д суулгаагүй байна",
   "desktop.wsl.error.updateVersion":
-    "OpenCode шинэчлэлт дууссан боловч {{distro}} мэдээлсэн хэвээр {{installed}}; хүлээгдэж буй {{expected}}",
+    "Miao шинэчлэлт дууссан боловч {{distro}} мэдээлсэн хэвээр {{installed}}; хүлээгдэж буй {{expected}}",
   "desktop.wsl.error.noVersion": "хувилбар байхгүй",
   "desktop.wsl.error.serverExited": "WSL сервер эхлүүлсний дараа гарсан (код={{code}} дохио ={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -223,7 +223,7 @@ export const dict = {
   "provider.connect.status.waiting": "Зөвшөөрөл хүлээж байна...",
   "provider.connect.status.failed": "Зөвшөөрөл амжилтгүй болсон: {{error}}",
   "provider.connect.apiKey.description":
-    "Бүртгэлээ холбохын тулд {{provider}} API түлхүүрээ оруулаад OpenCode-д {{provider}} загварыг ашиглана уу.",
+    "Бүртгэлээ холбохын тулд {{provider}} API түлхүүрээ оруулаад Miao-д {{provider}} загварыг ашиглана уу.",
   "provider.connect.apiKey.label": "{{provider}} API түлхүүр",
   "provider.connect.apiKey.placeholder": "API түлхүүр",
   "provider.connect.apiKey.required": "API түлхүүр шаардлагатай",
@@ -237,7 +237,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "зочилно уу",
   "provider.connect.oauth.code.visit.link": "энэ холбоос",
   "provider.connect.oauth.code.visit.suffix":
-    "OpenCode дахь {{provider}} загваруудыг ашиглан бүртгэлээ холбохын тулд зөвшөөрлийн кодыг цуглуулах.",
+    "Miao дахь {{provider}} загваруудыг ашиглан бүртгэлээ холбохын тулд зөвшөөрлийн кодыг цуглуулах.",
   "provider.connect.oauth.code.label": "{{method}} зөвшөөрлийн код",
   "provider.connect.oauth.code.placeholder": "Зөвшөөрлийн код",
   "provider.connect.oauth.code.required": "Зөвшөөрлийн код шаардлагатай",
@@ -245,7 +245,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "зочилно уу",
   "provider.connect.oauth.auto.visit.link": "энэ холбоос",
   "provider.connect.oauth.auto.visit.suffix":
-    "Доорх кодыг оруулаад бүртгэлээ холбож, OpenCode-д {{provider}} загварыг ашиглана уу.",
+    "Доорх кодыг оруулаад бүртгэлээ холбож, Miao-д {{provider}} загварыг ашиглана уу.",
   "provider.connect.oauth.auto.confirmationCode": "Баталгаажуулах код",
   "provider.connect.toast.connected.title": "{{provider}} холбогдсон",
   "provider.connect.toast.connected.description": "{{provider}} загваруудыг ашиглах боломжтой боллоо.",
@@ -488,12 +488,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL каталогоос Linux түгээлтийг суулгана уу",
   "wsl.onboarding.wslNotInstalled.title": "WSL суулгаагүй байна",
   "wsl.onboarding.wslNotInstalled.description":
-    "OpenCode WSL сервер нэмэхийн өмнө WSL (Windows Subsystem for Linux) шаардлагатай",
+    "Miao WSL сервер нэмэхийн өмнө WSL (Windows Subsystem for Linux) шаардлагатай",
   "wsl.onboarding.wslUnavailable.title": "WSL боломжгүй",
   "wsl.onboarding.wslUnavailable.description": "Miao энэ машин дээр WSL-г баталгаажуулж чадсангүй.",
   "wsl.onboarding.installWsl": "WSL суулгах",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL-г суулгаж дуусгахын тулд Windows-г дахин эхлүүлээд OpenCode-г дахин нээнэ үү.",
+    "WSL-г суулгаж дуусгахын тулд Windows-г дахин эхлүүлээд Miao-г дахин нээнэ үү.",
   "wsl.onboarding.next": "Дараа нь",
   "wsl.onboarding.refresh": "Сэргээх",
   "wsl.onboarding.allDistrosAdded": "Бүх суулгасан түгээлтүүд аль хэдийн нэмэгдсэн байна.",
@@ -666,7 +666,7 @@ export const dict = {
   "error.chain.modelNotFound": "Загвар олдсонгүй: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Өөрийн тохиргооны (miao.json) үйлчилгээ үзүүлэгч/загварын нэрийг шалгана уу",
   "error.chain.mcpFailed":
-    'MCP сервер "{{name}}" амжилтгүй боллоо. OpenCode нь MCP баталгаажуулалтыг хараахан дэмждэггүйг анхаарна уу.',
+    'MCP сервер "{{name}}" амжилтгүй боллоо. Miao нь MCP баталгаажуулалтыг хараахан дэмждэггүйг анхаарна уу.',
   "error.chain.providerAuthFailed":
     "Үйлчилгээ үзүүлэгчийн баталгаажуулалт амжилтгүй болсон ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
@@ -940,7 +940,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Miao төхөөрөмж дээрээ хэрхэн харагдахыг тохируулна уу",
   "settings.general.row.colorScheme.title": "Өнгөний схем",
   "settings.general.row.colorScheme.description":
-    "OpenCode нь систем, цайвар эсвэл бараан загварт тохирох эсэхийг сонгоно уу",
+    "Miao нь систем, цайвар эсвэл бараан загварт тохирох эсэхийг сонгоно уу",
   "settings.general.row.theme.title": "Сэдэв",
   "settings.general.row.theme.description": "Miao-г хэрхэн загварчлахыг тохируулна уу.",
   "settings.general.row.font.title": "Кодын фонт",

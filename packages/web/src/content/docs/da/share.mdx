@@ -3,6 +3,10 @@ title: Deling
 description: Del dine Miao-samtaler.
 ---
 
+:::note
+miao has no default sharing backend. Sharing requires an explicit `enterprise.url` in `miao.json`. Console login alone does not enable sharing.
+:::
+
 Miaos delingsfunksjon lar deg lage offentlige lenker til dine Miao-samtaler, slik at du kan samarbeide med lagkamerater eller få hjelp fra andre.
 
 :::note
@@ -17,7 +21,7 @@ Når du deler en samtale, Miao:
 
 1. Opreter en unik offentlig URL for sessionen din
 2. Synkroniserer samtaleloggen din til serverne våre
-3. Gør samtalen tilgængelig via den delbare lenken — `opncd.ai/s/<share-id>`
+3. Gør samtalen tilgængelig via den delbare lenken — `your-share-server/share/<share-id>`
 
 ---
 
@@ -41,7 +45,7 @@ For at eksplisitt angi manuell modus i [konfigurasjonsfilen](/docs/config):
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "manual"
 }
 ```
@@ -54,7 +58,7 @@ Du kan aktivere automatisk deling for alle nye samtaler ved at sette alternative
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "auto"
 }
 ```
@@ -69,7 +73,7 @@ Du kan deaktivere deling helt ved at sette alternativet `share` til `"disabled"`
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "disabled"
 }
 ```

@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao quraşdırılıb, lakin onu işə salmaq mümkün olmadı",
   "desktop.wsl.error.miaoNotInstalled": "Miao {{distro}} distribütivində quraşdırılmayıb",
   "desktop.wsl.error.updateVersion":
-    "OpenCode yeniləməsi tamamlandı, lakin {{distro}} hələ də {{installed}} versiyasını bildirir; gözlənilən versiya: {{expected}}",
+    "Miao yeniləməsi tamamlandı, lakin {{distro}} hələ də {{installed}} versiyasını bildirir; gözlənilən versiya: {{expected}}",
   "desktop.wsl.error.noVersion": "versiya yoxdur",
   "desktop.wsl.error.serverExited": "WSL serveri başladıqdan sonra dayandı (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -223,7 +223,7 @@ export const dict = {
   "provider.connect.status.waiting": "Avtorizasiya gözlənilir...",
   "provider.connect.status.failed": "Avtorizasiya uğursuz oldu: {{error}}",
   "provider.connect.apiKey.description":
-    "Hesabınızı qoşmaq və OpenCode-da {{provider}} modellərindən istifadə etmək üçün {{provider}} API açarınızı daxil edin.",
+    "Hesabınızı qoşmaq və Miao-da {{provider}} modellərindən istifadə etmək üçün {{provider}} API açarınızı daxil edin.",
   "provider.connect.apiKey.label": "{{provider}} API açarı",
   "provider.connect.apiKey.placeholder": "API açarı",
   "provider.connect.apiKey.required": "API açarı tələb olunur",
@@ -237,7 +237,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "",
   "provider.connect.oauth.code.visit.link": "Bu linkə",
   "provider.connect.oauth.code.visit.suffix":
-    " daxil olub hesabınızı qoşmaq və OpenCode-da {{provider}} modellərindən istifadə etmək üçün avtorizasiya kodunuzu əldə edin.",
+    " daxil olub hesabınızı qoşmaq və Miao-da {{provider}} modellərindən istifadə etmək üçün avtorizasiya kodunuzu əldə edin.",
   "provider.connect.oauth.code.label": "{{method}} avtorizasiya kodu",
   "provider.connect.oauth.code.placeholder": "Avtorizasiya kodu",
   "provider.connect.oauth.code.required": "Avtorizasiya kodu tələb olunur",
@@ -245,7 +245,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "",
   "provider.connect.oauth.auto.visit.link": "Bu linkə",
   "provider.connect.oauth.auto.visit.suffix":
-    " daxil olub aşağıdakı kodu daxil edərək hesabınızı qoşun və OpenCode-da {{provider}} modellərindən istifadə edin.",
+    " daxil olub aşağıdakı kodu daxil edərək hesabınızı qoşun və Miao-da {{provider}} modellərindən istifadə edin.",
   "provider.connect.oauth.auto.confirmationCode": "Təsdiq kodu",
   "provider.connect.toast.connected.title": "{{provider}} qoşuldu",
   "provider.connect.toast.connected.description": "{{provider}} modelləri artıq istifadə üçün mövcuddur.",
@@ -489,12 +489,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL kataloqundan Linux paylamasını quraşdırın",
   "wsl.onboarding.wslNotInstalled.title": "WSL quraşdırılmayıb",
   "wsl.onboarding.wslNotInstalled.description":
-    "OpenCode WSL serveri əlavə etməzdən əvvəl WSL (Linux üçün Windows alt sistemi) tələb olunur",
+    "Miao WSL serveri əlavə etməzdən əvvəl WSL (Linux üçün Windows alt sistemi) tələb olunur",
   "wsl.onboarding.wslUnavailable.title": "WSL mövcud deyil",
   "wsl.onboarding.wslUnavailable.description": "Miao bu maşında WSL-i doğrulaya bilmədi.",
   "wsl.onboarding.installWsl": "WSL quraşdırın",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL-nin quraşdırılmasını başa çatdırmaq üçün Windows-u yenidən başladın, sonra OpenCode-u yenidən açın.",
+    "WSL-nin quraşdırılmasını başa çatdırmaq üçün Windows-u yenidən başladın, sonra Miao-u yenidən açın.",
   "wsl.onboarding.next": "Növbəti",
   "wsl.onboarding.refresh": "Yeniləyin",
   "wsl.onboarding.allDistrosAdded": "Bütün quraşdırılmış distribütivlər artıq əlavə edilib.",
@@ -670,7 +670,7 @@ export const dict = {
   "error.chain.modelNotFound": "Model tapılmadı: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Konfiqurasiyanızdakı (miao.json) provayder/model adlarını yoxlayın",
   "error.chain.mcpFailed":
-    'MCP server "{{name}}" uğursuz oldu. Qeyd: OpenCode hələ MCP autentifikasiyasını dəstəkləmir.',
+    'MCP server "{{name}}" uğursuz oldu. Qeyd: Miao hələ MCP autentifikasiyasını dəstəkləmir.',
   "error.chain.providerAuthFailed": "Provayder autentifikasiyası uğursuz oldu ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" provayderinin işə salınması uğursuz oldu. Giriş məlumatlarını və konfiqurasiyanı yoxlayın.',
@@ -942,7 +942,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Miao-un cihazınızda necə göründüyünü fərdiləşdirin",
   "settings.general.row.colorScheme.title": "Rəng sxemi",
   "settings.general.row.colorScheme.description":
-    "OpenCode-un sistem, açıq və ya tünd mövzudan istifadə etməsini seçin",
+    "Miao-un sistem, açıq və ya tünd mövzudan istifadə etməsini seçin",
   "settings.general.row.theme.title": "Mövzu",
   "settings.general.row.theme.description": "Miao-un mövzusunu fərdiləşdirin.",
   "settings.general.row.font.title": "Kod şrifti",

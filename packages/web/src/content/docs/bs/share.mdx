@@ -3,6 +3,10 @@ title: Dijeljenje
 description: Dijelite Miao razgovore javnim linkovima.
 ---
 
+:::note
+miao has no default sharing backend. Sharing requires an explicit `enterprise.url` in `miao.json`. Console login alone does not enable sharing.
+:::
+
 Miao opcija dijeljenja vam omogucava da kreirate javne linkove za razgovore. Tako lakse saradujete s timom ili trazite pomoc od drugih.
 
 :::note
@@ -17,7 +21,7 @@ Kada podijelite razgovor, Miao:
 
 1. Kreira jedinstveni javni URL za vasu sesiju
 2. Sinhronizuje historiju razgovora na nase servere
-3. Cini razgovor dostupnim preko linka za dijeljenje — `opncd.ai/s/<share-id>`
+3. Cini razgovor dostupnim preko linka za dijeljenje — `your-share-server/share/<share-id>`
 
 ---
 
@@ -41,7 +45,7 @@ Da eksplicitno postavite rucni nacin u [config datoteci](/docs/config):
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "manual"
 }
 ```
@@ -54,7 +58,7 @@ Mozete ukljuciti automatsko dijeljenje za sve nove razgovore tako sto `share` po
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "auto"
 }
 ```
@@ -69,7 +73,7 @@ Dijeljenje mozete potpuno iskljuciti tako sto `share` postavite na `"disabled"` 
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "disabled"
 }
 ```

@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "ክፍት ኮድ ተጭኗል ግን ማሄድ አልቻለም",
   "desktop.wsl.error.miaoNotInstalled": "Miao በ{{distro}}] ውስጥ አልተጫነም",
   "desktop.wsl.error.updateVersion":
-    "OpenCode ዝማኔ አልቋል ግን {{distro}} አሁንም ሪፖርት ያደርጋል {{installed}}; የሚጠበቀው {{expected}}",
+    "Miao ዝማኔ አልቋል ግን {{distro}} አሁንም ሪፖርት ያደርጋል {{installed}}; የሚጠበቀው {{expected}}",
   "desktop.wsl.error.noVersion": "ምንም ስሪት የለም",
   "desktop.wsl.error.serverExited": "WSL አገልጋይ ከተጀመረ በኋላ ወጥቷል (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "ፈቀዳን በመጠበቅ ላይ...",
   "provider.connect.status.failed": "ፍቃድ መስጠት አልተሳካም፡ {{error}}",
   "provider.connect.apiKey.description":
-    "መለያዎን ለማገናኘት የ{{provider}} API ቁልፍዎን ያስገቡ እና {{provider}} ሞዴሎችን በOpenCode ይጠቀሙ።",
+    "መለያዎን ለማገናኘት የ{{provider}} API ቁልፍዎን ያስገቡ እና {{provider}} ሞዴሎችን በMiao ይጠቀሙ።",
   "provider.connect.apiKey.label": "{{provider}} API ቁልፍ",
   "provider.connect.apiKey.placeholder": "API ቁልፍ",
   "provider.connect.apiKey.required": "API ቁልፍ ያስፈልጋል",
@@ -232,7 +232,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ጎብኝ ",
   "provider.connect.oauth.code.visit.link": "ይህ ሊንክ",
   "provider.connect.oauth.code.visit.suffix":
-    " መለያዎን ለማገናኘት የፈቀዳ ኮድዎን ለመሰብሰብ እና {{provider}} ሞዴሎችን በOpenCode ውስጥ ይጠቀሙ።",
+    " መለያዎን ለማገናኘት የፈቀዳ ኮድዎን ለመሰብሰብ እና {{provider}} ሞዴሎችን በMiao ውስጥ ይጠቀሙ።",
   "provider.connect.oauth.code.label": "{{method}}የፈቀዳ ኮድ",
   "provider.connect.oauth.code.placeholder": "የፈቃድ ኮድ",
   "provider.connect.oauth.code.required": "የፈቃድ ኮድ ያስፈልጋል",
@@ -651,7 +651,7 @@ export const dict = {
   "error.chain.didYouMean": "{{suggestions}}] ማለትዎ ነው",
   "error.chain.modelNotFound": "ሞዴል አልተገኘም፦ {{provider}}/{{model}}",
   "error.chain.checkConfig": "የእርስዎን ውቅር (miao.json) አቅራቢ/የሞዴል ስሞችን ያረጋግጡ",
-  "error.chain.mcpFailed": 'MCP አገልጋይ "{{name}}" አልተሳካም። ማስታወሻ፣ OpenCode እስካሁን MCP ማረጋገጫን አይደግፍም።',
+  "error.chain.mcpFailed": 'MCP አገልጋይ "{{name}}" አልተሳካም። ማስታወሻ፣ Miao እስካሁን MCP ማረጋገጫን አይደግፍም።',
   "error.chain.providerAuthFailed": "የአቅራቢውን ማረጋገጥ አልተሳካም ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'አቅራቢውን "{{provider}}" ማስጀመር አልተሳካም። ምስክርነቶችን እና ውቅረትን ያረጋግጡ።',
   "error.chain.configJsonInvalid": "ማዋቀር በ{{path}} ላይ የሚሰራ አይደለም JSON(C)",

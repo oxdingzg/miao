@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao انسٹال اے پر چل نئیں سکیا",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}} وچ Miao انسٹال نئیں اے",
   "desktop.wsl.error.updateVersion":
-    "OpenCode دی اپ ڈیٹ پوری ہو گئی پر {{distro}} ہلے وی {{installed}} دس رہیا اے؛ {{expected}} چاہیدا سی",
+    "Miao دی اپ ڈیٹ پوری ہو گئی پر {{distro}} ہلے وی {{installed}} دس رہیا اے؛ {{expected}} چاہیدا سی",
   "desktop.wsl.error.noVersion": "کوئی ورژن نئیں",
   "desktop.wsl.error.serverExited": "WSL سرور شروع ہون پچھوں بند ہو گیا (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -227,7 +227,7 @@ export const dict = {
   "provider.connect.status.waiting": "اختیار ملن دی اڈیک اے...",
   "provider.connect.status.failed": "اختیار نئیں مل سکیا: {{error}}",
   "provider.connect.apiKey.description":
-    "اپنے اکاؤنٹ نوں جوڑن لئی اپنی {{provider}} API کلید درج کرو تے OpenCode وچ {{provider}} ماڈل ورتو۔",
+    "اپنے اکاؤنٹ نوں جوڑن لئی اپنی {{provider}} API کلید درج کرو تے Miao وچ {{provider}} ماڈل ورتو۔",
   "provider.connect.apiKey.label": "{{provider}} API کلید",
   "provider.connect.apiKey.placeholder": "API کلید",
   "provider.connect.apiKey.required": "API کلید دی لوڑ اے",
@@ -241,7 +241,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ویکھو ",
   "provider.connect.oauth.code.visit.link": "ایہہ لنک",
   "provider.connect.oauth.code.visit.suffix":
-    " اپنے اکاؤنٹ نوں جوڑن تے OpenCode وچ {{provider}} ماڈل ورتن لئی اپنا اجازت کوڈ حاصل کرن لئی۔",
+    " اپنے اکاؤنٹ نوں جوڑن تے Miao وچ {{provider}} ماڈل ورتن لئی اپنا اجازت کوڈ حاصل کرن لئی۔",
   "provider.connect.oauth.code.label": "{{method}} اجازت دا کوڈ",
   "provider.connect.oauth.code.placeholder": "اجازتی کوڈ",
   "provider.connect.oauth.code.required": "اجازتی کوڈ دی لوڑ اے",
@@ -249,7 +249,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "ویکھو ",
   "provider.connect.oauth.auto.visit.link": "ایہہ لنک",
   "provider.connect.oauth.auto.visit.suffix":
-    " تے اپنے اکاؤنٹ نوں جوڑن تے OpenCode وچ {{provider}} ماڈل ورتن لئی تھلے دتا کوڈ درج کرو۔",
+    " تے اپنے اکاؤنٹ نوں جوڑن تے Miao وچ {{provider}} ماڈل ورتن لئی تھلے دتا کوڈ درج کرو۔",
   "provider.connect.oauth.auto.confirmationCode": "تصدیقی کوڈ",
   "provider.connect.toast.connected.title": "{{provider}} جڑیا ہویا",
   "provider.connect.toast.connected.description": "{{provider}} ماڈل ہن ورتن لئی دستیاب ہن۔",
@@ -492,12 +492,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL کیٹلاگ توں Linux ڈسٹری بیوشن انسٹال کرو",
   "wsl.onboarding.wslNotInstalled.title": "WSL انسٹال نئیں کیتا گیا",
   "wsl.onboarding.wslNotInstalled.description":
-    "OpenCode دے WSL سرور شامل کرن توں پہلاں WSL (Windows Subsystem for Linux) دی لوڑ اے",
+    "Miao دے WSL سرور شامل کرن توں پہلاں WSL (Windows Subsystem for Linux) دی لوڑ اے",
   "wsl.onboarding.wslUnavailable.title": "WSL دستیاب نئیں",
   "wsl.onboarding.wslUnavailable.description": "Miao ایس مشین تے WSL دی تصدیق نئیں کر سکیا۔",
   "wsl.onboarding.installWsl": "WSL انسٹال کرو",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL دی تنصیب پوری کرن لئی Windows نوں دوبارہ شروع کرو، فیر OpenCode دوبارہ کھولو۔",
+    "WSL دی تنصیب پوری کرن لئی Windows نوں دوبارہ شروع کرو، فیر Miao دوبارہ کھولو۔",
   "wsl.onboarding.next": "اگلا",
   "wsl.onboarding.refresh": "تازہ کرو",
   "wsl.onboarding.allDistrosAdded": "سارے انسٹال شدہ ڈسٹرو پہلے ای شامل کر دتے گئے ہن۔",
@@ -672,7 +672,7 @@ export const dict = {
   "error.chain.didYouMean": "کی تہاڈا مطلب سی: {{suggestions}}",
   "error.chain.modelNotFound": "ماڈل نئیں لبیا: {{provider}}/{{model}}",
   "error.chain.checkConfig": "اپنی کنفگ (miao.json) وچ پرووائیڈر/ماڈل دے ناں چیک کرو",
-  "error.chain.mcpFailed": 'MCP سرور "{{name}}" ناکام ہو گیا۔ نوٹ، OpenCode ہلے تک MCP تصدیق دی حمایت نئیں کردا۔',
+  "error.chain.mcpFailed": 'MCP سرور "{{name}}" ناکام ہو گیا۔ نوٹ، Miao ہلے تک MCP تصدیق دی حمایت نئیں کردا۔',
   "error.chain.providerAuthFailed": "فراہم کرن آلے دی تصدیق ناکام ہو گئی ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'پرووائیڈر "{{provider}}" شروع نئیں ہو سکیا۔ اسناد تے کنفگ چیک کرو۔',
   "error.chain.configJsonInvalid": "{{path}} تے کنفیگ فائل درست نئیں اے JSON(C)",

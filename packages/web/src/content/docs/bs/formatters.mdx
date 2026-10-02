@@ -56,7 +56,7 @@ Možete prilagoditi formatere kroz `formatter` odjeljak u vašoj Miao konfigurac
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "formatter": {}
 }
 ```
@@ -78,7 +78,7 @@ Da onemogućite **sve** formatere globalno, postavite `formatter` na `false`:
 
 ```json title="miao.json" {3}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "formatter": false
 }
 ```
@@ -87,7 +87,7 @@ Da onemogućite **specifični** formater, postavite `disabled` na `true`:
 
 ```json title="miao.json" {5}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "formatter": {
     "prettier": {
       "disabled": true
@@ -104,7 +104,7 @@ Možete nadjačati ugrađene formatere ili dodati nove navođenjem naredbe, vari
 
 ```json title="miao.json" {4-14}
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "formatter": {
     "prettier": {
       "command": ["npx", "prettier", "--write", "$FILE"],

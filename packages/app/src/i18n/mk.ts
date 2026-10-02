@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao е инсталиран, но не може да се изврши",
   "desktop.wsl.error.miaoNotInstalled": "Miao не е инсталиран во {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode ажурирањето е завршено, но {{distro}} сè уште известува {{installed}}; се очекува {{expected}}",
+    "Miao ажурирањето е завршено, но {{distro}} сè уште известува {{installed}}; се очекува {{expected}}",
   "desktop.wsl.error.noVersion": "нема верзија",
   "desktop.wsl.error.serverExited": "WSL серверот излезе по стартувањето (код={{code}} сигнал={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "Се чека овластување...",
   "provider.connect.status.failed": "Овластувањето не успеа: {{error}}",
   "provider.connect.apiKey.description":
-    "Внесете го вашиот клуч {{provider}} API за да ја поврзете вашата сметка и да користите {{provider}} модели во OpenCode.",
+    "Внесете го вашиот клуч {{provider}} API за да ја поврзете вашата сметка и да користите {{provider}} модели во Miao.",
   "provider.connect.apiKey.label": "{{provider}} API клуч",
   "provider.connect.apiKey.placeholder": "клуч API",
   "provider.connect.apiKey.required": "Потребен е клуч API",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Посетете",
   "provider.connect.oauth.code.visit.link": "оваа врска",
   "provider.connect.oauth.code.visit.suffix":
-    "да го соберете вашиот код за авторизација за да ја поврзете вашата сметка и да користите {{provider}} модели во OpenCode.",
+    "да го соберете вашиот код за авторизација за да ја поврзете вашата сметка и да користите {{provider}} модели во Miao.",
   "provider.connect.oauth.code.label": "{{method}} код за авторизација",
   "provider.connect.oauth.code.placeholder": "Код за авторизација",
   "provider.connect.oauth.code.required": "Потребна е шифра за авторизација",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Посетете",
   "provider.connect.oauth.auto.visit.link": "оваа врска",
   "provider.connect.oauth.auto.visit.suffix":
-    "и внесете го кодот подолу за да ја поврзете вашата сметка и да користите {{provider}} модели во OpenCode.",
+    "и внесете го кодот подолу за да ја поврзете вашата сметка и да користите {{provider}} модели во Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Код за потврда",
   "provider.connect.toast.connected.title": "{{provider}} поврзан",
   "provider.connect.toast.connected.description": "Моделите {{provider}} сега се достапни за употреба.",
@@ -486,12 +486,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Инсталирајте Linux дистрибуција од каталогот WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL не е инсталиран",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) е потребно пред OpenCode да може да додаде WSL сервер",
+    "WSL (Windows Subsystem for Linux) е потребно пред Miao да може да додаде WSL сервер",
   "wsl.onboarding.wslUnavailable.title": "WSL недостапен",
   "wsl.onboarding.wslUnavailable.description": "Miao не можеше да го потврди WSL на оваа машина.",
   "wsl.onboarding.installWsl": "Инсталирај WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Рестартирајте го Windows за да завршите со инсталирањето WSL, а потоа повторно отворете OpenCode.",
+    "Рестартирајте го Windows за да завршите со инсталирањето WSL, а потоа повторно отворете Miao.",
   "wsl.onboarding.next": "Следно",
   "wsl.onboarding.refresh": "Освежи",
   "wsl.onboarding.allDistrosAdded": "Сите инсталирани дистрибуции се веќе додадени.",
@@ -665,7 +665,7 @@ export const dict = {
   "error.chain.modelNotFound": "Моделот не е пронајден: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Проверете ги имињата на давателот/моделот за конфигурација (miao.json).",
   "error.chain.mcpFailed":
-    "MCP серверот „{{name}}“ не успеа. Забелешка, OpenCode сè уште не поддржува автентикација MCP.",
+    "MCP серверот „{{name}}“ не успеа. Забелешка, Miao сè уште не поддржува автентикација MCP.",
   "error.chain.providerAuthFailed": "Неуспешна автентикација на провајдерот ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "Не успеа да се иницијализира провајдерот „{{provider}}“. Проверете ги ингеренциите и конфигурацијата.",

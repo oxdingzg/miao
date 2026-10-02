@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao установлен, но его не удалось запустить",
   "desktop.wsl.error.miaoNotInstalled": "Miao не установлен в {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Обновление OpenCode завершено, но {{distro}} по-прежнему сообщает версию {{installed}}; ожидалась {{expected}}",
+    "Обновление Miao завершено, но {{distro}} по-прежнему сообщает версию {{installed}}; ожидалась {{expected}}",
   "desktop.wsl.error.noVersion": "нет версии",
   "desktop.wsl.error.serverExited": "Сервер WSL завершил работу после запуска (код={{code}}, сигнал={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -240,7 +240,7 @@ export const dict = {
   "provider.connect.status.waiting": "Ожидание авторизации...",
   "provider.connect.status.failed": "Ошибка авторизации: {{error}}",
   "provider.connect.apiKey.description":
-    "Введите ключ API {{provider}}, чтобы подключить аккаунт и использовать модели {{provider}} в OpenCode.",
+    "Введите ключ API {{provider}}, чтобы подключить аккаунт и использовать модели {{provider}} в Miao.",
   "provider.connect.apiKey.label": "Ключ API {{provider}}",
   "provider.connect.apiKey.placeholder": "Ключ API",
   "provider.connect.apiKey.required": "Требуется ключ API",
@@ -254,7 +254,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Посетите ",
   "provider.connect.oauth.code.visit.link": "эту ссылку",
   "provider.connect.oauth.code.visit.suffix":
-    " чтобы получить код авторизации для подключения аккаунта и использования моделей {{provider}} в OpenCode.",
+    " чтобы получить код авторизации для подключения аккаунта и использования моделей {{provider}} в Miao.",
   "provider.connect.oauth.code.label": "{{method}} код авторизации",
   "provider.connect.oauth.code.placeholder": "Код авторизации",
   "provider.connect.oauth.code.required": "Код авторизации обязателен",
@@ -262,7 +262,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Посетите ",
   "provider.connect.oauth.auto.visit.link": "эту ссылку",
   "provider.connect.oauth.auto.visit.suffix":
-    " и введите код ниже для подключения аккаунта и использования моделей {{provider}} в OpenCode.",
+    " и введите код ниже для подключения аккаунта и использования моделей {{provider}} в Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Код подтверждения",
   "provider.connect.toast.connected.title": "{{provider}} подключён",
   "provider.connect.toast.connected.description": "Модели {{provider}} теперь доступны.",
@@ -513,12 +513,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Установите дистрибутив Linux из каталога WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL не установлена",
   "wsl.onboarding.wslNotInstalled.description":
-    "Для добавления сервера WSL в OpenCode требуется WSL (Подсистема Windows для Linux)",
+    "Для добавления сервера WSL в Miao требуется WSL (Подсистема Windows для Linux)",
   "wsl.onboarding.wslUnavailable.title": "WSL недоступна",
   "wsl.onboarding.wslUnavailable.description": "Miao не смог проверить WSL на этом компьютере.",
   "wsl.onboarding.installWsl": "Установить WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Перезапустите Windows, чтобы завершить установку WSL, затем снова откройте OpenCode.",
+    "Перезапустите Windows, чтобы завершить установку WSL, затем снова откройте Miao.",
   "wsl.onboarding.next": "Далее",
   "wsl.onboarding.refresh": "Обновить",
   "wsl.onboarding.allDistrosAdded": "Все установленные дистрибутивы уже добавлены.",
@@ -703,7 +703,7 @@ export const dict = {
   "error.chain.modelNotFound": "Модель не найдена: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Проверьте названия провайдера и модели в конфигурации (miao.json)",
   "error.chain.mcpFailed":
-    'MCP-сервер "{{name}}" завершился с ошибкой. Обратите внимание: OpenCode пока не поддерживает MCP-авторизацию.',
+    'MCP-сервер "{{name}}" завершился с ошибкой. Обратите внимание: Miao пока не поддерживает MCP-авторизацию.',
   "error.chain.providerAuthFailed": "Ошибка аутентификации провайдера ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Не удалось инициализировать провайдера "{{provider}}". Проверьте учётные данные и конфигурацию.',

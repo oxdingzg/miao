@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao-ը տեղադրված է, բայց չի կարող գործարկվել",
   "desktop.wsl.error.miaoNotInstalled": "Miao տեղադրված չէ {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode թարմացումն ավարտված է, բայց {{distro}}-ը դեռ հայտնում է {{installed}}; սպասվում է {{expected}}",
+    "Miao թարմացումն ավարտված է, բայց {{distro}}-ը դեռ հայտնում է {{installed}}; սպասվում է {{expected}}",
   "desktop.wsl.error.noVersion": "առանց տարբերակ",
   "desktop.wsl.error.serverExited": "WSL սերվերը դուրս է եկել գործարկումից հետո (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -222,7 +222,7 @@ export const dict = {
   "provider.connect.status.waiting": "Սպասում է թույլտվության...",
   "provider.connect.status.failed": "Լիազորումը ձախողվեց՝ {{error}}",
   "provider.connect.apiKey.description":
-    "Մուտքագրեք ձեր {{provider}} API բանալին՝ ձեր հաշիվը միացնելու և OpenCode-ում {{provider}} մոդելներ օգտագործելու համար։",
+    "Մուտքագրեք ձեր {{provider}} API բանալին՝ ձեր հաշիվը միացնելու և Miao-ում {{provider}} մոդելներ օգտագործելու համար։",
   "provider.connect.apiKey.label": "{{provider}} API բանալի",
   "provider.connect.apiKey.placeholder": "API բանալի",
   "provider.connect.apiKey.required": "API բանալի է պահանջվում",
@@ -236,7 +236,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Այցելություն ",
   "provider.connect.oauth.code.visit.link": "այս հղումը",
   "provider.connect.oauth.code.visit.suffix":
-    " հավաքել ձեր թույլտվության կոդը՝ ձեր հաշիվը միացնելու և OpenCode-ում {{provider}} մոդելներ օգտագործելու համար:",
+    " հավաքել ձեր թույլտվության կոդը՝ ձեր հաշիվը միացնելու և Miao-ում {{provider}} մոդելներ օգտագործելու համար:",
   "provider.connect.oauth.code.label": "{{method}} թույլտվության կոդ",
   "provider.connect.oauth.code.placeholder": "Լիցենզավորման կոդ",
   "provider.connect.oauth.code.required": "Պահանջվում է լիազորման կոդը",
@@ -244,7 +244,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Այցելություն ",
   "provider.connect.oauth.auto.visit.link": "այս հղումը",
   "provider.connect.oauth.auto.visit.suffix":
-    " և մուտքագրեք ստորև ծածկագիրը՝ ձեր հաշիվը միացնելու և OpenCode-ում {{provider}} մոդելներ օգտագործելու համար:",
+    " և մուտքագրեք ստորև ծածկագիրը՝ ձեր հաշիվը միացնելու և Miao-ում {{provider}} մոդելներ օգտագործելու համար:",
   "provider.connect.oauth.auto.confirmationCode": "Հաստատման կոդը",
   "provider.connect.toast.connected.title": "{{provider}} կապված",
   "provider.connect.toast.connected.description": "{{provider}} մոդելներ այժմ հասանելի են օգտագործման համար։",
@@ -487,12 +487,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Տեղադրեք Linux բաշխումը WSL կատալոգից",
   "wsl.onboarding.wslNotInstalled.title": "WSL տեղադրված չէ",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Ենթահամակարգը Linux-ի համար) անհրաժեշտ է, որպեսզի OpenCode-ը կարողանա ավելացնել WSL սերվեր",
+    "WSL (Windows Ենթահամակարգը Linux-ի համար) անհրաժեշտ է, որպեսզի Miao-ը կարողանա ավելացնել WSL սերվեր",
   "wsl.onboarding.wslUnavailable.title": "WSL անհասանելի է",
   "wsl.onboarding.wslUnavailable.description": "Miao-ը չկարողացավ հաստատել WSL-ն այս մեքենայի վրա։",
   "wsl.onboarding.installWsl": "Տեղադրեք WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Վերագործարկեք Windows՝ WSL-ի տեղադրումն ավարտելու համար, այնուհետև նորից բացեք OpenCode։",
+    "Վերագործարկեք Windows՝ WSL-ի տեղադրումն ավարտելու համար, այնուհետև նորից բացեք Miao։",
   "wsl.onboarding.next": "Հաջորդ",
   "wsl.onboarding.refresh": "Թարմացնել",
   "wsl.onboarding.allDistrosAdded": "Բոլոր տեղադրված բաշխումները արդեն ավելացված են։",
@@ -666,7 +666,7 @@ export const dict = {
   "error.chain.modelNotFound": "Մոդելը չի ​​գտնվել՝ {{provider}}/{{model}}",
   "error.chain.checkConfig": "Ստուգեք ձեր կազմաձևը (miao.json) մատակարարի/մոդելի անունները",
   "error.chain.mcpFailed":
-    "MCP «{{name}}» սերվերը ձախողվեց: Նկատի ունեցեք, որ OpenCode-ը դեռ չի աջակցում MCP նույնականացումը:",
+    "MCP «{{name}}» սերվերը ձախողվեց: Նկատի ունեցեք, որ Miao-ը դեռ չի աջակցում MCP նույնականացումը:",
   "error.chain.providerAuthFailed": "Մատակարարի նույնականացումը ձախողվեց ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "Չհաջողվեց նախաստորագրել «{{provider}}» մատակարարը։ Ստուգեք հավատարմագրերը և կազմաձևումը:",

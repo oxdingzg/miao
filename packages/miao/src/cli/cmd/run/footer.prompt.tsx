@@ -833,9 +833,9 @@ export function createPromptState(input: PromptInput): PromptState {
         ...(current.mode ? { mode: current.mode } : {}),
         ...(current.command ? { command: current.command } : {}),
       })
-    } catch {
+    } catch (error) {
       restore(current)
-      input.onStatus("failed to open editor")
+      input.onStatus(error instanceof Error ? error.message : "failed to open editor")
     }
   }
 

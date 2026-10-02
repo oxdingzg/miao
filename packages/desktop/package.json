@@ -7,7 +7,7 @@
   "homepage": "https://mtty.dev/miao",
   "author": {
     "name": "Miao",
-    "email": "hello@opencode.ai"
+    "url": "https://github.com/oxdingzg/miao"
   },
   "scripts": {
     "typecheck": "tsgo -b",

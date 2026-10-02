@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao ir instalēts, bet to nevar palaist",
   "desktop.wsl.error.miaoNotInstalled": "Miao nav instalēts {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode atjaunināšana pabeigta, bet {{distro}} joprojām rāda {{installed}}; gaidīts {{expected}}",
+    "Miao atjaunināšana pabeigta, bet {{distro}} joprojām rāda {{installed}}; gaidīts {{expected}}",
   "desktop.wsl.error.noVersion": "nav versijas",
   "desktop.wsl.error.serverExited": "WSL serveris izslēdzās pēc palaišanas (kods={{code}} signāls={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Gaida autorizāciju...",
   "provider.connect.status.failed": "Autorizācija neizdevās: {{error}}",
   "provider.connect.apiKey.description":
-    "Ievadiet savu {{provider}} API atslēgu, lai savienotu kontu un izmantotu {{provider}} modeļus OpenCode.",
+    "Ievadiet savu {{provider}} API atslēgu, lai savienotu kontu un izmantotu {{provider}} modeļus Miao.",
   "provider.connect.apiKey.label": "{{provider}} API atslēga",
   "provider.connect.apiKey.placeholder": "API atslēga",
   "provider.connect.apiKey.required": "Nepieciešama API atslēga",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Apmeklējiet",
   "provider.connect.oauth.code.visit.link": "šo saiti",
   "provider.connect.oauth.code.visit.suffix":
-    ", lai saņemtu autorizācijas kodu, savienotu kontu un izmantotu {{provider}} modeļus OpenCode.",
+    ", lai saņemtu autorizācijas kodu, savienotu kontu un izmantotu {{provider}} modeļus Miao.",
   "provider.connect.oauth.code.label": "{{method}} autorizācijas kods",
   "provider.connect.oauth.code.placeholder": "Autorizācijas kods",
   "provider.connect.oauth.code.required": "Nepieciešams autorizācijas kods",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Apmeklējiet",
   "provider.connect.oauth.auto.visit.link": "šo saiti",
   "provider.connect.oauth.auto.visit.suffix":
-    " un ievadiet zemāk redzamo kodu, lai savienotu kontu un izmantotu {{provider}} modeļus OpenCode.",
+    " un ievadiet zemāk redzamo kodu, lai savienotu kontu un izmantotu {{provider}} modeļus Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Apstiprinājuma kods",
   "provider.connect.toast.connected.title": "{{provider}} savienots",
   "provider.connect.toast.connected.description": "{{provider}} modeļi tagad ir pieejami lietošanai.",
@@ -485,12 +485,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Instalējiet Linux distribūciju no WSL kataloga",
   "wsl.onboarding.wslNotInstalled.title": "WSL nav instalēts",
   "wsl.onboarding.wslNotInstalled.description":
-    "Pirms OpenCode var pievienot WSL serveri, nepieciešams WSL (Windows Subsystem for Linux)",
+    "Pirms Miao var pievienot WSL serveri, nepieciešams WSL (Windows Subsystem for Linux)",
   "wsl.onboarding.wslUnavailable.title": "WSL nav pieejams",
   "wsl.onboarding.wslUnavailable.description": "Miao neizdevās pārbaudīt WSL šajā datorā.",
   "wsl.onboarding.installWsl": "Instalēt WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Restartējiet Windows, lai pabeigtu WSL instalēšanu, pēc tam atveriet OpenCode no jauna.",
+    "Restartējiet Windows, lai pabeigtu WSL instalēšanu, pēc tam atveriet Miao no jauna.",
   "wsl.onboarding.next": "Tālāk",
   "wsl.onboarding.refresh": "Atsvaidzināt",
   "wsl.onboarding.allDistrosAdded": "Visas instalētās distribūcijas jau ir pievienotas.",
@@ -663,7 +663,7 @@ export const dict = {
   "error.chain.modelNotFound": "Modelis nav atrasts: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Pārbaudiet konfigurāciju (miao.json) pakalpojuma/modela nosaukumus",
   "error.chain.mcpFailed":
-    'MCP serveris "{{name}}" neizdevās. Ņemiet vērā, OpenCode vēl neatbalsta MCP autentifikāciju.',
+    'MCP serveris "{{name}}" neizdevās. Ņemiet vērā, Miao vēl neatbalsta MCP autentifikāciju.',
   "error.chain.providerAuthFailed": "Pakalpojuma autentifikācija neizdevās ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Neizdevās inicializēt pakalpojumu "{{provider}}". Pārbaudiet akreditācijas datus un konfigurāciju.',
@@ -938,7 +938,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Pielāgojiet, kā Miao izskatās jūsu ierīcē",
   "settings.general.row.colorScheme.title": "Krāsu shēma",
   "settings.general.row.colorScheme.description":
-    "Izvēlieties, vai OpenCode sekos sistēmas, gaišajai vai tumšajai tēmai",
+    "Izvēlieties, vai Miao sekos sistēmas, gaišajai vai tumšajai tēmai",
   "settings.general.row.theme.title": "Tēma",
   "settings.general.row.theme.description": "Pielāgojiet Miao tēmu.",
   "settings.general.row.font.title": "Koda fonts",
