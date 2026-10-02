@@ -1,10 +1,13 @@
 import { describe, expect } from "bun:test"
 import { eq, sql } from "drizzle-orm"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { Database } from "@miao/core/database/database"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { SessionLegacyTables } from "@miao/core/session/legacy-tables"
+import { SessionMessage } from "@miao/core/session/message"
+import { ModelV2 } from "@miao/core/model"
+import { ProviderV2 } from "@miao/core/provider"
 import { SessionSchema } from "@miao/core/session/schema"
 import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
@@ -297,6 +300,89 @@ describe("session archive", () => {
       const exported = yield* archive(sessionID)
       expect(partTypes(exported?.messages ?? [])).toEqual(partTypes(v1.messages))
       expect(exported?.info).toMatchObject({ projectID: ctx.project.id, directory: ctx.directory })
+    }),
+  )
+
+  // A native V2 compaction has no V1 message; the archive records it as the
+  // summary reply V1 used, and the projection keeps the real boundary.
+  it.instance("exports a V2-native compaction as a V1 summary reply", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const ctx = yield* InstanceRef
+      if (!ctx) throw new Error("no instance")
+      const sessionID = SessionSchema.ID.make("ses_archive_v2_compaction")
+      yield* database.db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: ctx.project.id,
+          slug: "v2",
+          directory: ctx.directory,
+          title: "v2",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const at = (millis: number) => DateTime.makeUnsafe(millis)
+      const model = { id: ModelV2.ID.make("gpt"), providerID: ProviderV2.ID.make("openai") }
+      const messages: SessionMessage.Message[] = [
+        SessionMessage.Compaction.make({
+          id: SessionMessage.ID.make("msg_v2_0"),
+          type: "compaction",
+          reason: "auto",
+          summary: "earlier work",
+          recent: "",
+          time: { created: at(1) },
+        }),
+        SessionMessage.User.make({
+          id: SessionMessage.ID.make("msg_v2_1"),
+          type: "user",
+          text: "go on",
+          time: { created: at(2) },
+        }),
+        SessionMessage.Assistant.make({
+          id: SessionMessage.ID.make("msg_v2_2"),
+          type: "assistant",
+          agent: "build",
+          model,
+          content: [{ type: "text", id: "txt_1", text: "done" }],
+          time: { created: at(3), completed: at(4) },
+        }),
+        SessionMessage.Compaction.make({
+          id: SessionMessage.ID.make("msg_v2_3"),
+          type: "compaction",
+          reason: "manual",
+          summary: "all of it",
+          recent: "done",
+          time: { created: at(5) },
+        }),
+      ]
+      yield* SessionBackfill.write(database.db, sessionID, messages)
+
+      const exported = yield* archive(sessionID)
+      if (!exported) throw new Error("missing archive")
+      expect(exported.projection?.map((message) => message.type)).toEqual([
+        "compaction",
+        "user",
+        "assistant",
+        "compaction",
+      ])
+      expect(exported.messages.map((message) => [message.info.role, message.parts.map((part) => part.type)])).toEqual([
+        ["assistant", ["text"]],
+        ["user", ["text"]],
+        ["assistant", ["text"]],
+        ["assistant", ["text"]],
+      ])
+      const [opening, , , summary] = exported.messages
+      expect(opening.info).toMatchObject({ summary: true, agent: "compaction", parentID: "msg_v2_0" })
+      expect(summary.info).toMatchObject({
+        summary: true,
+        agent: "compaction",
+        parentID: "msg_v2_1",
+        modelID: "gpt",
+        providerID: "openai",
+      })
+      expect(summary.parts).toMatchObject([{ type: "text", text: "all of it" }])
     }),
   )
 
