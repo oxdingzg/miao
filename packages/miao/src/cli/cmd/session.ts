@@ -2,14 +2,18 @@ import type { Argv } from "yargs"
 import { Effect } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
-import { Session } from "@/session/session"
-import { SessionID } from "../../session/schema"
+import { SessionV2 } from "@miao/core/session"
+import { SessionExecution } from "@miao/core/session/execution"
+import { SessionTable } from "@miao/core/session/sql"
+import { Database } from "@miao/core/database/database"
+import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
+import { InstanceRef } from "@/effect/instance-ref"
+import { and, desc, eq, isNull } from "drizzle-orm"
 import { UI } from "../ui"
 import { Locale } from "@/util/locale"
 import { Flag } from "@miao/core/flag/flag"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
-import { NotFoundError } from "@/storage/storage"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@miao/core/util/which"
@@ -58,13 +62,21 @@ export const SessionDeleteCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.session.delete")(function* (args) {
-    const svc = yield* Session.Service
-    const sessionID = SessionID.make(args.sessionID)
-    yield* svc
-      .remove(sessionID)
-      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)))
+    yield* removeSession(SessionV2.ID.make(args.sessionID)).pipe(
+      Effect.provide(AppNodeBuilder.build(SessionV2.node, [[SessionExecution.node, SessionExecution.noopLayer]])),
+      Effect.catchTag("Session.NotFoundError", () => fail(`Session not found: ${args.sessionID}`)),
+    )
     UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
   }),
+})
+
+/** Removes a session and its subagent sessions, which V2 does not delete with their parent. */
+export const removeSession: (
+  sessionID: SessionV2.ID,
+) => Effect.Effect<void, SessionV2.NotFoundError, SessionV2.Service> = Effect.fnUntraced(function* (sessionID) {
+  const sessions = yield* SessionV2.Service
+  for (const child of yield* sessions.children(sessionID)) yield* removeSession(child.id)
+  yield* sessions.remove(sessionID)
 })
 
 export const SessionListCommand = effectCmd({
@@ -84,7 +96,23 @@ export const SessionListCommand = effectCmd({
         default: "table",
       }),
   handler: Effect.fn("Cli.session.list")(function* (args) {
-    const sessions = yield* Session.Service.use((svc) => svc.list({ roots: true, limit: args.maxCount }))
+    const ctx = yield* InstanceRef
+    if (!ctx) return
+    const { db } = yield* Database.Service
+    const sessions = yield* db
+      .select()
+      .from(SessionTable)
+      .where(
+        and(
+          eq(SessionTable.project_id, ctx.project.id),
+          isNull(SessionTable.parent_id),
+          isNull(SessionTable.time_archived),
+        ),
+      )
+      .orderBy(desc(SessionTable.time_updated), desc(SessionTable.id))
+      .limit(args.maxCount ?? 100)
+      .all()
+      .pipe(Effect.orDie)
 
     if (sessions.length === 0) return
 
@@ -115,7 +143,9 @@ export const SessionListCommand = effectCmd({
   }),
 })
 
-function formatSessionTable(sessions: Session.Info[]): string {
+type SessionRow = typeof SessionTable.$inferSelect
+
+function formatSessionTable(sessions: SessionRow[]): string {
   const lines: string[] = []
 
   const maxIdWidth = Math.max(20, ...sessions.map((s) => s.id.length))
@@ -126,7 +156,7 @@ function formatSessionTable(sessions: Session.Info[]): string {
   lines.push("─".repeat(header.length))
   for (const session of sessions) {
     const truncatedTitle = Locale.truncate(session.title, maxTitleWidth)
-    const timeStr = Locale.todayTimeOrDateTime(session.time.updated)
+    const timeStr = Locale.todayTimeOrDateTime(session.time_updated)
     const line = `${session.id.padEnd(maxIdWidth)}  ${truncatedTitle.padEnd(maxTitleWidth)}  ${timeStr}`
     lines.push(line)
   }
@@ -134,13 +164,13 @@ function formatSessionTable(sessions: Session.Info[]): string {
   return lines.join(EOL)
 }
 
-function formatSessionJSON(sessions: Session.Info[]): string {
+function formatSessionJSON(sessions: SessionRow[]): string {
   const jsonData = sessions.map((session) => ({
     id: session.id,
     title: session.title,
-    updated: session.time.updated,
-    created: session.time.created,
-    projectId: session.projectID,
+    updated: session.time_updated,
+    created: session.time_created,
+    projectId: session.project_id,
     directory: session.directory,
   }))
   return JSON.stringify(jsonData, null, 2)
