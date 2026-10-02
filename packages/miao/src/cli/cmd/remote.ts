@@ -1,12 +1,12 @@
 import type { Argv } from "yargs"
-import { mkdir, rm } from "node:fs/promises"
+import { appendFile, mkdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
 import { Flag } from "@miao/core/flag/flag"
 import { Global } from "@miao/core/global"
 import { InstallationVersion } from "@miao/core/installation/version"
-import type { AccountStatus, ConnectorStatus, FlowStep, Host, LoginInput } from "@miao/remote"
+import type { AccountStatus, ConnectorStatus, FlowStep, Host, LoginFlow, LoginInput } from "@miao/remote"
 import type { RemoteControl } from "@miao/server/remote-control"
 import { effectCmd, fail } from "../effect-cmd"
 
@@ -28,10 +28,16 @@ const loadRemoteConfig = Effect.fn("Cli.remote.config")(function* () {
   return { remote: config.remote ?? {}, model: config.model }
 })
 
-type RemoteConfig = Effect.Success<ReturnType<typeof loadRemoteConfig>>["remote"]
+/** The parts of `remote` a local host reads; the server config and the SDK's config both satisfy it. */
+type RemoteSettings = {
+  readonly connectors?: ReadonlyArray<string>
+  readonly wechat?: object
+  readonly qq?: object
+  readonly settings?: { readonly [id: string]: Readonly<Record<string, unknown>> }
+}
 
 /** Built-in connectors plus `remote.connectors`; npm packages install like plugins. */
-async function connectorsFor(remote: RemoteConfig, log: (message: string) => void) {
+async function connectorsFor(remote: RemoteSettings, log: (message: string) => void) {
   const { loadConnectors } = await import("@miao/remote/load")
   const { builtinConnectors } = await import("@miao/remote/builtin")
   const { Npm } = await import("@miao/core/npm")
@@ -48,7 +54,7 @@ async function connectorsFor(remote: RemoteConfig, log: (message: string) => voi
   return result.connectors
 }
 
-function connectorOptions(remote: RemoteConfig) {
+function connectorOptions(remote: RemoteSettings) {
   return (id: string): Readonly<Record<string, unknown>> => {
     if (id === "wechat") return { ...remote.wechat }
     if (id === "qq") return { ...remote.qq }
@@ -56,7 +62,7 @@ function connectorOptions(remote: RemoteConfig) {
   }
 }
 
-async function createLocalHost(remote: RemoteConfig, log: (message: string) => void) {
+async function createLocalHost(remote: RemoteSettings, log: (message: string) => void) {
   const { createHost, migrate } = await import("@miao/remote")
   const files = paths()
   await migrate({ authFile: files.auth, stateDir: files.state })
@@ -80,8 +86,9 @@ const RunCommand = effectCmd({
     const host = yield* Effect.promise(() => createLocalHost(config.remote, log))
     const status = yield* Effect.promise(() => host.status())
     const accounts = status.flatMap((connector) => connector.accounts.map((account) => ({ connector, account })))
+    // No account yet is a normal first start: the control routes below log one in and it joins at once.
     if (accounts.length === 0)
-      return yield* fail("还没有登录任何 IM：先运行 miao remote login wechat（或 miao remote login qq）")
+      log("还没有登录任何 IM：在 TUI 里打开 /remote 接入，或运行 miao remote login wechat（或 qq）；登录后立即生效")
     accounts
       .filter((item) => item.account.state === "needs-login")
       .forEach((item) =>
@@ -91,8 +98,8 @@ const RunCommand = effectCmd({
       )
     const opened = yield* Effect.promise(() => host.open())
     opened.failures.forEach((failure) => console.error(`${failure.id}：${failure.error}`))
-    // Exit 0 so the launchd agent (KeepAlive on failure only) does not restart into the same dead login.
-    if (opened.channels.length === 0) return
+    // Expired (-14) or failed accounts stay off; the service still runs so /remote can log in again.
+    if (opened.channels.length === 0 && accounts.length > 0) log("没有可用的 IM 通道；服务照常运行，重新登录后立即接入")
     const projects = config.remote.projects ?? {}
     if (Object.keys(projects).length === 0)
       console.error("提示：配置里没有 remote.projects，IM 里将看不到也建不了任何会话")
@@ -137,7 +144,9 @@ const RunCommand = effectCmd({
       yield* Effect.promise(() => server.stop(true))
       return yield* fail(started)
     }
-    console.log(`miao remote 已启动：${opened.channels.map((channel) => channel.id).join("、")}，服务 ${url}`)
+    console.log(
+      `miao remote 已启动：${opened.channels.map((channel) => channel.id).join("、") || "暂无 IM 通道"}，服务 ${url}`,
+    )
     console.log(`桌面查看或操作这些会话：${attach}`)
 
     yield* Effect.promise(
@@ -355,23 +364,16 @@ const InstallCommand = effectCmd({
     const { Label, plist } = yield* Effect.promise(() => import("@miao/remote/launchd"))
     const files = paths()
     const file = path.join(files.agents, `${Label}.plist`)
-    // A source checkout runs through bun; a compiled binary is its own executable.
-    const program = Bun.main.endsWith(".ts")
-      ? [process.execPath, "run", Bun.main, "remote"]
-      : [process.execPath, "remote"]
     yield* Effect.promise(() => mkdir(files.agents, { recursive: true }))
     yield* Effect.promise(() => mkdir(path.dirname(files.log), { recursive: true }))
     yield* Effect.promise(() =>
       Bun.write(
         file,
         plist({
-          program,
+          program: remoteProgram(),
           workingDirectory: Global.Path.home,
           logFile: files.log,
-          environment: {
-            PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
-            HOME: Global.Path.home,
-          },
+          environment: agentEnvironment(),
         }),
       ),
     )
@@ -413,6 +415,82 @@ const UninstallCommand = effectCmd({
     )
   }),
 })
+
+/** The command that runs the daemon: a source checkout runs through bun; a compiled binary is its own executable. */
+function remoteProgram() {
+  return Bun.main.endsWith(".ts") ? [process.execPath, "run", Bun.main, "remote"] : [process.execPath, "remote"]
+}
+
+/** The launchd agent's environment. It never includes MIAO_SERVER_PASSWORD. */
+function agentEnvironment() {
+  return { PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin", HOME: Global.Path.home }
+}
+
+/**
+ * What the TUI's /remote does on this machine when no daemon answers: it logs in
+ * through the same connector host as `miao remote login` (same credentials file,
+ * so a daemon started later picks the account up), and starts or stops the daemon
+ * once the user confirms. Messages go to remote.log because the TUI owns the terminal.
+ */
+export async function createRemoteLocal(remote: RemoteSettings | undefined) {
+  const { createDaemonControl, system } = await import("@miao/remote/daemon")
+  const settings = remote ?? {}
+  const files = paths()
+  const log = (message: string) =>
+    void mkdir(path.dirname(files.log), { recursive: true })
+      .then(() => appendFile(files.log, `${new Date().toISOString()} tui: ${message}\n`))
+      .catch(() => undefined)
+  // Status and removal share one host that never opens channels; each login gets its own, closed when it ends.
+  const shared = { host: undefined as Promise<Host> | undefined }
+  const host = () => (shared.host ??= createLocalHost(settings, log))
+  const flows = new Map<string, LoginFlow>()
+  const flow = (id: string) => {
+    const found = flows.get(id)
+    if (!found) throw new Error("登录已结束")
+    return found
+  }
+  return {
+    status: () => host().then((item) => item.status()),
+    login: async (connector: string) => {
+      const local = await createLocalHost(settings, log)
+      if (!local.connector(connector)) {
+        await local.close()
+        throw new Error(`没有名为 ${connector} 的连接器`)
+      }
+      const started = local.login(connector)
+      flows.set(started.id, started)
+      void drain(started).then(() => {
+        flows.delete(started.id)
+        return local.close()
+      })
+      return started.id
+    },
+    events: (id: string, signal: AbortSignal) => flow(id).events(signal),
+    input: async (id: string, value: LoginInput) => {
+      if (!flow(id).input(value)) throw new Error("现在没有等待输入的步骤")
+    },
+    cancel: async (id: string) => flows.get(id)?.cancel(),
+    remove: async (connector: string, account: string) => {
+      const item = await host()
+      await item.remove(connector, account)
+    },
+    daemon: createDaemonControl({
+      program: remoteProgram(),
+      platform: process.platform,
+      uid: process.getuid?.() ?? 0,
+      home: Global.Path.home,
+      agents: files.agents,
+      log: files.log,
+      environment: agentEnvironment(),
+      system,
+    }),
+  }
+}
+
+/** Resolves once a login flow has finished. */
+async function drain(flow: LoginFlow) {
+  for await (const _ of flow.events()) continue
+}
 
 export const RemoteCommand = effectCmd({
   command: "remote",
