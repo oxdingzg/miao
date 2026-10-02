@@ -5,6 +5,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { Image } from "../image"
+import { InstructionContext } from "../instruction-context"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
@@ -25,7 +26,9 @@ const LocationInput = Schema.Struct({
   }),
 })
 const Input = LocationInput
-const Output = Schema.Union([FileSystem.Content, ReadToolFileSystem.TextPage, ReadToolFileSystem.ListPage])
+// A whole-file text read may carry nested instruction files, like a text page.
+const FileContent = Schema.Struct({ ...FileSystem.Content.fields, instructions: ReadToolFileSystem.Instructions })
+const Output = Schema.Union([FileContent, ReadToolFileSystem.TextPage, ReadToolFileSystem.ListPage])
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -34,6 +37,7 @@ const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const image = yield* Image.Service
     const permission = yield* PermissionV2.Service
+    const instructions = yield* InstructionContext.Service
 
     yield* tools
       .register({
@@ -90,7 +94,13 @@ const layer = Layer.effectDiscard(
               }
               if ("encoding" in content && content.encoding === "base64")
                 return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
-              return content
+              const nearby = (yield* instructions.nearby({ sessionID: context.sessionID, path: absolute })).map(
+                (file) => ({ path: file.path, content: file.content }),
+              )
+              if (nearby.length === 0) return content
+              if (content instanceof ReadToolFileSystem.TextPage)
+                return new ReadToolFileSystem.TextPage({ ...content, instructions: nearby })
+              return { ...content, instructions: nearby }
             }).pipe(
               Effect.mapError((error) => {
                 const message =
@@ -113,5 +123,12 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/read",
   layer,
-  deps: [ToolRegistry.node, ReadToolFileSystem.node, LocationMutation.node, Image.node, PermissionV2.node],
+  deps: [
+    ToolRegistry.node,
+    ReadToolFileSystem.node,
+    LocationMutation.node,
+    Image.node,
+    PermissionV2.node,
+    InstructionContext.node,
+  ],
 })

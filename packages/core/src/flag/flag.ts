@@ -64,6 +64,10 @@ export const Flag = {
   get MIAO_DISABLE_PROJECT_CONFIG() {
     return truthy("MIAO_DISABLE_PROJECT_CONFIG")
   },
+  // Skips CLAUDE.md and ~/.claude/CLAUDE.md as instruction sources, matching V1.
+  get MIAO_DISABLE_CLAUDE_CODE_PROMPT() {
+    return truthy("MIAO_DISABLE_CLAUDE_CODE") || truthy("MIAO_DISABLE_CLAUDE_CODE_PROMPT")
+  },
   get MIAO_EXPERIMENTAL_REFERENCES() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_REFERENCES")
   },

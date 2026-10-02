@@ -1,5 +1,12 @@
 # V2 Schema Changelog
 
+## 2026-10-02: Align Instruction Sources With V1
+
+- Ambient instructions read the global `AGENTS.md`, falling back to `~/.claude/CLAUDE.md`; then, from the Location directory up to the project root, every file of the first name found among `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`; then configured `instructions` globs/paths; then `instructions` URLs. Duplicates keep their first position. `MIAO_DISABLE_CLAUDE_CODE[_PROMPT]` skips both CLAUDE.md sources.
+- URL instructions are cached per Location (5 minutes after success, 1 minute after failure; a failed refresh keeps the last good content) so per-turn observation neither waits on the network nor churns the Context Epoch. An unreachable URL is skipped and never blocks initialization.
+- The read tool attaches nested instruction files between the read file and the Location directory as an optional `instructions` array on text results, once per Session per process. V1 deduplicated against uncompacted history instead.
+- `InstructionContext.File.path` widens from an absolute path to a string so URLs can be recorded. Stored snapshots stay decodable; no migration.
+
 ## 2026-10-01: Record Time to First Token
 
 - Add an optional `ttft` to `session.next.step.ended.2`, holding milliseconds from issuing the request to the provider's first streamed event.
