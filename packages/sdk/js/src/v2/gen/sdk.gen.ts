@@ -292,6 +292,8 @@ import type {
   V2IntegrationListResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
+  V2ModelDefaultErrors,
+  V2ModelDefaultResponses,
   V2ModelListErrors,
   V2ModelListResponses,
   V2PermissionRequestListErrors,
@@ -6134,6 +6136,28 @@ export class Model extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ModelListResponses, V2ModelListErrors, ThrowOnError>({
       url: "/api/model",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get default model
+   *
+   * Retrieve the model a session without an explicit model runs with: the configured default when it is available, otherwise the newest available model. Null when no model is available.
+   */
+  public default<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2ModelDefaultResponses, V2ModelDefaultErrors, ThrowOnError>({
+      url: "/api/model/default",
       ...options,
       ...params,
     })
