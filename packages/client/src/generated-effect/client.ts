@@ -366,7 +366,12 @@ type Endpoint5_0Input = { readonly location?: Endpoint5_0Request["query"]["locat
 const Endpoint5_0 = (raw: RawClient["server.model"]) => (input?: Endpoint5_0Input) =>
   raw["model.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup5 = (raw: RawClient["server.model"]) => ({ list: Endpoint5_0(raw) })
+type Endpoint5_1Request = Parameters<RawClient["server.model"]["model.default"]>[0]
+type Endpoint5_1Input = { readonly location?: Endpoint5_1Request["query"]["location"] }
+const Endpoint5_1 = (raw: RawClient["server.model"]) => (input?: Endpoint5_1Input) =>
+  raw["model.default"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+const adaptGroup5 = (raw: RawClient["server.model"]) => ({ list: Endpoint5_0(raw), default: Endpoint5_1(raw) })
 
 type Endpoint6_0Request = Parameters<RawClient["server.provider"]["provider.list"]>[0]
 type Endpoint6_0Input = { readonly location?: Endpoint6_0Request["query"]["location"] }
