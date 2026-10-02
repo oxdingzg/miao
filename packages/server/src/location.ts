@@ -44,9 +44,18 @@ export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
  * with the entries its key cannot call still in it.
  */
 export const bootedCatalog = Effect.gen(function* () {
+  yield* booted
+  return yield* Catalog.Service
+})
+
+/**
+ * Waits for the location's plugins to finish booting. Agents, commands and
+ * skills are contributed by plugins too, so their first listing has the same
+ * window as the catalog.
+ */
+export const booted = Effect.gen(function* () {
   const plugins = yield* PluginV2.Service
   yield* Deferred.await(plugins.booted)
-  return yield* Catalog.Service
 })
 
 function ref(request: HttpServerRequest.HttpServerRequest): Location.Ref {
