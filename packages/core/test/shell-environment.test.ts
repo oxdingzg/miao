@@ -101,7 +101,9 @@ describe("ShellEnvironment", () => {
             const result = settled.result
             const text =
               result.type === "content"
-                ? result.value.map((part: { type: string; text?: string }) => (part.type === "text" ? (part.text ?? "") : "")).join("\n")
+                ? result.value
+                    .map((part: { type: string; text?: string }) => (part.type === "text" ? (part.text ?? "") : ""))
+                    .join("\n")
                 : String(result.value)
             expect(text).toContain("host-value")
             expect(inputs.at(-1)).toMatchObject({ directory: dir.path, sessionID, callID: "call-shell-environment" })
