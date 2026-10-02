@@ -5,11 +5,10 @@ import * as Tool from "./tool"
 import path from "path"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
-import { lazy } from "@/util/lazy"
-import { Language, type Node } from "web-tree-sitter"
+import { ShellParser } from "@miao/core/shell/parser"
+import type { Node } from "web-tree-sitter"
 
 import { FSUtil } from "@miao/core/fs-util"
-import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@miao/core/shell"
@@ -20,8 +19,8 @@ import { Plugin } from "@/plugin"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
-import { BashArity } from "@/permission/arity"
-import { extract, type Part } from "./shell/extract"
+import { BashArity } from "@miao/core/permission/arity"
+import { extract, type Part } from "@miao/core/shell/extract"
 import { Flag } from "@miao/core/flag/flag"
 import { SandboxRunner } from "@miao/core/sandbox/runner"
 import { readDenyReport, resolveSandboxRunner, sandboxArgs, sandboxEnabled } from "./sandbox"
@@ -78,13 +77,6 @@ type Scan = {
 type Chunk = {
   text: string
   size: number
-}
-
-const resolveWasm = (asset: string) => {
-  if (asset.startsWith("file://")) return fileURLToPath(asset)
-  if (asset.startsWith("/") || /^[a-z]:/i.test(asset)) return asset
-  const url = new URL(asset, import.meta.url)
-  return fileURLToPath(url)
 }
 
 function unquote(text: string) {
@@ -218,7 +210,9 @@ function tail(text: string, maxLines: number, maxBytes: number) {
 }
 
 const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boolean) {
-  const tree = yield* Effect.promise(() => parser().then((p) => (ps ? p.ps : p.bash).parse(command)))
+  const tree = yield* Effect.promise(() =>
+    (ps ? ShellParser.powershell() : ShellParser.bash()).then((p) => p.parse(command)),
+  )
   if (!tree) throw new Error("Failed to parse command")
   return tree
 })
@@ -271,32 +265,6 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
     detached: process.platform !== "win32",
   })
 }
-const parser = lazy(async () => {
-  const { Parser } = await import("web-tree-sitter")
-  const { default: treeWasm } = await import("web-tree-sitter/tree-sitter.wasm" as string, {
-    with: { type: "wasm" },
-  })
-  const treePath = resolveWasm(treeWasm)
-  await Parser.init({
-    locateFile() {
-      return treePath
-    },
-  })
-  const { default: bashWasm } = await import("tree-sitter-bash/tree-sitter-bash.wasm" as string, {
-    with: { type: "wasm" },
-  })
-  const { default: psWasm } = await import("tree-sitter-powershell/tree-sitter-powershell.wasm" as string, {
-    with: { type: "wasm" },
-  })
-  const bashPath = resolveWasm(bashWasm)
-  const psPath = resolveWasm(psWasm)
-  const [bashLanguage, psLanguage] = await Promise.all([Language.load(bashPath), Language.load(psPath)])
-  const bash = new Parser()
-  bash.setLanguage(bashLanguage)
-  const ps = new Parser()
-  ps.setLanguage(psLanguage)
-  return { bash, ps }
-})
 
 export const ShellTool = Tool.define(
   ShellID.ToolID,
@@ -645,7 +613,11 @@ export const ShellTool = Tool.define(
                   ctx,
                 )
                 const denied = yield* Effect.promise(() => readDenyReport(reportPath))
-                yield* Effect.promise(() => Bun.file(reportPath).delete().catch(() => {}))
+                yield* Effect.promise(() =>
+                  Bun.file(reportPath)
+                    .delete()
+                    .catch(() => {}),
+                )
                 if (denied.length === 0 || (result.metadata.exit ?? 0) === 0 || attempt === maxAttempts) {
                   return result
                 }

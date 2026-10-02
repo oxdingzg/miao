@@ -3,7 +3,7 @@ import { createRequire } from "module"
 import path from "path"
 import { fileURLToPath } from "url"
 import { Language, Parser, type Node } from "web-tree-sitter"
-import { extract } from "../../src/tool/shell/extract"
+import { extract } from "@miao/core/shell/extract"
 
 const require = createRequire(import.meta.url)
 const nativePath = path.join(import.meta.dir, "../../../../crates/miao-native/miao-native.node")

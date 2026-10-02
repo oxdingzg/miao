@@ -385,8 +385,12 @@ export function PermissionPrompt(props: {
                 title: "Shell command",
                 body: (
                   <Show when={command}>
-                    <box paddingLeft={1}>
+                    <box paddingLeft={1} gap={1}>
                       <text fg={theme.text}>{"$ " + command}</text>
+                      {/* The rules "Allow always" saves, such as `git status *`, so the reach of the approval is visible up front. */}
+                      <Show when={props.request.always.length > 0 && !props.request.always.includes("*")}>
+                        <text fg={theme.textMuted}>{"Allow always saves: " + props.request.always.join(", ")}</text>
+                      </Show>
                     </box>
                   </Show>
                 ),

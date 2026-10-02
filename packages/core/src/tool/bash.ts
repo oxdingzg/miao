@@ -3,7 +3,7 @@ export * as BashTool from "./bash"
 import { existsSync } from "fs"
 import path from "path"
 import { ToolFailure } from "@miao/llm"
-import { Duration, Effect, Layer, Schema } from "effect"
+import { Duration, Effect, Layer, Option, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
 import { makeLocationNode } from "../effect/app-node"
@@ -12,6 +12,7 @@ import { LocationMutation } from "../location-mutation"
 import { AppProcess } from "../process"
 import { PermissionV2 } from "../permission"
 import { Sandbox } from "../sandbox"
+import { ShellApproval } from "../shell/approval"
 import { SandboxPolicy } from "../sandbox/policy"
 import { PositiveInt } from "../schema"
 import { Hash } from "../util/hash"
@@ -126,8 +127,7 @@ const blockedWarning = (denied: readonly string[], unmapped: readonly string[], 
  * Minimal V2 core shell boundary. Keep parity debt visible without pulling the
  * legacy shell runtime into core.
  */
-// TODO: Port tree-sitter bash / PowerShell parser-based approval reduction.
-// TODO: Port BashArity reusable command-prefix approvals.
+// TODO: Port PowerShell parser-based approval reduction (bash commands already split per command with BashArity prefixes).
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
 // TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
 // TODO: Add plugin shell.env environment augmentation once V2 plugin hooks exist.
@@ -522,11 +522,22 @@ const layer = Layer.effectDiscard(
                 (directory) =>
                   `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
               )
-              const resources = permissionResources(input.command, input.stdin)
+              const exact = permissionResources(input.command, input.stdin)
+              // A plain command is approved per command it runs, and "always"
+              // saves prefix rules such as `git status *`, as V1 did. With stdin
+              // (or the stdin marker spelled out) the exact resources stay, so a
+              // script is never approved through a broad prefix.
+              const split =
+                exact.length === 1 && process.platform !== "win32"
+                  ? yield* Effect.tryPromise(() => ShellApproval.bash(input.command)).pipe(
+                      Effect.option,
+                      Effect.map(Option.getOrUndefined),
+                    )
+                  : undefined
               yield* permission.assert({
                 action: name,
-                resources,
-                save: resources,
+                resources: split?.resources ?? exact,
+                save: split?.save ?? exact,
                 ...(input.stdin === undefined ? {} : { metadata: { command: input.command, stdin: input.stdin } }),
                 sessionID: context.sessionID,
                 agent: context.agent,

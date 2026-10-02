@@ -518,7 +518,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
       ),
     )
 
-    it.live("keeps the saved command rule without stdin working as before", () =>
+    it.live("remembers a command without stdin by its BashArity prefix rule", () =>
       withTmp((directory) =>
         Effect.gen(function* () {
           const runner = yield* fakeRunner(directory, realpathSync(directory))
@@ -532,8 +532,40 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
                 yield* tools.run("printf one")
                 yield* tools.run("printf one")
                 expect(tools.asked.map((request) => [request.resources, request.save])).toEqual([
-                  [["printf one"], ["printf one"]],
+                  [["printf one"], ["printf *"]],
                 ])
+              }),
+          })
+        }),
+      ),
+    )
+
+    it.live("reuses saved prefix rules for each command of a compound command", () =>
+      withTmp((directory) =>
+        Effect.gen(function* () {
+          const runner = yield* fakeRunner(directory, realpathSync(directory))
+          yield* withSandboxedBash({
+            directory,
+            runner: runner.file,
+            rules: asking,
+            answer: () => ({ reply: "always" }),
+            body: (tools) =>
+              Effect.gen(function* () {
+                yield* tools.run("printf one")
+                // `printf *` covers another printf without asking.
+                yield* tools.run("printf two")
+                expect(tools.asked).toHaveLength(1)
+                // Only the command no rule covers yet makes the request ask.
+                yield* tools.run("printf three && echo four")
+                expect(tools.asked.map((request) => [request.resources, request.save])).toEqual([
+                  [["printf one"], ["printf *"]],
+                  [
+                    ["printf three", "echo four"],
+                    ["printf *", "echo *"],
+                  ],
+                ])
+                yield* tools.run("echo five | printf six")
+                expect(tools.asked).toHaveLength(2)
               }),
           })
         }),
