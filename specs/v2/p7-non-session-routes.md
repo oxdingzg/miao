@@ -12,6 +12,11 @@
 - `lsp`：core `LSP.status()` 已有，加 `GET /api/lsp`（protocol 组 + server handler）+ 生成；
   TUI 改走 `client.v2.lsp.status`，并在 `sync.tsx` 用 `toLspStatus` 把 core 的 `{id,extensions,connected}`
   投影回现有 `{id,name,root,status}` 形状（`root` 置空），渲染点与插件 API 不变。
+- `provider` / `auth`：`sync.tsx` 的 `provider.auth` → `client.v2.integration.list`，用 `toProviderAuth`
+  把 `IntegrationInfo.methods` 映射回 `Record<providerID, ProviderAuthMethod[]>`（env 方法丢弃）；
+  `dialog-provider` 的 `auth.set` → `client.v2.integration.connect.key`，并去掉随之的 `instance.dispose`
+  （V2 保存凭据后服务端自行重载）。`provider.oauth.authorize/callback` 仍待迁到 `integration.connect.oauth`
+  / `attempt.complete`（需要改成 attemptID 流程），单独一轮。
 - `app` / `project`：`app.agents` → `v2.agent.list`，`sync.tsx` 用 `toAgent` 把 `AgentV2Info` 映射回
   V1 `Agent`（`name←id`，不读 `permissions` 置空，`model←ModelRef`）；`dialog-move-session` 的
   `project.directories` → `v2.project.directories`。无需新端点。

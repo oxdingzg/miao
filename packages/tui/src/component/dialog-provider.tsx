@@ -384,15 +384,14 @@ function ApiMethod(props: ApiMethodProps) {
       }
       onConfirm={async (value) => {
         if (!value) return
-        await sdk.client.auth.set({
-          providerID: props.providerID,
-          auth: {
-            type: "api",
+        await sdk.client.v2.integration.connect.key(
+          {
+            integrationID: props.providerID,
+            location: { directory: sdk.directory },
             key: value,
-            ...(props.metadata ? { metadata: props.metadata } : {}),
           },
-        })
-        await sdk.client.instance.dispose()
+          { throwOnError: true },
+        )
         await sync.bootstrap()
         if (props.custom) await sync.loadProviderCatalog()
         if (props.custom && !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)) {

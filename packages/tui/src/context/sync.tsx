@@ -18,6 +18,7 @@ import type {
   SessionStatus,
   ProviderListResponse,
   ProviderAuthMethod,
+  IntegrationInfo,
   VcsInfo,
   SnapshotFileDiff,
   ConsoleState,
@@ -81,6 +82,27 @@ function toLspStatus(items: ReadonlyArray<{ id: string; connected: boolean }>): 
     root: "",
     status: item.connected ? "connected" : "error",
   }))
+}
+
+// The V2 integration list replaces the V1 provider-auth map; env methods are
+// discovery-only, so only oauth and key methods become connectable entries.
+function toProviderAuth(integrations: ReadonlyArray<IntegrationInfo>): Record<string, ProviderAuthMethod[]> {
+  const result: Record<string, ProviderAuthMethod[]> = {}
+  for (const integration of integrations) {
+    result[integration.id] = integration.methods.flatMap((method): ProviderAuthMethod[] => {
+      if (method.type === "env") return []
+      if (method.type === "oauth")
+        return [
+          {
+            type: "oauth" as const,
+            label: method.label,
+            ...(method.prompts ? { prompts: method.prompts } : {}),
+          },
+        ]
+      return [{ type: "api" as const, label: method.label ?? "API key" }]
+    })
+  }
+  return result
 }
 
 // The V2 agent shape carries `id` and `permissions`; the TUI store still keeps
@@ -679,7 +701,9 @@ export const {
               .then((x) => {
                 setStore("session_status", reconcile(x.data ?? {}))
               }),
-            sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
+            sdk.client.v2.integration
+              .list({ location: { workspace } })
+              .then((x) => setStore("provider_auth", reconcile(toProviderAuth(x.data?.data ?? [])))),
             ...(reloadProviderCatalog
               ? [
                   loadProviderCatalog().catch((error) =>
