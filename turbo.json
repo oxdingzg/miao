@@ -17,9 +17,6 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@miao/function#test": {
-      "outputs": []
-    },
     "@miao/app#test": {
       "dependsOn": ["^build"],
       "outputs": []
