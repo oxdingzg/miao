@@ -7,11 +7,15 @@ import { Api } from "../api"
 import { response } from "../location"
 
 export const ControlPlaneHandler = HttpApiBuilder.group(Api, "server.controlPlane", (handlers) =>
-  handlers.handle("controlPlane.moveSession", (ctx) =>
-    response(
-      Effect.gen(function* () {
-        const move = yield* MoveSession.Service
-        yield* move.moveSession(ctx.payload).pipe(
+  // MoveSession is a stable app-level service, not a location service: yield it
+  // once here. Yielding it inside the handler would make it a request-level
+  // requirement of the location middleware, which only provides location
+  // services and so can never satisfy it.
+  Effect.gen(function* () {
+    const move = yield* MoveSession.Service
+    return handlers.handle("controlPlane.moveSession", (ctx) =>
+      response(
+        move.moveSession(ctx.payload).pipe(
           Effect.mapError(
             (error) =>
               new ControlPlaneError({
@@ -19,11 +23,11 @@ export const ControlPlaneHandler = HttpApiBuilder.group(Api, "server.controlPlan
                 data: { message: message(error) },
               }),
           ),
-        )
-        return undefined
-      }),
-    ),
-  ),
+          Effect.as(undefined),
+        ),
+      ),
+    )
+  }),
 )
 
 function message(error: MoveSession.Error) {
