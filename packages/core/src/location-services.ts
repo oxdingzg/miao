@@ -36,6 +36,8 @@ import { Snapshot } from "./snapshot"
 import { SystemContextBuiltIns } from "./system-context/builtins"
 import { SystemContextRegistry } from "./system-context/registry"
 import { BuiltInTools } from "./tool/builtins"
+import { CustomTools } from "./tool/custom"
+import { ToolPlugins } from "./tool/plugins"
 import { ReadToolFileSystem } from "./tool/read-filesystem"
 import { ToolRegistry } from "./tool/registry"
 import { ToolOutputStore } from "./tool-output-store"
@@ -70,6 +72,7 @@ export const locationServices = LayerNode.group([
   LSP.node,
   MCP.node,
   ToolOutputStore.node,
+  ToolPlugins.node,
   ToolRegistry.node,
   ToolRegistry.toolsNode,
   Image.node,
@@ -79,6 +82,7 @@ export const locationServices = LayerNode.group([
   QuestionV2.node,
   ReadToolFileSystem.node,
   BuiltInTools.node,
+  CustomTools.node,
   SessionRunnerModel.node,
   Snapshot.node,
   SessionRunnerLLM.node,
