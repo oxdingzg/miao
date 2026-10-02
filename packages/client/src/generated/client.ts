@@ -1,5 +1,7 @@
 import type {
   HealthGetOutput,
+  FormattersStatusInput,
+  FormattersStatusOutput,
   LocationGetInput,
   LocationGetOutput,
   AgentsListInput,
@@ -294,6 +296,20 @@ export function make(options: ClientOptions) {
       get: (requestOptions?: RequestOptions) =>
         request<HealthGetOutput>(
           { method: "GET", path: `/api/health`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
+          requestOptions,
+        ),
+    },
+    formatters: {
+      status: (input?: FormattersStatusInput, requestOptions?: RequestOptions) =>
+        request<FormattersStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/formatter`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
           requestOptions,
         ),
     },

@@ -5,6 +5,10 @@
 
 ## 已完成
 
+- `formatter`：core `Format.status()` 下沉 + `GET /api/formatter`（protocol 组 + server handler）+
+  重新生成 `packages/client` 与 legacy SDK；TUI `sync.tsx` 改走 `client.v2.formatter.status`。
+  加组后必须重生成两套客户端：`packages/client`（纯 codegen）与 legacy SDK
+  （`packages/sdk/js/script/build.ts`，内部 `bun dev generate` 起服务导出 OpenAPI）。
 - TUI：`sdk.client.find.files` → `client.v2.fs.find`；`sdk.client.path.get` → `client.v2.location.get`；
   `sdk.client.project.current/directories` → `client.v2.project.*`（`context/project.tsx` 把
   `LocationInfo.project.directory` 映射回 `instance.path.worktree`）。`packages/tui` 367 测试通过、typecheck 通过。
