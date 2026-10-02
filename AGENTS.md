@@ -2,7 +2,7 @@
 - After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit `src/generated` or `src/generated-effect` directly.
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
 - The default branch in this repo is `main`. Keep this repo single-branch; do not create a `dev` branch.
-- Upstream `anomalyco/opencode` uses `dev`; when diffing against upstream use `origin/dev`.
+- `origin` is this fork (`oxdingzg/miao`); `upstream` is `anomalyco/opencode`, which is fetch-only and narrowed to its `dev` branch. When diffing against upstream use `upstream/dev`.
 
 ## Licence and Upstream Code
 
@@ -10,7 +10,7 @@ miao is a derivative of opencode under the MIT licence, and most of its code sti
 
 - Keep both copyright lines in `LICENSE`: `the miao authors` and `opencode`. MIT requires opencode's notice in every copy that contains a substantial portion of its code, so do not remove it.
 - opencode's MIT grant covers the code miao forked and cannot be withdrawn. A later licence change upstream applies only to code released after that change.
-- Before merging or cherry-picking newer upstream code, check `git show origin/dev:LICENSE`. Bring the code in only if it is still MIT or another permissive licence; otherwise stop and ask the owner.
+- Before merging or cherry-picking newer upstream code, check `git show upstream/dev:LICENSE`. Bring the code in only if it is still MIT or another permissive licence; otherwise stop and ask the owner.
 - When copying code from any other project, keep its licence and copyright notice next to the copied code.
 
 ## Branch Names
