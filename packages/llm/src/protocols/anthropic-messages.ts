@@ -852,4 +852,33 @@ export const route = Route.make({
   headers: () => ({ "anthropic-version": "2023-06-01" }),
 })
 
+// Vertex AI serves Claude through `rawPredict`: the model is named in the URL,
+// the API version travels in the body, and a `model` body field is rejected.
+const VERTEX_VERSION = "vertex-2023-10-16" as const
+const { model: _model, ...vertexBodyFields } = AnthropicBodyFields
+const AnthropicVertexBody = Schema.Struct({ ...vertexBodyFields, anthropic_version: Schema.Literal(VERTEX_VERSION) })
+
+export const vertexProtocol = Protocol.make({
+  // Same wire semantics as Messages, so cache policy treats it the same way.
+  id: ADAPTER,
+  body: {
+    schema: AnthropicVertexBody,
+    from: (request: LLMRequest) =>
+      fromRequest(request).pipe(
+        Effect.map(({ model: _, ...body }) => ({ ...body, anthropic_version: VERTEX_VERSION })),
+      ),
+  },
+  stream: protocol.stream,
+})
+
+/** Claude on Vertex AI. Configure `baseURL` as `.../projects/{p}/locations/{l}/publishers/anthropic`. */
+export const vertexRoute = Route.make({
+  id: "anthropic-vertex",
+  provider: "google-vertex-anthropic",
+  protocol: vertexProtocol,
+  endpoint: Endpoint.path(({ request }) => `/models/${request.model.id}:streamRawPredict`),
+  auth: Auth.none,
+  framing: Framing.sse,
+})
+
 export * as AnthropicMessages from "./anthropic-messages"

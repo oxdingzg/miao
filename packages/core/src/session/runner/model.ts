@@ -17,6 +17,7 @@ import { AzureEntra } from "../../azure-entra"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Flag } from "../../flag/flag"
+import { GoogleCloudAuth } from "../../google-cloud-auth"
 import { CopilotModels } from "../../github-copilot/models"
 import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
@@ -195,6 +196,7 @@ export const fromCatalogModel = (
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
   if (resolved.api.package === "@ai-sdk/azure") return azure(resolved, credential)
+  if (isVertex(resolved)) return vertex(resolved, credential)
   if (resolved.api.package === "@ai-sdk/openai") {
     // The llm OpenAI facade applies these defaults; building the route directly
     // skipped them, so reasoning models ran without the encrypted reasoning
@@ -309,7 +311,7 @@ const azure = (model: ModelV2.Info, credential?: Credential.Value) => {
   const baseURL = deployments
     ? `${base.replace(/\/v1\/?$/, "")}/deployments/${model.api.id}`
     : model.api.url ?? `${base}/v1`
-  const key = apiKey(model, credential)
+  const key = cloudKey(model, credential, ["AZURE_RESOURCE_NAME"], "AZURE_API_KEY")
   const configured = Object.keys(model.request.headers).some((name) => name.toLowerCase() === "authorization")
   const auth = key
     ? Auth.header("api-key", key)
@@ -325,6 +327,25 @@ const azure = (model: ModelV2.Info, credential?: Credential.Value) => {
   return Effect.succeed(
     withDefaults(model, route, AZURE_SETTINGS).with({ endpoint: { baseURL }, auth }).model({ id: model.api.id }),
   )
+}
+
+/**
+ * The API key for a cloud provider whose models.dev entry lists configuration
+ * env vars beside the key. Integration env connections cannot tell them apart,
+ * so a "key" equal to one of `settings` (a resource name, a project) is
+ * configuration, and the provider's own key variable is read instead.
+ */
+const cloudKey = (
+  model: ModelV2.Info,
+  credential: Credential.Value | undefined,
+  settings: ReadonlyArray<string>,
+  keyEnv: string,
+) => {
+  const misread = credential?.type === "key" && settings.some((name) => process.env[name] === credential.key)
+  const key = apiKey(model, misread ? undefined : credential)
+  if (key) return key
+  const env = process.env[keyEnv]
+  return env ? Auth.value(env) : undefined
 }
 
 const setting = (model: ModelV2.Info, key: string) =>
@@ -348,6 +369,79 @@ const expandAzureTemplate = (model: ModelV2.Info) => {
   })
 }
 
+const VERTEX_SETTINGS = ["project", "location", "fetch", "googleAuthOptions"]
+
+const isVertex = (model: ModelV2.Info) =>
+  model.api.type === "aisdk" &&
+  (model.api.package.startsWith("@ai-sdk/google-vertex") ||
+    (model.providerID === ProviderV2.ID.googleVertex && model.api.package === "@ai-sdk/openai-compatible"))
+
+/**
+ * Google Vertex AI: Gemini over `generateContent`, Claude over `rawPredict`,
+ * and partner (MaaS) models over the OpenAI-compatible endpoint, all under
+ * `/v1/projects/{project}/locations/{location}`. Auth is Application Default
+ * Credentials, a configured `Authorization` header, or, for Gemini only, an
+ * express-mode API key.
+ */
+const vertex = (model: ModelV2.Info, credential?: Credential.Value) => {
+  const anthropic = model.api.type === "aisdk" && model.api.package === "@ai-sdk/google-vertex/anthropic"
+  const project = vertexSetting(model, "project", [
+    "GOOGLE_VERTEX_PROJECT",
+    "GOOGLE_CLOUD_PROJECT",
+    "GCP_PROJECT",
+    "GCLOUD_PROJECT",
+  ])
+  const location =
+    vertexSetting(model, "location", ["GOOGLE_VERTEX_LOCATION", "GOOGLE_CLOUD_LOCATION", "VERTEX_LOCATION"]) ??
+    (anthropic ? "global" : "us-central1")
+  const host =
+    location === "global"
+      ? "aiplatform.googleapis.com"
+      : // Continental multi-regions resolve only on the Regional Endpoint Platform domain.
+        anthropic && (location === "eu" || location === "us")
+        ? `aiplatform.${location}.rep.googleapis.com`
+        : `${location}-aiplatform.googleapis.com`
+  const url = model.api.url
+    ?.replaceAll("${GOOGLE_VERTEX_PROJECT}", project ?? "${GOOGLE_VERTEX_PROJECT}")
+    .replaceAll("${GOOGLE_VERTEX_LOCATION}", location)
+    .replaceAll("${GOOGLE_VERTEX_ENDPOINT}", host)
+  const key = cloudKey(
+    model,
+    credential,
+    ["GOOGLE_VERTEX_PROJECT", "GOOGLE_VERTEX_LOCATION", "GOOGLE_APPLICATION_CREDENTIALS"],
+    "GOOGLE_VERTEX_API_KEY",
+  )
+  const configured = Object.keys(model.request.headers).some((name) => name.toLowerCase() === "authorization")
+  const bearer = configured ? Auth.none : Auth.effect(GoogleCloudAuth.token).bearer()
+  if (model.api.type === "aisdk" && model.api.package === "@ai-sdk/openai-compatible") {
+    if (!url || url.includes("${")) return Effect.fail(unsupported(model))
+    return Effect.succeed(
+      withDefaults(model, OpenAICompatibleChat.route, VERTEX_SETTINGS)
+        .with({ endpoint: { baseURL: url }, auth: bearer })
+        .model({ id: model.api.id }),
+    )
+  }
+  const publisher = anthropic ? "anthropic" : "google"
+  // Express mode: a Vertex API key reaches Gemini without a project.
+  const express = !anthropic && key !== undefined && !project && !url
+  if (!url && !project && !express) return Effect.fail(unsupported(model))
+  const baseURL = express
+    ? "https://aiplatform.googleapis.com/v1/publishers/google"
+    : (url ?? `https://${host}/v1/projects/${project}/locations/${location}/publishers/${publisher}`)
+  const auth = !anthropic && key !== undefined ? Auth.header("x-goog-api-key", key) : bearer
+  return Effect.succeed(
+    withDefaults(model, anthropic ? AnthropicMessages.vertexRoute : Gemini.route, VERTEX_SETTINGS)
+      .with({ endpoint: { baseURL }, auth })
+      .model({ id: model.api.id.trim() }),
+  )
+}
+
+const vertexSetting = (model: ModelV2.Info, key: string, env: ReadonlyArray<string>) => {
+  const value = setting(model, key)
+  if (typeof value === "string" && value !== "") return value
+  return env.map((name) => process.env[name]).find((item) => item !== undefined && item !== "")
+}
+
 export const resolveWithInfo = (
   session: SessionSchema.Info,
   model: ModelV2.Info,
@@ -364,6 +458,7 @@ export const supported = (model: ModelV2.Info) => {
   if (model.api.type !== "aisdk") return false
   if (model.providerID === ProviderV2.ID.githubCopilot) return true
   if (model.api.package === "@ai-sdk/azure") return model.api.url !== undefined || azureResource(model) !== undefined
+  if (isVertex(model)) return true
   if (
     model.api.package === "@ai-sdk/openai" ||
     model.api.package === "@ai-sdk/anthropic" ||
