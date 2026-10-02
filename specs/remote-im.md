@@ -307,3 +307,62 @@ Hermes（MIT）实现。扫码 SDK `@tencent-connect/qqbot-connector` 是 `UNLIC
 3. 守护进程控制路由 + 生成 client；`miao remote login` 改走步骤。
 4. TUI `/remote` 对话框（列表、扫码、表单、配对、断开、守护进程状态、在守护进程里打开当前会话）。
 5. 文档与真机验收（微信、QQ）。之后按同一模式接 Telegram、飞书、企业微信智能机器人。
+
+### 实现状态（2026-10-02）
+
+步骤 1–4 与文档已实现，真机验收（微信、QQ 扫码，TUI `/remote`）未做。
+
+- **代码位置**：`packages/remote/src/connector.ts`（`defineConnector`、登录步骤、`callbackLogin` 把回调式登录转成步骤）、
+  `accounts.ts`（凭证文件、按账号的状态目录、旧格式迁移）、`host.ts`（把账号变成 Channel、主人闸门、配对码、登录流程、状态）、
+  `load.ts`（第三方连接器）、`testing.ts`（`@miao/remote/testing` 的 `connectorConformance`）、`builtin.ts`；
+  内置连接器在 `src/connectors/wechat/`、`src/connectors/qq/`（含 `fake-qq.ts`）。控制路由的协议在
+  `packages/protocol/src/groups/remote.ts`，处理在 `packages/server/src/handlers/remote.ts`，服务接口
+  `packages/server/src/remote-control.ts`；TUI 对话框在 `packages/tui/src/component/dialog-remote.tsx`。
+- **凭证与迁移**：`remote-auth.json` 为 `{ 连接器: { 账号: { label, owner, pair?, needsLogin?, savedAt, credentials } } }`，0600 原子写，
+  同一进程内的读改写串行。旧的 `{ wechat: Credentials }` 读取时直接兼容；`miao remote` 各子命令启动时迁移一次：改写凭证文件、
+  把 `wechat-<bot>.cursor/tokens/status.json` 搬到 `state/remote/wechat/<bot>/`，并把路由状态里的用户键 `wechat:<用户>`
+  改成 `wechat/<bot>:<用户>`（Router 的通道 ID 现在是 `<连接器>/<账号>`），编号、当前会话、待取结果都保留。
+- **主人与配对**：主人闸门在 host 里，Router 的 `allow` 也改成按 host 查询。配对码 6 位、10 分钟有效、一次性；收到 10 次错误的
+  6 位数字即作废（防穷举），可重新生成；接受 `123456`、`/start 123456`、全角数字。**重新配对时旧主人在新码被使用前仍然有效**（保守，
+  避免配对期间失联）。登录时已确定主人的连接器（微信、QQ）不提供重新配对，换主人要重新登录。没有路由的进程（CLI 登录）只为收配对码
+  临时启动通道，配对完成或过期后关闭。
+- **第三方连接器**：`remote.connectors` 里的 npm 包走与插件相同的 `Npm.add` 安装与缓存，本地路径（绝对、`./`、`~/`、`file:`）直接导入；
+  模块导出的所有 `defineConnector(...)` 都会注册，与已有 id 重名的跳过并记日志。第三方连接器的设置放 `remote.settings.<id>`。
+- **一致性套件**：经真实 host 跑（登录步骤收尾、凭证不出现在步骤里、主人或配对、收发、陌生人与重复消息被丢弃、按 `maxLength` 切分、
+  断线重连、能力声明与主动推送）。微信、QQ 和一个测试用的配对型连接器都通过。
+- **QQ 的取舍**：
+  - 对 Router 不声明回复窗口和推送预算，由通道自己决定被动还是主动：被动回复只在入站后 **5 分钟内、每条最多 4 次**（文档同页
+    60 分钟与 5 分钟取保守值），`msg_seq` 每次递增；之后改发主动消息，本地按每用户每天 1000 条、每分钟 20 条计数。被动回复被拒
+    （40034005/40034024/40034128）时改发主动；40054013（用户关闭主动消息）、40034100（超频）让发送失败，Router 照常把结果放进待取。
+  - 先发 `msg_type: 2` markdown，遇到 markdown 权限/格式错误码（40034008–40034011、40034124、40034127）回退纯文本并记住；
+    `remote.qq.markdown: false` 可直接用纯文本。风险：QQ markdown 对单个换行的渲染未在真机确认。
+  - 域名：未配置 `remote.qq.api` 时先用 `api.bot.qq.com`，网络失败/404/5xx 时依次回退 `bots.qq.com`（取 token）和
+    `api.sgroup.qq.com`（其它接口），回退成功后粘住；配置了就只用配置的地址。扫码绑定的主机可用 `remote.qq.portal` 改。
+  - Token 提前 min(5 分钟, 有效期的 1/3) 刷新（官方 SDK 用「剩余时间的 1/3」，那个式子永远成立，等于不提前）。401 时清缓存重取一次。
+  - 网关：4009/op 7/op 9(true) 续连，4006/4007/4900–4913/op 9(false) 清会话重新 Identify 并重取 token，4004 重取 token，
+    4008 等 60 秒，4914/4915 停止并标记需要重新扫码；心跳未被确认视为半开连接，断开后续连。`session_id` 与 seq 存
+    `gateway.json`，重启后先 Resume。
+  - 扫码：二维码过期最多刷新 3 次；`user_openid` 缺失时退回配对码。
+- **守护进程控制接口**：在设计表格之外加了 `DELETE /api/remote/login/:flow`（取消登录）。路由走服务密码鉴权，只有 `miao remote` 把
+  控制对象交给服务时才有效，其它服务（`miao serve`、TUI 内嵌服务）一律 404。`miao remote login` 先探测 `remote.port`，守护进程在跑就通过它
+  登录（新账号立即生效），否则在本进程完成；`miao remote status` 优先读守护进程的实时状态，并显示守护进程是否在运行。
+  **`miao remote` 仍然在没有任何账号时拒绝启动**（行为不变），所以第一个账号要先用 CLI 登录，之后才能在 TUI 里接入更多。
+- **TUI `/remote`**：列表、状态（每 3 秒刷新，有变化才重绘）、回车接入（二维码用半格字符、白模块黑底绘制，与 CLI 共用 `uqr`）、
+  `code`/`form` 用输入框（**secret 字段没有遮挡**，输入框组件不支持，界面会提示）、配对码与配对二维码、测试消息、重新配对、重新登录、断开（二次确认）。
+  守护进程没运行时只显示「前台启动」「安装常驻」要执行的命令（`miao remote install` + `launchctl bootstrap …`），不执行任何命令。
+  **「在守护进程里打开当前会话」只给出命令**（`miao attach http://127.0.0.1:<port> --session <id>`，需先退出当前 TUI），没有做原地重新 attach。
+- **测试**：`packages/remote/test`（accounts 迁移、host 登录流程与配对、第三方加载、一致性套件 ×3、QQ 扫码/加解密/token/域名回退/网关关闭码/
+  Resume/心跳/收发策略/markdown 回退/输入中）；`packages/miao/test/remote`（QQ 端到端：被动确认、超窗主动推送、40054013 进待取；
+  守护进程：控制路由、经守护进程登录、断开、非 remote 服务 404、无守护进程时 CLI 登录与状态）；`packages/tui/test/cli/tui/dialog-remote.test.tsx`；
+  `test/server/httpapi-exercise` 覆盖新路由的 404。所有 remote 测试经只允许 127.0.0.1 的 fetch/WebSocket 守卫（`packages/remote/test/preload.ts`）。
+- **未做**：真机验收；QQ 群聊（`GROUP_AT_MESSAGE_CREATE`）、图片与文件；Telegram、飞书、企业微信连接器；TUI 原地切换到守护进程。
+
+真机验收步骤：
+
+1. 微信：`miao remote login wechat` 扫码 → `miao remote` → 手机发 `/help`、`/new <项目> 写一句话`，确认回复与审批码；`miao remote status`
+   显示「微信：<bot>，主人 …」与「轮询：运行中」。
+2. QQ：守护进程运行时执行 `miao remote login qq`（或在 TUI `/remote` 选「QQ 机器人」回车），用手机 QQ 扫码、新建专用机器人、点「连接到第三方平台」
+   → 列表显示「● 已连接」→ 在 QQ 私聊里发 `/help`；让一轮超过 5 分钟再结束，确认结果仍被推送；在 QQ 里关闭该机器人的主动消息后重复，
+   确认结果进入待取、发 `/r` 能取回。观察 markdown 消息的换行是否正常，不正常就设 `remote.qq.markdown: false`。
+3. TUI：在没有 attach 守护进程的 TUI 里输入 `/remote`，确认显示「这里的会话在手机上只读」和 attach 命令；守护进程未运行时只显示命令；
+   选中已接入账号可发测试消息、断开。
