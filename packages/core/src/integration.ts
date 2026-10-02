@@ -38,13 +38,18 @@ export const legacyOAuth = (entry: unknown, methodID: MethodID): Credential.OAut
   if (typeof entry !== "object" || entry === null) return undefined
   const legacy = entry as Record<string, unknown>
   if (legacy.type !== "oauth" || typeof legacy.access !== "string" || typeof legacy.refresh !== "string") return
+  // ChatGPT logins carried the account; GitHub Copilot Enterprise logins carried their domain.
+  const metadata = {
+    ...(typeof legacy.accountId === "string" ? { accountID: legacy.accountId } : {}),
+    ...(typeof legacy.enterpriseUrl === "string" ? { enterpriseUrl: legacy.enterpriseUrl } : {}),
+  }
   return Credential.OAuth.make({
     type: "oauth",
     methodID,
     access: legacy.access,
     refresh: legacy.refresh,
     expires: typeof legacy.expires === "number" ? legacy.expires : Date.now() + 3_600_000,
-    ...(typeof legacy.accountId === "string" ? { metadata: { accountID: legacy.accountId } } : {}),
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   })
 }
 
