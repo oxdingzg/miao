@@ -982,6 +982,7 @@
         "remeda": "catalog:",
         "solid-js": "catalog:",
         "strip-ansi": "7.1.2",
+        "uqr": "0.1.3",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
