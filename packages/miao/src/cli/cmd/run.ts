@@ -159,10 +159,6 @@ export const RunCommand = effectCmd({
         describe: "fork the session before continuing (requires --continue or --session)",
         type: "boolean",
       })
-      .option("share", {
-        type: "boolean",
-        describe: "share the session",
-      })
       .option("model", {
         type: "string",
         alias: ["m"],
@@ -574,21 +570,8 @@ export const RunCommand = effectCmd({
         return { id: created.id, title: name ?? created.title, directory: created.location.directory }
       }
 
-      async function share(sdk: OpencodeClient, sessionID: string) {
-        const cfg = await sdk.config.get()
-        if (!cfg.data) return
-        if (cfg.data.share !== "auto" && !flags.autoShare && !args.share) return
-        // throwOnError turns the server's refusal (e.g. sharing disabled, 403) into an Error carrying its reason.
-        const res = await sdk.session.share({ sessionID }, { throwOnError: true }).catch((error) => {
-          if (error instanceof Error && error.message.includes("disabled")) {
-            UI.println(UI.Style.TEXT_DANGER_BOLD + "!  " + error.message)
-          }
-          return undefined
-        })
-        if (res?.data.share?.url) {
-          UI.println(UI.Style.TEXT_INFO_BOLD + "~  " + res.data.share.url)
-        }
-      }
+      // Sharing was removed; the interactive runtime still takes this hook.
+      async function share(_sdk: OpencodeClient, _sessionID: string) {}
 
       async function createFreshSession(
         sdk: OpencodeClient,
@@ -611,7 +594,6 @@ export const RunCommand = effectCmd({
           throw new Error("Failed to create session")
         }
 
-        void share(sdk, id).catch(() => {})
         return {
           id,
           title: result.data?.title,
@@ -871,13 +853,6 @@ export const RunCommand = effectCmd({
         // Validate agent if specified
         const agent = await pickAgent(client)
 
-        if (!headlessV2) await share(client, sessionID)
-        if (headlessV2 && args.share)
-          UI.println(
-            UI.Style.TEXT_WARNING_BOLD + "!",
-            UI.Style.TEXT_NORMAL + "sharing is not available for V2 sessions yet",
-          )
-
         if (headlessV2) {
           const { runHeadless } = await import("./run/headless")
           const error = await runHeadless({
@@ -1086,7 +1061,6 @@ export async function runMini(input: MiniCommandInput) {
     continue: input.continue,
     session: input.session,
     fork: input.fork,
-    share: undefined,
     model: input.model,
     agent: input.agent,
     format: "default",

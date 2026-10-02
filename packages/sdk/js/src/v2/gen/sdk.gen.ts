@@ -38,8 +38,6 @@ import type {
   ExperimentalConsoleSwitchOrgResponses,
   ExperimentalControlPlaneMoveSessionErrors,
   ExperimentalControlPlaneMoveSessionResponses,
-  ExperimentalProjectCopyGenerateNameErrors,
-  ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
   ExperimentalSessionBackgroundErrors,
@@ -208,8 +206,6 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
-  SessionShareErrors,
-  SessionShareResponses,
   SessionShellErrors,
   SessionShellResponses,
   SessionStatusErrors,
@@ -220,8 +216,6 @@ import type {
   SessionTodoResponses,
   SessionUnrevertErrors,
   SessionUnrevertResponses,
-  SessionUnshareErrors,
-  SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
   SubtaskPartInput,
@@ -965,51 +959,6 @@ export class Resource extends HeyApiClient {
   }
 }
 
-export class ProjectCopy extends HeyApiClient {
-  /**
-   * Generate project copy name
-   *
-   * Generate a short name for a project copy from task context.
-   */
-  public generateName<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      directory?: string
-      workspace?: string
-      context?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "context" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      ExperimentalProjectCopyGenerateNameResponses,
-      ExperimentalProjectCopyGenerateNameErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/project/{projectID}/copy/generate-name",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Adapter extends HeyApiClient {
   /**
    * List workspace adapters
@@ -1307,11 +1256,6 @@ export class Experimental extends HeyApiClient {
   private _resource?: Resource
   get resource(): Resource {
     return (this._resource ??= new Resource({ client: this.client }))
-  }
-
-  private _projectCopy?: ProjectCopy
-  get projectCopy(): ProjectCopy {
-    return (this._projectCopy ??= new ProjectCopy({ client: this.client }))
   }
 
   private _workspace?: Workspace
@@ -4026,70 +3970,6 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
-   * Unshare session
-   *
-   * Remove the shareable link for a session, making it private again.
-   */
-  public unshare<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<SessionUnshareResponses, SessionUnshareErrors, ThrowOnError>({
-      url: "/session/{sessionID}/share",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Share session
-   *
-   * Create a shareable link for a session, allowing others to view the conversation.
-   */
-  public share<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionShareResponses, SessionShareErrors, ThrowOnError>({
-      url: "/session/{sessionID}/share",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
    * Summarize session
    *
    * Generate a concise summary of the session using AI compaction to preserve key information.
@@ -6010,15 +5890,26 @@ export class Session3 extends HeyApiClient {
   /**
    * Get session diff
    *
-   * Files changed by the session since its first recorded snapshot.
+   * Files changed by the session since its first recorded snapshot, or within the turn that answered `messageID`.
    */
   public diff<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
+      messageID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "messageID" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).get<V2SessionDiffResponses, V2SessionDiffErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/diff",
       ...options,
@@ -7223,7 +7114,7 @@ export class Reference extends HeyApiClient {
   }
 }
 
-export class ProjectCopy2 extends HeyApiClient {
+export class ProjectCopy extends HeyApiClient {
   public remove<ThrowOnError extends boolean = false>(
     parameters: {
       projectID: string
@@ -7707,9 +7598,9 @@ export class V2 extends HeyApiClient {
     return (this._reference ??= new Reference({ client: this.client }))
   }
 
-  private _projectCopy?: ProjectCopy2
-  get projectCopy(): ProjectCopy2 {
-    return (this._projectCopy ??= new ProjectCopy2({ client: this.client }))
+  private _projectCopy?: ProjectCopy
+  get projectCopy(): ProjectCopy {
+    return (this._projectCopy ??= new ProjectCopy({ client: this.client }))
   }
 
   private _project?: Project2

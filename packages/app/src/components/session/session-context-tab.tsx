@@ -230,7 +230,7 @@ export function SessionContextTab() {
     try {
       const data = await fetchSessionExport({
         sessionID,
-        client: sdk().client,
+        api: sdk().api,
       })
       const filename = sessionExportFilename(data.info)
       downloadSessionExport(filename, data)

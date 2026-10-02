@@ -57,11 +57,10 @@ export const Info = Schema.Struct({
   }),
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPluginV1.Spec))),
   share: Schema.optional(Schema.Literals(["manual", "auto", "disabled"])).annotate({
-    description:
-      "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",
+    description: "@deprecated Ignored: session sharing was removed",
   }),
   autoshare: Schema.optional(Schema.Boolean).annotate({
-    description: "@deprecated Use 'share' field instead. Share newly created sessions automatically",
+    description: "@deprecated Ignored: session sharing was removed",
   }),
   autoupdate: Schema.optional(Schema.Union([Schema.Boolean, Schema.Literal("notify")])).annotate({
     description:
@@ -134,7 +133,7 @@ export const Info = Schema.Struct({
   }),
   enterprise: Schema.optional(
     Schema.Struct({ url: Schema.optional(Schema.String).annotate({ description: "Enterprise URL" }) }),
-  ),
+  ).annotate({ description: "@deprecated Ignored: session sharing was removed" }),
   tool_output: Schema.optional(
     Schema.Struct({
       max_lines: Schema.optional(PositiveInt).annotate({

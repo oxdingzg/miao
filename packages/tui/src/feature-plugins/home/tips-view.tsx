@@ -260,8 +260,6 @@ const TIPS: Tip[] = [
   'Set {highlight}"tools": {"bash": false}{/highlight} to disable specific tools',
   'Set {highlight}"mcp_*": false{/highlight} to disable all tools from an MCP server',
   "Override global tool settings per agent configuration",
-  'Sharing is off by default; set {highlight}"share": "manual"{/highlight} to enable {highlight}/share{/highlight}',
-  "Run {highlight}/unshare{/highlight} to remove a session from public access",
   "Permission {highlight}doom_loop{/highlight} prevents infinite tool call loops",
   "Permission {highlight}external_directory{/highlight} protects files outside project",
   "Run {highlight}miao debug config{/highlight} to troubleshoot configuration",

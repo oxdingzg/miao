@@ -133,6 +133,9 @@ export interface Interface {
   readonly waitForDependencies: () => Effect.Effect<void>
 }
 
+// Warn about removed share keys once per process, not on every instance load.
+let warnedIgnoredShareKeys = false
+
 export class Service extends Context.Service<Service, Interface>()("@miao/Config") {}
 
 export const use = serviceUse(Service)
@@ -588,12 +591,13 @@ const layer = Layer.effect(
           }
         }
 
-        if (result.autoshare === true && !result.share) {
-          result.share = "auto"
+        // Sharing was removed. Older configs keep loading; the keys are ignored
+        // and reported once per process instead of failing startup.
+        const ignored = (["share", "autoshare", "enterprise"] as const).filter((key) => result[key] !== undefined)
+        if (ignored.length > 0 && !warnedIgnoredShareKeys) {
+          warnedIgnoredShareKeys = true
+          yield* Effect.logWarning("ignoring removed config keys: sharing is no longer supported", { keys: ignored })
         }
-        // miao runs no share backend, so sharing (which uploads to the inherited
-        // opencode share service) stays off unless the user opts in explicitly.
-        if (!result.share) result.share = "disabled"
 
         if (Flag.MIAO_DISABLE_AUTOCOMPACT) {
           result.compaction = { ...result.compaction, auto: false }
