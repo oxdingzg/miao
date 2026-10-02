@@ -4,6 +4,7 @@ import { httpClient } from "@miao/core/effect/app-node-platform"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { EventV2 } from "@miao/core/event"
 import { Git } from "@miao/core/git"
+import { MoveSession } from "@miao/core/control-plane/move-session"
 import { Credential } from "@miao/core/credential"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { Project } from "@miao/core/project"
@@ -40,6 +41,7 @@ const applicationServices = LayerNode.group([
   Project.node,
   Git.node,
   WorkspaceLive.node,
+  MoveSession.node,
 ])
 
 export function createRoutes(password?: string) {

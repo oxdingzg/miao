@@ -1,6 +1,7 @@
 export { Agent } from "./agent"
 export { Command } from "./command"
 export { Connection } from "./connection"
+export { ControlPlane } from "./control-plane"
 export { Credential } from "./credential"
 export { Event } from "./event"
 export { FileSystem } from "./filesystem"

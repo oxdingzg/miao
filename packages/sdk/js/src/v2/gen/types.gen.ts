@@ -3052,6 +3052,13 @@ export type ProjectCopyError = {
   }
 }
 
+export type ControlPlaneError = {
+  name: "ControlPlaneError"
+  data: {
+    message: string
+  }
+}
+
 export type RemoteAccountStatus = {
   connector: string
   account: string
@@ -6609,6 +6616,10 @@ export type WorkspaceWarpInput = {
   id: string | null
   sessionID: string
   copyChanges?: boolean
+}
+
+export type ControlPlaneMoveSessionDestination = {
+  directory: string
 }
 
 export type EventModelsDevRefreshed = {
@@ -15217,6 +15228,48 @@ export type V2WorkspaceRemoveResponses = {
 }
 
 export type V2WorkspaceRemoveResponse = V2WorkspaceRemoveResponses[keyof V2WorkspaceRemoveResponses]
+
+export type V2ControlPlaneMoveSessionData = {
+  body: {
+    sessionID: string
+    destination: ControlPlaneMoveSessionDestination
+    moveChanges?: boolean
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/control-plane/move-session"
+}
+
+export type V2ControlPlaneMoveSessionErrors = {
+  /**
+   * ControlPlaneError | InvalidRequestError
+   */
+  400: ControlPlaneError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ControlPlaneMoveSessionError = V2ControlPlaneMoveSessionErrors[keyof V2ControlPlaneMoveSessionErrors]
+
+export type V2ControlPlaneMoveSessionResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: null
+  }
+}
+
+export type V2ControlPlaneMoveSessionResponse =
+  V2ControlPlaneMoveSessionResponses[keyof V2ControlPlaneMoveSessionResponses]
 
 export type V2RemoteGetData = {
   body?: never

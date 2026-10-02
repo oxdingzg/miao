@@ -174,6 +174,8 @@ import type {
   WorkspaceWarpOutput,
   WorkspaceRemoveInput,
   WorkspaceRemoveOutput,
+  ControlPlaneMoveSessionInput,
+  ControlPlaneMoveSessionOutput,
   RemoteGetOutput,
   RemoteLoginInput,
   RemoteLoginOutput,
@@ -1441,6 +1443,25 @@ export function make(options: ClientOptions) {
             method: "DELETE",
             path: `/api/workspace/${encodeURIComponent(input.id)}`,
             query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    controlPlane: {
+      moveSession: (input: ControlPlaneMoveSessionInput, requestOptions?: RequestOptions) =>
+        request<ControlPlaneMoveSessionOutput>(
+          {
+            method: "POST",
+            path: `/api/control-plane/move-session`,
+            query: { location: input["location"] },
+            body: {
+              sessionID: input["sessionID"],
+              destination: input["destination"],
+              moveChanges: input["moveChanges"],
+            },
             successStatus: 200,
             declaredStatuses: [400, 401],
             empty: false,

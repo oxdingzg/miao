@@ -24,6 +24,7 @@ import type {
   ConfigProvidersResponses,
   ConfigUpdateErrors,
   ConfigUpdateResponses,
+  ControlPlaneMoveSessionDestination,
   EventSubscribeResponses,
   EventTuiCommandExecute,
   EventTuiPromptAppend,
@@ -268,6 +269,8 @@ import type {
   V2ConfigGetResponses,
   V2ConfigProvidersErrors,
   V2ConfigProvidersResponses,
+  V2ControlPlaneMoveSessionErrors,
+  V2ControlPlaneMoveSessionResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -7804,6 +7807,54 @@ export class Workspace2 extends HeyApiClient {
   }
 }
 
+export class ControlPlane2 extends HeyApiClient {
+  /**
+   * Move session
+   *
+   * Move a session to another project directory, optionally transferring local changes.
+   */
+  public moveSession<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      sessionID?: string
+      destination?: ControlPlaneMoveSessionDestination
+      moveChanges?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "destination" },
+            { in: "body", key: "moveChanges" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2ControlPlaneMoveSessionResponses,
+      V2ControlPlaneMoveSessionErrors,
+      ThrowOnError
+    >({
+      url: "/api/control-plane/move-session",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Login extends HeyApiClient {
   /**
    * Start a connector login
@@ -8149,6 +8200,11 @@ export class V2 extends HeyApiClient {
   private _workspace?: Workspace2
   get workspace(): Workspace2 {
     return (this._workspace ??= new Workspace2({ client: this.client }))
+  }
+
+  private _controlPlane?: ControlPlane2
+  get controlPlane(): ControlPlane2 {
+    return (this._controlPlane ??= new ControlPlane2({ client: this.client }))
   }
 
   private _remote?: Remote
