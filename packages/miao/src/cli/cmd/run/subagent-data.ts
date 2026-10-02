@@ -741,13 +741,10 @@ export function bootstrapSubagentData(input: BootstrapSubagentInput) {
 
   // A task still running when the transcript was read has not reported its
   // child yet; pair those calls with the children that have no tab, in order.
+  // A call whose child does not exist yet waits for its `session.next.created`.
   const unlinked = input.children.filter((item) => !input.data.tabs.has(item.id))
   for (const [index, part] of tasks.filter((part) => part.state.status === "running").entries()) {
     const sessionID = unlinked[index]?.id
-    if (!sessionID) {
-      break
-    }
-
     input.data.tasks.set(part.id, {
       messageID: part.messageID,
       callID: part.callID,
@@ -755,6 +752,10 @@ export function bootstrapSubagentData(input: BootstrapSubagentInput) {
       created: "time" in part.state ? part.state.time.start : Date.now(),
       sessionID,
     })
+    if (!sessionID) {
+      continue
+    }
+
     changed =
       syncTaskTab(input.data, { ...part, metadata: { ...part.metadata, sessionId: sessionID } }, children) || changed
   }

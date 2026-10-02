@@ -536,4 +536,30 @@ describe("run subagent data", () => {
       expect.objectContaining({ sessionID: "child-7", status: "running" }),
     ])
   })
+
+  test("links a child created after bootstrap to a task that was already running", () => {
+    const data = createSubagentData()
+    const running = taskMessage("unused", "running")
+    const part = running.parts[0]
+    if (part?.type !== "tool" || part.state.status !== "running") throw new Error("expected a running task part")
+
+    bootstrapSubagentData({
+      data,
+      messages: [{ parts: [{ ...part, id: "msg-1:call-1", state: { ...part.state, metadata: {} } }] }],
+      children: [],
+      permissions: [],
+      questions: [],
+    })
+    expect(snapshotSubagentData(data).tabs).toEqual([])
+
+    expect(
+      reduce(data, {
+        type: "session.next.created",
+        properties: { sessionID: "child-8", timestamp: 6, info: { id: "child-8", parentID: "parent-1" } },
+      }),
+    ).toBe(true)
+    expect(snapshotSubagentData(data).tabs).toEqual([
+      expect.objectContaining({ sessionID: "child-8", status: "running" }),
+    ])
+  })
 })
