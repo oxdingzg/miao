@@ -7,6 +7,7 @@ import {
   type Model,
   type ProviderMetadata,
 } from "@miao/llm"
+import { fileURLToPath } from "url"
 import { SessionMessage } from "../message"
 import type { FileAttachment } from "../prompt"
 
@@ -18,12 +19,14 @@ import type { FileAttachment } from "../prompt"
 const acceptsImages = (input: readonly string[] | undefined) =>
   input === undefined || input.length === 0 || input.some((item) => item.startsWith("image"))
 
-const media = (file: FileAttachment, images: boolean): ContentPart => {
+const media = (file: FileAttachment, images: boolean, accepted: ReadonlySet<string> | undefined): ContentPart => {
   if (!images && file.mime.startsWith("image/"))
     return {
       type: "text",
       text: `[image attachment omitted: model does not support image input${file.name ? `: ${file.name}` : ""}]`,
     }
+  if (accepted !== undefined && !accepted.has(file.mime.toLowerCase()))
+    return { type: "text", text: unsupportedMedia(file) }
   return {
     type: "media",
     mediaType: file.mime,
@@ -32,6 +35,27 @@ const media = (file: FileAttachment, images: boolean): ContentPart => {
     metadata: file.description === undefined ? undefined : { description: file.description },
   }
 }
+
+/**
+ * Text standing in for an attachment the route's protocol cannot carry (a PDF
+ * on OpenAI Chat, an AVIF image on Anthropic). Sending it would fail the whole
+ * turn locally, so the model is told what the file is and how to read it with
+ * tools instead. Only a client-supplied local path or a `file:` URI is named; an
+ * attachment from a remote client is identified by name alone.
+ */
+const unsupportedMedia = (file: FileAttachment) => {
+  const location = file.path ?? (isLocalFileUri(file.uri) ? fileURLToPath(file.uri) : undefined)
+  const name = file.name ?? location?.split(/[\\/]/).pop() ?? "attachment"
+  return [
+    `[attachment not sent: "${name}"${location === undefined ? "" : ` (local file: ${location})`}, ${file.mime}]`,
+    `This model/provider cannot receive ${file.mime} directly; read the file with tools (for PDFs: pdftotext, or render pages to images with pdftoppm and read them).`,
+    "Tell the user that this attachment could not be sent to the model directly.",
+  ].join("\n")
+}
+
+// fileURLToPath throws on a remote host, so only a host-less file URI is named.
+const isLocalFileUri = (uri: string) =>
+  URL.canParse(uri) && new URL(uri).protocol === "file:" && new URL(uri).hostname === ""
 
 const toolInput = (tool: SessionMessage.AssistantTool) => {
   if (tool.state.status !== "pending") return tool.state.input
@@ -155,7 +179,10 @@ function toLLMMessage(message: SessionMessage.Message, model: Model, images: boo
         Message.make({
           id: message.id,
           role: "user",
-          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map((file) => media(file, images))],
+          content: [
+            { type: "text", text: message.text },
+            ...(message.files ?? []).map((file) => media(file, images, model.route.media)),
+          ],
           metadata: {
             ...message.metadata,
             ...(message.agents?.length ? { agents: message.agents } : {}),
@@ -203,6 +230,8 @@ ${message.recent}
  * Translate projected V2 Session history into canonical @miao/llm context.
  * `input` is the target model's declared input modalities; when it claims no
  * image support, image attachments are replaced with a text placeholder.
+ * Attachments whose MIME type the route's protocol does not accept are replaced
+ * with a note naming the file and how to read it with tools.
  */
 export const toLLMMessages = (
   messages: readonly SessionMessage.Message[],

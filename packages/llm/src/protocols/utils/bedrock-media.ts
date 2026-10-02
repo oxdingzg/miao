@@ -49,6 +49,9 @@ const DOCUMENT_FORMATS = {
   "text/markdown": "md",
 } as const satisfies Record<string, DocumentFormat>
 
+/** Every MIME type `lower` accepts: the image formats plus the document formats. */
+export const MIMES: ReadonlySet<string> = new Set([...Object.keys(IMAGE_FORMATS), ...Object.keys(DOCUMENT_FORMATS)])
+
 const documentBlock = (part: MediaPart, format: DocumentFormat, bytes: string): DocumentBlock => ({
   document: {
     format,

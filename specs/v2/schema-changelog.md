@@ -1,5 +1,11 @@
 # V2 Schema Changelog
 
+## 2026-10-02: Local Path on File Attachments
+
+- Add an optional `path` to `PromptInput.FileAttachment` and `Prompt.FileAttachment`: the absolute path on the submitting client's filesystem, set only when the attachment was read from a local file (the TUI sends it for pasted or dropped files). Remote clients omit it.
+- The runner uses it when the route's protocol cannot carry an attachment's MIME type (`Protocol.media`; a PDF on OpenAI Chat/Responses, Anthropic Messages or Gemini): the attachment becomes a text note naming the file, its local path when known, and how to read it with tools, instead of failing the whole turn locally. Bedrock Converse still receives PDFs as document blocks.
+- Stored prompts and `session.next.prompted` payloads stay decodable: an added optional field needs no migration or durable version change.
+
 ## 2026-10-02: Per-Turn Session Diff
 
 - `GET /api/session/:sessionID/diff` accepts an optional `messageID` query. With it, the diff spans the turn that answered that user message: from the first `step.started` snapshot after its `session.next.prompted` event to the last `step.ended` snapshot before the next prompted message, or the live worktree while the turn is still open. This is the V2 source for the app's per-turn DiffSummary, which V1 stored as `summary.diffs` on user messages.

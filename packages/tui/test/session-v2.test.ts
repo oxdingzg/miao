@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
 import {
   isLiveSessionV2Event,
@@ -263,6 +264,22 @@ test("maps prompt parts into the V2 prompt input", () => {
       { type: "file", url: "file:///a.png", filename: "a.png" },
     ]),
   ).toEqual({ text: "hi", files: [{ uri: "file:///a.png", name: "a.png" }] })
+  const pdf = "data:application/pdf;base64,JVBERi0="
+  const local = path.resolve("report.pdf")
+  expect(
+    promptInputFromParts([
+      { type: "text", text: "[PDF 1]" },
+      { type: "file", url: pdf, filename: "report.pdf", source: { type: "file", path: local } },
+      // A clipboard paste has no file on disk; its source path falls back to the bare filename.
+      { type: "file", url: pdf, filename: "clip.pdf", source: { type: "file", path: "clip.pdf" } },
+    ]),
+  ).toEqual({
+    text: "[PDF 1]",
+    files: [
+      { uri: pdf, name: "report.pdf", path: local },
+      { uri: pdf, name: "clip.pdf" },
+    ],
+  })
   expect(
     promptInputFromParts([
       { type: "text", text: "a" },

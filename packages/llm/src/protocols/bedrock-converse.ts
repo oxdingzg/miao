@@ -641,6 +641,7 @@ export const protocol = Protocol.make({
     schema: BedrockConverseBody,
     from: fromRequest,
   },
+  media: BedrockMedia.MIMES,
   stream: {
     event: BedrockEvent,
     initial: () => ({

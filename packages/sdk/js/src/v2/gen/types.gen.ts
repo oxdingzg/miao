@@ -3315,6 +3315,7 @@ export type PromptFileAttachment = {
   name?: string
   description?: string
   source?: PromptSource
+  path?: string
 }
 
 export type PromptAgentAttachment = {
@@ -4221,6 +4222,7 @@ export type PromptInputFileAttachment = {
   name?: string
   description?: string
   source?: PromptSource
+  path?: string
 }
 
 export type SessionInputAdmitted = {

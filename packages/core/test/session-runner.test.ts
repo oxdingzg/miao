@@ -670,6 +670,35 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("sends a PDF attachment the route cannot carry as a note naming its local path", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      requests.length = 0
+      responses = undefined
+      streamGate = undefined
+      streamStarted = undefined
+      response = []
+
+      yield* session.prompt({
+        sessionID,
+        prompt: {
+          text: "Summarize [PDF 1]",
+          files: [{ uri: "data:application/pdf;base64,JVBERi0=", name: "report.pdf", path: "/home/me/report.pdf" }],
+        },
+      })
+
+      expect(requests).toHaveLength(1)
+      const content = requests[0]!.messages.find((message) => message.role === "user")!.content
+      expect(content.some((part) => part.type === "media")).toBe(false)
+      const note = content.find((part) => part.type === "text" && part.text.includes("report.pdf"))
+      expect(note?.type === "text" ? note.text : "").toContain("(local file: /home/me/report.pdf)")
+      // The OpenAI Chat body builds; before, lowering threw "does not support media type application/pdf".
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(requests[0]!)
+      expect(JSON.stringify(prepared.body.messages)).toContain("pdftotext")
+    }),
+  )
+
   it.effect("streams one request with registry definitions from chronological V2 user history", () =>
     Effect.gen(function* () {
       yield* setup
