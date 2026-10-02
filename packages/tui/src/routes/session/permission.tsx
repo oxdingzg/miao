@@ -479,6 +479,28 @@ export function PermissionPrompt(props: {
               }
             }
 
+            const meta = props.request.metadata ?? {}
+            if (permission.startsWith("mcp__") && typeof meta.server === "string" && typeof meta.tool === "string") {
+              // The tool call's input is preferred; the request metadata carries
+              // the same arguments when the call is not in sync yet.
+              const args = Object.keys(data).length > 0 ? data : meta.input
+              const lines = mcpArgumentLines(args)
+              return {
+                icon: "⚙",
+                title: `MCP ${meta.server} · ${meta.tool}`,
+                body: (
+                  <box paddingLeft={1} flexDirection="column">
+                    <text fg={theme.textMuted}>{"Server: " + meta.server}</text>
+                    <text fg={theme.textMuted}>{"Tool: " + meta.tool}</text>
+                    <Show when={lines.length > 0}>
+                      <text fg={theme.textMuted}>Arguments</text>
+                      <For each={lines}>{(line) => <text fg={theme.text}>{"  " + line}</text>}</For>
+                    </Show>
+                  </box>
+                ),
+              }
+            }
+
             return {
               icon: "⚙",
               title: `Call tool ${permission}`,
@@ -858,4 +880,20 @@ function Prompt<const T extends Record<string, string>>(props: {
       {content()}
     </Show>
   )
+}
+
+const MCP_ARGUMENT_LINES = 8
+const MCP_ARGUMENT_WIDTH = 80
+
+// One `key: value` line per top-level argument, clipped so a large payload
+// cannot push the approval options off screen.
+function mcpArgumentLines(input: unknown) {
+  if (typeof input !== "object" || input === null) return []
+  const entries = Object.entries(input)
+  const lines = entries.slice(0, MCP_ARGUMENT_LINES).map(([key, value]) => {
+    const line = `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`.replace(/\s+/g, " ")
+    return line.length > MCP_ARGUMENT_WIDTH ? line.slice(0, MCP_ARGUMENT_WIDTH - 1) + "…" : line
+  })
+  if (entries.length > MCP_ARGUMENT_LINES) lines.push(`… ${entries.length - MCP_ARGUMENT_LINES} more`)
+  return lines
 }

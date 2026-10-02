@@ -44,6 +44,8 @@ Both are scoped:
 
 The registry has no `PermissionV2.Service` dependency and performs no execution authorization. An internal built-in-only operation attaches a permission action solely to preserve whole-tool definition filtering; it is not part of public `Tool.make`. Most tools default to their registered name; `edit`, `write`, and `apply_patch` declare the shared `edit` action.
 
+MCP tools assert their registered name (`mcp__<server>__<tool>`) before calling the server. They also carry the V1 name (`<server>_<tool>`) as a permission alias, so existing rules for it still hide, allow, or deny the tool.
+
 Definition filtering is catalog visibility, not execution authorization. A call still executes the captured leaf policy if it reaches settlement.
 
 ## Output

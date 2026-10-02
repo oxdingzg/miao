@@ -1,3 +1,4 @@
+import { appendFile } from "node:fs/promises"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
@@ -24,8 +25,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }))
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => ({
-  content: [{ type: "text", text: `echo:${String((request.params.arguments as { text?: string })?.text ?? "")}` }],
-}))
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  // Lets tests prove a denied call never reached the server.
+  const log = process.env.MOCK_MCP_CALL_LOG
+  if (log) await appendFile(log, request.params.name + "\n")
+  return {
+    content: [{ type: "text", text: `echo:${String((request.params.arguments as { text?: string })?.text ?? "")}` }],
+  }
+})
 
 await server.connect(new StdioServerTransport())

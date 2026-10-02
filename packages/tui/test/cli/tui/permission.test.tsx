@@ -214,3 +214,33 @@ test("a bash permission prompt shows the stdin script in a scrollable body", asy
     app.renderer.destroy()
   }
 })
+
+test("an MCP permission prompt names the server and tool and summarizes the arguments", async () => {
+  await using tmp = await tmpdir()
+  const { app } = await mountPermission(tmp.path, 200, () => {}, 0, {
+    ...webfetchRequest,
+    permission: "mcp__github__create_issue",
+    patterns: ["*"],
+    metadata: {
+      server: "github",
+      tool: "create_issue",
+      input: { repo: "oxdingzg/miao", title: "Ask before MCP calls", labels: ["security"], body: "x".repeat(400) },
+    },
+  })
+  try {
+    await app.renderOnce()
+    await Bun.sleep(20)
+    await app.renderOnce()
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("MCP github · create_issue")
+    expect(frame).toContain("Server: github")
+    expect(frame).toContain("Tool: create_issue")
+    expect(frame).toContain("repo: oxdingzg/miao")
+    expect(frame).toContain('labels: ["security"]')
+    // A long argument is clipped instead of flooding the prompt.
+    expect(frame).not.toContain("x".repeat(200))
+    expect(frame).toContain("Allow once")
+  } finally {
+    app.renderer.destroy()
+  }
+})

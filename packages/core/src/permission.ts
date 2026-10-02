@@ -44,6 +44,11 @@ export const AssertInput = Schema.Struct({
    * skipped. Leaving the OS sandbox must not be granted by a catch-all allow.
    */
   explicit: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * Older names of this action. A rule naming any of them decides it exactly as
+   * one naming `action` would; the request and saved approvals use `action`.
+   */
+  aliases: Schema.Array(Schema.String).pipe(Schema.optional),
 }).annotate({ identifier: "PermissionV2.AssertInput" })
 export type AssertInput = typeof AssertInput.Type
 
@@ -78,12 +83,19 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Per
 
 export type Error = BlockedError | CorrectedError
 
-export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
+export function evaluate(
+  action: string | ReadonlyArray<string>,
+  resource: string,
+  ...rulesets: Permission.Ruleset[]
+): Permission.Rule {
+  const actions = typeof action === "string" ? [action] : action
   return (
     rulesets
       .flat()
-      .findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource)) ?? {
-      action,
+      .findLast(
+        (rule) => actions.some((item) => Wildcard.match(item, rule.action)) && Wildcard.match(resource, rule.resource),
+      ) ?? {
+      action: actions[0] ?? "",
       resource: "*",
       effect: "ask",
     }
@@ -107,6 +119,7 @@ export class Service extends Context.Service<Service, Interface>()("@miao/v2/Per
 
 interface Pending {
   readonly request: Request
+  readonly actions: ReadonlyArray<string>
   readonly agent?: AgentV2.ID
   readonly deferred: Deferred.Deferred<void, DeclinedError | CorrectedError>
 }
@@ -149,20 +162,25 @@ const layer = Layer.effect(
       return agent?.permissions ?? missingAgentPermissions
     })
 
-    function denied(input: AssertInput, rules: Permission.Ruleset) {
-      return input.resources.some((resource) => evaluate(input.action, resource, rules).effect === "deny")
+    function actions(input: Pick<AssertInput, "action" | "aliases">) {
+      return [input.action, ...(input.aliases ?? [])]
+    }
+
+    function denied(names: ReadonlyArray<string>, resources: ReadonlyArray<string>, rules: Permission.Ruleset) {
+      return resources.some((resource) => evaluate(names, resource, rules).effect === "deny")
     }
 
     function relevant(input: AssertInput, rules: Permission.Ruleset) {
-      return rules.filter((rule) => Wildcard.match(input.action, rule.action))
+      const names = actions(input)
+      return rules.filter((rule) => names.some((name) => Wildcard.match(name, rule.action)))
     }
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
       const configuredRules = yield* configured(input.sessionID, input.agent)
       const rules = input.explicit ? configuredRules.filter((rule) => rule.action !== "*") : configuredRules
-      if (denied(input, rules)) return { effect: "deny" as const, rules }
+      if (denied(actions(input), input.resources, rules)) return { effect: "deny" as const, rules }
       const all = [...rules, ...(yield* savedRules())]
-      const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
+      const effects = input.resources.map((resource) => evaluate(actions(input), resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
       return { effect, rules: all }
     })
@@ -179,11 +197,11 @@ const layer = Layer.effect(
       }
     }
 
-    const create = (request: Request, agent?: AgentV2.ID) =>
+    const create = (request: Request, input: AssertInput) =>
       EffectRuntime.uninterruptible(
         EffectRuntime.gen(function* () {
           const deferred = yield* Deferred.make<void, DeclinedError | CorrectedError>()
-          const item = { request, agent, deferred }
+          const item = { request, actions: actions(input), agent: input.agent, deferred }
           if (pending.has(request.id)) return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
           pending.set(request.id, item)
           yield* events
@@ -196,7 +214,7 @@ const layer = Layer.effect(
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
       const value = request(input)
-      if (result.effect === "ask") yield* create(value, input.agent)
+      if (result.effect === "ask") yield* create(value, input)
       return { id: value.id, effect: result.effect }
     })
 
@@ -210,7 +228,7 @@ const layer = Layer.effect(
             })
           }
           if (result.effect === "allow") return
-          const item = yield* create(request(input), input.agent)
+          const item = yield* create(request(input), input)
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.catchTag("PermissionV2.DeclinedError", (error) => EffectRuntime.die(error)),
             EffectRuntime.ensuring(
@@ -286,16 +304,15 @@ const layer = Layer.effect(
 
           const rememberedRules = yield* savedRules()
           for (const [id, item] of pending) {
-            const input = { ...item.request }
             const rules = yield* configured(item.request.sessionID, item.agent).pipe(
               EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
             )
             if (!rules) continue
-            if (denied(input, rules)) continue
+            if (denied(item.actions, item.request.resources, rules)) continue
             const effective = [...rules, ...rememberedRules]
             if (
               !item.request.resources.every(
-                (resource) => evaluate(item.request.action, resource, effective).effect === "allow",
+                (resource) => evaluate(item.actions, resource, effective).effect === "allow",
               )
             )
               continue
