@@ -6582,6 +6582,35 @@ export type ProjectDirectory = {
   strategy?: string
 }
 
+export type WorkspaceInfo = {
+  id: string
+  type: string
+  name: string
+  branch?: string
+  directory?: string
+  extra?: unknown
+  projectID: string
+  timeUsed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type WorkspaceAdapterEntry = {
+  type: string
+  name: string
+  description: string
+}
+
+export type WorkspaceCreateInput = {
+  type: string
+  branch?: string | null
+  extra?: unknown | null
+}
+
+export type WorkspaceWarpInput = {
+  id: string | null
+  sessionID: string
+  copyChanges?: boolean
+}
+
 export type EventModelsDevRefreshed = {
   id: string
   type: "models-dev.refreshed"
@@ -14927,6 +14956,267 @@ export type V2VcsStatusResponses = {
 }
 
 export type V2VcsStatusResponse = V2VcsStatusResponses[keyof V2VcsStatusResponses]
+
+export type V2WorkspaceListData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace"
+}
+
+export type V2WorkspaceListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceListError = V2WorkspaceListErrors[keyof V2WorkspaceListErrors]
+
+export type V2WorkspaceListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<WorkspaceInfo>
+  }
+}
+
+export type V2WorkspaceListResponse = V2WorkspaceListResponses[keyof V2WorkspaceListResponses]
+
+export type V2WorkspaceCreateData = {
+  body: WorkspaceCreateInput
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace"
+}
+
+export type V2WorkspaceCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceCreateError = V2WorkspaceCreateErrors[keyof V2WorkspaceCreateErrors]
+
+export type V2WorkspaceCreateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: WorkspaceInfo
+  }
+}
+
+export type V2WorkspaceCreateResponse = V2WorkspaceCreateResponses[keyof V2WorkspaceCreateResponses]
+
+export type V2WorkspaceStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace/status"
+}
+
+export type V2WorkspaceStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceStatusError = V2WorkspaceStatusErrors[keyof V2WorkspaceStatusErrors]
+
+export type V2WorkspaceStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<WorkspaceEventConnectionStatus>
+  }
+}
+
+export type V2WorkspaceStatusResponse = V2WorkspaceStatusResponses[keyof V2WorkspaceStatusResponses]
+
+export type V2WorkspaceAdaptersData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace/adapter"
+}
+
+export type V2WorkspaceAdaptersErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceAdaptersError = V2WorkspaceAdaptersErrors[keyof V2WorkspaceAdaptersErrors]
+
+export type V2WorkspaceAdaptersResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<WorkspaceAdapterEntry>
+  }
+}
+
+export type V2WorkspaceAdaptersResponse = V2WorkspaceAdaptersResponses[keyof V2WorkspaceAdaptersResponses]
+
+export type V2WorkspaceSyncListData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace/sync"
+}
+
+export type V2WorkspaceSyncListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceSyncListError = V2WorkspaceSyncListErrors[keyof V2WorkspaceSyncListErrors]
+
+export type V2WorkspaceSyncListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2WorkspaceSyncListResponse = V2WorkspaceSyncListResponses[keyof V2WorkspaceSyncListResponses]
+
+export type V2WorkspaceWarpData = {
+  body: WorkspaceWarpInput
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace/warp"
+}
+
+export type V2WorkspaceWarpErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceWarpError = V2WorkspaceWarpErrors[keyof V2WorkspaceWarpErrors]
+
+export type V2WorkspaceWarpResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2WorkspaceWarpResponse = V2WorkspaceWarpResponses[keyof V2WorkspaceWarpResponses]
+
+export type V2WorkspaceRemoveData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/workspace/{id}"
+}
+
+export type V2WorkspaceRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkspaceRemoveError = V2WorkspaceRemoveErrors[keyof V2WorkspaceRemoveErrors]
+
+export type V2WorkspaceRemoveResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: WorkspaceInfo
+  }
+}
+
+export type V2WorkspaceRemoveResponse = V2WorkspaceRemoveResponses[keyof V2WorkspaceRemoveResponses]
 
 export type V2RemoteGetData = {
   body?: never

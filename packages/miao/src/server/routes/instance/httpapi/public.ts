@@ -113,7 +113,7 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
         if (!isV2Api) delete operation.requestBody.required
         const body = operation.requestBody.content?.["application/json"]
         if (body?.schema) body.schema = stripOptionalNull(structuredClone(body.schema))
-        if (path === "/experimental/workspace" && method === "post") {
+        if ((path === "/experimental/workspace" || path === "/api/workspace") && method === "post") {
           // Workspace creation fields `branch` and `extra` are Schema.NullOr —
           // genuinely nullable, not just optional. Re-add the null that the
           // component-level strip above removed.
@@ -127,7 +127,7 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
           if (properties?.branch) properties.branch = { anyOf: [properties.branch, { type: "null" }] }
           if (properties?.extra) properties.extra = { anyOf: [properties.extra, { type: "null" }] }
         }
-        if (path === "/experimental/workspace/warp" && method === "post") {
+        if ((path === "/experimental/workspace/warp" || path === "/api/workspace/warp") && method === "post") {
           const ref = operation.requestBody.content?.["application/json"]?.schema?.$ref?.replace(
             "#/components/schemas/",
             "",

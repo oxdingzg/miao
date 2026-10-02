@@ -3385,6 +3385,164 @@ export type VcsStatusOutput = {
   }>
 }
 
+export type WorkspaceListInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type WorkspaceListOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{
+    readonly id: string
+    readonly type: string
+    readonly name: string
+    readonly branch?: string | null
+    readonly directory?: string | null
+    readonly extra?: JsonValue | null
+    readonly projectID: string
+    readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type WorkspaceStatusInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type WorkspaceStatusOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{
+    readonly workspaceID: string
+    readonly status: "connected" | "connecting" | "disconnected" | "error"
+  }>
+}
+
+export type WorkspaceAdaptersInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type WorkspaceAdaptersOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{ readonly type: string; readonly name: string; readonly description: string }>
+}
+
+export type WorkspaceCreateInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly type: { readonly type: string; readonly branch?: string | null; readonly extra?: JsonValue | null }["type"]
+  readonly branch?: {
+    readonly type: string
+    readonly branch?: string | null
+    readonly extra?: JsonValue | null
+  }["branch"]
+  readonly extra?: {
+    readonly type: string
+    readonly branch?: string | null
+    readonly extra?: JsonValue | null
+  }["extra"]
+}
+
+export type WorkspaceCreateOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly id: string
+    readonly type: string
+    readonly name: string
+    readonly branch?: string | null
+    readonly directory?: string | null
+    readonly extra?: JsonValue | null
+    readonly projectID: string
+    readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type WorkspaceSyncListInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type WorkspaceSyncListOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
+}
+
+export type WorkspaceWarpInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly id: { readonly id: string | null; readonly sessionID: string; readonly copyChanges?: boolean }["id"]
+  readonly sessionID: {
+    readonly id: string | null
+    readonly sessionID: string
+    readonly copyChanges?: boolean
+  }["sessionID"]
+  readonly copyChanges?: {
+    readonly id: string | null
+    readonly sessionID: string
+    readonly copyChanges?: boolean
+  }["copyChanges"]
+}
+
+export type WorkspaceWarpOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
+}
+
+export type WorkspaceRemoveInput = {
+  readonly id: { readonly id: string }["id"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type WorkspaceRemoveOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly id: string
+    readonly type: string
+    readonly name: string
+    readonly branch?: string | null
+    readonly directory?: string | null
+    readonly extra?: JsonValue | null
+    readonly projectID: string
+    readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
+  } | null
+}
+
 export type RemoteGetOutput = {
   readonly pid: number
   readonly port: number

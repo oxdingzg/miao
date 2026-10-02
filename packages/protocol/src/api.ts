@@ -28,6 +28,7 @@ import { ProjectCopyGroup } from "./groups/project-copy"
 import { ProjectGroup } from "./groups/project"
 import { RemoteGroup } from "./groups/remote"
 import { VcsGroup } from "./groups/vcs"
+import { WorkspaceGroup } from "./groups/workspace"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -66,6 +67,7 @@ const makeApiFromGroup = <
     .add(ProjectCopyGroup.middleware(locationMiddleware))
     .add(ProjectGroup.middleware(locationMiddleware))
     .add(VcsGroup.middleware(locationMiddleware))
+    .add(WorkspaceGroup.middleware(locationMiddleware))
     .add(RemoteGroup)
     .annotateMerge(
       OpenApi.annotations({

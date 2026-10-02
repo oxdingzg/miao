@@ -120,7 +120,7 @@ export function DialogSessionList() {
         if (selection.type === "existing") return selection.workspaceID
         let result
         try {
-          result = await sdk.client.experimental.workspace.create({ type: selection.workspaceType, branch: null })
+          result = await sdk.client.v2.workspace.create({ workspaceCreateInput: { type: selection.workspaceType } })
         } catch (err) {
           toast.show({
             title: "Failed to create workspace",
@@ -129,7 +129,7 @@ export function DialogSessionList() {
           })
           return
         }
-        const workspace = result?.data
+        const workspace = result?.data?.data
         if (!workspace) {
           toast.show({
             title: "Failed to create workspace",
@@ -163,7 +163,7 @@ export function DialogSessionList() {
         onDelete={async () => {
           const current = currentSessionID()
           const info = current ? sync.data.session.find((item) => item.id === current) : undefined
-          const result = await sdk.client.experimental.workspace.remove({ id: session.workspaceID! })
+          const result = await sdk.client.v2.workspace.remove({ id: session.workspaceID! })
           if (result.error) {
             toast.show({
               variant: "error",

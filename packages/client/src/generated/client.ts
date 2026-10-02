@@ -160,6 +160,20 @@ import type {
   VcsGetOutput,
   VcsStatusInput,
   VcsStatusOutput,
+  WorkspaceListInput,
+  WorkspaceListOutput,
+  WorkspaceStatusInput,
+  WorkspaceStatusOutput,
+  WorkspaceAdaptersInput,
+  WorkspaceAdaptersOutput,
+  WorkspaceCreateInput,
+  WorkspaceCreateOutput,
+  WorkspaceSyncListInput,
+  WorkspaceSyncListOutput,
+  WorkspaceWarpInput,
+  WorkspaceWarpOutput,
+  WorkspaceRemoveInput,
+  WorkspaceRemoveOutput,
   RemoteGetOutput,
   RemoteLoginInput,
   RemoteLoginOutput,
@@ -1341,6 +1355,94 @@ export function make(options: ClientOptions) {
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    workspace: {
+      list: (input?: WorkspaceListInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceListOutput>(
+          {
+            method: "GET",
+            path: `/api/workspace`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      status: (input?: WorkspaceStatusInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/workspace/status`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      adapters: (input?: WorkspaceAdaptersInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceAdaptersOutput>(
+          {
+            method: "GET",
+            path: `/api/workspace/adapter`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      create: (input: WorkspaceCreateInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceCreateOutput>(
+          {
+            method: "POST",
+            path: `/api/workspace`,
+            query: { location: input["location"] },
+            body: { type: input["type"], branch: input["branch"], extra: input["extra"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      syncList: (input?: WorkspaceSyncListInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceSyncListOutput>(
+          {
+            method: "POST",
+            path: `/api/workspace/sync`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      warp: (input: WorkspaceWarpInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceWarpOutput>(
+          {
+            method: "POST",
+            path: `/api/workspace/warp`,
+            query: { location: input["location"] },
+            body: { id: input["id"], sessionID: input["sessionID"], copyChanges: input["copyChanges"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      remove: (input: WorkspaceRemoveInput, requestOptions?: RequestOptions) =>
+        request<WorkspaceRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/workspace/${encodeURIComponent(input.id)}`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
             empty: false,
           },
           requestOptions,
