@@ -167,18 +167,38 @@ miao is pre-1.0. V2 is the default for the terminal UI and supported browser con
 | V2 sessions, prompt admission, context epochs, project-local session messaging | Implemented                                                    |
 | Autonomous continuation, cost budgets, pruning and compaction tuning           | Opt-in; behavior varies by setting                             |
 | Code Mode (`MIAO_EXPERIMENTAL_CODE_MODE=1`)                                    | Experimental                                                   |
-| Native edit/patch and kernel sandbox                                           | Compatibility runtime; see comparison for setup and boundaries |
+| Native edit/patch                                                              | Compatibility runtime; see comparison for setup and boundaries |
+| OS sandbox for bash                                                            | V2 and compatibility runtime; opt-in through `sandbox` config  |
 | Generated clients and embedded Effect host                                     | Private workspace packages; API still evolving                 |
+
+### V1 and V2
+
+V1 is the session runtime miao inherited from opencode; V2 is miao's rewritten core. They share the same database and configuration, but run sessions differently. V1 is being retired; see [specs/architecture.md](specs/architecture.md).
+
+| Area                  | V1 (inherited from opencode)                                                    | V2 (miao's core)                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Code                  | `packages/miao/src/session` and the legacy tools                                | `packages/core`, layered Schema → Core / Protocol → Server                                        |
+| Sending a prompt      | Runs as soon as it arrives                                                      | Written to a durable inbox first, then executed; a crash does not lose it                         |
+| Input while running   | Saved; the running loop reads it at its next step, with no steer / queue choice | Steer (joins the current turn at the next safe point) or queue (waits until the turn ends)        |
+| Turn loop             | One loop around tool calls                                                      | One `llm.stream` call per provider turn; history is reloaded from storage before continuing       |
+| Storage               | `message` / `part` tables                                                       | Event log with projections and a per-session `seq`, replayable from any point                     |
+| Context               | Rebuilt for every request                                                       | Context Epochs: a stable baseline plus chronological updates, keeping the cached prefix stable    |
+| API                   | Legacy `/session/*` routes and the legacy JS SDK                                | `/api/session/*` defined with Effect Schema; clients are generated from it                        |
+| Tools and permissions | Legacy tools; bash rules by sub-command prefix                                  | Location-scoped tools and permissions; OS sandbox for bash, a parse check before running, `stdin` |
+| Plugins               | All plugin hooks                                                                | Some `chat.*` hooks are not called yet                                                            |
+| Cost and cache        | Basic usage                                                                     | Per-turn usage and cost, TTFT, cache-hit ratio and miss causes, cost budgets                      |
+| Across sessions       | None                                                                            | Child sessions (`task`), `list_sessions` / `send_message`                                         |
+| Used by               | `--mini`, ACP, `MIAO_TUI_V2=0`, the legacy JS SDK                               | The default TUI, `miao run`, the web app, `miao remote`                                           |
 
 Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for compiled checkout validation. New source features may not yet be in the installed release.
 
 ## Related projects
 
-| Project | What it is | Links |
-|---|---|---|
-| **miao** (this repository) | AI coding agent for the terminal | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
-| **mtty** | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term) |
-| **mtty.dev** | The website and documentation for both | [mtty.dev](https://mtty.dev) |
+| Project                    | What it is                                                                                                                         | Links                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **miao** (this repository) | AI coding agent for the terminal                                                                                                   | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **mtty**                   | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term)                            |
+| **mtty.dev**               | The website and documentation for both                                                                                             | [mtty.dev](https://mtty.dev)                                                                                                    |
 
 miao and mtty are separate projects, and each works without the other. Run miao inside an mtty pane and it reports its state (working, waiting for you, done, error) to mtty, which badges the pane, notifies you when the agent needs you, and sends your queued prompt when it goes idle. Outside mtty the report does nothing. `miaotty` was a personal macOS prototype of that terminal and has been replaced by mtty.
 
