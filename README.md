@@ -60,7 +60,7 @@ Durable history does **not** imply automatic execution recovery after a crash: u
 Install on macOS or Linux with the bash script, or on Windows from PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex   # Windows: PowerShell 5.1 or 7
+irm https://mtty.dev/miao/install.ps1 | iex   # Windows: PowerShell 5.1 or 7
 ```
 
 Windows terminal rendering is still being verified; see the [Windows verification notes](docs/windows-vt-verification.en.md).

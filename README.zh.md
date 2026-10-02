@@ -60,7 +60,7 @@ V2 使用持久化输入与事件记录保存会话。你可以查看、重新�
 macOS / Linux 用下面的 bash 脚本安装；Windows 在 PowerShell 里运行：
 
 ```powershell
-irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex   # Windows：PowerShell 5.1 或 7
+irm https://mtty.dev/miao/install.ps1 | iex   # Windows：PowerShell 5.1 或 7
 ```
 
 Windows 终端里的显示仍在验证中，见 [Windows 验证说明](docs/windows-vt-verification.zh.md)。
