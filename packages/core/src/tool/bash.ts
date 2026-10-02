@@ -1,5 +1,6 @@
 export * as BashTool from "./bash"
 
+import { existsSync } from "fs"
 import path from "path"
 import { ToolFailure } from "@miao/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
@@ -13,6 +14,7 @@ import { PermissionV2 } from "../permission"
 import { Sandbox } from "../sandbox"
 import { SandboxPolicy } from "../sandbox/policy"
 import { PositiveInt } from "../schema"
+import { Hash } from "../util/hash"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -25,6 +27,10 @@ export const MAX_CAPTURE_BYTES = 1024 * 1024
 export const MAX_SANDBOX_ATTEMPTS = 4
 /** Permission action for rerunning one command without the OS sandbox. Its approval is never saved. */
 export const UNSANDBOXED_ACTION = "bash_unsandboxed"
+/** Largest `stdin` payload, in UTF-8 bytes. */
+export const MAX_STDIN_BYTES = 1024 * 1024
+/** How long the pre-run `-n` syntax check may take before it is ignored. */
+export const SYNTAX_CHECK_TIMEOUT_MS = 2_000
 
 export const Input = Schema.Struct({
   command: Schema.String.annotate({ description: "Shell command string to execute" }),
@@ -36,6 +42,10 @@ export const Input = Schema.Struct({
     .annotate({
       description: `Timeout in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS} and may not exceed ${MAX_TIMEOUT_MS}.`,
     }),
+  stdin: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "Text written verbatim to the command's standard input, never parsed by the shell. Use it to hand a script to another interpreter instead of nesting quotes or heredocs, for example `ssh host 'bash -s'`, `docker exec -i <container> sh`, `kubectl exec -i <pod> -- sh`, `python3 -`, or `psql`. At most 1 MiB. Omit it and standard input is closed.",
+  }),
 })
 
 const SandboxInfo = Schema.Struct({
@@ -86,7 +96,7 @@ const description = (status: Sandbox.Status) => {
     status.enabled && !status.available
       ? " An OS sandbox was requested but is unavailable on this host, so commands run unsandboxed."
       : ""
-  return `${authority}${unavailable} The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. Timeout values are milliseconds (default: ${DEFAULT_TIMEOUT_MS}; maximum: ${MAX_TIMEOUT_MS}). Uses the configured shell when set; otherwise uses /bin/sh on POSIX and COMSPEC or cmd.exe on Windows.`
+  return `${authority}${unavailable} The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. Timeout values are milliseconds (default: ${DEFAULT_TIMEOUT_MS}; maximum: ${MAX_TIMEOUT_MS}). Uses the configured shell when set; otherwise uses /bin/sh on POSIX and COMSPEC or cmd.exe on Windows. When a script runs inside another interpreter or on a remote host (ssh, docker exec, kubectl exec, python, psql), put the script in \`stdin\` instead of nesting quotes or heredocs inside \`command\`. A command the shell cannot parse is not run; the shell's syntax error is returned instead.`
 }
 
 const UNAVAILABLE_WARNING =
@@ -147,6 +157,128 @@ const externalCommandDirectories = Effect.fn("BashTool.externalCommandDirectorie
   return [...directories]
 })
 
+/**
+ * Separates the command from its stdin in permission resources, so a saved
+ * exact rule reads as the command, a `<<stdin` line, and the script it
+ * approved. The leading space keeps prefix rules such as `cat *` (which
+ * Wildcard reads as "cat, optionally followed by a space and anything")
+ * matching a bare `cat` that is given stdin.
+ */
+const STDIN_MARKER = " \n<<stdin"
+
+/**
+ * Permission resources (and the matching `save` list) for one call.
+ *
+ * Without stdin this is exactly `[command]`, as before. With stdin it is the
+ * command plus the full script, so the prompt and saved rule show the script,
+ * and a second resource naming the script's sha256. Every resource must be
+ * allowed, and wildcard characters in the script would make the full-text rule
+ * a pattern (`SELECT *`), so the digest is what keeps an exact rule from
+ * approving a different script. Rules written as patterns, such as `ssh *`,
+ * match both resources and keep their meaning.
+ *
+ * A command without stdin that itself contains the marker could spell out a
+ * saved stdin rule (and, run as shell text, would expand that script locally).
+ * It gets an extra resource that no rule built from a command matches, so
+ * only a catch-all rule allows it without a prompt.
+ */
+const permissionResources = (command: string, stdin: string | undefined) => {
+  if (stdin !== undefined)
+    return [`${command}${STDIN_MARKER}\n${stdin}`, `${command}${STDIN_MARKER} sha256:${Hash.sha256(stdin)}`]
+  if (command.includes(STDIN_MARKER)) return [command, `<<no-stdin\n${command}`]
+  return [command]
+}
+
+/** Shells whose `-n` flag parses a `-c` script without running any of it. */
+const SYNTAX_CHECKED_SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh"])
+
+/**
+ * Words that make `<shell> -n` an unreliable stand-in for the real run, so the
+ * syntax check is skipped when the script mentions any of them.
+ *
+ * `-n` parses the whole script without running anything, but the real run
+ * parses and runs it a line at a time (bash, dash, ksh). Builtins that change
+ * how later lines parse (aliases, `shopt -s extglob`, `set -o`, zsh options,
+ * sourced files, eval, posix mode) take effect in the real run only, so `-n`
+ * could reject a script that runs fine. `exit`, `exec`, and `logout` end the
+ * real run before later lines are parsed at all. `trap` is skipped to stay
+ * conservative. Matching is by whole word anywhere in the text, including
+ * quoted text and heredoc bodies; skipping more often only means checking less.
+ */
+const PARSE_STATE_WORDS = new Set([
+  "shopt",
+  "alias",
+  "unalias",
+  "set",
+  "source",
+  "eval",
+  "enable",
+  "disable",
+  "setopt",
+  "unsetopt",
+  "emulate",
+  "builtin",
+  "trap",
+  "exit",
+  "exec",
+  "logout",
+  // zsh parameters that change aliases or options when assigned.
+  "options",
+  "aliases",
+  "galiases",
+  "saliases",
+  // bash variables that define aliases or change the parser's mode.
+  "BASH_ALIASES",
+  "POSIXLY_CORRECT",
+  "BASH_COMPAT",
+])
+
+/** A `.` (source) command: a lone dot followed by whitespace. */
+const DOT_COMMAND = /(?:^|[\s;&|(){}`!])\.(?=\s)/
+
+const changesParseState = (command: string) =>
+  // Also test the text with quotes and backslashes removed, since the shell
+  // runs `sh'opt'` or `\set` as the builtin itself.
+  [command, command.replace(/['"\\]/g, "")].some(
+    (text) => DOT_COMMAND.test(text) || text.split(/[^\w-]+/).some((word) => PARSE_STATE_WORDS.has(word)),
+  )
+
+/**
+ * Whether `<shell> -n -c <command>` parses exactly as `<shell> -c <command>`
+ * will. Startup files run before the script and may change parsing (for
+ * example `shopt -s extglob` in BASH_ENV), but `-n` does not run them, so any
+ * shell that would read one is skipped.
+ */
+const syntaxCheckable = (shell: string, command: string) => {
+  if (process.platform === "win32") return false
+  const name = path.basename(shell)
+  if (!SYNTAX_CHECKED_SHELLS.has(name)) return false
+  // bash reads BASH_ENV, and some shells read ENV, before a `-c` script.
+  if (process.env.BASH_ENV || process.env.ENV) return false
+  if (name === "zsh" && !zshWithoutStartupFiles(shell)) return false
+  return !changesParseState(command)
+}
+
+/**
+ * zsh always reads zshenv, even for `-c`. Only the system zsh builds have a
+ * known global zshenv location, so other zsh binaries are not checked.
+ */
+const zshWithoutStartupFiles = (shell: string) => {
+  if (shell !== "/bin/zsh" && shell !== "/usr/bin/zsh") return false
+  const home = process.env.ZDOTDIR || process.env.HOME
+  if (!home) return false
+  return ["/etc/zshenv", "/etc/zsh/zshenv", path.join(home, ".zshenv"), path.join(home, ".zshenv.zwc")].every(
+    (file) => !existsSync(file),
+  )
+}
+
+const syntaxErrorMessage = (shell: string, stderr: string) =>
+  [
+    `The command was not run: ${shell} -n reported a syntax error.`,
+    stderr.trim() || "(the shell printed no details)",
+    "If the command nests quotes or heredocs for another interpreter or a remote host, pass that script through the `stdin` parameter instead (for example command `ssh host 'bash -s'` with the script in stdin).",
+  ].join("\n\n")
+
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -157,18 +289,48 @@ const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const sandbox = yield* Sandbox.Service
 
-    const exec = (command: ChildProcess.Command, timeout: number) =>
+    // With stdin, AppProcess pipes it in from a separate fiber and closes the
+    // pipe when done; a command that exits without reading it does not wait on
+    // the write, and the timeout still ends the run.
+    const exec = (command: ChildProcess.Command, timeout: number, stdin: string | undefined) =>
       appProcess
         .run(command, {
           combineOutput: true,
           timeout: Duration.millis(timeout),
           maxOutputBytes: MAX_CAPTURE_BYTES,
+          ...(stdin === undefined ? {} : { stdin }),
         })
         .pipe(
           Effect.catchTag("AppProcessError", (error) =>
             isTimeout(error) ? Effect.succeed(undefined) : Effect.fail(error),
           ),
         )
+
+    /**
+     * Parse the command with the shell that will run it: the same executable,
+     * `-n` added before the same `-c <command>`, the same working directory and
+     * inherited environment. The sandboxed path runs `<shell> -c <command>`
+     * under the runner, so this matches it too; parsing reads nothing the
+     * sandbox restricts. Returns the shell's report only when it exited
+     * normally with a non-zero code. A check that cannot spawn, times out, or
+     * dies from a signal never blocks the command.
+     */
+    const syntaxError = Effect.fn("BashTool.syntaxError")(function* (
+      shell: string,
+      command: string,
+      options: ChildProcess.CommandOptions,
+    ) {
+      if (!syntaxCheckable(shell, command)) return undefined
+      const result = yield* appProcess
+        .run(ChildProcess.make(shell, ["-n", "-c", command], options), {
+          combineOutput: true,
+          timeout: Duration.millis(SYNTAX_CHECK_TIMEOUT_MS),
+          maxOutputBytes: 64 * 1024,
+        })
+        .pipe(Effect.option)
+      if (result._tag === "None" || result.value.exitCode === 0) return undefined
+      return result.value.output?.toString("utf8") ?? ""
+    })
 
     // A declined, corrected, or rule-blocked escalation is an answer, not a
     // tool failure: the caller keeps the sandboxed result. Interruption and
@@ -196,6 +358,7 @@ const layer = Layer.effectDiscard(
      */
     const confined = Effect.fn("BashTool.confined")(function* (input: {
       readonly command: string
+      readonly stdin: string | undefined
       readonly shell: string
       readonly cwd: string
       readonly timeout: number
@@ -215,7 +378,7 @@ const layer = Layer.effectDiscard(
             options: input.options,
           })
           if (!wrapped) return undefined
-          const result = yield* exec(wrapped.command, input.timeout)
+          const result = yield* exec(wrapped.command, input.timeout, input.stdin)
           const denied = yield* wrapped.denied
           yield* Effect.annotateCurrentSpan({
             "sandbox.backend": wrapped.backend,
@@ -243,7 +406,8 @@ const layer = Layer.effectDiscard(
       for (let attempt = 1; ; attempt++) {
         const current = yield* run(attempt)
         // The runner disappeared between the status check and the wrap.
-        if (!current) return { result: yield* exec(plain, input.timeout), warnings: [UNAVAILABLE_WARNING] } as Outcome
+        if (!current)
+          return { result: yield* exec(plain, input.timeout, input.stdin), warnings: [UNAVAILABLE_WARNING] } as Outcome
         const done: Outcome = {
           result: current.result,
           sandbox: info("sandboxed", current.backend, current.denied),
@@ -269,7 +433,13 @@ const layer = Layer.effectDiscard(
                 action: "external_directory",
                 resources: patterns,
                 save: patterns,
-                metadata: { command: input.command, denied: current.denied, directories, sandbox: true },
+                metadata: {
+                  command: input.command,
+                  ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+                  denied: current.denied,
+                  directories,
+                  sandbox: true,
+                },
               })
             : undefined
         if (level1?.approved) {
@@ -281,14 +451,19 @@ const layer = Layer.effectDiscard(
         const level2 = yield* decide({
           ...input.request,
           action: UNSANDBOXED_ACTION,
-          resources: [input.command],
-          metadata: { command: input.command, denied: current.denied, unmapped },
+          resources: permissionResources(input.command, input.stdin),
+          metadata: {
+            command: input.command,
+            ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+            denied: current.denied,
+            unmapped,
+          },
         })
         if (!level2.approved) {
           const feedback = level2.feedback ?? (level1 && !level1.approved ? level1.feedback : undefined)
           return { ...done, warnings: [blockedWarning(current.denied, unmapped, feedback)] } as Outcome
         }
-        const result = yield* exec(plain, input.timeout).pipe(
+        const result = yield* exec(plain, input.timeout, input.stdin).pipe(
           Effect.withSpan("Sandbox.run", {
             attributes: {
               "sandbox.mode": "unsandboxed",
@@ -330,6 +505,10 @@ const layer = Layer.effectDiscard(
                 messageID: context.assistantMessageID,
                 callID: context.toolCallID,
               }
+              if (input.stdin !== undefined && Buffer.byteLength(input.stdin, "utf8") > MAX_STDIN_BYTES)
+                return yield* new ToolFailure({
+                  message: `stdin is ${Buffer.byteLength(input.stdin, "utf8")} bytes, over the ${MAX_STDIN_BYTES}-byte limit. The command was not run.`,
+                })
               const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory" })
               const external = target.externalDirectory
               if (external)
@@ -343,10 +522,12 @@ const layer = Layer.effectDiscard(
                 (directory) =>
                   `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
               )
+              const resources = permissionResources(input.command, input.stdin)
               yield* permission.assert({
                 action: name,
-                resources: [input.command],
-                save: [input.command],
+                resources,
+                save: resources,
+                ...(input.stdin === undefined ? {} : { metadata: { command: input.command, stdin: input.stdin } }),
                 sessionID: context.sessionID,
                 agent: context.agent,
                 source,
@@ -372,10 +553,13 @@ const layer = Layer.effectDiscard(
                   message:
                     "The OS sandbox is enabled with sandbox.on_unavailable set to fail, but no sandbox runner is available on this host.",
                 })
+              const invalid = yield* syntaxError(shell, input.command, options)
+              if (invalid !== undefined) return yield* new ToolFailure({ message: syntaxErrorMessage(shell, invalid) })
               const outcome: Outcome =
                 status.enabled && status.available
                   ? yield* confined({
                       command: input.command,
+                      stdin: input.stdin,
                       shell,
                       cwd: target.canonical,
                       timeout,
@@ -384,7 +568,11 @@ const layer = Layer.effectDiscard(
                       request: { sessionID: context.sessionID, agent: context.agent, source },
                     })
                   : {
-                      result: yield* exec(ChildProcess.make(input.command, [], { ...options, shell }), timeout),
+                      result: yield* exec(
+                        ChildProcess.make(input.command, [], { ...options, shell }),
+                        timeout,
+                        input.stdin,
+                      ),
                       warnings: status.enabled ? [UNAVAILABLE_WARNING] : [],
                     }
               const allWarnings = [...warnings, ...outcome.warnings]

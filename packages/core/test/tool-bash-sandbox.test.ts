@@ -56,7 +56,7 @@ const withSandboxedBash = <A, E>(input: {
   readonly rules?: PermissionV2.Ruleset
   readonly answer: (request: PermissionV2.Request) => Answer
   readonly body: (tools: {
-    readonly run: (command: string, timeout?: number) => Effect.Effect<Settled, unknown>
+    readonly run: (command: string, timeout?: number, stdin?: string) => Effect.Effect<Settled, unknown>
     readonly asked: PermissionV2.Request[]
     readonly saved: () => Effect.Effect<readonly { readonly action: string; readonly resource: string }[]>
   }) => Effect.Effect<A, E>
@@ -104,7 +104,7 @@ const withSandboxedBash = <A, E>(input: {
         Effect.forkScoped,
       )
       return yield* input.body({
-        run: (command, timeout) =>
+        run: (command, timeout, stdin) =>
           settleTool(registry, {
             sessionID,
             ...toolIdentity,
@@ -112,7 +112,7 @@ const withSandboxedBash = <A, E>(input: {
               type: "tool-call" as const,
               id: `call-${crypto.randomUUID()}`,
               name: "bash",
-              input: { command, ...(timeout ? { timeout } : {}) },
+              input: { command, ...(timeout ? { timeout } : {}), ...(stdin === undefined ? {} : { stdin }) },
             },
           }).pipe(Effect.map(settled)),
         asked,
@@ -428,6 +428,27 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
     ),
   )
 
+  it.live("pipes stdin through the sandbox runner", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        const runner = yield* fakeRunner(directory, realpathSync(directory))
+        yield* withSandboxedBash({
+          directory,
+          runner: runner.file,
+          answer: () => ({ reply: "once" }),
+          body: (tools) =>
+            Effect.gen(function* () {
+              const stdin = "printf '%s' \"$((6 * 7)) `echo tick`\"\n"
+              const result = yield* tools.run("bash -s", undefined, stdin)
+              expect(result.text).toBe("42 tick\nCommand exited with code 0.")
+              expect(result.structured).toMatchObject({ exit: 0, sandbox: { state: "sandboxed" } })
+              expect(yield* runner.runs()).toHaveLength(1)
+            }),
+        })
+      }),
+    ),
+  )
+
   it.live("does not escalate an ordinary failing command", () =>
     withTmp((directory) =>
       Effect.gen(function* () {
@@ -448,6 +469,119 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
     ),
   )
 })
+
+describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === undefined)(
+  "BashTool stdin approval",
+  () => {
+    // Bash asks unless a rule says otherwise; the fake runner runs everything.
+    const asking: PermissionV2.Ruleset = [...rules, { action: "bash", resource: "*", effect: "ask" }]
+
+    it.live("shows the script in the request and remembers it only for the same script", () =>
+      withTmp((directory) =>
+        Effect.gen(function* () {
+          const runner = yield* fakeRunner(directory, realpathSync(directory))
+          yield* withSandboxedBash({
+            directory,
+            runner: runner.file,
+            rules: asking,
+            answer: () => ({ reply: "always" }),
+            body: (tools) =>
+              Effect.gen(function* () {
+                const script = "SELECT * FROM t\n"
+                const first = yield* tools.run("cat", undefined, script)
+                expect(first.text).toBe("SELECT * FROM t\n\nCommand exited with code 0.")
+                expect(tools.asked).toHaveLength(1)
+                expect(tools.asked[0]?.action).toBe("bash")
+                expect(tools.asked[0]?.resources[0]).toBe(`cat \n<<stdin\n${script}`)
+                expect(tools.asked[0]?.metadata).toEqual({ command: "cat", stdin: script })
+                expect(yield* tools.saved()).toContainEqual(
+                  expect.objectContaining({ action: "bash", resource: `cat \n<<stdin\n${script}` }),
+                )
+
+                // The same command and script reuse the saved approval.
+                yield* tools.run("cat", undefined, script)
+                expect(tools.asked).toHaveLength(1)
+
+                // A different script asks again, even one the saved text would match as a pattern.
+                yield* tools.run("cat", undefined, "SELECT 1; DROP TABLE t; -- FROM t\n")
+                expect(tools.asked).toHaveLength(2)
+                yield* tools.run("cat", undefined, "something else\n")
+                expect(tools.asked).toHaveLength(3)
+
+                // The command alone, without stdin, is a different request too.
+                yield* tools.run("cat")
+                expect(tools.asked).toHaveLength(4)
+                expect(tools.asked[3]?.resources).toEqual(["cat"])
+              }),
+          })
+        }),
+      ),
+    )
+
+    it.live("keeps the saved command rule without stdin working as before", () =>
+      withTmp((directory) =>
+        Effect.gen(function* () {
+          const runner = yield* fakeRunner(directory, realpathSync(directory))
+          yield* withSandboxedBash({
+            directory,
+            runner: runner.file,
+            rules: asking,
+            answer: () => ({ reply: "always" }),
+            body: (tools) =>
+              Effect.gen(function* () {
+                yield* tools.run("printf one")
+                yield* tools.run("printf one")
+                expect(tools.asked.map((request) => [request.resources, request.save])).toEqual([
+                  [["printf one"], ["printf one"]],
+                ])
+              }),
+          })
+        }),
+      ),
+    )
+
+    it.live("lets a pattern rule cover any stdin", () =>
+      withTmp((directory) =>
+        Effect.gen(function* () {
+          const runner = yield* fakeRunner(directory, realpathSync(directory))
+          yield* withSandboxedBash({
+            directory,
+            runner: runner.file,
+            rules: [...asking, { action: "bash", resource: "cat *", effect: "allow" }],
+            answer: () => ({ reply: "reject" }),
+            body: (tools) =>
+              Effect.gen(function* () {
+                const result = yield* tools.run("cat", undefined, "any script\n")
+                expect(result.text).toBe("any script\n\nCommand exited with code 0.")
+                yield* tools.run("cat -", undefined, "another\n")
+                expect(tools.asked).toEqual([])
+              }),
+          })
+        }),
+      ),
+    )
+
+    it.live("applies a deny rule to the script as well as the command", () =>
+      withTmp((directory) =>
+        Effect.gen(function* () {
+          const runner = yield* fakeRunner(directory, realpathSync(directory))
+          yield* withSandboxedBash({
+            directory,
+            runner: runner.file,
+            rules: [...rules, { action: "bash", resource: "*rm -rf*", effect: "deny" }],
+            answer: () => ({ reply: "once" }),
+            body: (tools) =>
+              Effect.gen(function* () {
+                const result = yield* tools.run("bash -s", undefined, "rm -rf ./build\n")
+                expect(result.text).not.toContain("Command exited")
+                expect(yield* runner.runs()).toEqual([])
+              }),
+          })
+        }),
+      ),
+    )
+  },
+)
 
 // End-to-end against the real kernel sandbox: the built `miao-run` binary when
 // present, otherwise the source runner through the native addon.
@@ -563,6 +697,24 @@ describe.skipIf(!realAvailable)("BashTool sandbox (macOS seatbelt)", () => {
           }),
         ),
       (listener) => Effect.promise(() => listener.server.stop(true)),
+    ),
+  )
+
+  it.live("delivers stdin to a sandboxed command", () =>
+    withTmp((directory) =>
+      withSandboxedBash({
+        directory,
+        runner: realRunner,
+        answer: () => ({ reply: "reject" }),
+        body: (tools) =>
+          Effect.gen(function* () {
+            const script = "cat <<'EOF' > inside.txt\n$HOME `id` 'q' \"dq\" 中文\nEOF\ncat inside.txt\n"
+            const result = yield* tools.run("bash -s", undefined, script)
+            expect(result.text).toBe("$HOME `id` 'q' \"dq\" 中文\n\nCommand exited with code 0.")
+            expect(result.structured).toMatchObject({ exit: 0, sandbox: { state: "sandboxed" } })
+            expect(tools.asked).toEqual([])
+          }),
+      }),
     ),
   )
 
