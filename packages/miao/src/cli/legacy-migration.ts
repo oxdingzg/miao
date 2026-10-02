@@ -26,7 +26,8 @@ export async function migrateLegacySessions() {
     )
     if (result.status === "migrated")
       process.stderr.write(
-        `miao: migrated ${result.migrated + result.repaired} legacy session(s); backup: ${result.backup}${EOL}`,
+        `miao: migrated ${result.migrated + result.repaired} legacy session(s); ` +
+          `${result.reused ? "pre-migration backup" : "backup"}: ${result.backup}${EOL}`,
       )
     if (result.status === "no-space")
       process.stderr.write(

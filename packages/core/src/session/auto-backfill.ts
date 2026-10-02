@@ -13,6 +13,8 @@ export type Result =
   | {
       readonly status: "migrated"
       readonly backup: string
+      /** The pre-migration backup an earlier start took, kept instead of copying again. */
+      readonly reused: boolean
       readonly migrated: number
       readonly repaired: number
     }
@@ -33,12 +35,21 @@ export interface Options {
  * the volume cannot hold that copy the migration is skipped, not forced: the
  * legacy fallback keeps serving those sessions and the next start tries again.
  * `miao db compact` stays manual; this never drops legacy data.
+ *
+ * Only the first migration copies the file. While a V1 entry point (`--mini`,
+ * ACP) still writes legacy rows, every later start finds a few more to migrate,
+ * and a multi-gigabyte copy per start would fill the disk; the backfill only
+ * adds rows, so the original pre-migration backup stays the recovery point.
  */
 export const run = (db: Database.Interface["db"], options: Options) =>
   Effect.gen(function* () {
     const pending = yield* SessionBackfill.backfill(db, { dryRun: true })
     const sessions = pending.migrated + pending.repaired
     if (sessions === 0) return { status: "current" } satisfies Result
+
+    const previous = existingBackup(options.file)
+    if (previous)
+      return { status: "migrated", backup: previous, reused: true, ...(yield* SessionBackfill.backfill(db)) }
 
     // The copy needs room for the main file plus whatever the WAL still holds.
     const size = [options.file, `${options.file}-wal`].reduce(
@@ -53,8 +64,19 @@ export const run = (db: Database.Interface["db"], options: Options) =>
     // VACUUM INTO writes a consistent snapshot from a live connection, like `.backup`.
     yield* db.run(sql`VACUUM INTO ${backup}`).pipe(Effect.orDie)
     const result = yield* SessionBackfill.backfill(db)
-    return { status: "migrated", backup, ...result } satisfies Result
+    return { status: "migrated", backup, reused: false, ...result } satisfies Result
   })
+
+/** The newest `<file>.bak-YYYYMMDD-HHMMSS` this migration wrote, if any. */
+function existingBackup(file: string) {
+  const prefix = `${path.basename(file)}.bak-`
+  const latest = fs
+    .readdirSync(path.dirname(file))
+    .filter((entry) => entry.startsWith(prefix) && /^\d{8}-\d{6}$/.test(entry.slice(prefix.length)))
+    .toSorted()
+    .at(-1)
+  return latest === undefined ? undefined : path.join(path.dirname(file), latest)
+}
 
 function freeBytes(directory: string) {
   const stats = fs.statfsSync(directory)
