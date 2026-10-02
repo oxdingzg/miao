@@ -635,7 +635,7 @@ const layer: Layer.Layer<
       return yield* Effect.die(
         new Error(
           "legacy V1 session storage was retired by `miao db compact`;" +
-            " run the TUI on the V2 runtime (MIAO_TUI_V2 must not be 0)",
+            " the V1 session runtime is no longer supported",
         ),
       )
     })

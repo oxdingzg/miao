@@ -85,7 +85,6 @@ export const PrCommand = effectCmd({
           stdout: "inherit",
           stderr: "inherit",
           cwd: process.cwd(),
-          env: { MIAO_TUI_V2: "1" },
         }).exited,
     )
     // Match legacy throw semantics — propagate as a defect so the top-level

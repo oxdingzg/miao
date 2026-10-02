@@ -1,4 +1,3 @@
-import type { PermissionV1 } from "@miao/core/v1/permission"
 import { FSUtil } from "@miao/core/fs-util"
 // CLI entry point for `miao run` and `miao --mini`.
 //
@@ -23,9 +22,7 @@ import { effectCmd } from "../effect-cmd"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
-import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
-import { Flag } from "@miao/core/flag/flag"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -82,10 +79,6 @@ function block(info: Inline, output?: string) {
   if (!output?.trim()) return
   UI.println(output)
   UI.empty()
-}
-
-function formatRunError(error: unknown) {
-  return FormatError(error) ?? FormatUnknownError(error)
 }
 
 async function tool(part: ToolPart) {
@@ -268,10 +261,8 @@ export const RunCommand = effectCmd({
     yield* Effect.promise(async () => {
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
       const interactive = args.mini
-      // Headless runs use V2 unless MIAO_TUI_V2=0; the interactive --mini mode
-      // only speaks V2.
-      const headlessV2 = !interactive && Flag.MIAO_TUI_V2
-      const sessionsV2 = interactive || headlessV2
+      // Headless runs and the interactive --mini mode both speak V2.
+      const headlessV2 = !interactive
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
@@ -428,114 +419,14 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      const rules: PermissionV1.Ruleset = interactive
-        ? []
-        : [
-            {
-              permission: "question",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_enter",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_exit",
-              action: "deny",
-              pattern: "*",
-            },
-          ]
-
       function title() {
         if (args.title === undefined) return
         if (args.title !== "") return args.title
         return message.slice(0, 50) + (message.length > 50 ? "..." : "")
       }
 
-      async function session(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
-        if (sessionsV2) return sessionV2(sdk)
-        if (args.session) {
-          const current = await sdk.session
-            .get({
-              sessionID: args.session,
-            })
-            .catch(() => undefined)
-
-          if (!current?.data) {
-            UI.error("Session not found")
-            process.exit(1)
-          }
-
-          if (args.fork) {
-            const forked = await sdk.session.fork({
-              sessionID: args.session,
-            })
-            const id = forked.data?.id
-            if (!id) {
-              return
-            }
-
-            return {
-              id,
-              title: forked.data?.title ?? current.data.title,
-              directory: forked.data?.directory ?? current.data.directory,
-            }
-          }
-
-          return {
-            id: current.data.id,
-            title: current.data.title,
-            directory: current.data.directory,
-          }
-        }
-
-        const base = args.continue ? (await sdk.session.list()).data?.find((item) => !item.parentID) : undefined
-
-        if (base && args.fork) {
-          const forked = await sdk.session.fork({
-            sessionID: base.id,
-          })
-          const id = forked.data?.id
-          if (!id) {
-            return
-          }
-
-          return {
-            id,
-            title: forked.data?.title ?? base.title,
-            directory: forked.data?.directory ?? base.directory,
-          }
-        }
-
-        if (base) {
-          return {
-            id: base.id,
-            title: base.title,
-            directory: base.directory,
-          }
-        }
-
-        const name = title()
-        const result = await sdk.session.create({
-          title: name,
-          permission: [...rules],
-        })
-        const id = result.data?.id
-        if (!id) {
-          return
-        }
-
-        return {
-          id,
-          title: result.data?.title ?? name,
-          directory: result.data?.directory,
-        }
-      }
-
-      // V2 counterpart of session(): the V1 session routes write the retired V1
-      // tables, which fail once a database has been compacted.
+      // Session routes use V2; the V1 routes write the retired V1 tables, which
+      // fail once a database has been compacted.
       async function sessionV2(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
         const where = directory ?? root
         const pick = async (id: string) => {
@@ -575,36 +466,8 @@ export const RunCommand = effectCmd({
       // Sharing was removed; the interactive runtime still takes this hook.
       async function share(_sdk: OpencodeClient, _sessionID: string) {}
 
-      async function createFreshSession(
-        sdk: OpencodeClient,
-        input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
-      ): Promise<SessionInfo> {
-        if (sessionsV2) return createFreshSessionV2(sdk, input)
-        const result = await sdk.session.create({
-          title: args.title !== undefined && args.title !== "" ? args.title : undefined,
-          agent: input.agent,
-          model: input.model
-            ? {
-                providerID: input.model.providerID,
-                id: input.model.modelID,
-                variant: input.variant,
-              }
-            : undefined,
-          permission: [...rules],
-        })
-        const id = result.data?.id
-        if (!id) {
-          throw new Error("Failed to create session")
-        }
-
-        return {
-          id,
-          title: result.data?.title,
-        }
-      }
-
-      // V2 counterpart of createFreshSession(): the selected agent and model are
-      // switched on the new session, which is what a V2 prompt then runs with.
+      // The selected agent and model are switched on the new session, which is
+      // what a V2 prompt then runs with.
       async function createFreshSessionV2(
         sdk: OpencodeClient,
         input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
@@ -717,7 +580,7 @@ export const RunCommand = effectCmd({
       }
 
       async function execute(sdk: OpencodeClient) {
-        const sess = await session(sdk)
+        const sess = await sessionV2(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
           process.exit(1)
@@ -739,138 +602,6 @@ export const RunCommand = effectCmd({
           return false
         }
 
-        // Consume one subscribed event stream for the active session and mirror it
-        // to stdout/UI. `client` is passed explicitly because attach mode may
-        // rebind the SDK to the session's directory after the subscription is
-        // created, and replies issued from inside the loop must use that client.
-        async function loop(client: OpencodeClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
-          const toggles = new Map<string, boolean>()
-          const sessions = new Set([sessionID])
-          let error: string | undefined
-
-          for await (const event of events.stream) {
-            if (event.type === "session.created" && event.properties.info.parentID) {
-              if (sessions.has(event.properties.info.parentID)) sessions.add(event.properties.info.id)
-            }
-
-            if (
-              event.type === "message.updated" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.info.role === "assistant" &&
-              args.format !== "json" &&
-              toggles.get("start") !== true
-            ) {
-              UI.empty()
-              UI.println(`> ${event.properties.info.agent} · ${event.properties.info.modelID}`)
-              UI.empty()
-              toggles.set("start", true)
-            }
-
-            if (event.type === "message.part.updated") {
-              const part = event.properties.part
-              if (part.sessionID !== sessionID) continue
-
-              if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
-                if (emit("tool_use", { part })) continue
-                if (part.state.status === "completed") {
-                  await tool(part)
-                  continue
-                }
-                await toolError(part)
-                UI.error(part.state.error)
-              }
-
-              if (
-                part.type === "tool" &&
-                part.tool === "task" &&
-                part.state.status === "running" &&
-                args.format !== "json"
-              ) {
-                if (toggles.get(part.id) === true) continue
-                await tool(part)
-                toggles.set(part.id, true)
-              }
-
-              if (part.type === "step-start") {
-                if (emit("step_start", { part })) continue
-              }
-
-              if (part.type === "step-finish") {
-                if (emit("step_finish", { part })) continue
-              }
-
-              if (part.type === "text" && part.time?.end) {
-                if (emit("text", { part })) continue
-                const text = part.text.trim()
-                if (!text) continue
-                if (!process.stdout.isTTY) {
-                  process.stdout.write(text + EOL)
-                  continue
-                }
-                UI.empty()
-                UI.println(text)
-                UI.empty()
-              }
-
-              if (part.type === "reasoning" && part.time?.end && thinking) {
-                if (emit("reasoning", { part })) continue
-                const text = part.text.trim()
-                if (!text) continue
-                const line = `Thinking: ${text}`
-                if (process.stdout.isTTY) {
-                  UI.empty()
-                  UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
-                  UI.empty()
-                  continue
-                }
-                process.stdout.write(line + EOL)
-              }
-            }
-
-            if (event.type === "session.error") {
-              const props = event.properties
-              if (props.sessionID !== sessionID || !props.error) continue
-              let err = String(props.error.name)
-              if ("data" in props.error && props.error.data && "message" in props.error.data) {
-                err = String(props.error.data.message)
-              }
-              error = error ? error + EOL + err : err
-              if (emit("error", { error: props.error })) continue
-              UI.error(err)
-            }
-
-            if (
-              event.type === "session.status" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.status.type === "idle"
-            ) {
-              break
-            }
-
-            if (event.type === "permission.asked") {
-              const permission = event.properties
-              if (!sessions.has(permission.sessionID)) continue
-
-              if (auto) {
-                await client.permission.reply({
-                  requestID: permission.id,
-                  reply: "once",
-                })
-              } else {
-                UI.println(
-                  UI.Style.TEXT_WARNING_BOLD + "!",
-                  UI.Style.TEXT_NORMAL +
-                    `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
-                )
-                await client.permission.reply({
-                  requestID: permission.id,
-                  reply: "reject",
-                })
-              }
-            }
-          }
-          return error
-        }
         const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
 
@@ -926,53 +657,6 @@ export const RunCommand = effectCmd({
           return
         }
 
-        if (!interactive) {
-          const events = await client.event.subscribe()
-          const completed = loop(client, events).catch((e) => {
-            console.error(e)
-            process.exitCode = 1
-          })
-          async function finish() {
-            if (args.attach) return
-            const error = await completed
-            if (error) process.exitCode = 1
-          }
-
-          if (args.command) {
-            const result = await client.session.command({
-              sessionID,
-              agent,
-              model: args.model,
-              command: args.command,
-              arguments: message,
-              variant: args.variant,
-            })
-            if (result.error) {
-              if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-              process.exitCode = 1
-              return
-            }
-            await finish()
-            return
-          }
-
-          const model = pick(args.model)
-          const result = await client.session.prompt({
-            sessionID,
-            agent,
-            model,
-            variant: args.variant,
-            parts: [...files, { type: "text", text: message }],
-          })
-          if (result.error) {
-            if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-            process.exitCode = 1
-            return
-          }
-          await finish()
-          return
-        }
-
         const model = pick(args.model)
         const { runInteractiveMode } = await import("./run/runtime")
         try {
@@ -989,7 +673,7 @@ export const RunCommand = effectCmd({
             variant: args.variant,
             files,
             initialInput,
-            createSession: createFreshSession,
+            createSession: createFreshSessionV2,
             thinking,
             backgroundSubagents: flags.experimentalBackgroundSubagents,
             demo: args.demo,
@@ -1017,9 +701,9 @@ export const RunCommand = effectCmd({
             directory: directory ?? root,
             fetch: fetchFn,
             resolveAgent: localAgent,
-            session,
+            session: sessionV2,
             share,
-            createSession: createFreshSession,
+            createSession: createFreshSessionV2,
             agent: args.agent,
             model,
             variant: args.variant,
