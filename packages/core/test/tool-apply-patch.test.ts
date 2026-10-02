@@ -23,8 +23,8 @@ const sessionID = SessionV2.ID.make("ses_apply_patch_tool_test")
 const assertions: PermissionV2.AssertInput[] = []
 let denyAction: string | undefined
 let failRemoveTarget: string | undefined
-let readsBeforeEditApproval = 0
-let editApproved = false
+let readsBeforeExternalApproval = 0
+let externalApproved = false
 let blockRemoveTarget: string | undefined
 let removeStarted: Deferred.Deferred<void> | undefined
 let releaseRemove: Deferred.Deferred<void> | undefined
@@ -36,7 +36,7 @@ const permission = Layer.succeed(
     assert: (input) =>
       Effect.sync(() => {
         assertions.push(input)
-        if (input.action === "edit") editApproved = true
+        if (input.action === "external_directory") externalApproved = true
       }).pipe(
         Effect.andThen(input.action === "edit" ? Effect.suspend(afterEditApproval) : Effect.void),
         Effect.andThen(
@@ -55,8 +55,8 @@ const reset = () => {
   assertions.length = 0
   denyAction = undefined
   failRemoveTarget = undefined
-  readsBeforeEditApproval = 0
-  editApproved = false
+  readsBeforeExternalApproval = 0
+  externalApproved = false
   blockRemoveTarget = undefined
   removeStarted = undefined
   releaseRemove = undefined
@@ -71,7 +71,7 @@ const filesystem = Layer.effect(
       ...fs,
       readFile: (target) =>
         Effect.sync(() => {
-          if (!editApproved) readsBeforeEditApproval++
+          if (!externalApproved) readsBeforeExternalApproval++
         }).pipe(Effect.andThen(fs.readFile(target))),
       remove: (target, options) => {
         if (failRemoveTarget && path.basename(target) === failRemoveTarget) return Effect.die("forced remove failure")
@@ -184,10 +184,23 @@ describe("ApplyPatchTool", () => {
                     },
                   ],
                 })
+                // The prompt shows every file's change before any of them is written.
+                const diff = String(assertions[0]?.metadata?.diff)
+                expect(diff).toContain("+created")
+                expect(diff).toContain("-before\n+after")
+                expect(diff).toContain("-remove")
                 expect(assertions).toMatchObject([
-                  { sessionID, action: "edit", resources: ["nested/new.txt", "update.txt", "remove.txt"], save: ["*"] },
+                  {
+                    sessionID,
+                    action: "edit",
+                    resources: ["nested/new.txt", "update.txt", "remove.txt"],
+                    save: ["*"],
+                    metadata: {
+                      filepath: "nested/new.txt, update.txt, remove.txt",
+                      files: [{ file: "nested/new.txt" }, { file: "update.txt" }, { file: "remove.txt" }],
+                    },
+                  },
                 ])
-                expect(readsBeforeEditApproval).toBe(0)
                 expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "nested/new.txt"), "utf8"))).toBe(
                   "created\n",
                 )
@@ -231,7 +244,7 @@ describe("ApplyPatchTool", () => {
     ),
   )
 
-  it.live("approves an external directory and the batch before reading external update content", () =>
+  it.live("approves an external directory before reading external update content, then the batch with its diff", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       ([active, outside]) => {
@@ -248,7 +261,8 @@ describe("ApplyPatchTool", () => {
                   ),
                 ).toMatchObject({ type: "text" })
                 expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
-                expect(readsBeforeEditApproval).toBe(0)
+                expect(readsBeforeExternalApproval).toBe(0)
+                expect(assertions[1]?.metadata?.diff).toContain("-before\n+after")
                 expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("after\n")
               }),
             ),
@@ -315,7 +329,39 @@ describe("ApplyPatchTool", () => {
               ),
             ).toEqual({ type: "error", value: "Unable to apply patch at missing.txt" })
             expect(yield* exists(path.join(tmp.path, "created.txt"))).toBe(false)
+            // The failure is reported only after edit approval, which then carries no diff.
+            expect(assertions).toMatchObject([{ action: "edit", metadata: { filepath: "created.txt, missing.txt" } }])
+            expect(assertions[0]?.metadata?.diff).toBeUndefined()
           }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("denied edit does not disclose whether the patch context matches", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        denyAction = "edit"
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "secret.txt"), "secret\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                const patch = (line: string) =>
+                  call(`*** Begin Patch\n*** Update File: secret.txt\n@@\n-${line}\n+replacement\n*** End Patch`)
+                const matching = yield* executeTool(registry, patch("secret"))
+                const missing = yield* executeTool(registry, patch("not present"))
+                expect(matching).toEqual({ type: "error", value: "Unable to apply patch at patch" })
+                expect(missing).toEqual(matching)
+                expect(assertions.map((input) => input.action)).toEqual(["edit", "edit"])
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "secret.txt"), "utf8"))).toBe(
+                  "secret\n",
+                )
+              }),
+            ),
+          ),
         )
       },
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),

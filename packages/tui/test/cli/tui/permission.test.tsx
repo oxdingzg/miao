@@ -215,6 +215,34 @@ test("a bash permission prompt shows the stdin script in a scrollable body", asy
   }
 })
 
+test("an edit permission prompt shows the file and the diff it will apply", async () => {
+  await using tmp = await tmpdir()
+  const file = path.join(tmp.path, "src", "hello.ts")
+  // The shape a V2 edit request has once sync maps it: metadata carries filepath and diff.
+  const { app } = await mountPermission(tmp.path, 200, () => {}, 0, {
+    ...webfetchRequest,
+    permission: "edit",
+    patterns: ["src/hello.ts"],
+    metadata: {
+      filepath: file,
+      diff: `Index: ${file}\n===================================================================\n--- ${file}\n+++ ${file}\n@@ -1,2 +1,2 @@\n-const greeting = "before"\n+const greeting = "after"\n export {}\n`,
+    },
+  })
+  try {
+    await app.renderOnce()
+    await Bun.sleep(20)
+    await app.renderOnce()
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("hello.ts")
+    expect(frame).toContain('const greeting = "before"')
+    expect(frame).toContain('const greeting = "after"')
+    expect(frame).not.toContain("No diff provided")
+    expect(frame).toContain("Allow once")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("an MCP permission prompt names the server and tool and summarizes the arguments", async () => {
   await using tmp = await tmpdir()
   const { app } = await mountPermission(tmp.path, 200, () => {}, 0, {

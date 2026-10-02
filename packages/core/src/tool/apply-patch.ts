@@ -3,7 +3,7 @@ export * as ApplyPatchTool from "./apply-patch"
 import { ToolFailure } from "@miao/llm"
 import { FileDiff } from "@miao/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Result, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
@@ -14,6 +14,7 @@ import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { trimDiff } from "./edit"
 
 export const name = "apply_patch"
 
@@ -71,7 +72,7 @@ const layer = Layer.effectDiscard(
         [name]: Tool.withPermission(
           Tool.make({
             description:
-              "Apply one patch containing add, update, and delete file operations. All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.",
+              "Apply one patch containing add, update, and delete file operations. All targets are resolved and external directories approved before target contents are read; the whole patch is then approved, with its diff, before any file changes. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.",
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -115,49 +116,73 @@ const layer = Layer.effectDiscard(
                     source,
                   })
                 }
-                yield* permission.assert({
-                  action: "edit",
-                  resources: [...new Set(targets.map(({ target }) => target.resource))],
-                  save: ["*"],
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source,
-                })
-
-                const prepared: Prepared[] = []
-                for (const { hunk, target } of targets) {
-                  yield* Effect.gen(function* () {
-                    if (hunk.type === "add") {
-                      prepared.push({
+                // Contents are read after external_directory approval but before
+                // edit approval, so the prompt can show the diff. A preparation
+                // failure is reported only after edit approval, so a caller
+                // without edit permission cannot probe file contents.
+                const preparation = yield* Effect.forEach(targets, ({ hunk, target }) =>
+                  Effect.gen(function* () {
+                    if (hunk.type === "add")
+                      return {
                         ...hunk,
                         target,
                         before: "",
                         after:
                           hunk.contents.endsWith("\n") || hunk.contents === "" ? hunk.contents : `${hunk.contents}\n`,
-                      })
-                      return
-                    }
-                    if ((yield* fs.stat(target.canonical)).type !== "File") yield* fail(hunk.path)
+                      } satisfies Prepared
+                    if ((yield* fs.stat(target.canonical)).type !== "File") return yield* fail(hunk.path)
                     const source = yield* fs.readFile(target.canonical)
                     const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(source)
                     const before = original.replace(/^\uFEFF/, "")
-                    if (hunk.type === "delete") {
-                      prepared.push({ ...hunk, target, before, after: "" })
-                      return
-                    }
-                    const update = Patch.derive(hunk.path, hunk.chunks, original)
-                    prepared.push({
+                    if (hunk.type === "delete") return { ...hunk, target, before, after: "" } satisfies Prepared
+                    // derive throws when the context lines do not match; that must
+                    // stay a failure so it is reported only after edit approval.
+                    const update = yield* Effect.try({
+                      try: () => Patch.derive(hunk.path, hunk.chunks, original),
+                      catch: () => fail(hunk.path),
+                    })
+                    return {
                       ...hunk,
                       target,
                       source,
                       content: Patch.joinBom(update.content, update.bom),
                       before,
                       after: update.content,
-                    })
-                  }).pipe(Effect.mapError(() => fail(hunk.path)))
-                }
-
-                const patchFiles = prepared.map(patchFile)
+                    } satisfies Prepared
+                  }).pipe(Effect.mapError(() => fail(hunk.path))),
+                ).pipe(Effect.result)
+                const patchFiles = Result.isSuccess(preparation) ? preparation.success.map(patchFile) : []
+                const resources = [...new Set(targets.map(({ target }) => target.resource))]
+                yield* permission.assert({
+                  action: "edit",
+                  resources,
+                  save: ["*"],
+                  metadata: {
+                    filepath: resources.join(", "),
+                    ...(Result.isSuccess(preparation)
+                      ? {
+                          diff: preparation.success
+                            .map((change) =>
+                              trimDiff(
+                                createTwoFilesPatch(
+                                  change.target.canonical,
+                                  change.target.canonical,
+                                  change.before,
+                                  change.after,
+                                ),
+                              ),
+                            )
+                            .join("\n"),
+                          files: patchFiles,
+                        }
+                      : {}),
+                  },
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source,
+                })
+                if (Result.isFailure(preparation)) return yield* preparation.failure
+                const prepared: Prepared[] = preparation.success
                 yield* Effect.forEach(
                   prepared,
                   (change) =>

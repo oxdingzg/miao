@@ -17,6 +17,7 @@ import { FileMutation } from "../file-mutation"
 import { LSP } from "../lsp"
 import { LSPClient } from "../lsp/client"
 import { Diagnostic } from "../lsp/diagnostic"
+import { trimDiff } from "./edit"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
@@ -87,10 +88,20 @@ const layer = Layer.effectDiscard(
                     agent: context.agent,
                     source,
                   })
+                // Read the current content only to show the change in the prompt;
+                // a missing or unreadable file previews as a new one.
+                const previous = yield* fs.readFileString(target.canonical).pipe(
+                  Effect.map((text) => text.replace(/^﻿/, "")),
+                  Effect.orElseSucceed(() => ""),
+                )
                 yield* permission.assert({
                   action: "edit",
                   resources: [target.resource],
                   save: ["*"],
+                  metadata: {
+                    filepath: target.canonical,
+                    diff: trimDiff(createTwoFilesPatch(target.canonical, target.canonical, previous, input.content)),
+                  },
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
