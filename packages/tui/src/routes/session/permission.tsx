@@ -8,7 +8,6 @@ import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
 import { SplitBorder } from "../../ui/border"
 import { useSync } from "../../context/sync"
-import { useProject } from "../../context/project"
 import { filetype } from "../../util/filetype"
 import { Locale } from "../../util/locale"
 import { webSearchProviderLabel } from "../../util/tool-display"
@@ -18,7 +17,6 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiConfig } from "../../config"
 import { MIAO_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
-import { Flag } from "@miao/core/flag/flag"
 import { useToast } from "../../ui/toast"
 import { isNotFoundError } from "../../util/error"
 
@@ -157,7 +155,6 @@ export function PermissionPrompt(props: {
   onSettled?: (request: PermissionRequest) => void
 }) {
   const sdk = useSDK()
-  const project = useProject()
   const sync = useSync()
   const toast = useToast()
   const [store, setStore] = createStore({
@@ -236,24 +233,14 @@ export function PermissionPrompt(props: {
             if (option === "cancel") return
             settle(
               () =>
-                Flag.MIAO_TUI_V2
-                  ? sdk.client.v2.session.permission.reply(
-                      {
-                        sessionID: props.request.sessionID,
-                        requestID: props.request.id,
-                        reply: "always",
-                      },
-                      { throwOnError: true },
-                    )
-                  : sdk.client.permission.reply(
-                      {
-                        reply: "always",
-                        requestID: props.request.id,
-                        directory: props.directory,
-                        workspace: project.workspace.current(),
-                      },
-                      { throwOnError: true },
-                    ),
+                sdk.client.v2.session.permission.reply(
+                  {
+                    sessionID: props.request.sessionID,
+                    requestID: props.request.id,
+                    reply: "always",
+                  },
+                  { throwOnError: true },
+                ),
               props.request,
             )
           }}
@@ -264,26 +251,15 @@ export function PermissionPrompt(props: {
           onConfirm={(message) => {
             settle(
               () =>
-                Flag.MIAO_TUI_V2
-                  ? sdk.client.v2.session.permission.reply(
-                      {
-                        sessionID: props.request.sessionID,
-                        requestID: props.request.id,
-                        reply: "reject",
-                        message: message || undefined,
-                      },
-                      { throwOnError: true },
-                    )
-                  : sdk.client.permission.reply(
-                      {
-                        reply: "reject",
-                        requestID: props.request.id,
-                        directory: props.directory,
-                        message: message || undefined,
-                        workspace: project.workspace.current(),
-                      },
-                      { throwOnError: true },
-                    ),
+                sdk.client.v2.session.permission.reply(
+                  {
+                    sessionID: props.request.sessionID,
+                    requestID: props.request.id,
+                    reply: "reject",
+                    message: message || undefined,
+                  },
+                  { throwOnError: true },
+                ),
               props.request,
             )
           }}
@@ -553,48 +529,28 @@ export function PermissionPrompt(props: {
                   }
                   settle(
                     () =>
-                      Flag.MIAO_TUI_V2
-                        ? sdk.client.v2.session.permission.reply(
-                            {
-                              sessionID: props.request.sessionID,
-                              requestID: props.request.id,
-                              reply: "reject",
-                            },
-                            { throwOnError: true },
-                          )
-                        : sdk.client.permission.reply(
-                            {
-                              reply: "reject",
-                              requestID: props.request.id,
-                              directory: props.directory,
-                              workspace: project.workspace.current(),
-                            },
-                            { throwOnError: true },
-                          ),
+                      sdk.client.v2.session.permission.reply(
+                        {
+                          sessionID: props.request.sessionID,
+                          requestID: props.request.id,
+                          reply: "reject",
+                        },
+                        { throwOnError: true },
+                      ),
                     props.request,
                   )
                   return
                 }
                 settle(
                   () =>
-                    Flag.MIAO_TUI_V2
-                      ? sdk.client.v2.session.permission.reply(
-                          {
-                            sessionID: props.request.sessionID,
-                            requestID: props.request.id,
-                            reply: "once",
-                          },
-                          { throwOnError: true },
-                        )
-                      : sdk.client.permission.reply(
-                          {
-                            reply: "once",
-                            requestID: props.request.id,
-                            directory: props.directory,
-                            workspace: project.workspace.current(),
-                          },
-                          { throwOnError: true },
-                        ),
+                    sdk.client.v2.session.permission.reply(
+                      {
+                        sessionID: props.request.sessionID,
+                        requestID: props.request.id,
+                        reply: "once",
+                      },
+                      { throwOnError: true },
+                    ),
                   props.request,
                 )
               }}

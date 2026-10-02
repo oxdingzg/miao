@@ -9,7 +9,6 @@ import { useProject } from "../context/project"
 import { useTheme } from "../context/theme"
 import { useSDK } from "../context/sdk"
 import { sessionInfo } from "../context/session-v2-read"
-import { Flag } from "@miao/core/flag/flag"
 import { useLocal } from "../context/local"
 import { DialogSessionRename } from "./dialog-session-rename"
 import { createDebouncedSignal } from "../util/signal"
@@ -62,18 +61,16 @@ export function DialogSessionList() {
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
 
   const listSessions = (query: ReturnType<typeof createDialogSessionListQuery>) =>
-    Flag.MIAO_TUI_V2
-      ? sdk.client.v2.session
-          .list({
-            limit: query.limit,
-            ...(query.search ? { search: query.search } : {}),
-            ...(query.path ? { subpath: query.path } : {}),
-          })
-          .then((x) => ({
-            // V2 list has no roots filter; keep only root sessions like the V1 query did.
-            data: (x.data?.data ?? []).map(sessionInfo).filter((session) => session.parentID === undefined),
-          }))
-      : sdk.client.session.list(query)
+    sdk.client.v2.session
+      .list({
+        limit: query.limit,
+        ...(query.search ? { search: query.search } : {}),
+        ...(query.path ? { subpath: query.path } : {}),
+      })
+      .then((x) => ({
+        // V2 list has no roots filter; keep only root sessions like the V1 query did.
+        data: (x.data?.data ?? []).map(sessionInfo).filter((session) => session.parentID === undefined),
+      }))
 
   const [browseResults, { refetch: refetchBrowse }] = createResource(
     () => sync.session.query(),
@@ -320,11 +317,7 @@ export function DialogSessionList() {
               const status = session?.workspaceID ? project.workspace.status(session.workspaceID) : undefined
 
               try {
-                const result = await (Flag.MIAO_TUI_V2
-                  ? sdk.client.v2.session.remove({ sessionID: option.value })
-                  : sdk.client.session.delete({
-                      sessionID: option.value,
-                    }))
+                const result = await sdk.client.v2.session.remove({ sessionID: option.value })
                 if (result.error) {
                   if (session?.workspaceID) {
                     recover(session)

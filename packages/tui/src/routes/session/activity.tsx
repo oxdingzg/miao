@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
-import { Flag } from "@miao/core/flag/flag"
 import { Spinner } from "../../component/spinner"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
@@ -94,7 +93,6 @@ export function SessionActivity(props: { sessionID: string }) {
     return current ? (sync.data.part[current.id] ?? []) : []
   })
   const waiting = createMemo(() => {
-    if (!Flag.MIAO_TUI_V2) return false
     return waitingForResponse({ busy: busy(), blocked: blocked(), message: message(), parts: parts() })
   })
   const turnParts = createMemo(() => {
@@ -105,7 +103,7 @@ export function SessionActivity(props: { sessionID: string }) {
   // `working` mirrors Claude Code's live flag: the current step is still
   // streaming, so the summary uses present tense and flips to past between steps.
   const activity = createMemo(() => {
-    if (!Flag.MIAO_TUI_V2 || !busy() || blocked()) return undefined
+    if (!busy() || blocked()) return undefined
     return turnActivity({ parts: turnParts(), working: !waiting() })
   })
   // Measure from the prompt that opened the turn so the live timer agrees with
@@ -115,7 +113,6 @@ export function SessionActivity(props: { sessionID: string }) {
 
   createEffect(() => {
     const sessionID = props.sessionID
-    if (!Flag.MIAO_TUI_V2) return
     const abort = new AbortController()
     const stop = watchSessionStatus({
       read: () => sync.session.syncStatus(sessionID, abort.signal),

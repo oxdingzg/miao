@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { afterEach, beforeEach, expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 import type { GlobalEvent, SessionMessage } from "@opencode-ai/sdk/v2"
 import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
@@ -22,15 +22,6 @@ const input = {
   model: { providerID: "test", modelID: "model" },
   parts: [{ type: "text" as const, text: "还没完成吗？" }],
 }
-let previous: string | undefined
-beforeEach(() => {
-  previous = process.env["MIAO_TUI_V2"]
-  process.env["MIAO_TUI_V2"] = "1"
-})
-afterEach(() => {
-  if (previous === undefined) delete process.env["MIAO_TUI_V2"]
-  else process.env["MIAO_TUI_V2"] = previous
-})
 
 function payload(event: GlobalEvent["payload"]): GlobalEvent {
   return { directory, project: "proj_test", payload: event }

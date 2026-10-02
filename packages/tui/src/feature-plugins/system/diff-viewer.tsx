@@ -9,7 +9,6 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core"
 import { LANGUAGE_EXTENSIONS } from "../../util/filetype"
-import { Flag } from "@miao/core/flag/flag"
 import { useBindings, useCommandShortcut } from "../../keymap"
 import { useTheme } from "../../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -116,24 +115,17 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     if (input.mode === "last-turn") {
       const sessionID = input.sessionID
       if (!sessionID) return []
-      if (Flag.MIAO_TUI_V2) {
-        // V2 has no message-scoped diff; show the session diff instead.
-        const result = await props.api.client.v2.session.diff({ sessionID }, { throwOnError: true })
-        return normalizeDiffs(
-          (result.data?.data ?? []).map((file) => ({
-            file: file.path,
-            patch: file.patch,
-            additions: file.additions,
-            deletions: file.deletions,
-            status: file.status,
-          })),
-        )
-      }
-      const result = await props.api.client.session.diff(
-        { sessionID, messageID: input.messageID },
-        { throwOnError: true },
+      // V2 has no message-scoped diff; show the session diff instead.
+      const result = await props.api.client.v2.session.diff({ sessionID }, { throwOnError: true })
+      return normalizeDiffs(
+        (result.data?.data ?? []).map((file) => ({
+          file: file.path,
+          patch: file.patch,
+          additions: file.additions,
+          deletions: file.deletions,
+          status: file.status,
+        })),
       )
-      return normalizeDiffs(result.data ?? [])
     }
 
     const result = await props.api.client.vcs.diff(

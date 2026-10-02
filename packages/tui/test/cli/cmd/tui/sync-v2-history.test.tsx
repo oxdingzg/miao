@@ -30,8 +30,6 @@ const message = (id: string, created: number, text: string) => ({
 test("V2 hydration keeps compacted history reachable", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const previous = process.env["MIAO_TUI_V2"]
-  process.env["MIAO_TUI_V2"] = "1"
   let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
 
   try {
@@ -63,16 +61,12 @@ test("V2 hydration keeps compacted history reachable", async () => {
     expect(mounted.sync.data.part["msg_active"][0]).toMatchObject({ type: "text", text: "after compaction" })
   } finally {
     app?.renderer.destroy()
-    if (previous === undefined) delete process.env["MIAO_TUI_V2"]
-    else process.env["MIAO_TUI_V2"] = previous
   }
 })
 
 test("V2 loadOlder walks the timeline behind the transcript and stops at the oldest page", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const previous = process.env["MIAO_TUI_V2"]
-  process.env["MIAO_TUI_V2"] = "1"
   let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
 
   try {
@@ -107,7 +101,5 @@ test("V2 loadOlder walks the timeline behind the transcript and stops at the old
     expect(await mounted.sync.session.loadOlder(sessionID)).toBe(false)
   } finally {
     app?.renderer.destroy()
-    if (previous === undefined) delete process.env["MIAO_TUI_V2"]
-    else process.env["MIAO_TUI_V2"] = previous
   }
 })

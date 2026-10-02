@@ -1,10 +1,6 @@
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import type { EventSource } from "../../src/context/sdk"
 
-// TUI tests mock a V1 server. Pin the protocol so the default-on V2 runtime
-// does not route them through /api/session.
-process.env["MIAO_TUI_V2"] = "0"
-
 export const worktree = "/tmp/opencode"
 export const directory = `${worktree}/packages/tui`
 
@@ -69,7 +65,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
   const session = [] as URL[]
   const fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
-    if (url.pathname === "/session") session.push(url)
+    if (url.pathname === "/api/session") session.push(url)
     const overridden = await override?.(url, input instanceof Request ? input : undefined)
     if (overridden) return overridden
     if (url.pathname === "/api/event" && events) return events.response()
@@ -106,9 +102,28 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       return json({ location: { directory, project: { id: "proj_test", directory } }, data: [] })
     if (url.pathname === "/provider") return json({ all: [], default: {}, connected: [] })
     if (url.pathname === "/session") return json([])
+    if (url.pathname === "/api/session") return json({ data: [], cursor: {} })
+    if (url.pathname === "/api/session/active") return json({ data: {} })
     // V2 hydration pages the projected timeline alongside `session.context` so
     // compacted history stays reachable in the transcript.
     if (/^\/api\/session\/[^/]+\/message$/.test(url.pathname)) return json({ data: [], cursor: {} })
+    if (/^\/api\/session\/[^/]+\/context$/.test(url.pathname)) return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/todo$/.test(url.pathname)) return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/diff$/.test(url.pathname)) return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/status$/.test(url.pathname)) return json({ data: { type: "idle" } })
+    if (/^\/api\/session\/[^/]+$/.test(url.pathname))
+      return json({
+        data: {
+          id: decodeURIComponent(url.pathname.slice("/api/session/".length)),
+          projectID: "proj_test",
+          title: "",
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 0, updated: 0 },
+          location: { directory },
+          subpath: "",
+        },
+      })
     if (url.pathname === "/vcs") return json({ branch: "main" })
     throw new Error(`unexpected request: ${url.pathname}`)
   }) as typeof globalThis.fetch

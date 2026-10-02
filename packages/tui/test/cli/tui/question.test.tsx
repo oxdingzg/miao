@@ -8,12 +8,9 @@ import path from "node:path"
 import { tmpdir } from "../../fixture/fixture"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
-import { Flag } from "@miao/core/flag/flag"
 
-const replyPath = () =>
-  Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_test/reply" : "/question/que_test/reply"
-const rejectPath = () =>
-  Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_test/reject" : "/question/que_test/reject"
+const replyPath = () => "/api/session/ses_test/question/que_test/reply"
+const rejectPath = () => "/api/session/ses_test/question/que_test/reject"
 
 type QuestionInput = {
   header: string
@@ -232,10 +229,7 @@ test("settling a queued question mounts the next question with fresh answers and
     expect(calls).toHaveLength(1)
     app.mockInput.pressEscape()
     await Bun.sleep(60)
-    expect(calls).toEqual([
-      replyPath(),
-      Flag.MIAO_TUI_V2 ? "/api/session/ses_test/question/que_next/reject" : "/question/que_next/reject",
-    ])
+    expect(calls).toEqual([replyPath(), "/api/session/ses_test/question/que_next/reject"])
   } finally {
     app.renderer.destroy()
   }

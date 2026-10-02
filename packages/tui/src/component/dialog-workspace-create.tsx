@@ -10,7 +10,6 @@ import { useSDK } from "../context/sdk"
 import { useToast } from "../ui/toast"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogWorkspaceFileChanges } from "./dialog-workspace-file-changes"
-import { Flag } from "@miao/core/flag/flag"
 
 type Adapter = ExperimentalWorkspaceAdapterListResponse[number]
 
@@ -138,19 +137,13 @@ export async function warpWorkspaceSession(input: {
   const dir = input.project.instance.directory() || input.sync.path.directory
   if (dir) {
     // Admit the reminder without running a turn: the model reads it with the next prompt.
-    await (Flag.MIAO_TUI_V2
-      ? input.sdk.client.v2.session.prompt({
-          sessionID: input.sessionID,
-          prompt: { text: warpReminderText(dir) },
-          resume: false,
-        })
-      : input.sdk.client.session.promptAsync({
-          sessionID: input.sessionID,
-          workspace: input.workspaceID ?? undefined,
-          noReply: true,
-          parts: [{ type: "text", text: warpReminderText(dir), synthetic: true }],
-        })
-    ).catch(() => undefined)
+    await input.sdk.client.v2.session
+      .prompt({
+        sessionID: input.sessionID,
+        prompt: { text: warpReminderText(dir) },
+        resume: false,
+      })
+      .catch(() => undefined)
   }
 
   await Promise.all([input.project.workspace.sync(), input.sync.session.refresh()])

@@ -449,9 +449,7 @@ export function Prompt(props: PromptProps) {
 
           if (store.interrupt >= 2 && props.sessionID) {
             const sessionID = props.sessionID
-            void (Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session.interrupt({ sessionID })
-              : sdk.client.session.abort({ sessionID }))
+            void sdk.client.v2.session.interrupt({ sessionID })
             setStore("interrupt", 0)
           }
           dialog.clear()
@@ -477,12 +475,12 @@ export function Prompt(props: PromptProps) {
 
           const value = text
           const content = await openEditor({
-              renderer,
-              value,
-              cwd:
-                (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
-                project.instance.directory() ||
-                paths.cwd,
+            renderer,
+            value,
+            cwd:
+              (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
+              project.instance.directory() ||
+              paths.cwd,
           }).catch((error) => {
             toast.show({ message: errorMessage(error), variant: "error" })
           })
@@ -1039,49 +1037,22 @@ export function Prompt(props: PromptProps) {
       if (move.pending() && !directory) return false
       finishMoveProgress = Boolean(move.progress())
 
-      if (Flag.MIAO_TUI_V2) {
-        const res = await sdk.client.v2.session
-          .create(
-            {
-              agent: agent.name,
-              model: { id: selectedModel.modelID, providerID: selectedModel.providerID, variant },
-              location: directory === undefined ? undefined : { directory, workspaceID },
-            },
-            { throwOnError: true },
-          )
-          .catch((error) => {
-            if (finishMoveProgress) move.finishSubmit()
-            toast.show({ message: errorMessage(error), variant: "error" })
-            return undefined
-          })
-        if (!res) return true
-        sessionID = res.data.data.id
-      } else {
-        const res = await sdk.client.session.create({
-          directory,
-          workspace: workspaceID,
-          agent: agent.name,
-          model: {
-            providerID: selectedModel.providerID,
-            id: selectedModel.modelID,
-            variant,
+      const res = await sdk.client.v2.session
+        .create(
+          {
+            agent: agent.name,
+            model: { id: selectedModel.modelID, providerID: selectedModel.providerID, variant },
+            location: directory === undefined ? undefined : { directory, workspaceID },
           },
-        })
-
-        if (res.error) {
+          { throwOnError: true },
+        )
+        .catch((error) => {
           if (finishMoveProgress) move.finishSubmit()
-          console.log("Creating a session failed:", res.error)
-
-          toast.show({
-            message: "Creating a session failed. Open console for more details.",
-            variant: "error",
-          })
-
-          return true
-        }
-
-        sessionID = res.data.id
-      }
+          toast.show({ message: errorMessage(error), variant: "error" })
+          return undefined
+        })
+      if (!res) return true
+      sessionID = res.data.data.id
     }
 
     const inputText = expandTrackedPastedText(
@@ -1119,19 +1090,7 @@ export function Prompt(props: PromptProps) {
 
     if (store.mode === "shell") {
       move.startSubmit()
-      if (Flag.MIAO_TUI_V2) {
-        void sdk.client.v2.session.shell({ sessionID, command: inputText })
-      } else {
-        void sdk.client.session.shell({
-          sessionID,
-          agent: agent.name,
-          model: {
-            providerID: selectedModel.providerID,
-            modelID: selectedModel.modelID,
-          },
-          command: inputText,
-        })
-      }
+      void sdk.client.v2.session.shell({ sessionID, command: inputText })
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1145,17 +1104,7 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void (Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session.command({ sessionID, command: command.slice(1), arguments: args })
-        : sdk.client.session.command({
-            sessionID,
-            command: command.slice(1),
-            arguments: args,
-            agent: agent.name,
-            model: `${selectedModel.providerID}/${selectedModel.modelID}`,
-            variant,
-            parts: nonTextParts.filter((x) => x.type === "file"),
-          }))
+      void sdk.client.v2.session.command({ sessionID, command: command.slice(1), arguments: args })
     } else {
       move.startSubmit()
       const parts = [
@@ -1166,19 +1115,7 @@ export function Prompt(props: PromptProps) {
         },
         ...nonTextParts,
       ]
-      const request = Flag.MIAO_TUI_V2
-        ? sync.prompt.send({ sessionID, agent: agent.name, model: { ...selectedModel, variant }, parts })
-        : sdk.client.session.prompt(
-            {
-              sessionID,
-              ...selectedModel,
-              agent: agent.name,
-              model: selectedModel,
-              variant,
-              parts,
-            },
-            { throwOnError: true },
-          )
+      const request = sync.prompt.send({ sessionID, agent: agent.name, model: { ...selectedModel, variant }, parts })
       request.catch((error) => {
         toast.show({
           title: "Failed to send prompt",

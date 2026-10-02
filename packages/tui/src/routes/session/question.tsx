@@ -5,7 +5,6 @@ import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
-import { Flag } from "@miao/core/flag/flag"
 import { SplitBorder } from "../../ui/border"
 import { useToast } from "../../ui/toast"
 import { isNotFoundError } from "../../util/error"
@@ -65,68 +64,51 @@ export function QuestionPrompt(props: {
     setSettling(true)
     const request = props.request
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void (
-      Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session.question.reply(
-            {
-              sessionID: request.sessionID,
-              requestID: request.id,
-              questionV2Reply: { answers },
-            },
-            { throwOnError: true },
-          )
-        : sdk.client.question.reply(
-            {
-              requestID: request.id,
-              directory: props.directory,
-              answers,
-            },
-            { throwOnError: true },
-          )
-    ).then(
-      () => props.onSettled?.(request),
-      (error: unknown) => {
-        toast.error(error)
-        if (isNotFoundError(error)) {
-          props.onSettled?.(request)
-          return
-        }
-        setSettling(false)
-      },
-    )
+    void sdk.client.v2.session.question
+      .reply(
+        {
+          sessionID: request.sessionID,
+          requestID: request.id,
+          questionV2Reply: { answers },
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => props.onSettled?.(request),
+        (error: unknown) => {
+          toast.error(error)
+          if (isNotFoundError(error)) {
+            props.onSettled?.(request)
+            return
+          }
+          setSettling(false)
+        },
+      )
   }
 
   function reject() {
     if (settling()) return
     setSettling(true)
     const request = props.request
-    void (
-      Flag.MIAO_TUI_V2
-        ? sdk.client.v2.session.question.reject(
-            {
-              sessionID: request.sessionID,
-              requestID: request.id,
-            },
-            { throwOnError: true },
-          )
-        : sdk.client.question.reject(
-            {
-              requestID: request.id,
-              directory: props.directory,
-            },
-            { throwOnError: true },
-          )
-    ).then(
-      () => props.onSettled?.(request),
-      (error: unknown) => {
-        toast.error(error)
-        if (isNotFoundError(error)) {
-          props.onSettled?.(request)
-          return
-        }
-        setSettling(false)
-      },
-    )
+    void sdk.client.v2.session.question
+      .reject(
+        {
+          sessionID: request.sessionID,
+          requestID: request.id,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => props.onSettled?.(request),
+        (error: unknown) => {
+          toast.error(error)
+          if (isNotFoundError(error)) {
+            props.onSettled?.(request)
+            return
+          }
+          setSettling(false)
+        },
+      )
   }
 
   function pick(answer: string, custom: boolean = false) {
@@ -428,97 +410,97 @@ export function QuestionPrompt(props: {
             </box>
             <box flexDirection={hasPreview() ? "row" : "column"} gap={hasPreview() ? 2 : 0}>
               <box flexGrow={hasPreview() ? 1 : 0} flexBasis={hasPreview() ? 0 : "auto"} minWidth={0}>
-              <For each={options()}>
-                {(opt, i) => {
-                  const active = () => i() === store.selected
-                  const picked = () => store.answers[store.tab]?.includes(opt.label) ?? false
-                  return (
-                    <box
-                      onMouseOver={() => moveTo(i())}
-                      onMouseDown={() => moveTo(i())}
-                      onMouseUp={() => {
-                        if (renderer.getSelection()?.getSelectedText()) return
-                        selectOption()
-                      }}
-                    >
-                      <box flexDirection="row">
-                        <box backgroundColor={active() ? theme.backgroundElement : undefined} paddingRight={1}>
-                          <text fg={active() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
-                            {`${i() + 1}.`}
-                          </text>
+                <For each={options()}>
+                  {(opt, i) => {
+                    const active = () => i() === store.selected
+                    const picked = () => store.answers[store.tab]?.includes(opt.label) ?? false
+                    return (
+                      <box
+                        onMouseOver={() => moveTo(i())}
+                        onMouseDown={() => moveTo(i())}
+                        onMouseUp={() => {
+                          if (renderer.getSelection()?.getSelectedText()) return
+                          selectOption()
+                        }}
+                      >
+                        <box flexDirection="row">
+                          <box backgroundColor={active() ? theme.backgroundElement : undefined} paddingRight={1}>
+                            <text fg={active() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
+                              {`${i() + 1}.`}
+                            </text>
+                          </box>
+                          <box backgroundColor={active() ? theme.backgroundElement : undefined}>
+                            <text fg={active() ? theme.secondary : picked() ? theme.success : theme.text}>
+                              {multi() ? `[${picked() ? "✓" : " "}] ${opt.label}` : opt.label}
+                            </text>
+                          </box>
+                          <Show when={!multi()}>
+                            <text fg={theme.success}>{picked() ? " ✓" : ""}</text>
+                          </Show>
                         </box>
-                        <box backgroundColor={active() ? theme.backgroundElement : undefined}>
-                          <text fg={active() ? theme.secondary : picked() ? theme.success : theme.text}>
-                            {multi() ? `[${picked() ? "✓" : " "}] ${opt.label}` : opt.label}
-                          </text>
-                        </box>
-                        <Show when={!multi()}>
-                          <text fg={theme.success}>{picked() ? " ✓" : ""}</text>
-                        </Show>
-                      </box>
 
-                      <box paddingLeft={3}>
-                        <text fg={theme.textMuted}>{opt.description}</text>
+                        <box paddingLeft={3}>
+                          <text fg={theme.textMuted}>{opt.description}</text>
+                        </box>
                       </box>
-                    </box>
-                  )
-                }}
-              </For>
-              <Show when={custom()}>
-                <box
-                  onMouseOver={() => moveTo(options().length)}
-                  onMouseDown={() => moveTo(options().length)}
-                  onMouseUp={() => {
-                    if (renderer.getSelection()?.getSelectedText()) return
-                    selectOption()
+                    )
                   }}
-                >
-                  <box flexDirection="row">
-                    <box backgroundColor={other() ? theme.backgroundElement : undefined} paddingRight={1}>
-                      <text fg={other() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
-                        {`${options().length + 1}.`}
-                      </text>
-                    </box>
-                    <box backgroundColor={other() ? theme.backgroundElement : undefined}>
-                      <text fg={other() ? theme.secondary : customPicked() ? theme.success : theme.text}>
-                        {multi() ? `[${customPicked() ? "✓" : " "}] Type your own answer` : "Type your own answer"}
-                      </text>
-                    </box>
+                </For>
+                <Show when={custom()}>
+                  <box
+                    onMouseOver={() => moveTo(options().length)}
+                    onMouseDown={() => moveTo(options().length)}
+                    onMouseUp={() => {
+                      if (renderer.getSelection()?.getSelectedText()) return
+                      selectOption()
+                    }}
+                  >
+                    <box flexDirection="row">
+                      <box backgroundColor={other() ? theme.backgroundElement : undefined} paddingRight={1}>
+                        <text fg={other() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
+                          {`${options().length + 1}.`}
+                        </text>
+                      </box>
+                      <box backgroundColor={other() ? theme.backgroundElement : undefined}>
+                        <text fg={other() ? theme.secondary : customPicked() ? theme.success : theme.text}>
+                          {multi() ? `[${customPicked() ? "✓" : " "}] Type your own answer` : "Type your own answer"}
+                        </text>
+                      </box>
 
-                    <Show when={!multi()}>
-                      <text fg={theme.success}>{customPicked() ? " ✓" : ""}</text>
+                      <Show when={!multi()}>
+                        <text fg={theme.success}>{customPicked() ? " ✓" : ""}</text>
+                      </Show>
+                    </box>
+                    <Show when={store.editing}>
+                      <box paddingLeft={3}>
+                        <textarea
+                          ref={(val: TextareaRenderable) => {
+                            textarea = val
+                            val.traits = { status: "ANSWER" }
+                            queueMicrotask(() => {
+                              val.focus()
+                              val.gotoLineEnd()
+                            })
+                          }}
+                          initialValue={input()}
+                          placeholder="Type your own answer"
+                          placeholderColor={theme.textMuted}
+                          minHeight={1}
+                          maxHeight={6}
+                          textColor={theme.text}
+                          focusedTextColor={theme.text}
+                          cursorColor={theme.primary}
+                          cursorStyle={tuiConfig.cursor}
+                        />
+                      </box>
+                    </Show>
+                    <Show when={!store.editing && input()}>
+                      <box paddingLeft={3}>
+                        <text fg={theme.textMuted}>{input()}</text>
+                      </box>
                     </Show>
                   </box>
-                  <Show when={store.editing}>
-                    <box paddingLeft={3}>
-                      <textarea
-                        ref={(val: TextareaRenderable) => {
-                          textarea = val
-                          val.traits = { status: "ANSWER" }
-                          queueMicrotask(() => {
-                            val.focus()
-                            val.gotoLineEnd()
-                          })
-                        }}
-                        initialValue={input()}
-                        placeholder="Type your own answer"
-                        placeholderColor={theme.textMuted}
-                        minHeight={1}
-                        maxHeight={6}
-                        textColor={theme.text}
-                        focusedTextColor={theme.text}
-                        cursorColor={theme.primary}
-                        cursorStyle={tuiConfig.cursor}
-                      />
-                    </box>
-                  </Show>
-                  <Show when={!store.editing && input()}>
-                    <box paddingLeft={3}>
-                      <text fg={theme.textMuted}>{input()}</text>
-                    </box>
-                  </Show>
-                </box>
-              </Show>
+                </Show>
               </box>
               <Show when={hasPreview()}>
                 <box

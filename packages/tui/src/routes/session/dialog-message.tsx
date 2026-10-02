@@ -2,7 +2,6 @@ import { createMemo } from "solid-js"
 import { useSync } from "../../context/sync"
 import { DialogSelect } from "../../ui/dialog-select"
 import { useSDK } from "../../context/sdk"
-import { Flag } from "@miao/core/flag/flag"
 import { useRoute } from "../../context/route"
 import { useClipboard } from "../../context/clipboard"
 import type { PromptInfo } from "../../component/prompt/history"
@@ -31,12 +30,7 @@ export function DialogMessage(props: {
             const msg = message()
             if (!msg) return
 
-            void (Flag.MIAO_TUI_V2
-              ? sdk.client.v2.session.revert.stage({ sessionID: props.sessionID, messageID: msg.id })
-              : sdk.client.session.revert({
-                  sessionID: props.sessionID,
-                  messageID: msg.id,
-                }))
+            void sdk.client.v2.session.revert.stage({ sessionID: props.sessionID, messageID: msg.id })
 
             if (props.setPrompt) {
               const parts = sync.data.part[msg.id]
@@ -81,14 +75,9 @@ export function DialogMessage(props: {
           value: "session.fork",
           description: "create a new session",
           onSelect: async (dialog) => {
-            const result = Flag.MIAO_TUI_V2
-              ? await sdk.client.v2.session
-                  .fork({ sessionID: props.sessionID, messageID: props.messageID })
-                  .then((r) => ({ data: r.data?.data }))
-              : await sdk.client.session.fork({
-                  sessionID: props.sessionID,
-                  messageID: props.messageID,
-                })
+            const result = await sdk.client.v2.session
+              .fork({ sessionID: props.sessionID, messageID: props.messageID })
+              .then((r) => ({ data: r.data?.data }))
             const msg = message()
             const prompt = msg
               ? sync.data.part[msg.id].reduce(
