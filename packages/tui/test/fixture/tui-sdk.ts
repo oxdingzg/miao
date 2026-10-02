@@ -157,6 +157,11 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
         location: { directory, project: { id: "proj_test", directory: worktree } },
         data: {},
       })
+    if (url.pathname === "/api/mcp/resources")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: {},
+      })
     if (/^\/api\/mcp\/[^/]+\/(connect|disconnect)$/.test(url.pathname))
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree } },

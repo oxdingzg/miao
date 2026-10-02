@@ -1,9 +1,24 @@
 import { appendFile } from "node:fs/promises"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js"
 
-const server = new Server({ name: "mock", version: "1.0.0" }, { capabilities: { tools: {} } })
+const server = new Server({ name: "mock", version: "1.0.0" }, { capabilities: { tools: {}, resources: {} } })
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  resources: [
+    {
+      uri: "file:///mock/readme.txt",
+      name: "readme.txt",
+      description: "Mock readme",
+      mimeType: "text/plain",
+    },
+  ],
+}))
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [

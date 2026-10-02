@@ -12036,6 +12036,45 @@ export type V2McpDisconnectResponses = {
 
 export type V2McpDisconnectResponse = V2McpDisconnectResponses[keyof V2McpDisconnectResponses]
 
+export type V2McpResourcesData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/resources"
+}
+
+export type V2McpResourcesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2McpResourcesError = V2McpResourcesErrors[keyof V2McpResourcesErrors]
+
+export type V2McpResourcesResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      [key: string]: McpResource
+    }
+  }
+}
+
+export type V2McpResourcesResponse = V2McpResourcesResponses[keyof V2McpResourcesResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never

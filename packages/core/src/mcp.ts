@@ -6,7 +6,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ToolFailure } from "@miao/llm"
-import { Status } from "@miao/schema/mcp"
+import { Resource, Status } from "@miao/schema/mcp"
 import { Context, Effect, Exit, JsonSchema, Layer, Schema, Scope } from "effect"
 import path from "node:path"
 import { Config } from "./config"
@@ -20,7 +20,7 @@ import { Tool } from "./tool/tool"
 import type { AnyTool } from "./tool/tool"
 import { Tools } from "./tool/tools"
 
-export { Status }
+export { Resource, Status }
 
 export type Server = ConfigMCP.Local | ConfigMCP.Remote
 
@@ -51,7 +51,10 @@ export const legacyToolName = (serverID: string, tool: string) =>
 type Connected = {
   readonly client: Client
   readonly tools: ReadonlyArray<{ name: string; description?: string; inputSchema?: unknown }>
+  readonly resources: ReadonlyArray<ResourceInfo>
 }
+
+type ResourceInfo = Awaited<ReturnType<Client["listResources"]>>["resources"][number]
 
 export const resultContent = (result: { content?: ReadonlyArray<unknown> }): ReadonlyArray<Tool.Content> =>
   (result.content ?? []).flatMap((item): Tool.Content[] => {
@@ -82,6 +85,7 @@ export interface Interface {
   readonly disconnect: (name: string) => Effect.Effect<void, NotFoundError>
   readonly add: (name: string, server: Server) => Effect.Effect<Record<string, Status>, NotFoundError>
   readonly remove: (name: string) => Effect.Effect<Record<string, Status>>
+  readonly resources: () => Effect.Effect<Record<string, Resource>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/MCP") {}
@@ -98,6 +102,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label?: string): Promis
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+const MAX_LIST_PAGES = 1_000
+
+// Mirror the V1 MCP catalog: only ask servers that advertise resources, and walk
+// every page so a large catalog is not silently truncated.
+async function listResources(client: Client, timeout?: number): Promise<ResourceInfo[]> {
+  if (!client.getServerCapabilities()?.resources) return []
+  const result: ResourceInfo[] = []
+  const cursors = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const listed = await client.listResources(cursor === undefined ? undefined : { cursor }, { timeout })
+    result.push(...listed.resources)
+    if (listed.nextCursor === undefined) return result
+    if (cursors.has(listed.nextCursor)) throw new Error(`MCP list returned duplicate cursor: ${listed.nextCursor}`)
+    cursors.add(listed.nextCursor)
+    cursor = listed.nextCursor
+  }
+  throw new Error(`MCP list exceeded ${MAX_LIST_PAGES} pages`)
 }
 
 function connectLocal(server: ConfigMCP.Local, directory: string): Effect.Effect<{ status: Status; connected?: Connected }> {
@@ -118,7 +142,8 @@ function connectLocal(server: ConfigMCP.Local, directory: string): Effect.Effect
       try: async () => {
         await withTimeout(client.connect(transport), server.timeout?.startup ?? DEFAULT_TIMEOUT)
         const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
-        return { client, tools: listed.tools } satisfies Connected
+        const resources = await listResources(client, server.timeout?.request).catch(() => [] as ResourceInfo[])
+        return { client, tools: listed.tools, resources } satisfies Connected
       },
       catch: (error) => error,
     }).pipe(
@@ -149,7 +174,8 @@ function connectRemote(server: ConfigMCP.Remote): Effect.Effect<{ status: Status
         try: async () => {
           await withTimeout(client.connect(transport), server.timeout?.startup ?? DEFAULT_TIMEOUT)
           const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
-          return { client, tools: listed.tools } satisfies Connected
+          const resources = await listResources(client, server.timeout?.request).catch(() => [] as ResourceInfo[])
+          return { client, tools: listed.tools, resources } satisfies Connected
         },
         catch: (error) => error,
       }).pipe(
@@ -262,6 +288,7 @@ const layer = Layer.effect(
     const clients = new Map<string, Client>()
     const scopes = new Map<string, Scope.Closeable>()
     const toolNames = new Map<string, string[]>()
+    const resourcesByServer = new Map<string, ReadonlyArray<ResourceInfo>>()
     const registered = new Set<string>()
 
     const entries = yield* config.entries()
@@ -276,6 +303,7 @@ const layer = Layer.effect(
       clients.delete(name)
       for (const tool of toolNames.get(name) ?? []) registered.delete(tool)
       toolNames.delete(name)
+      resourcesByServer.delete(name)
       if (child) yield* Scope.close(child, exit).pipe(Effect.ignore)
       if (client) yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
     })
@@ -295,6 +323,7 @@ const layer = Layer.effect(
         toolNames.set(name, Object.keys(registrations))
       }
       clients.set(name, result.connected.client)
+      resourcesByServer.set(name, result.connected.resources)
     })
 
     for (const [name, server] of servers) {
@@ -313,6 +342,7 @@ const layer = Layer.effect(
         toolNames.set(name, Object.keys(registrations))
       }
       clients.set(name, result.connected.client)
+      resourcesByServer.set(name, result.connected.resources)
     }
 
     yield* Effect.addFinalizer((exit) =>
@@ -326,6 +356,26 @@ const layer = Layer.effect(
     const status = Effect.fn("MCP.status")(function* () {
       const result: Record<string, Status> = {}
       for (const name of servers.keys()) result[name] = statuses.get(name) ?? { status: "disabled" }
+      return result
+    })
+
+    const resources = Effect.fn("MCP.resources")(function* () {
+      const result: Record<string, Resource> = {}
+      for (const [serverID, listed] of resourcesByServer) {
+        if (statuses.get(serverID)?.status !== "connected") continue
+        // Escape the separator and escape marker so a server id containing `:`
+        // cannot make the `server:uri` keys ambiguous, matching the V1 catalog.
+        const escaped = serverID.replaceAll("%", "%25").replaceAll(":", "%3A")
+        for (const resource of listed) {
+          result[`${escaped}:${resource.uri}`] = {
+            name: resource.name,
+            uri: resource.uri,
+            ...(resource.description !== undefined ? { description: resource.description } : {}),
+            ...(resource.mimeType !== undefined ? { mimeType: resource.mimeType } : {}),
+            client: serverID,
+          }
+        }
+      }
       return result
     })
 
@@ -354,6 +404,7 @@ const layer = Layer.effect(
       disconnect,
       add,
       remove,
+      resources,
     })
   }),
 )

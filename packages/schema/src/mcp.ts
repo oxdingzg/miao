@@ -1,6 +1,7 @@
 export * as MCP from "./mcp"
 
 import { Schema } from "effect"
+import { optional } from "./schema"
 
 export interface StatusConnected extends Schema.Schema.Type<typeof StatusConnected> {}
 export const StatusConnected = Schema.Struct({
@@ -43,3 +44,12 @@ export const Status = Schema.Union([
   StatusNeedsAuth,
   StatusNeedsClientRegistration,
 ]).annotate({ identifier: "McpServerStatus", discriminator: "status" })
+
+export interface Resource extends Schema.Schema.Type<typeof Resource> {}
+export const Resource = Schema.Struct({
+  name: Schema.String,
+  uri: Schema.String,
+  description: optional(Schema.String),
+  mimeType: optional(Schema.String),
+  client: Schema.String,
+}).annotate({ identifier: "McpResource" })

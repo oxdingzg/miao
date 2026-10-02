@@ -311,6 +311,8 @@ import type {
   V2McpConnectResponses,
   V2McpDisconnectErrors,
   V2McpDisconnectResponses,
+  V2McpResourcesErrors,
+  V2McpResourcesResponses,
   V2McpStatusErrors,
   V2McpStatusResponses,
   V2ModelDefaultErrors,
@@ -5227,6 +5229,28 @@ export class Mcp2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<V2McpDisconnectResponses, V2McpDisconnectErrors, ThrowOnError>({
       url: "/api/mcp/{name}/disconnect",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get MCP resources
+   *
+   * Get all available MCP resources from connected Model Context Protocol (MCP) servers.
+   */
+  public resources<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2McpResourcesResponses, V2McpResourcesErrors, ThrowOnError>({
+      url: "/api/mcp/resources",
       ...options,
       ...params,
     })

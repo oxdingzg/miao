@@ -57,4 +57,18 @@ export const McpGroup = HttpApiGroup.make("server.mcp")
         }),
       ),
   )
+  .add(
+    HttpApiEndpoint.get("mcp.resources", "/api/mcp/resources", {
+      query: LocationQuery,
+      success: Location.response(Schema.Record(Schema.String, MCP.Resource)),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.mcp.resources",
+          summary: "Get MCP resources",
+          description: "Get all available MCP resources from connected Model Context Protocol (MCP) servers.",
+        }),
+      ),
+  )
   .annotateMerge(OpenApi.annotations({ title: "mcp", description: "MCP server management routes." }))
