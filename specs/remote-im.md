@@ -138,3 +138,41 @@ miao remote status               # 通道连接状态、今日主动推送用量
    `work_dir` 管项目，切到任意目录要 `admin_from` 授权。
 4. **单写者**：要从 IM 驱动的会话必须开在 `miao remote` 的服务里，桌面用 `miao attach`。Claude Code Remote Control
    连的是本地 CLI 进程里的会话，Codex 是单个 app-server 进程，Happy 包住 CLI 进程，都是一个会话只归一个进程执行。
+
+## 实现状态（2026-10-02）
+
+阶段 1–3 已实现，阶段 3 的真机验收和阶段 4（飞书、Telegram）未做。
+
+- **代码位置**：`packages/remote`（`@miao/remote`，只依赖 `@miao/client`）放 Channel 接口、Router、微信适配器、
+  单实例锁和 launchd plist 生成；`packages/miao/src/cli/cmd/remote.ts` 是 `miao remote` 命令；配置 schema 在
+  `packages/core/src/config/remote.ts`（V1、V2 两套 schema 都已接入）。
+- **文件**：凭证 `~/.local/share/miao/remote-auth.json`（0600）。没有放进 `auth.json`，因为那里的条目会被当成
+  provider 密钥读进集成列表；做法同 `mcp-auth.json`。游标、context_token、通道状态、路由状态（编号、当前会话、
+  审批码、待取结果、推送用量）和锁都在 `~/.local/state/miao/remote/`，均为 0600、原子写入。
+- **单写者**：Router 订阅本服务的 `/api/event`，凡是在本服务的事件总线上出现过 `session.next.*` 事件的会话
+  （在这里新建或执行过，包括 `miao attach` 进来的操作）才算「本服务的会话」，可以驱动；其余会话 `/list` 里标「只读」，
+  驱动时拒绝并提示用 `miao attach` 打开后发一条消息。
+- **新建会话带上模型**：`/new` 用全局配置的 `model` 显式建会话。原因：没有模型的会话在冷启动的 location 上解析
+  默认模型时，插件还没把配置里的 provider 放进目录，会落到目录里第一个可用模型（测试里实测选中了无关的
+  `vercel/...` 模型）。这是内核的问题，这里只做规避。
+- **推送预算**：审批可以用掉最后一条预算；「结束/出错」通知要给审批留一条。超窗时完整结果进待取队列、只推短通知；
+  主动推送失败或预算用完时只进队列。一次补发最多约 3 条消息的长度，其余提示 `/r` 继续。
+- **审批与问答**：审批码 1–99 轮转，30 分钟过期；过期或重启后发 `/status` 会给仍在等待的请求重新发码。
+  问答用 `q7 2`（多选 `q7 1,3`，多题 `q7 1;2`，也可直接写文字），`n7` 拒绝。服务事件流重连后会补发断线期间的
+  审批请求。
+- **iLink 细节**：`channel_version` 与 `iLink-App-ClientVersion` 报所核对的协议版本 2.4.9，`bot_agent` 报
+  `miao/<版本>`；去重键 `from|message_id|seq|create_time_ms`（5 分钟）；游标在一批消息交给 Router 之后才落盘，
+  宁可崩溃后重投也不丢；`ret=-2` 不重试；`-14` 停止轮询并在凭证里标记需重新登录，`miao remote` 遇到该标记以
+  退出码 0 结束，避免 launchd 反复重启。
+- **launchd**：`miao remote install` 只写 `~/Library/LaunchAgents/dev.mtty.miao.remote.plist` 并打印
+  `launchctl bootstrap` 命令；plist 不含 `MIAO_SERVER_PASSWORD`。
+- **未做**：图片/文件消息（回复「暂时只支持文字」）、IM 里调用 miao 自己的斜杠命令、飞书与 Telegram、跨进程 fencing。
+- **测试**：`packages/remote/test`（问答解析、0600 原子写、launchd plist、iLink 协议细节、扫码登录含 redirect
+  与验证码、长轮询断线与超时、游标持久化、`-14`、单实例锁、切分与 `ret=-2`）；`packages/miao/test/remote`
+  （真实 `miao serve` + 假 LLM：list/use/new/定向发送/结果/审批/问答/中断/白名单/只读拒绝/重启保留/预算与待取；
+  经假 iLink 的端到端；`miao remote` 命令本身）。
+
+真机验收步骤：`miao remote login wechat` 扫码 → 在全局配置里写 `remote.projects` → `miao remote` →
+在微信里依次试 `/projects`、`/new <项目> 写一句话`、`/list`、触发一次需要审批的 bash 并回 `y码`、`/stop`、
+等两分钟以上再让一轮结束，确认收到「发 /r 取结果」通知并能取回 → 桌面 `miao attach http://127.0.0.1:4097`
+能看到同一批会话。
