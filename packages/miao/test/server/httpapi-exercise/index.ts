@@ -668,6 +668,12 @@ const scenarios: Scenario[] = [
     .json(200, locationData(array), "none"),
   http.protected.get("/api/agent", "v2.agent.list").json(200, locationData(array)),
   http.protected.get("/api/model", "v2.model.list").json(200, locationData(array)),
+  http.protected.get("/api/model/default", "v2.model.default").json(
+    200,
+    locationData((value) => {
+      if (value !== null) object(value)
+    }),
+  ),
   http.protected.get("/api/provider", "v2.provider.list").json(200, locationData(array)),
   http.protected.get("/api/integration", "v2.integration.list").json(200, locationData(array)),
   http.protected
