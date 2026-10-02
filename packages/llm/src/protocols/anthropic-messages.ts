@@ -26,6 +26,7 @@ import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
 
 const ADAPTER = "anthropic-messages"
+const IMAGE_MIMES = new Set<string>(ProviderShared.IMAGE_MIMES)
 export const DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 export const PATH = "/messages"
 
@@ -305,11 +306,7 @@ const lowerServerToolResult = Effect.fn("AnthropicMessages.lowerServerToolResult
 })
 
 const lowerImage = Effect.fn("AnthropicMessages.lowerImage")(function* (part: MediaPart) {
-  const media = yield* ProviderShared.validateMedia(
-    "Anthropic Messages",
-    part,
-    new Set<string>(ProviderShared.IMAGE_MIMES),
-  )
+  const media = yield* ProviderShared.validateMedia("Anthropic Messages", part, IMAGE_MIMES)
   return {
     type: "image" as const,
     source: {
@@ -326,11 +323,7 @@ const lowerToolResultContentItem = Effect.fn("AnthropicMessages.lowerToolResultC
   item: ToolContent,
 ) {
   if (item.type === "text") return { type: "text" as const, text: item.text } satisfies AnthropicTextBlock
-  const media = yield* ProviderShared.validateToolFile(
-    "Anthropic Messages",
-    item,
-    new Set<string>(ProviderShared.IMAGE_MIMES),
-  )
+  const media = yield* ProviderShared.validateToolFile("Anthropic Messages", item, IMAGE_MIMES)
   return {
     type: "image" as const,
     source: {
@@ -835,6 +828,7 @@ export const protocol = Protocol.make({
     schema: AnthropicMessagesBody,
     from: fromRequest,
   },
+  media: IMAGE_MIMES,
   stream: {
     event: Protocol.jsonEvent(AnthropicEvent),
     initial: () => ({ tools: ToolStream.empty<number>(), lifecycle: Lifecycle.initial() }),
@@ -868,6 +862,7 @@ export const vertexProtocol = Protocol.make({
         Effect.map(({ model: _, ...body }) => ({ ...body, anthropic_version: VERTEX_VERSION })),
       ),
   },
+  media: protocol.media,
   stream: protocol.stream,
 })
 

@@ -40,6 +40,13 @@ export interface Protocol<Body, Frame, Event, State> {
   readonly body: ProtocolBody<Body>
   /** Response side: streaming state machine. */
   readonly stream: ProtocolStream<Frame, Event, State>
+  /**
+   * Lowercase MIME types this protocol lowers from user-message media parts.
+   * Callers check it before building a request so an unsupported attachment
+   * (a PDF on OpenAI Chat, for example) can be replaced with a text note
+   * instead of failing the whole request. Absent means undeclared, not "none".
+   */
+  readonly media?: ReadonlySet<string>
 }
 
 export interface ProtocolBody<Body> {

@@ -16,6 +16,10 @@ export const FileAttachment = Schema.Struct({
   name: Schema.String.pipe(optional),
   description: Schema.String.pipe(optional),
   source: Source.pipe(optional),
+  // Absolute path on the submitting client's filesystem, set only when the
+  // attachment was read from a local file. Lets the model reach the original
+  // with tools when the provider cannot receive the bytes directly.
+  path: Schema.String.pipe(optional),
 })
   .annotate({ identifier: "Prompt.FileAttachment" })
   .pipe(
@@ -27,6 +31,7 @@ export const FileAttachment = Schema.Struct({
           name: input.name,
           description: input.description,
           source: input.source,
+          path: input.path,
         }),
     })),
   )

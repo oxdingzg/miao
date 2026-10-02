@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
+import path from "path"
+import { pathToFileURL } from "url"
 import { LLM, Message, Model } from "@miao/llm"
 import { LLMClient } from "@miao/llm/route"
 import * as OpenAIChat from "@miao/llm/protocols/openai-chat"
+import * as OpenAIResponses from "@miao/llm/protocols/openai-responses"
+import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
+import * as Gemini from "@miao/llm/protocols/gemini"
+import { AmazonBedrock } from "@miao/llm/providers"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
 import { SessionMessage } from "@miao/core/session/message"
@@ -194,6 +200,94 @@ Recent work
       mediaType: "image/png",
       data: "data:image/png;base64,aGVsbG8=",
       filename: "hello.png",
+    })
+  })
+
+  describe("attachments the route protocol cannot carry", () => {
+    const pdf = FileAttachment.make({
+      uri: "data:application/pdf;base64,JVBERi0=",
+      mime: "application/pdf",
+      name: "report.pdf",
+      path: "/home/me/report.pdf",
+    })
+    const prompt = (files: FileAttachment[]) =>
+      SessionMessage.User.make({ id: id("user"), type: "user", text: "Summarize", files, time: { created } })
+    const prepare = (target: Model, files: FileAttachment[]) =>
+      Effect.runPromise(
+        LLMClient.prepare(LLM.request({ id: "req", model: target, messages: toLLMMessages([prompt(files)], target) })),
+      )
+    const routes = [
+      ["OpenAI Chat", OpenAIChat.route],
+      ["OpenAI Responses", OpenAIResponses.route],
+      ["Anthropic Messages", AnthropicMessages.route],
+      ["Gemini", Gemini.route],
+    ] as const
+
+    test.each(routes)("%s receives a PDF as a note naming its local path", async (_, route) => {
+      const target = Model.make({ id: "model", provider: "provider", route })
+      const content = toLLMMessages([prompt([pdf])], target)[0].content
+      expect(content.some((part) => part.type === "media")).toBe(false)
+      expect(content[1]).toEqual({
+        type: "text",
+        text: [
+          '[attachment not sent: "report.pdf" (local file: /home/me/report.pdf), application/pdf]',
+          "This model/provider cannot receive application/pdf directly; read the file with tools (for PDFs: pdftotext, or render pages to images with pdftoppm and read them).",
+          "Tell the user that this attachment could not be sent to the model directly.",
+        ].join("\n"),
+      })
+      const body = JSON.stringify((await prepare(target, [pdf])).body)
+      expect(body).toContain("/home/me/report.pdf")
+      expect(body).not.toContain("JVBERi0=")
+    })
+
+    test("Bedrock Converse still receives the PDF as a document block", async () => {
+      const target = AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", apiKey: "test" }).model(
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+      )
+      expect(toLLMMessages([prompt([pdf])], target)[0].content[1]).toMatchObject({
+        type: "media",
+        mediaType: "application/pdf",
+      })
+      const body = JSON.stringify((await prepare(target, [pdf])).body)
+      expect(body).toContain('"document":{"format":"pdf","name":"report.pdf","source":{"bytes":"JVBERi0="}}')
+    })
+
+    test("names only the file when a remote client supplied no local path", () => {
+      const remote = FileAttachment.make({ uri: pdf.uri, mime: pdf.mime, name: "report.pdf" })
+      const note = toLLMMessages([prompt([remote])], model)[0].content[1]
+      expect(note.type === "text" ? note.text : "").toStartWith('[attachment not sent: "report.pdf", application/pdf]')
+    })
+
+    test("names the path of a file URI attachment", () => {
+      const local = path.resolve("scan.pdf")
+      const file = FileAttachment.make({ uri: pathToFileURL(local).href, mime: "application/pdf" })
+      const note = toLLMMessages([prompt([file])], model)[0].content[1]
+      expect(note.type === "text" ? note.text : "").toStartWith(
+        `[attachment not sent: "scan.pdf" (local file: ${local}), application/pdf]`,
+      )
+    })
+
+    test("replaces an image type the protocol does not accept", async () => {
+      const avif = FileAttachment.make({
+        uri: "data:image/avif;base64,AAAA",
+        mime: "image/avif",
+        name: "photo.avif",
+        path: "/home/me/photo.avif",
+      })
+      const png = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "ok.png" })
+      const content = toLLMMessages([prompt([avif, png])], model)[0].content
+      expect(content[1]).toMatchObject({ type: "text" })
+      expect(content[1].type === "text" ? content[1].text : "").toContain("cannot receive image/avif directly")
+      expect(content[2]).toMatchObject({ type: "media", mediaType: "image/png" })
+      await prepare(model, [avif, png])
+    })
+
+    test("keeps the capability placeholder for images on a model without image input", () => {
+      const avif = FileAttachment.make({ uri: "data:image/avif;base64,AAAA", mime: "image/avif", name: "photo.avif" })
+      expect(toLLMMessages([prompt([avif])], model, ["text"])[0].content[1]).toEqual({
+        type: "text",
+        text: "[image attachment omitted: model does not support image input: photo.avif]",
+      })
     })
   })
 

@@ -37,6 +37,8 @@ export interface Route<Body, Prepared = unknown> {
   readonly id: string
   readonly provider?: ProviderID
   readonly protocol: ProtocolID
+  /** User-message media MIME types the protocol accepts; see `Protocol.media`. */
+  readonly media?: ReadonlySet<string>
   readonly endpoint: Endpoint<Body>
   readonly auth: AuthDef
   readonly transport: Transport<Body, Prepared, unknown>
@@ -249,6 +251,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
       id: routeInput.id,
       provider: routeInput.provider === undefined ? undefined : ProviderID.make(routeInput.provider),
       protocol: protocol.id,
+      media: protocol.media,
       endpoint: routeInput.endpoint,
       auth: routeInput.auth ?? Auth.none,
       transport: routeInput.transport,

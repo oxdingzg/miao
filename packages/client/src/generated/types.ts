@@ -396,6 +396,7 @@ export type SessionsPromptInput = {
         readonly name?: string
         readonly description?: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+        readonly path?: string
       }>
       readonly agents?: ReadonlyArray<{
         readonly name: string
@@ -414,6 +415,7 @@ export type SessionsPromptInput = {
         readonly name?: string
         readonly description?: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+        readonly path?: string
       }>
       readonly agents?: ReadonlyArray<{
         readonly name: string
@@ -432,6 +434,7 @@ export type SessionsPromptInput = {
         readonly name?: string
         readonly description?: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+        readonly path?: string
       }>
       readonly agents?: ReadonlyArray<{
         readonly name: string
@@ -450,6 +453,7 @@ export type SessionsPromptInput = {
         readonly name?: string
         readonly description?: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+        readonly path?: string
       }>
       readonly agents?: ReadonlyArray<{
         readonly name: string
@@ -474,6 +478,7 @@ export type SessionsPromptOutput = {
         readonly name?: string
         readonly description?: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+        readonly path?: string
       }>
       readonly agents?: ReadonlyArray<{
         readonly name: string
@@ -569,6 +574,7 @@ export type SessionsContextOutput = {
           readonly name?: string
           readonly description?: string
           readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+          readonly path?: string
         }>
         readonly agents?: ReadonlyArray<{
           readonly name: string
@@ -645,6 +651,7 @@ export type SessionsContextOutput = {
                       readonly name?: string
                       readonly description?: string
                       readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+                      readonly path?: string
                     }>
                     readonly content: ReadonlyArray<
                       | { readonly type: "text"; readonly text: string }
@@ -958,6 +965,7 @@ export type SessionsHistoryOutput = {
               readonly name?: string
               readonly description?: string
               readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+              readonly path?: string
             }>
             readonly agents?: ReadonlyArray<{
               readonly name: string
@@ -985,6 +993,7 @@ export type SessionsHistoryOutput = {
               readonly name?: string
               readonly description?: string
               readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+              readonly path?: string
             }>
             readonly agents?: ReadonlyArray<{
               readonly name: string
@@ -1474,6 +1483,7 @@ export type SessionsEventsOutput =
             readonly name?: string
             readonly description?: string
             readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+            readonly path?: string
           }>
           readonly agents?: ReadonlyArray<{
             readonly name: string
@@ -1501,6 +1511,7 @@ export type SessionsEventsOutput =
             readonly name?: string
             readonly description?: string
             readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+            readonly path?: string
           }>
           readonly agents?: ReadonlyArray<{
             readonly name: string
@@ -1903,6 +1914,7 @@ export type SessionsMessageOutput = {
           readonly name?: string
           readonly description?: string
           readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+          readonly path?: string
         }>
         readonly agents?: ReadonlyArray<{
           readonly name: string
@@ -1979,6 +1991,7 @@ export type SessionsMessageOutput = {
                       readonly name?: string
                       readonly description?: string
                       readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+                      readonly path?: string
                     }>
                     readonly content: ReadonlyArray<
                       | { readonly type: "text"; readonly text: string }
@@ -2076,6 +2089,7 @@ export type MessagesListOutput = {
           readonly name?: string
           readonly description?: string
           readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+          readonly path?: string
         }>
         readonly agents?: ReadonlyArray<{
           readonly name: string
@@ -2152,6 +2166,7 @@ export type MessagesListOutput = {
                       readonly name?: string
                       readonly description?: string
                       readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+                      readonly path?: string
                     }>
                     readonly content: ReadonlyArray<
                       | { readonly type: "text"; readonly text: string }

@@ -499,6 +499,7 @@ export const protocol = Protocol.make({
     schema: OpenAIChatBody,
     from: fromRequest,
   },
+  media: IMAGE_MIMES,
   stream: {
     event: Protocol.jsonEvent(OpenAIChatEvent),
     initial: () => ({ tools: ToolStream.empty<number>(), toolCallEvents: [], lifecycle: Lifecycle.initial() }),

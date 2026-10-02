@@ -184,6 +184,32 @@ describe("SessionV2.prompt", () => {
     }),
   )
 
+  it.effect("keeps the client's local attachment path through admission", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+
+      const message = yield* session.prompt({
+        sessionID,
+        prompt: {
+          text: "Read [PDF 1]",
+          files: [{ uri: "data:application/pdf;base64,JVBERi0=", name: "report.pdf", path: "/home/me/report.pdf" }],
+        },
+        resume: false,
+      })
+
+      expect(message.prompt.files).toEqual([
+        {
+          uri: "data:application/pdf;base64,JVBERi0=",
+          name: "report.pdf",
+          path: "/home/me/report.pdf",
+          mime: "application/pdf",
+        },
+      ])
+      expect((yield* admitted(message.id))?.prompt.files).toEqual(message.prompt.files)
+    }),
+  )
+
   it.effect("streams durable Session events after an aggregate sequence", () =>
     Effect.gen(function* () {
       yield* setup

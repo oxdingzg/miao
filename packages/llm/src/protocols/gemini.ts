@@ -489,6 +489,7 @@ export const protocol = Protocol.make({
     schema: GeminiBody,
     from: fromRequest,
   },
+  media: MEDIA_MIMES,
   stream: {
     event: Protocol.jsonEvent(GeminiEvent),
     initial: () => ({ hasToolCalls: false, nextToolCallId: 0, lifecycle: Lifecycle.initial() }),

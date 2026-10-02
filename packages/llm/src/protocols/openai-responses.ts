@@ -26,6 +26,7 @@ import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
 
 const ADAPTER = "openai-responses"
+const IMAGE_MIMES = new Set<string>(ProviderShared.IMAGE_MIMES)
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1"
 export const PATH = "/responses"
 
@@ -310,11 +311,7 @@ const lowerUserContent = Effect.fn("OpenAIResponses.lowerUserContent")(function*
 ) {
   if (part.type === "text") return { type: "input_text" as const, text: part.text }
   if (part.type === "media") {
-    const media = yield* ProviderShared.validateMedia(
-      "OpenAI Responses",
-      part,
-      new Set<string>(ProviderShared.IMAGE_MIMES),
-    )
+    const media = yield* ProviderShared.validateMedia("OpenAI Responses", part, IMAGE_MIMES)
     return { type: "input_image" as const, image_url: media.dataUrl }
   }
   return yield* ProviderShared.unsupportedContent("OpenAI Responses", "user", ["text", "media"])
@@ -326,11 +323,7 @@ const lowerToolResultContentItem = Effect.fn("OpenAIResponses.lowerToolResultCon
   item: ToolContent,
 ) {
   if (item.type === "text") return { type: "input_text" as const, text: item.text }
-  const media = yield* ProviderShared.validateToolFile(
-    "OpenAI Responses",
-    item,
-    new Set<string>(ProviderShared.IMAGE_MIMES),
-  )
+  const media = yield* ProviderShared.validateToolFile("OpenAI Responses", item, IMAGE_MIMES)
   return { type: "input_image" as const, image_url: media.dataUrl }
 })
 
@@ -962,6 +955,7 @@ export const protocol = Protocol.make({
     schema: OpenAIResponsesBody,
     from: fromRequest,
   },
+  media: IMAGE_MIMES,
   stream: {
     event: Protocol.jsonEvent(OpenAIResponsesEvent),
     initial: (request) => ({

@@ -46,11 +46,15 @@ export const materializeBlobFiles = (blob: Blob.Interface, messages: readonly Se
 
 /**
  * Inlines text attachments as message text. Provider protocols accept only
- * image, audio, video and PDF media, so a source file attached with `@file`
- * (or a text data URI from `miao run --attach`) failed the whole turn with
- * "does not support media type". V1 read such files into the conversation; this
- * does the same. Whether an attachment is text is decided from its content, not
- * its MIME type: extension lookup calls a `.ts` file `video/mp2t`.
+ * binary media, and each a different subset (OpenAI, Anthropic: images; Gemini:
+ * images, audio, video; Bedrock: images and documents including PDF — see
+ * `Protocol.media`), so a source file attached with `@file` (or a text data URI
+ * from `miao run --attach`) failed the whole turn with "does not support media
+ * type". V1 read such files into the conversation; this does the same. Media
+ * (including PDF) is kept as an attachment here; `toLLMMessages` replaces any
+ * type the route's protocol rejects with a note. Whether an attachment is text
+ * is decided from its content, not its MIME type: extension lookup calls a `.ts`
+ * file `video/mp2t`.
  */
 export const inlineTextFiles = (fs: FSUtil.Interface, messages: readonly SessionMessage.Message[]) =>
   Effect.forEach(messages, (message) => {

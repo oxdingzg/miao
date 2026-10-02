@@ -10,6 +10,9 @@ export const FileAttachment = Schema.Struct({
   name: Schema.String.pipe(optional),
   description: Schema.String.pipe(optional),
   source: Source.pipe(optional),
+  // Absolute local path of the attached file, only when the client read it from
+  // its own filesystem. Remote clients without one omit it.
+  path: Schema.String.pipe(optional),
 })
   .annotate({ identifier: "PromptInput.FileAttachment" })
   .pipe(
