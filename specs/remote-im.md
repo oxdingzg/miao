@@ -310,7 +310,7 @@ Hermes（MIT）实现。扫码 SDK `@tencent-connect/qqbot-connector` 是 `UNLIC
 
 ### 实现状态（2026-10-02）
 
-步骤 1–4 与文档已实现，真机验收（微信、QQ 扫码，TUI `/remote`）未做。
+步骤 1–4 与文档已实现，真机验收（微信、QQ 扫码，TUI `/remote`）未做。之后补上：首个账号可完全在 TUI `/remote` 里接入并启动守护进程（见下文「TUI `/remote`」）。
 
 - **代码位置**：`packages/remote/src/connector.ts`（`defineConnector`、登录步骤、`callbackLogin` 把回调式登录转成步骤）、
   `accounts.ts`（凭证文件、按账号的状态目录、旧格式迁移）、`host.ts`（把账号变成 Channel、主人闸门、配对码、登录流程、状态）、
@@ -346,14 +346,33 @@ Hermes（MIT）实现。扫码 SDK `@tencent-connect/qqbot-connector` 是 `UNLIC
 - **守护进程控制接口**：在设计表格之外加了 `DELETE /api/remote/login/:flow`（取消登录）。路由走服务密码鉴权，只有 `miao remote` 把
   控制对象交给服务时才有效，其它服务（`miao serve`、TUI 内嵌服务）一律 404。`miao remote login` 先探测 `remote.port`，守护进程在跑就通过它
   登录（新账号立即生效），否则在本进程完成；`miao remote status` 优先读守护进程的实时状态，并显示守护进程是否在运行。
-  **`miao remote` 仍然在没有任何账号时拒绝启动**（行为不变），所以第一个账号要先用 CLI 登录，之后才能在 TUI 里接入更多。
+  **`miao remote` 没有任何账号时也照常启动**（服务与 `/api/remote*` 都起来，只记一条日志），之后经控制接口登录的账号立即热加入
+  Router；`-14`/需要重新登录的账号仍不轮询，进程照常运行（只在收到 SIGINT/SIGTERM 时以 0 退出），launchd plist 仍只在非 0 退出时重启。
 - **TUI `/remote`**：列表、状态（每 3 秒刷新，有变化才重绘）、回车接入（二维码用半格字符、白模块黑底绘制，与 CLI 共用 `uqr`）、
   `code`/`form` 用输入框（**secret 字段没有遮挡**，输入框组件不支持，界面会提示）、配对码与配对二维码、测试消息、重新配对、重新登录、断开（二次确认）。
-  守护进程没运行时只显示「前台启动」「安装常驻」要执行的命令（`miao remote install` + `launchctl bootstrap …`），不执行任何命令。
+  **守护进程没运行时整个流程也能在 `/remote` 里完成**（首个账号不必碰 CLI）：
+  - 本地登录：miao 通过 `TuiInput.remote` 注入 `RemoteLocal`（实现是 `packages/miao/src/cli/cmd/remote.ts` 的 `createRemoteLocal`，
+    在 `cli/tui/layer.ts` 里懒加载）。它用与 `miao remote login` 相同的 `createLocalHost`（同一组连接器、同一个 `remote-auth.json`），
+    在 TUI 进程内跑登录步骤；完成后列表显示「● 已登录（守护进程未运行）」，守护进程启动时读到同一份凭证。TUI 包不依赖 `@miao/remote`
+    （它只依赖 core 与 sdk），类型定义在 TUI、实现由 miao 组合注入，保持依赖方向。TUI 进程里的日志写到 `remote.log`。
+    连接器设置取自 TUI 所连服务的配置（`sync.data.config.remote`），守护进程读的是全局配置；两者只在项目配置覆盖 `remote.*` 时不同。
+  - 启动守护进程：macOS 上「启动守护进程（launchd 常驻）」写入与 `miao remote install` 相同的 plist，执行
+    `launchctl bootstrap gui/<uid> <plist>`（已加载则 `launchctl kickstart -k gui/<uid>/dev.mtty.miao.remote`）；
+    「仅本次启动（后台）」（其它平台只有这一项）以 detached 方式启动 `<当前可执行文件> remote`，stdout/stderr 追加到 `remote.log`。
+    两者都先在确认框里列出将要执行的命令，按回车确认才执行；失败时显示错误与可手动执行的命令。启动后每 500ms 轮询
+    `GET /api/remote`（最多 30 秒），就绪后自动切到守护进程视图。
+  - 停止守护进程（守护进程运行时出现）：launchd 已加载则 `launchctl bootout gui/<uid>/dev.mtty.miao.remote`，否则给
+    `/api/remote` 报告的 pid 发 SIGTERM；同样先确认，停止后轮询到服务不再响应。
+  - 命令构造与执行器在 `packages/remote/src/daemon.ts`（`createDaemonControl`，launchctl、spawn、kill、写文件全部经注入的 `DaemonSystem`）。
+  - 宿主没有注入 `RemoteLocal` 时（例如别的嵌入方），对话框退回只显示命令的旧行为。
   **「在守护进程里打开当前会话」只给出命令**（`miao attach http://127.0.0.1:<port> --session <id>`，需先退出当前 TUI），没有做原地重新 attach。
 - **测试**：`packages/remote/test`（accounts 迁移、host 登录流程与配对、第三方加载、一致性套件 ×3、QQ 扫码/加解密/token/域名回退/网关关闭码/
   Resume/心跳/收发策略/markdown 回退/输入中）；`packages/miao/test/remote`（QQ 端到端：被动确认、超窗主动推送、40054013 进待取；
-  守护进程：控制路由、经守护进程登录、断开、非 remote 服务 404、无守护进程时 CLI 登录与状态）；`packages/tui/test/cli/tui/dialog-remote.test.tsx`；
+  守护进程：控制路由、经守护进程登录、断开、非 remote 服务 404、无守护进程时 CLI 登录与状态、**无账号启动后经控制接口登录热加入**、
+  **只有 -14 账号时照常服务且不轮询**；子进程用 `bun run --preload packages/remote/test/preload.ts` 加同一个 loopback 守卫；
+  `local.test.ts`：`createRemoteLocal` 本地登录写入同一个凭证文件、取消）；`packages/remote/test/daemon.test.ts`（launchctl/detached/kill
+  命令构造，全部经假执行器）；`packages/tui/test/cli/tui/dialog-remote.test.tsx`（另含：守护进程未运行时本地登录、启动前确认与取消、
+  非 macOS 只给后台启动、启动失败显示手动命令、停止前确认）；
   `test/server/httpapi-exercise` 覆盖新路由的 404。所有 remote 测试经只允许 127.0.0.1 的 fetch/WebSocket 守卫（`packages/remote/test/preload.ts`）。
 - **未做**：真机验收；QQ 群聊（`GROUP_AT_MESSAGE_CREATE`）、图片与文件；Telegram、飞书、企业微信连接器；TUI 原地切换到守护进程。
 
@@ -364,5 +383,7 @@ Hermes（MIT）实现。扫码 SDK `@tencent-connect/qqbot-connector` 是 `UNLIC
 2. QQ：守护进程运行时执行 `miao remote login qq`（或在 TUI `/remote` 选「QQ 机器人」回车），用手机 QQ 扫码、新建专用机器人、点「连接到第三方平台」
    → 列表显示「● 已连接」→ 在 QQ 私聊里发 `/help`；让一轮超过 5 分钟再结束，确认结果仍被推送；在 QQ 里关闭该机器人的主动消息后重复，
    确认结果进入待取、发 `/r` 能取回。观察 markdown 消息的换行是否正常，不正常就设 `remote.qq.markdown: false`。
-3. TUI：在没有 attach 守护进程的 TUI 里输入 `/remote`，确认显示「这里的会话在手机上只读」和 attach 命令；守护进程未运行时只显示命令；
-   选中已接入账号可发测试消息、断开。
+3. TUI：在没有 attach 守护进程的 TUI 里输入 `/remote`，确认显示「这里的会话在手机上只读」和 attach 命令；选中已接入账号可发测试消息、断开。
+4. 纯 TUI 首次接入（不碰 CLI）：守护进程未运行时 `/remote` → 选「QQ 机器人」回车 → 手机 QQ 扫码 → 列表显示「● 已登录（守护进程未运行）」
+   → 选「启动守护进程（launchd 常驻）」→ 确认框里核对 `launchctl bootstrap …` 后回车 → 对话框切到「● 运行中」→ 手机上给机器人发 `/help`。
+   再选「停止守护进程」确认，列表回到「○ 未运行」。
