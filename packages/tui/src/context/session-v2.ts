@@ -164,7 +164,8 @@ function userParts(sessionID: string, message: Extract<SessionMessage, { type: "
   return parts
 }
 
-function toolPart(
+/** Maps one projected V2 tool call into the V1 `ToolPart` shape the renderers read. */
+export function toolPart(
   sessionID: string,
   messageID: string,
   tool: Extract<SessionMessage, { type: "assistant" }>["content"][number] & { type: "tool" },

@@ -1,22 +1,24 @@
 // Global event subscription and prompt turn coordination.
 //
-// Creates a long-lived global event stream subscription and feeds relevant
-// events for the current session tree through the reducers. The reducers
-// produce scrollback commits and footer patches, which get forwarded to the
-// footer through stream.ts.
+// Creates a long-lived global event stream subscription and feeds the V2
+// session events (`session.next.*`, `permission.v2.*`, `question.v2.*`) for the
+// current session tree through the reducers. The reducers produce scrollback
+// commits and footer patches, which get forwarded to the footer through
+// stream.ts. Reads and writes go through the V2 session routes only.
 //
-// Prompt turns are one-at-a-time: runPromptTurn() sends the prompt, arms a
+// Prompt turns are one-at-a-time: runPromptTurn() admits the prompt, arms a
 // deferred Wait, and resolves when the session becomes idle.
-// Prefer session.status idle events, but also poll session.status because some
-// transports can miss status events while still delivering message events. If
-// the turn is aborted (user interrupt), it flushes any in-progress parts as
-// interrupted entries.
+// Prefer `session.next.status` idle events, but also poll the session status
+// route because some transports can miss status events while still delivering
+// message events. If the turn is aborted (user interrupt), it flushes any
+// in-progress parts as interrupted entries.
 //
 // The tick counter prevents stale idle events from resolving the wrong turn.
 // We also re-check live session status before resolving an idle event so a
 // delayed idle from an older turn cannot complete a newer busy turn.
-import type { Event, GlobalEvent, OpencodeClient } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent, OpencodeClient } from "@opencode-ai/sdk/v2"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
+import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
 import { makeRuntime } from "@/effect/run-service"
 import {
   blockerStatus,
@@ -26,8 +28,17 @@ import {
   pickBlockerView,
   reduceSessionData,
   type SessionData,
+  type SessionV2Event,
 } from "./session-data"
 import { replayActiveText, replayLocalRows, replaySession } from "./session-replay"
+import {
+  loadTranscript,
+  permissionRequest,
+  questionRequest,
+  partKey,
+  transcriptEntries,
+  type TranscriptEntry,
+} from "./session-v2"
 import {
   bootstrapSubagentCalls,
   bootstrapSubagentData,
@@ -121,6 +132,9 @@ type State = {
   blockerTick: number
   selectedSubagent?: string
   blockers: Map<string, number>
+  // The agent and model last applied to the session; a V2 prompt carries
+  // neither, so a turn that selects different ones switches first.
+  selection?: { agent?: string; model?: { providerID: string; modelID: string; variant?: string } }
 }
 
 type TransportService = {
@@ -132,44 +146,36 @@ type TransportService = {
 
 class Service extends Context.Service<Service, TransportService>()("@miao/RunStreamTransport") {}
 
-function sid(event: Event): string | undefined {
-  if (event.type === "message.updated") {
-    return event.properties.sessionID
-  }
-
-  if (event.type === "message.part.delta") {
-    return event.properties.sessionID
-  }
-
-  if (event.type === "message.part.updated") {
-    return event.properties.part.sessionID
-  }
-
-  if (
-    event.type === "session.next.shell.started" ||
-    event.type === "session.next.shell.ended" ||
-    event.type === "permission.asked" ||
-    event.type === "permission.replied" ||
-    event.type === "question.asked" ||
-    event.type === "question.replied" ||
-    event.type === "question.rejected" ||
-    event.type === "session.error" ||
-    event.type === "session.status"
-  ) {
-    return event.properties.sessionID
-  }
-
-  return undefined
+function sid(event: SessionV2Event): string {
+  return event.properties.sessionID
 }
 
-function isEvent(value: unknown): value is Event {
+// The session an event is routed by: a child's creation belongs to its parent,
+// which links it to the running `task` call that spawned it.
+function owner(event: SessionV2Event): string {
+  if (event.type === "session.next.created") {
+    return event.properties.info.parentID ?? event.properties.sessionID
+  }
+
+  return event.properties.sessionID
+}
+
+function isSessionEvent(value: unknown): value is SessionV2Event {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false
   }
 
   const type = Reflect.get(value, "type")
   const properties = Reflect.get(value, "properties")
-  return typeof type === "string" && !!properties && typeof properties === "object"
+  if (typeof type !== "string" || !properties || typeof properties !== "object") {
+    return false
+  }
+
+  if (!type.startsWith("session.next.") && !type.startsWith("permission.v2.") && !type.startsWith("question.v2.")) {
+    return false
+  }
+
+  return typeof Reflect.get(properties, "sessionID") === "string"
 }
 
 function isGlobalEvent(value: unknown): value is GlobalEvent {
@@ -181,17 +187,12 @@ function isGlobalEvent(value: unknown): value is GlobalEvent {
   return !!payload && typeof payload === "object"
 }
 
-function globalPayloadEvent(value: unknown): Event | undefined {
+function globalPayloadEvent(value: unknown): SessionV2Event | undefined {
   if (!isGlobalEvent(value)) {
     return undefined
   }
 
-  const payload = value.payload
-  if (payload.type === "sync") {
-    return undefined
-  }
-
-  return isEvent(payload) ? payload : undefined
+  return isSessionEvent(value.payload) ? value.payload : undefined
 }
 
 function isMatchingDisposeEvent(value: unknown, directory: string | undefined): boolean {
@@ -206,24 +207,28 @@ function isMatchingDisposeEvent(value: unknown, directory: string | undefined): 
   return value.payload.type === "server.instance.disposed"
 }
 
-function active(event: Event, sessionID: string): boolean {
+// Events that prove the session started working on the current turn. Stream
+// fragments are left out: a late fragment from an earlier turn must not mark a
+// new turn live.
+function active(event: SessionV2Event, sessionID: string): boolean {
   if (sid(event) !== sessionID) {
     return false
   }
 
-  if (event.type === "message.updated") {
-    return event.properties.info.role === "assistant"
+  if (event.type === "session.next.status") {
+    return event.properties.status.type !== "idle"
   }
 
-  if (event.type === "message.part.delta" || event.type === "message.part.updated") {
-    return false
-  }
-
-  if (event.type !== "session.status") {
-    return true
-  }
-
-  return event.properties.status.type !== "idle"
+  return (
+    event.type === "session.next.step.started" ||
+    event.type === "session.next.prompted" ||
+    event.type === "session.next.shell.started" ||
+    event.type === "session.next.failed" ||
+    event.type === "session.next.retried" ||
+    event.type === "session.next.compaction.started" ||
+    event.type === "permission.v2.asked" ||
+    event.type === "question.v2.asked"
+  )
 }
 
 // Races the turn's deferred completion against an abort signal.
@@ -455,7 +460,7 @@ function createLayer(input: StreamInput) {
         let replaying = false
         let replayDisabled = false
         let replayPending: SessionResizeReplayInput | undefined
-        const buffered: Event[] = []
+        const buffered: SessionV2Event[] = []
         const replayedParts = new Set<string>()
         const recovering = new Set<string>()
         const tracked = (sessionID: string | undefined) =>
@@ -477,8 +482,8 @@ function createLayer(input: StreamInput) {
           state.blockers.set(id, state.blockerTick)
         }
 
-        const trackBlocker = (event: Event) => {
-          if (event.type !== "permission.asked" && event.type !== "question.asked") {
+        const trackBlocker = (event: SessionV2Event) => {
+          if (event.type !== "permission.v2.asked" && event.type !== "question.v2.asked") {
             return
           }
 
@@ -489,11 +494,11 @@ function createLayer(input: StreamInput) {
           seedBlocker(event.properties.id)
         }
 
-        const releaseBlocker = (event: Event) => {
+        const releaseBlocker = (event: SessionV2Event) => {
           if (
-            event.type !== "permission.replied" &&
-            event.type !== "question.replied" &&
-            event.type !== "question.rejected"
+            event.type !== "permission.v2.replied" &&
+            event.type !== "question.v2.replied" &&
+            event.type !== "question.v2.rejected"
           ) {
             return
           }
@@ -532,27 +537,6 @@ function createLayer(input: StreamInput) {
           state.footerView = current
         }
 
-        const resolveShellAgent = Effect.fn("RunStreamTransport.resolveShellAgent")(function* (
-          agent: string | undefined,
-        ) {
-          if (agent) {
-            return agent
-          }
-
-          const list = yield* Effect.promise(() =>
-            input.sdk.app.agents(input.directory ? { directory: input.directory } : undefined, { throwOnError: true }),
-          ).pipe(
-            Effect.map((item) => item.data ?? []),
-            Effect.orElseSucceed(() => []),
-          )
-          const next = list.find((item) => item.mode !== "subagent" && item.hidden !== true)?.name
-          if (next) {
-            return next
-          }
-
-          return yield* Effect.fail(new Error("no primary agent available for shell mode"))
-        })
-
         const recoverQuestion = Effect.fn("RunStreamTransport.recoverQuestion")(function* (partID: string) {
           if (recovering.has(partID)) {
             return
@@ -565,10 +549,10 @@ function createLayer(input: StreamInput) {
                 return
               }
 
-              const questions = yield* Effect.promise(() => input.sdk.question.list()).pipe(
-                Effect.map((item) => (item.data ?? []).filter((request) => request.sessionID === input.sessionID)),
-                Effect.orElseSucceed(() => []),
-              )
+              const questions = yield* Effect.tryPromise({
+                try: () => listQuestions(input.sessionID),
+                catch: (error) => error,
+              }).pipe(Effect.orElseSucceed(() => []))
               if (state.data.questions.length > 0 || !state.data.tools.has(partID)) {
                 return
               }
@@ -598,36 +582,42 @@ function createLayer(input: StreamInput) {
           }
         })
 
+        const listPermissions = (sessionID: string) =>
+          input.sdk.v2.session.permission
+            .list({ sessionID }, { throwOnError: true })
+            .then((item) => item.data.data.map(permissionRequest))
+
+        const listQuestions = (sessionID: string) =>
+          input.sdk.v2.session.question
+            .list({ sessionID }, { throwOnError: true })
+            .then((item) => item.data.data.map(questionRequest))
+
+        const entries = (sessionID: string, limit?: number) =>
+          Effect.tryPromise({ try: () => loadTranscript(input.sdk, sessionID, limit), catch: (error) => error }).pipe(
+            Effect.map((messages) =>
+              transcriptEntries({ sessionID, directory: input.directory ?? "", messages }).slice(
+                limit === undefined ? 0 : -limit,
+              ),
+            ),
+          )
+
         const messages = (sessionID: string, limit?: number) =>
-          Effect.promise(() =>
-            input.sdk.session.messages({
-              sessionID,
-              ...(typeof limit === "number" ? { limit } : {}),
-            }),
-          ).pipe(
-            Effect.map((item) => item.data ?? []),
+          entries(sessionID, limit).pipe(
+            Effect.map((list) => list.flatMap((entry) => (entry.type === "message" ? [entry.message] : []))),
             Effect.orElseSucceed(() => []),
           )
 
         const replayMessages = () =>
-          Effect.promise(() =>
-            input.sdk.session.messages({
-              sessionID: input.sessionID,
-              ...(input.replayLimit === undefined
-                ? {}
-                : { limit: Math.max(input.replayLimit, SUBAGENT_BOOTSTRAP_LIMIT) }),
-            }),
-          ).pipe(Effect.flatMap((item) => (item.error ? Effect.fail(item.error) : Effect.succeed(item.data ?? []))))
+          entries(
+            input.sessionID,
+            input.replayLimit === undefined ? undefined : Math.max(input.replayLimit, SUBAGENT_BOOTSTRAP_LIMIT),
+          )
 
         const replayRequests = () =>
           Effect.all(
             [
-              Effect.promise(() => input.sdk.permission.list()).pipe(
-                Effect.flatMap((item) => (item.error ? Effect.fail(item.error) : Effect.succeed(item.data ?? []))),
-              ),
-              Effect.promise(() => input.sdk.question.list()).pipe(
-                Effect.flatMap((item) => (item.error ? Effect.fail(item.error) : Effect.succeed(item.data ?? []))),
-              ),
+              Effect.tryPromise({ try: () => listPermissions(input.sessionID), catch: (error) => error }),
+              Effect.tryPromise({ try: () => listQuestions(input.sessionID), catch: (error) => error }),
             ],
             { concurrency: "unbounded" },
           )
@@ -674,43 +664,65 @@ function createLayer(input: StreamInput) {
         })
 
         const bootstrap = Effect.fn("RunStreamTransport.bootstrap")(function* () {
-          const [messagesList, children, permissions, questions] = yield* Effect.all(
+          const [entryList, children, session] = yield* Effect.all(
             [
-              messages(
+              entries(
                 input.sessionID,
                 input.replay
                   ? input.replayLimit === undefined
                     ? undefined
                     : Math.max(input.replayLimit, SUBAGENT_BOOTSTRAP_LIMIT)
                   : SUBAGENT_BOOTSTRAP_LIMIT,
-              ),
-              Effect.promise(() =>
-                input.sdk.session.children({
-                  sessionID: input.sessionID,
-                }),
-              ).pipe(
-                Effect.map((item) => item.data ?? []),
-                Effect.orElseSucceed(() => []),
-              ),
-              Effect.promise(() => input.sdk.permission.list()).pipe(
-                Effect.map((item) => item.data ?? []),
-                Effect.orElseSucceed(() => []),
-              ),
-              Effect.promise(() => input.sdk.question.list()).pipe(
-                Effect.map((item) => item.data ?? []),
-                Effect.orElseSucceed(() => []),
-              ),
+              ).pipe(Effect.orElseSucceed((): TranscriptEntry[] => [])),
+              Effect.tryPromise({
+                try: () =>
+                  input.sdk.v2.session
+                    .children({ sessionID: input.sessionID }, { throwOnError: true })
+                    .then((item) => item.data.data.map((child) => ({ id: child.id, title: child.title }))),
+                catch: (error) => error,
+              }).pipe(Effect.orElseSucceed((): Array<{ id: string; title?: string }> => [])),
+              Effect.tryPromise({
+                try: () =>
+                  input.sdk.v2.session
+                    .get({ sessionID: input.sessionID }, { throwOnError: true })
+                    .then((item) => item.data.data),
+                catch: (error) => error,
+              }).pipe(Effect.orElseSucceed(() => undefined)),
             ],
             {
               concurrency: "unbounded",
             },
           )
+          state.selection = {
+            agent: session?.agent,
+            model: session?.model
+              ? { providerID: session.model.providerID, modelID: session.model.id, variant: session.model.variant }
+              : undefined,
+          }
+          // V2 lists blockers per session: the root's and every child's.
+          const [permissions, questions] = yield* Effect.all(
+            [
+              Effect.forEach([input.sessionID, ...children.map((child) => child.id)], (sessionID) =>
+                Effect.tryPromise({ try: () => listPermissions(sessionID), catch: (error) => error }).pipe(
+                  Effect.orElseSucceed(() => []),
+                ),
+              ).pipe(Effect.map((list) => list.flat())),
+              Effect.forEach([input.sessionID, ...children.map((child) => child.id)], (sessionID) =>
+                Effect.tryPromise({ try: () => listQuestions(sessionID), catch: (error) => error }).pipe(
+                  Effect.orElseSucceed(() => []),
+                ),
+              ).pipe(Effect.map((list) => list.flat())),
+            ],
+            { concurrency: "unbounded" },
+          )
+          const messagesList = entryList.flatMap((entry) => (entry.type === "message" ? [entry.message] : []))
 
           const sessionPermissions = permissions.filter((item) => item.sessionID === input.sessionID)
           const sessionQuestions = questions.filter((item) => item.sessionID === input.sessionID)
           const history = input.replay
             ? replaySession({
-                messages: messagesList,
+                sessionID: input.sessionID,
+                entries: entryList,
                 permissions: sessionPermissions,
                 questions: sessionQuestions,
                 thinking: input.thinking,
@@ -719,9 +731,10 @@ function createLayer(input: StreamInput) {
               })
             : undefined
           const replay =
-            history && input.replayLimit !== undefined && messagesList.length > input.replayLimit
+            history && input.replayLimit !== undefined && entryList.length > input.replayLimit
               ? replaySession({
-                  messages: messagesList.slice(-input.replayLimit),
+                  sessionID: input.sessionID,
+                  entries: entryList.slice(-input.replayLimit),
                   permissions: sessionPermissions,
                   questions: sessionQuestions,
                   thinking: input.thinking,
@@ -800,13 +813,13 @@ function createLayer(input: StreamInput) {
         })
 
         const idle = Effect.fn("RunStreamTransport.idle")((fallback: boolean) =>
-          Effect.promise(() => input.sdk.session.status()).pipe(
-            Effect.map((out) => {
-              const item = out.data?.[input.sessionID]
-              return !item || item.type === "idle"
-            }),
-            Effect.orElseSucceed(() => fallback),
-          ),
+          Effect.tryPromise({
+            try: () =>
+              input.sdk.v2.session
+                .status({ sessionID: input.sessionID }, { throwOnError: true })
+                .then((out) => out.data.data.type === "idle"),
+            catch: (error) => error,
+          }).pipe(Effect.orElseSucceed(() => fallback)),
         )
 
         const fail = Effect.fn("RunStreamTransport.fail")(function* (error: unknown) {
@@ -824,7 +837,7 @@ function createLayer(input: StreamInput) {
           yield* Deferred.fail(next.done, error).pipe(Effect.ignore)
         })
 
-        const touch = (event: Event) => {
+        const touch = (event: SessionV2Event) => {
           const next = state.wait
           if (!next || !active(event, input.sessionID)) {
             return
@@ -847,9 +860,9 @@ function createLayer(input: StreamInput) {
           yield* Deferred.succeed(next.done, undefined).pipe(Effect.ignore)
         })
 
-        const mark = Effect.fn("RunStreamTransport.mark")(function* (event: Event) {
+        const mark = Effect.fn("RunStreamTransport.mark")(function* (event: SessionV2Event) {
           if (
-            event.type !== "session.status" ||
+            event.type !== "session.next.status" ||
             event.properties.sessionID !== input.sessionID ||
             event.properties.status.type !== "idle"
           ) {
@@ -880,21 +893,31 @@ function createLayer(input: StreamInput) {
           })
         }
 
-        const applyEvent = Effect.fn("RunStreamTransport.applyEvent")(function* (event: Event) {
-          if (event.type === "message.part.delta" && event.properties.sessionID === input.sessionID) {
-            if (replayedParts.has(event.properties.partID)) {
-              const seen = state.data.text.get(event.properties.partID) ?? ""
+        const applyEvent = Effect.fn("RunStreamTransport.applyEvent")(function* (event: SessionV2Event) {
+          if (
+            (event.type === "session.next.text.delta" || event.type === "session.next.reasoning.delta") &&
+            event.properties.sessionID === input.sessionID
+          ) {
+            const partID = partKey(
+              event.properties.assistantMessageID,
+              event.type === "session.next.text.delta" ? event.properties.textID : event.properties.reasoningID,
+            )
+            if (replayedParts.has(partID)) {
+              const seen = state.data.text.get(partID) ?? ""
               if (seen.endsWith(event.properties.delta)) {
                 return
               }
 
-              replayedParts.delete(event.properties.partID)
+              replayedParts.delete(partID)
             }
           }
 
           trackBlocker(event)
 
-          const prev = event.type === "message.part.updated" ? listSubagentTabs(state.subagent) : undefined
+          const prev =
+            event.type === "session.next.created" || event.properties.sessionID === input.sessionID
+              ? listSubagentTabs(state.subagent)
+              : undefined
           const next = reduceSessionData({
             data: state.data,
             event,
@@ -919,14 +942,12 @@ function createLayer(input: StreamInput) {
           }
 
           if (
-            event.type === "message.part.updated" &&
-            event.properties.part.sessionID === input.sessionID &&
-            event.properties.part.type === "tool" &&
-            event.properties.part.tool === "question" &&
-            event.properties.part.state.status === "running" &&
+            event.type === "session.next.tool.called" &&
+            event.properties.sessionID === input.sessionID &&
+            event.properties.tool === "question" &&
             state.data.questions.length === 0
           ) {
-            yield* recoverQuestion(event.properties.part.id).pipe(
+            yield* recoverQuestion(partKey(event.properties.assistantMessageID, event.properties.callID)).pipe(
               Effect.forkIn(scope, { startImmediately: true }),
               Effect.asVoid,
             )
@@ -953,10 +974,10 @@ function createLayer(input: StreamInput) {
         const drainBuffered = Effect.fn("RunStreamTransport.drainBuffered")(function* () {
           let pending = buffered.splice(0)
           while (pending.length > 0) {
-            const next: Event[] = []
+            const next: SessionV2Event[] = []
             let changed = false
             for (const event of pending) {
-              if (!tracked(sid(event))) {
+              if (!tracked(owner(event))) {
                 next.push(event)
                 continue
               }
@@ -1017,13 +1038,14 @@ function createLayer(input: StreamInput) {
             return false
           }
 
-          const [messagesList, [permissions, questions]] = source.value
+          const [entryList, [permissions, questions]] = source.value
           const sessionPermissions = permissions.filter((item) => item.sessionID === input.sessionID)
           const sessionQuestions = questions.filter((item) => item.sessionID === input.sessionID)
           const snapshot = yield* Effect.try({
             try: () => {
               const history = replaySession({
-                messages: messagesList,
+                sessionID: input.sessionID,
+                entries: entryList,
                 permissions: sessionPermissions,
                 questions: sessionQuestions,
                 thinking: input.thinking,
@@ -1039,9 +1061,10 @@ function createLayer(input: StreamInput) {
                     ? { ...history.patch, phase: "running" as const }
                     : history.patch,
                 visible:
-                  input.replayLimit !== undefined && messagesList.length > input.replayLimit
+                  input.replayLimit !== undefined && entryList.length > input.replayLimit
                     ? replaySession({
-                        messages: messagesList.slice(-input.replayLimit),
+                        sessionID: input.sessionID,
+                        entries: entryList.slice(-input.replayLimit),
                         permissions: sessionPermissions,
                         questions: sessionQuestions,
                         thinking: input.thinking,
@@ -1091,7 +1114,7 @@ function createLayer(input: StreamInput) {
           }
 
           for (const commit of replayLocalRows(
-            messagesList,
+            entryList,
             [...snapshot.value.visible.commits, ...snapshot.value.activeCommits],
             next.localRows(),
           )) {
@@ -1147,7 +1170,7 @@ function createLayer(input: StreamInput) {
                   return
                 }
 
-                const sessionID = sid(event)
+                const sessionID = owner(event)
                 if (booting || replaying) {
                   if (sessionID) {
                     input.trace?.write("recv.event", event)
@@ -1184,6 +1207,50 @@ function createLayer(input: StreamInput) {
         yield* Scope.provide(scope)(watch().pipe(Effect.forkScoped))
         yield* bootstrap()
 
+        // A V2 prompt carries only its content; the agent and model the footer
+        // selected are switched on the session first, and only when they changed.
+        const applySelection = Effect.fn("RunStreamTransport.applySelection")(function* (
+          next: SessionTurnInput,
+          signal: AbortSignal,
+        ) {
+          const current = state.selection ?? {}
+          if (next.agent && next.agent !== current.agent) {
+            const agent = next.agent
+            yield* Effect.tryPromise({
+              try: () =>
+                input.sdk.v2.session.switchAgent({ sessionID: input.sessionID, agent }, { signal, throwOnError: true }),
+              catch: (error) => error,
+            })
+            state.selection = { ...state.selection, agent }
+          }
+
+          const model = next.model
+          if (
+            !model ||
+            (current.model?.providerID === model.providerID &&
+              current.model.modelID === model.modelID &&
+              current.model.variant === next.variant)
+          ) {
+            return
+          }
+
+          yield* Effect.tryPromise({
+            try: () =>
+              input.sdk.v2.session.switchModel(
+                {
+                  sessionID: input.sessionID,
+                  model: { providerID: model.providerID, id: model.modelID, variant: next.variant },
+                },
+                { signal, throwOnError: true },
+              ),
+            catch: (error) => error,
+          })
+          state.selection = {
+            ...state.selection,
+            model: { providerID: model.providerID, modelID: model.modelID, variant: next.variant },
+          }
+        })
+
         const runPromptTurn = Effect.fn("RunStreamTransport.runPromptTurn")(function* (next: SessionTurnInput) {
           if (closed || next.signal?.aborted || input.footer.isClosed) {
             return
@@ -1217,19 +1284,29 @@ function createLayer(input: StreamInput) {
           abort.signal.addEventListener("abort", stop, { once: true })
           yield* poll(item, turn.signal).pipe(Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid)
 
-          const req = {
-            sessionID: input.sessionID,
-            messageID: next.prompt.messageID,
-            agent: next.agent,
-            model: next.model,
-            variant: next.variant,
-            parts: [
-              ...(next.includeFiles ? next.files : []),
-              { type: "text" as const, text: next.prompt.text },
-              ...next.prompt.parts,
-            ],
-          }
           const command = next.prompt.command
+          const prompt = promptInputFromParts([
+            ...(next.includeFiles ? next.files : []),
+            { type: "text", text: next.prompt.text },
+            ...next.prompt.parts,
+          ])
+          const agents = next.prompt.parts.flatMap((part) =>
+            part.type === "agent"
+              ? [
+                  {
+                    name: part.name,
+                    ...(part.source
+                      ? { source: { start: part.source.start, end: part.source.end, text: part.source.value } }
+                      : {}),
+                  },
+                ]
+              : [],
+          )
+          const armed = () => {
+            item.armed = true
+          }
+          // A V2 shell run records itself and returns once the command exits; it
+          // starts no provider turn, so the turn is over when the call returns.
           const send =
             next.prompt.mode === "shell"
               ? Effect.sync(() => {
@@ -1239,99 +1316,83 @@ function createLayer(input: StreamInput) {
                   })
                 }).pipe(
                   Effect.andThen(
-                    resolveShellAgent(next.agent)
-                      .pipe(
-                        Effect.flatMap((agent) =>
-                          Effect.promise(() =>
-                            input.sdk.session.shell(
-                              {
-                                sessionID: input.sessionID,
-                                agent,
-                                model: next.model,
-                                command: next.prompt.text,
-                              },
-                              { signal: turn.signal, throwOnError: true },
-                            ),
-                          ),
+                    Effect.tryPromise({
+                      try: () =>
+                        input.sdk.v2.session.shell(
+                          { sessionID: input.sessionID, command: next.prompt.text, resume: false },
+                          { signal: turn.signal, throwOnError: true },
                         ),
-                      )
-                      .pipe(
-                        Effect.tap(() =>
-                          Effect.sync(() => {
-                            input.trace?.write("send.shell.ok", {
-                              sessionID: input.sessionID,
-                            })
-                            item.armed = true
-                            item.live = true
-                          }),
-                        ),
-                        Effect.flatMap(() => Deferred.succeed(item.done, undefined).pipe(Effect.ignore)),
-                        Effect.catch((error) => Deferred.fail(item.done, error).pipe(Effect.ignore)),
-                        Effect.forkIn(scope, { startImmediately: true }),
-                        Effect.asVoid,
+                      catch: (error) => error,
+                    }).pipe(
+                      Effect.tap(() =>
+                        Effect.sync(() => {
+                          input.trace?.write("send.shell.ok", {
+                            sessionID: input.sessionID,
+                          })
+                          item.armed = true
+                          item.live = true
+                        }),
                       ),
+                      Effect.flatMap(() => Deferred.succeed(item.done, undefined).pipe(Effect.ignore)),
+                      Effect.catch((error) => Deferred.fail(item.done, error).pipe(Effect.ignore)),
+                      Effect.forkIn(scope, { startImmediately: true }),
+                      Effect.asVoid,
+                    ),
                   ),
                 )
               : command
                 ? Effect.sync(() => {
                     input.trace?.write("send.command", { sessionID: input.sessionID, command: command.name })
                   }).pipe(
+                    Effect.andThen(applySelection(next, turn.signal)),
                     Effect.andThen(
-                      Effect.promise(() =>
-                        input.sdk.session.command(
-                          {
-                            sessionID: input.sessionID,
-                            messageID: next.prompt.messageID,
-                            agent: next.agent,
-                            model: next.model ? `${next.model.providerID}/${next.model.modelID}` : undefined,
-                            variant: next.variant,
-                            command: command.name,
-                            arguments: command.arguments,
-                            parts: [
-                              ...(next.includeFiles ? next.files : []),
-                              ...next.prompt.parts.filter(
-                                (item): item is Extract<RunPromptPart, { type: "file" }> => item.type === "file",
-                              ),
-                            ],
-                          },
-                          { signal: turn.signal },
-                        ),
-                      ).pipe(
-                        Effect.tap(() =>
-                          Effect.sync(() => {
-                            input.trace?.write("send.command.ok", {
-                              sessionID: input.sessionID,
-                              command: command.name,
-                            })
-                            item.armed = true
-                            item.live = true
-                          }),
-                        ),
-                        Effect.flatMap(() => Deferred.succeed(item.done, undefined).pipe(Effect.ignore)),
-                        Effect.catch((error) => Deferred.fail(item.done, error).pipe(Effect.ignore)),
-                        Effect.forkIn(scope, { startImmediately: true }),
-                        Effect.asVoid,
-                      ),
+                      Effect.tryPromise({
+                        try: () =>
+                          input.sdk.v2.session.command(
+                            { sessionID: input.sessionID, command: command.name, arguments: command.arguments },
+                            { signal: turn.signal, throwOnError: true },
+                          ),
+                        catch: (error) => error,
+                      }),
                     ),
+                    Effect.tap(() =>
+                      Effect.sync(() => {
+                        input.trace?.write("send.command.ok", {
+                          sessionID: input.sessionID,
+                          command: command.name,
+                        })
+                        armed()
+                      }),
+                    ),
+                    Effect.asVoid,
                   )
                 : Effect.sync(() => {
-                    input.trace?.write("send.prompt", req)
+                    input.trace?.write("send.prompt", { sessionID: input.sessionID, prompt })
                   }).pipe(
+                    Effect.andThen(applySelection(next, turn.signal)),
                     Effect.andThen(
-                      Effect.promise(() =>
-                        input.sdk.session.promptAsync(req, {
-                          signal: turn.signal,
-                        }),
-                      ),
+                      Effect.tryPromise({
+                        try: () =>
+                          input.sdk.v2.session.prompt(
+                            {
+                              sessionID: input.sessionID,
+                              ...(next.prompt.messageID ? { id: next.prompt.messageID } : {}),
+                              prompt: agents.length > 0 ? { ...prompt, agents } : prompt,
+                            },
+                            { signal: turn.signal, throwOnError: true },
+                          ),
+                        catch: (error) => error,
+                      }),
                     ),
                     Effect.tap(() =>
                       Effect.sync(() => {
                         input.trace?.write("send.prompt.ok", {
                           sessionID: input.sessionID,
                         })
-                        item.armed = true
+                        armed()
                       }),
                     ),
+                    Effect.asVoid,
                   )
 
           yield* send.pipe(

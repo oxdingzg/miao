@@ -1,11 +1,25 @@
-import type { Event, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
-import { bootstrapSessionData, createSessionData, reduceSessionData, type SessionData } from "./session-data"
+// Rebuilds scrollback from a session's persisted transcript.
+//
+// The V2 transcript is mapped to V1-shaped messages plus shell and compaction
+// entries by `session-v2.ts`; each entry is fed through the same reducer the
+// live stream uses, so a replayed turn renders like the turn did live.
+import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
+import {
+  bootstrapSessionData,
+  compactionCommit,
+  createSessionData,
+  reduceSessionData,
+  type SessionData,
+  type SessionDataEvent,
+} from "./session-data"
+import type { TranscriptEntry } from "./session-v2"
 import { messagePrompt, type SessionMessages } from "./session.shared"
 import { messageTurnSummaryCommit } from "./turn-summary"
 import type { FooterPatch, LocalReplayRow, RunProvider, StreamCommit } from "./types"
 
 type ReplayInput = {
-  messages: SessionMessages
+  sessionID: string
+  entries: TranscriptEntry[]
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   thinking: boolean
@@ -32,7 +46,13 @@ type ReplayMessage = {
 
 const SHELL_SYNTHETIC_USER_TEXT = "The following tool was executed by the user"
 
-function apply(data: SessionData, event: Event, sessionID: string, thinking: boolean, limits: Record<string, number>) {
+function apply(
+  data: SessionData,
+  event: SessionDataEvent,
+  sessionID: string,
+  thinking: boolean,
+  limits: Record<string, number>,
+) {
   return reduceSessionData({
     data,
     event,
@@ -99,15 +119,24 @@ function replayPatch(data: SessionData, patch: FooterPatch | undefined) {
   } satisfies FooterPatch
 }
 
+// A legacy V1 shell run recorded a user message holding only this synthetic
+// text. The V2 projection keeps the text but drops the synthetic flag.
 function isShellSyntheticUser(message: SessionMessages[number]) {
   if (message.info.role !== "user") {
     return false
   }
 
   const prompt = messagePrompt(message)
+  if (prompt.parts.length > 0) {
+    return false
+  }
+
+  if (prompt.text.trim() === SHELL_SYNTHETIC_USER_TEXT) {
+    return true
+  }
+
   return (
     !prompt.text.trim() &&
-    prompt.parts.length === 0 &&
     message.parts.some((part) => part.type === "text" && part.synthetic && part.text === SHELL_SYNTHETIC_USER_TEXT)
   )
 }
@@ -158,7 +187,7 @@ function replayMessage(
 ): ReplayMessage {
   if (message.info.role === "user") {
     const prompt = messagePrompt(message)
-    if (!prompt.text.trim()) {
+    if (!prompt.text.trim() || isShellSyntheticUser(message)) {
       return {
         commits: [],
       }
@@ -230,25 +259,64 @@ function replayMessage(
   }
 }
 
+function replayShell(
+  data: SessionData,
+  entry: Extract<TranscriptEntry, { type: "shell" }>,
+  sessionID: string,
+  config: { thinking: boolean; limits: Record<string, number> },
+): ReplayMessage {
+  const started = apply(
+    data,
+    {
+      type: "session.next.shell.started",
+      properties: { sessionID, timestamp: 0, messageID: entry.id, callID: entry.callID, command: entry.command },
+    } as SessionDataEvent,
+    sessionID,
+    config.thinking,
+    config.limits,
+  )
+  if (!entry.completed) {
+    return { commits: started.commits, patch: started.footer?.patch }
+  }
+
+  const ended = apply(
+    data,
+    {
+      type: "session.next.shell.ended",
+      properties: { sessionID, timestamp: 0, callID: entry.callID, output: entry.output },
+    } as SessionDataEvent,
+    sessionID,
+    config.thinking,
+    config.limits,
+  )
+  return { commits: [...started.commits, ...ended.commits] }
+}
+
 export function replaySession(input: ReplayInput): SessionReplay {
   const data = createSessionData()
   const commits: StreamCommit[] = []
   let patch: FooterPatch | undefined
-  const summaries = summaryMessageIDs(input.messages)
+  const messages = input.entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : []))
+  const summaries = summaryMessageIDs(messages)
 
   bootstrapSessionData({
     data,
-    messages: input.messages,
+    messages,
     permissions: input.permissions,
     questions: input.questions,
   })
 
-  for (const message of input.messages) {
-    const next = replayMessage(data, message, input.thinking, {
-      limits: input.limits,
-      providers: input.providers,
-      summaries,
-    })
+  for (const entry of input.entries) {
+    const next =
+      entry.type === "message"
+        ? replayMessage(data, entry.message, input.thinking, {
+            limits: input.limits,
+            providers: input.providers,
+            summaries,
+          })
+        : entry.type === "shell"
+          ? replayShell(data, entry, input.sessionID, input)
+          : { commits: [compactionCommit(entry.id, entry.reason)] }
     commits.push(...next.commits)
     patch = mergePatch(patch, next.patch)
   }
@@ -261,11 +329,11 @@ export function replaySession(input: ReplayInput): SessionReplay {
 }
 
 export function replayLocalRows(
-  messages: SessionMessages,
+  entries: TranscriptEntry[],
   commits: StreamCommit[],
   rows: LocalReplayRow[],
 ): StreamCommit[] {
-  const persisted = new Set(messages.map((message) => message.info.id))
+  const persisted = new Set(entries.map((entry) => (entry.type === "message" ? entry.message.info.id : entry.id)))
   return rows.reduce((out, local) => {
     const row = local.commit
     if (row.kind === "user" && row.messageID && persisted.has(row.messageID)) {

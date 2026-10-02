@@ -7,11 +7,17 @@
 //
 // Data flow through the system:
 //
-//   SDK events → session-data reducer → StreamCommit[] + FooterOutput
+//   V2 session events → session-data reducer → StreamCommit[] + FooterOutput
 //     → stream.ts bridges to footer API
 //       → footer.ts queues commits and patches the footer view
 //         → OpenTUI split-footer renderer writes to terminal
-import type { OpencodeClient, PermissionRequest, QuestionRequest, ToolPart } from "@opencode-ai/sdk/v2"
+import type {
+  OpencodeClient,
+  PermissionRequest,
+  QuestionRequest,
+  QuestionV2Answer,
+  ToolPart,
+} from "@opencode-ai/sdk/v2"
 import type { TuiConfig } from "@miao/tui/config"
 
 export type RunFilePart = {
@@ -280,11 +286,17 @@ export type FooterEvent =
       state: FooterSubagentState
     }
 
-export type PermissionReply = Parameters<OpencodeClient["permission"]["reply"]>[0]
+// Replies go to the V2 routes, which address a request through the session
+// that owns it (a subagent's child session for its blockers).
+export type PermissionReply = Parameters<OpencodeClient["v2"]["session"]["permission"]["reply"]>[0]
 
-export type QuestionReply = Parameters<OpencodeClient["question"]["reply"]>[0]
+export type QuestionReply = {
+  sessionID: string
+  requestID: string
+  answers: QuestionV2Answer[]
+}
 
-export type QuestionReject = Parameters<OpencodeClient["question"]["reject"]>[0]
+export type QuestionReject = Parameters<OpencodeClient["v2"]["session"]["question"]["reject"]>[0]
 
 export type RunTuiConfig = Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout" | "diff_style">
 

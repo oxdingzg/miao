@@ -268,8 +268,10 @@ export const RunCommand = effectCmd({
     yield* Effect.promise(async () => {
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
       const interactive = args.mini
-      // The interactive --mini mode still renders V1 events; headless runs use V2.
+      // Headless runs use V2 unless MIAO_TUI_V2=0; the interactive --mini mode
+      // only speaks V2.
       const headlessV2 = !interactive && Flag.MIAO_TUI_V2
+      const sessionsV2 = interactive || headlessV2
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
@@ -453,7 +455,7 @@ export const RunCommand = effectCmd({
       }
 
       async function session(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
-        if (headlessV2) return sessionV2(sdk)
+        if (sessionsV2) return sessionV2(sdk)
         if (args.session) {
           const current = await sdk.session
             .get({
@@ -577,6 +579,7 @@ export const RunCommand = effectCmd({
         sdk: OpencodeClient,
         input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
       ): Promise<SessionInfo> {
+        if (sessionsV2) return createFreshSessionV2(sdk, input)
         const result = await sdk.session.create({
           title: args.title !== undefined && args.title !== "" ? args.title : undefined,
           agent: input.agent,
@@ -598,6 +601,27 @@ export const RunCommand = effectCmd({
           id,
           title: result.data?.title,
         }
+      }
+
+      // V2 counterpart of createFreshSession(): the selected agent and model are
+      // switched on the new session, which is what a V2 prompt then runs with.
+      async function createFreshSessionV2(
+        sdk: OpencodeClient,
+        input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
+      ): Promise<SessionInfo> {
+        const created = await sdk.v2.session
+          .create({ location: { directory: directory ?? root } }, { throwOnError: true })
+          .then((result) => result.data.data)
+        if (input.agent) await sdk.v2.session.switchAgent({ sessionID: created.id, agent: input.agent })
+        if (input.model)
+          await sdk.v2.session.switchModel({
+            sessionID: created.id,
+            model: { providerID: input.model.providerID, id: input.model.modelID, variant: input.variant },
+          })
+        const name = args.title !== undefined && args.title !== "" ? args.title : undefined
+        if (name) await sdk.v2.session.rename({ sessionID: created.id, title: name })
+        void share(sdk, created.id).catch(() => {})
+        return { id: created.id, title: name ?? created.title }
       }
 
       async function current(sdk: OpencodeClient): Promise<string> {

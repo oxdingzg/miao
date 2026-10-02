@@ -15,8 +15,8 @@
 // Demo mode also handles permission and question replies locally, completing
 // or failing the synthetic tool parts as appropriate.
 import path from "path"
-import type { Event, ToolPart } from "@opencode-ai/sdk/v2"
-import { createSessionData, reduceSessionData, type SessionData } from "./session-data"
+import type { ToolPart } from "@opencode-ai/sdk/v2"
+import { createSessionData, reduceSessionData, type SessionData, type SessionDataEvent } from "./session-data"
 import { writeSessionOutput } from "./stream"
 import type { FooterApi, PermissionReply, QuestionReject, QuestionReply, RunPrompt, StreamCommit } from "./types"
 
@@ -256,7 +256,7 @@ function take(state: State, key: "msg" | "part" | "call" | "perm" | "ask", prefi
   return `demo_${prefix}_${state[key]}`
 }
 
-function feed(state: State, event: Event): void {
+function feed(state: State, event: SessionDataEvent): void {
   const out = reduceSessionData({
     data: state.data,
     event,
@@ -307,7 +307,7 @@ function open(state: State): string {
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
   return id
 }
 
@@ -332,7 +332,7 @@ async function emitText(state: State, body: string, signal?: AbortSignal): Promi
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 
   let next = ""
   for (const item of split(body)) {
@@ -350,7 +350,7 @@ async function emitText(state: State, body: string, signal?: AbortSignal): Promi
         field: "text",
         delta: item,
       },
-    } as Event)
+    } as SessionDataEvent)
     await wait(45, signal)
   }
 
@@ -371,7 +371,7 @@ async function emitText(state: State, body: string, signal?: AbortSignal): Promi
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 async function emitReasoning(state: State, body: string, signal?: AbortSignal): Promise<void> {
@@ -395,7 +395,7 @@ async function emitReasoning(state: State, body: string, signal?: AbortSignal): 
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 
   let next = ""
   for (const item of split(body)) {
@@ -413,7 +413,7 @@ async function emitReasoning(state: State, body: string, signal?: AbortSignal): 
         field: "text",
         delta: item,
       },
-    } as Event)
+    } as SessionDataEvent)
     await wait(45, signal)
   }
 
@@ -434,7 +434,7 @@ async function emitReasoning(state: State, body: string, signal?: AbortSignal): 
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 function make(state: State, tool: string, input: Record<string, unknown>): Ref {
@@ -471,7 +471,7 @@ function startTool(state: State, ref: Ref, metadata: Record<string, unknown> = {
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 function askPermission(state: State, item: Permit): void {
@@ -484,20 +484,21 @@ function askPermission(state: State, item: Permit): void {
   })
 
   feed(state, {
-    type: "permission.asked",
+    type: "permission.v2.asked",
     properties: {
       id,
       sessionID: state.id,
-      permission: item.permission,
-      patterns: item.patterns,
+      action: item.permission,
+      resources: item.patterns,
       metadata: item.metadata ?? {},
-      always: item.always,
-      tool: {
+      save: item.always,
+      source: {
+        type: "tool",
         messageID: item.ref.msg,
         callID: item.ref.call,
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 function doneTool(
@@ -534,7 +535,7 @@ function doneTool(
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 function failTool(state: State, ref: Ref, error: string): void {
@@ -562,23 +563,22 @@ function failTool(state: State, ref: Ref, error: string): void {
         },
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 function emitError(state: State, text: string): void {
   const event = {
-    id: `session.error:${state.id}:${Date.now()}`,
-    type: "session.error",
+    id: `session.failed:${state.id}:${Date.now()}`,
+    type: "session.next.failed",
     properties: {
       sessionID: state.id,
+      timestamp: Date.now(),
       error: {
-        name: "UnknownError",
-        data: {
-          message: text,
-        },
+        type: "unknown",
+        message: text,
       },
     },
-  } satisfies Event
+  } satisfies SessionDataEvent
   feed(state, event)
 }
 
@@ -1007,7 +1007,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
   state.asks.set(id, { ref })
 
   feed(state, {
-    type: "question.asked",
+    type: "question.v2.asked",
     properties: {
       id,
       sessionID: state.id,
@@ -1017,7 +1017,7 @@ function emitQuestion(state: State, kind: QuestionKind = "multi"): void {
         callID: ref.call,
       },
     },
-  } as Event)
+  } as SessionDataEvent)
 }
 
 async function emitFmt(state: State, kind: string, body: string, signal?: AbortSignal): Promise<boolean> {
@@ -1201,13 +1201,13 @@ export function createRunDemo(input: Input) {
     state.perms.delete(input.requestID)
     const event = {
       id: `permission.replied:${input.requestID}:${Date.now()}`,
-      type: "permission.replied",
+      type: "permission.v2.replied",
       properties: {
         sessionID: state.id,
         requestID: input.requestID,
         reply: input.reply,
       },
-    } satisfies Event
+    } satisfies SessionDataEvent
     feed(state, event)
 
     if (input.reply === "reject") {
@@ -1228,13 +1228,13 @@ export function createRunDemo(input: Input) {
     state.asks.delete(input.requestID)
     const event = {
       id: `question.replied:${input.requestID}:${Date.now()}`,
-      type: "question.replied",
+      type: "question.v2.replied",
       properties: {
         sessionID: state.id,
         requestID: input.requestID,
         answers: input.answers,
       },
-    } satisfies Event
+    } satisfies SessionDataEvent
     feed(state, event)
     doneTool(state, ask.ref, {
       title: "question",
@@ -1254,12 +1254,12 @@ export function createRunDemo(input: Input) {
 
     state.asks.delete(input.requestID)
     feed(state, {
-      type: "question.rejected",
+      type: "question.v2.rejected",
       properties: {
         sessionID: state.id,
         requestID: input.requestID,
       },
-    } as Event)
+    } as SessionDataEvent)
     failTool(state, ask.ref, "question rejected")
     return true
   }

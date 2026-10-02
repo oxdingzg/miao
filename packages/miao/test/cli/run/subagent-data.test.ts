@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Event } from "@opencode-ai/sdk/v2"
 import { entryBody } from "@/cli/cmd/run/entry.body"
+import type { SessionDataEvent } from "@/cli/cmd/run/session-data"
 import {
   bootstrapSubagentCalls,
   bootstrapSubagentData,
@@ -42,7 +42,7 @@ function visible(commits: Array<Parameters<typeof entryBody>[0]>) {
 function reduce(data: ReturnType<typeof createSubagentData>, event: unknown) {
   return reduceSubagentData({
     data,
-    event: event as Event,
+    event: event as SessionDataEvent,
     sessionID: "parent-1",
     thinking: true,
     limits: {},
@@ -292,108 +292,48 @@ describe("run subagent data", () => {
       questions: [],
     })
 
-    reduce(data, {
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "txt-user-1",
-          messageID: "msg-user-1",
-          sessionID: "child-1",
-          type: "text",
-          text: "Inspect footer tabs",
-        },
-      },
+    const child = (type: string, properties: Record<string, unknown>) =>
+      reduce(data, { type, properties: { sessionID: "child-1", timestamp: 1, ...properties } })
+    child("session.next.prompted", {
+      messageID: "msg-user-1",
+      prompt: { text: "Inspect footer tabs" },
+      delivery: "steer",
+    })
+    child("session.next.step.started", {
+      assistantMessageID: "msg-assistant-1",
+      agent: "explore",
+      model: { providerID: "openai", id: "gpt-5" },
+    })
+    child("session.next.reasoning.started", { assistantMessageID: "msg-assistant-1", reasoningID: "reason-1" })
+    child("session.next.reasoning.delta", {
+      assistantMessageID: "msg-assistant-1",
+      reasoningID: "reason-1",
+      delta: "planning next steps",
+    })
+    child("session.next.tool.called", {
+      assistantMessageID: "msg-assistant-1",
+      callID: "call-1",
+      tool: "bash",
+      input: { command: "git status --short" },
+      provider: { executed: false },
     })
     reduce(data, {
-      type: "message.updated",
-      properties: {
-        sessionID: "child-1",
-        info: {
-          id: "msg-user-1",
-          role: "user",
-        },
-      },
-    })
-    reduce(data, {
-      type: "message.updated",
-      properties: {
-        sessionID: "child-1",
-        info: {
-          id: "msg-assistant-1",
-          role: "assistant",
-        },
-      },
-    })
-    reduce(data, {
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "reason-1",
-          messageID: "msg-assistant-1",
-          sessionID: "child-1",
-          type: "reasoning",
-          text: "planning next steps",
-          time: { start: 1 },
-        },
-      },
-    })
-    reduce(data, {
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "tool-1",
-          messageID: "msg-assistant-1",
-          sessionID: "child-1",
-          type: "tool",
-          callID: "call-1",
-          tool: "bash",
-          state: {
-            status: "running",
-            input: {
-              command: "git status --short",
-            },
-            time: { start: 1 },
-          },
-        },
-      },
-    })
-    reduce(data, {
-      type: "permission.asked",
+      type: "permission.v2.asked",
       properties: {
         id: "perm-1",
         sessionID: "child-1",
-        permission: "bash",
-        patterns: ["git status --short"],
-        metadata: {},
-        always: [],
-        tool: {
+        action: "bash",
+        resources: ["git status --short"],
+        source: {
+          type: "tool",
           messageID: "msg-assistant-1",
           callID: "call-1",
         },
       },
     })
-    reduce(data, {
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "txt-1",
-          messageID: "msg-assistant-1",
-          sessionID: "child-1",
-          type: "text",
-          text: "hello",
-        },
-      },
-    })
-    reduce(data, {
-      type: "message.part.delta",
-      properties: {
-        sessionID: "child-1",
-        messageID: "msg-assistant-1",
-        partID: "txt-1",
-        field: "text",
-        delta: " world",
-      },
-    })
+    child("session.next.text.started", { assistantMessageID: "msg-assistant-1", textID: "txt-1" })
+    child("session.next.text.delta", { assistantMessageID: "msg-assistant-1", textID: "txt-1", delta: "hello" })
+    child("session.next.text.delta", { assistantMessageID: "msg-assistant-1", textID: "txt-1", delta: " world" })
 
     const snapshot = snapshotSubagentData(data)
 
@@ -496,44 +436,12 @@ describe("run subagent data", () => {
     })
 
     reduce(data, {
-      type: "message.updated",
+      type: "session.next.step.failed",
       properties: {
         sessionID: "child-1",
-        info: {
-          id: "msg-assistant-1",
-          sessionID: "child-1",
-          role: "assistant",
-          time: {
-            created: 1,
-            completed: 2,
-          },
-          error: {
-            name: "MessageAbortedError",
-            data: {
-              message: "Aborted",
-            },
-          },
-          parentID: "msg-user-1",
-          providerID: "openai",
-          modelID: "gpt-5",
-          mode: "default",
-          agent: "explore",
-          path: {
-            cwd: "/tmp",
-            root: "/tmp",
-          },
-          cost: 0,
-          tokens: {
-            input: 1,
-            output: 1,
-            reasoning: 0,
-            cache: {
-              read: 0,
-              write: 0,
-            },
-          },
-          finish: "error",
-        },
+        timestamp: 2,
+        assistantMessageID: "msg-assistant-1",
+        error: { type: "unknown", message: "Provider turn interrupted" },
       },
     })
 
@@ -542,6 +450,90 @@ describe("run subagent data", () => {
         sessionID: "child-1",
         status: "cancelled",
       }),
+    ])
+  })
+
+  test("links a running task call to the child it spawns, then settles the tab", () => {
+    const data = createSubagentData()
+    const root = (type: string, properties: Record<string, unknown>) =>
+      reduce(data, { type, properties: { sessionID: "parent-1", timestamp: 5, ...properties } })
+
+    root("session.next.tool.called", {
+      assistantMessageID: "msg_root",
+      callID: "call_task",
+      tool: "task",
+      input: { description: "Scan reducer paths", subagent_type: "explore", prompt: "scan" },
+      provider: { executed: false },
+    })
+    expect(snapshotSubagentData(data).tabs).toEqual([])
+
+    expect(
+      reduce(data, {
+        type: "session.next.created",
+        properties: { sessionID: "child-9", timestamp: 6, info: { id: "child-9", parentID: "parent-1" } },
+      }),
+    ).toBe(true)
+    expect(snapshotSubagentData(data).tabs).toEqual([
+      expect.objectContaining({
+        sessionID: "child-9",
+        label: "Explore",
+        description: "Scan reducer paths",
+        status: "running",
+      }),
+    ])
+
+    root("session.next.tool.success", {
+      assistantMessageID: "msg_root",
+      callID: "call_task",
+      structured: { sessionID: "child-9", text: "done" },
+      content: [{ type: "text", text: "done" }],
+      provider: { executed: false },
+    })
+    expect(snapshotSubagentData(data).tabs).toEqual([
+      expect.objectContaining({ sessionID: "child-9", status: "completed" }),
+    ])
+  })
+
+  test("ignores children of other sessions", () => {
+    const data = createSubagentData()
+    reduce(data, {
+      type: "session.next.tool.called",
+      properties: {
+        sessionID: "parent-1",
+        timestamp: 5,
+        assistantMessageID: "msg_root",
+        callID: "call_task",
+        tool: "task",
+        input: { description: "x", subagent_type: "explore", prompt: "x" },
+        provider: { executed: false },
+      },
+    })
+
+    expect(
+      reduce(data, {
+        type: "session.next.created",
+        properties: { sessionID: "child-9", timestamp: 6, info: { id: "child-9", parentID: "someone-else" } },
+      }),
+    ).toBe(false)
+    expect(snapshotSubagentData(data).tabs).toEqual([])
+  })
+
+  test("pairs a task still running at bootstrap with its unreported child", () => {
+    const data = createSubagentData()
+    const running = taskMessage("unused", "running")
+    const part = running.parts[0]
+    if (part?.type !== "tool" || part.state.status !== "running") throw new Error("expected a running task part")
+
+    bootstrapSubagentData({
+      data,
+      messages: [{ parts: [{ ...part, state: { ...part.state, metadata: {} } }] }],
+      children: [{ id: "child-7" }],
+      permissions: [],
+      questions: [],
+    })
+
+    expect(snapshotSubagentData(data).tabs).toEqual([
+      expect.objectContaining({ sessionID: "child-7", status: "running" }),
     ])
   })
 })

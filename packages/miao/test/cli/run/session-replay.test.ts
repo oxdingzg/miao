@@ -1,7 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { replayLocalRows, replaySession } from "@/cli/cmd/run/session-replay"
 import type { SessionMessages } from "@/cli/cmd/run/session.shared"
-import type { RunProvider } from "@/cli/cmd/run/types"
+import type { RunProvider, StreamCommit, LocalReplayRow } from "@/cli/cmd/run/types"
+
+// These cases replay V1-shaped messages directly, the shape `session-v2.ts`
+// maps the V2 transcript into; `session-v2.test.ts` covers that mapping.
+function entries(messages: SessionMessages) {
+  return messages.map((message) => ({ type: "message" as const, message }))
+}
+
+function replay(
+  input: Omit<Parameters<typeof replaySession>[0], "sessionID" | "entries"> & { messages: SessionMessages },
+) {
+  const { messages, ...rest } = input
+  return replaySession({ sessionID: "session-1", entries: entries(messages), ...rest })
+}
+
+function local(messages: SessionMessages, commits: StreamCommit[], rows: LocalReplayRow[]) {
+  return replayLocalRows(entries(messages), commits, rows)
+}
 
 function userMessage(id: string, text: string): SessionMessages[number] {
   return {
@@ -251,7 +268,7 @@ function shellAssistantMessage(id: string, parentID: string): SessionMessages[nu
 
 describe("run session replay", () => {
   test("replays persisted user, assistant, and turn summary history into scrollback commits", () => {
-    const out = replaySession({
+    const out = replay({
       messages: [
         userMessage("msg-user-1", "Hello, whats the weather today?"),
         assistantMessage("msg-1", "What city or ZIP code should I check?"),
@@ -299,7 +316,7 @@ describe("run session replay", () => {
   })
 
   test("uses provider model names for replayed turn summaries when available", () => {
-    const out = replaySession({
+    const out = replay({
       messages: [
         userMessage("msg-user-1", "Hello, whats the weather today?"),
         assistantMessage("msg-1", "What city or ZIP code should I check?"),
@@ -325,7 +342,7 @@ describe("run session replay", () => {
   })
 
   test("replays one turn summary for the final assistant in a multi-step turn", () => {
-    const out = replaySession({
+    const out = replay({
       messages: [
         userMessage("msg-user-1", "Plan and then answer"),
         assistantMessage("msg-step-1", "Working", {
@@ -353,7 +370,7 @@ describe("run session replay", () => {
   })
 
   test("keeps the footer in a running state for resumed active tools", () => {
-    const out = replaySession({
+    const out = replay({
       messages: [runningToolMessage("msg-1")],
       permissions: [],
       questions: [],
@@ -370,7 +387,7 @@ describe("run session replay", () => {
   })
 
   test("does not replay turn summaries for shell-mode commands", () => {
-    const out = replaySession({
+    const out = replay({
       messages: [
         shellUserMessage("msg-shell-user-1"),
         shellAssistantMessage("msg-shell-assistant-1", "msg-shell-user-1"),
@@ -416,7 +433,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows([userMessage("msg-user-2", "successful")], [persisted], [{ commit: failed }, { commit: error }]),
+      local([userMessage("msg-user-2", "successful")], [persisted], [{ commit: failed }, { commit: error }]),
     ).toEqual([failed, error, persisted])
   })
 
@@ -437,7 +454,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows(
+      local(
         [userMessage("msg-user-1", "failed after persistence")],
         [persisted],
         [{ commit: persisted }, { commit: error }],
@@ -476,7 +493,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows(
+      local(
         [userMessage("msg-user-1", "start"), userMessage("msg-user-2", "retry")],
         [first, answer, second],
         [
@@ -512,7 +529,7 @@ describe("run session replay", () => {
       messageID: "msg-assistant-1",
     } as const
 
-    expect(replayLocalRows([userMessage("msg-user-1", "start")], [first, late], [{ commit: error }])).toEqual([
+    expect(local([userMessage("msg-user-1", "start")], [first, late], [{ commit: error }])).toEqual([
       first,
       error,
       late,
@@ -544,7 +561,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows(
+      local(
         [userMessage("msg-user-1", "start")],
         [first, complete],
         [
@@ -588,7 +605,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows(
+      local(
         [],
         [answer],
         [
@@ -637,7 +654,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows(
+      local(
         [userMessage("msg-user-1", "run ls")],
         [prompt, running, completed],
         [
@@ -681,7 +698,7 @@ describe("run session replay", () => {
     } as const
 
     expect(
-      replayLocalRows(
+      local(
         [userMessage("msg-user-1", "before"), userMessage("msg-user-3", "after")],
         [first, second],
         [{ commit: error }],

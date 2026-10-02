@@ -1,17 +1,18 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { OpencodeClient, type GlobalEvent } from "@opencode-ai/sdk/v2"
+import {
+  OpencodeClient,
+  type GlobalEvent,
+  type PermissionV2Request,
+  type QuestionV2Request,
+  type SessionMessage,
+} from "@opencode-ai/sdk/v2"
 import { createSessionTransport } from "@/cli/cmd/run/stream.transport"
 import type { FooterApi, FooterEvent, LocalReplayRow, RunFilePart, StreamCommit } from "@/cli/cmd/run/types"
 
-type EventStream = Awaited<ReturnType<OpencodeClient["event"]["subscribe"]>>["stream"]
 type GlobalEventStream = Awaited<ReturnType<OpencodeClient["global"]["event"]>>["stream"]
-type SdkEvent = EventStream extends AsyncGenerator<infer T, unknown, unknown> ? T : never
-type SessionMessage = NonNullable<Awaited<ReturnType<OpencodeClient["session"]["messages"]>>["data"]>[number]
-type SessionChild = NonNullable<Awaited<ReturnType<OpencodeClient["session"]["children"]>>["data"]>[number]
-type SessionToolPart = Extract<SessionMessage["parts"][number], { type: "tool" }>
-type SessionStatusMap = NonNullable<Awaited<ReturnType<OpencodeClient["session"]["status"]>>["data"]>
-type TextPart = Extract<SessionMessage["parts"][number], { type: "text" }>
-type ReasoningPart = Extract<SessionMessage["parts"][number], { type: "reasoning" }>
+type Assistant = Extract<SessionMessage, { type: "assistant" }>
+type Content = Assistant["content"][number]
+type Event = { type: string; properties: Record<string, unknown> }
 
 afterEach(() => {
   mock.restore()
@@ -42,61 +43,126 @@ async function waitFor<T>(check: () => T | undefined, timeout = 1_000): Promise<
   throw new Error("timed out waiting for value")
 }
 
+// V2 session events, in the encoded form the server streams.
+function next(type: string, properties: Record<string, unknown>, sessionID = "session-1"): Event {
+  return { type: `session.next.${type}`, properties: { sessionID, timestamp: 1, ...properties } }
+}
+
 function busy(sessionID = "session-1") {
-  return {
-    id: `evt-${sessionID}-busy`,
-    type: "session.status",
-    properties: {
-      sessionID,
-      status: {
-        type: "busy",
-      },
-    },
-  } satisfies SdkEvent
+  return next("status", { status: { type: "busy" } }, sessionID)
 }
 
 function idle(sessionID = "session-1") {
-  return {
-    id: `evt-${sessionID}-idle`,
-    type: "session.status",
-    properties: {
-      sessionID,
-      status: {
-        type: "idle",
-      },
-    },
-  } satisfies SdkEvent
+  return next("status", { status: { type: "idle" } }, sessionID)
 }
 
-function retry(sessionID: string, attempt: number, message: string) {
-  return {
-    id: `evt-${sessionID}-retry-${attempt}`,
-    type: "session.status",
-    properties: {
-      sessionID,
-      status: {
-        type: "retry",
-        attempt,
-        message,
-        next: 1,
-      },
-    },
-  } satisfies SdkEvent
+function step(messageID: string, sessionID = "session-1") {
+  return next(
+    "step.started",
+    { assistantMessageID: messageID, agent: "build", model: { providerID: "openai", id: "gpt-5" } },
+    sessionID,
+  )
 }
 
-function assistant(id: string) {
-  return {
-    id: `evt-${id}`,
-    type: "message.updated",
-    properties: {
-      sessionID: "session-1",
-      info: assistantMessage({
-        sessionID: "session-1",
-        id,
-        parts: [],
-      }).info,
+function textStarted(messageID: string, textID: string, sessionID = "session-1") {
+  return next("text.started", { assistantMessageID: messageID, textID }, sessionID)
+}
+
+function textDelta(messageID: string, textID: string, delta: string, sessionID = "session-1") {
+  return next("text.delta", { assistantMessageID: messageID, textID, delta }, sessionID)
+}
+
+function textEnded(messageID: string, textID: string, text: string, sessionID = "session-1") {
+  return next("text.ended", { assistantMessageID: messageID, textID, text }, sessionID)
+}
+
+function toolCalled(input: {
+  messageID: string
+  callID: string
+  tool: string
+  body: Record<string, unknown>
+  sessionID?: string
+}) {
+  return next(
+    "tool.called",
+    {
+      assistantMessageID: input.messageID,
+      callID: input.callID,
+      tool: input.tool,
+      input: input.body,
+      provider: { executed: false },
     },
-  } satisfies SdkEvent
+    input.sessionID,
+  )
+}
+
+function toolSuccess(input: {
+  messageID: string
+  callID: string
+  structured?: Record<string, unknown>
+  output?: string
+  sessionID?: string
+}) {
+  return next(
+    "tool.success",
+    {
+      assistantMessageID: input.messageID,
+      callID: input.callID,
+      structured: input.structured ?? {},
+      content: input.output === undefined ? [] : [{ type: "text", text: input.output }],
+      provider: { executed: false },
+    },
+    input.sessionID,
+  )
+}
+
+function created(sessionID: string, parentID: string) {
+  return next("created", { info: { id: sessionID, parentID } }, sessionID)
+}
+
+// Projected V2 transcript messages, as the context route returns them.
+function assistantMessage(input: { id: string; content: Content[]; completed?: number }): SessionMessage {
+  return {
+    id: input.id,
+    type: "assistant",
+    agent: "build",
+    model: { providerID: "openai", id: "gpt-5" },
+    time: { created: 1, ...(input.completed === undefined ? {} : { completed: input.completed }) },
+    content: input.content,
+  }
+}
+
+function text(id: string, value: string): Content {
+  return { type: "text", id, text: value }
+}
+
+function reasoning(id: string, value: string): Content {
+  return { type: "reasoning", id, text: value }
+}
+
+function runningTool(callID: string, name: string, input: Record<string, unknown>): Content {
+  return {
+    type: "tool",
+    id: callID,
+    name,
+    state: { status: "running", input, structured: {}, content: [] },
+    time: { created: 1, ran: 1 },
+  }
+}
+
+function completedTool(
+  callID: string,
+  name: string,
+  input: Record<string, unknown>,
+  structured: Record<string, unknown> = {},
+): Content {
+  return {
+    type: "tool",
+    id: callID,
+    name,
+    state: { status: "completed", input, structured, content: [{ type: "text", text: "" }] },
+    time: { created: 1, ran: 1, completed: 2 },
+  }
 }
 
 const StreamClosed = undefined as never
@@ -115,12 +181,12 @@ function feed<T, R = never>(returnValue: R = StreamClosed) {
         continue
       }
 
-      const next = list.shift()
-      if (!next) {
+      const value = list.shift()
+      if (!value) {
         continue
       }
 
-      yield next
+      yield value
     }
     return returnValue as R
   })()
@@ -140,16 +206,23 @@ function feed<T, R = never>(returnValue: R = StreamClosed) {
   }
 }
 
+// Session events wrapped into the global event stream the transport reads.
 function eventFeed() {
-  return feed<SdkEvent>()
+  const source = feed<GlobalEvent>()
+  return {
+    stream: source.stream,
+    push: (event: Event) => source.push(globalEvent(event)),
+    pushGlobal: source.push,
+    close: source.close,
+  }
 }
 
-function globalFeed() {
-  return feed<GlobalEvent>()
-}
-
-function emptyStream(): EventStream {
-  return (async function* (): AsyncGenerator<SdkEvent> {})()
+function globalEvent(payload: Event): GlobalEvent {
+  return {
+    directory: "/tmp",
+    project: "project-1",
+    payload: payload as GlobalEvent["payload"],
+  }
 }
 
 function ok<T>(data: T) {
@@ -159,216 +232,6 @@ function ok<T>(data: T) {
     request: new Request("https://opencode.test"),
     response: new Response(),
   })
-}
-
-function sse(stream: EventStream) {
-  return Promise.resolve({ stream })
-}
-
-function globalSse(stream: GlobalEventStream) {
-  return Promise.resolve({ stream })
-}
-
-function wrapGlobalStream(stream: EventStream): GlobalEventStream {
-  return (async function* (): GlobalEventStream {
-    for await (const event of stream) {
-      yield globalEvent(event)
-    }
-    return StreamClosed
-  })()
-}
-
-function statusMap(busy: boolean): SessionStatusMap {
-  if (busy) {
-    return { "session-1": { type: "busy" } }
-  }
-
-  return {}
-}
-
-function assistantMessage(input: { sessionID: string; id: string; parts: SessionMessage["parts"] }): SessionMessage {
-  return {
-    info: {
-      id: input.id,
-      sessionID: input.sessionID,
-      role: "assistant",
-      time: {
-        created: 1,
-      },
-      parentID: "msg-user-1",
-      modelID: "gpt-5",
-      providerID: "openai",
-      mode: "chat",
-      agent: "build",
-      path: {
-        cwd: "/tmp",
-        root: "/tmp",
-      },
-      cost: 0,
-      tokens: {
-        input: 1,
-        output: 1,
-        reasoning: 0,
-        cache: {
-          read: 0,
-          write: 0,
-        },
-      },
-    },
-    parts: input.parts,
-  }
-}
-
-function runningTool(input: {
-  sessionID: string
-  messageID: string
-  id: string
-  callID: string
-  tool: string
-  body: Record<string, unknown>
-  metadata?: Record<string, unknown>
-}): SessionToolPart {
-  return {
-    id: input.id,
-    sessionID: input.sessionID,
-    messageID: input.messageID,
-    type: "tool",
-    callID: input.callID,
-    tool: input.tool,
-    state: {
-      status: "running",
-      input: input.body,
-      ...(input.metadata ? { metadata: input.metadata } : {}),
-      time: {
-        start: 1,
-      },
-    },
-  }
-}
-
-function completedTool(input: {
-  sessionID: string
-  messageID: string
-  id: string
-  callID: string
-  tool: string
-  body: Record<string, unknown>
-  output?: string
-  metadata?: Record<string, unknown>
-}): SessionToolPart {
-  return {
-    id: input.id,
-    sessionID: input.sessionID,
-    messageID: input.messageID,
-    type: "tool",
-    callID: input.callID,
-    tool: input.tool,
-    state: {
-      status: "completed",
-      input: input.body,
-      output: input.output ?? "",
-      title: input.tool,
-      metadata: input.metadata ?? {},
-      time: {
-        start: 1,
-        end: 2,
-      },
-    },
-  }
-}
-
-function textPart(id: string, messageID: string, text: string, sessionID = "session-1"): TextPart {
-  return {
-    id,
-    sessionID,
-    messageID,
-    type: "text",
-    text,
-  }
-}
-
-function textUpdated(part: TextPart): SdkEvent {
-  return {
-    id: `evt-${part.id}-updated`,
-    type: "message.part.updated",
-    properties: {
-      sessionID: part.sessionID,
-      part,
-      time: 1,
-    },
-  }
-}
-
-function reasoningPart(id: string, messageID: string, text: string): ReasoningPart {
-  return {
-    id,
-    sessionID: "session-1",
-    messageID,
-    type: "reasoning",
-    text,
-    time: { start: 1 },
-  }
-}
-
-function reasoningUpdated(part: ReasoningPart): SdkEvent {
-  return {
-    id: `evt-${part.id}-updated`,
-    type: "message.part.updated",
-    properties: {
-      sessionID: part.sessionID,
-      part,
-      time: 1,
-    },
-  }
-}
-
-function toolUpdated(part: SessionToolPart): SdkEvent {
-  return {
-    id: `evt-${part.id}-updated`,
-    type: "message.part.updated",
-    properties: {
-      sessionID: part.sessionID,
-      part,
-      time: 1,
-    },
-  }
-}
-
-function textDelta(messageID: string, partID: string, delta: string, sessionID = "session-1"): SdkEvent {
-  return {
-    id: `evt-${partID}-delta`,
-    type: "message.part.delta",
-    properties: {
-      sessionID,
-      messageID,
-      partID,
-      field: "text",
-      delta,
-    },
-  }
-}
-
-function child(id: string): SessionChild {
-  return {
-    id,
-    slug: id,
-    projectID: "project-1",
-    directory: "/tmp",
-    title: id,
-    version: "1",
-    time: {
-      created: 1,
-      updated: 1,
-    },
-  }
-}
-
-function globalEvent(payload: GlobalEvent["payload"]): GlobalEvent {
-  return {
-    directory: "/tmp",
-    project: "project-1",
-    payload,
-  }
 }
 
 function footer(fn?: (commit: StreamCommit) => void) {
@@ -384,12 +247,12 @@ function footer(fn?: (commit: StreamCommit) => void) {
     onPrompt: () => () => {},
     onQueuedRemove: () => () => {},
     onClose: () => () => {},
-    event(next) {
-      events.push(next)
+    event(value) {
+      events.push(value)
     },
-    append(next) {
-      commits.push(next)
-      fn?.(next)
+    append(value) {
+      commits.push(value)
+      fn?.(value)
     },
     idle() {
       idleCalls += 1
@@ -413,42 +276,115 @@ function footer(fn?: (commit: StreamCommit) => void) {
   }
 }
 
+type Calls = {
+  prompt: unknown[]
+  command: unknown[]
+  shell: unknown[]
+  agent: unknown[]
+  model: unknown[]
+}
+
+// A client whose V2 session routes are stubbed. The transcript loader backs the
+// context route (the messages timeline stays empty, so each transcript read
+// is one loader call), and blocker lists are per session like the V2 routes.
 function sdk(
   input: {
-    stream?: EventStream
-    globalStream?: GlobalEventStream
-    subscribe?: OpencodeClient["event"]["subscribe"]
+    stream?: GlobalEventStream
     globalEvent?: OpencodeClient["global"]["event"]
-    promptAsync?: OpencodeClient["session"]["promptAsync"]
-    status?: OpencodeClient["session"]["status"]
-    messages?: OpencodeClient["session"]["messages"]
-    children?: OpencodeClient["session"]["children"]
-    permissions?: OpencodeClient["permission"]["list"]
-    questions?: OpencodeClient["question"]["list"]
+    transcript?: (sessionID: string) => Promise<SessionMessage[]> | SessionMessage[]
+    children?: (sessionID: string) => Array<{ id: string }>
+    session?: { agent?: string; model?: { providerID: string; id: string; variant?: string } }
+    status?: () => Promise<"busy" | "idle"> | "busy" | "idle"
+    permissions?: (sessionID: string) => PermissionV2Request[]
+    questions?: (sessionID: string) => Promise<QuestionV2Request[]> | QuestionV2Request[]
+    prompt?: (params: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>
+    command?: (params: unknown) => Promise<unknown>
+    shell?: (params: unknown) => Promise<unknown>
   } = {},
 ) {
   const client = new OpencodeClient()
+  const calls: Calls = { prompt: [], command: [], shell: [], agent: [], model: [] }
+  const session = client.v2.session
+  const stub = (target: object, name: string, impl: (...args: never[]) => unknown) => {
+    spyOn(target as Record<string, (...args: never[]) => unknown>, name).mockImplementation(impl)
+  }
 
-  const subscribe: OpencodeClient["event"]["subscribe"] = input.subscribe ?? (() => sse(input.stream ?? emptyStream()))
-  const globalEvent: OpencodeClient["global"]["event"] =
-    input.globalEvent ?? (() => globalSse(input.globalStream ?? wrapGlobalStream(input.stream ?? emptyStream())))
-  const promptAsync: OpencodeClient["session"]["promptAsync"] = input.promptAsync ?? (() => ok(undefined))
-  const status: OpencodeClient["session"]["status"] = input.status ?? (() => ok({}))
-  const messages: OpencodeClient["session"]["messages"] = input.messages ?? (() => ok([]))
-  const children: OpencodeClient["session"]["children"] = input.children ?? (() => ok([]))
-  const permissions: OpencodeClient["permission"]["list"] = input.permissions ?? (() => ok([]))
-  const questions: OpencodeClient["question"]["list"] = input.questions ?? (() => ok([]))
+  spyOn(client.global, "event").mockImplementation(
+    input.globalEvent ??
+      (() => Promise.resolve({ stream: input.stream ?? (async function* (): AsyncGenerator<GlobalEvent> {})() })),
+  )
+  stub(session, "context", async (params: { sessionID: string }) =>
+    ok({ data: await (input.transcript?.(params.sessionID) ?? []) }),
+  )
+  stub(session, "messages", () => ok({ data: [], cursor: {} }))
+  stub(session, "children", (params: { sessionID: string }) =>
+    ok({
+      data: (input.children?.(params.sessionID) ?? []).map((child) => ({
+        id: child.id,
+        parentID: params.sessionID,
+        projectID: "project-1",
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: 1, updated: 1 },
+        title: child.id,
+        location: { directory: "/tmp" },
+      })),
+    }),
+  )
+  stub(session, "get", () =>
+    ok({
+      data: { id: "session-1", title: "t", location: { directory: "/tmp" }, ...input.session },
+    }),
+  )
+  stub(session, "status", async () => ok({ data: { type: (await input.status?.()) ?? "idle" } }))
+  stub(session.permission, "list", (params: { sessionID: string }) =>
+    ok({ data: input.permissions?.(params.sessionID) ?? [] }),
+  )
+  stub(session.question, "list", async (params: { sessionID: string }) =>
+    ok({ data: await (input.questions?.(params.sessionID) ?? []) }),
+  )
+  stub(session, "prompt", (params: unknown, options?: { signal?: AbortSignal }) => {
+    calls.prompt.push(params)
+    return (input.prompt?.(params, options) ?? Promise.resolve()).then(() => ok({ data: { admittedSeq: 1 } }))
+  })
+  stub(session, "command", (params: unknown) => {
+    calls.command.push(params)
+    return (input.command?.(params) ?? Promise.resolve()).then(() => ok(undefined))
+  })
+  stub(session, "shell", (params: unknown) => {
+    calls.shell.push(params)
+    return (input.shell?.(params) ?? Promise.resolve()).then(() => ok(undefined))
+  })
+  stub(session, "switchAgent", (params: unknown) => {
+    calls.agent.push(params)
+    return ok(undefined)
+  })
+  stub(session, "switchModel", (params: unknown) => {
+    calls.model.push(params)
+    return ok(undefined)
+  })
 
-  spyOn(client.event, "subscribe").mockImplementation(subscribe)
-  spyOn(client.global, "event").mockImplementation(globalEvent)
-  spyOn(client.session, "promptAsync").mockImplementation(promptAsync)
-  spyOn(client.session, "status").mockImplementation(status)
-  spyOn(client.session, "messages").mockImplementation(messages)
-  spyOn(client.session, "children").mockImplementation(children)
-  spyOn(client.permission, "list").mockImplementation(permissions)
-  spyOn(client.question, "list").mockImplementation(questions)
+  return { client, calls }
+}
 
-  return client
+function turn(
+  textValue: string,
+  extra: Partial<Parameters<Awaited<ReturnType<typeof createSessionTransport>>["runPromptTurn"]>[0]> = {},
+) {
+  return {
+    agent: undefined,
+    model: undefined,
+    variant: undefined,
+    prompt: { text: textValue, parts: [] },
+    files: [],
+    includeFiles: false,
+    ...extra,
+  }
+}
+
+function lastSubagent(ui: ReturnType<typeof footer>) {
+  const item = ui.events.findLast((event) => event.type === "stream.subagent")
+  return item?.type === "stream.subagent" ? item.state : undefined
 }
 
 describe("run stream transport", () => {
@@ -458,25 +394,11 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) =>
+        transcript: (sessionID) =>
           sessionID === "session-1"
-            ? ok([
-                assistantMessage({
-                  sessionID: "session-1",
-                  id: "msg-1",
-                  parts: [
-                    {
-                      ...textPart("text-1", "msg-1", "Hello."),
-                      time: {
-                        start: 1,
-                        end: 2,
-                      },
-                    },
-                  ],
-                }),
-              ])
-            : ok([]),
-      }),
+            ? [assistantMessage({ id: "msg-1", content: [text("text-1", "Hello.")], completed: 2 })]
+            : [],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -498,25 +420,11 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) =>
+        transcript: (sessionID) =>
           sessionID === "session-1"
-            ? ok([
-                assistantMessage({
-                  sessionID: "session-1",
-                  id: "msg-1",
-                  parts: [
-                    {
-                      ...textPart("text-1", "msg-1", "Hello."),
-                      time: {
-                        start: 1,
-                        end: 2,
-                      },
-                    },
-                  ],
-                }),
-              ])
-            : ok([]),
-      }),
+            ? [assistantMessage({ id: "msg-1", content: [text("text-1", "Hello.")], completed: 2 })]
+            : [],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -525,7 +433,8 @@ describe("run stream transport", () => {
     })
 
     try {
-      await waitFor(() => ui.commits.find((item) => item.kind === "assistant" && item.text === "Hello."))
+      const commit = await waitFor(() => ui.commits.find((item) => item.kind === "assistant" && item.text === "Hello."))
+      expect(commit.partID).toBe("msg-1:text-1")
       expect(ui.idleCalls).toBeGreaterThan(0)
     } finally {
       src.close()
@@ -539,40 +448,14 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) =>
-          ok(
-            sessionID === "session-1"
-              ? [
-                  assistantMessage({
-                    sessionID: "session-1",
-                    id: "msg-1",
-                    parts: [
-                      {
-                        ...textPart("text-1", "msg-1", "Hello."),
-                        time: {
-                          start: 1,
-                          end: 2,
-                        },
-                      },
-                    ],
-                  }),
-                  assistantMessage({
-                    sessionID: "session-1",
-                    id: "msg-2",
-                    parts: [
-                      {
-                        ...textPart("text-2", "msg-2", "World."),
-                        time: {
-                          start: 3,
-                          end: 4,
-                        },
-                      },
-                    ],
-                  }),
-                ]
-              : [],
-          ),
-      }),
+        transcript: (sessionID) =>
+          sessionID === "session-1"
+            ? [
+                assistantMessage({ id: "msg-1", content: [text("text-0", "Hello.")], completed: 2 }),
+                assistantMessage({ id: "msg-2", content: [text("text-0", "World.")], completed: 4 }),
+              ]
+            : [],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -584,10 +467,39 @@ describe("run stream transport", () => {
     try {
       await waitFor(() => (ui.commits.length > 0 ? ui.commits : undefined))
       expect(ui.commits.filter((item) => item.kind === "assistant")).toEqual([
-        expect.objectContaining({
-          text: "World.",
-        }),
+        expect.objectContaining({ text: "World." }),
       ])
+    } finally {
+      src.close()
+      await transport.close()
+    }
+  })
+
+  test("replays a finished session as idle", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    const transport = await createSessionTransport({
+      sdk: sdk({
+        stream: src.stream,
+        transcript: () => [
+          assistantMessage({
+            id: "msg-1",
+            content: [reasoning("r-0", "think"), text("text-0", "Done.")],
+            completed: 3,
+          }),
+        ],
+      }).client,
+      sessionID: "session-1",
+      thinking: true,
+      replay: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await waitFor(() => ui.commits.find((item) => item.text === "Done."))
+      const patch = ui.events.findLast((event) => event.type === "stream.patch")
+      expect(patch?.type === "stream.patch" ? patch.patch.phase : undefined).not.toBe("running")
     } finally {
       src.close()
       await transport.close()
@@ -602,70 +514,15 @@ describe("run stream transport", () => {
     const task = createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) => {
+        transcript: async (sessionID) => {
           if (sessionID !== "session-1") {
-            return ok([])
+            return []
           }
 
           await gate.promise
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-1",
-              parts: [textPart("text-1", "msg-1", "Hello")],
-            }),
-          ])
+          return [assistantMessage({ id: "msg-1", content: [text("text-1", "")] })]
         },
-      }),
-      sessionID: "session-1",
-      thinking: true,
-      replay: true,
-      limits: () => ({}),
-      footer: ui.api,
-    })
-
-    try {
-      await Promise.resolve()
-      src.push(textDelta("msg-1", "text-1", "lo"))
-      gate.resolve()
-      transport = await task
-
-      await waitFor(() => (ui.commits.length > 0 ? ui.commits : undefined))
-      await Bun.sleep(20)
-      expect(ui.commits.filter((item) => item.kind === "assistant")).toEqual([
-        expect.objectContaining({
-          text: "Hello",
-        }),
-      ])
-    } finally {
-      src.close()
-      await transport?.close()
-    }
-  })
-
-  test("applies buffered pre-bootstrap deltas not yet persisted", async () => {
-    const src = eventFeed()
-    const ui = footer()
-    const gate = defer<void>()
-    let transport: Awaited<ReturnType<typeof createSessionTransport>> | undefined
-    const task = createSessionTransport({
-      sdk: sdk({
-        stream: src.stream,
-        messages: async ({ sessionID }) => {
-          if (sessionID !== "session-1") {
-            return ok([])
-          }
-
-          await gate.promise
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-1",
-              parts: [textPart("text-1", "msg-1", "")],
-            }),
-          ])
-        },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -682,9 +539,7 @@ describe("run stream transport", () => {
       await waitFor(() => (ui.commits.length > 0 ? ui.commits : undefined))
       await Bun.sleep(20)
       expect(ui.commits.filter((item) => item.kind === "assistant")).toEqual([
-        expect.objectContaining({
-          text: "Hello",
-        }),
+        expect.objectContaining({ text: "Hello" }),
       ])
     } finally {
       src.close()
@@ -698,28 +553,11 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) =>
+        transcript: (sessionID) =>
           sessionID === "session-1"
-            ? ok([
-                assistantMessage({
-                  sessionID: "session-1",
-                  id: "msg-1",
-                  parts: [
-                    runningTool({
-                      sessionID: "session-1",
-                      messageID: "msg-1",
-                      id: "bash-1",
-                      callID: "call-1",
-                      tool: "bash",
-                      body: {
-                        command: "pwd",
-                      },
-                    }),
-                  ],
-                }),
-              ])
-            : ok([]),
-      }),
+            ? [assistantMessage({ id: "msg-1", content: [runningTool("call-1", "bash", { command: "pwd" })] })]
+            : [],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -733,12 +571,7 @@ describe("run stream transport", () => {
         return item?.type === "stream.patch" ? item.patch : undefined
       })
 
-      expect(patch).toEqual(
-        expect.objectContaining({
-          phase: "running",
-          status: "running bash",
-        }),
-      )
+      expect(patch).toEqual(expect.objectContaining({ phase: "running", status: "running bash" }))
     } finally {
       src.close()
       await transport.close()
@@ -752,21 +585,15 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async () => {
+        transcript: () => {
           calls += 1
           if (calls === 1) {
-            return ok([])
+            return []
           }
 
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-1",
-              parts: [textPart("text-1", "msg-1", "Hello")],
-            }),
-          ])
+          return [assistantMessage({ id: "msg-1", content: [text("text-1", "")] })]
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -790,12 +617,13 @@ describe("run stream transport", () => {
     })
 
     try {
-      expect(
-        await transport.replayOnResize({
-          localRows: () => localRows,
-          reset,
-        }),
-      ).toBe(true)
+      src.push(step("msg-1"))
+      src.push(textStarted("msg-1", "text-1"))
+      src.push(textDelta("msg-1", "text-1", "Hello"))
+      await waitFor(() => ui.commits.find((commit) => commit.kind === "assistant" && commit.text === "Hello"))
+      ui.commits.length = 0
+
+      expect(await transport.replayOnResize({ localRows: () => localRows, reset })).toBe(true)
       expect(reset).toHaveBeenCalledTimes(1)
       expect(ui.commits).toEqual(
         expect.arrayContaining([
@@ -804,7 +632,7 @@ describe("run stream transport", () => {
         ]),
       )
 
-      src.push(textUpdated(textPart("text-1", "msg-1", "Hello world")))
+      src.push(textDelta("msg-1", "text-1", " world"))
       await waitFor(() => ui.commits.find((commit) => commit.kind === "assistant" && commit.text === " world"))
       expect(ui.commits.filter((commit) => commit.kind === "assistant").map((commit) => commit.text)).toEqual([
         "Hello",
@@ -824,7 +652,7 @@ describe("run stream transport", () => {
     const resetB = mock(() => Promise.resolve())
     const resetC = mock(() => Promise.resolve())
     const transport = await createSessionTransport({
-      sdk: sdk({ stream: src.stream }),
+      sdk: sdk({ stream: src.stream }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -870,9 +698,9 @@ describe("run stream transport", () => {
             statusStarted.resolve()
             await statusGate.promise
           }
-          return ok(statusMap(true))
+          return "busy" as const
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -880,18 +708,11 @@ describe("run stream transport", () => {
       footer: ui.api,
       trace: { write: trace },
     })
-    const turn = transport.runPromptTurn({
-      agent: undefined,
-      model: undefined,
-      variant: undefined,
-      prompt: { text: "active", parts: [] },
-      files: [],
-      includeFiles: false,
-    })
+    const active = transport.runPromptTurn(turn("active"))
 
     try {
       await waitFor(() => ui.events.find((event) => event.type === "turn.wait"))
-      const active = transport.replayOnResize({ localRows: () => [], reset: resetA })
+      const resize = transport.replayOnResize({ localRows: () => [], reset: resetA })
       await waitFor(() => (resetA.mock.calls.length === 1 ? true : undefined))
       blockStatus = true
       src.push(busy())
@@ -914,7 +735,7 @@ describe("run stream transport", () => {
 
       expect(
         await Promise.race([
-          active,
+          resize,
           Bun.sleep(1_000).then(() => {
             throw new Error("timed out waiting for trailing resize replay")
           }),
@@ -925,7 +746,7 @@ describe("run stream transport", () => {
     } finally {
       src.close()
       await transport.close()
-      await turn
+      await active
     }
   })
 
@@ -936,21 +757,11 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async () => {
+        transcript: () => {
           calls += 1
-          if (calls === 1) {
-            return ok([])
-          }
-
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-live",
-              parts: [textPart("text-live", "msg-live", "")],
-            }),
-          ])
+          return calls === 1 ? [] : [assistantMessage({ id: "msg-live", content: [text("text-live", "")] })]
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -959,20 +770,15 @@ describe("run stream transport", () => {
     })
 
     try {
-      src.push(assistant("msg-live"))
-      src.push(textUpdated(textPart("text-live", "msg-live", "")))
+      src.push(step("msg-live"))
+      src.push(textStarted("msg-live", "text-live"))
       src.push(textDelta("msg-live", "text-live", "Hello"))
       await waitFor(() => ui.commits.find((commit) => commit.kind === "assistant" && commit.text === "Hello"))
       ui.commits.length = 0
 
       expect(await transport.replayOnResize({ localRows: () => [], reset: () => Promise.resolve() })).toBe(true)
       src.push(textDelta("msg-live", "text-live", "Hello"))
-      src.push(
-        textUpdated({
-          ...textPart("text-live", "msg-live", "HelloHello"),
-          time: { start: 1, end: 2 },
-        }),
-      )
+      src.push(textEnded("msg-live", "text-live", "HelloHello"))
 
       await waitFor(() =>
         ui.commits.filter((commit) => commit.kind === "assistant" && commit.text === "Hello").length === 2
@@ -995,21 +801,11 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async () => {
+        transcript: () => {
           calls += 1
-          if (calls === 1) {
-            return ok([])
-          }
-
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-thinking",
-              parts: [reasoningPart("thinking-1", "msg-thinking", "")],
-            }),
-          ])
+          return calls === 1 ? [] : [assistantMessage({ id: "msg-thinking", content: [reasoning("thinking-1", "")] })]
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -1018,9 +814,11 @@ describe("run stream transport", () => {
     })
 
     try {
-      src.push(assistant("msg-thinking"))
-      src.push(reasoningUpdated(reasoningPart("thinking-1", "msg-thinking", "")))
-      src.push(textDelta("msg-thinking", "thinking-1", "plan"))
+      src.push(step("msg-thinking"))
+      src.push(next("reasoning.started", { assistantMessageID: "msg-thinking", reasoningID: "thinking-1" }))
+      src.push(
+        next("reasoning.delta", { assistantMessageID: "msg-thinking", reasoningID: "thinking-1", delta: "plan" }),
+      )
       await waitFor(() => ui.commits.find((commit) => commit.kind === "reasoning" && commit.text === "Thinking: plan"))
       ui.commits.length = 0
 
@@ -1041,26 +839,13 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async () => {
+        transcript: () => {
           calls += 1
-          if (calls === 1) {
-            return ok([])
-          }
-
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-finished",
-              parts: [
-                {
-                  ...textPart("text-finished", "msg-finished", "Hello"),
-                  time: { start: 1, end: 2 },
-                },
-              ],
-            }),
-          ])
+          return calls === 1
+            ? []
+            : [assistantMessage({ id: "msg-finished", content: [text("text-finished", "Hello")], completed: 2 })]
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -1069,8 +854,8 @@ describe("run stream transport", () => {
     })
 
     try {
-      src.push(assistant("msg-finished"))
-      src.push(textUpdated(textPart("text-finished", "msg-finished", "")))
+      src.push(step("msg-finished"))
+      src.push(textStarted("msg-finished", "text-finished"))
       src.push(textDelta("msg-finished", "text-finished", "Hello"))
       await waitFor(() => ui.commits.find((commit) => commit.kind === "assistant" && commit.text === "Hello"))
       ui.commits.length = 0
@@ -1092,15 +877,15 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async () => {
+        transcript: () => {
           calls += 1
           if (calls === 1) {
-            return ok([])
+            return []
           }
 
           throw new Error("snapshot failed")
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -1123,7 +908,7 @@ describe("run stream transport", () => {
     const src = eventFeed()
     const ui = footer()
     const transport = await createSessionTransport({
-      sdk: sdk({ stream: src.stream }),
+      sdk: sdk({ stream: src.stream }).client,
       sessionID: "session-1",
       thinking: true,
       replay: true,
@@ -1148,77 +933,31 @@ describe("run stream transport", () => {
     }
   })
 
-  test("disables resize replay when rebuilding scrollback fails after terminal reset", async () => {
-    const src = eventFeed()
-    const ui = footer()
-    let cleared = false
-    const idle = ui.api.idle
-    ui.api.idle = () => (cleared ? Promise.reject(new Error("render failed")) : idle())
-    const transport = await createSessionTransport({
-      sdk: sdk({ stream: src.stream }),
-      sessionID: "session-1",
-      thinking: true,
-      replay: true,
-      limits: () => ({}),
-      footer: ui.api,
-    })
-    const reset = mock(() => {
-      cleared = true
-      return Promise.resolve()
-    })
-
-    try {
-      expect(await transport.replayOnResize({ localRows: () => [], reset })).toBe(false)
-      expect(await transport.replayOnResize({ localRows: () => [], reset })).toBe(false)
-      expect(reset).toHaveBeenCalledTimes(1)
-      expect(ui.commits).toContainEqual({
-        kind: "error",
-        text: "resize replay failed; disabled for this session",
-        phase: "start",
-        source: "system",
-      })
-    } finally {
-      src.close()
-      await transport.close()
-    }
-  })
-
   test("keeps completed historical subagent tabs during bootstrap", async () => {
     const src = eventFeed()
     const ui = footer()
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) => {
-          if (sessionID !== "session-1") {
-            return ok([])
-          }
-
-          return ok([
-            assistantMessage({
-              sessionID: "session-1",
-              id: "msg-1",
-              parts: [
-                completedTool({
-                  sessionID: "session-1",
-                  messageID: "msg-1",
-                  id: "task-1",
-                  callID: "call-1",
-                  tool: "task",
-                  body: {
-                    description: "Explore run folder",
-                    subagent_type: "explore",
-                  },
-                  metadata: {
-                    sessionId: "child-1",
-                  },
+        transcript: (sessionID) =>
+          sessionID === "session-1"
+            ? [
+                assistantMessage({
+                  id: "msg-1",
+                  completed: 2,
+                  content: [
+                    completedTool(
+                      "call-1",
+                      "task",
+                      { description: "Explore run folder", subagent_type: "explore", prompt: "x" },
+                      { sessionID: "child-1", text: "done" },
+                    ),
+                  ],
                 }),
-              ],
-            }),
-          ])
-        },
-        children: async () => ok([child("child-1")]),
-      }),
+              ]
+            : [],
+        children: () => [{ id: "child-1" }],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1226,11 +965,7 @@ describe("run stream transport", () => {
     })
 
     try {
-      const state = await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        return item?.type === "stream.subagent" ? item.state : undefined
-      })
-
+      const state = await waitFor(() => lastSubagent(ui))
       expect(state.tabs).toEqual([expect.objectContaining({ sessionID: "child-1", status: "completed" })])
       expect(state.details).toEqual({})
     } finally {
@@ -1239,75 +974,49 @@ describe("run stream transport", () => {
     }
   })
 
-  test("bootstraps child tabs and resumed blocker input", async () => {
+  test("bootstraps a running task's child tab and its resumed blocker input", async () => {
     const src = eventFeed()
     const ui = footer()
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        messages: async ({ sessionID }) => {
-          if (sessionID === "session-1") {
-            return ok([
-              assistantMessage({
-                sessionID: "session-1",
-                id: "msg-1",
-                parts: [
-                  runningTool({
-                    sessionID: "session-1",
-                    messageID: "msg-1",
-                    id: "task-1",
-                    callID: "call-1",
-                    tool: "task",
-                    body: {
-                      description: "Explore run folder",
-                      subagent_type: "explore",
-                    },
-                    metadata: {
-                      sessionId: "child-1",
-                    },
-                  }),
-                ],
-              }),
-            ])
-          }
-
-          return ok([
-            assistantMessage({
-              sessionID: "child-1",
-              id: "msg-child-1",
-              parts: [
-                runningTool({
-                  sessionID: "child-1",
-                  messageID: "msg-child-1",
-                  id: "edit-1",
-                  callID: "call-edit-1",
-                  tool: "edit",
-                  body: {
-                    filePath: "src/run/subagent-data.ts",
-                    diff: "@@ -1 +1 @@",
-                  },
+        transcript: (sessionID) =>
+          sessionID === "session-1"
+            ? [
+                assistantMessage({
+                  id: "msg-1",
+                  content: [
+                    runningTool("call-1", "task", { description: "Explore run folder", subagent_type: "explore" }),
+                  ],
+                }),
+              ]
+            : [
+                assistantMessage({
+                  id: "msg-child-1",
+                  content: [
+                    runningTool("call-edit-1", "edit", {
+                      path: "src/run/subagent-data.ts",
+                      oldString: "a",
+                      newString: "b",
+                    }),
+                  ],
                 }),
               ],
-            }),
-          ])
-        },
-        children: async () => ok([child("child-1")]),
-        permissions: async () =>
-          ok([
-            {
-              id: "perm-1",
-              sessionID: "child-1",
-              permission: "edit",
-              patterns: ["src/run/subagent-data.ts"],
-              metadata: {},
-              always: [],
-              tool: {
-                messageID: "msg-child-1",
-                callID: "call-edit-1",
-              },
-            },
-          ]),
-      }),
+        children: () => [{ id: "child-1" }],
+        permissions: (sessionID) =>
+          sessionID === "child-1"
+            ? [
+                {
+                  id: "perm-1",
+                  sessionID: "child-1",
+                  action: "edit",
+                  resources: ["src/run/subagent-data.ts"],
+                  metadata: { filepath: "src/run/subagent-data.ts", diff: "@@ -1 +1 @@" },
+                  source: { type: "tool", messageID: "msg-child-1", callID: "call-edit-1" },
+                },
+              ]
+            : [],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1316,8 +1025,7 @@ describe("run stream transport", () => {
 
     try {
       const boot = await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        const state = item?.type === "stream.subagent" ? item.state : undefined
+        const state = lastSubagent(ui)
         return state?.tabs.some((tab) => tab.sessionID === "child-1") &&
           state.permissions.some((req) => req.id === "perm-1")
           ? state
@@ -1333,193 +1041,69 @@ describe("run stream transport", () => {
         }),
       ])
       expect(boot.permissions).toEqual([
-        expect.objectContaining({
-          id: "perm-1",
-          sessionID: "child-1",
-          metadata: {
-            input: {
-              filePath: "src/run/subagent-data.ts",
-              diff: "@@ -1 +1 @@",
-            },
-          },
-        }),
+        expect.objectContaining({ id: "perm-1", sessionID: "child-1", permission: "edit" }),
       ])
 
       transport.selectSubagent("child-1")
 
       const selected = await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        const state = item?.type === "stream.subagent" ? item.state : undefined
-        const detail = state?.details["child-1"]
-        return detail?.commits.some(
+        const state = lastSubagent(ui)
+        return state?.details["child-1"]?.commits.some(
           (commit) => commit.kind === "tool" && commit.tool === "edit" && commit.phase === "start",
         )
           ? state
           : undefined
       })
+      expect(selected.details["child-1"]?.commits).toEqual([
+        expect.objectContaining({ kind: "tool", tool: "edit", phase: "start" }),
+      ])
 
-      expect(selected.details).toEqual({
-        "child-1": {
-          sessionID: "child-1",
-          commits: [
-            expect.objectContaining({
-              kind: "tool",
-              tool: "edit",
-              phase: "start",
-            }),
-          ],
-        },
+      const view = await waitFor(() => {
+        const item = ui.events.findLast((event) => event.type === "stream.view")
+        return item?.type === "stream.view" && item.view.type === "permission" && item.view.request.id === "perm-1"
+          ? item.view
+          : undefined
       })
-
-      expect(
-        await waitFor(() => {
-          const item = ui.events.findLast((event) => event.type === "stream.view")
-          return item?.type === "stream.view" && item.view.type === "permission" && item.view.request.id === "perm-1"
-            ? item
-            : undefined
+      expect(view.request.metadata).toEqual(
+        expect.objectContaining({
+          diff: "@@ -1 +1 @@",
+          input: expect.objectContaining({ filePath: "src/run/subagent-data.ts" }),
         }),
-      ).toEqual({
-        type: "stream.view",
-        view: {
-          type: "permission",
-          request: expect.objectContaining({
-            id: "perm-1",
-            metadata: {
-              input: {
-                filePath: "src/run/subagent-data.ts",
-                diff: "@@ -1 +1 @@",
-              },
-            },
-          }),
-        },
-      })
+      )
     } finally {
       src.close()
       await transport.close()
     }
   })
 
-  test("bootstraps child session output before selection", async () => {
-    const ui = footer()
-    const transport = await createSessionTransport({
-      sdk: sdk({
-        messages: async ({ sessionID }) => {
-          if (sessionID === "session-1") {
-            return ok([
-              assistantMessage({
-                sessionID: "session-1",
-                id: "msg-1",
-                parts: [
-                  runningTool({
-                    sessionID: "session-1",
-                    messageID: "msg-1",
-                    id: "task-1",
-                    callID: "call-1",
-                    tool: "task",
-                    body: {
-                      description: "Explore run.ts",
-                      subagent_type: "explore",
-                    },
-                    metadata: {
-                      sessionId: "child-1",
-                    },
-                  }),
-                ],
-              }),
-            ])
-          }
-
-          return sessionID === "child-1"
-            ? ok([
-                assistantMessage({
-                  sessionID: "child-1",
-                  id: "msg-child-1",
-                  parts: [textPart("txt-child-1", "msg-child-1", "subagent summary", "child-1")],
-                }),
-              ])
-            : ok([])
-        },
-        children: async () => ok([child("child-1")]),
-      }),
-      sessionID: "session-1",
-      thinking: true,
-      limits: () => ({}),
-      footer: ui.api,
-    })
-
-    try {
-      await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        return item?.type === "stream.subagent" && item.state.tabs.some((tab) => tab.sessionID === "child-1")
-          ? item
-          : undefined
-      })
-
-      transport.selectSubagent("child-1")
-
-      expect(
-        await waitFor(() => {
-          const item = ui.events.findLast((event) => event.type === "stream.subagent")
-          const detail = item?.type === "stream.subagent" ? item.state.details["child-1"] : undefined
-          return detail?.commits.some((commit) => commit.kind === "assistant" && commit.text === "subagent summary")
-            ? detail
-            : undefined
-        }),
-      ).toEqual({
-        sessionID: "child-1",
-        commits: [
-          expect.objectContaining({
-            kind: "assistant",
-            text: "subagent summary",
-          }),
-        ],
-      })
-    } finally {
-      await transport.close()
-    }
-  })
-
   test("does not block startup on child history bootstrap", async () => {
-    const pending = defer<Awaited<ReturnType<typeof ok<SessionMessage[]>>>>()
+    const pending = defer<SessionMessage[]>()
     const ui = footer()
     let transport: Awaited<ReturnType<typeof createSessionTransport>> | undefined
 
     const task = createSessionTransport({
       sdk: sdk({
-        messages: async ({ sessionID }) => {
+        transcript: (sessionID) => {
           if (sessionID === "session-1") {
-            return ok([
+            return [
               assistantMessage({
-                sessionID: "session-1",
                 id: "msg-1",
-                parts: [
-                  runningTool({
-                    sessionID: "session-1",
-                    messageID: "msg-1",
-                    id: "task-1",
-                    callID: "call-1",
-                    tool: "task",
-                    body: {
-                      description: "Explore run.ts",
-                      subagent_type: "explore",
-                    },
-                    metadata: {
-                      sessionId: "child-1",
-                    },
-                  }),
+                content: [
+                  completedTool(
+                    "call-1",
+                    "task",
+                    { description: "Explore run.ts", subagent_type: "explore" },
+                    { sessionID: "child-1", text: "" },
+                  ),
                 ],
               }),
-            ])
+            ]
           }
 
-          if (sessionID === "child-1") {
-            return pending.promise
-          }
-
-          return ok([])
+          return sessionID === "child-1" ? pending.promise : []
         },
-        children: async () => ok([child("child-1")]),
-      }),
+        children: () => [{ id: "child-1" }],
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1531,45 +1115,34 @@ describe("run stream transport", () => {
 
     try {
       const state = await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        return item?.type === "stream.subagent" && item.state.tabs.some((tab) => tab.sessionID === "child-1")
-          ? item.state
-          : undefined
+        const value = lastSubagent(ui)
+        return value?.tabs.some((tab) => tab.sessionID === "child-1") ? value : undefined
       })
-
       await waitFor(() => transport)
-
-      expect(state).toEqual({
-        tabs: [expect.objectContaining({ sessionID: "child-1", status: "running" })],
-        details: {},
-        permissions: [],
-        questions: [],
-      })
+      expect(state.tabs).toEqual([expect.objectContaining({ sessionID: "child-1" })])
+      expect(state.details).toEqual({})
     } finally {
-      pending.resolve(ok([]))
+      pending.resolve([])
       await task
       await transport?.close()
     }
   })
 
-  test("replays child events buffered during bootstrap once the tab is known", async () => {
-    const global = globalFeed()
+  test("replays child events buffered during bootstrap once the spawning task links the child", async () => {
+    const src = eventFeed()
     const ui = footer()
     const gate = defer<void>()
     let transport: Awaited<ReturnType<typeof createSessionTransport>> | undefined
     const task = createSessionTransport({
       sdk: sdk({
-        globalStream: global.stream,
-        messages: async ({ sessionID }) => {
-          if (sessionID !== "session-1") {
-            return ok([])
+        stream: src.stream,
+        transcript: async (sessionID) => {
+          if (sessionID === "session-1") {
+            await gate.promise
           }
-
-          await gate.promise
-          return ok([])
+          return []
         },
-        children: async () => ok([]),
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1578,90 +1151,44 @@ describe("run stream transport", () => {
 
     try {
       await Promise.resolve()
-      global.push(globalEvent(retry("child-1", 1, "retry child")))
-      global.push(
-        globalEvent({
-          id: "evt-child-message",
-          type: "message.updated",
-          properties: {
-            sessionID: "child-1",
-            info: assistantMessage({
-              sessionID: "child-1",
-              id: "msg-child-1",
-              parts: [],
-            }).info,
-          },
+      src.push(next("retried", { attempt: 1, error: { message: "retry child", isRetryable: true } }, "child-1"))
+      src.push(step("msg-child-1", "child-1"))
+      src.push(textStarted("msg-child-1", "txt-child-1", "child-1"))
+      src.push(textDelta("msg-child-1", "txt-child-1", "Hello", "child-1"))
+      src.push(
+        toolCalled({
+          messageID: "msg-1",
+          callID: "call-1",
+          tool: "task",
+          body: { description: "Explore run.ts", subagent_type: "explore" },
         }),
       )
-      global.push(globalEvent(textUpdated(textPart("txt-child-1", "msg-child-1", "", "child-1"))))
-      global.push(globalEvent(textDelta("msg-child-1", "txt-child-1", "Hello", "child-1")))
-      global.push(
-        globalEvent(
-          toolUpdated(
-            runningTool({
-              sessionID: "session-1",
-              messageID: "msg-1",
-              id: "task-1",
-              callID: "call-1",
-              tool: "task",
-              body: {
-                description: "Explore run.ts",
-                subagent_type: "explore",
-              },
-              metadata: {
-                sessionId: "child-1",
-              },
-            }),
-          ),
-        ),
-      )
+      src.push(created("child-1", "session-1"))
       gate.resolve()
       transport = await task
 
-      await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        return item?.type === "stream.subagent" && item.state.tabs.some((tab) => tab.sessionID === "child-1")
-          ? item
-          : undefined
-      })
-
+      await waitFor(() => lastSubagent(ui)?.tabs.find((tab) => tab.sessionID === "child-1"))
       transport.selectSubagent("child-1")
 
       const detail = await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        const next = item?.type === "stream.subagent" ? item.state.details["child-1"] : undefined
-        return next?.commits.some((commit) => commit.kind === "error" && commit.text === "retry child") &&
-          next.commits.some((commit) => commit.kind === "assistant" && commit.text === "Hello")
-          ? next
+        const value = lastSubagent(ui)?.details["child-1"]
+        return value?.commits.some((commit) => commit.kind === "error" && commit.text === "retry child") &&
+          value.commits.some((commit) => commit.kind === "assistant" && commit.text === "Hello")
+          ? value
           : undefined
       })
-
-      expect(detail).toEqual({
-        sessionID: "child-1",
-        commits: expect.arrayContaining([
-          expect.objectContaining({
-            kind: "error",
-            text: "retry child",
-          }),
-          expect.objectContaining({
-            kind: "assistant",
-            text: "Hello",
-          }),
-        ]),
-      })
+      expect(detail.sessionID).toBe("child-1")
     } finally {
-      global.close()
+      src.close()
       await transport?.close()
     }
   })
 
   test("streams selected subagent output from global events while it is running", async () => {
-    const global = globalFeed()
+    const src = eventFeed()
     const ui = footer()
     const transport = await createSessionTransport({
-      sdk: sdk({
-        globalStream: global.stream,
-      }),
+      sdk: sdk({ stream: src.stream }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1669,101 +1196,60 @@ describe("run stream transport", () => {
     })
 
     try {
-      global.push(globalEvent(assistant("msg-1")))
-      global.push(
-        globalEvent(
-          toolUpdated(
-            runningTool({
-              sessionID: "session-1",
-              messageID: "msg-1",
-              id: "task-1",
-              callID: "call-1",
-              tool: "task",
-              body: {
-                description: "Explore run.ts",
-                subagent_type: "explore",
-              },
-              metadata: {
-                sessionId: "child-1",
-              },
-            }),
-          ),
-        ),
-      )
-
-      await waitFor(() => {
-        const item = ui.events.findLast((event) => event.type === "stream.subagent")
-        return item?.type === "stream.subagent" && item.state.tabs.some((tab) => tab.sessionID === "child-1")
-          ? item
-          : undefined
-      })
-
-      transport.selectSubagent("child-1")
-
-      global.push(
-        globalEvent({
-          id: "evt-child-message",
-          type: "message.updated",
-          properties: {
-            sessionID: "child-1",
-            info: assistantMessage({
-              sessionID: "child-1",
-              id: "msg-child-1",
-              parts: [],
-            }).info,
-          },
+      src.push(step("msg-1"))
+      src.push(
+        toolCalled({
+          messageID: "msg-1",
+          callID: "call-1",
+          tool: "task",
+          body: { description: "Explore run.ts", subagent_type: "explore" },
         }),
       )
-      global.push(globalEvent(textUpdated(textPart("txt-child-1", "msg-child-1", "hello", "child-1"))))
+      src.push(created("child-1", "session-1"))
+      await waitFor(() => lastSubagent(ui)?.tabs.find((tab) => tab.sessionID === "child-1" && tab.status === "running"))
+
+      transport.selectSubagent("child-1")
+      src.push(step("msg-child-1", "child-1"))
+      src.push(textStarted("msg-child-1", "txt-child-1", "child-1"))
+      src.push(textDelta("msg-child-1", "txt-child-1", "hello", "child-1"))
 
       expect(
         await waitFor(() => {
-          const item = ui.events.findLast((event) => event.type === "stream.subagent")
-          const detail = item?.type === "stream.subagent" ? item.state.details["child-1"] : undefined
+          const detail = lastSubagent(ui)?.details["child-1"]
           return detail?.commits.some((commit) => commit.kind === "assistant" && commit.text === "hello")
             ? detail
             : undefined
         }),
-      ).toEqual({
-        sessionID: "child-1",
-        commits: [
-          expect.objectContaining({
-            kind: "assistant",
-            text: "hello",
-          }),
-        ],
-      })
+      ).toEqual({ sessionID: "child-1", commits: [expect.objectContaining({ kind: "assistant", text: "hello" })] })
 
-      global.push(globalEvent(textUpdated(textPart("txt-child-1", "msg-child-1", "hello world", "child-1"))))
-
+      src.push(textDelta("msg-child-1", "txt-child-1", " world", "child-1"))
       expect(
         await waitFor(() => {
-          const item = ui.events.findLast((event) => event.type === "stream.subagent")
-          const detail = item?.type === "stream.subagent" ? item.state.details["child-1"] : undefined
+          const detail = lastSubagent(ui)?.details["child-1"]
           return detail?.commits.some((commit) => commit.kind === "assistant" && commit.text === "hello world")
             ? detail
             : undefined
         }, 2_000),
       ).toEqual({
         sessionID: "child-1",
-        commits: [
-          expect.objectContaining({
-            kind: "assistant",
-            text: "hello world",
-          }),
-        ],
+        commits: [expect.objectContaining({ kind: "assistant", text: "hello world" })],
       })
+
+      src.push(toolSuccess({ messageID: "msg-1", callID: "call-1", structured: { sessionID: "child-1", text: "ok" } }))
+      await waitFor(() =>
+        lastSubagent(ui)?.tabs.find((tab) => tab.sessionID === "child-1" && tab.status === "completed"),
+      )
     } finally {
-      global.close()
+      src.close()
       await transport.close()
     }
   })
 
-  test("recovers pending questions from question.list when question.asked is missed", async () => {
+  test("recovers pending questions from the question list when the ask is missed", async () => {
     const src = eventFeed()
     const ui = footer()
     let questionCalls = 0
-    const request = {
+    const request: QuestionV2Request = {
       id: "question-1",
       sessionID: "session-1",
       questions: [
@@ -1774,40 +1260,30 @@ describe("run stream transport", () => {
           multiSelect: false,
         },
       ],
-      tool: {
-        messageID: "msg-1",
-        callID: "call-question-1",
-      },
+      tool: { messageID: "msg-1", callID: "call-question-1" },
     }
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        questions: async () => {
+        questions: () => {
           questionCalls += 1
-          return ok(questionCalls > 1 ? [request] : [])
+          return questionCalls > 1 ? [request] : []
         },
-        promptAsync: async () => {
+        prompt: async () => {
           queueMicrotask(() => {
             src.push(busy())
-            src.push(assistant("msg-1"))
+            src.push(step("msg-1"))
             src.push(
-              toolUpdated(
-                runningTool({
-                  sessionID: "session-1",
-                  messageID: "msg-1",
-                  id: "question-tool-1",
-                  callID: "call-question-1",
-                  tool: "question",
-                  body: {
-                    questions: request.questions,
-                  },
-                }),
-              ),
+              toolCalled({
+                messageID: "msg-1",
+                callID: "call-question-1",
+                tool: "question",
+                body: { questions: request.questions },
+              }),
             )
           })
-          return ok(undefined)
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1817,51 +1293,22 @@ describe("run stream transport", () => {
     const ctrl = new AbortController()
 
     try {
-      const run = transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "hello", parts: [] },
-        files: [],
-        includeFiles: false,
-        signal: ctrl.signal,
-      })
+      const run = transport.runPromptTurn(turn("hello", { signal: ctrl.signal }))
 
       const view = await waitFor(() => {
         const item = ui.events.findLast((event) => event.type === "stream.view")
         return item?.type === "stream.view" && item.view.type === "question" ? item.view : undefined
       })
-
-      expect(view).toEqual({
-        type: "question",
-        request,
-      })
-
-      expect(ui.events).toContainEqual({
-        type: "stream.patch",
-        patch: {
-          phase: "running",
-          status: "awaiting answer",
-        },
-      })
+      expect(view).toEqual({ type: "question", request })
+      expect(ui.events).toContainEqual({ type: "stream.patch", patch: { phase: "running", status: "awaiting answer" } })
 
       src.push(
-        toolUpdated(
-          completedTool({
-            sessionID: "session-1",
-            messageID: "msg-1",
-            id: "question-tool-1",
-            callID: "call-question-1",
-            tool: "question",
-            body: {
-              questions: request.questions,
-            },
-            output: "User has answered your questions.",
-            metadata: {
-              answers: [["CLI"]],
-            },
-          }),
-        ),
+        toolSuccess({
+          messageID: "msg-1",
+          callID: "call-question-1",
+          structured: { answers: [["CLI"]] },
+          output: "User has answered your questions.",
+        }),
       )
 
       expect(
@@ -1869,10 +1316,7 @@ describe("run stream transport", () => {
           const item = ui.events.findLast((event) => event.type === "stream.view")
           return item?.type === "stream.view" && item.view.type === "prompt" ? item : undefined
         }),
-      ).toEqual({
-        type: "stream.view",
-        view: { type: "prompt" },
-      })
+      ).toEqual({ type: "stream.view", view: { type: "prompt" } })
 
       ctrl.abort()
       await run
@@ -1882,35 +1326,25 @@ describe("run stream transport", () => {
     }
   })
 
-  test("does not resurrect questions if question.list resolves after tool completion", async () => {
+  test("does not resurrect questions if the question list resolves after tool completion", async () => {
     const src = eventFeed()
     const ui = footer()
     const started = defer()
-    const request = {
+    const request: QuestionV2Request = {
       id: "question-race-1",
       sessionID: "session-1",
-      questions: [
-        {
-          question: "Which area should I inspect first?",
-          header: "Area",
-          options: [{ label: "CLI", description: "Look at the direct run flow." }],
-          multiSelect: false,
-        },
-      ],
-      tool: {
-        messageID: "msg-1",
-        callID: "call-question-race-1",
-      },
+      questions: [{ question: "Which area?", header: "Area", options: [], multiSelect: false }],
+      tool: { messageID: "msg-1", callID: "call-question-race-1" },
     }
-    const pending = defer<Awaited<ReturnType<typeof ok<(typeof request)[]>>>>()
+    const pending = defer<QuestionV2Request[]>()
     let questionCalls = 0
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        questions: async () => {
+        questions: () => {
           questionCalls += 1
           if (questionCalls === 1) {
-            return ok([])
+            return []
           }
 
           if (questionCalls === 2) {
@@ -1918,30 +1352,23 @@ describe("run stream transport", () => {
             return pending.promise
           }
 
-          return ok([])
+          return []
         },
-        promptAsync: async () => {
+        prompt: async () => {
           queueMicrotask(() => {
             src.push(busy())
-            src.push(assistant("msg-1"))
+            src.push(step("msg-1"))
             src.push(
-              toolUpdated(
-                runningTool({
-                  sessionID: "session-1",
-                  messageID: "msg-1",
-                  id: "question-race-tool-1",
-                  callID: "call-question-race-1",
-                  tool: "question",
-                  body: {
-                    questions: request.questions,
-                  },
-                }),
-              ),
+              toolCalled({
+                messageID: "msg-1",
+                callID: "call-question-race-1",
+                tool: "question",
+                body: { questions: request.questions },
+              }),
             )
           })
-          return ok(undefined)
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -1951,42 +1378,24 @@ describe("run stream transport", () => {
     const ctrl = new AbortController()
 
     try {
-      const run = transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "hello", parts: [] },
-        files: [],
-        includeFiles: false,
-        signal: ctrl.signal,
-      })
+      const run = transport.runPromptTurn(turn("hello", { signal: ctrl.signal }))
 
       await started.promise
       src.push(
-        toolUpdated(
-          completedTool({
-            sessionID: "session-1",
-            messageID: "msg-1",
-            id: "question-race-tool-1",
-            callID: "call-question-race-1",
-            tool: "question",
-            body: {
-              questions: request.questions,
-            },
-            output: "User has answered your questions.",
-            metadata: {
-              answers: [["CLI"]],
-            },
-          }),
+        toolSuccess({
+          messageID: "msg-1",
+          callID: "call-question-race-1",
+          structured: { answers: [["CLI"]] },
+          output: "ok",
+        }),
+      )
+      await waitFor(() =>
+        ui.commits.findLast(
+          (item) =>
+            item.kind === "tool" && item.partID === "msg-1:call-question-race-1" && item.toolState === "completed",
         ),
       )
-      await waitFor(() => {
-        const commit = ui.commits.findLast(
-          (item) => item.kind === "tool" && item.partID === "question-race-tool-1" && item.toolState === "completed",
-        )
-        return commit ? true : undefined
-      })
-      pending.resolve(ok([request]))
+      pending.resolve([request])
 
       await Bun.sleep(50)
 
@@ -2005,29 +1414,22 @@ describe("run stream transport", () => {
     }
   })
 
-  test("respects the includeFiles flag when building prompt payloads", async () => {
+  test("admits V2 prompts and respects the includeFiles flag", async () => {
     const src = eventFeed()
     const ui = footer()
-    const seen: unknown[] = []
-    const file: RunFilePart = {
-      type: "file",
-      url: "file:///tmp/a.ts",
-      filename: "a.ts",
-      mime: "text/plain",
-    }
+    const file: RunFilePart = { type: "file", url: "file:///tmp/a.ts", filename: "a.ts", mime: "text/plain" }
+    const mocked = sdk({
+      stream: src.stream,
+      prompt: async () => {
+        queueMicrotask(() => {
+          src.push(busy())
+          src.push(idle())
+        })
+      },
+    })
 
     const transport = await createSessionTransport({
-      sdk: sdk({
-        stream: src.stream,
-        promptAsync: async (input) => {
-          seen.push(input)
-          queueMicrotask(() => {
-            src.push(busy())
-            src.push(idle())
-          })
-          return ok(undefined)
-        },
-      }),
+      sdk: mocked.client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -2035,32 +1437,165 @@ describe("run stream transport", () => {
     })
 
     try {
-      await transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "hello", parts: [] },
-        files: [file],
-        includeFiles: true,
-      })
-
-      await transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "again", parts: [] },
-        files: [file],
-        includeFiles: false,
-      })
-
-      expect(seen).toEqual([
-        expect.objectContaining({
-          parts: [file, { type: "text", text: "hello" }],
+      await transport.runPromptTurn(
+        turn("hello", {
+          files: [file],
+          includeFiles: true,
+          prompt: { text: "hello", parts: [], messageID: "msg_local_1" },
         }),
-        expect.objectContaining({
-          parts: [{ type: "text", text: "again" }],
-        }),
+      )
+      await transport.runPromptTurn(turn("again", { files: [file], includeFiles: false }))
+
+      expect(mocked.calls.prompt).toEqual([
+        {
+          sessionID: "session-1",
+          id: "msg_local_1",
+          prompt: { text: "hello", files: [{ uri: "file:///tmp/a.ts", name: "a.ts" }] },
+        },
+        { sessionID: "session-1", prompt: { text: "again" } },
       ])
+    } finally {
+      src.close()
+      await transport.close()
+    }
+  })
+
+  test("switches agent and model before a prompt only when the selection changed", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    const mocked = sdk({
+      stream: src.stream,
+      session: { agent: "build", model: { providerID: "openai", id: "gpt-5" } },
+      prompt: async () => {
+        queueMicrotask(() => {
+          src.push(busy())
+          src.push(idle())
+        })
+      },
+    })
+    const transport = await createSessionTransport({
+      sdk: mocked.client,
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      const model = { providerID: "openai", modelID: "gpt-5" }
+      await transport.runPromptTurn(turn("same", { agent: "build", model }))
+      expect(mocked.calls.agent).toEqual([])
+      expect(mocked.calls.model).toEqual([])
+
+      await transport.runPromptTurn(turn("switch", { agent: "plan", model, variant: "high" }))
+      expect(mocked.calls.agent).toEqual([{ sessionID: "session-1", agent: "plan" }])
+      expect(mocked.calls.model).toEqual([
+        { sessionID: "session-1", model: { providerID: "openai", id: "gpt-5", variant: "high" } },
+      ])
+
+      await transport.runPromptTurn(turn("again", { agent: "plan", model, variant: "high" }))
+      expect(mocked.calls.agent).toHaveLength(1)
+      expect(mocked.calls.model).toHaveLength(1)
+    } finally {
+      src.close()
+      await transport.close()
+    }
+  })
+
+  test("runs slash commands through the V2 command route and waits for idle", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    const mocked = sdk({
+      stream: src.stream,
+      command: async () => {
+        queueMicrotask(() => {
+          src.push(busy())
+          src.push(idle())
+        })
+      },
+    })
+    const transport = await createSessionTransport({
+      sdk: mocked.client,
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await transport.runPromptTurn(
+        turn("/review main", {
+          prompt: { text: "/review main", parts: [], command: { name: "review", arguments: "main" } },
+        }),
+      )
+      expect(mocked.calls.command).toEqual([{ sessionID: "session-1", command: "review", arguments: "main" }])
+      expect(mocked.calls.prompt).toEqual([])
+    } finally {
+      src.close()
+      await transport.close()
+    }
+  })
+
+  test("runs shell mode through the V2 shell route without starting a turn", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    const mocked = sdk({
+      stream: src.stream,
+      shell: async () => {
+        src.push(next("shell.started", { messageID: "msg_shell", callID: "call_shell", command: "ls" }))
+        src.push(next("shell.ended", { callID: "call_shell", output: "a.ts\n" }))
+      },
+    })
+    const transport = await createSessionTransport({
+      sdk: mocked.client,
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await transport.runPromptTurn(turn("ls", { prompt: { text: "ls", parts: [], mode: "shell" } }))
+      expect(mocked.calls.shell).toEqual([{ sessionID: "session-1", command: "ls", resume: false }])
+      await waitFor(() =>
+        ui.commits.find((commit) => commit.shell?.command === "ls" && commit.toolState === "completed"),
+      )
+    } finally {
+      src.close()
+      await transport.close()
+    }
+  })
+
+  test("reports a drain failure and completes the turn on idle", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    const transport = await createSessionTransport({
+      sdk: sdk({
+        stream: src.stream,
+        prompt: async () => {
+          queueMicrotask(() => {
+            src.push(busy())
+            src.push(
+              next("failed", {
+                error: { type: "unknown", message: "Session history is not migrated" },
+                name: "Session.LegacyNotMigratedError",
+              }),
+            )
+            src.push(idle())
+          })
+        },
+      }).client,
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await transport.runPromptTurn(turn("hello"))
+      expect(ui.commits).toContainEqual(
+        expect.objectContaining({ kind: "error", text: expect.stringContaining("miao db backfill") }),
+      )
     } finally {
       src.close()
       await transport.close()
@@ -2070,19 +1605,18 @@ describe("run stream transport", () => {
   test("falls back to session status polling when idle events are missing", async () => {
     const src = eventFeed()
     const ui = footer()
-    let busy = true
+    let running = true
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        promptAsync: async () => {
+        prompt: async () => {
           queueMicrotask(() => {
-            src.push(assistant("msg-1"))
-            busy = false
+            src.push(step("msg-1"))
+            running = false
           })
-          return ok(undefined)
         },
-        status: async () => ok(statusMap(busy)),
-      }),
+        status: () => (running ? "busy" : "idle"),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -2091,14 +1625,7 @@ describe("run stream transport", () => {
 
     try {
       await Promise.race([
-        transport.runPromptTurn({
-          agent: undefined,
-          model: undefined,
-          variant: undefined,
-          prompt: { text: "hello", parts: [] },
-          files: [],
-          includeFiles: false,
-        }),
+        transport.runPromptTurn(turn("hello")),
         new Promise((_, reject) => setTimeout(() => reject(new Error("turn timed out")), 1_000)),
       ])
     } finally {
@@ -2118,16 +1645,15 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        promptAsync: async () => {
+        prompt: async () => {
           queueMicrotask(() => {
             src.push(busy())
-            src.push(assistant("msg-1"))
-            src.push(textUpdated(textPart("txt-1", "msg-1", "")))
+            src.push(step("msg-1"))
+            src.push(textStarted("msg-1", "txt-1"))
             src.push(textDelta("msg-1", "txt-1", "unfinished"))
           })
-          return ok(undefined)
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -2137,15 +1663,7 @@ describe("run stream transport", () => {
     const ctrl = new AbortController()
 
     try {
-      const task = transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "hello", parts: [] },
-        files: [],
-        includeFiles: false,
-        signal: ctrl.signal,
-      })
+      const task = transport.runPromptTurn(turn("hello", { signal: ctrl.signal }))
 
       await seen.promise
       ctrl.abort()
@@ -2158,7 +1676,7 @@ describe("run stream transport", () => {
           phase: "progress",
           source: "assistant",
           messageID: "msg-1",
-          partID: "txt-1",
+          partID: "msg-1:txt-1",
         },
         {
           kind: "assistant",
@@ -2166,7 +1684,7 @@ describe("run stream transport", () => {
           phase: "final",
           source: "assistant",
           messageID: "msg-1",
-          partID: "txt-1",
+          partID: "msg-1:txt-1",
           interrupted: true,
         },
       ])
@@ -2185,20 +1703,20 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         stream: src.stream,
-        promptAsync: async (_input, opt) => {
+        prompt: async (_params, options) => {
           ready.resolve()
           await new Promise<void>((resolve) => {
-            const onAbort = () => {
-              aborted = true
-              opt?.signal?.removeEventListener("abort", onAbort)
-              resolve()
-            }
-
-            opt?.signal?.addEventListener("abort", onAbort, { once: true })
+            options?.signal?.addEventListener(
+              "abort",
+              () => {
+                aborted = true
+                resolve()
+              },
+              { once: true },
+            )
           })
-          return ok(undefined)
         },
-      }),
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -2206,14 +1724,7 @@ describe("run stream transport", () => {
     })
 
     try {
-      const task = transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "hello", parts: [] },
-        files: [],
-        includeFiles: false,
-      })
+      const task = transport.runPromptTurn(turn("hello"))
 
       await ready.promise
       await transport.close()
@@ -2233,19 +1744,18 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         globalEvent: () =>
-          globalSse(
-            (async function* (): AsyncGenerator<GlobalEvent> {
+          Promise.resolve({
+            stream: (async function* (): AsyncGenerator<GlobalEvent> {
               await ready.promise
               yield globalEvent(busy())
               throw new Error("boom")
             })(),
-          ),
-        promptAsync: async () => {
+          }),
+        prompt: async () => {
           ready.resolve()
-          return ok(undefined)
         },
-        status: async () => ok({ "session-1": { type: "busy" } }),
-      }),
+        status: () => "busy",
+      }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -2253,16 +1763,7 @@ describe("run stream transport", () => {
     })
 
     try {
-      await expect(
-        transport.runPromptTurn({
-          agent: undefined,
-          model: undefined,
-          variant: undefined,
-          prompt: { text: "hello", parts: [] },
-          files: [],
-          includeFiles: false,
-        }),
-      ).rejects.toThrow("boom")
+      await expect(transport.runPromptTurn(turn("hello"))).rejects.toThrow("boom")
     } finally {
       await transport.close()
     }
@@ -2275,24 +1776,16 @@ describe("run stream transport", () => {
     const transport = await createSessionTransport({
       sdk: sdk({
         globalEvent: () =>
-          globalSse(
-            (async function* (): AsyncGenerator<GlobalEvent> {
+          Promise.resolve({
+            stream: (async function* (): AsyncGenerator<GlobalEvent> {
               await ready.promise
-              yield globalEvent({
-                id: "evt-disposed",
-                type: "server.instance.disposed",
-                properties: {
-                  directory: "/tmp",
-                },
-              })
+              yield globalEvent({ type: "server.instance.disposed", properties: { directory: "/tmp" } })
             })(),
-          ),
-        promptAsync: async () => {
+          }),
+        prompt: async () => {
           ready.resolve()
-          return ok(undefined)
         },
-        status: async () => ok({}),
-      }),
+      }).client,
       directory: "/tmp",
       sessionID: "session-1",
       thinking: true,
@@ -2301,16 +1794,7 @@ describe("run stream transport", () => {
     })
 
     try {
-      await expect(
-        transport.runPromptTurn({
-          agent: undefined,
-          model: undefined,
-          variant: undefined,
-          prompt: { text: "hello", parts: [] },
-          files: [],
-          includeFiles: false,
-        }),
-      ).rejects.toThrow("instance disposed")
+      await expect(transport.runPromptTurn(turn("hello"))).rejects.toThrow("instance disposed")
     } finally {
       await transport.close()
     }
@@ -2320,9 +1804,7 @@ describe("run stream transport", () => {
     const src = eventFeed()
     const ui = footer()
     const transport = await createSessionTransport({
-      sdk: sdk({
-        stream: src.stream,
-      }),
+      sdk: sdk({ stream: src.stream }).client,
       sessionID: "session-1",
       thinking: true,
       limits: () => ({}),
@@ -2332,26 +1814,8 @@ describe("run stream transport", () => {
     const ctrl = new AbortController()
 
     try {
-      const task = transport.runPromptTurn({
-        agent: undefined,
-        model: undefined,
-        variant: undefined,
-        prompt: { text: "one", parts: [] },
-        files: [],
-        includeFiles: false,
-        signal: ctrl.signal,
-      })
-
-      await expect(
-        transport.runPromptTurn({
-          agent: undefined,
-          model: undefined,
-          variant: undefined,
-          prompt: { text: "two", parts: [] },
-          files: [],
-          includeFiles: false,
-        }),
-      ).rejects.toThrow("prompt already running")
+      const task = transport.runPromptTurn(turn("one", { signal: ctrl.signal }))
+      await expect(transport.runPromptTurn(turn("two"))).rejects.toThrow("prompt already running")
 
       ctrl.abort()
       await task

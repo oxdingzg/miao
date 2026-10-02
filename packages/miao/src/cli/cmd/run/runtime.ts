@@ -164,11 +164,11 @@ async function resolveExitTitle(
     return undefined
   }
 
-  return ctx.sdk.session
+  return ctx.sdk.v2.session
     .get({
       sessionID: state.sessionID,
     })
-    .then((x) => x.data?.title)
+    .then((x) => x.data?.data.title)
     .catch(() => undefined)
 }
 
@@ -243,28 +243,34 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     model: state.model,
     variant: state.activeVariant,
     tuiConfig,
-    backgroundSubagents: input.backgroundSubagents,
+    // V2 subagents run inside their `task` call; there is no V2 route to
+    // detach them into the background, so the footer action stays hidden.
+    backgroundSubagents: false,
     onPermissionReply: async (next) => {
       if (state.demo?.permission(next)) {
         return
       }
 
       log?.write("send.permission.reply", next)
-      await ctx.sdk.permission.reply(next)
+      await ctx.sdk.v2.session.permission.reply(next)
     },
     onQuestionReply: async (next) => {
       if (state.demo?.questionReply(next)) {
         return
       }
 
-      await ctx.sdk.question.reply(next)
+      await ctx.sdk.v2.session.question.reply({
+        sessionID: next.sessionID,
+        requestID: next.requestID,
+        questionV2Reply: { answers: next.answers },
+      })
     },
     onQuestionReject: async (next) => {
       if (state.demo?.questionReject(next)) {
         return
       }
 
-      await ctx.sdk.question.reject(next)
+      await ctx.sdk.v2.session.question.reject(next)
     },
     onCycleVariant: () => {
       if (!state.model || state.variants.length === 0) {
@@ -343,18 +349,14 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       state.aborting = true
-      void ctx.sdk.session
-        .abort({
+      void ctx.sdk.v2.session
+        .interrupt({
           sessionID: state.sessionID,
         })
         .catch(() => {})
         .finally(() => {
           state.aborting = false
         })
-    },
-    onBackground: () => {
-      if (!hasSession(input, state)) return
-      void ctx.sdk.experimental.session.background({ sessionID: state.sessionID }).catch(() => {})
     },
     onSubagentSelect: (sessionID) => {
       state.selectSubagent?.(sessionID)

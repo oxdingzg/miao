@@ -3,7 +3,9 @@ import { OpencodeClient } from "@opencode-ai/sdk/v2"
 import { runInteractiveMode } from "@/cli/cmd/run/runtime"
 import type { FooterApi, RunProvider } from "@/cli/cmd/run/types"
 
-type SessionMessage = NonNullable<Awaited<ReturnType<OpencodeClient["session"]["messages"]>>["data"]>[number]
+type SessionMessage = NonNullable<
+  Awaited<ReturnType<OpencodeClient["v2"]["session"]["context"]>>["data"]
+>["data"][number]
 
 const provider: RunProvider = {
   id: "openai",
@@ -146,36 +148,20 @@ describe("run interactive runtime", () => {
       await providers.promise
       return ok({ providers: [provider], default: {} })
     })
-    spyOn(sdk.session, "messages").mockImplementation(() =>
-      ok([
-        {
-          info: {
+    spyOn(sdk.v2.session, "context").mockImplementation(() =>
+      ok({
+        data: [
+          {
             id: "msg-user-1",
-            sessionID: "ses-1",
-            role: "user",
-            time: {
-              created: 1,
-            },
-            agent: "build",
-            model: {
-              providerID: "openai",
-              modelID: "gpt-5",
-              variant: undefined,
-            },
-          },
-          parts: [
-            {
-              id: "part-user-1",
-              sessionID: "ses-1",
-              messageID: "msg-user-1",
-              type: "text",
-              text: "hello",
-            },
-          ],
-        } satisfies SessionMessage,
-      ]),
+            type: "user",
+            text: "hello",
+            time: { created: 1 },
+          } satisfies SessionMessage,
+        ],
+      }),
     )
-    spyOn(sdk.session, "get").mockRejectedValue(new Error("not needed"))
+    spyOn(sdk.v2.session, "messages").mockImplementation(() => ok({ data: [], cursor: {} }))
+    spyOn(sdk.v2.session, "get").mockRejectedValue(new Error("not needed"))
     spyOn(sdk.app, "agents").mockImplementation(() => ok([]))
     spyOn(sdk.experimental.resource, "list").mockImplementation(() => ok({}))
     spyOn(sdk.command, "list").mockImplementation(() => ok([]))

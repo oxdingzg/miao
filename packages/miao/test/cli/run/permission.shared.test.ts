@@ -24,37 +24,40 @@ function req(input: Partial<PermissionRequest> = {}): PermissionRequest {
 
 describe("run permission shared", () => {
   test("replies immediately for allow once", () => {
-    const out = permissionRun(createPermissionBodyState("perm-1"), "perm-1", "once")
+    const out = permissionRun(createPermissionBodyState("perm-1"), req(), "once")
 
     expect(out.reply).toEqual({
+      sessionID: "session-1",
       requestID: "perm-1",
       reply: "once",
     })
   })
 
   test("requires confirmation for allow always", () => {
-    const next = permissionRun(createPermissionBodyState("perm-1"), "perm-1", "always")
+    const next = permissionRun(createPermissionBodyState("perm-1"), req(), "always")
     expect(next.state.stage).toBe("always")
     expect(next.state.selected).toBe("confirm")
     expect(next.reply).toBeUndefined()
 
-    expect(permissionRun(next.state, "perm-1", "confirm").reply).toEqual({
+    expect(permissionRun(next.state, req(), "confirm").reply).toEqual({
+      sessionID: "session-1",
       requestID: "perm-1",
       reply: "always",
     })
 
-    expect(permissionRun(next.state, "perm-1", "cancel").state).toMatchObject({
+    expect(permissionRun(next.state, req(), "cancel").state).toMatchObject({
       stage: "permission",
       selected: "always",
     })
   })
 
   test("builds trimmed reject replies and stage transitions", () => {
-    const next = permissionRun(createPermissionBodyState("perm-1"), "perm-1", "reject")
+    const next = permissionRun(createPermissionBodyState("perm-1"), req(), "reject")
     expect(next.state.stage).toBe("reject")
 
-    const out = permissionReject({ ...next.state, message: "  use rg  " }, "perm-1")
+    const out = permissionReject({ ...next.state, message: "  use rg  " }, req())
     expect(out).toEqual({
+      sessionID: "session-1",
       requestID: "perm-1",
       reply: "reject",
       message: "use rg",
