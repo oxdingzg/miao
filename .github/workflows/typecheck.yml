@@ -2,10 +2,20 @@ name: typecheck
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
+      - main
   pull_request:
-    branches: [dev]
+    branches:
+      - dev
+      - main
   workflow_dispatch:
+
+concurrency:
+  # Same policy as test.yml: keep every run on upstream dev, but let a new push to main
+  # (or a PR) cancel the still-running run of an older commit.
+  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  cancel-in-progress: true
 
 jobs:
   typecheck:
