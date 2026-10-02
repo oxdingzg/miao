@@ -47,6 +47,14 @@ image.writeToFileAtomically(${JSON.stringify(file)}, true)`
 }
 
 export async function read() {
+  // The mtty host writes an image paste here, so a TUI does not need osascript
+  // to reach the macOS pasteboard (mtty ADR 0036).
+  const hostFile = process.env.MTTY_CLIPBOARD_FILE
+  if (hostFile) {
+    const data = await readFile(hostFile).catch(() => undefined)
+    if (data?.length) return { data: data.toString("base64"), mime: "image/png" }
+  }
+
   if (platform() === "darwin") {
     const file = path.join(tmpdir(), "miao-clipboard.png")
     try {
