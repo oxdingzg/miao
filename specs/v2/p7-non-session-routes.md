@@ -12,6 +12,9 @@
 - `lsp`：core `LSP.status()` 已有，加 `GET /api/lsp`（protocol 组 + server handler）+ 生成；
   TUI 改走 `client.v2.lsp.status`，并在 `sync.tsx` 用 `toLspStatus` 把 core 的 `{id,extensions,connected}`
   投影回现有 `{id,name,root,status}` 形状（`root` 置空），渲染点与插件 API 不变。
+- `app` / `project`：`app.agents` → `v2.agent.list`，`sync.tsx` 用 `toAgent` 把 `AgentV2Info` 映射回
+  V1 `Agent`（`name←id`，不读 `permissions` 置空，`model←ModelRef`）；`dialog-move-session` 的
+  `project.directories` → `v2.project.directories`。无需新端点。
 - TUI：`sdk.client.find.files` → `client.v2.fs.find`；`sdk.client.path.get` → `client.v2.location.get`；
   `sdk.client.project.current/directories` → `client.v2.project.*`（`context/project.tsx` 把
   `LocationInfo.project.directory` 映射回 `instance.path.worktree`）。`packages/tui` 367 测试通过、typecheck 通过。
