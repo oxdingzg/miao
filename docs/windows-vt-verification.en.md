@@ -11,8 +11,8 @@ output is redirected. This page is the on-device verification.
 ## Setup
 
 ```powershell
-# Install via the release script (run in Git Bash or WSL)
-curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash
+# Install via the PowerShell script
+irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex
 # Or drop the miao.exe from miao-windows-x64.zip onto PATH
 miao --version
 ```

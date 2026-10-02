@@ -1,0 +1,60 @@
+name: install
+
+# Runs the published installers against the latest release on each platform, so a
+# change to `install` or `install.ps1` is checked on a real machine before users hit it.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - install
+      - install.ps1
+      - .github/workflows/install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bash:
+    name: bash (${{ matrix.host }})
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.host }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install with the bash installer
+        run: bash install --no-modify-path
+      - name: Run miao
+        run: |
+          "$HOME/.miao/bin/miao" --version
+
+  powershell:
+    name: powershell (${{ matrix.shell }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # powershell = Windows PowerShell 5.1, pwsh = PowerShell 7
+        shell: [powershell, pwsh]
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install the latest release through irm | iex
+        run: Get-Content -Raw ./install.ps1 | Invoke-Expression
+      - name: Run miao from the user PATH
+        run: |
+          $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+          if (-not (($userPath -split ";") -contains "$HOME\.miao\bin")) { throw "user PATH was not updated: $userPath" }
+          & "$HOME\.miao\bin\miao.exe" --version
+      - name: Re-run is a no-op for the same version
+        run: Get-Content -Raw ./install.ps1 | Invoke-Expression
+      - name: Install a pinned version through parameters
+        run: |
+          & ([scriptblock]::Create((Get-Content -Raw ./install.ps1))) -Version 0.0.32
+          $installed = (& "$HOME\.miao\bin\miao.exe" --version | Out-String).Trim()
+          if ($installed -ne "0.0.32") { throw "expected 0.0.32, got $installed" }
