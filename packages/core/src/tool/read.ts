@@ -30,7 +30,7 @@ const LocationInput = Schema.Struct({
     description: `PDF only: 1-based pages to read, such as "3", "1-5", or "1,3,7-9" (at most ${ReadToolPdf.MAX_PAGES}; default: the first ${ReadToolPdf.DEFAULT_PAGES})`,
   }),
 })
-const Input = LocationInput
+export const Input = LocationInput
 // A whole-file text read may carry nested instruction files, like a text page.
 const FileContent = Schema.Struct({ ...FileSystem.Content.fields, instructions: ReadToolFileSystem.Instructions })
 const Output = Schema.Union([FileContent, ReadToolFileSystem.TextPage, ReadToolFileSystem.ListPage, ReadToolPdf.Pages])

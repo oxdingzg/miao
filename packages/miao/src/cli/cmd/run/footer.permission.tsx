@@ -186,7 +186,7 @@ export function RunPermissionBody(props: {
 
   const run = (option: PermissionOption) => {
     const cur = state()
-    const next = permissionRun(cur, props.request.id, option)
+    const next = permissionRun(cur, props.request, option)
     if (next.state !== cur) {
       setState(next.state)
     }
@@ -199,7 +199,7 @@ export function RunPermissionBody(props: {
   }
 
   const reject = () => {
-    const next = permissionReject(state(), props.request.id)
+    const next = permissionReject(state(), props.request)
     if (!next) {
       return
     }

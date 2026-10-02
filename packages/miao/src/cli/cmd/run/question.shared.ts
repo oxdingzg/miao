@@ -181,6 +181,7 @@ function questionPick(
     return {
       state: next,
       reply: {
+        sessionID: request.sessionID,
         requestID: request.id,
         answers: [[answer]],
       },
@@ -307,6 +308,7 @@ export function questionSave(state: QuestionBodyState, request: QuestionRequest)
 
 export function questionSubmit(request: QuestionRequest, state: QuestionBodyState): QuestionReply {
   return {
+    sessionID: request.sessionID,
     requestID: request.id,
     answers: questionAnswers(state, request.questions.length),
   }
@@ -314,6 +316,7 @@ export function questionSubmit(request: QuestionRequest, state: QuestionBodyStat
 
 export function questionReject(request: QuestionRequest): QuestionReject {
   return {
+    sessionID: request.sessionID,
     requestID: request.id,
   }
 }

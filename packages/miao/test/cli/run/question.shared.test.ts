@@ -33,6 +33,7 @@ describe("run question shared", () => {
     const out = questionSelect(createQuestionBodyState("question-1"), req())
 
     expect(out.reply).toEqual({
+      sessionID: "session-1",
       requestID: "question-1",
       answers: [["chunked"]],
     })
@@ -66,6 +67,7 @@ describe("run question shared", () => {
     state = questionSelect(state, ask).state
     expect(questionConfirm(ask, state)).toBe(true)
     expect(questionSubmit(ask, state)).toEqual({
+      sessionID: "session-1",
       requestID: "question-1",
       answers: [["chunked"], ["no"]],
     })
@@ -98,6 +100,7 @@ describe("run question shared", () => {
     state = questionStoreCustom(next.state, 0, "  custom mode  ")
     next = questionSave(state, req())
     expect(next.reply).toEqual({
+      sessionID: "session-1",
       requestID: "question-1",
       answers: [["custom mode"]],
     })
@@ -109,6 +112,7 @@ describe("run question shared", () => {
     expect(questionSync(state, "question-1")).toBe(state)
     expect(questionSync(state, "question-2")).toEqual(createQuestionBodyState("question-2"))
     expect(questionReject(req())).toEqual({
+      sessionID: "session-1",
       requestID: "question-1",
     })
   })

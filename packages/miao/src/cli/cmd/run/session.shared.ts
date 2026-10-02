@@ -1,14 +1,18 @@
 // Session message extraction and prompt history.
 //
-// Fetches session messages from the SDK and extracts user turn text for
-// the prompt history ring. Also finds the most recently used variant for
-// the current model so the footer can pre-select it.
+// Reads the V2 session transcript and extracts user turn text for the prompt
+// history ring. Also finds the most recently used variant for the current
+// model so the footer can pre-select it.
+import type { Message, Part } from "@opencode-ai/sdk/v2"
 import { promptCopy, promptSame } from "./prompt.shared"
+import { loadTranscript, transcriptMessages } from "./session-v2"
 import type { RunInput, RunPrompt } from "./types"
 
 const LIMIT = 200
 
-export type SessionMessages = NonNullable<Awaited<ReturnType<RunInput["sdk"]["session"]["messages"]>>["data"]>
+// The transcript in the V1 message/part shape the reducers render, mapped from
+// the V2 projection by `session-v2.ts`.
+export type SessionMessages = Array<{ info: Message; parts: Part[] }>
 
 type Turn = {
   prompt: RunPrompt
@@ -153,11 +157,9 @@ export function createSession(messages: SessionMessages): RunSession {
 }
 
 export async function resolveSession(sdk: RunInput["sdk"], sessionID: string, limit = LIMIT): Promise<RunSession> {
-  const response = await sdk.session.messages({
-    sessionID,
-    limit,
-  })
-  return createSession(response.data ?? [])
+  const messages = await loadTranscript(sdk, sessionID, limit)
+  // Prompt history reads user turns only; the directory feeds assistant paths.
+  return createSession(transcriptMessages({ sessionID, directory: "", messages }).slice(-limit))
 }
 
 export function sessionHistory(session: RunSession, limit = LIMIT): RunPrompt[] {

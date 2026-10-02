@@ -62,7 +62,7 @@ const SandboxInfo = Schema.Struct({
 
 type SandboxInfo = typeof SandboxInfo.Type
 
-const StructuredOutput = Schema.Struct({
+export const StructuredOutput = Schema.Struct({
   exit: Schema.Number.pipe(Schema.optional),
   truncated: Schema.Boolean,
   timeout: Schema.Boolean.pipe(Schema.optional),

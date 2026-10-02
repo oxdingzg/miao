@@ -1,12 +1,19 @@
-import type { Event, Message, Part, PermissionRequest, QuestionRequest, ToolPart } from "@opencode-ai/sdk/v2"
+// Subagent tabs and their inspector detail for direct interactive mode.
+//
+// A V2 `task` call learns its child session only when the call settles, so a
+// running call is linked to the child whose `session.next.created` names the
+// root as parent, in call order.
+import type { Message, Part, PermissionRequest, QuestionRequest, ToolPart } from "@opencode-ai/sdk/v2"
 import * as Locale from "@/util/locale"
 import {
   bootstrapSessionData,
   createSessionData,
-  formatError,
+  failureText,
   reduceSessionData,
   type SessionData,
+  type SessionDataEvent,
 } from "./session-data"
+import { liveToolPart, partKey } from "./session-v2"
 import type { FooterSubagentState, FooterSubagentTab, StreamCommit } from "./types"
 
 export const SUBAGENT_BOOTSTRAP_LIMIT = 200
@@ -37,9 +44,19 @@ type DetailState = {
   frames: Frame[]
 }
 
+// A root `task` call awaiting or holding its child session.
+type TaskCall = {
+  messageID: string
+  callID: string
+  input: Record<string, unknown>
+  created: number
+  sessionID?: string
+}
+
 export type SubagentData = {
   tabs: Map<string, FooterSubagentTab>
   details: Map<string, DetailState>
+  tasks: Map<string, TaskCall>
 }
 
 export type BootstrapSubagentInput = {
@@ -292,13 +309,16 @@ function metadata(part: ToolPart, key: string) {
   return ("metadata" in part.state ? part.state.metadata?.[key] : undefined) ?? part.metadata?.[key]
 }
 
+// V1 and V2 wording for a tool call cut short by an interrupt.
+const ABORTED_TOOL = new Set(["Tool execution aborted", "Tool execution interrupted"])
+
 function taskStatus(part: ToolPart): FooterSubagentTab["status"] {
   if (part.state.status === "completed") {
     return "completed"
   }
 
   if (part.state.status === "error") {
-    if (metadata(part, "interrupted") === true || text(part.state.error) === "Tool execution aborted") {
+    if (metadata(part, "interrupted") === true || ABORTED_TOOL.has(text(part.state.error) ?? "")) {
       return "cancelled"
     }
 
@@ -472,10 +492,6 @@ function ensureBlockerTab(
   return true
 }
 
-function isAbortedAssistantMessage(info: Message) {
-  return info.role === "assistant" && info.error?.name === "MessageAbortedError"
-}
-
 function cancelSubagentTab(data: SubagentData, sessionID: string) {
   const current = data.tabs.get(sessionID)
   if (!current || current.status !== "running") {
@@ -551,12 +567,16 @@ function compactDetail(detail: DetailState) {
   next.sent = copyMap(detail.data.sent, activePartIDs)
   next.end = new Set([...detail.data.end].filter((item) => activePartIDs.has(item)))
   next.echo = compactEchoMap(detail.data, messageIDs)
+  next.steps = new Map(recent(detail.data.steps.entries(), SUBAGENT_ROLE_LIMIT))
+  // In-flight calls hold the tool name and input their settlement needs.
+  next.calls = detail.data.calls
+  next.retrying = detail.data.retrying
   detail.data = next
 }
 
 function applyChildEvent(input: {
   detail: DetailState
-  event: Event
+  event: SessionDataEvent
   thinking: boolean
   limits: Record<string, number>
 }) {
@@ -576,7 +596,7 @@ function applyChildEvent(input: {
 
 function bootstrapChildEvent(input: {
   detail: DetailState
-  event: Event
+  event: SessionDataEvent
   thinking: boolean
   limits: Record<string, number>
 }) {
@@ -654,6 +674,7 @@ export function createSubagentData(): SubagentData {
   return {
     tabs: new Map(),
     details: new Map(),
+    tasks: new Map(),
   }
 }
 
@@ -711,14 +732,31 @@ export function bootstrapSubagentData(input: BootstrapSubagentInput) {
   const children = new Set(child.keys())
   let changed = false
 
-  for (const message of input.messages) {
-    for (const part of message.parts) {
-      if (part.type !== "tool") {
-        continue
-      }
+  const tasks = input.messages.flatMap((message) =>
+    message.parts.filter((part): part is ToolPart => part.type === "tool" && part.tool === "task"),
+  )
+  for (const part of tasks) {
+    changed = syncTaskTab(input.data, part, children) || changed
+  }
 
-      changed = syncTaskTab(input.data, part, children) || changed
+  // A task still running when the transcript was read has not reported its
+  // child yet; pair those calls with the children that have no tab, in order.
+  const unlinked = input.children.filter((item) => !input.data.tabs.has(item.id))
+  for (const [index, part] of tasks.filter((part) => part.state.status === "running").entries()) {
+    const sessionID = unlinked[index]?.id
+    if (!sessionID) {
+      break
     }
+
+    input.data.tasks.set(part.id, {
+      messageID: part.messageID,
+      callID: part.callID,
+      input: part.state.input,
+      created: "time" in part.state ? part.state.time.start : Date.now(),
+      sessionID,
+    })
+    changed =
+      syncTaskTab(input.data, { ...part, metadata: { ...part.metadata, sessionId: sessionID } }, children) || changed
   }
 
   for (const item of input.permissions) {
@@ -791,75 +829,63 @@ export function bootstrapSubagentCalls(input: {
 
 export function reduceSubagentData(input: {
   data: SubagentData
-  event: Event
+  event: SessionDataEvent
   sessionID: string
   thinking: boolean
   limits: Record<string, number>
 }) {
   const event = input.event
-
-  if (event.type === "message.part.updated") {
-    const part = event.properties.part
-    if (part.sessionID === input.sessionID) {
-      if (part.type !== "tool") {
-        return false
-      }
-
-      return syncTaskTab(input.data, part)
-    }
+  if (
+    event.type === "message.updated" ||
+    event.type === "message.part.updated" ||
+    event.type === "message.part.delta"
+  ) {
+    return false
   }
 
-  const sessionID =
-    event.type === "message.updated" ||
-    event.type === "message.part.delta" ||
-    event.type === "permission.asked" ||
-    event.type === "permission.replied" ||
-    event.type === "question.asked" ||
-    event.type === "question.replied" ||
-    event.type === "question.rejected" ||
-    event.type === "session.error" ||
-    event.type === "session.status"
-      ? event.properties.sessionID
-      : event.type === "message.part.updated"
-        ? event.properties.part.sessionID
-        : undefined
+  if (event.type === "session.next.created") {
+    return linkChild(input.data, event.properties.info.parentID, event.properties.info.id, input.sessionID)
+  }
 
-  if (!sessionID || !knownSession(input.data, sessionID)) {
+  if (event.properties.sessionID === input.sessionID) {
+    return reduceRootTask(input.data, event, input.sessionID)
+  }
+
+  const sessionID = event.properties.sessionID
+  if (!knownSession(input.data, sessionID)) {
     return false
   }
 
   const detail = ensureDetail(input.data, sessionID)
   const cancelled =
-    event.type === "message.updated" && isAbortedAssistantMessage(event.properties.info)
+    event.type === "session.next.step.failed" && event.properties.error.message === "Provider turn interrupted"
       ? cancelSubagentTab(input.data, sessionID)
       : false
-  if (event.type === "session.status") {
-    if (event.properties.status.type !== "retry") {
-      return cancelled
-    }
 
+  if (event.type === "session.next.retried") {
     return (
       appendCommits(detail, [
         {
           kind: "error",
-          text: event.properties.status.message,
+          text: event.properties.error.message,
           phase: "start",
           source: "system",
-          messageID: `retry:${event.properties.status.attempt}`,
+          messageID: `retry:${event.properties.attempt}`,
         },
       ]) || cancelled
     )
   }
 
-  if (event.type === "session.error" && event.properties.error) {
+  if (event.type === "session.next.failed") {
+    const text = failureText(event.properties)
     return (
       appendCommits(detail, [
         {
           kind: "error",
-          text: formatError(event.properties.error),
+          text,
           phase: "start",
           source: "system",
-          messageID: `session.error:${event.properties.sessionID}:${formatError(event.properties.error)}`,
+          messageID: `session.failed:${sessionID}:${text}`,
         },
       ]) || cancelled
     )
@@ -873,4 +899,78 @@ export function reduceSubagentData(input: {
       limits: input.limits,
     }) || cancelled
   )
+}
+
+// Tracks the root session's `task` calls so their tabs follow the call.
+function reduceRootTask(data: SubagentData, event: SessionDataEvent, rootID: string) {
+  if (event.type === "session.next.tool.called") {
+    if (event.properties.tool !== "task") {
+      return false
+    }
+
+    data.tasks.set(partKey(event.properties.assistantMessageID, event.properties.callID), {
+      messageID: event.properties.assistantMessageID,
+      callID: event.properties.callID,
+      input: event.properties.input,
+      created: event.properties.timestamp,
+    })
+    return false
+  }
+
+  if (event.type !== "session.next.tool.success" && event.type !== "session.next.tool.failed") {
+    return false
+  }
+
+  const key = partKey(event.properties.assistantMessageID, event.properties.callID)
+  const task = data.tasks.get(key)
+  if (!task) {
+    return false
+  }
+
+  data.tasks.delete(key)
+  const reported = event.type === "session.next.tool.success" ? text(event.properties.structured.sessionID) : undefined
+  const sessionID = reported ?? task.sessionID
+  if (!sessionID) {
+    return false
+  }
+
+  const part = liveToolPart(rootID, task.messageID, {
+    type: "tool",
+    id: task.callID,
+    name: "task",
+    state:
+      event.type === "session.next.tool.success"
+        ? {
+            status: "completed",
+            input: task.input,
+            structured: event.properties.structured,
+            content: [...event.properties.content],
+          }
+        : { status: "error", input: task.input, structured: {}, content: [], error: event.properties.error },
+    time: { created: task.created, ran: task.created, completed: event.properties.timestamp },
+  })
+  return syncTaskTab(data, { ...part, metadata: { ...part.metadata, sessionId: sessionID } })
+}
+
+// Links a newly created child session to the oldest running task call that
+// has none. `task` spawns its child while the call runs, in call order.
+function linkChild(data: SubagentData, parentID: string | undefined, sessionID: string, rootID: string) {
+  if (parentID !== rootID || data.tabs.has(sessionID)) {
+    return false
+  }
+
+  const task = [...data.tasks.values()].find((item) => !item.sessionID)
+  if (!task) {
+    return false
+  }
+
+  task.sessionID = sessionID
+  const part = liveToolPart(rootID, task.messageID, {
+    type: "tool",
+    id: task.callID,
+    name: "task",
+    state: { status: "running", input: task.input, structured: {}, content: [] },
+    time: { created: task.created, ran: task.created },
+  })
+  return syncTaskTab(data, { ...part, metadata: { ...part.metadata, sessionId: sessionID } })
 }
