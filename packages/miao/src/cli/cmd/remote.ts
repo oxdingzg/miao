@@ -1,17 +1,19 @@
 import type { Argv } from "yargs"
 import { mkdir, rm } from "node:fs/promises"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
 import { Flag } from "@miao/core/flag/flag"
 import { Global } from "@miao/core/global"
 import { InstallationVersion } from "@miao/core/installation/version"
+import type { AccountStatus, ConnectorStatus, FlowStep, LoginInput } from "@miao/remote"
 import { effectCmd, fail } from "../effect-cmd"
 
 const DefaultPort = 4097
 
 // Credentials sit next to auth.json and mcp-auth.json but in their own file, so a
-// bot token is never read as a provider key. Cursor, router state, and the lock
-// live under the state directory.
+// bot token is never read as a provider key. Cursors, router state, and locks
+// live under the state directory, one directory per connector account.
 const paths = () => ({
   auth: path.join(Global.Path.data, "remote-auth.json"),
   state: path.join(Global.Path.state, "remote"),
@@ -25,24 +27,74 @@ const loadRemoteConfig = Effect.fn("Cli.remote.config")(function* () {
   return { remote: config.remote ?? {}, model: config.model }
 })
 
+type RemoteConfig = Effect.Success<ReturnType<typeof loadRemoteConfig>>["remote"]
+
+/** Built-in connectors plus `remote.connectors`; npm packages install like plugins. */
+async function connectorsFor(remote: RemoteConfig, log: (message: string) => void) {
+  const { loadConnectors } = await import("@miao/remote/load")
+  const { builtinConnectors } = await import("@miao/remote/builtin")
+  const { Npm } = await import("@miao/core/npm")
+  const result = await loadConnectors({
+    builtins: builtinConnectors,
+    specs: remote.connectors ?? [],
+    cwd: Global.Path.home,
+    install: async (spec) => {
+      const entry = await Npm.add(spec)
+      return entry.entrypoint ? pathToFileURL(entry.entrypoint).href : entry.directory
+    },
+  })
+  result.errors.forEach((error) => log(`无法加载连接器 ${error.spec}：${error.error}`))
+  return result.connectors
+}
+
+function connectorOptions(remote: RemoteConfig) {
+  return (id: string): Readonly<Record<string, unknown>> => {
+    if (id === "wechat") return { ...remote.wechat }
+    if (id === "qq") return { ...remote.qq }
+    return remote.settings?.[id] ?? {}
+  }
+}
+
+async function createLocalHost(remote: RemoteConfig, log: (message: string) => void) {
+  const { createHost, migrate } = await import("@miao/remote")
+  const files = paths()
+  await migrate({ authFile: files.auth, stateDir: files.state })
+  return createHost({
+    authFile: files.auth,
+    stateDir: files.state,
+    connectors: await connectorsFor(remote, log),
+    options: connectorOptions(remote),
+    agentVersion: InstallationVersion,
+    log,
+  })
+}
+
 const RunCommand = effectCmd({
   command: "$0",
   describe: "run the miao server with the logged-in IM channels (foreground)",
   instance: false,
   handler: Effect.fn("Cli.remote.run")(function* () {
-    const { loadCredentials } = yield* Effect.promise(() => import("@miao/remote/wechat/login"))
-    const files = paths()
-    const credentials = yield* Effect.promise(() => loadCredentials(files.auth))
-    if (!credentials) return yield* fail("还没有登录任何 IM：先运行 miao remote login wechat")
-    // Exit 0 so the launchd agent (KeepAlive on failure only) does not restart into the same dead token.
-    if (credentials.needsLogin) {
-      console.error("微信登录已失效（iLink -14），请运行 miao remote login wechat 重新扫码")
-      return
-    }
+    const log = (message: string) => console.error(`${new Date().toISOString()} ${message}`)
     const config = yield* loadRemoteConfig()
+    const host = yield* Effect.promise(() => createLocalHost(config.remote, log))
+    const status = yield* Effect.promise(() => host.status())
+    const accounts = status.flatMap((connector) => connector.accounts.map((account) => ({ connector, account })))
+    if (accounts.length === 0)
+      return yield* fail("还没有登录任何 IM：先运行 miao remote login wechat（或 miao remote login qq）")
+    accounts
+      .filter((item) => item.account.state === "needs-login")
+      .forEach((item) =>
+        console.error(
+          `${item.connector.name}（${item.account.account}）登录已失效（${item.account.error ?? "需要重新登录"}），请运行 miao remote login ${item.connector.id} 重新扫码`,
+        ),
+      )
+    const opened = yield* Effect.promise(() => host.open())
+    opened.failures.forEach((failure) => console.error(`${failure.id}：${failure.error}`))
+    // Exit 0 so the launchd agent (KeepAlive on failure only) does not restart into the same dead login.
+    if (opened.channels.length === 0) return
     const projects = config.remote.projects ?? {}
     if (Object.keys(projects).length === 0)
-      console.error("提示：配置里没有 remote.projects，微信里将看不到也建不了任何会话")
+      console.error("提示：配置里没有 remote.projects，IM 里将看不到也建不了任何会话")
     if (!Flag.MIAO_SERVER_PASSWORD)
       console.error("提示：MIAO_SERVER_PASSWORD 没有设置，本机其它进程可以不经鉴权访问 127.0.0.1 上的服务")
 
@@ -54,27 +106,17 @@ const RunCommand = effectCmd({
     }).pipe(Effect.catch((error) => fail(`无法在 127.0.0.1:${port} 启动服务（端口被占用？）：${String(error)}`)))
     const url = `http://127.0.0.1:${server.port}`
     const attach = `miao attach ${url}`
-    const log = (message: string) => console.error(`${new Date().toISOString()} ${message}`)
 
     const { OpenCode } = yield* Effect.promise(() => import("@miao/client"))
     const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
     const { createRouter } = yield* Effect.promise(() => import("@miao/remote"))
-    const { createWechatChannel } = yield* Effect.promise(() => import("@miao/remote/wechat/channel"))
-    const wechat = createWechatChannel({
-      credentials,
-      stateDir: files.state,
-      authFile: files.auth,
-      agentVersion: InstallationVersion,
-      pushBudgetPerDay: config.remote.wechat?.push_budget_per_day,
-      log,
-    })
     const router = yield* Effect.promise(() =>
       createRouter({
         client: OpenCode.make({ baseUrl: url, headers: ServerAuth.headers() }),
-        channels: [wechat],
+        channels: opened.channels,
         projects,
-        allow: { wechat: [credentials.userID] },
-        state: path.join(files.state, "router.json"),
+        allow: host.allow,
+        state: path.join(paths().state, "router.json"),
         model: parseModel(config.model),
         attach,
         log,
@@ -91,7 +133,8 @@ const RunCommand = effectCmd({
       yield* Effect.promise(() => server.stop(true))
       return yield* fail(started)
     }
-    console.log(`miao remote 已启动：微信 bot ${credentials.botID}，服务 ${url}`)
+    host.bind({ add: router.add, remove: router.remove })
+    console.log(`miao remote 已启动：${opened.channels.map((channel) => channel.id).join("、")}，服务 ${url}`)
     console.log(`桌面查看或操作这些会话：${attach}`)
 
     yield* Effect.promise(
@@ -101,104 +144,132 @@ const RunCommand = effectCmd({
           process.once("SIGTERM", () => resolve())
         }),
     )
+    host.bind(undefined)
+    yield* Effect.promise(() => host.close())
     yield* Effect.promise(() => router.stop())
     yield* Effect.promise(() => server.stop(true))
   }),
 })
 
 const LoginCommand = effectCmd({
-  command: "login <channel>",
-  describe: "log in to an IM channel (scan a QR code)",
+  command: "login <connector>",
+  describe: "connect an IM account (scan a QR code or enter a token)",
   instance: false,
   builder: (yargs: Argv) =>
-    yargs.positional("channel", { type: "string", choices: ["wechat"], demandOption: true, describe: "IM channel" }),
-  handler: Effect.fn("Cli.remote.login")(function* () {
-    const { createLoginApi } = yield* Effect.promise(() => import("@miao/remote/wechat/ilink"))
-    const { login, loadCredentials, saveCredentials } = yield* Effect.promise(() => import("@miao/remote/wechat/login"))
-    const { renderUnicodeCompact } = yield* Effect.promise(() => import("uqr"))
-    const { createInterface } = yield* Effect.promise(() => import("node:readline/promises"))
-    const files = paths()
+    yargs.positional("connector", {
+      type: "string",
+      demandOption: true,
+      describe: "connector id: wechat, qq, or a third-party connector from remote.connectors",
+    }),
+  handler: Effect.fn("Cli.remote.login")(function* (args: { connector: string }) {
+    const log = (message: string) => console.error(message)
+    const config = yield* loadRemoteConfig()
+    const host = yield* Effect.promise(() => createLocalHost(config.remote, log))
+    const connector = host.connector(args.connector)
+    if (!connector)
+      return yield* fail(
+        `没有名为 ${args.connector} 的连接器；可用：${host
+          .connectors()
+          .map((item) => item.id)
+          .join("、")}`,
+      )
+    if (connector.notice) console.log(`${connector.notice}\n`)
+    const flow = host.login(connector.id)
+    const last = yield* Effect.promise(() =>
+      renderLogin(flow.events(), async (value) => flow.input(value)).finally(() => host.close()),
+    )
+    if (last?.type !== "done") return yield* fail(last?.type === "error" ? last.message : "登录没有完成")
     console.log(
-      [
-        "风险提示：腾讯没有明确允许或禁止第三方客户端使用微信 ClawBot（iLink）。目前没有因此封微信号的报告，",
-        "但有 bot 下行消息被风控、几天到三周才恢复的报告。miao 会把每天的主动推送控制在配置的预算内。",
-        "",
-        "用手机微信扫描下面的二维码：",
-      ].join("\n"),
+      `已连接${connector.name}（${last.account.id}）${last.message ? `，${last.message}` : ""}。凭证保存在 ${paths().auth}（0600）`,
     )
-    const result = yield* Effect.promise(() =>
-      login({
-        api: createLoginApi({}),
-        show: (content) => {
-          console.log(renderUnicodeCompact(content, { border: 1 }))
-          console.log(`二维码显示不全时，用微信打开这个链接：${content}`)
-        },
-        ask: async (prompt) => {
-          const reader = createInterface({ input: process.stdin, output: process.stdout })
-          const answer = await reader.question(prompt)
-          reader.close()
-          return answer
-        },
-        say: (message) => console.log(message),
-      }),
-    )
-    if (!result.ok) {
-      if (result.alreadyBound && (yield* Effect.promise(() => loadCredentials(files.auth)))) {
-        console.log(result.message)
-        return
-      }
-      return yield* fail(result.message)
-    }
-    yield* Effect.promise(() => saveCredentials(files.auth, result.credentials))
-    console.log(`已登录微信 bot ${result.credentials.botID}，只接受扫码者本人的消息。凭证保存在 ${files.auth}（0600）`)
     console.log("运行 miao remote 启动；如果它已经在运行，请重启它以使用新凭证")
   }),
 })
 
+/** Prints login steps in a terminal and answers code and form steps from stdin. Returns the last step. */
+export async function renderLogin(steps: AsyncIterable<FlowStep>, answer: (value: LoginInput) => Promise<boolean>) {
+  const { renderUnicodeCompact } = await import("uqr")
+  const { createInterface } = await import("node:readline/promises")
+  const ask = async (prompt: string) => {
+    const reader = createInterface({ input: process.stdin, output: process.stdout })
+    const value = await reader.question(prompt)
+    reader.close()
+    return value
+  }
+  const seen: FlowStep[] = []
+  for await (const step of steps) {
+    seen.push(step)
+    if (step.type === "qr") {
+      if (step.hint) console.log(step.hint)
+      console.log(renderUnicodeCompact(step.content, { border: 1 }))
+      console.log(`二维码显示不全时，用手机打开这个链接：${step.content}`)
+    }
+    if (step.type === "progress") console.log(step.message)
+    if (step.type === "open") console.log(`${step.hint ?? "在浏览器里打开"}：${step.url}`)
+    if (step.type === "code") await answer((await ask(step.prompt)).trim())
+    if (step.type === "form") {
+      console.log(step.title)
+      const values: Record<string, string> = {}
+      for (const field of step.fields)
+        values[field.key] = (await ask(`${field.label}${field.optional ? "（可留空）" : ""}：`)).trim()
+      await answer(values)
+    }
+    if (step.type === "pair") {
+      console.log(`配对码：${step.code}`)
+      console.log(step.hint)
+      if (step.link) {
+        console.log(renderUnicodeCompact(step.link, { border: 1 }))
+        console.log(`或打开：${step.link}`)
+      }
+    }
+  }
+  return seen.at(-1)
+}
+
 const StatusCommand = effectCmd({
   command: "status",
-  describe: "show channel login, polling state, today's push usage, and held results",
+  describe: "show connected IM accounts, their state, today's push usage, and held results",
   instance: false,
   handler: Effect.fn("Cli.remote.status")(function* () {
-    const { loadCredentials } = yield* Effect.promise(() => import("@miao/remote/wechat/login"))
-    const { statePaths } = yield* Effect.promise(() => import("@miao/remote/wechat/channel"))
-    const { lockHolder } = yield* Effect.promise(() => import("@miao/remote/lock"))
-    const { readJson } = yield* Effect.promise(() => import("@miao/remote/file"))
-    const { routerStatus } = yield* Effect.promise(() => import("@miao/remote"))
     const { Label } = yield* Effect.promise(() => import("@miao/remote/launchd"))
     const files = paths()
     const config = yield* loadRemoteConfig()
-    const credentials = yield* Effect.promise(() => loadCredentials(files.auth))
-    const lines = [`服务端口：127.0.0.1:${config.remote.port ?? DefaultPort}`]
-    if (!credentials) lines.push("微信：未登录（miao remote login wechat）")
-    if (credentials) {
-      const state = statePaths(files.state, credentials.botID)
-      const holder = yield* Effect.promise(() => lockHolder(state.lock))
-      const status = (yield* Effect.promise(() => readJson(state.status))) as
-        | { state?: string; lastPollAt?: number; error?: string }
-        | undefined
-      lines.push(
-        `微信：bot ${credentials.botID}，扫码者 ${mask(credentials.userID)}` +
-          (credentials.needsLogin ? `，登录已失效（${credentials.needsLogin.reason}），请重新登录` : ""),
-        `轮询：${holder ? `运行中（pid ${holder}）` : "未运行"}` +
-          (status?.state ? `，最近状态 ${status.state}` : "") +
-          (status?.lastPollAt ? `，上次成功轮询 ${new Date(status.lastPollAt).toLocaleString()}` : "") +
-          (status?.error ? `，最近错误 ${status.error}` : ""),
-      )
-    }
-    const budget = config.remote.wechat?.push_budget_per_day ?? 4
-    const users = yield* Effect.promise(() => routerStatus(path.join(files.state, "router.json")))
-    users.forEach((user) =>
-      lines.push(
-        `${mask(user.key)}：今日主动推送 ${user.pushesToday}/${budget}，待取结果 ${user.pending} 条，待审批 ${user.approvals} 个` +
-          (user.current === undefined ? "" : `，当前会话 #${user.current}`),
-      ),
-    )
+    const host = yield* Effect.promise(() => createLocalHost(config.remote, (message) => console.error(message)))
+    const status = yield* Effect.promise(() => host.status())
     const installed = yield* Effect.promise(() => Bun.file(path.join(files.agents, `${Label}.plist`)).exists())
-    lines.push(`launchd：${installed ? "已安装" : "未安装"}`)
-    console.log(lines.join("\n"))
+    console.log(
+      [
+        `服务端口：127.0.0.1:${config.remote.port ?? DefaultPort}`,
+        ...statusLines(status),
+        `launchd：${installed ? "已安装" : "未安装"}`,
+      ].join("\n"),
+    )
   }),
 })
+
+export function statusLines(status: ReadonlyArray<ConnectorStatus>) {
+  return status.flatMap((connector) => {
+    if (connector.accounts.length === 0) return [`${connector.name}：未登录（miao remote login ${connector.id}）`]
+    return connector.accounts.flatMap((account) => accountLines(connector, account))
+  })
+}
+
+function accountLines(connector: ConnectorStatus, account: AccountStatus) {
+  const verb = connector.transport === "poll" ? "轮询" : "连接"
+  return [
+    `${connector.name}：${account.account}` +
+      (account.owner ? `，主人 ${account.owner}` : "，还没有配对主人") +
+      (account.state === "needs-login"
+        ? `，登录已失效（${account.error ?? "需要重新登录"}），请重新登录（miao remote login ${connector.id}）`
+        : ""),
+    `${verb}：${account.pid ? `运行中（pid ${account.pid}）` : "未运行"}` +
+      (account.detail ? `，最近状态 ${account.detail}` : "") +
+      (account.lastActivityAt ? `，最近活动 ${new Date(account.lastActivityAt).toLocaleString()}` : "") +
+      (account.error && account.state !== "needs-login" ? `，最近错误 ${account.error}` : ""),
+    `  今日主动推送 ${account.pushesToday}${account.pushBudget === undefined ? "" : `/${account.pushBudget}`}，` +
+      `待取结果 ${account.pending} 条，待审批 ${account.approvals} 个`,
+  ]
+}
 
 const InstallCommand = effectCmd({
   command: "install",
@@ -270,7 +341,7 @@ const UninstallCommand = effectCmd({
 
 export const RemoteCommand = effectCmd({
   command: "remote",
-  describe: "drive sessions from WeChat (and later other IM apps)",
+  describe: "drive sessions from WeChat, QQ, and other IM apps",
   instance: false,
   builder: (yargs: Argv) =>
     yargs
@@ -287,8 +358,4 @@ function parseModel(model: string | undefined) {
   const slash = model.indexOf("/")
   if (slash <= 0) return undefined
   return { providerID: model.slice(0, slash), id: model.slice(slash + 1) }
-}
-
-function mask(value: string) {
-  return value.length <= 8 ? value : `${value.slice(0, 4)}…${value.slice(-6)}`
 }

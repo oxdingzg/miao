@@ -5,9 +5,9 @@
 // specs/remote-im.md: replies within ~2 minutes of an inbound message, about 10
 // per context token, and a few proactive pushes per day.
 import path from "node:path"
-import type { Channel, Inbound, SendResult } from "../channel"
-import { readJson, writer } from "../file"
-import { acquireLock, type Lock } from "../lock"
+import type { Channel, Inbound, SendResult } from "../../channel"
+import { readJson, writer } from "../../file"
+import { acquireLock, type Lock } from "../../lock"
 import { createIlinkApi, ItemType, MessageType, StaleTokenCode, ThrottledCode, type WeixinMessage } from "./ilink"
 import { saveCredentials, type Credentials } from "./login"
 
@@ -25,10 +25,12 @@ export type WechatStatus = {
 
 export type WechatChannelOptions = {
   readonly credentials: Credentials
-  /** Directory for the cursor, context tokens, status, and the single-instance lock. */
+  /** This account's private directory for the cursor, context tokens, status, and the single-instance lock. */
   readonly stateDir: string
-  /** Credentials file; updated with needsLogin when the token goes stale. */
-  readonly authFile: string
+  /** Records a stale token so the account stays off until a new QR login. */
+  readonly markNeedsLogin?: (reason: string) => Promise<void>
+  /** Credentials file updated with needsLogin when no markNeedsLogin is given. */
+  readonly authFile?: string
   readonly agentVersion: string
   readonly pushBudgetPerDay?: number
   readonly fetch?: typeof fetch
@@ -40,13 +42,12 @@ export type WechatChannelOptions = {
   readonly pollTimeoutMs?: number
 }
 
-export function statePaths(stateDir: string, botID: string) {
-  const base = path.join(stateDir, `wechat-${botID.replace(/[^A-Za-z0-9_.-]/g, "_")}`)
+export function statePaths(stateDir: string) {
   return {
-    cursor: `${base}.cursor.json`,
-    tokens: `${base}.tokens.json`,
-    status: `${base}.status.json`,
-    lock: `${base}.lock`,
+    cursor: path.join(stateDir, "cursor.json"),
+    tokens: path.join(stateDir, "tokens.json"),
+    status: path.join(stateDir, "status.json"),
+    lock: path.join(stateDir, "lock"),
   }
 }
 
@@ -60,7 +61,7 @@ export function createWechatChannel(options: WechatChannelOptions) {
     agentVersion: options.agentVersion,
     fetch: options.fetch,
   })
-  const files = statePaths(options.stateDir, credentials.botID)
+  const files = statePaths(options.stateDir)
   const onWriteError = (error: unknown) => log(`wechat: failed to save state: ${String(error)}`)
   const saveCursor = writer(files.cursor, onWriteError)
   const saveTokens = writer(files.tokens, onWriteError)
@@ -159,10 +160,15 @@ export function createWechatChannel(options: WechatChannelOptions) {
         // The token is dead; polling again only repeats the error. A new QR login is required.
         log("wechat: iLink reported the bot token stale (-14); polling stopped, run `miao remote login wechat`")
         setStatus({ state: "needs-login", at: now(), error: failure })
-        await saveCredentials(options.authFile, {
-          ...credentials,
-          needsLogin: { at: now(), reason: "iLink returned -14 (session timeout)" },
-        }).catch(onWriteError)
+        const reason = "iLink returned -14 (session timeout)"
+        const authFile = options.authFile
+        await (
+          options.markNeedsLogin
+            ? options.markNeedsLogin(reason)
+            : authFile
+              ? saveCredentials(authFile, { ...credentials, needsLogin: { at: now(), reason } })
+              : Promise.resolve()
+        ).catch(onWriteError)
         return
       }
       if (failure !== undefined) {

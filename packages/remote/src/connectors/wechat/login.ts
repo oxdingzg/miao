@@ -1,6 +1,6 @@
 // QR login against iLink, mirroring the official plugin's waitForWeixinLogin:
 // redirects, verify codes, and at most three QR refreshes.
-import { readJson, writePrivate } from "../file"
+import { readAccounts, updateAccount, type AccountRecord } from "../../accounts"
 import { DefaultBaseUrl, type LoginApi } from "./ilink"
 
 export type Credentials = {
@@ -32,6 +32,8 @@ export async function login(input: {
   readonly now?: () => number
   /** Turns a redirect host into a base URL. iLink redirects are always HTTPS. */
   readonly redirect?: (host: string) => string
+  /** Stops polling when the user cancels the login. */
+  readonly signal?: AbortSignal
 }): Promise<LoginResult> {
   const now = input.now ?? Date.now
   const deadline = now() + (input.timeoutMs ?? 480_000)
@@ -57,6 +59,7 @@ export async function login(input: {
   }
 
   while (now() < deadline) {
+    if (input.signal?.aborted) return { ok: false, message: "登录已取消" }
     const status = await input.api.getStatus(session.host, session.qrcode, session.verifyCode)
     if (status.status === "need_verifycode") {
       session.verifyCode = (
@@ -99,14 +102,39 @@ export async function login(input: {
   return { ok: false, message: "登录超时，请重试" }
 }
 
+/** The first saved WeChat account, with its needsLogin mark. */
 export async function loadCredentials(file: string): Promise<Credentials | undefined> {
-  const value = await readJson(file)
-  const wechat = typeof value === "object" && value !== null ? (value as { wechat?: Credentials }).wechat : undefined
-  if (!wechat?.token || !wechat.botID || !wechat.userID) return undefined
-  return wechat
+  const record = Object.values((await readAccounts(file)).wechat ?? {})[0]
+  const credentials = record ? parseCredentials(record.credentials) : undefined
+  if (!record || !credentials) return undefined
+  return record.needsLogin ? { ...credentials, needsLogin: record.needsLogin } : credentials
 }
 
 export async function saveCredentials(file: string, credentials: Credentials) {
-  const value = await readJson(file)
-  await writePrivate(file, { ...(typeof value === "object" && value !== null ? value : {}), wechat: credentials })
+  await updateAccount(file, "wechat", credentials.botID, () => accountRecord(credentials))
+}
+
+export function accountRecord(credentials: Credentials): AccountRecord {
+  const { needsLogin, ...rest } = credentials
+  return {
+    label: "微信 ClawBot",
+    owner: credentials.userID,
+    savedAt: credentials.savedAt,
+    ...(needsLogin ? { needsLogin } : {}),
+    credentials: rest,
+  }
+}
+
+export function parseCredentials(value: unknown): Credentials | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  const candidate = value as Partial<Credentials>
+  if (typeof candidate.token !== "string" || typeof candidate.botID !== "string") return undefined
+  if (typeof candidate.userID !== "string") return undefined
+  return {
+    token: candidate.token,
+    botID: candidate.botID,
+    baseUrl: typeof candidate.baseUrl === "string" && candidate.baseUrl ? candidate.baseUrl : DefaultBaseUrl,
+    userID: candidate.userID,
+    savedAt: typeof candidate.savedAt === "number" ? candidate.savedAt : 0,
+  }
 }
