@@ -19,9 +19,9 @@ export function DialogSkill(props: DialogSkillProps) {
   const [loadError, setLoadError] = createSignal<unknown>()
 
   const [skills] = createResource(() =>
-    sdk.client.app
-      .skills({}, { throwOnError: true })
-      .then((result) => result.data ?? [])
+    sdk.client.v2.skill
+      .list({ location: { directory: sdk.directory } }, { throwOnError: true })
+      .then((result) => result.data?.data ?? [])
       // Catch so the rejected resource never reaches the memo below: reading
       // skills() in an errored state re-throws and tears down the dialog.
       .catch((error) => {

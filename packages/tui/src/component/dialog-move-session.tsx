@@ -60,9 +60,9 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
   const [loadedProject] = createResource(
     () => (projectContext.project() === props.projectID ? undefined : props.projectID),
     (projectID) =>
-      sdk.client.project
-        .current({}, { throwOnError: true })
-        .then((result) => (result.data?.id === projectID ? result.data.worktree : undefined))
+      sdk.client.v2.project
+        .current({ location: { directory: sdk.directory } }, { throwOnError: true })
+        .then((result) => (result.data?.data?.id === projectID ? result.data.data.directory : undefined))
         .catch(() => undefined),
   )
   const currentCheckout = createMemo(() => {

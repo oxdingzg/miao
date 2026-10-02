@@ -115,6 +115,11 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/session/active") return json({ data: {} })
     if (/^\/api\/project\/[^/]+\/directories$/.test(url.pathname))
       return json({ location: { directory, project: { id: "proj_test", directory } }, data: [] })
+    if (url.pathname === "/api/project/current")
+      return json({
+        location: { directory, project: { id: "proj_test", directory } },
+        data: { id: "proj_test", directory },
+      })
     // V2 hydration pages the projected timeline alongside `session.context` so
     // compacted history stays reachable in the transcript.
     if (/^\/api\/session\/[^/]+\/message$/.test(url.pathname)) return json({ data: [], cursor: {} })

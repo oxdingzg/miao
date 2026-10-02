@@ -9,6 +9,7 @@ import type {
   Config,
   Todo,
   Command,
+  CommandV2Info,
   PermissionRequest,
   QuestionRequest,
   LspStatus,
@@ -131,6 +132,20 @@ function toAgent(agent: AgentV2Info): Agent {
 // Schema; keep the store shape the TUI already reads.
 function toConfig(raw: Record<string, unknown>): Config {
   return raw as unknown as Config
+}
+
+// V2 commands carry a model ref and no hints; the TUI store still keeps the V1
+// Command shape and renders no hints.
+function toCommand(command: CommandV2Info): Command {
+  return {
+    name: command.name,
+    description: command.description,
+    agent: command.agent,
+    model: command.model ? `${command.model.providerID}/${command.model.id}` : undefined,
+    template: command.template,
+    subtask: command.subtask,
+    hints: [],
+  }
 }
 
 export const {
@@ -691,9 +706,9 @@ export const {
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             // The palette only shows names and descriptions; executing a command
             // resolves its template on the server.
-            sdk.client.command
-              .list({ workspace, template: "false" })
-              .then((x) => setStore("command", reconcile(x.data ?? []))),
+            sdk.client.v2.command
+              .list({ location: { workspace } })
+              .then((x) => setStore("command", reconcile((x.data?.data ?? []).map(toCommand)))),
             sdk.client.v2.lsp
               .status({ location: { workspace } })
               .then((x) => setStore("lsp", reconcile(toLspStatus(x.data?.data ?? [])))),
