@@ -3,6 +3,7 @@ import * as Option from "effect/Option"
 import { Auth, type Auth as AuthDef } from "./auth"
 import { Endpoint, type EndpointPatch } from "./endpoint"
 import { RequestExecutor } from "./executor"
+import { ProviderWireArchive } from "./archive"
 import type { Framing } from "./framing"
 import { HttpTransport } from "./transport"
 import type { Transport, TransportRuntime } from "./transport"
@@ -454,6 +455,7 @@ export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer
       http: yield* RequestExecutor.Service,
       webSocket: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketExecutor.Service)),
       webSocketPool: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketPool.Service)),
+      archive: Option.getOrUndefined(yield* Effect.serviceOption(ProviderWireArchive.Service)),
     })
     return Service.of({ prepare: prepareWith as Interface["prepare"], stream, generate: generateWith(stream) })
   }),
