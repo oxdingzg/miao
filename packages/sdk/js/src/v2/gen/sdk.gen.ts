@@ -264,6 +264,8 @@ import type {
   V2CommandListResponses,
   V2ConfigGetErrors,
   V2ConfigGetResponses,
+  V2ConfigProvidersErrors,
+  V2ConfigProvidersResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -5010,6 +5012,28 @@ export class Config3 extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ConfigGetResponses, V2ConfigGetErrors, ThrowOnError>({
       url: "/api/config",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List providers
+   *
+   * Retrieve available providers and their default models for the requested location.
+   */
+  public providers<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2ConfigProvidersResponses, V2ConfigProvidersErrors, ThrowOnError>({
+      url: "/api/config/providers",
       ...options,
       ...params,
     })

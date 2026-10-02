@@ -11671,6 +11671,48 @@ export type V2ConfigGetResponses = {
 
 export type V2ConfigGetResponse = V2ConfigGetResponses[keyof V2ConfigGetResponses]
 
+export type V2ConfigProvidersData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/config/providers"
+}
+
+export type V2ConfigProvidersErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ConfigProvidersError = V2ConfigProvidersErrors[keyof V2ConfigProvidersErrors]
+
+export type V2ConfigProvidersResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      providers: Array<unknown>
+      default: {
+        [key: string]: string
+      }
+    }
+  }
+}
+
+export type V2ConfigProvidersResponse = V2ConfigProvidersResponses[keyof V2ConfigProvidersResponses]
+
 export type V2LspStatusData = {
   body?: never
   path?: never

@@ -134,6 +134,13 @@ function toConfig(raw: Record<string, unknown>): Config {
   return raw as unknown as Config
 }
 
+// V2 serves providers as the legacy V1 shape but with a permissive schema until
+// the V2 provider/model schemas move into Schema; keep the store shape the TUI
+// already reads.
+function toProviderList(raw: { providers: unknown[]; default: Record<string, string> }) {
+  return raw as unknown as { providers: Provider[]; default: Record<string, string> }
+}
+
 // V2 commands carry a model ref and no hints; the TUI store still keeps the V1
 // Command shape and renders no hints.
 function toCommand(command: CommandV2Info): Command {
@@ -645,7 +652,7 @@ export const {
       const sessionListPromise = projectPromise.then(() => listSessions())
 
       // blocking - include session.list when continuing a session
-      const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
+      const providersPromise = sdk.client.v2.config.providers({ location: { workspace } }, { throwOnError: true })
       const capabilitiesPromise = sdk.client.experimental.capabilities
         .get({ workspace }, { throwOnError: true })
         .then((x) => x.data)
@@ -665,7 +672,7 @@ export const {
         ...(args.continue ? [sessionListPromise] : []),
       ])
         .then(async () => {
-          const providersResponse = providersPromise.then((x) => x.data!)
+          const providersResponse = providersPromise.then((x) => toProviderList(x.data!.data))
           const capabilitiesResponse = capabilitiesPromise
           const consoleStateResponse = consoleStatePromise
           const agentsResponse = agentsPromise.then((x) => (x.data?.data ?? []).map(toAgent))
