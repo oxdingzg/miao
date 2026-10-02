@@ -6,6 +6,11 @@ import {
   Model,
   TransportReason,
   InvalidRequestReason,
+  RateLimitReason,
+  HttpContext,
+  HttpRateLimitDetails,
+  HttpRequestDetails,
+  HttpResponseDetails,
   type LLMClientShape,
   type LLMRequest,
 } from "@miao/llm"
@@ -3845,6 +3850,105 @@ describe("SessionRunnerLLM", () => {
       expect(retried.map((row) => row.data)).toMatchObject([
         { sessionID, attempt: 1, error: { message: "test.stream: connection reset", isRetryable: true } },
       ])
+    }),
+  )
+
+  it.effect("records why a throttled provider attempt was retried", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a rate limit" }), resume: false })
+      // A routed 429 carries its status on the captured response rather than on
+      // the reason, and the vendor's request id is the only handle support has on
+      // the request that was throttled, so both have to survive into the event.
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.fail(
+                new LLMError({
+                  module: "RequestExecutor",
+                  method: "execute",
+                  reason: new RateLimitReason({
+                    message: 'Provider request failed with HTTP 429: {"code":"429003"}',
+                    retryAfterMs: 1_000,
+                    rateLimit: new HttpRateLimitDetails({
+                      retryAfterMs: 1_000,
+                      limit: { tokens: "3000000" },
+                      remaining: { tokens: "0" },
+                    }),
+                    http: new HttpContext({
+                      request: new HttpRequestDetails({
+                        method: "POST",
+                        url: "https://api.example/v1/chat/completions",
+                        headers: { "content-type": "application/json" },
+                      }),
+                      response: new HttpResponseDetails({ status: 429, headers: { "retry-after": "1" } }),
+                      body: '{"code":"429003","message":"TPM limit 3000000 exceeded"}',
+                      requestId: "3ad25122-8353-4ca1-bc7f-575dd63f5e7f",
+                    }),
+                  }),
+                }),
+              )
+            : Stream.fromIterable(fragmentFixture("text", "text-after-limit", ["Recovered"]).completeEvents),
+        ),
+      )
+
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+
+      expect(attempts).toBe(2)
+      const { db } = yield* Database.Service
+      const retried = yield* db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(retried.map((row) => row.data)).toMatchObject([
+        {
+          sessionID,
+          attempt: 1,
+          error: {
+            statusCode: 429,
+            isRetryable: true,
+            responseHeaders: { "retry-after": "1" },
+            responseBody: '{"code":"429003","message":"TPM limit 3000000 exceeded"}',
+            metadata: {
+              requestId: "3ad25122-8353-4ca1-bc7f-575dd63f5e7f",
+              retryAfterMs: "1000",
+              "rateLimit.limit.tokens": "3000000",
+              "rateLimit.remaining.tokens": "0",
+            },
+          },
+        },
+      ])
+    }),
+  )
+
+  it.effect("settles a step with the same model its start recorded", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Settle a step" }), resume: false })
+      responseStream = Stream.fromIterable(fragmentFixture("text", "text-settled", ["Settled"]).completeEvents)
+
+      yield* session.resume(sessionID)
+
+      const { db } = yield* Database.Service
+      const byType = (type: string, version: number) =>
+        db
+          .select({ data: EventTable.data })
+          .from(EventTable)
+          .where(eq(EventTable.type, EventV2.versionedType(type, version)))
+          .all()
+          .pipe(Effect.orDie)
+      const started = yield* byType(SessionEvent.Step.Started.type, 1)
+      const ended = yield* byType(SessionEvent.Step.Ended.type, 2)
+
+      expect(ended).toHaveLength(1)
+      expect(ended.map((row) => row.data.model)).toEqual(started.map((row) => row.data.model))
     }),
   )
 

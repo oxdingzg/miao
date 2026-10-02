@@ -1119,6 +1119,7 @@ export type SessionsHistoryOutput = {
           readonly timestamp: number
           readonly sessionID: string
           readonly assistantMessageID: string
+          readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
           readonly finish: string
           readonly cost: number
           readonly tokens: {
@@ -1637,6 +1638,7 @@ export type SessionsEventsOutput =
         readonly timestamp: number
         readonly sessionID: string
         readonly assistantMessageID: string
+        readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
         readonly finish: string
         readonly cost: number
         readonly tokens: {
