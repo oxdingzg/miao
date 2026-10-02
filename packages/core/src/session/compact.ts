@@ -80,6 +80,18 @@ export const compact = (db: Client, options: Options = {}) =>
     const before = yield* inspect(db)
     if (options.dryRun) return { ...before, deleted: 0, dropped: 0, reset: 0 } satisfies Result
 
+    // Deletes and drops commit before VACUUM, so a structurally broken database
+    // would be half-retired before the failure surfaces. Check first and stop
+    // with the actual corruption instead.
+    const integrity = yield* db.get<{ quick_check: string }>(sql.raw("PRAGMA quick_check")).pipe(Effect.orDie)
+    if (integrity?.quick_check !== "ok")
+      return yield* Effect.die(
+        new Error(
+          `refusing to compact: PRAGMA quick_check reported ${integrity?.quick_check ?? "no result"}` +
+            " — restore the database from a consistent backup before retrying",
+        ),
+      )
+
     const report = yield* SessionBackfill.verify(db)
     if (report.failures.length > 0 || report.sessions > 0)
       return yield* Effect.die(
@@ -125,16 +137,15 @@ const inspect = (db: Client) =>
     const tables: { name: string; rows: number; bytes: number }[] = []
     if (yield* SessionLegacyTables.present(db))
       for (const name of legacyTables)
-        tables.push(
-          {
-            name,
-            ...(yield* db
-              .get<{ rows: number; bytes: number }>(
-                sql`SELECT COUNT(*) AS rows, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM ${sql.identifier(name)}`,
-              )
-              .pipe(Effect.orDie))!,
-          },
-        )
+        tables.push({
+          name,
+          ...(yield* db
+            .get<{
+              rows: number
+              bytes: number
+            }>(sql`SELECT COUNT(*) AS rows, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM ${sql.identifier(name)}`)
+            .pipe(Effect.orDie))!,
+        })
 
     // Aggregates whose events are all legacy are the ones the deletes will
     // leave empty, so their sequence restarts. Deleting the sequence of an
@@ -208,5 +219,8 @@ const resetSequences = (db: Client, aggregates: ReadonlyArray<string>) => {
             AND NOT EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = event_sequence.aggregate_id)
           RETURNING aggregate_id`,
     )
-    .pipe(Effect.map((reset) => reset.length), Effect.orDie)
+    .pipe(
+      Effect.map((reset) => reset.length),
+      Effect.orDie,
+    )
 }
