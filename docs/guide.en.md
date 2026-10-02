@@ -172,8 +172,8 @@ Configure local or remote servers under `mcp.servers`; their tools appear as
 The sandbox integration belongs to the compatibility shell tool in `packages/miao/src/tool`. The default V2 `bash` tool does not use this runner. For compatibility TUI testing on a supported macOS / Linux host:
 
 ```bash
-MIAO_TUI_V2=0 MIAO_SANDBOX=1 miao
-MIAO_TUI_V2=0 MIAO_SANDBOX=1 MIAO_SANDBOX_DENY_NETWORK=1 miao
+MIAO_SANDBOX=1 miao
+MIAO_SANDBOX=1 MIAO_SANDBOX_DENY_NETWORK=1 miao
 ```
 
 The packaged backend must be available. Supported backends restrict writes; the compatibility shell permits network by default unless explicitly denied. Do not infer kernel confinement for V2 from these flags. See the [integration matrix](miao-vs-opencode.en.md#native-tools-and-sandbox-where-they-apply) for scope and platform limitations.
@@ -226,7 +226,7 @@ This optional project configuration combines continued todo work, a scheduling b
 
 ## 6. Runtime status and ongoing work
 
-V2 is the default TUI runtime, and the browser app selects V2 when the server advertises it. V1 remains for compatibility; `MIAO_TUI_V2=0` selects it in the TUI and `?protocol=v1` selects it in the app.
+The TUI and the browser app only use the V2 session protocol; the V1 compatibility runtime is being retired.
 
 - [V1 retirement](../specs/v2/v1-retirement.md) tracks the migration and remaining compatibility surfaces.
 - [Session storage](../specs/storage/session-storage-hardening.md) tracks storage design. Use `miao db stats`, `miao db vacuum`, and JSONL exports to inspect and maintain local records.

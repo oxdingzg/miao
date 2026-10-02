@@ -168,8 +168,8 @@ miao
 沙箱接入位于 `packages/miao/src/tool` 的兼容 Shell 工具。默认 V2 `bash` 工具不经过这个 runner。在受支持的 macOS / Linux 主机上测试兼容 TUI：
 
 ```bash
-MIAO_TUI_V2=0 MIAO_SANDBOX=1 miao
-MIAO_TUI_V2=0 MIAO_SANDBOX=1 MIAO_SANDBOX_DENY_NETWORK=1 miao
+MIAO_SANDBOX=1 miao
+MIAO_SANDBOX=1 MIAO_SANDBOX_DENY_NETWORK=1 miao
 ```
 
 打包的后端必须可用。支持的后端限制写入；兼容 Shell 默认允许网络，需要显式禁止。不能由这些环境变量推断 V2 已有内核隔离。可用范围和平台限制见 [接入说明](miao-vs-opencode.zh.md#原生工具与沙箱适用范围)。
@@ -217,7 +217,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 
 ## 6. 运行时状态与后续工作
 
-V2 是默认 TUI 运行时，浏览器应用在服务端声明支持时选择 V2。V1 保留用于兼容；TUI 可用 `MIAO_TUI_V2=0` 选择 V1，浏览器可用 `?protocol=v1` 选择 V1。
+TUI 与浏览器应用只使用 V2 会话协议；V1 兼容运行时正在退役。
 
 - [V1 退役计划](../specs/v2/v1-retirement.md) 跟踪迁移和剩余兼容接口。
 - [会话存储设计](../specs/storage/session-storage-hardening.md) 记录存储方案。可用 `miao db stats`、`miao db vacuum` 和 JSONL 导出检查、维护本地记录。

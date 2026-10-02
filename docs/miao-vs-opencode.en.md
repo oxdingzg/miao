@@ -45,7 +45,7 @@ The current code has two tool implementations. Native integration lives in `pack
 - **Compatibility shell sandbox:** opt in with `MIAO_SANDBOX=1`. macOS seatbelt and Linux Landlock restrict writes; network is allowed in the shell integration unless `MIAO_SANDBOX_DENY_NETWORK=1` is also set. Availability depends on the platform and packaged backend.
 - **V2 permissions:** rule-based approvals remain the relevant default control. V2's `bash` leaf does not currently route through the compatibility sandbox. An environment flag alone does not provide V2 kernel confinement.
 
-For compatibility TUI testing, `MIAO_TUI_V2=0` selects V1. Read the [guide](guide.en.md#56-kernel-level-sandbox-compatibility-runtime-opt-in) and [integration risks](rust-integration-risks.en.md) before relying on the sandbox. Windows kernel sandbox parity is not implemented.
+Read the [guide](guide.en.md#56-kernel-level-sandbox-compatibility-runtime-opt-in) and [integration risks](rust-integration-risks.en.md) before relying on the sandbox. Windows kernel sandbox parity is not implemented.
 
 ## Boundaries and ongoing work
 

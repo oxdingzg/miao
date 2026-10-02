@@ -45,7 +45,7 @@ miao 延续 opencode 的开源编程工作流，把工程投入集中在上下�
 - **兼容路径的 Shell 沙箱：** `MIAO_SANDBOX=1` 显式开启；macOS seatbelt 与 Linux Landlock 限制写入。Shell 接入默认放行网络，叠加 `MIAO_SANDBOX_DENY_NETWORK=1` 才限制网络。实际可用性取决于平台和打包的后端。
 - **V2 权限：** 默认依赖规则式批准。V2 `bash` 工具目前未经过兼容沙箱，单独设置环境变量不构成 V2 内核隔离。
 
-测试兼容 TUI 可用 `MIAO_TUI_V2=0` 选择 V1。依赖沙箱前，请阅读 [使用指南](guide.zh.md#56-内核级沙箱兼容运行时需开启) 与 [接入风险](rust-integration-risks.zh.md)。Windows 内核沙箱尚未实现同等能力。
+依赖沙箱前，请阅读 [使用指南](guide.zh.md#56-内核级沙箱兼容运行时需开启) 与 [接入风险](rust-integration-risks.zh.md)。Windows 内核沙箱尚未实现同等能力。
 
 ## 边界与后续工作
 
