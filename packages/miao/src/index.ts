@@ -58,7 +58,6 @@ const commandLoaders: Array<[string, CommandLoader]> = [
   ["stats", () => import("./cli/cmd/stats").then((m) => m.StatsCommand)],
   ["export", () => import("./cli/cmd/export").then((m) => m.ExportCommand)],
   ["import", () => import("./cli/cmd/import").then((m) => m.ImportCommand)],
-  ["github", () => import("./cli/cmd/github").then((m) => m.GithubCommand)],
   ["pr", () => import("./cli/cmd/pr").then((m) => m.PrCommand)],
   ["session", () => import("./cli/cmd/session").then((m) => m.SessionCommand)],
   ["plugin", () => import("./cli/cmd/plug").then((m) => m.PluginCommand)],
