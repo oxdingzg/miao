@@ -7,8 +7,8 @@
 ## 准备
 
 ```powershell
-# 用 release 安装脚本（Git Bash 或 WSL 里执行）
-curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash
+# 通过 PowerShell 脚本安装
+irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex
 # 或直接把 miao-windows-x64.zip 解压出来的 miao.exe 放到 PATH
 miao --version
 ```
