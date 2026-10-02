@@ -421,6 +421,16 @@ describe("mini on the V2 session API", () => {
       yield* Effect.promise(() => transport.close())
 
       expect(ui.commits.filter((commit) => commit.kind === "error")).toEqual([])
+      const messages = yield* Effect.promise(() => loadTranscript(sdk, created.id))
+      const replayed = replaySession({
+        sessionID: created.id,
+        entries: transcriptEntries({ sessionID: created.id, directory, messages }),
+        permissions: [],
+        questions: [],
+        thinking: true,
+        limits: {},
+      })
+      expect(replayed.commits.filter((commit) => commit.kind === "error")).toEqual([])
       const status = yield* Effect.promise(() =>
         sdk.v2.session.status({ sessionID: created.id }, { throwOnError: true }).then((result) => result.data.data),
       )

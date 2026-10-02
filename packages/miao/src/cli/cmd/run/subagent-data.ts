@@ -13,7 +13,7 @@ import {
   type SessionData,
   type SessionDataEvent,
 } from "./session-data"
-import { liveToolPart, partKey } from "./session-v2"
+import { INTERRUPTED_STEP, liveToolPart, partKey } from "./session-v2"
 import type { FooterSubagentState, FooterSubagentTab, StreamCommit } from "./types"
 
 export const SUBAGENT_BOOTSTRAP_LIMIT = 200
@@ -859,7 +859,7 @@ export function reduceSubagentData(input: {
 
   const detail = ensureDetail(input.data, sessionID)
   const cancelled =
-    event.type === "session.next.step.failed" && event.properties.error.message === "Provider turn interrupted"
+    event.type === "session.next.step.failed" && event.properties.error.message === INTERRUPTED_STEP
       ? cancelSubagentTab(input.data, sessionID)
       : false
 

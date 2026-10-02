@@ -33,6 +33,10 @@ export type TranscriptEntry =
   | { type: "shell"; id: string; callID: string; command: string; output: string; completed: boolean }
   | { type: "compaction"; id: string; reason: "auto" | "manual" }
 
+// V2 interruption settles the open step with this message. Like V1's
+// MessageAbortedError it ends the turn without an error row.
+export const INTERRUPTED_STEP = "Provider turn interrupted"
+
 export function partKey(messageID: string, id: string) {
   return `${messageID}:${id}`
 }
@@ -108,12 +112,18 @@ export function transcriptEntries(input: {
       {
         type: "message",
         message: {
-          info: found.info,
+          info: interruptedAsAborted(found.info),
           parts: found.parts.map((part) => settleText(scopePart(part), message.time.created, completed)),
         },
       },
     ]
   })
+}
+
+function interruptedAsAborted(info: SessionMessages[number]["info"]): SessionMessages[number]["info"] {
+  if (info.role !== "assistant" || info.error?.name !== "UnknownError") return info
+  if (info.error.data.message !== INTERRUPTED_STEP) return info
+  return { ...info, error: { name: "MessageAbortedError", data: { message: INTERRUPTED_STEP } } }
 }
 
 // Only `text.ended`/`reasoning.ended` are durable (deltas are live-only), so a
