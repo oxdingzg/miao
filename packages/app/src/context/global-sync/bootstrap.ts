@@ -356,6 +356,17 @@ export async function bootstrapDirectory(input: {
               const next = projectID(data.directory ?? input.directory, input.global.project)
               if (next) input.setStore("project", next)
             })),
+      // The V2 API has no branch endpoint yet (only /api/vcs/status and /api/vcs/diff), so the
+      // review pane's "Branch changes" mode still needs the instance `/vcs` route for the branch
+      // and its default branch.
+      () =>
+        retry(() =>
+          input.sdk.vcs.get().then((result) => {
+            const next = { branch: result.data?.branch, default_branch: result.data?.default_branch }
+            input.setStore("vcs", next)
+            input.vcsCache.setStore("value", next)
+          }),
+        ),
       input.mcp &&
         (() =>
           loadCommands(input.directory, input.api.command).then((commands) =>
