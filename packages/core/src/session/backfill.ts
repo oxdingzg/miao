@@ -174,40 +174,54 @@ const migrateSession = (db: Database.Interface["db"], sessionID: SessionSchema.I
   db
     .transaction((tx) =>
       Effect.gen(function* () {
-        const mapped = yield* read(tx, sessionID)
-        const existing = yield* tx
-          .select({ id: SessionMessageTable.id })
-          .from(SessionMessageTable)
-          .where(eq(SessionMessageTable.session_id, sessionID))
-          .all()
-          .pipe(Effect.orDie)
-        const projected = new Set(existing.map((row) => row.id))
-        const stranded = mapped.filter((message) => !projected.has(message.id))
-        if (stranded.length === 0) return
-
-        // `session_message.seq` is the EventV2 aggregate sequence, and future
-        // events continue from the session's current maximum. Legacy messages
-        // have no event, so place them strictly below every event sequence
-        // (always negative) to avoid colliding with the next event and to keep
-        // them identifiable as event-less legacy projection.
-        let seq = -stranded.length
-        for (const message of stranded) {
-          const encoded = encode(message)
-          const { id, type, ...data } = encoded
-          yield* tx
-            .insert(SessionMessageTable)
-            .values({
-              id: SessionMessage.ID.make(id),
-              session_id: sessionID,
-              type,
-              seq,
-              time_created: DateTime.toEpochMillis(message.time.created),
-              data,
-            })
-            .run()
-            .pipe(Effect.orDie)
-          seq += 1
-        }
+        yield* write(tx, sessionID, yield* read(tx, sessionID))
       }),
     )
     .pipe(Effect.orDie)
+
+/**
+ * Writes event-less projected messages into a session, skipping ids it already
+ * holds. Used by the backfill and by `miao import`, so it must run inside the
+ * caller's transaction to stay all-or-nothing.
+ */
+export const write = (
+  tx: Pick<Database.Interface["db"], "select" | "insert">,
+  sessionID: SessionSchema.ID,
+  messages: ReadonlyArray<SessionMessage.Message>,
+) =>
+  Effect.gen(function* () {
+    const existing = yield* tx
+      .select({ id: SessionMessageTable.id, seq: SessionMessageTable.seq })
+      .from(SessionMessageTable)
+      .where(eq(SessionMessageTable.session_id, sessionID))
+      .all()
+      .pipe(Effect.orDie)
+    const projected = new Set(existing.map((row) => row.id))
+    const stranded = messages.filter((message) => !projected.has(message.id))
+    if (stranded.length === 0) return 0
+
+    // `session_message.seq` is the EventV2 aggregate sequence, and future
+    // events continue from the session's current maximum. Messages without an
+    // event go strictly below every sequence already used (always negative) to
+    // avoid colliding with the next event and to keep them identifiable as
+    // event-less projection.
+    let seq = existing.reduce((min, row) => Math.min(min, row.seq), 0) - stranded.length
+    for (const message of stranded) {
+      const encoded = encode(message)
+      const { id, type, ...data } = encoded
+      yield* tx
+        .insert(SessionMessageTable)
+        .values({
+          id: SessionMessage.ID.make(id),
+          session_id: sessionID,
+          type,
+          seq,
+          time_created: DateTime.toEpochMillis(message.time.created),
+          data,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      seq += 1
+    }
+    return stranded.length
+  })

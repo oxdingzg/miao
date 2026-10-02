@@ -68,12 +68,76 @@ const relativeTo = (directory: string, file: string) => {
   return path.startsWith(root) ? path.slice(root.length) : undefined
 }
 
+/**
+ * Legacy detail the V2 shape has no field for, kept under `metadata.v1` so an
+ * export can rebuild the V1 transcript and nothing is lost when `miao db compact`
+ * drops the legacy tables. Message metadata never reaches a provider request.
+ *
+ * `parts` holds every part the V2 content does not represent, with its index in
+ * the original part list. `info` holds the original message fields V2 drops.
+ */
+export interface Preserved {
+  readonly parts?: ReadonlyArray<{ readonly index: number; readonly part: StoredPart }>
+  readonly info?: Record<string, unknown>
+}
+
+/** A legacy part without the ids its message already supplies. */
+export type StoredPart = Omit<SessionV1.Part, "sessionID" | "messageID">
+
+export const METADATA_KEY = "v1"
+
+/** The preserved legacy detail of a projected message, if it was mapped from V1. */
+export const preserved = (message: { readonly metadata?: Record<string, unknown> }): Preserved | undefined => {
+  const value = message.metadata?.[METADATA_KEY]
+  return typeof value === "object" && value !== null ? (value as Preserved) : undefined
+}
+
+const strip = (part: SessionV1.Part): StoredPart => {
+  const { sessionID: _sessionID, messageID: _messageID, ...rest } = part
+  return rest
+}
+
+const withPreserved = (value: Preserved) => {
+  const kept = {
+    ...(value.parts && value.parts.length > 0 ? { parts: value.parts } : {}),
+    ...(value.info && Object.keys(value.info).length > 0 ? { info: value.info } : {}),
+  }
+  return Object.keys(kept).length === 0 ? {} : { metadata: { [METADATA_KEY]: kept } }
+}
+
+const errorMessage = (error: NonNullable<SessionV1.Assistant["error"]>) => {
+  const data = (error as { data?: { message?: unknown } }).data
+  return typeof data?.message === "string" && data.message !== "" ? data.message : error.name
+}
+
 const assistant = (
   info: SessionV1.Assistant,
   parts: ReadonlyArray<SessionV1.Part>,
   directory: string | undefined,
+  compaction: SessionV1.CompactionPart | undefined,
 ): SessionMessage.Message => {
+  const { id: _id, sessionID: _sessionID, ...fields } = info
+  // A V1 compaction is the `summary` reply to a user message holding a
+  // `compaction` part. Projecting it as a V2 compaction keeps the boundary the
+  // V2 history loader starts from, so a backfilled session does not resend the
+  // history it had already summarized.
+  const summary = parts
+    .filter((part): part is SessionV1.TextPart => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+  if (info.summary === true && summary !== "")
+    return {
+      id: info.id,
+      type: "compaction",
+      reason: compaction?.auto === false ? "manual" : "auto",
+      summary,
+      recent: "",
+      time: { created: at(info.time.created) },
+      ...withPreserved({ info: fields, parts: parts.map((part, index) => ({ index, part: strip(part) })) }),
+    } as unknown as SessionMessage.Message
+
   const content: SessionMessage.AssistantContent[] = []
+  const kept: { index: number; part: StoredPart }[] = []
   // A legacy assistant message records its span as per-step markers: `step-start`
   // holds the tree before a step and `step-finish` the tree after one, and a
   // `patch` repeats the start tree alongside the files the message changed. The
@@ -84,7 +148,9 @@ const assistant = (
   let start: string | undefined
   let end: string | undefined
   const files = new Set<string>()
-  for (const part of parts) {
+  for (const [index, part] of parts.entries()) {
+    if (part.type !== "text" && part.type !== "reasoning" && part.type !== "tool")
+      kept.push({ index, part: strip(part) })
     if (part.type === "step-start" || part.type === "snapshot") {
       start ??= part.snapshot
       continue
@@ -111,8 +177,7 @@ const assistant = (
     }
     if (part.type !== "tool") continue
     const toolStart = "time" in part.state ? part.state.time.start : undefined
-    const toolEnd =
-      part.state.status === "completed" || part.state.status === "error" ? part.state.time.end : undefined
+    const toolEnd = part.state.status === "completed" || part.state.status === "error" ? part.state.time.end : undefined
     content.push({
       type: "tool",
       id: part.callID,
@@ -141,6 +206,7 @@ const assistant = (
     content,
     ...(start === undefined && end === undefined && files.size === 0 ? {} : { snapshot }),
     ...(info.finish !== undefined ? { finish: info.finish } : {}),
+    ...(info.error !== undefined ? { error: { type: "unknown", message: errorMessage(info.error) } } : {}),
     cost: info.cost,
     tokens: {
       input: info.tokens.input,
@@ -148,6 +214,15 @@ const assistant = (
       reasoning: info.tokens.reasoning,
       cache: info.tokens.cache,
     },
+    ...withPreserved({
+      parts: kept,
+      info: {
+        ...(info.error !== undefined ? { error: info.error } : {}),
+        ...(info.summary !== undefined ? { summary: info.summary } : {}),
+        ...(info.mode !== info.agent ? { mode: info.mode } : {}),
+        ...(info.structured !== undefined ? { structured: info.structured } : {}),
+      },
+    }),
   } as unknown as SessionMessage.Message
 }
 
@@ -162,6 +237,14 @@ const user = (info: SessionV1.User, parts: ReadonlyArray<SessionV1.Part>): Sessi
   const agents = parts
     .filter((part): part is SessionV1.AgentPart => part.type === "agent")
     .map((part) => ({ name: part.name }))
+  // V2 joins a user message into one text and a file list. When the original was
+  // anything else (several or flagged text parts, compaction or subtask markers,
+  // agent mentions) keep every non-file part so the original order survives.
+  const plain =
+    parts.every((part) => part.type === "text" || part.type === "file") &&
+    parts.filter((part) => part.type === "text").length <= 1 &&
+    parts.every((part) => part.type !== "text" || (!part.synthetic && !part.ignored && !part.metadata))
+  const { id: _id, sessionID: _sessionID, role: _role, time: _time, ...extra } = info
   return {
     id: info.id,
     type: "user",
@@ -169,11 +252,24 @@ const user = (info: SessionV1.User, parts: ReadonlyArray<SessionV1.Part>): Sessi
     text,
     ...(files.length > 0 ? { files } : {}),
     ...(agents.length > 0 ? { agents } : {}),
+    ...withPreserved({
+      parts: plain ? [] : parts.flatMap((part, index) => (part.type === "file" ? [] : [{ index, part: strip(part) }])),
+      info: extra,
+    }),
   } as unknown as SessionMessage.Message
 }
 
 /** Maps a legacy V1 session transcript into the V2 projected message shape (read-only). */
-export const map = (messages: ReadonlyArray<WithParts>, options: Options = {}): SessionMessage.Message[] =>
-  messages.map(({ info, parts }) =>
-    info.role === "user" ? user(info, parts) : assistant(info, parts, options.directory),
+export const map = (messages: ReadonlyArray<WithParts>, options: Options = {}): SessionMessage.Message[] => {
+  const compactions = new Map(
+    messages.flatMap(({ info, parts }) => {
+      const part = parts.find((item): item is SessionV1.CompactionPart => item.type === "compaction")
+      return info.role === "user" && part ? [[info.id, part] as const] : []
+    }),
   )
+  return messages.map(({ info, parts }) =>
+    info.role === "user"
+      ? user(info, parts)
+      : assistant(info, parts, options.directory, compactions.get(info.parentID)),
+  )
+}
