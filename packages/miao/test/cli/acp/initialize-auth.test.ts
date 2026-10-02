@@ -14,8 +14,9 @@ describe("opencode acp initialize/auth subprocess", () => {
         expect(initialized.protocolVersion).toBe(1)
         expect(initialized.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true)
         expect(initialized.agentCapabilities?.promptCapabilities?.image).toBe(true)
-        expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(true)
-        expect(initialized.agentCapabilities?.mcpCapabilities?.sse).toBe(true)
+        // Client-provided MCP servers are not wired into V2 yet, so remote transports are not advertised.
+        expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(false)
+        expect(initialized.agentCapabilities?.mcpCapabilities?.sse).toBe(false)
         expect(initialized.agentCapabilities?.loadSession).toBe(true)
         expect(initialized.agentCapabilities?.sessionCapabilities?.close).toEqual({})
         expect(initialized.agentCapabilities?.sessionCapabilities?.fork).toEqual({})
