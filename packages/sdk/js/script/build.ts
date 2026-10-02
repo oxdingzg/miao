@@ -112,6 +112,21 @@ if (sseTypesPatched === sseTypesSource) {
 }
 await Bun.write(sseTypesPath, sseTypesPatched)
 
+// Patch a @hey-api/openapi-ts client bug: the SSE abort handler calls
+// `reader.cancel()` inside a synchronous try/catch, but cancel() returns a
+// promise that rejects with the abort reason once the request is aborted. The
+// rejection goes unhandled and fails the process (or the running bun test).
+const ssePath = "./src/v2/gen/core/serverSentEvents.gen.ts"
+const sseSource = await Bun.file(ssePath).text()
+const ssePatched = sseSource.replace(
+  /(const abortHandler = \(\) => \{\s*try \{\s*)reader\.cancel\(\)/,
+  "$1void reader.cancel().catch(() => {})",
+)
+if (ssePatched === sseSource) {
+  throw new Error(`SSE abort patch did not apply; @hey-api/openapi-ts output may have changed (${ssePath})`)
+}
+await Bun.write(ssePath, ssePatched)
+
 await $`bun prettier --write src/gen`
 await $`bun prettier --write src/v2`
 await $`rm -rf dist`
