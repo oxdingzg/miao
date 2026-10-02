@@ -5,8 +5,9 @@ const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mc
 
 // The app reads session history and live events through the V2 API only (Stage 5:
 // d7abcfdcd, ddc72cf81, 5adff3598), but some fixtures still describe V1 messages and events:
-// V1 part IDs, compaction/file/patch parts, message summaries, and the V1 permission routes. The V1->V2 translation in this mock cannot express them, so the affected
-// specs are parked with `test.fixme` until their fixtures are rewritten in V2 terms.
+// V1 part IDs, compaction/file/patch parts, and message summaries. The V1->V2 translation in
+// this mock cannot express them, so the affected specs are parked with `test.fixme` until their
+// fixtures are rewritten in V2 terms.
 export const LEGACY_V1_FIXTURE = "fixture still models the V1 session API; needs a V2 rewrite"
 
 export interface MockServerConfig {

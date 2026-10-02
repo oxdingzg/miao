@@ -43,6 +43,7 @@ const transcript: SessionMessage[] = [
 // been answered does the step settle and session.wait return.
 function server(options: { failPrompt?: boolean; models?: { providerID: string; id: string }[] } = {}) {
   const calls: string[] = []
+  const replies: { path: string; body: unknown }[] = []
   const answered = new Set<string>()
   let admitted = false
   let push: (event: object) => void = () => {}
@@ -81,6 +82,7 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
       return new Response(null, { status: 204 })
     }
     if (url.pathname.endsWith("/reply") || url.pathname.endsWith("/reject")) {
+      replies.push({ path: url.pathname, body: await request.json().catch(() => undefined) })
       answered.add(url.pathname)
       if (answered.size === 2) {
         push({ type: "session.next.step.ended", properties: { sessionID } })
@@ -92,6 +94,7 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
   }
   return {
     calls,
+    replies,
     client: createOpencodeClient({
       baseUrl: "http://headless.test",
       fetch: Object.assign(fetch, { preconnect: globalThis.fetch.preconnect }),
@@ -155,6 +158,20 @@ describe("headless V2 run", () => {
     expect(calls.indexOf(`POST /api/session/${sessionID}/model`)).toBeLessThan(
       calls.indexOf(`POST /api/session/${sessionID}/prompt`),
     )
+  })
+
+  test("auto-approves the attached session's permission once instead of rejecting it", async () => {
+    const declined = server()
+    await runHeadless({ ...base, client: declined.client, auto: false, ...capture().output(false) })
+    const approved = server()
+    const out = capture()
+    const error = await runHeadless({ ...base, client: approved.client, auto: true, ...out.output(false) })
+
+    const permissionReply = `/api/session/${sessionID}/permission/per_1/reply`
+    expect(declined.replies.find((item) => item.path === permissionReply)?.body).toEqual({ reply: "reject" })
+    expect(error).toBeUndefined()
+    expect(approved.replies.find((item) => item.path === permissionReply)?.body).toEqual({ reply: "once" })
+    expect(out.printed.some((line) => line.startsWith("warning permission requested"))).toBe(false)
   })
 
   test("writes the V1-shaped JSON event sequence", async () => {

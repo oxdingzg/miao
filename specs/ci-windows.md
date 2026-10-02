@@ -46,14 +46,15 @@ watching:
 
 ## Not Windows-specific: parked e2e fixtures
 
-16 app e2e cases are marked `test.fixme(..., LEGACY_V1_FIXTURE)` on every platform because their
-fixtures still describe V1 data (V1 part ids, compaction/file/patch parts, message summary diffs,
-V1 permission routes) that the V2-only app no longer reads. The reason is
+14 app e2e cases are marked `test.fixme(..., LEGACY_V1_FIXTURE)` on every platform because their
+fixtures still describe V1 data (V1 part ids, compaction/file/patch parts, message summary diffs)
+that the V2-only app no longer reads. The reason is
 documented next to `LEGACY_V1_FIXTURE` in `packages/app/e2e/utils/mock-server.ts`; list the cases
 with `grep -rn LEGACY_V1_FIXTURE packages/app/e2e`. As of this change they are in
-`regression/remote-session-settings` (2), `session-timeline-context-resize` (2),
+`session-timeline-context-resize` (2),
 `session-timeline-history-root` (1, two scenarios), `session-timeline-lifecycle-state` (1),
 `session-timeline-projection` (3), `session-timeline-reasoning-projection` (2),
 `session-timeline-reducer-projection` (1), `session-timeline-shell-outline` (1),
 `session-timeline-transport` (1) and `smoke/session-timeline` (1). `session-todo-dock-navigation`
-runs again now that the app reads `/api/session/:id/todo`.
+runs again now that the app reads `/api/session/:id/todo`, and `regression/remote-session-settings`
+runs against the V2 permission list, reply route and `permission.v2.asked` event.

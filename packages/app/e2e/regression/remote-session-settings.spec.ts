@@ -1,7 +1,7 @@
 import { base64Encode } from "@miao/core/util/encode"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { installSseTransport } from "../utils/sse-transport"
-import { currentSession, LEGACY_V1_FIXTURE } from "../utils/mock-server"
+import { currentSession } from "../utils/mock-server"
 
 const serverA = "http://127.0.0.1:4096"
 const serverB = "http://127.0.0.1:4097"
@@ -12,7 +12,6 @@ const childSessionA = { ...session("ses_server_a_child", directoryA, "Server A c
 const sessionB = session("ses_server_b", directoryB, "Server B session")
 
 test("session settings use the remote server context", async ({ page }) => {
-  test.fixme(true, LEGACY_V1_FIXTURE)
   const permissionRequests: string[] = []
   await mockServers(page, permissionRequests)
   await configureServers(page)
@@ -33,7 +32,7 @@ test("session settings use the remote server context", async ({ page }) => {
     .poll(() =>
       permissionRequests.some((request) => {
         const url = new URL(request)
-        return url.origin === serverB && url.searchParams.get("directory") === directoryB
+        return url.origin === serverB && url.searchParams.get("location[directory]") === directoryB
       }),
     )
     .toBe(true)
@@ -45,7 +44,6 @@ test("session settings use the remote server context", async ({ page }) => {
 })
 
 test("auto-accept responds for an unfocused server session", async ({ page }) => {
-  test.fixme(true, LEGACY_V1_FIXTURE)
   const permissionRequests: string[] = []
   const permissionResponses: PermissionResponse[] = []
   const transport = await installSseTransport<{ directory: string; payload: Record<string, unknown> }>(page, {
@@ -69,7 +67,7 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
     .poll(() =>
       permissionRequests.some((request) => {
         const url = new URL(request)
-        return url.origin === serverA && url.searchParams.get("directory") === directoryA
+        return url.origin === serverA && url.searchParams.get("location[directory]") === directoryA
       }),
     )
     .toBe(true)
@@ -83,15 +81,14 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
   await transport.send({
     directory: directoryA,
     payload: {
-      id: "event-permission-background-a",
-      type: "permission.asked",
+      id: "evt_permission_background_a",
+      type: "permission.v2.asked",
       properties: {
-        id: "permission-background-a",
+        id: "per_background_a",
         sessionID: sessionA.id,
-        permission: "bash",
-        patterns: ["git status"],
+        action: "bash",
+        resources: ["git status"],
         metadata: {},
-        always: [],
       },
     },
   })
@@ -101,25 +98,23 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
     .toEqual([
       {
         origin: serverA,
-        directory: directoryA,
         sessionID: sessionA.id,
-        permissionID: "permission-background-a",
-        body: { response: "once" },
+        permissionID: "per_background_a",
+        body: { reply: "once" },
       },
     ])
 
   await transport.send({
     directory: directoryA,
     payload: {
-      id: "event-permission-background-a-child",
-      type: "permission.asked",
+      id: "evt_permission_background_a_child",
+      type: "permission.v2.asked",
       properties: {
-        id: "permission-background-a-child",
+        id: "per_background_a_child",
         sessionID: childSessionA.id,
-        permission: "bash",
-        patterns: ["git diff"],
+        action: "bash",
+        resources: ["git diff"],
         metadata: {},
-        always: [],
       },
     },
   })
@@ -129,24 +124,49 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
     .toEqual([
       {
         origin: serverA,
-        directory: directoryA,
         sessionID: sessionA.id,
-        permissionID: "permission-background-a",
-        body: { response: "once" },
+        permissionID: "per_background_a",
+        body: { reply: "once" },
       },
       {
         origin: serverA,
-        directory: directoryA,
         sessionID: childSessionA.id,
-        permissionID: "permission-background-a-child",
-        body: { response: "once" },
+        permissionID: "per_background_a_child",
+        body: { reply: "once" },
       },
     ])
 })
 
+test("enabling auto-accept answers the remote server's pending request", async ({ page }) => {
+  const permissionRequests: string[] = []
+  const permissionResponses: PermissionResponse[] = []
+  await mockServers(page, permissionRequests, permissionResponses, {
+    [serverB]: [
+      {
+        id: "per_pending_b",
+        sessionID: sessionB.id,
+        action: "bash",
+        resources: ["git log"],
+        metadata: {},
+      },
+    ],
+  })
+  await configureServers(page)
+
+  await page.goto(`/server/${base64Encode(serverB)}/session/${sessionB.id}`)
+  await expect(page.getByText(sessionB.title).first()).toBeVisible()
+  await page.keyboard.press("Control+,")
+  const autoAccept = page.locator(".settings-v2-dialog").locator('[data-action="settings-auto-accept-permissions"]')
+  await autoAccept.locator('[data-slot="switch-control"]').click()
+  await expect(autoAccept.getByRole("switch")).toBeChecked()
+
+  await expect
+    .poll(() => permissionResponses)
+    .toEqual([{ origin: serverB, sessionID: sessionB.id, permissionID: "per_pending_b", body: { reply: "once" } }])
+})
+
 type PermissionResponse = {
   origin: string
-  directory?: string
   sessionID: string
   permissionID: string
   body: unknown
@@ -163,33 +183,45 @@ async function configureServers(page: Page, tabs: { type: "session"; server: str
   )
 }
 
-async function mockServers(page: Page, permissionRequests: string[], permissionResponses: PermissionResponse[] = []) {
+async function mockServers(
+  page: Page,
+  permissionRequests: string[],
+  permissionResponses: PermissionResponse[] = [],
+  pending: Record<string, unknown[]> = {},
+) {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
     if (url.origin !== serverA && url.origin !== serverB) return route.fallback()
     const remote = url.origin === serverB
     const directory = remote ? directoryB : directoryA
     const sessions = remote ? [sessionB] : [sessionA, childSessionA]
-    const requestDirectory = url.searchParams.get("directory")
-    const response = url.pathname.match(/^\/session\/([^/]+)\/permissions\/([^/]+)$/)
+    const requestDirectory = url.searchParams.get("directory") ?? url.searchParams.get("location[directory]")
+    // V2 replies carry no directory: the server resolves the Location from the owning Session.
+    const response = url.pathname.match(/^\/api\/session\/([^/]+)\/permission\/([^/]+)\/reply$/)
     if (route.request().method() === "POST" && response) {
       permissionResponses.push({
         origin: url.origin,
-        directory: requestDirectory ?? undefined,
         sessionID: response[1]!,
         permissionID: response[2]!,
         body: route.request().postDataJSON(),
       })
-      return json(route, true)
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
     }
     if (requestDirectory && requestDirectory !== directory) return json(route, { name: "InvalidDirectory" }, 500)
     if (url.pathname === "/global/event" || url.pathname === "/event" || url.pathname === "/api/event")
       return sse(route)
-    if (url.pathname === "/global/health") return json(route, { healthy: true })
-    if (url.pathname === "/api/provider" || url.pathname === "/api/model" || url.pathname === "/api/agent")
-      return json(route, { data: [] })
+    if (url.pathname === "/global/health") return json(route, {}, 404)
+    if (url.pathname === "/api/health") return json(route, { healthy: true, version: "2.0.0", pid: 1 })
+    if (url.pathname === "/api/permission/request") {
+      permissionRequests.push(url.toString())
+      return json(route, { location: { directory }, data: pending[url.origin] ?? [] })
+    }
+    // normalizeProviderList still accepts the legacy `{ all, connected, default }` payload.
+    if (url.pathname === "/api/provider")
+      return json(route, { location: { directory }, data: provider(remote ? "server-b" : "server-a") })
+    if (url.pathname === "/api/model" || url.pathname === "/api/agent") return json(route, { data: [] })
     if (url.pathname === "/api/model/default") return json(route, { data: null })
-    if (["/api/command", "/api/reference", "/api/permission/request", "/api/question/request"].includes(url.pathname))
+    if (["/api/command", "/api/reference", "/api/question/request"].includes(url.pathname))
       return json(route, { location: { directory }, data: [] })
     if (url.pathname === "/api/mcp") return json(route, { location: { directory }, data: [] })
     if (url.pathname === "/api/mcp/resource")
