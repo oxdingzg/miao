@@ -4,10 +4,10 @@ import os from "node:os"
 import path from "node:path"
 import type { Inbound } from "../src/channel"
 import { readJson } from "../src/file"
-import { createWechatChannel, split, statePaths } from "../src/wechat/channel"
-import { createFakeIlink, textMessage } from "../src/wechat/fake-ilink"
-import { clientVersion, createLoginApi, parseLossless } from "../src/wechat/ilink"
-import { loadCredentials, login, saveCredentials, type Credentials } from "../src/wechat/login"
+import { createWechatChannel, split, statePaths } from "../src/connectors/wechat/channel"
+import { createFakeIlink, textMessage } from "../src/connectors/wechat/fake-ilink"
+import { clientVersion, createLoginApi, parseLossless } from "../src/connectors/wechat/ilink"
+import { loadCredentials, login, saveCredentials, type Credentials } from "../src/connectors/wechat/login"
 
 const owner = "owner@im.wechat"
 
@@ -197,7 +197,7 @@ describe("wechat channel", () => {
     expect(Number(Buffer.from(polls[0].headers["x-wechat-uin"], "base64").toString())).toBeGreaterThanOrEqual(0)
     expect(polls[0].body.base_info).toEqual({ channel_version: "2.4.9", bot_agent: "miao/0.0.32" })
 
-    const files = statePaths(path.join(fixture.directory, "state"), "bot@im.bot")
+    const files = statePaths(path.join(fixture.directory, "state"))
     expect(await readJson(files.cursor)).toEqual({ cursor: "b3" })
     expect(await readJson(files.status)).toMatchObject({ state: "stopped" })
 
@@ -228,7 +228,7 @@ describe("wechat channel", () => {
     const wechat = channel()
     fake().update({ ret: -14, errmsg: "session timeout" })
     await wechat.start(collector().onMessage)
-    const files = statePaths(path.join(fixture.directory, "state"), "bot@im.bot")
+    const files = statePaths(path.join(fixture.directory, "state"))
     await eventually(
       async () =>
         (await readJson(files.status).then((value) => (value as { state?: string })?.state)) === "needs-login",

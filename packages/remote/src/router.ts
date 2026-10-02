@@ -16,8 +16,8 @@ export type RouterOptions = {
   readonly channels: ReadonlyArray<Channel>
   /** Project alias → directory. Only sessions inside these directories can be listed or driven. */
   readonly projects: Readonly<Record<string, string>>
-  /** Channel ID → the only users whose messages are accepted. */
-  readonly allow: Readonly<Record<string, ReadonlyArray<string>>>
+  /** Channel ID → the only users whose messages are accepted, or a check that is asked per message. */
+  readonly allow: Readonly<Record<string, ReadonlyArray<string>>> | ((channel: string, user: string) => boolean)
   /** Path of the router state file (numbers, current session, approval codes, pending results). */
   readonly state: string
   readonly approvalTtlMs?: number
@@ -137,26 +137,60 @@ export async function createRouter(options: RouterOptions) {
   const background = new Set<Promise<unknown>>()
   const connected = Promise.withResolvers<void>()
 
+  const lifecycle = { started: false }
+
   return {
     start,
     stop,
     /** Resolves once queued message handling, turn watchers, and state writes have settled. */
     settled,
+    /** Adds a channel after start (a new login); it starts right away. Replaces a channel with the same ID. */
+    add,
+    /** Stops and forgets a channel (logout). Its users' state is kept. */
+    remove,
+    channels: () => [...channels.values()],
   }
 
   async function start() {
+    lifecycle.started = true
     void subscribe()
     // Asks raised before the stream connects are recovered by resync, but waiting
     // here keeps the common path event-driven.
     await Promise.race([connected.promise, Bun.sleep(5000)])
-    await Promise.all(options.channels.map((channel) => channel.start((message) => receive(channel, message))))
+    await Promise.all([...channels.values()].map((channel) => channel.start((message) => receive(channel, message))))
   }
 
   async function stop() {
+    lifecycle.started = false
     abort.abort()
-    await Promise.all(options.channels.map((channel) => channel.stop()))
+    await Promise.all([...channels.values()].map((channel) => channel.stop()))
     await Promise.allSettled([...chains.values()])
     await save()
+  }
+
+  async function add(channel: Channel) {
+    await remove(channel.id)
+    channels.set(channel.id, channel)
+    if (!lifecycle.started) return
+    await channel
+      .start((message) => receive(channel, message))
+      .catch((error: unknown) => {
+        channels.delete(channel.id)
+        throw error
+      })
+  }
+
+  async function remove(id: string) {
+    const channel = channels.get(id)
+    if (!channel) return
+    channels.delete(id)
+    if (lifecycle.started)
+      await channel.stop().catch((error: unknown) => log(`remote: stopping ${id}: ${String(error)}`))
+  }
+
+  function allowed(channel: string, user: string) {
+    if (typeof options.allow === "function") return options.allow(channel, user)
+    return (options.allow[channel] ?? []).includes(user)
   }
 
   async function settled(): Promise<void> {
@@ -184,7 +218,7 @@ export async function createRouter(options: RouterOptions) {
   }
 
   function receive(channel: Channel, inbound: Inbound) {
-    if (!(options.allow[channel.id] ?? []).includes(inbound.user)) {
+    if (!allowed(channel.id, inbound.user)) {
       log(`remote: ignored message from unlisted ${channel.id} user ${inbound.user}`)
       return Promise.resolve()
     }
