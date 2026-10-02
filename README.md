@@ -188,7 +188,7 @@ V1 is the session runtime miao inherited from opencode; V2 is miao's rewritten c
 | Plugins               | All plugin hooks                                                                | Some `chat.*` hooks are not called yet                                                            |
 | Cost and cache        | Basic usage                                                                     | Per-turn usage and cost, TTFT, cache-hit ratio and miss causes, cost budgets                      |
 | Across sessions       | None                                                                            | Child sessions (`task`), `list_sessions` / `send_message`                                         |
-| Used by               | `--mini`, ACP, `MIAO_TUI_V2=0`, the legacy JS SDK                               | The default TUI, `miao run`, the web app, `miao remote`                                           |
+| Used by               | The legacy JS SDK and `/session/*` routes                                       | The default TUI, `--mini`, ACP, `miao run`, the web app, `miao remote`                            |
 
 Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for compiled checkout validation. New source features may not yet be in the installed release.
 

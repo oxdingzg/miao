@@ -19,6 +19,17 @@
 
 执行约束：编译、打包、全量测试在构建机上进行（macmini：macOS；xx02/xx01：Ubuntu；192.168.3.96：Windows），不在开发者本机进行；全量测试以 CI 为准。优先项：先修 MCP 工具调用不再询问权限的安全退步（P1 第一项）。
 
+进展（2026-10-02）：P4 第 1 步的客户端回退已移除——TUI 源码中全部 `Flag.MIAO_TUI_V2` 分支删除，`MIAO_TUI_V2` 开关从 `core` 移除；app 的 `?protocol=v1`、`createV1Api` 运行时与 `CompatibleApi` 的 legacy 类型全部删除（`CompatibleApi = ServerApi`，调用点去掉 V2 不支持的 `agent`/`model`/`variant`/`legacyParts`），API 选择不再依赖协议探测；`run.ts`/`pr.ts`/`session.ts` 的开关引用清理。TUI 测试夹具已迁到 V2，`packages/tui` 366 pass/0 fail，`core`/`tui`/`app`/`miao` typecheck 通过。
+注意：app 里仍有一批 `protocol === "v1"` 守护的 V1 专属功能路径（terminal `pty.shells`、custom provider、`project.update`、legacy `session.update` 归档、`path.get` 兜底等）。它们用的是 legacy client，而对应 `/api/*` 路由尚未迁移，因此本轮**不能**删除，留到 P7 非会话旧路由迁移后处理。服务端 V1 路由与 `packages/miao/src/session|tool` 同样待 P3 压缩与 R1 soak 之后删除。
+
+进展（2026-10-02，P3 前置）：已实现 `miao db restore --merge-from <db>`（`packages/core/src/session/restore.ts` + CLI），按主键并集把另一 miao 库的 `project`/`project_directory`/`session`/`session_message`/`session_input`/`session_context_epoch`/`todo`/`session_share`/`event` 合并进来，`event_sequence` 取两库最大值，父表先于子表插入，只做 `INSERT OR IGNORE` 不覆盖已有行，支持 `--dry-run`。覆盖测试在 `packages/core/test/session-restore.test.ts`（3 pass）。这是压缩真库前回滚流程 `miao db restore --merge-from <compact-clone>` 的工具。
+
+进展（2026-10-02，P1 完成 + run.ts 死码清理）：核对确认 P1 各项已由近期提交完成——`edit` 询问带 diff，`edit`/`write`/`apply_patch` 均带 LSP 诊断，V2 bash 接 `shell.env`，`summary_*` 由 projector 写入，`stats` 在 core `SessionStats` 按 root 会话树去重，`export`/`import` 已用 V2 投影；codex/copilot 的逐请求头已在 `packages/core/src/session/runner/provider-headers.ts`（copilot `X-Interaction-Id`/`x-initiator`/vision、openai `session-id`）与 `runner/model.ts`（codex `originator`/UA、copilot `X-GitHub-Api-Version`/`anthropic-beta`）实现，codex 的 `chat.params` 在 V2 天然等价（openai 协议不消费 `limits.output`）。另外删除了 `miao/src/cli/cmd/run.ts` 中因 `sessionsV2` 恒真而不可达的 V1 分支（`session`/`createFreshSession` 的 V1 体、`loop`、`if (!interactive)` headless-V1 循环，-326 行）；`test/cli/run` 226 pass，help 快照已更新。
+
+进展（2026-10-02，P3 主库完成）：真库 `~/.local/share/miao/miao.db` 已压缩（2746 MB → 574 MB，`quick_check` = ok，`message`/`part` 已删），已装正式版 `miao` 0.0.34 可正常读取。正确克隆方式是 `sqlite3 <db> ".backup '<clone>'"`（禁止 `cp -c`，WAL 热拷贝会损坏）；克隆校验用 `sqlite3 <clone> "PRAGMA quick_check;"`（**不要加 `-readonly`**，WAL 目标会误报 error 14）。`db compact` 已加 `PRAGMA quick_check` 前置守卫。`miao-main.db`（preview 通道）尚未压缩。
+
+进展（2026-10-02，P7 开始）：TUI 已把 `find.files`→`v2.fs.find`、`path.get`→`v2.location.get`、`project.current/directories`→`v2.project.*` 迁到 V2（`packages/tui` 367 测试通过）。P7 清单与缺口（`config`/`mcp`/`lsp`/`vcs`/`formatter`/`experimental-workspace`/`instance-app`/`sync` 尚无 `/api/*` 组）见 `specs/v2/p7-non-session-routes.md`；补齐这些 V2 端点并迁移客户端是下一步主体。
+
 ---
 
 
@@ -332,9 +343,15 @@ miao db compact --yes        → before 2609.7 MB → after 438.8 MB; deleted 16
    未压缩的库：`v1-read` 回退和 backfill 都保留；也**能读**压缩后的库。
    所有通道（`miao`、`miao-preview`、`miao-dev`）都升级到这个版本，并且确认用户不再运行任何更旧的二进制
    （包括别的机器）。
-2. **先在克隆上演练。** `sqlite3 miao.db ".backup miao.db.bak-YYYYMMDD"`，再 `cp -c` 一份做克隆，
+2. **先在克隆上演练。** 停掉所有会写这个库的 miao 进程（或至少确认没有写入），然后**用 SQLite 备份 API**
+   克隆，不要用 `cp`/`cp -c`——库处于 WAL 模式时主文件不是一致快照，热拷贝会得到损坏的库（已实测：
+   `cp -c` 出来的克隆 `PRAGMA quick_check` 报 btree 错误，`db compact` 在 VACUUM 处失败）：
+   - 备份：`sqlite3 <db> ".backup '<db>.bak-YYYYMMDD'"`
+   - 克隆：`sqlite3 <db> ".backup '/tmp/miao-clone.db'"`（`.backup` 走在线备份 API，含 WAL 内容，一致）
+   - 克隆后先校验：`sqlite3 /tmp/miao-clone.db "PRAGMA quick_check;"` 必须输出 `ok`。
+     **不要加 `-readonly`**：`.backup` 目标保持 WAL 模式，只读连接无法创建 `-shm`，会误报 `unable to open database file (14)`。
    在克隆上按顺序跑：
-   - `db backfill --verify`（0 失败）→ `db backfill` → `db compact --yes`；
+   - `MIAO_DB=/tmp/miao-clone.db miao-dev db backfill --verify`（0 失败）→ `… db backfill` → `… db compact --yes`；
    - 然后用**已安装的** `miao` 对克隆（`MIAO_DB=<clone>`）逐个冒烟：TUI 打开 legacy 和 V2 会话各一个、
      `--mini` 回放并续跑、ACP load / prompt、`export`、`import`、`stats`、
      `/api/session/<id>/context` 和 `/message` 都返回 200。

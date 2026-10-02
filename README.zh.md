@@ -166,7 +166,7 @@ V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内�
 | 插件        | 支持全部插件钩子                                           | 部分 `chat.*` 钩子尚未调用                                               |
 | 费用与缓存  | 基本用量                                                   | 每回合用量与费用、TTFT、缓存命中率与未命中原因、费用预算                 |
 | 跨会话协作  | 无                                                         | 子会话（`task`）、`list_sessions` / `send_message`                       |
-| 使用方      | `--mini`、ACP、`MIAO_TUI_V2=0`、旧版 JS SDK                | 默认 TUI、`miao run`、Web 应用、`miao remote`                            |
+| 使用方      | 旧版 JS SDK 与 `/session/*` 路由                           | 默认 TUI、`--mini`、ACP、`miao run`、Web 应用、`miao remote`             |
 
 日常用 `miao` 正式版，源码迭代用 `miao-dev`，编译验证用 `miao-preview`。源码中的新能力可能尚未包含在已安装的发行版里。
 

@@ -3,6 +3,10 @@
 Companion to `specs/v2/remaining-work-handoff.md`. Tick items in order; each slice ends with the
 Definition of Done. Run in `miao-dev` only.
 
+> Progress (2026-10-02): the client `MIAO_TUI_V2=0` / `?protocol=v1` fallbacks are removed. The TUI
+> and app always use the V2 API; TUI test fixtures were migrated to V2 (`packages/tui` 366 pass /
+> 0 fail). Stage 5 (delete server V1) still waits on P3 DB compact and the R1 soak.
+
 ## 0. Guardrails
 - [ ] Confirm working in `miao-dev` (source), not release `miao`
 - [ ] Confirm one writer per session (engine + routes + client flip together)
