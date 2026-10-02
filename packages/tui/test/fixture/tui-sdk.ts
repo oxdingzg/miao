@@ -88,6 +88,16 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/experimental/capabilities") return json({ backgroundSubagents: false })
     if (url.pathname === "/path") return json({ home: "", state: "", config: "", worktree, directory })
     if (url.pathname === "/api/location") return json({ directory, project: { id: "proj_test", directory: worktree } })
+    if (url.pathname === "/api/vcs")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: { branch: "main" },
+      })
+    if (url.pathname === "/api/vcs/status")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree } },
+        data: [],
+      })
     if (url.pathname === "/api/config")
       return json({ location: { directory, project: { id: "proj_test", directory: worktree } }, data: {} })
     if (url.pathname === "/api/config/providers")

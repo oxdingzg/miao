@@ -3,6 +3,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { httpClient } from "@miao/core/effect/app-node-platform"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { EventV2 } from "@miao/core/event"
+import { Git } from "@miao/core/git"
 import { Credential } from "@miao/core/credential"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { Project } from "@miao/core/project"
@@ -36,6 +37,7 @@ const applicationServices = LayerNode.group([
   PtyEnvironment.node,
   LocationServiceMap.node,
   Project.node,
+  Git.node,
 ])
 
 export function createRoutes(password?: string) {

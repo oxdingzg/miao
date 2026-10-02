@@ -24,6 +24,10 @@
   （protocol 组 + handler）。因为 `Config.Info` 定义在 core、protocol 不能依赖 core，成功类型暂用
   `Schema.Record(String, Unknown)` 宽松对象，TUI 用 `toConfig` 直接接收——**待 config schema 下沉到
   `@miao/schema` 后再收紧**。`config.providers` 见下条。
+- `vcs`：core `Git` 新增 `status.entries(repository)`（`git status --porcelain` + `git diff --numstat`），
+  `@miao/schema/vcs.ts` 定义 `Info`/`FileStatus`/`FileDiff`，加 `/api/vcs`（`vcs.get`/`vcs.status`），
+  TUI 的 `vcs.get`/`vcs.status` 改走 V2（含 `dialog-workspace-create` 的第 4 处）。`vcs.diff`/`diff-viewer`
+  仍 V1，未在本轮范围。
 - `provider.list`（catalog）：新增 `GET /api/config/catalog`，服务端用 core `provider.all()` + `model.all()` +
   `provider.available()` 投影回 V1 的 `{all, default, connected}`，TUI 的 `loadProviderCatalog` 改走
   `client.v2.config.catalog`，`provider_next` 形状不变。投影逻辑抽到

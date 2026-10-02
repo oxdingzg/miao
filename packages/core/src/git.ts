@@ -46,6 +46,13 @@ export class Worktree extends Schema.Class<Worktree>("Git.Worktree")({
   kind: Schema.Literals(["main", "linked"]),
 }) {}
 
+export class StatusEntry extends Schema.Class<StatusEntry>("Git.StatusEntry")({
+  path: RelativePath,
+  status: Schema.Literals(["added", "deleted", "modified"]),
+  additions: Schema.Finite,
+  deletions: Schema.Finite,
+}) {}
+
 export class WorktreeError extends Schema.TaggedErrorClass<WorktreeError>()("Git.WorktreeError", {
   operation: Schema.Literals(["create", "remove", "list"]),
   message: Schema.String,
@@ -84,6 +91,9 @@ export interface Interface {
     readonly branch: (repository: Repository) => Effect.Effect<string | undefined>
     readonly defaultRemoteBranch: (repository: Repository, remote?: string) => Effect.Effect<string | undefined>
     readonly rootCommits: (repository: Repository) => Effect.Effect<readonly string[]>
+  }
+  readonly status: {
+    readonly entries: (repository: Repository) => Effect.Effect<readonly StatusEntry[]>
   }
   readonly sync: {
     readonly fetchRemotes: (repository: Repository, input?: { prune?: boolean }) => Effect.Effect<void, OperationError>
@@ -237,6 +247,84 @@ const layer = Layer.effect(
       const result = yield* run(repository.worktree, proc)(["symbolic-ref", `refs/remotes/${remoteName}/HEAD`])
       if (result.exitCode !== 0) return undefined
       return result.text.trim().replace(new RegExp(`^refs/remotes/${remoteName}/`), "") || undefined
+    })
+
+    const statusKind = (code: string): StatusEntry["status"] => {
+      if (code === "??") return "added"
+      if (code.includes("U")) return "modified"
+      if (code.includes("A") && !code.includes("D")) return "added"
+      if (code.includes("D") && !code.includes("A")) return "deleted"
+      return "modified"
+    }
+
+    const numstat = (text: string) => {
+      const map = new Map<string, { additions: number; deletions: number }>()
+      for (const record of text.split("\0")) {
+        if (!record) continue
+        const first = record.indexOf("\t")
+        const second = record.indexOf("\t", first + 1)
+        if (first === -1 || second === -1) continue
+        const file = record.slice(second + 1)
+        if (!file) continue
+        const additions = record.slice(0, first)
+        const deletions = record.slice(first + 1, second)
+        map.set(file, {
+          additions: additions === "-" ? 0 : Number.parseInt(additions || "0", 10) || 0,
+          deletions: deletions === "-" ? 0 : Number.parseInt(deletions || "0", 10) || 0,
+        })
+      }
+      return map
+    }
+
+    const untrackedStat = Effect.fnUntraced(function* (repository: Repository, file: string) {
+      const result = yield* run(
+        repository.worktree,
+        proc,
+      )(["diff", "--no-ext-diff", "--no-renames", "--numstat", "--", "/dev/null", file])
+      const [additions, deletions] = result.text.split("\t")
+      if (additions === undefined || deletions === undefined) return undefined
+      return {
+        additions: additions === "-" ? 0 : Number.parseInt(additions || "0", 10) || 0,
+        deletions: deletions === "-" ? 0 : Number.parseInt(deletions || "0", 10) || 0,
+      }
+    })
+
+    const statusEntries = Effect.fn("Git.status.entries")(function* (repository: Repository) {
+      const listed = yield* run(
+        repository.worktree,
+        proc,
+      )(["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."])
+      if (listed.exitCode !== 0) return []
+      const items = listed.text
+        .split("\0")
+        .filter(Boolean)
+        .flatMap((item) => {
+          const code = item.slice(0, 2)
+          const file = item.slice(3)
+          if (!file) return []
+          return [{ file, code, status: statusKind(code) }]
+        })
+      const head = yield* run(repository.worktree, proc)(["rev-parse", "--verify", "HEAD"])
+      const diff =
+        head.exitCode === 0
+          ? yield* run(
+              repository.worktree,
+              proc,
+            )(["diff", "--no-ext-diff", "--no-renames", "--numstat", "-z", "HEAD", "--", "."])
+          : undefined
+      const stats =
+        diff && diff.exitCode === 0 ? numstat(diff.text) : new Map<string, { additions: number; deletions: number }>()
+      return yield* Effect.forEach(items, (item) =>
+        Effect.gen(function* () {
+          const stat = stats.get(item.file) ?? (yield* untrackedStat(repository, item.file))
+          return new StatusEntry({
+            path: RelativePath.make(item.file),
+            status: item.status,
+            additions: stat?.additions ?? 0,
+            deletions: stat?.deletions ?? 0,
+          })
+        }),
+      )
     })
 
     const operation = Effect.fnUntraced(function* (
@@ -926,6 +1014,7 @@ const layer = Layer.effect(
       repo: { discover, clone, create },
       remote: { get: remote },
       history: { head, branch, defaultRemoteBranch: remoteHead, rootCommits: roots },
+      status: { entries: statusEntries },
       sync: { fetchRemotes: fetch, fetchBranch, checkoutRemoteBranch: checkout, resetHard: reset },
       change: { capture, apply, discard },
       worktree: { create: worktreeCreate, remove: worktreeRemove, list: worktreeList },

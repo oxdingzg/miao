@@ -14694,6 +14694,80 @@ export type V2ProjectDirectoriesResponses = {
 
 export type V2ProjectDirectoriesResponse = V2ProjectDirectoriesResponses[keyof V2ProjectDirectoriesResponses]
 
+export type V2VcsGetData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/vcs"
+}
+
+export type V2VcsGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsGetError = V2VcsGetErrors[keyof V2VcsGetErrors]
+
+export type V2VcsGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: VcsInfo
+  }
+}
+
+export type V2VcsGetResponse = V2VcsGetResponses[keyof V2VcsGetResponses]
+
+export type V2VcsStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/vcs/status"
+}
+
+export type V2VcsStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsStatusError = V2VcsStatusErrors[keyof V2VcsStatusErrors]
+
+export type V2VcsStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<VcsFileStatus>
+  }
+}
+
+export type V2VcsStatusResponse = V2VcsStatusResponses[keyof V2VcsStatusResponses]
+
 export type V2RemoteGetData = {
   body?: never
   path?: never
