@@ -294,6 +294,8 @@ import type {
   V2IntegrationListResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
+  V2LspStatusErrors,
+  V2LspStatusResponses,
   V2ModelDefaultErrors,
   V2ModelDefaultResponses,
   V2ModelListErrors,
@@ -4988,6 +4990,30 @@ export class Formatter2 extends HeyApiClient {
   }
 }
 
+export class Lsp2 extends HeyApiClient {
+  /**
+   * Get LSP status
+   *
+   * List the language servers configured for the location and whether each is connected.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2LspStatusResponses, V2LspStatusErrors, ThrowOnError>({
+      url: "/api/lsp",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Location extends HeyApiClient {
   /**
    * Get location
@@ -7576,6 +7602,11 @@ export class V2 extends HeyApiClient {
   private _formatter?: Formatter2
   get formatter(): Formatter2 {
     return (this._formatter ??= new Formatter2({ client: this.client }))
+  }
+
+  private _lsp?: Lsp2
+  get lsp(): Lsp2 {
+    return (this._lsp ??= new Lsp2({ client: this.client }))
   }
 
   private _location?: Location

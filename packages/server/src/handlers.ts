@@ -11,6 +11,7 @@ import { EventHandler } from "./handlers/event"
 import { AgentHandler } from "./handlers/agent"
 import { HealthHandler } from "./handlers/health"
 import { FormatterHandler } from "./handlers/formatter"
+import { LspHandler } from "./handlers/lsp"
 import { PtyHandler } from "./handlers/pty"
 import { QuestionHandler } from "./handlers/question"
 import { ReferenceHandler } from "./handlers/reference"
@@ -24,6 +25,7 @@ import { RemoteHandler } from "./handlers/remote"
 export const handlers = Layer.mergeAll(
   HealthHandler,
   FormatterHandler,
+  LspHandler,
   LocationHandler,
   AgentHandler,
   SessionHandler,

@@ -71,6 +71,17 @@ function compareMessage(a: Message, b: Message) {
   return a.time.created - b.time.created || a.id.localeCompare(b.id)
 }
 
+// The V2 status omits the display name and root the V1 shape carried; keep the
+// existing store/render shape by projecting the server id.
+function toLspStatus(items: ReadonlyArray<{ id: string; connected: boolean }>): LspStatus[] {
+  return items.map((item) => ({
+    id: item.id,
+    name: item.id,
+    root: "",
+    status: item.connected ? "connected" : "error",
+  }))
+}
+
 export const {
   context: SyncContext,
   use: useSync,
@@ -524,7 +535,9 @@ export const {
 
         case "lsp.updated": {
           const workspace = project.workspace.current()
-          void sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", x.data ?? []))
+          void sdk.client.v2.lsp
+            .status({ location: { workspace } })
+            .then((x) => setStore("lsp", toLspStatus(x.data?.data ?? [])))
           break
         }
 
@@ -630,7 +643,9 @@ export const {
             sdk.client.command
               .list({ workspace, template: "false" })
               .then((x) => setStore("command", reconcile(x.data ?? []))),
-            sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
+            sdk.client.v2.lsp
+              .status({ location: { workspace } })
+              .then((x) => setStore("lsp", reconcile(toLspStatus(x.data?.data ?? [])))),
             sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
             sdk.client.experimental.resource
               .list({ workspace })
