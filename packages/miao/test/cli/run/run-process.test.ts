@@ -319,7 +319,11 @@ describe("opencode run (non-interactive subprocess)", () => {
         expect(input).toContain(sentinel)
         expect(input).not.toContain(`file://${source}`)
       }),
-    60_000,
+    // Two cold-started CLIs (serve + run) plus serve's graceful shutdown. Alone this
+    // takes ~8s, but it scales with host load (~26s with six copies in parallel) and
+    // hit 60s on ubuntu-latest while turbo runs the core and miao suites side by side.
+    // serve's 15s ready bound and run's 30s bound still catch a real hang.
+    120_000,
   )
 
   cliIt.concurrent(
