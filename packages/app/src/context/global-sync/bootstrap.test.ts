@@ -95,6 +95,7 @@ describe("bootstrapDirectory", () => {
             throw new Error("legacy directory config should not be called")
           },
         },
+        vcs: { get: async () => ({ data: { branch: "feature", default_branch: "dev" } }) },
       } as unknown as OpencodeClient,
       api,
       store,
@@ -110,6 +111,8 @@ describe("bootstrapDirectory", () => {
     await new Promise((resolve) => setTimeout(resolve, 80))
 
     expect(store.status).toBe("complete")
+    // Branch review mode needs the branch and its default branch.
+    expect(store.vcs).toEqual({ branch: "feature", default_branch: "dev" })
   })
 })
 

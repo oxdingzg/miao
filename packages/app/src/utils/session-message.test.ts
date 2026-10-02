@@ -211,4 +211,41 @@ describe("normalizeSessionMessages", () => {
       }),
     ])
   })
+
+  test("reads tool metadata from the server's structured field", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "delegate", time: { created: 1 } },
+      {
+        id: "msg_assistant",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          {
+            type: "tool",
+            id: "call_task",
+            name: "task",
+            state: {
+              status: "completed",
+              input: { description: "Inspect" },
+              content: [{ type: "text", text: "done" }],
+              structured: { sessionId: "ses_child" },
+            },
+            time: { created: 2, ran: 3, completed: 4 },
+          },
+        ],
+        time: { created: 2, completed: 4 },
+      },
+      // The vendored client types predate `structured`; the server sends it on the wire.
+    ] as unknown as SessionMessageInfo[]
+
+    const result = normalizeSessionMessages("ses_1", source)
+
+    expect(result.parts.get("msg_assistant")).toEqual([
+      expect.objectContaining({
+        tool: "task",
+        state: expect.objectContaining({ metadata: { sessionId: "ses_child" } }),
+      }),
+    ])
+  })
 })

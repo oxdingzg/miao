@@ -300,6 +300,13 @@ function textPart(sessionID: string, messageID: string, ordinal: number, text: s
   }
 }
 
+// The server encodes tool metadata as `structured` (Session.Message.ToolState), while the vendored
+// client types still name it `metadata`; read both so reloaded history keeps task links and diffs.
+function toolMetadata(state: SessionMessageAssistantTool["state"]): Record<string, unknown> {
+  const value = state as { metadata?: Record<string, unknown>; structured?: Record<string, unknown> }
+  return value.structured ?? value.metadata ?? {}
+}
+
 function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssistantTool): ToolPart {
   const start = tool.time.ran ?? tool.time.created
   const state = (() => {
@@ -312,8 +319,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
       return {
         status: "running" as const,
         input: normalizeToolInput(tool.name, tool.state.input),
-        // metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        metadata: normalizeToolMetadata(tool.name, tool.state.metadata ?? {}),
+        metadata: normalizeToolMetadata(tool.name, toolMetadata(tool.state)),
         time: { start },
       }
     }
@@ -322,8 +328,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
         status: "error" as const,
         input: normalizeToolInput(tool.name, tool.state.input),
         error: tool.state.error.message,
-        // metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        metadata: normalizeToolMetadata(tool.name, tool.state.metadata ?? {}),
+        metadata: normalizeToolMetadata(tool.name, toolMetadata(tool.state)),
         time: { start, end: tool.time.completed ?? start },
       }
     }
@@ -347,8 +352,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
       input: normalizeToolInput(tool.name, tool.state.input),
       output: tool.state.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n"),
       title: tool.name,
-      // metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-      metadata: normalizeToolMetadata(tool.name, tool.state.metadata ?? {}),
+      metadata: normalizeToolMetadata(tool.name, toolMetadata(tool.state)),
       time: { start, end: tool.time.completed ?? start },
       attachments: attachments.length ? attachments : undefined,
     }
