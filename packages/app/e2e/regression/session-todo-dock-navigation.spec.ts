@@ -86,9 +86,12 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   await switchSession(page, otherID, otherTitle)
   await expect(dock).toHaveCount(0)
 
-  const returningOpen = sampleDock(page, 700)
+  // Sample every frame from before the switch until the dock has shown, however long the switch takes:
+  // a replayed opening animation would make the first frame that shows the dock partly transparent.
+  await startDockSampler(page)
   await switchSession(page, sourceID, sourceTitle)
-  const openSamples = (await returningOpen).filter((sample) => sample.present)
+  await expect(dock).toBeVisible()
+  const openSamples = (await stopDockSampler(page, 3)).filter((sample) => sample.present)
   expect(openSamples.length).toBeGreaterThan(0)
   expect(openSamples[0]!.opacity).toBeGreaterThan(0.98)
   expect(openSamples[0]!.height).toBeGreaterThan(70)
@@ -104,10 +107,14 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   events.push(todoEvent(sourceID, []))
 
   await switchSession(page, otherID, otherTitle)
-  const returningEmpty = sampleDock(page, 700)
+  await startDockSampler(page)
   await switchSession(page, sourceID, sourceTitle)
   await expect(dock).toHaveCount(0)
-  expect((await returningEmpty).every((sample) => !sample.present)).toBe(true)
+  // Keep sampling for a stretch of rendered frames after the switch, so a flash of the emptied dock
+  // is caught on a slow runner as well.
+  const returningEmpty = await stopDockSampler(page, 30)
+  expect(returningEmpty.length).toBeGreaterThan(30)
+  expect(returningEmpty.every((sample) => !sample.present)).toBe(true)
 })
 
 test("restores the todo dock from the server after a reload", async ({ page }) => {
@@ -206,6 +213,40 @@ async function switchSession(page: Page, sessionID: string, title: string) {
   await expect(tab).toBeVisible()
   await tab.click()
   await expectSessionTitle(page, title)
+}
+
+type DockSample = { present: boolean; height: number; opacity: number }
+type DockSamplerWindow = Window & { __dockSampler?: { samples: DockSample[]; stop: boolean } }
+
+// Records the dock on every rendered frame until stopped. Frame-driven rather than a fixed duration,
+// so a runner that renders slowly still records the frames around a tab switch.
+async function startDockSampler(page: Page) {
+  await page.evaluate(() => {
+    const state = { samples: [] as DockSample[], stop: false }
+    ;(window as DockSamplerWindow).__dockSampler = state
+    const tick = () => {
+      if (state.stop) return
+      const dock = document.querySelector<HTMLElement>('[data-component="session-todo-dock"]')
+      const clip = dock?.parentElement?.parentElement
+      const label = dock?.querySelector<HTMLElement>('[data-action="session-todo-toggle"] span[aria-label]')
+      state.samples.push({
+        present: !!dock,
+        height: clip?.getBoundingClientRect().height ?? 0,
+        opacity: label ? Number.parseFloat(getComputedStyle(label).opacity) : 0,
+      })
+      requestAnimationFrame(tick)
+    }
+    tick()
+  })
+}
+
+async function stopDockSampler(page: Page, frames: number) {
+  return page.evaluate(async (frames) => {
+    const state = (window as DockSamplerWindow).__dockSampler!
+    for (let index = 0; index < frames; index++) await new Promise(requestAnimationFrame)
+    state.stop = true
+    return state.samples
+  }, frames)
 }
 
 function sampleDock(page: Page, duration: number) {
