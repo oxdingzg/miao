@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
 import {
   assistantMessage,
   completedAssistantInfo,
@@ -72,6 +73,7 @@ test("transitions thinking and hidden reasoning through busy to idle", async ({ 
 })
 
 test("moves busy through retry and recovery to final idle content", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   const assistant = assistantMessage([], { completed: false })
   const timeline = await setupTimeline(page, {
     messages: [

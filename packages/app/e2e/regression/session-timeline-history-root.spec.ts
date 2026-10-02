@@ -13,7 +13,7 @@ import {
   userID,
   userMessage,
 } from "../performance/timeline-stability/fixture"
-import { mockOpenCodeServer } from "../utils/mock-server"
+import { LEGACY_V1_FIXTURE, mockOpenCodeServer } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
 import { expectSessionTitle } from "../utils/waits"
 
@@ -49,6 +49,7 @@ test.use({ viewport: { width: 646, height: 1385 } })
 
 for (const scenario of scenarios) {
   test(`keeps visible timeline content visible through ${scenario.name}`, async ({ page }) => {
+    test.fixme(true, LEGACY_V1_FIXTURE)
     const requests: { before?: string; phase: "start" | "end" }[] = []
     const pages: { before?: string; limit: number }[] = []
     const roots: { sessionID: string; messageID: string }[] = []

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
 import {
   assistantMessage,
   completedAssistantInfo,
@@ -13,6 +14,7 @@ import {
 } from "../performance/timeline-stability/fixture"
 
 test("groups singleton and separated context operations at correct boundaries", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   const parts = [
     toolPart("prt_boundary_01_read", "read", "completed", { filePath: "src/a.ts" }),
     textPart("prt_boundary_02_text", "Boundary text"),

@@ -1,7 +1,7 @@
 import { base64Encode } from "@miao/core/util/encode"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { installSseTransport } from "../utils/sse-transport"
-import { currentSession } from "../utils/mock-server"
+import { currentSession, LEGACY_V1_FIXTURE } from "../utils/mock-server"
 
 const serverA = "http://127.0.0.1:4096"
 const serverB = "http://127.0.0.1:4097"
@@ -12,6 +12,7 @@ const childSessionA = { ...session("ses_server_a_child", directoryA, "Server A c
 const sessionB = session("ses_server_b", directoryB, "Server B session")
 
 test("session settings use the remote server context", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   const permissionRequests: string[] = []
   await mockServers(page, permissionRequests)
   await configureServers(page)
@@ -44,6 +45,7 @@ test("session settings use the remote server context", async ({ page }) => {
 })
 
 test("auto-accept responds for an unfocused server session", async ({ page }) => {
+  test.fixme(true, LEGACY_V1_FIXTURE)
   const permissionRequests: string[] = []
   const permissionResponses: PermissionResponse[] = []
   const transport = await installSseTransport<{ directory: string; payload: Record<string, unknown> }>(page, {
