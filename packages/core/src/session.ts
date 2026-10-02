@@ -44,7 +44,7 @@ import { Revert } from "@miao/schema/revert"
 import { FSUtil } from "./fs-util"
 import { Blob } from "./blob"
 import { SessionBlobStorage } from "./session/blob-storage"
-import { materializeBlobRefs } from "./session/runner/materialize-files"
+import { materializeBlobRefs, materializeEvent } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
 import { EventSequenceTable, EventTable } from "./event/sql"
 
@@ -618,17 +618,29 @@ const layer = Layer.effect(
       }),
       events: (input) =>
         Stream.unwrap(
-          result
-            .get(input.sessionID)
-            .pipe(Effect.as(events.durable({ aggregateID: input.sessionID, after: input.after }))),
-        ).pipe(Stream.filter((event): event is SessionEvent.DurableEvent => isDurableSessionEvent(event))),
+          result.get(input.sessionID).pipe(
+            Effect.map(() => {
+              // One cache per subscription: a replayed stream repeats the same
+              // attachment across events, and each distinct blob is read once.
+              const cache = new Map<string, string | undefined>()
+              return events
+                .durable({ aggregateID: input.sessionID, after: input.after })
+                .pipe(
+                  Stream.filter((event): event is SessionEvent.DurableEvent => isDurableSessionEvent(event)),
+                  Stream.mapEffect((event) => materializeEvent(blob, cache, event)),
+                )
+            }),
+          ),
+        ),
       history: Effect.fn("V2Session.history")(function* (input) {
         yield* result.get(input.sessionID)
-        return yield* EventV2.readAggregate(db, {
+        const page = yield* EventV2.readAggregate(db, {
           ...input,
           aggregateID: input.sessionID,
           manifest: SessionDurable,
         })
+        // Same boundary as `events`: a replayed page carries the same payloads.
+        return { ...page, events: yield* Effect.forEach(page.events, (event) => materializeEvent(blob, new Map(), event)) }
       }),
       prompt: Effect.fn("V2Session.prompt")((input) =>
         Effect.uninterruptible(
