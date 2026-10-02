@@ -3,6 +3,7 @@ import { spawn } from "child_process"
 import { Database } from "@miao/core/database/database"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { SessionCompact } from "@miao/core/session/compact"
+import { SessionRestore } from "@miao/core/session/restore"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
@@ -61,8 +62,7 @@ const StatsCommand = effectCmd({
   instance: false,
   handler: Effect.fn("Cli.db.stats")(function* () {
     const { db } = yield* Database.Service
-    const pragma = (name: string) =>
-      db.get<Record<string, unknown>>(sql.raw(`PRAGMA ${name}`)).pipe(Effect.orDie)
+    const pragma = (name: string) => db.get<Record<string, unknown>>(sql.raw(`PRAGMA ${name}`)).pipe(Effect.orDie)
     const pageSize = Number((yield* pragma("page_size"))?.page_size ?? 0)
     const pageCount = Number((yield* pragma("page_count"))?.page_count ?? 0)
     const freelist = Number((yield* pragma("freelist_count"))?.freelist_count ?? 0)
@@ -75,9 +75,9 @@ const StatsCommand = effectCmd({
     console.log(`size:        ${mb(pageSize * pageCount)} MB   free: ${mb(pageSize * freelist)} MB`)
 
     const tables = yield* db
-      .all<{ name: string }>(
-        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
-      )
+      .all<{
+        name: string
+      }>(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
       .pipe(Effect.orDie)
     console.log("\ntables:")
     for (const table of tables) {
@@ -88,9 +88,11 @@ const StatsCommand = effectCmd({
     }
 
     const events = yield* db
-      .all<{ type: string; n: number; bytes: number }>(
-        sql`SELECT type, COUNT(*) AS n, SUM(LENGTH(data)) AS bytes FROM event GROUP BY type ORDER BY bytes DESC`,
-      )
+      .all<{
+        type: string
+        n: number
+        bytes: number
+      }>(sql`SELECT type, COUNT(*) AS n, SUM(LENGTH(data)) AS bytes FROM event GROUP BY type ORDER BY bytes DESC`)
       .pipe(Effect.orElseSucceed(() => [] as { type: string; n: number; bytes: number }[]))
     if (events.length > 0) {
       console.log("\nevent types:")
@@ -170,10 +172,8 @@ const CompactCommand = effectCmd({
     const { db } = yield* Database.Service
     const report = (label: string, result: SessionCompact.Plan) => {
       console.log(`${label}: file ${mb(result.fileBytes)} MB`)
-      for (const event of result.events)
-        console.log(`  event ${event.type}\t${event.rows} rows\t${mb(event.bytes)} MB`)
-      for (const table of result.tables)
-        console.log(`  table ${table.name}\t${table.rows} rows\t${mb(table.bytes)} MB`)
+      for (const event of result.events) console.log(`  event ${event.type}\t${event.rows} rows\t${mb(event.bytes)} MB`)
+      for (const table of result.tables) console.log(`  table ${table.name}\t${table.rows} rows\t${mb(table.bytes)} MB`)
       console.log(`  ${result.sequences} aggregate sequence(s) restart`)
     }
 
@@ -205,6 +205,42 @@ const CompactCommand = effectCmd({
   }),
 })
 
+const RestoreCommand = effectCmd({
+  command: "restore",
+  describe: "merge sessions from another database into this one (to roll back a compaction)",
+  instance: false,
+  builder: (yargs: Argv) =>
+    yargs
+      .option("merge-from", {
+        type: "string",
+        demandOption: true,
+        describe: "database to merge from, e.g. a compacted clone or the current database",
+      })
+      .option("dry-run", {
+        type: "boolean",
+        default: false,
+        describe: "report what would be inserted without writing",
+      }),
+  handler: Effect.fn("Cli.db.restore")(function* (args: { "merge-from": string; "dry-run": boolean }) {
+    const { db } = yield* Database.Service
+    const source = args["merge-from"]
+    if (source === Database.path()) {
+      console.error("refusing to merge a database into itself")
+      process.exitCode = 1
+      return
+    }
+    if (!(yield* Effect.promise(() => Bun.file(source).exists()))) {
+      console.error(`no such database: ${source}`)
+      process.exitCode = 1
+      return
+    }
+    const result = yield* SessionRestore.merge(db, source, { dryRun: args["dry-run"] })
+    console.log(`${args["dry-run"] ? "would merge" : "merged"} from ${source}`)
+    for (const table of result.tables) console.log(`  ${table.table}\t${table.rows} row(s)`)
+    console.log(`  event_sequence\t${result.sequences}`)
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
@@ -217,6 +253,7 @@ export const DbCommand = effectCmd({
       .command(VacuumCommand)
       .command(BackfillCommand)
       .command(CompactCommand)
+      .command(RestoreCommand)
       .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),

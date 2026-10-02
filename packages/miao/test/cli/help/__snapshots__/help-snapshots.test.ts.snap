@@ -471,6 +471,7 @@ Commands:
   miao db backfill    convert legacy V1 session messages into the V2 projection (idempotent)
   miao db compact     retire legacy V1 storage once its history is projected (deletes events, drops
                       tables, vacuums)
+  miao db restore     merge sessions from another database into this one (to roll back a compaction)
 
 Positionals:
   query  SQL query to execute                                                               [string]
