@@ -34,7 +34,7 @@ import type {
   ToolPart,
 } from "@opencode-ai/sdk/v2"
 import * as Locale from "@/util/locale"
-import { liveToolPart, partKey, permissionRequest, questionRequest } from "./session-v2"
+import { INTERRUPTED_STEP, liveToolPart, partKey, permissionRequest, questionRequest } from "./session-v2"
 import { toolView } from "./tool"
 import type { FooterOutput, FooterPatch, FooterView, StreamCommit } from "./types"
 
@@ -1099,10 +1099,6 @@ function reducePartEvent(input: SessionDataInput & { event: PartEvent }): Sessio
 
   return out(data, commits, applyPart(data, commits, part, input.thinking))
 }
-
-// V2 interruption settles the open step with this message; like V1's
-// MessageAbortedError it is not shown as an error.
-const INTERRUPTED_STEP = "Provider turn interrupted"
 
 // Tag of the drain failure for a session whose history was never migrated.
 const LEGACY_NOT_MIGRATED = "Session.LegacyNotMigratedError"
