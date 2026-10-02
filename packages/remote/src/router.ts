@@ -576,10 +576,12 @@ export async function createRouter(options: RouterOptions) {
 
   // After (re)connecting, asks raised while the stream was down would otherwise wait forever.
   async function resync() {
+    // Only a running drain can be waiting on an ask.
+    const running = await active()
     await Promise.all(
       Object.entries(state.sessions).flatMap(([sessionID, session]) => {
         const key = session.driver
-        if (!key) return []
+        if (!key || !(sessionID in running)) return []
         const channel = channels.get(key.slice(0, key.indexOf(":")))
         if (!channel) return []
         return [serial(key, () => announcePending({ channel, key, user: userState(key) }, sessionID, false))]
@@ -629,13 +631,12 @@ export async function createRouter(options: RouterOptions) {
   // the channel's daily budget; approvals may spend the last unit of budget.
   async function deliver(context: Context, message: Message) {
     const capabilities = context.channel.capabilities
-    if (windowOpen(capabilities, context.user)) {
-      const sent = await send(context, message.text)
-      if (sent.ok) return
-    }
+    const open = windowOpen(capabilities, context.user)
+    if (open && (await send(context, message.text)).ok) return
     if (message.kind === "reply") return
     context.user.pending.push({ text: message.text, at: now() })
-    if (!capabilities.push) return
+    // A send that just failed inside the window is likely throttling; pushing now would only extend it.
+    if (open || !capabilities.push) return
     const reserve = message.kind === "approval" ? 0 : 1
     if (!budgetLeft(capabilities, context.user, reserve)) {
       log(`remote: push budget spent for ${context.key}; holding ${message.kind}`)
