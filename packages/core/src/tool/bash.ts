@@ -8,11 +8,13 @@ import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
+import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { AppProcess } from "../process"
 import { PermissionV2 } from "../permission"
 import { Sandbox } from "../sandbox"
 import { ShellApproval } from "../shell/approval"
+import { ShellEnvironment } from "../shell/environment"
 import { SandboxPolicy } from "../sandbox/policy"
 import { PositiveInt } from "../schema"
 import { Hash } from "../util/hash"
@@ -130,7 +132,6 @@ const blockedWarning = (denied: readonly string[], unmapped: readonly string[], 
 // TODO: Port PowerShell parser-based approval reduction (bash commands already split per command with BashArity prefixes).
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
 // TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
-// TODO: Add plugin shell.env environment augmentation once V2 plugin hooks exist.
 // TODO: Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.
 // TODO: Persist background job status and define restart recovery before exposing remote observation.
 // TODO: Re-add model-facing background launch only with owner-bound get/wait/cancel tools and completion delivery.
@@ -288,6 +289,8 @@ const layer = Layer.effectDiscard(
     const config = yield* Config.Service
     const permission = yield* PermissionV2.Service
     const sandbox = yield* Sandbox.Service
+    const shellEnvironment = yield* ShellEnvironment.Service
+    const location = yield* Location.Service
 
     // With stdin, AppProcess pipes it in from a separate fiber and closes the
     // pipe when done; a command that exits without reading it does not wait on
@@ -551,8 +554,16 @@ const layer = Layer.effectDiscard(
               const shell =
                 Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])))
                   .shell ?? defaultShell()
+              // Plugin `shell.env` variables, layered over the inherited environment as in V1.
+              const env = yield* shellEnvironment.get({
+                directory: location.directory,
+                cwd: target.canonical,
+                sessionID: context.sessionID,
+                callID: context.toolCallID,
+              })
               const options = {
                 cwd: target.canonical,
+                ...(Object.keys(env).length === 0 ? {} : { env, extendEnv: true }),
                 stdin: "ignore",
                 detached: process.platform !== "win32",
                 forceKillAfter: Duration.seconds(3),
@@ -634,5 +645,7 @@ export const node = makeLocationNode({
     Config.node,
     PermissionV2.node,
     Sandbox.node,
+    ShellEnvironment.node,
+    Location.node,
   ],
 })
