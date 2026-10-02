@@ -14,6 +14,7 @@ import type {
   QuestionRequest,
   LspStatus,
   McpStatus,
+  McpServerStatus,
   McpResource,
   FormatterStatus,
   SessionStatus,
@@ -83,6 +84,13 @@ function toLspStatus(items: ReadonlyArray<{ id: string; connected: boolean }>): 
     root: "",
     status: item.connected ? "connected" : "error",
   }))
+}
+
+// The V2 MCP status is a discriminated union with the same members as the V1
+// shape the TUI store keeps, but under a different schema identity; project it
+// back to the shape consumers already render.
+export function toMcpStatus(raw: Record<string, McpServerStatus>): Record<string, McpStatus> {
+  return raw as unknown as Record<string, McpStatus>
 }
 
 // The V2 integration method carries the id, but the V1 provider-auth shape the
@@ -730,7 +738,9 @@ export const {
             sdk.client.v2.lsp
               .status({ location: { workspace } })
               .then((x) => setStore("lsp", reconcile(toLspStatus(x.data?.data ?? [])))),
-            sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
+            sdk.client.v2.mcp
+              .status({ location: { workspace } })
+              .then((x) => setStore("mcp", reconcile(toMcpStatus(x.data?.data ?? {})))),
             sdk.client.experimental.resource
               .list({ workspace })
               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
