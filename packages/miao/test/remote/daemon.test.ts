@@ -6,6 +6,7 @@ import net from "node:net"
 import path from "node:path"
 import { OpenCode } from "@miao/client"
 import { createFakeQQ } from "@miao/remote/connectors/qq/fake-qq"
+import { createFakeIlink } from "@miao/remote/connectors/wechat/fake-ilink"
 import { Effect } from "effect"
 import { cliIt } from "../lib/cli-process"
 import { testProviderConfig } from "../lib/test-provider"
@@ -13,6 +14,97 @@ import { testProviderConfig } from "../lib/test-provider"
 const owner = "OWNER_OPENID"
 
 describe("miao remote daemon", () => {
+  cliIt.live(
+    "starts with no account, and a login through the control route joins the running Router at once",
+    ({ home, llm }) =>
+      Effect.gen(function* () {
+        const qq = createFakeQQ()
+        yield* Effect.addFinalizer(() => Effect.sync(() => qq.stop()))
+        const alpha = path.join(home, "alpha")
+        yield* Effect.promise(() => mkdir(alpha, { recursive: true }))
+        const port = yield* Effect.promise(freePort)
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(home, ".config/miao/miao.json"),
+            JSON.stringify({
+              model: "test/test-model",
+              remote: { port, projects: { alpha }, qq: { portal: qq.url, api: qq.url } },
+            }),
+          ),
+        )
+        const child = yield* daemon(home, { MIAO_CONFIG_CONTENT: JSON.stringify(testProviderConfig(llm.url)) })
+        const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
+        const stderr = new Response(child.stderr).text()
+
+        yield* Effect.promise(async () => {
+          const status = await ready(client, child)
+          expect(status.pid).toBe(child.pid)
+          expect(status.connectors.map((connector) => connector.id)).toEqual(["wechat", "qq"])
+          expect(status.connectors.flatMap((connector) => connector.accounts)).toEqual([])
+
+          qq.autoBind = owner
+          const flow = await client.remote.login({ connector: "qq" })
+          const steps = []
+          for await (const step of client.remote.loginEvents({ flow: flow.flow })) steps.push(step)
+          expect(steps.at(-1)).toMatchObject({ type: "done", connector: "qq", account: { id: qq.appId } })
+
+          // No restart: the new channel connects inside the running daemon and the owner is answered.
+          await qq.until(() => qq.connected(), 30_000)
+          const account = (await client.remote.get()).connectors[1].accounts[0]
+          expect(account).toMatchObject({ connector: "qq", account: qq.appId, owner: "OWNE…OPENID" })
+          expect(["connected", "connecting"]).toContain(account.state)
+          qq.c2c({ from: owner, text: "/help", id: "help-1" })
+          await qq.until(() => qq.delivered().find((message) => message.msg_id === "help-1"), 20_000)
+        })
+
+        child.kill("SIGTERM")
+        expect(yield* Effect.promise(() => child.exited)).toBe(0)
+        expect(yield* Effect.promise(() => stderr)).toContain("还没有登录任何 IM")
+      }),
+    180_000,
+  )
+
+  cliIt.live(
+    "keeps serving with only an expired (-14) login and never polls it",
+    ({ home, llm }) =>
+      Effect.gen(function* () {
+        const ilink = createFakeIlink()
+        yield* Effect.addFinalizer(() => Effect.sync(() => ilink.stop()))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(home, ".local/share/miao/remote-auth.json"),
+            JSON.stringify({
+              wechat: {
+                token: "t",
+                botID: "bot@im.bot",
+                baseUrl: ilink.url,
+                userID: "owner@im.wechat",
+                savedAt: 0,
+                needsLogin: { at: 1, reason: "iLink returned -14" },
+              },
+            }),
+          ),
+        )
+        const port = yield* Effect.promise(freePort)
+        yield* Effect.promise(() =>
+          Bun.write(path.join(home, ".config/miao/miao.json"), JSON.stringify({ remote: { port } })),
+        )
+        const child = yield* daemon(home, { MIAO_CONFIG_CONTENT: JSON.stringify(testProviderConfig(llm.url)) })
+        const stderr = new Response(child.stderr).text()
+        const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
+        yield* Effect.promise(async () => {
+          const status = await ready(client, child)
+          expect(status.connectors[0].accounts[0]).toMatchObject({ account: "bot@im.bot", state: "needs-login" })
+          await Bun.sleep(1000)
+          expect(ilink.requests).toEqual([])
+        })
+        child.kill("SIGTERM")
+        expect(yield* Effect.promise(() => child.exited)).toBe(0)
+        expect(yield* Effect.promise(() => stderr)).toContain("重新扫码")
+      }),
+    120_000,
+  )
+
   cliIt.live(
     "logs in to QQ in this process when no daemon runs, then reports the account",
     ({ opencode, home }) =>
@@ -80,36 +172,7 @@ describe("miao remote daemon", () => {
           ),
         )
         const env = { MIAO_CONFIG_CONTENT: JSON.stringify(testProviderConfig(llm.url)) }
-        const child = yield* Effect.acquireRelease(
-          Effect.sync(() =>
-            Bun.spawn(["bun", "run", path.resolve(import.meta.dir, "../../src/index.ts"), "remote"], {
-              cwd: home,
-              env: {
-                ...process.env,
-                HOME: home,
-                PWD: home,
-                MIAO_TEST_HOME: home,
-                XDG_CONFIG_HOME: path.join(home, ".config"),
-                XDG_DATA_HOME: path.join(home, ".local/share"),
-                XDG_STATE_HOME: path.join(home, ".local/state"),
-                XDG_CACHE_HOME: path.join(home, ".cache"),
-                MIAO_DISABLE_PROJECT_CONFIG: "1",
-                MIAO_PURE: "1",
-                MIAO_DISABLE_AUTOUPDATE: "1",
-                MIAO_DISABLE_MODELS_FETCH: "1",
-                MIAO_AUTH_CONTENT: "{}",
-                ...env,
-              },
-              stdout: "pipe",
-              stderr: "pipe",
-            }),
-          ),
-          (process) =>
-            Effect.promise(async () => {
-              process.kill("SIGTERM")
-              await process.exited
-            }),
-        )
+        const child = yield* daemon(home, env)
         const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
 
         yield* Effect.promise(async () => {
@@ -186,6 +249,65 @@ describe("miao remote daemon", () => {
     180_000,
   )
 })
+
+/**
+ * `miao remote` in an isolated home, stopped with SIGTERM when the scope closes.
+ * The remote package's preload makes any request beyond 127.0.0.1 throw in the child.
+ */
+function daemon(home: string, env: Record<string, string>) {
+  return Effect.acquireRelease(
+    Effect.sync(() =>
+      Bun.spawn(
+        [
+          "bun",
+          "run",
+          "--preload",
+          path.resolve(import.meta.dir, "../../../remote/test/preload.ts"),
+          path.resolve(import.meta.dir, "../../src/index.ts"),
+          "remote",
+        ],
+        {
+          cwd: home,
+          env: {
+            ...process.env,
+            HOME: home,
+            PWD: home,
+            MIAO_TEST_HOME: home,
+            XDG_CONFIG_HOME: path.join(home, ".config"),
+            XDG_DATA_HOME: path.join(home, ".local/share"),
+            XDG_STATE_HOME: path.join(home, ".local/state"),
+            XDG_CACHE_HOME: path.join(home, ".cache"),
+            MIAO_DISABLE_PROJECT_CONFIG: "1",
+            MIAO_PURE: "1",
+            MIAO_DISABLE_AUTOUPDATE: "1",
+            MIAO_DISABLE_MODELS_FETCH: "1",
+            MIAO_AUTH_CONTENT: "{}",
+            ...env,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      ),
+    ),
+    (process) =>
+      Effect.promise(async () => {
+        process.kill("SIGTERM")
+        await process.exited
+      }),
+  )
+}
+
+/** Waits until the daemon answers its control route. */
+async function ready(client: ReturnType<typeof OpenCode.make>, child: { readonly exitCode: number | null }) {
+  const deadline = Date.now() + 60_000
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`miao remote exited with ${child.exitCode}`)
+    const status = await client.remote.get({ signal: AbortSignal.timeout(2000) }).catch(() => undefined)
+    if (status) return status
+    await Bun.sleep(200)
+  }
+  throw new Error("miao remote did not answer within 60s")
+}
 
 function freePort() {
   return new Promise<number>((resolve, reject) => {

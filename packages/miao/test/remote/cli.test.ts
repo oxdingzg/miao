@@ -15,7 +15,7 @@ const owner = "owner@im.wechat"
 
 describe("miao remote command", () => {
   cliIt.live(
-    "reports status, refuses to run without a login, and writes the launchd agent without loading it",
+    "reports status and writes the launchd agent without loading it",
     ({ opencode, home }) =>
       Effect.gen(function* () {
         const status = yield* opencode.spawn(["remote", "status"])
@@ -23,29 +23,7 @@ describe("miao remote command", () => {
         expect(status.stdout).toContain("微信：未登录")
         expect(status.stdout).toContain("服务端口：127.0.0.1:4097")
 
-        const run = yield* opencode.spawn(["remote"])
-        expect(run.exitCode).toBe(1)
-        expect(run.stderr).toContain("miao remote login wechat")
-
-        yield* Effect.promise(() =>
-          Bun.write(
-            path.join(home, ".local/share/miao/remote-auth.json"),
-            JSON.stringify({
-              wechat: {
-                token: "t",
-                botID: "bot@im.bot",
-                baseUrl: "http://127.0.0.1:9",
-                userID: owner,
-                savedAt: 0,
-                needsLogin: { at: 1, reason: "iLink returned -14" },
-              },
-            }),
-          ),
-        )
-        const expired = yield* opencode.spawn(["remote"])
-        opencode.expectExit(expired, 0, "remote with an expired login")
-        expect(expired.stderr).toContain("重新扫码")
-
+        // Running with no account or only an expired one is covered in daemon.test.ts: it now starts and keeps serving.
         if (process.platform !== "darwin") return
         const install = yield* opencode.spawn(["remote", "install"])
         opencode.expectExit(install, 0, "remote install")
