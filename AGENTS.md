@@ -4,6 +4,15 @@
 - The default branch in this repo is `main`. Keep this repo single-branch; do not create a `dev` branch.
 - Upstream `anomalyco/opencode` uses `dev`; when diffing against upstream use `origin/dev`.
 
+## Licence and Upstream Code
+
+miao is a derivative of opencode under the MIT licence, and most of its code still comes from opencode.
+
+- Keep both copyright lines in `LICENSE`: `the miao authors` and `opencode`. MIT requires opencode's notice in every copy that contains a substantial portion of its code, so do not remove it.
+- opencode's MIT grant covers the code miao forked and cannot be withdrawn. A later licence change upstream applies only to code released after that change.
+- Before merging or cherry-picking newer upstream code, check `git show origin/dev:LICENSE`. Bring the code in only if it is still MIT or another permissive licence; otherwise stop and ask the owner.
+- When copying code from any other project, keep its licence and copyright notice next to the copied code.
+
 ## Branch Names
 
 Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
