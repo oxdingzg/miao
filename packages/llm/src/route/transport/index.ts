@@ -1,6 +1,7 @@
 import type { Effect, Stream } from "effect"
 import type { Endpoint } from "../endpoint"
 import type { Auth } from "../auth"
+import type { Interface as ProviderWireArchiveInterface } from "../archive"
 import type { Interface as RequestExecutorInterface } from "../executor"
 import type { Interface as WebSocketExecutorInterface } from "./websocket"
 import type { Interface as WebSocketPoolInterface } from "./websocket-pool"
@@ -10,6 +11,8 @@ export interface TransportRuntime {
   readonly http: RequestExecutorInterface
   readonly webSocket?: WebSocketExecutorInterface
   readonly webSocketPool?: WebSocketPoolInterface
+  /** Provider wire archive, absent unless the host records one. */
+  readonly archive?: ProviderWireArchiveInterface
 }
 
 export interface Transport<Body, Prepared, Frame> {

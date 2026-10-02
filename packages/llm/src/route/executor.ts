@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Layer, Random } from "effect"
+import { Cause, Context, Effect, Layer, Option, Random } from "effect"
 import {
   FetchHttpClient,
   Headers,
@@ -12,8 +12,6 @@ import {
   ContentPolicyReason,
   HttpContext,
   HttpRateLimitDetails,
-  HttpRequestDetails,
-  HttpResponseDetails,
   InvalidRequestReason,
   LLMError,
   ProviderInternalReason,
@@ -23,6 +21,18 @@ import {
   UnknownProviderReason,
 } from "../schema"
 import { isContextOverflow } from "../provider-error"
+import {
+  captureBody,
+  normalizedHeaders,
+  redactHeaders,
+  redactUrl,
+  requestBodyText,
+  requestDetails,
+  requestId,
+  responseDetails,
+  type CapturedBody,
+} from "./http-capture"
+import { ProviderWireArchive } from "./archive"
 
 export interface Interface {
   readonly execute: (
@@ -32,62 +42,10 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@miao/LLM/RequestExecutor") {}
 
-const BODY_LIMIT = 16_384
 const MAX_RETRIES = 2
 const BASE_DELAY_MS = 500
 const MAX_DELAY_MS = 10_000
 const MIN_RETRY_AFTER_MS = 250
-const REDACTED = "<redacted>"
-
-// One source of truth for what counts as a sensitive name across headers,
-// URL query keys, and field names embedded inside request/response bodies.
-//
-// `SENSITIVE_NAME` is used as both a substring matcher (for free-form header
-// names like `Authorization` / `X-API-Key`) and as the body-field alternation
-// list. `SHORT_QUERY_NAME` covers anchored short keys like `?key=…` / `?sig=…`
-// that are too generic to redact substring-style without false positives.
-const SENSITIVE_NAME_SOURCE =
-  "authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|credential|signature|x-amz-signature"
-const SENSITIVE_NAME = new RegExp(SENSITIVE_NAME_SOURCE, "i")
-const SHORT_QUERY_NAME = /^(key|sig)$/i
-const SENSITIVE_BODY_FIELD = new RegExp(`(?:${SENSITIVE_NAME_SOURCE}|key)`, "i")
-const REDACT_JSON_FIELD = new RegExp(`("(?:${SENSITIVE_BODY_FIELD.source})"\\s*:\\s*)"[^"]*"`, "gi")
-const REDACT_QUERY_FIELD = new RegExp(`((?:${SENSITIVE_BODY_FIELD.source})=)[^&\\s"]+`, "gi")
-
-const isSensitiveHeaderName = (name: string) => SENSITIVE_NAME.test(name)
-
-const isSensitiveQueryName = (name: string) => isSensitiveHeaderName(name) || SHORT_QUERY_NAME.test(name)
-
-const redactHeaders = (headers: Headers.Headers, redactedNames: ReadonlyArray<string | RegExp>) =>
-  Object.fromEntries(
-    Object.entries(Headers.redact(headers, [...redactedNames, SENSITIVE_NAME])).map(([name, value]) => [
-      name,
-      String(value),
-    ]),
-  )
-
-const redactUrl = (value: string) => {
-  if (!URL.canParse(value)) return REDACTED
-  const url = new URL(value)
-  url.searchParams.forEach((_, key) => {
-    if (isSensitiveQueryName(key)) url.searchParams.set(key, REDACTED)
-  })
-  return url.toString()
-}
-
-const normalizedHeaders = (headers: Headers.Headers) =>
-  Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
-
-const requestId = (headers: Record<string, string>) => {
-  return (
-    headers["x-request-id"] ??
-    headers["request-id"] ??
-    headers["x-amzn-requestid"] ??
-    headers["x-amz-request-id"] ??
-    headers["x-goog-request-id"] ??
-    headers["cf-ray"]
-  )
-}
 
 const retryableStatus = (status: number) => status === 429 || status === 503 || status === 504 || status === 529
 
@@ -148,61 +106,7 @@ const rateLimitDetails = (headers: Record<string, string>, retryAfter: number | 
   })
 }
 
-const requestDetails = (request: HttpClientRequest.HttpClientRequest, redactedNames: ReadonlyArray<string | RegExp>) =>
-  new HttpRequestDetails({
-    method: request.method,
-    url: redactUrl(request.url),
-    headers: redactHeaders(request.headers, redactedNames),
-  })
-
-const responseDetails = (
-  response: HttpClientResponse.HttpClientResponse,
-  redactedNames: ReadonlyArray<string | RegExp>,
-) =>
-  new HttpResponseDetails({
-    status: response.status,
-    headers: redactHeaders(response.headers, redactedNames),
-  })
-
-const secretValues = (request: HttpClientRequest.HttpClientRequest) => {
-  const values = new Set<string>()
-  const add = (value: string) => {
-    if (value.length < 4) return
-    values.add(value)
-    values.add(encodeURIComponent(value))
-  }
-
-  Object.entries(request.headers).forEach(([name, value]) => {
-    if (!isSensitiveHeaderName(name)) return
-    add(value)
-    const bearer = /^Bearer\s+(.+)$/i.exec(value)?.[1]
-    if (bearer) add(bearer)
-  })
-
-  if (!URL.canParse(request.url)) return values
-  new URL(request.url).searchParams.forEach((value, key) => {
-    if (isSensitiveQueryName(key)) add(value)
-  })
-  return values
-}
-
-// Two passes: structural (redact `"name": "value"` and `name=value` patterns
-// for any field name that looks sensitive) plus literal (replace any actual
-// secret values we sent in the request, in case the response echoes one back).
-const redactBody = (body: string, request: HttpClientRequest.HttpClientRequest) =>
-  Array.from(secretValues(request)).reduce(
-    (text, secret) => text.split(secret).join(REDACTED),
-    body.replace(REDACT_JSON_FIELD, `$1"${REDACTED}"`).replace(REDACT_QUERY_FIELD, `$1${REDACTED}`),
-  )
-
-const responseBody = (body: string | void, request: HttpClientRequest.HttpClientRequest) => {
-  if (body === undefined) return {}
-  const redacted = redactBody(body, request)
-  if (redacted.length <= BODY_LIMIT) return { body: redacted }
-  return { body: redacted.slice(0, BODY_LIMIT), bodyTruncated: true }
-}
-
-const providerMessage = (status: number, body: { readonly body?: string }) => {
+const providerMessage = (status: number, body: CapturedBody) => {
   if (body.body && body.body.length <= 500) return `Provider request failed with HTTP ${status}: ${body.body}`
   return `Provider request failed with HTTP ${status}`
 }
@@ -211,7 +115,7 @@ const responseHttp = (input: {
   readonly request: HttpClientRequest.HttpClientRequest
   readonly response: HttpClientResponse.HttpClientResponse
   readonly redactedNames: ReadonlyArray<string | RegExp>
-  readonly body: ReturnType<typeof responseBody>
+  readonly body: CapturedBody
   readonly requestId?: string | undefined
   readonly rateLimit?: HttpRateLimitDetails | undefined
 }) =>
@@ -275,16 +179,66 @@ const statusReason = (input: {
   return new UnknownProviderReason({ message: input.message, status: input.status, http: input.http })
 }
 
+/**
+ * Archive lines for one HTTP attempt, or nothing when no exchange is being
+ * traced. Built per attempt rather than per exchange so that the attempts the
+ * retry loop below makes are each recorded, not collapsed into the last one.
+ */
+const tracerFor = (input: {
+  readonly exchange: ProviderWireArchive.Exchange | undefined
+  readonly archive: ProviderWireArchive.Interface | undefined
+  readonly request: HttpClientRequest.HttpClientRequest
+  readonly redactedNames: ReadonlyArray<string | RegExp>
+}) => {
+  if (input.exchange === undefined || input.archive === undefined) return undefined
+  const exchange = input.exchange
+  const archive = input.archive
+  const request = input.request
+  const base = { exchange: exchange.id, route: exchange.route, attempt: ProviderWireArchive.attemptID() }
+  return {
+    request: () =>
+      archive.record({
+        ...base,
+        at: Date.now(),
+        kind: "request",
+        method: request.method,
+        url: redactUrl(request.url),
+        headers: redactHeaders(request.headers, input.redactedNames),
+        ...captureBody(requestBodyText(request), request, ProviderWireArchive.MAX_CAPTURE_BYTES),
+      }),
+    response: (response: HttpClientResponse.HttpClientResponse, body: CapturedBody) =>
+      archive.record({
+        ...base,
+        at: Date.now(),
+        kind: "response",
+        status: response.status,
+        headers: redactHeaders(response.headers, input.redactedNames),
+        requestID: requestId(normalizedHeaders(response.headers)),
+        ...body,
+      }),
+    error: (error: LLMError) =>
+      archive.record({ ...base, at: Date.now(), kind: "error", tag: error.reason._tag, message: error.reason.message }),
+  }
+}
+
 const statusError =
-  (request: HttpClientRequest.HttpClientRequest, redactedNames: ReadonlyArray<string | RegExp>) =>
+  (
+    request: HttpClientRequest.HttpClientRequest,
+    redactedNames: ReadonlyArray<string | RegExp>,
+    trace: ReturnType<typeof tracerFor>,
+  ) =>
   (response: HttpClientResponse.HttpClientResponse) =>
     Effect.gen(function* () {
-      if (response.status < 400) return response
+      if (response.status < 400) {
+        if (trace !== undefined) yield* trace.response(response, {})
+        return response
+      }
       const body = yield* response.text.pipe(Effect.catch(() => Effect.void))
       const headers = normalizedHeaders(response.headers)
       const retryAfter = retryAfterMs(headers)
       const rateLimit = rateLimitDetails(headers, retryAfter)
-      const details = responseBody(body, request)
+      const details = captureBody(body, request)
+      if (trace !== undefined) yield* trace.response(response, details)
       return yield* new LLMError({
         module: "RequestExecutor",
         method: "execute",
@@ -396,9 +350,20 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
     const executeOnce = (request: HttpClientRequest.HttpClientRequest) =>
       Effect.gen(function* () {
         const redactedNames = yield* Headers.CurrentRedactedNames
+        const trace = tracerFor({
+          exchange: yield* ProviderWireArchive.CurrentExchange,
+          archive: Option.getOrUndefined(yield* Effect.serviceOption(ProviderWireArchive.Service)),
+          request,
+          redactedNames,
+        })
+        if (trace !== undefined) yield* trace.request()
         return yield* http
           .execute(request)
-          .pipe(Effect.mapError(toHttpError(redactedNames)), Effect.flatMap(statusError(request, redactedNames)))
+          .pipe(
+            Effect.mapError(toHttpError(redactedNames)),
+            Effect.flatMap(statusError(request, redactedNames, trace)),
+            Effect.tapError((error) => (trace === undefined ? Effect.void : trace.error(error))),
+          )
       })
     return Service.of({
       execute: (request) => retryStatusFailures(executeOnce(request)),
