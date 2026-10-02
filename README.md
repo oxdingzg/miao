@@ -103,6 +103,28 @@ miao includes Rust accelerators and benchmarks against this repository's earlier
 
 These are **component benchmarks, not end-to-end task speedups or comparisons with today's upstream release**. Native edit/patch integration and the opt-in macOS/Linux kernel sandbox currently belong to the compatibility tool path; V2 has separate tools. In-process Git remains a prototype. See the [full comparison and availability matrix](docs/miao-vs-opencode.en.md).
 
+### Public baseline: startup, memory, idle cost, crash recovery
+
+Measured 2026-10-02 on an Apple M2 with 16 GB RAM, macOS 26.5. Each run launches the compiled TUI in a
+160×45 tmux pane in an empty git repository and waits until the prompt renders. The two builds ran
+alternately, 6 starts and 2 two-minute idle runs each. Other agents were running on the machine (1-minute load
+average 3.5–12.4), so treat the absolute numbers as an upper bound; the comparison is like for like.
+
+| Metric                             | 0.0.31 release | `main` @ `a230e1302` | Phase 0 target |
+| ---------------------------------- | -------------- | -------------------- | -------------- |
+| Launch to prompt (median of 6)     | 2.27 s         | 1.82 s               | < 2.5 s        |
+| CPU time spent reaching the prompt | 3.3 s          | 2.4 s                | —              |
+| RSS when the prompt appears        | ~1,080 MB      | ~700 MB              | —              |
+| RSS after 2 minutes idle           | 1,240–1,380 MB | 853 MB               | < 600 MB       |
+| CPU while idle (minutes 1–2)       | 2.0–2.6 %      | 2.2–2.3 %            | < 1 %          |
+
+Crash recovery (0.0.31): killing the process with `SIGKILL` while a `bash` tool call was running lost no
+messages; `miao -c` reopened the session and the next prompt continued it. Three gaps remain: the interrupted
+tool call still shows as running until the next turn starts, the child process it started keeps running, and
+nothing resumes automatically.
+
+Idle RSS and idle CPU still miss the Phase 0 targets; see [specs/architecture.md](specs/architecture.md).
+
 ## Status and architecture
 
 miao is pre-1.0. V2 is the default for the terminal UI and supported browser connections; V1 remains for compatibility. The V2 core uses Effect services, Location-scoped tools, durable inboxes, event-backed history, and Context Epochs. Local execution coordination is process-local; clustered execution and automatic crash continuation are not implemented.
