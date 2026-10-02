@@ -10,7 +10,15 @@ import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ToolCodeMode } from "./code-mode"
-import { definition, permission, settle, validateName, type AnyTool, type Progress, type RegistrationError } from "./tool"
+import {
+  definition,
+  permissions,
+  settle,
+  validateName,
+  type AnyTool,
+  type Progress,
+  type RegistrationError,
+} from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
@@ -33,7 +41,10 @@ export type MaterializeOptions = {
 }
 
 export interface Interface {
-  readonly materialize: (permissions?: PermissionV2.Ruleset, options?: MaterializeOptions) => Effect.Effect<Materialization>
+  readonly materialize: (
+    permissions?: PermissionV2.Ruleset,
+    options?: MaterializeOptions,
+  ) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
   /** Session-scoped registration owned by the runner; highest precedence while its Session drain is active. */
@@ -159,7 +170,7 @@ const registryLayer = Layer.effect(
           }
         })
       }),
-      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], options?: MaterializeOptions) {
+      materialize: Effect.fn("ToolRegistry.materialize")(function* (rules = [], options?: MaterializeOptions) {
         const registrations = new Map(applications.entries())
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
@@ -172,7 +183,7 @@ const registryLayer = Layer.effect(
             if (registration) registrations.set(name, registration)
           }
         for (const [name, registration] of registrations)
-          if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+          if (whollyDisabled(permissions(registration.tool, name), rules)) registrations.delete(name)
         for (const name of options?.disabledTools ?? []) registrations.delete(name)
         const orderKey = options?.sessionID ?? "@location"
         const ordered = stableToolOrder(advertisedOrder.get(orderKey) ?? [], Array.from(registrations.keys()))
@@ -192,7 +203,9 @@ const registryLayer = Layer.effect(
               local.get(input.call.name)?.at(-1)?.registration ??
               applications.entries().get(input.call.name)
             if (now !== captured)
-              return Effect.succeed({ result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } })
+              return Effect.succeed({
+                result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` },
+              })
             return settleRegistration(input, captured, captured.identity, options?.onProgress)
           },
         }
@@ -201,7 +214,7 @@ const registryLayer = Layer.effect(
           definitions,
           settle: (call, context) => inner.settle({ ...context, call }),
         })
-        if (whollyDisabled(permission(execute, ToolCodeMode.CODE_MODE_TOOL), permissions)) return inner
+        if (whollyDisabled(permissions(execute, ToolCodeMode.CODE_MODE_TOOL), rules)) return inner
         const executeRegistration: Registration = { identity: {}, tool: execute }
         return {
           definitions: [definition(ToolCodeMode.CODE_MODE_TOOL, execute)],
@@ -220,8 +233,8 @@ const layer = Layer.effect(
   Service.use((registry) => Effect.succeed(Tools.Service.of({ register: registry.register }))),
 ).pipe(Layer.provideMerge(registryLayer))
 
-function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {
-  const rule = rules.findLast((rule) => Wildcard.match(action, rule.action))
+function whollyDisabled(actions: ReadonlyArray<string>, rules: PermissionV2.Ruleset) {
+  const rule = rules.findLast((rule) => actions.some((action) => Wildcard.match(action, rule.action)))
   return rule?.resource === "*" && rule.effect === "deny"
 }
 

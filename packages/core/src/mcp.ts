@@ -8,6 +8,7 @@ import { Effect, JsonSchema, Layer } from "effect"
 import { Config } from "./config"
 import type { ConfigMCP } from "./config/mcp"
 import { makeLocationNode } from "./effect/app-node"
+import { PermissionV2 } from "./permission"
 import { ToolRegistry } from "./tool/registry"
 import { Tool } from "./tool/tool"
 import type { AnyTool } from "./tool/tool"
@@ -22,6 +23,14 @@ export const MAX_RESULT_IMAGE_BASE64_BYTES = 5 * 1024 * 1024
 /** Sanitize an MCP tool name into the canonical tool-name alphabet. */
 export const toolName = (serverID: string, tool: string) =>
   `mcp__${serverID}__${tool}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, MAX_TOOL_NAME)
+
+/**
+ * The V1 name of an MCP tool. V1 asked permission under this action, so rules a
+ * user already wrote for it (for example `"github_*": "deny"`) must keep
+ * deciding the same tool under V2.
+ */
+export const legacyToolName = (serverID: string, tool: string) =>
+  `${serverID.replace(/[^A-Za-z0-9_-]/g, "_")}_${tool.replace(/[^A-Za-z0-9_-]/g, "_")}`
 
 type Connected = {
   readonly client: Client
@@ -71,6 +80,7 @@ const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const tools = yield* Tools.Service
+    const permission = yield* PermissionV2.Service
 
     const entries = yield* config.entries()
     let mcp: ConfigMCP.Info | undefined
@@ -92,14 +102,48 @@ const layer = Layer.effectDiscard(
         const name = toolName(serverID, tool.name)
         if (!NAME_PATTERN.test(name) || registered.has(name)) continue
         registered.add(name)
+        const legacy = legacyToolName(serverID, tool.name)
         registrations[name] = Tool.makeExternal({
           description: tool.description ?? `MCP tool ${tool.name} from ${serverID}`,
           inputSchema: (tool.inputSchema as JsonSchema.JsonSchema | undefined) ?? { type: "object" },
-          execute: (input) =>
-            Effect.tryPromise({
-              try: () => connected.client.callTool({ name: tool.name, arguments: input }),
-              catch: (error) => new ToolFailure({ message: `MCP call ${tool.name} failed: ${String(error)}` }),
-            }).pipe(Effect.map((result) => resultContent(result as { content?: ReadonlyArray<unknown> }))),
+          permissionAliases: [legacy],
+          execute: (input, context) =>
+            permission
+              .assert({
+                action: name,
+                aliases: [legacy],
+                resources: ["*"],
+                save: ["*"],
+                metadata: { server: serverID, tool: tool.name, input },
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+              })
+              .pipe(
+                Effect.catchTags({
+                  "PermissionV2.BlockedError": (error) =>
+                    Effect.fail(
+                      new ToolFailure({
+                        message: `The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules ${JSON.stringify(error.rules)}`,
+                      }),
+                    ),
+                  "PermissionV2.CorrectedError": (error) =>
+                    Effect.fail(
+                      new ToolFailure({
+                        message: `The user rejected permission to use this specific tool call with the following feedback: ${error.feedback}`,
+                      }),
+                    ),
+                  "Session.NotFoundError": () =>
+                    Effect.fail(new ToolFailure({ message: `MCP call ${tool.name} failed: session not found` })),
+                }),
+                Effect.andThen(
+                  Effect.tryPromise({
+                    try: () => connected.client.callTool({ name: tool.name, arguments: input }),
+                    catch: (error) => new ToolFailure({ message: `MCP call ${tool.name} failed: ${String(error)}` }),
+                  }),
+                ),
+                Effect.map((result) => resultContent(result as { content?: ReadonlyArray<unknown> })),
+              ),
         })
       }
       if (Object.keys(registrations).length > 0) yield* tools.register(registrations).pipe(Effect.orDie)
@@ -110,5 +154,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "mcp/tools",
   layer,
-  deps: [Config.node, ToolRegistry.toolsNode],
+  deps: [Config.node, ToolRegistry.toolsNode, PermissionV2.node],
 })

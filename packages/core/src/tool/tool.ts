@@ -73,6 +73,7 @@ type Config<
 
 type Runtime = {
   readonly permission?: string
+  readonly permissionAliases?: ReadonlyArray<string>
   readonly definition: (name: string) => ToolDefinition
   readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
 }
@@ -150,6 +151,8 @@ export function makeExternal(config: {
   readonly description: string
   readonly inputSchema: JsonSchema.JsonSchema
   readonly outputSchema?: JsonSchema.JsonSchema
+  /** Further action names whose whole-tool deny rules also hide this tool. */
+  readonly permissionAliases?: ReadonlyArray<string>
   readonly execute: (
     input: Record<string, unknown>,
     context: Context,
@@ -158,6 +161,7 @@ export function makeExternal(config: {
   const tool = Object.freeze({}) as Definition<any, any>
   const definitions = new Map<string, ToolDefinition>()
   runtimes.set(tool, {
+    permissionAliases: config.permissionAliases,
     definition: (name) => {
       const cached = definitions.get(name)
       if (cached) return cached
@@ -206,7 +210,10 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
   return decorated
 }
 
-export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
+export const permissions = (tool: AnyTool, name: string) => {
+  const runtime = runtimeOf(tool)
+  return [runtime.permission ?? name, ...(runtime.permissionAliases ?? [])]
+}
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => runtimeOf(tool).settle(call, context)
 
