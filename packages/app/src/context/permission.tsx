@@ -241,7 +241,6 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
         sessionID: request.sessionID,
         requestID: request.permissionID,
         reply: request.response,
-        location: request.directory ? { directory: request.directory } : undefined,
       })
       .catch(() => {
         responded.delete(request.permissionID)

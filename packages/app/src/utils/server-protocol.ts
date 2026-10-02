@@ -24,10 +24,7 @@ async function probe(server: ServerConnection.HttpBase, fetch: typeof globalThis
 export async function detectServerProtocol(
   server: ServerConnection.HttpBase,
   fetch: typeof globalThis.fetch,
-  override?: ServerProtocol,
 ): Promise<ServerProtocol> {
-  if (override) return override
-
   // Prefer the current API whenever the server advertises it, so app/desktop/web
   // run on V2 while the legacy routes are still mounted during the soak.
   const current = await probe(server, fetch, "/api/health").catch(() => undefined)
@@ -37,15 +34,4 @@ export async function detectServerProtocol(
   if (legacy && "healthy" in legacy && legacy.healthy === true) return "v1"
   if (current && "healthy" in current && current.healthy === true) return "v1"
   return "v2"
-}
-
-/**
- * Explicit protocol override from the `?protocol=v1|v2` query string, so a
- * build can be soaked on the V2 API before the server stops serving the V1
- * health endpoint. Absent or unknown values fall back to detection.
- */
-export function protocolOverride(search: string | undefined): ServerProtocol | undefined {
-  if (!search) return undefined
-  const value = new URLSearchParams(search).get("protocol")
-  return value === "v1" || value === "v2" ? value : undefined
 }
