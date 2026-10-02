@@ -58,6 +58,22 @@ test.describe("smoke: session timeline", () => {
       await page.mouse.wheel(0, -120)
       await page.waitForTimeout(20)
     }
+    // Wheel scrolling keeps moving after the last event; pick the reference rows only once it rests,
+    // or they can scroll out of the mounted range before the history page lands.
+    await scroller.evaluate(
+      (element) =>
+        new Promise<void>((resolve) => {
+          let last = Number.NaN
+          let stable = 0
+          const check = () => {
+            stable = element.scrollTop === last ? stable + 1 : 0
+            last = element.scrollTop
+            if (stable >= 5) return resolve()
+            requestAnimationFrame(check)
+          }
+          requestAnimationFrame(check)
+        }),
+    )
     const keys = await scroller.evaluate((element) => {
       const view = element.getBoundingClientRect()
       return [...element.querySelectorAll<HTMLElement>("[data-timeline-part-id]")]
