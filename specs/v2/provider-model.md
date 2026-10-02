@@ -281,7 +281,28 @@ aisdk:@ai-sdk/anthropic
 
 Native endpoint URLs are complete endpoint URLs and are split into base URL plus request path when building an LLM route. AI SDK endpoint URLs remain base URLs. The adapter preserves model headers and body options, environment-backed provider credentials, direct model API keys, and selected Session variant overlays.
 
-Unsupported routes fail explicitly with `SessionRunnerModel.UnsupportedEndpointError`. In particular, `openai/responses` with WebSocket transport must not silently downgrade to HTTP. Google, Azure, Bedrock, OpenRouter-specific behavior, GitHub Copilot, Vertex, gateway adapters, and signed authentication remain future provider slices.
+Unsupported routes fail explicitly with `SessionRunnerModel.UnsupportedEndpointError`. In particular, `openai/responses` with WebSocket transport must not silently downgrade to HTTP. OpenRouter-specific behavior and gateway adapters remain future provider slices.
+
+Cloud providers that V1 reached through AI SDK packages build native routes in `SessionRunnerModel`:
+
+```text
+github-copilot                    Responses (GPT-5 class), Chat, or Anthropic Messages at {base}/v1, per the
+                                  account's /models answer; GitHub OAuth token as bearer; Enterprise base URL
+aisdk:@ai-sdk/azure               {resource}.openai.azure.com/openai/v1 (or deployment URLs) + api-version;
+                                  api-key header, else a configured Authorization header or the Azure CLI Entra token
+aisdk:@ai-sdk/google-vertex       Gemini generateContent under projects/{p}/locations/{l}/publishers/google;
+                                  ADC bearer, configured Authorization header, or express-mode API key
+aisdk:@ai-sdk/google-vertex/anthropic
+                                  Anthropic Messages over rawPredict (Vertex body, no model field); ADC bearer
+aisdk:@ai-sdk/amazon-bedrock      Converse stream; Bedrock API key bearer or SigV4 from the AWS provider chain
+aisdk:@ai-sdk/amazon-bedrock/mantle
+                                  Responses with a Bedrock API key (SigV4 not wired)
+```
+
+Request overrides that V1 provider plugins applied through `chat.headers` and `chat.params` are built in: the
+OpenAI provider sends `originator: miao` and the miao `User-Agent` (plus the Codex `session-id` affinity header),
+Copilot sends its API version, intent, interaction, initiator and vision headers, and no route sends a maximum
+output token count unless the request sets one.
 
 ## Plugin Interface
 
