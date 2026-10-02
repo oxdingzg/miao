@@ -8,11 +8,12 @@ import * as Gemini from "@miao/llm/protocols/gemini"
 import * as OpenAIChat from "@miao/llm/protocols/openai-chat"
 import * as OpenAICompatibleChat from "@miao/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@miao/llm/protocols/openai-responses"
-import { GitHubCopilot } from "@miao/llm/providers"
+import { Azure, GitHubCopilot } from "@miao/llm/providers"
 import { openAIDefaultOptions } from "@miao/llm/providers/openai"
 import { Auth, type AnyRoute } from "@miao/llm/route"
 import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
+import { AzureEntra } from "../../azure-entra"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Flag } from "../../flag/flag"
@@ -112,11 +113,17 @@ const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (typeof value === "string") return Auth.value(value)
 }
 
-const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
+/**
+ * `settings` names AI SDK provider settings that catalog plugins and the V1
+ * config lowering leave in `request.body` (Azure `resourceName`, Vertex
+ * `project`, ...). They configure the route, so they must not reach the wire.
+ */
+const withDefaults = (model: ModelV2.Info, route: AnyRoute, settings: ReadonlyArray<string> = []) => {
   const body = model.request.body
-  const httpBody = Object.hasOwn(body, "apiKey")
-    ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== "apiKey"))
-    : body
+  const httpBody =
+    Object.hasOwn(body, "apiKey") || settings.some((key) => Object.hasOwn(body, key))
+      ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== "apiKey" && !settings.includes(key)))
+      : body
   return route.with({
     provider: model.providerID,
     endpoint: model.api.url === undefined ? undefined : { baseURL: model.api.url },
@@ -176,16 +183,18 @@ export const fromCatalogModel = (
   model: ModelV2.Info,
   credential?: Credential.Value,
 ): Effect.Effect<Model, UnsupportedApiError> => {
-  const resolved =
+  const resolved = expandAzureTemplate(
     credential?.type !== "key" || credential.metadata === undefined
       ? model
       : produce(model, (draft) => {
           Object.assign(draft.request.body, credential.metadata)
-        })
+        }),
+  )
   const key = apiKey(resolved, credential)
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
+  if (resolved.api.package === "@ai-sdk/azure") return azure(resolved, credential)
   if (resolved.api.package === "@ai-sdk/openai") {
     // The llm OpenAI facade applies these defaults; building the route directly
     // skipped them, so reasoning models ran without the encrypted reasoning
@@ -283,6 +292,62 @@ const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
   return withDefaults(model, route).with({ endpoint: { baseURL: base }, auth, headers }).model({ id: model.api.id })
 }
 
+const AZURE_SETTINGS = ["resourceName", "apiVersion", "useCompletionUrls", "useDeploymentBasedUrls"]
+
+/**
+ * Azure OpenAI: `{resource}.openai.azure.com/openai/v1` with `api-version`
+ * (default `v1`), or deployment URLs when `useDeploymentBasedUrls` is set.
+ * Auth is the `api-key` header; without a key it falls back to a Microsoft
+ * Entra token, either a configured `Authorization` header or the Azure CLI's.
+ */
+const azure = (model: ModelV2.Info, credential?: Credential.Value) => {
+  const resource = azureResource(model)
+  const deployments = setting(model, "useDeploymentBasedUrls") === true
+  const apiVersion = setting(model, "apiVersion")
+  if (!model.api.url && !resource) return Effect.fail(unsupported(model))
+  const base = model.api.url ?? `https://${resource!.trim()}.openai.azure.com/openai`
+  const baseURL = deployments
+    ? `${base.replace(/\/v1\/?$/, "")}/deployments/${model.api.id}`
+    : model.api.url ?? `${base}/v1`
+  const key = apiKey(model, credential)
+  const configured = Object.keys(model.request.headers).some((name) => name.toLowerCase() === "authorization")
+  const auth = key
+    ? Auth.header("api-key", key)
+    : configured
+      ? Auth.none
+      : Auth.effect(AzureEntra.token).bearer()
+  const route = Azure.configure({
+    baseURL,
+    apiVersion: typeof apiVersion === "string" ? apiVersion : undefined,
+    useCompletionUrls: setting(model, "useCompletionUrls") === true,
+    auth,
+  }).model(model.api.id).route
+  return Effect.succeed(
+    withDefaults(model, route, AZURE_SETTINGS).with({ endpoint: { baseURL }, auth }).model({ id: model.api.id }),
+  )
+}
+
+const setting = (model: ModelV2.Info, key: string) =>
+  (model.api.type === "aisdk" ? model.api.settings?.[key] : undefined) ?? model.request.body[key]
+
+const azureResource = (model: ModelV2.Info) => {
+  const value = setting(model, "resourceName")
+  if (typeof value === "string" && value.trim() !== "") return value
+  return process.env.AZURE_RESOURCE_NAME
+}
+
+// models.dev lists Azure AI Foundry models (Claude, DeepSeek, Kimi) under the
+// Azure provider with a `${AZURE_RESOURCE_NAME}` URL template.
+const expandAzureTemplate = (model: ModelV2.Info) => {
+  if (!model.api.url?.includes("${AZURE_RESOURCE_NAME}")) return model
+  const resource = azureResource(model)
+  if (!resource) return model
+  return produce(model, (draft) => {
+    draft.api.url = draft.api.url!.replaceAll("${AZURE_RESOURCE_NAME}", resource.trim())
+    delete draft.request.body.resourceName
+  })
+}
+
 export const resolveWithInfo = (
   session: SessionSchema.Info,
   model: ModelV2.Info,
@@ -298,6 +363,7 @@ export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, creden
 export const supported = (model: ModelV2.Info) => {
   if (model.api.type !== "aisdk") return false
   if (model.providerID === ProviderV2.ID.githubCopilot) return true
+  if (model.api.package === "@ai-sdk/azure") return model.api.url !== undefined || azureResource(model) !== undefined
   if (
     model.api.package === "@ai-sdk/openai" ||
     model.api.package === "@ai-sdk/anthropic" ||
