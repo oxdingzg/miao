@@ -95,6 +95,7 @@ describe("SessionAutoBackfill", () => {
     expect(result).toEqual({
       status: "migrated",
       backup: `${file}.bak-20261002-080509`,
+      reused: false,
       migrated: 1,
       repaired: 0,
     })
@@ -107,6 +108,51 @@ describe("SessionAutoBackfill", () => {
 
     const again = await withDatabase(file, (db) => SessionAutoBackfill.run(db, { file }))
     expect(again).toEqual({ status: "current" })
+
+    // A V1 entry point still writing legacy rows must not trigger a fresh copy on every start.
+    const later = await withDatabase(file, (db) =>
+      Effect.gen(function* () {
+        yield* db
+          .insert(SessionTable)
+          .values({
+            id: "ses_auto_later" as never,
+            project_id: Project.ID.global,
+            slug: "later",
+            directory: "/project",
+            title: "later",
+            version: "0.0.1",
+          })
+          .run()
+          .pipe(Effect.orDie)
+        yield* db
+          .insert(MessageTable)
+          .values({
+            id: "msg_auto_later" as never,
+            session_id: "ses_auto_later" as never,
+            time_created: 2,
+            data: {
+              role: "user",
+              time: { created: 2 },
+              agent: "build",
+              model: { providerID: "p", modelID: "m" },
+            } as never,
+          })
+          .run()
+          .pipe(Effect.orDie)
+        return yield* SessionAutoBackfill.run(db, { file, now: new Date(2026, 9, 3) })
+      }),
+    )
+    expect(later).toEqual({
+      status: "migrated",
+      backup: `${file}.bak-20261002-080509`,
+      reused: true,
+      migrated: 1,
+      repaired: 0,
+    })
+    expect(fs.readdirSync(path.dirname(file)).filter((name) => name.includes(".bak-"))).toEqual([
+      "miao.db.bak-20261002-080509",
+    ])
+    expect(count(file, "session_message")).toBe(2)
   })
 
   test("skips the migration without writing when the backup would not fit", async () => {
