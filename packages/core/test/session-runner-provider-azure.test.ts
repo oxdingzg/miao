@@ -151,6 +151,27 @@ describe("Azure OpenAI V2 route", () => {
     }),
   )
 
+  it.effect("does not send the AZURE_RESOURCE_NAME env connection as the API key", () =>
+    Effect.gen(function* () {
+      const previous = { name: process.env.AZURE_RESOURCE_NAME, key: process.env.AZURE_API_KEY }
+      process.env.AZURE_RESOURCE_NAME = "contoso"
+      process.env.AZURE_API_KEY = "real-azure-key"
+      // models.dev lists AZURE_RESOURCE_NAME first, so the env connection resolves to it.
+      const model = yield* SessionRunnerModel.fromCatalogModel(
+        azure({}),
+        Credential.Key.make({ type: "key", key: "contoso" }),
+      )
+      const { wire } = yield* exchange(LLM.request({ model, prompt: "Hello" }), responsesStream)
+      process.env.AZURE_RESOURCE_NAME = previous.name
+      process.env.AZURE_API_KEY = previous.key
+      if (previous.name === undefined) delete process.env.AZURE_RESOURCE_NAME
+      if (previous.key === undefined) delete process.env.AZURE_API_KEY
+
+      expect(wire.url).toStartWith("https://contoso.openai.azure.com/openai/v1/responses")
+      expect(wire.headers["api-key"]).toBe("real-azure-key")
+    }),
+  )
+
   it.effect("rejects an Azure model with neither a resource name nor a URL", () =>
     Effect.gen(function* () {
       const previous = process.env.AZURE_RESOURCE_NAME
