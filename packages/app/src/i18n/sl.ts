@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao je nameščen, vendar se ne more zagnati",
   "desktop.wsl.error.miaoNotInstalled": "Miao ni nameščen v {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Posodobitev OpenCode je končana, vendar {{distro}} še vedno poroča {{installed}}; pričakovano {{expected}}",
+    "Posodobitev Miao je končana, vendar {{distro}} še vedno poroča {{installed}}; pričakovano {{expected}}",
   "desktop.wsl.error.noVersion": "brez različice",
   "desktop.wsl.error.serverExited": "Strežnik WSL je po zagonu zapustil (koda={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Čakanje na avtorizacijo ...",
   "provider.connect.status.failed": "Avtorizacija ni uspela: {{error}}",
   "provider.connect.apiKey.description":
-    "Vnesite ključ API ponudnika {{provider}}, da povežete račun in uporabljate modele {{provider}} v OpenCode.",
+    "Vnesite ključ API ponudnika {{provider}}, da povežete račun in uporabljate modele {{provider}} v Miao.",
   "provider.connect.apiKey.label": "Ključ {{provider}} API",
   "provider.connect.apiKey.placeholder": "Ključ API",
   "provider.connect.apiKey.required": "Potreben je ključ API",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Obisk ",
   "provider.connect.oauth.code.visit.link": "ta povezava",
   "provider.connect.oauth.code.visit.suffix":
-    " za zbiranje avtorizacijske kode za povezavo vašega računa in uporabo modelov {{provider}} v OpenCode.",
+    " za zbiranje avtorizacijske kode za povezavo vašega računa in uporabo modelov {{provider}} v Miao.",
   "provider.connect.oauth.code.label": "{{method}} avtorizacijska koda",
   "provider.connect.oauth.code.placeholder": "Avtorizacijska koda",
   "provider.connect.oauth.code.required": "Zahtevana je avtorizacijska koda",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Obisk ",
   "provider.connect.oauth.auto.visit.link": "ta povezava",
   "provider.connect.oauth.auto.visit.suffix":
-    " in vnesite spodnjo kodo, da povežete svoj račun in uporabite modele {{provider}} v OpenCode.",
+    " in vnesite spodnjo kodo, da povežete svoj račun in uporabite modele {{provider}} v Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Potrditvena koda",
   "provider.connect.toast.connected.title": "{{provider}} je povezan",
   "provider.connect.toast.connected.description": "Modeli {{provider}} so zdaj na voljo za uporabo.",
@@ -484,12 +484,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Namestite distribucijo Linux iz kataloga WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL ni nameščen",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (podsistem Windows za Linux) je potreben, preden lahko OpenCode doda strežnik WSL",
+    "WSL (podsistem Windows za Linux) je potreben, preden lahko Miao doda strežnik WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL ni na voljo",
   "wsl.onboarding.wslUnavailable.description": "Miao ni mogel preveriti WSL na tej napravi.",
   "wsl.onboarding.installWsl": "Namestite WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Znova zaženite Windows, da dokončate namestitev WSL, nato znova odprite OpenCode.",
+    "Znova zaženite Windows, da dokončate namestitev WSL, nato znova odprite Miao.",
   "wsl.onboarding.next": "Naprej",
   "wsl.onboarding.refresh": "Osveži",
   "wsl.onboarding.allDistrosAdded": "Vse nameščene distribucije so že dodane.",
@@ -663,7 +663,7 @@ export const dict = {
   "error.chain.didYouMean": "Ste mislili: {{suggestions}}",
   "error.chain.modelNotFound": "Modela ni bilo mogoče najti: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Preverite imena ponudnikov/modelov konfiguracije (miao.json).",
-  "error.chain.mcpFailed": 'MCP strežnik "{{name}}" ni uspel. Opomba, OpenCode še ne podpira avtentikacije MCP.',
+  "error.chain.mcpFailed": 'MCP strežnik "{{name}}" ni uspel. Opomba, Miao še ne podpira avtentikacije MCP.',
   "error.chain.providerAuthFailed": "Preverjanje pristnosti ponudnika ni uspelo ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Inicializacija ponudnika "{{provider}}" ni uspela. Preverite poverilnice in konfiguracijo.',

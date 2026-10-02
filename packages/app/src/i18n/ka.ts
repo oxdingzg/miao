@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao დაინსტალირებულია, მაგრამ ვერ გაშვება",
   "desktop.wsl.error.miaoNotInstalled": "Miao არ არის დაინსტალირებული {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode განახლება დასრულდა, მაგრამ {{distro}} კვლავ იუწყება {{installed}}; მოსალოდნელია {{expected}}",
+    "Miao განახლება დასრულდა, მაგრამ {{distro}} კვლავ იუწყება {{installed}}; მოსალოდნელია {{expected}}",
   "desktop.wsl.error.noVersion": "ვერსიის გარეშე",
   "desktop.wsl.error.serverExited": "WSL სერვერი გავიდა გაშვების შემდეგ (კოდი={{code}} სიგნალი={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "ველოდები ავტორიზაციას...",
   "provider.connect.status.failed": "ავტორიზაცია ვერ მოხერხდა: {{error}}",
   "provider.connect.apiKey.description":
-    "შეიყვანეთ თქვენი {{provider}} API გასაღები თქვენი ანგარიშის დასაკავშირებლად და გამოიყენეთ {{provider}} მოდელები OpenCode-ში.",
+    "შეიყვანეთ თქვენი {{provider}} API გასაღები თქვენი ანგარიშის დასაკავშირებლად და გამოიყენეთ {{provider}} მოდელები Miao-ში.",
   "provider.connect.apiKey.label": "{{provider}} API გასაღები",
   "provider.connect.apiKey.placeholder": "API გასაღები",
   "provider.connect.apiKey.required": "API გასაღები საჭიროა",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ეწვიეთ ",
   "provider.connect.oauth.code.visit.link": "ეს ბმული",
   "provider.connect.oauth.code.visit.suffix":
-    " შეაგროვეთ თქვენი ავტორიზაციის კოდი თქვენი ანგარიშის დასაკავშირებლად და გამოიყენოთ {{provider}} მოდელები OpenCode-ში.",
+    " შეაგროვეთ თქვენი ავტორიზაციის კოდი თქვენი ანგარიშის დასაკავშირებლად და გამოიყენოთ {{provider}} მოდელები Miao-ში.",
   "provider.connect.oauth.code.label": "{{method}} ავტორიზაციის კოდი",
   "provider.connect.oauth.code.placeholder": "ავტორიზაციის კოდი",
   "provider.connect.oauth.code.required": "საჭიროა ავტორიზაციის კოდი",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "ეწვიეთ ",
   "provider.connect.oauth.auto.visit.link": "ეს ბმული",
   "provider.connect.oauth.auto.visit.suffix":
-    " და შეიყვანეთ ქვემოთ კოდი თქვენი ანგარიშის დასაკავშირებლად და გამოიყენეთ {{provider}} მოდელები OpenCode-ში.",
+    " და შეიყვანეთ ქვემოთ კოდი თქვენი ანგარიშის დასაკავშირებლად და გამოიყენეთ {{provider}} მოდელები Miao-ში.",
   "provider.connect.oauth.auto.confirmationCode": "დადასტურების კოდი",
   "provider.connect.toast.connected.title": "{{provider}} დაკავშირებული",
   "provider.connect.toast.connected.description": "{{provider}} მოდელები ახლა ხელმისაწვდომია გამოსაყენებლად.",
@@ -485,12 +485,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "დააინსტალირეთ Linux დისტრიბუცია WSL კატალოგიდან",
   "wsl.onboarding.wslNotInstalled.title": "WSL არ არის დაინსტალირებული",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows ქვესისტემა Linux-ისთვის) საჭიროა, სანამ OpenCode შეძლებს WSL სერვერის დამატებას",
+    "WSL (Windows ქვესისტემა Linux-ისთვის) საჭიროა, სანამ Miao შეძლებს WSL სერვერის დამატებას",
   "wsl.onboarding.wslUnavailable.title": "WSL მიუწვდომელია",
   "wsl.onboarding.wslUnavailable.description": "Miao ვერ დაადასტურა WSL ამ მოწყობილობაზე.",
   "wsl.onboarding.installWsl": "დააინსტალირეთ WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "გადატვირთეთ Windows WSL-ის ინსტალაციის დასასრულებლად, შემდეგ ხელახლა გახსენით OpenCode.",
+    "გადატვირთეთ Windows WSL-ის ინსტალაციის დასასრულებლად, შემდეგ ხელახლა გახსენით Miao.",
   "wsl.onboarding.next": "შემდეგი",
   "wsl.onboarding.refresh": "განახლება",
   "wsl.onboarding.allDistrosAdded": "ყველა დაინსტალირებული დისტრო უკვე დამატებულია.",
@@ -662,7 +662,7 @@ export const dict = {
   "error.chain.modelNotFound": "მოდელი ვერ მოიძებნა: {{provider}}/{{model}}",
   "error.chain.checkConfig": "შეამოწმეთ თქვენი კონფიგურაცია (miao.json) პროვაიდერის/მოდელების სახელები",
   "error.chain.mcpFailed":
-    'MCP სერვერი "{{name}}" ვერ მოხერხდა. შენიშვნა, OpenCode ჯერ არ უჭერს მხარს MCP ავთენტიფიკაციას.',
+    'MCP სერვერი "{{name}}" ვერ მოხერხდა. შენიშვნა, Miao ჯერ არ უჭერს მხარს MCP ავთენტიფიკაციას.',
   "error.chain.providerAuthFailed": "პროვაიდერის ავთენტიფიკაცია ვერ მოხერხდა ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "ვერ მოხერხდა პროვაიდერის „{{provider}}“ ინიციალიზაცია. შეამოწმეთ რწმუნებათა სიგელები და კონფიგურაცია.",

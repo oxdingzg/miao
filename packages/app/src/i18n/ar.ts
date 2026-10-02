@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao مثبت، لكن تعذر تشغيله",
   "desktop.wsl.error.miaoNotInstalled": "Miao غير مثبت في {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "اكتمل تحديث OpenCode، لكن {{distro}} ما زالت تعرض الإصدار {{installed}}؛ الإصدار المتوقع هو {{expected}}",
+    "اكتمل تحديث Miao، لكن {{distro}} ما زالت تعرض الإصدار {{installed}}؛ الإصدار المتوقع هو {{expected}}",
   "desktop.wsl.error.noVersion": "لا يوجد إصدار",
   "desktop.wsl.error.serverExited": "خرج خادم WSL بعد بدء التشغيل (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -227,7 +227,7 @@ export const dict = {
   "provider.connect.status.waiting": "في انتظار التفويض...",
   "provider.connect.status.failed": "فشل التفويض: {{error}}",
   "provider.connect.apiKey.description":
-    "أدخل مفتاح API الخاص بـ {{provider}} لتوصيل حسابك واستخدام نماذج {{provider}} في OpenCode.",
+    "أدخل مفتاح API الخاص بـ {{provider}} لتوصيل حسابك واستخدام نماذج {{provider}} في Miao.",
   "provider.connect.apiKey.label": "مفتاح API لـ {{provider}}",
   "provider.connect.apiKey.placeholder": "مفتاح API",
   "provider.connect.apiKey.required": "مفتاح API مطلوب",
@@ -241,7 +241,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "قم بزيارة ",
   "provider.connect.oauth.code.visit.link": "هذا الرابط",
   "provider.connect.oauth.code.visit.suffix":
-    " للحصول على رمز التفويض الخاص بك لتوصيل حسابك واستخدام نماذج {{provider}} في OpenCode.",
+    " للحصول على رمز التفويض الخاص بك لتوصيل حسابك واستخدام نماذج {{provider}} في Miao.",
   "provider.connect.oauth.code.label": "رمز تفويض {{method}}",
   "provider.connect.oauth.code.placeholder": "رمز التفويض",
   "provider.connect.oauth.code.required": "رمز التفويض مطلوب",
@@ -249,7 +249,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "قم بزيارة ",
   "provider.connect.oauth.auto.visit.link": "هذا الرابط",
   "provider.connect.oauth.auto.visit.suffix":
-    " وأدخل الرمز أدناه لتوصيل حسابك واستخدام نماذج {{provider}} في OpenCode.",
+    " وأدخل الرمز أدناه لتوصيل حسابك واستخدام نماذج {{provider}} في Miao.",
   "provider.connect.oauth.auto.confirmationCode": "رمز التأكيد",
   "provider.connect.toast.connected.title": "تم توصيل {{provider}}",
   "provider.connect.toast.connected.description": "نماذج {{provider}} متاحة الآن للاستخدام.",
@@ -485,7 +485,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "ثبّت توزيعة Linux من كتالوج WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL غير مثبت",
   "wsl.onboarding.wslNotInstalled.description":
-    "يلزم WSL (نظام Windows الفرعي لـ Linux) قبل أن يتمكن OpenCode من إضافة خادم WSL",
+    "يلزم WSL (نظام Windows الفرعي لـ Linux) قبل أن يتمكن Miao من إضافة خادم WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL غير متاح",
   "wsl.onboarding.wslUnavailable.description": "تعذر على Miao التحقق من WSL على هذا الجهاز.",
   "wsl.onboarding.installWsl": "تثبيت WSL",
@@ -650,7 +650,7 @@ export const dict = {
   "error.chain.didYouMean": "هل كنت تعني: {{suggestions}}",
   "error.chain.modelNotFound": "النموذج غير موجود: {{provider}}/{{model}}",
   "error.chain.checkConfig": "تحقق من أسماء الموفر/النموذج في التكوين (miao.json)",
-  "error.chain.mcpFailed": 'فشل خادم MCP "{{name}}". لاحظ أن OpenCode لا يدعم مصادقة MCP بعد.',
+  "error.chain.mcpFailed": 'فشل خادم MCP "{{name}}". لاحظ أن Miao لا يدعم مصادقة MCP بعد.',
   "error.chain.providerAuthFailed": "فشلت مصادقة الموفر ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'فشل تهيئة الموفر "{{provider}}". تحقق من بيانات الاعتماد والتكوين.',
   "error.chain.configJsonInvalid": "ملف التكوين في {{path}} ليس JSON(C) صالحًا",

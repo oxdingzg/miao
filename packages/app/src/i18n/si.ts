@@ -81,7 +81,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.miaoCannotRun": "miao ස්ථාපනය කර ඇති නමුත් ධාවනය කල නොහැක",
   "desktop.wsl.error.miaoNotInstalled": "Miao {{distro}} හි ස්ථාපනය කර නැත",
   "desktop.wsl.error.updateVersion":
-    "OpenCode යාවත්කාලීන කිරීම අවසන් නමුත් {{distro}} තවමත් වාර්තා කරන්නේ {{installed}}; අපේක්ෂිත {{expected}}",
+    "Miao යාවත්කාලීන කිරීම අවසන් නමුත් {{distro}} තවමත් වාර්තා කරන්නේ {{installed}}; අපේක්ෂිත {{expected}}",
   "desktop.wsl.error.noVersion": "අනුවාදයක් නැත",
   "desktop.wsl.error.serverExited": "WSL සේවාදායකය ආරම්භයෙන් පසු ඉවත් විය (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict: Record<string, string> = {
   "provider.connect.status.waiting": "අවසරය සඳහා රැඳී සිටිමින්...",
   "provider.connect.status.failed": "අවසරය අසාර්ථක විය: {{error}}",
   "provider.connect.apiKey.description":
-    "ඔබගේ ගිණුම සම්බන්ධ කිරීමට ඔබගේ {{provider}} API යතුර ඇතුලත් කරන්න සහ OpenCode හි {{provider}} මාදිලි භාවිතා කරන්න.",
+    "ඔබගේ ගිණුම සම්බන්ධ කිරීමට ඔබගේ {{provider}} API යතුර ඇතුලත් කරන්න සහ Miao හි {{provider}} මාදිලි භාවිතා කරන්න.",
   "provider.connect.apiKey.label": "{{provider}} API යතුර",
   "provider.connect.apiKey.placeholder": "API යතුර",
   "provider.connect.apiKey.required": "API යතුර අවශ්‍යයි",
@@ -234,7 +234,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.code.visit.prefix": "පිවිසෙන්න",
   "provider.connect.oauth.code.visit.link": "මෙම සබැඳිය",
   "provider.connect.oauth.code.visit.suffix":
-    "ඔබගේ ගිණුම සම්බන්ධ කිරීමට සහ OpenCode හි {{provider}} මාදිලි භාවිතා කිරීමට ඔබගේ අවසර කේතය එකතු කිරීමට.",
+    "ඔබගේ ගිණුම සම්බන්ධ කිරීමට සහ Miao හි {{provider}} මාදිලි භාවිතා කිරීමට ඔබගේ අවසර කේතය එකතු කිරීමට.",
   "provider.connect.oauth.code.label": "{{method}} අවසර කේතය",
   "provider.connect.oauth.code.placeholder": "අවසර කේතය",
   "provider.connect.oauth.code.required": "අවසර කේතය අවශ්ය වේ",
@@ -242,7 +242,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.auto.visit.prefix": "පිවිසෙන්න",
   "provider.connect.oauth.auto.visit.link": "මෙම සබැඳිය",
   "provider.connect.oauth.auto.visit.suffix":
-    "සහ ඔබගේ ගිණුම සම්බන්ධ කිරීමට පහත කේතය ඇතුළු කර {{provider}} මාදිලි OpenCode තුළ භාවිතා කරන්න.",
+    "සහ ඔබගේ ගිණුම සම්බන්ධ කිරීමට පහත කේතය ඇතුළු කර {{provider}} මාදිලි Miao තුළ භාවිතා කරන්න.",
   "provider.connect.oauth.auto.confirmationCode": "තහවුරු කිරීමේ කේතය",
   "provider.connect.toast.connected.title": "{{provider}} සම්බන්ධයි",
   "provider.connect.toast.connected.description": "{{provider}} මාදිලි දැන් භාවිතා කිරීමට තිබේ.",
@@ -484,12 +484,12 @@ export const dict: Record<string, string> = {
   "wsl.onboarding.needAnotherDistroHint": "WSL නාමාවලියෙන් Linux බෙදාහැරීමක් ස්ථාපනය කරන්න",
   "wsl.onboarding.wslNotInstalled.title": "WSL ස්ථාපනය කර නැත",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Linux සඳහා උප පද්ධතිය) OpenCode WSL සේවාදායකයක් එක් කිරීමට පෙර අවශ්‍ය වේ",
+    "WSL (Windows Linux සඳහා උප පද්ධතිය) Miao WSL සේවාදායකයක් එක් කිරීමට පෙර අවශ්‍ය වේ",
   "wsl.onboarding.wslUnavailable.title": "WSL නොමැත",
   "wsl.onboarding.wslUnavailable.description": "Miao හට මෙම යන්ත්‍රයේ WSL සත්‍යාපනය කළ නොහැක.",
   "wsl.onboarding.installWsl": "WSL ස්ථාපනය කරන්න",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL ස්ථාපනය අවසන් කිරීමට Windows නැවත අරඹන්න, පසුව OpenCode නැවත විවෘත කරන්න.",
+    "WSL ස්ථාපනය අවසන් කිරීමට Windows නැවත අරඹන්න, පසුව Miao නැවත විවෘත කරන්න.",
   "wsl.onboarding.next": "ඊළඟ",
   "wsl.onboarding.refresh": "නැවුම් කරන්න",
   "wsl.onboarding.allDistrosAdded": "ස්ථාපිත සියලුම බෙදාහැරීම් දැනටමත් එකතු කර ඇත.",
@@ -660,7 +660,7 @@ export const dict: Record<string, string> = {
   "error.chain.didYouMean": "ඔබ අදහස් කළේ: {{suggestions}}",
   "error.chain.modelNotFound": "ආකෘතිය හමු නොවීය: {{provider}}/{{model}}",
   "error.chain.checkConfig": "ඔබගේ වින්‍යාසය (miao.json) සපයන්නා/ආදර්ශ නම් පරීක්ෂා කරන්න",
-  "error.chain.mcpFailed": 'MCP සේවාදායකය "{{name}}" අසාර්ථක විය. සටහන, OpenCode තවමත් MCP සත්‍යාපනයට සහය නොදක්වයි.',
+  "error.chain.mcpFailed": 'MCP සේවාදායකය "{{name}}" අසාර්ථක විය. සටහන, Miao තවමත් MCP සත්‍යාපනයට සහය නොදක්වයි.',
   "error.chain.providerAuthFailed": "සැපයුම්කරු සත්‍යාපනය අසාර්ථක විය ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" සපයන්නා ආරම්භ කිරීමට අසමත් විය. අක්තපත්ර සහ වින්යාසය පරීක්ෂා කරන්න.',

@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miaoはインストールされていますが、実行できませんでした",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}}にはMiaoがインストールされていません",
   "desktop.wsl.error.updateVersion":
-    "OpenCodeのアップデートは完了しましたが、{{distro}}から報告されたバージョンはまだ{{installed}}です。想定されるバージョンは{{expected}}です",
+    "Miaoのアップデートは完了しましたが、{{distro}}から報告されたバージョンはまだ{{installed}}です。想定されるバージョンは{{expected}}です",
   "desktop.wsl.error.noVersion": "バージョンなし",
   "desktop.wsl.error.serverExited": "WSLサーバーが起動後に終了しました (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -227,7 +227,7 @@ export const dict = {
   "provider.connect.status.waiting": "認証を待機中...",
   "provider.connect.status.failed": "認証に失敗しました: {{error}}",
   "provider.connect.apiKey.description":
-    "{{provider}}のAPIキーを入力してアカウントを接続し、OpenCodeで{{provider}}モデルを使用します。",
+    "{{provider}}のAPIキーを入力してアカウントを接続し、Miaoで{{provider}}モデルを使用します。",
   "provider.connect.apiKey.label": "{{provider}} APIキー",
   "provider.connect.apiKey.placeholder": "APIキー",
   "provider.connect.apiKey.required": "APIキーが必要です",
@@ -240,7 +240,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": " ",
   "provider.connect.oauth.code.visit.link": "このリンク",
   "provider.connect.oauth.code.visit.suffix":
-    " にアクセスして認証コードを取得し、アカウントを接続してOpenCodeで{{provider}}モデルを使用してください。",
+    " にアクセスして認証コードを取得し、アカウントを接続してMiaoで{{provider}}モデルを使用してください。",
   "provider.connect.oauth.code.label": "{{method}} 認証コード",
   "provider.connect.oauth.code.placeholder": "認証コード",
   "provider.connect.oauth.code.required": "認証コードが必要です",
@@ -248,7 +248,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": " ",
   "provider.connect.oauth.auto.visit.link": "このリンク",
   "provider.connect.oauth.auto.visit.suffix":
-    " にアクセスし、以下のコードを入力してアカウントを接続し、OpenCodeで{{provider}}モデルを使用してください。",
+    " にアクセスし、以下のコードを入力してアカウントを接続し、Miaoで{{provider}}モデルを使用してください。",
   "provider.connect.oauth.auto.confirmationCode": "確認コード",
   "provider.connect.toast.connected.title": "{{provider}}が接続されました",
   "provider.connect.toast.connected.description": "{{provider}}モデルが使用可能になりました。",
@@ -484,12 +484,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSLカタログからLinuxディストリビューションをインストール",
   "wsl.onboarding.wslNotInstalled.title": "WSLがインストールされていません",
   "wsl.onboarding.wslNotInstalled.description":
-    "OpenCodeでWSLサーバーを追加するには、WSL (Windows Subsystem for Linux) が必要です",
+    "MiaoでWSLサーバーを追加するには、WSL (Windows Subsystem for Linux) が必要です",
   "wsl.onboarding.wslUnavailable.title": "WSLを利用できません",
   "wsl.onboarding.wslUnavailable.description": "このマシンのWSLを確認できませんでした。",
   "wsl.onboarding.installWsl": "WSLをインストール",
   "wsl.onboarding.windowsRestartRequired":
-    "WSLのインストールを完了するにはWindowsを再起動し、OpenCodeをもう一度開いてください。",
+    "WSLのインストールを完了するにはWindowsを再起動し、Miaoをもう一度開いてください。",
   "wsl.onboarding.next": "次へ",
   "wsl.onboarding.refresh": "更新",
   "wsl.onboarding.allDistrosAdded": "インストール済みのディストリビューションはすべて追加済みです。",
@@ -652,7 +652,7 @@ export const dict = {
   "error.chain.didYouMean": "もしかして: {{suggestions}}",
   "error.chain.modelNotFound": "モデルが見つかりません: {{provider}}/{{model}}",
   "error.chain.checkConfig": "config (miao.json) のプロバイダー/モデル名を確認してください",
-  "error.chain.mcpFailed": 'MCPサーバー "{{name}}" が失敗しました。注意: OpenCodeはまだMCP認証をサポートしていません。',
+  "error.chain.mcpFailed": 'MCPサーバー "{{name}}" が失敗しました。注意: MiaoはまだMCP認証をサポートしていません。',
   "error.chain.providerAuthFailed": "プロバイダー認証に失敗しました ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'プロバイダー "{{provider}}" の初期化に失敗しました。認証情報と設定を確認してください。',

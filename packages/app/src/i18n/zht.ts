@@ -89,7 +89,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "已安裝 miao，但無法執行",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}} 中未安裝 Miao",
   "desktop.wsl.error.updateVersion":
-    "OpenCode 更新完成，但 {{distro}} 回報的版本仍為 {{installed}}；預期版本為 {{expected}}",
+    "Miao 更新完成，但 {{distro}} 回報的版本仍為 {{installed}}；預期版本為 {{expected}}",
   "desktop.wsl.error.noVersion": "無版本資訊",
   "desktop.wsl.error.serverExited": "WSL 伺服器在啟動後結束 (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.status.waiting": "等待授權...",
   "provider.connect.status.failed": "授權失敗: {{error}}",
   "provider.connect.apiKey.description":
-    "輸入你的 {{provider}} API 金鑰以連線帳戶，並在 OpenCode 中使用 {{provider}} 模型。",
+    "輸入你的 {{provider}} API 金鑰以連線帳戶，並在 Miao 中使用 {{provider}} 模型。",
   "provider.connect.apiKey.label": "{{provider}} API 金鑰",
   "provider.connect.apiKey.placeholder": "API 金鑰",
   "provider.connect.apiKey.required": "API 金鑰為必填",
@@ -262,7 +262,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "造訪 ",
   "provider.connect.oauth.auto.visit.link": "此連結",
   "provider.connect.oauth.auto.visit.suffix":
-    " 並輸入以下程式碼，以連線你的帳戶並在 OpenCode 中使用 {{provider}} 模型。",
+    " 並輸入以下程式碼，以連線你的帳戶並在 Miao 中使用 {{provider}} 模型。",
   "provider.connect.oauth.auto.confirmationCode": "確認碼",
   "provider.connect.toast.connected.title": "{{provider}} 已連線",
   "provider.connect.toast.connected.description": "現在可以使用 {{provider}} 模型了。",

@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao ຖືກຕິດຕັ້ງແຕ່ບໍ່ສາມາດດໍາເນີນການໄດ້",
   "desktop.wsl.error.miaoNotInstalled": "Miao ບໍ່ໄດ້ຕິດຕັ້ງຢູ່ໃນ {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "ການປັບປຸງ OpenCode ສໍາເລັດແລ້ວແຕ່ {{distro}} ຍັງລາຍງານ {{installed}}; ຄາດວ່າ {{expected}}",
+    "ການປັບປຸງ Miao ສໍາເລັດແລ້ວແຕ່ {{distro}} ຍັງລາຍງານ {{installed}}; ຄາດວ່າ {{expected}}",
   "desktop.wsl.error.noVersion": "ບໍ່ມີສະບັບ",
   "desktop.wsl.error.serverExited": "ເຊີບເວີ WSL ອອກຈາກການເລີ່ມຕົ້ນ (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "ລໍຖ້າການອະນຸຍາດ...",
   "provider.connect.status.failed": "ການອະນຸຍາດລົ້ມເຫລວ: {{error}}",
   "provider.connect.apiKey.description":
-    "ໃສ່ລະຫັດ API {{provider}} ຂອງທ່ານເພື່ອເຊື່ອມຕໍ່ບັນຊີຂອງທ່ານ ແລະໃຊ້ຕົວແບບ {{provider}} ໃນ OpenCode.",
+    "ໃສ່ລະຫັດ API {{provider}} ຂອງທ່ານເພື່ອເຊື່ອມຕໍ່ບັນຊີຂອງທ່ານ ແລະໃຊ້ຕົວແບບ {{provider}} ໃນ Miao.",
   "provider.connect.apiKey.label": "ລະຫັດ API {{provider}}",
   "provider.connect.apiKey.placeholder": "ລະຫັດ API",
   "provider.connect.apiKey.required": "ຕ້ອງການລະຫັດ API",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ຢ້ຽມຢາມ",
   "provider.connect.oauth.code.visit.link": "ລິ້ງນີ້",
   "provider.connect.oauth.code.visit.suffix":
-    "ເພື່ອເກັບກຳລະຫັດການອະນຸຍາດຂອງທ່ານເພື່ອເຊື່ອມຕໍ່ບັນຊີຂອງທ່ານ ແລະໃຊ້ຕົວແບບ {{provider}} ໃນ OpenCode.",
+    "ເພື່ອເກັບກຳລະຫັດການອະນຸຍາດຂອງທ່ານເພື່ອເຊື່ອມຕໍ່ບັນຊີຂອງທ່ານ ແລະໃຊ້ຕົວແບບ {{provider}} ໃນ Miao.",
   "provider.connect.oauth.code.label": "ລະຫັດການອະນຸຍາດ {{method}}",
   "provider.connect.oauth.code.placeholder": "ລະຫັດການອະນຸຍາດ",
   "provider.connect.oauth.code.required": "ຕ້ອງການລະຫັດການອະນຸຍາດ",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "ຢ້ຽມຢາມ",
   "provider.connect.oauth.auto.visit.link": "ລິ້ງນີ້",
   "provider.connect.oauth.auto.visit.suffix":
-    "ແລະໃສ່ລະຫັດຂ້າງລຸ່ມນີ້ເພື່ອເຊື່ອມຕໍ່ບັນຊີຂອງທ່ານ ແລະໃຊ້ຕົວແບບ {{provider}} ໃນ OpenCode.",
+    "ແລະໃສ່ລະຫັດຂ້າງລຸ່ມນີ້ເພື່ອເຊື່ອມຕໍ່ບັນຊີຂອງທ່ານ ແລະໃຊ້ຕົວແບບ {{provider}} ໃນ Miao.",
   "provider.connect.oauth.auto.confirmationCode": "ລະຫັດຢືນຢັນ",
   "provider.connect.toast.connected.title": "{{provider}} ເຊື່ອມຕໍ່",
   "provider.connect.toast.connected.description": "ລຸ້ນ {{provider}} ມີໃຫ້ນຳໃຊ້ແລ້ວ.",
@@ -484,7 +484,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "ຕິດຕັ້ງການແຈກຢາຍ Linux ຈາກລາຍການ WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL ບໍ່ໄດ້ຕິດຕັ້ງ",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (ລະບົບຍ່ອຍຂອງ Windows ສໍາລັບ Linux) ກ່ອນທີ່ OpenCode ສາມາດເພີ່ມເຄື່ອງແມ່ຂ່າຍ WSL ໄດ້",
+    "WSL (ລະບົບຍ່ອຍຂອງ Windows ສໍາລັບ Linux) ກ່ອນທີ່ Miao ສາມາດເພີ່ມເຄື່ອງແມ່ຂ່າຍ WSL ໄດ້",
   "wsl.onboarding.wslUnavailable.title": "WSL ບໍ່ສາມາດໃຊ້ໄດ້",
   "wsl.onboarding.wslUnavailable.description": "Miao ບໍ່ສາມາດກວດສອບ WSL ໃນເຄື່ອງນີ້ໄດ້.",
   "wsl.onboarding.installWsl": "ຕິດຕັ້ງ WSL",
@@ -658,7 +658,7 @@ export const dict = {
   "error.chain.didYouMean": "ເຈົ້າຫມາຍຄວາມວ່າ: {{suggestions}}",
   "error.chain.modelNotFound": "ບໍ່ພົບໂມເດວ: {{provider}}/{{model}}",
   "error.chain.checkConfig": "ກວດເບິ່ງການຕັ້ງຄ່າ (miao.json) ຜູ້ໃຫ້ບໍລິການ/ຊື່ແບບຈໍາລອງຂອງທ່ານ",
-  "error.chain.mcpFailed": 'ເຊີບເວີ MCP "{{name}}" ລົ້ມເຫລວ. ໝາຍເຫດ, OpenCode ບໍ່ຮອງຮັບການພິສູດຢືນຢັນ MCP ເທື່ອ.',
+  "error.chain.mcpFailed": 'ເຊີບເວີ MCP "{{name}}" ລົ້ມເຫລວ. ໝາຍເຫດ, Miao ບໍ່ຮອງຮັບການພິສູດຢືນຢັນ MCP ເທື່ອ.',
   "error.chain.providerAuthFailed": "ການພິສູດຢືນຢັນຜູ້ໃຫ້ບໍລິການລົ້ມເຫລວ ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'ລົ້ມເຫລວໃນການເລີ່ມຕົ້ນຜູ້ໃຫ້ບໍລິການ "{{provider}}". ກວດເບິ່ງຂໍ້ມູນປະຈໍາຕົວແລະການຕັ້ງຄ່າ.',

@@ -82,7 +82,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.miaoCannotRun": "miao ইনস্টল করা আছে কিন্তু চালানো যায়নি",
   "desktop.wsl.error.miaoNotInstalled": "Miao {{distro}} এ ইনস্টল করা নেই",
   "desktop.wsl.error.updateVersion":
-    "OpenCode আপডেট শেষ হয়েছে কিন্তু {{distro}} এখনও রিপোর্ট করে {{installed}}; প্রত্যাশিত {{expected}}",
+    "Miao আপডেট শেষ হয়েছে কিন্তু {{distro}} এখনও রিপোর্ট করে {{installed}}; প্রত্যাশিত {{expected}}",
   "desktop.wsl.error.noVersion": "কোন সংস্করণ নেই",
   "desktop.wsl.error.serverExited": "WSL সার্ভার স্টার্টআপের পরে প্রস্থান হয়েছে (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict: Record<string, string> = {
   "provider.connect.status.waiting": "অনুমোদনের জন্য অপেক্ষা করা হচ্ছে...",
   "provider.connect.status.failed": "অনুমোদন ব্যর্থ হয়েছে: {{error}}",
   "provider.connect.apiKey.description":
-    "আপনার অ্যাকাউন্ট সংযোগ করতে আপনার {{provider}} API কী লিখুন এবং OpenCode-এ {{provider}} মডেলগুলি ব্যবহার করুন৷",
+    "আপনার অ্যাকাউন্ট সংযোগ করতে আপনার {{provider}} API কী লিখুন এবং Miao-এ {{provider}} মডেলগুলি ব্যবহার করুন৷",
   "provider.connect.apiKey.label": "{{provider}} API কী",
   "provider.connect.apiKey.placeholder": "API কী",
   "provider.connect.apiKey.required": "API কী প্রয়োজন",
@@ -235,7 +235,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.code.visit.prefix": "ভিজিট করুন",
   "provider.connect.oauth.code.visit.link": "এই লিঙ্ক",
   "provider.connect.oauth.code.visit.suffix":
-    "আপনার অ্যাকাউন্ট সংযোগ করতে আপনার অনুমোদন কোড সংগ্রহ করতে এবং {{provider}} মডেলগুলি OpenCode-এ ব্যবহার করতে।",
+    "আপনার অ্যাকাউন্ট সংযোগ করতে আপনার অনুমোদন কোড সংগ্রহ করতে এবং {{provider}} মডেলগুলি Miao-এ ব্যবহার করতে।",
   "provider.connect.oauth.code.label": "{{method}} অনুমোদন কোড",
   "provider.connect.oauth.code.placeholder": "অনুমোদন কোড",
   "provider.connect.oauth.code.required": "অনুমোদন কোড প্রয়োজন",
@@ -243,7 +243,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.auto.visit.prefix": "ভিজিট করুন",
   "provider.connect.oauth.auto.visit.link": "এই লিঙ্ক",
   "provider.connect.oauth.auto.visit.suffix":
-    "এবং আপনার অ্যাকাউন্ট সংযোগ করতে নীচের কোডটি লিখুন এবং {{provider}} মডেলগুলি OpenCode-এ ব্যবহার করুন৷",
+    "এবং আপনার অ্যাকাউন্ট সংযোগ করতে নীচের কোডটি লিখুন এবং {{provider}} মডেলগুলি Miao-এ ব্যবহার করুন৷",
   "provider.connect.oauth.auto.confirmationCode": "নিশ্চিতকরণ কোড",
   "provider.connect.toast.connected.title": "{{provider}} সংযুক্ত",
   "provider.connect.toast.connected.description": "{{provider}} মডেলগুলি এখন ব্যবহারের জন্য উপলব্ধ৷",
@@ -485,12 +485,12 @@ export const dict: Record<string, string> = {
   "wsl.onboarding.needAnotherDistroHint": "WSL ক্যাটালগ থেকে একটি Linux বিতরণ ইনস্টল করুন",
   "wsl.onboarding.wslNotInstalled.title": "WSL ইনস্টল করা হয়নি",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Linux এর জন্য Windows সাবসিস্টেম) OpenCode একটি WSL সার্ভার যোগ করার আগে প্রয়োজন",
+    "WSL (Linux এর জন্য Windows সাবসিস্টেম) Miao একটি WSL সার্ভার যোগ করার আগে প্রয়োজন",
   "wsl.onboarding.wslUnavailable.title": "WSL অনুপলব্ধ",
   "wsl.onboarding.wslUnavailable.description": "Miao এই মেশিনে WSL যাচাই করতে পারেনি।",
   "wsl.onboarding.installWsl": "WSL ইনস্টল করুন",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL ইনস্টল করা শেষ করতে Windows পুনরায় চালু করুন, তারপর OpenCode আবার খুলুন।",
+    "WSL ইনস্টল করা শেষ করতে Windows পুনরায় চালু করুন, তারপর Miao আবার খুলুন।",
   "wsl.onboarding.next": "পরবর্তী",
   "wsl.onboarding.refresh": "রিফ্রেশ",
   "wsl.onboarding.allDistrosAdded": "সমস্ত ইনস্টল করা ডিস্ট্রো ইতিমধ্যেই যোগ করা হয়েছে।",
@@ -662,7 +662,7 @@ export const dict: Record<string, string> = {
   "error.chain.modelNotFound": "মডেল পাওয়া যায়নি: {{provider}}/{{model}}",
   "error.chain.checkConfig": "আপনার কনফিগারেশন (miao.json) প্রদানকারী/মডেলের নাম পরীক্ষা করুন",
   "error.chain.mcpFailed":
-    'MCP সার্ভার "{{name}}" ব্যর্থ হয়েছে৷ মনে রাখবেন, OpenCode এখনও MCP প্রমাণীকরণ সমর্থন করে না।',
+    'MCP সার্ভার "{{name}}" ব্যর্থ হয়েছে৷ মনে রাখবেন, Miao এখনও MCP প্রমাণীকরণ সমর্থন করে না।',
   "error.chain.providerAuthFailed": "প্রদানকারীর প্রমাণীকরণ ব্যর্থ হয়েছে ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" প্রদানকারী শুরু করতে ব্যর্থ হয়েছে৷ শংসাপত্র এবং কনফিগারেশন চেক করুন.',

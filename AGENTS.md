@@ -157,6 +157,11 @@ const table = sqliteTable("session", {
 
 - Always run `bun typecheck` from package directories (e.g., `packages/miao`), never `tsc` directly.
 
+## Build offloading
+
+- Do not run heavy native/Rust compilation on the workstation. Offload Cargo builds and tests (`cargo build`, `cargo test`, `cargo clippy`, `cargo bench`) and other CPU-heavy compile steps to a build host over SSH, then copy the artifacts back.
+- The build-host list and SSH details live in the private global instructions at `~/.config/miao/AGENTS.md`. Keep host aliases, users, and addresses out of this public repository and its docs.
+
 ## Version source
 
 - Root `package.json` is the single source of the miao version.

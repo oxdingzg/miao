@@ -14,7 +14,6 @@ import { ConfigProviderOptionsV1 } from "../../v1/config/provider-options"
 import { ConfigV1 } from "../../v1/config/config"
 
 const defaultServer = "https://opencode.ai/console"
-const clientID = "opencode-cli"
 const methodID = Integration.MethodID.make("device")
 const RemoteResponse = Schema.Struct({ config: ConfigV1.Info })
 const Device = Schema.Struct({
@@ -34,7 +33,8 @@ const DeviceToken = Schema.Union([Token, TokenPending])
 const User = Schema.Struct({ id: Schema.String, email: Schema.String })
 const Org = Schema.Struct({ id: Schema.String, name: Schema.String })
 
-function oauth(http: HttpClient.HttpClient) {
+function oauth(http: HttpClient.HttpClient, server: string) {
+  const clientID = process.env.MIAO_CONSOLE_CLIENT_ID || "opencode-cli"
   return {
     integrationID: Integration.ID.make("opencode"),
     method: {
@@ -44,10 +44,10 @@ function oauth(http: HttpClient.HttpClient) {
     },
     authorize: () =>
       Effect.gen(function* () {
-        const device = yield* post(http, `${defaultServer}/auth/device/code`, { client_id: clientID }, Device)
+        const device = yield* post(http, `${server}/auth/device/code`, { client_id: clientID }, Device)
         const verification = yield* Effect.try({
           try: () => {
-            const url = new URL(device.verification_uri_complete, `${defaultServer}/`)
+            const url = new URL(device.verification_uri_complete, `${server}/`)
             if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("expected HTTP(S)")
             return url
           },
@@ -58,7 +58,7 @@ function oauth(http: HttpClient.HttpClient) {
           mode: "auto" as const,
           url: verification.href,
           instructions: `Enter code: ${device.user_code}`,
-          callback: poll(http, defaultServer, device.device_code, Duration.seconds(device.interval)),
+          callback: poll(http, server, device.device_code, Duration.seconds(device.interval), clientID),
         }
       }),
     refresh: (credential) =>
@@ -88,6 +88,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
   effect: Effect.fn(function* (ctx) {
     const events = yield* EventV2.Service
     const http = yield* HttpClient.HttpClient
+    const consoleServer = process.env.MIAO_CONSOLE_URL
     const loading = Semaphore.makeUnsafe(1)
     let connected = false
     let providers: typeof ConfigV1.Info.Type.provider | undefined
@@ -98,7 +99,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
         ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
         : undefined
       connected = connection !== undefined
-      providers = credential
+      providers = credential && consoleServer
         ? yield* fetchProviders(http, credential).pipe(
             Effect.catch((cause) =>
               Effect.logWarning("failed to load OpenCode provider config", { cause }).pipe(Effect.as(undefined)),
@@ -111,7 +112,8 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
       draft.update("opencode", (integration) => {
         integration.name = "OpenCode"
       })
-      draft.method.update(oauth(http))
+      // Console OAuth is an optional integration, never a default miao login.
+      if (consoleServer) draft.method.update(oauth(http, consoleServer))
       draft.method.update({ integrationID: "opencode", method: { type: "key", label: "API key (service account)" } })
     })
 
@@ -173,7 +175,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
 
       const item = catalog.provider.get(ProviderV2.ID.opencode)
       if (!item) return
-      const hasKey = Boolean(process.env.MIAO_API_KEY || connected || item.provider.request.body.apiKey)
+      const hasKey = Boolean(process.env.OPENCODE_API_KEY || process.env.MIAO_API_KEY || connected || item.provider.request.body.apiKey)
       // OpenCode's free tier serves only the official OpenCode client and answers
       // miao with a FreeTierError, so free models are never offered; paid models
       // need a key.
@@ -244,7 +246,7 @@ function remoteCost(input: NonNullable<(typeof ConfigProviderV1.Model.Type)["cos
   ]
 }
 
-function poll(http: HttpClient.HttpClient, server: string, deviceCode: string, interval: Duration.Duration) {
+function poll(http: HttpClient.HttpClient, server: string, deviceCode: string, interval: Duration.Duration, clientID: string) {
   const loop = (wait: Duration.Duration): Effect.Effect<Credential.OAuth, unknown> =>
     Effect.gen(function* () {
       yield* Effect.sleep(wait)

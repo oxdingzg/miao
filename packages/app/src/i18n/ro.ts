@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao este instalat, dar nu a putut fi pornit",
   "desktop.wsl.error.miaoNotInstalled": "Miao nu este instalat în {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Actualizarea OpenCode s-a terminat, dar {{distro}} raportează tot {{installed}}; era așteptat {{expected}}",
+    "Actualizarea Miao s-a terminat, dar {{distro}} raportează tot {{installed}}; era așteptat {{expected}}",
   "desktop.wsl.error.noVersion": "nicio versiune",
   "desktop.wsl.error.serverExited": "Serverul WSL s-a oprit după pornire (cod={{code}} semnal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Se așteaptă autorizarea...",
   "provider.connect.status.failed": "Autorizare eșuată: {{error}}",
   "provider.connect.apiKey.description":
-    "Introdu cheia API {{provider}} pentru a-ți conecta contul și a folosi modelele {{provider}} în OpenCode.",
+    "Introdu cheia API {{provider}} pentru a-ți conecta contul și a folosi modelele {{provider}} în Miao.",
   "provider.connect.apiKey.label": "Cheie API {{provider}}",
   "provider.connect.apiKey.placeholder": "Cheie API",
   "provider.connect.apiKey.required": "Cheia API este obligatorie",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Vizitează",
   "provider.connect.oauth.code.visit.link": "acest link",
   "provider.connect.oauth.code.visit.suffix":
-    " pentru a obține codul de autorizare și a-ți conecta contul ca să folosești modelele {{provider}} în OpenCode.",
+    " pentru a obține codul de autorizare și a-ți conecta contul ca să folosești modelele {{provider}} în Miao.",
   "provider.connect.oauth.code.label": "Cod de autorizare {{method}}",
   "provider.connect.oauth.code.placeholder": "Cod de autorizare",
   "provider.connect.oauth.code.required": "Codul de autorizare este obligatoriu",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Vizitează",
   "provider.connect.oauth.auto.visit.link": "acest link",
   "provider.connect.oauth.auto.visit.suffix":
-    " și introdu codul de mai jos pentru a-ți conecta contul și a folosi modelele {{provider}} în OpenCode.",
+    " și introdu codul de mai jos pentru a-ți conecta contul și a folosi modelele {{provider}} în Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Cod de confirmare",
   "provider.connect.toast.connected.title": "{{provider}} conectat",
   "provider.connect.toast.connected.description": "Modelele {{provider}} sunt acum disponibile.",
@@ -484,12 +484,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Instalează o distribuție Linux din catalogul WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL nu este instalat",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Subsistemul Windows pentru Linux) este necesar înainte ca OpenCode să poată adăuga un server WSL",
+    "WSL (Subsistemul Windows pentru Linux) este necesar înainte ca Miao să poată adăuga un server WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL indisponibil",
   "wsl.onboarding.wslUnavailable.description": "Miao nu a putut verifica WSL pe acest calculator.",
   "wsl.onboarding.installWsl": "Instalează WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Repornește Windows pentru a finaliza instalarea WSL, apoi redeschide OpenCode.",
+    "Repornește Windows pentru a finaliza instalarea WSL, apoi redeschide Miao.",
   "wsl.onboarding.next": "Următorul",
   "wsl.onboarding.refresh": "Reîmprospătează",
   "wsl.onboarding.allDistrosAdded": "Toate distro-urile instalate sunt deja adăugate.",
@@ -661,7 +661,7 @@ export const dict = {
   "error.chain.didYouMean": "Ai vrut să scrii: {{suggestions}}",
   "error.chain.modelNotFound": "Modelul nu a fost găsit: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Verifică numele provider/model în config (miao.json)",
-  "error.chain.mcpFailed": 'Serverul MCP "{{name}}" a eșuat. Atenție, OpenCode nu suportă încă autentificarea MCP.',
+  "error.chain.mcpFailed": 'Serverul MCP "{{name}}" a eșuat. Atenție, Miao nu suportă încă autentificarea MCP.',
   "error.chain.providerAuthFailed": "Autentificarea providerului a eșuat ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Nu s-a putut inițializa providerul "{{provider}}". Verifică datele de autentificare și configurația.',

@@ -194,11 +194,21 @@ Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for
 
 ## Related projects
 
-| Project                    | What it is                                                                                                                         | Links                                                                                                                           |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **miao** (this repository) | AI coding agent for the terminal                                                                                                   | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
-| **mtty**                   | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term)                            |
-| **mtty.dev**               | The website and documentation for both                                                                                             | [mtty.dev](https://mtty.dev)                                                                                                    |
+### Local defaults and optional services
+
+miao runs locally without a miao or OpenCode account. Connect your chosen model provider directly with its API key or supported OAuth method.
+
+- Model metadata comes from the public [models.dev](https://models.dev) catalog; builds bundle a snapshot for offline startup. Override it with `MIAO_MODELS_URL` or `MIAO_MODELS_PATH`.
+- Release notes and updates come from [oxdingzg/miao releases](https://github.com/oxdingzg/miao/releases).
+- Sharing has no default backend. Configure `enterprise.url` in `miao.json` to enable a compatible server; shared conversation content is sent only to that configured server.
+- Console accounts are optional external integrations. `miao console login <url>` requires an explicit server URL. To enable remote organization configuration and expose Console OAuth in V2 provider integrations, set `MIAO_CONSOLE_URL`; a custom server can specify `MIAO_CONSOLE_CLIENT_ID`.
+- OpenCode Zen / Go remain optional third-party model providers, with their actual OpenCode service names and endpoints.
+
+| Project | What it is | Links |
+|---|---|---|
+| **miao** (this repository) | AI coding agent for the terminal | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **mtty** | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term) |
+| **mtty.dev** | The website and documentation for both | [mtty.dev](https://mtty.dev) |
 
 miao and mtty are separate projects, and each works without the other. Run miao inside an mtty pane and it reports its state (working, waiting for you, done, error) to mtty, which badges the pane, notifies you when the agent needs you, and sends your queued prompt when it goes idle. Outside mtty the report does nothing. `miaotty` was a personal macOS prototype of that terminal and has been replaced by mtty.
 

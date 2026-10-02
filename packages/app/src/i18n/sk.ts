@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao je nainštalovaný, ale nedá sa spustiť",
   "desktop.wsl.error.miaoNotInstalled": "Miao nie je nainštalovaný v {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Aktualizácia OpenCode bola dokončená, ale {{distro}} stále hlási {{installed}}; očakávané {{expected}}",
+    "Aktualizácia Miao bola dokončená, ale {{distro}} stále hlási {{installed}}; očakávané {{expected}}",
   "desktop.wsl.error.noVersion": "žiadna verzia",
   "desktop.wsl.error.serverExited": "WSL server sa ukončil po spustení (kód={{code}} signál={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Čaká sa na autorizáciu...",
   "provider.connect.status.failed": "Autorizácia zlyhala: {{error}}",
   "provider.connect.apiKey.description":
-    "Zadajte svoj API kľúč {{provider}}, aby ste prepojili svoj účet a mohli používať modely {{provider}} v OpenCode.",
+    "Zadajte svoj API kľúč {{provider}}, aby ste prepojili svoj účet a mohli používať modely {{provider}} v Miao.",
   "provider.connect.apiKey.label": "API kľúč {{provider}}",
   "provider.connect.apiKey.placeholder": "API kľúč",
   "provider.connect.apiKey.required": "API kľúč je povinný",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Navštívte",
   "provider.connect.oauth.code.visit.link": "tento odkaz",
   "provider.connect.oauth.code.visit.suffix":
-    " a získajte svoj autorizačný kód na prepojenie účtu a používanie modelov {{provider}} v OpenCode.",
+    " a získajte svoj autorizačný kód na prepojenie účtu a používanie modelov {{provider}} v Miao.",
   "provider.connect.oauth.code.label": "Autorizačný kód {{method}}",
   "provider.connect.oauth.code.placeholder": "Autorizačný kód",
   "provider.connect.oauth.code.required": "Autorizačný kód je povinný",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Navštívte",
   "provider.connect.oauth.auto.visit.link": "tento odkaz",
   "provider.connect.oauth.auto.visit.suffix":
-    " a zadajte nižšie uvedený kód na prepojenie účtu a používanie modelov {{provider}} v OpenCode.",
+    " a zadajte nižšie uvedený kód na prepojenie účtu a používanie modelov {{provider}} v Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Potvrdzovací kód",
   "provider.connect.toast.connected.title": "{{provider}} pripojený",
   "provider.connect.toast.connected.description": "Modely {{provider}} sú teraz dostupné na použitie.",
@@ -484,12 +484,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Nainštalujte linuxovú distribúciu z katalógu WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL nie je nainštalovaný",
   "wsl.onboarding.wslNotInstalled.description":
-    "Pred pridaním WSL servera cez OpenCode je potrebné mať nainštalovaný WSL (Windows Subsystem for Linux).",
+    "Pred pridaním WSL servera cez Miao je potrebné mať nainštalovaný WSL (Windows Subsystem for Linux).",
   "wsl.onboarding.wslUnavailable.title": "WSL nie je dostupný",
   "wsl.onboarding.wslUnavailable.description": "Miao nemohol overiť WSL na tomto zariadení.",
   "wsl.onboarding.installWsl": "Nainštalovať WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Reštartujte Windows, aby ste dokončili inštaláciu WSL, potom znova otvorte OpenCode.",
+    "Reštartujte Windows, aby ste dokončili inštaláciu WSL, potom znova otvorte Miao.",
   "wsl.onboarding.next": "Ďalej",
   "wsl.onboarding.refresh": "Obnoviť",
   "wsl.onboarding.allDistrosAdded": "Všetky nainštalované distribúcie sú už pridané.",
@@ -936,7 +936,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Prispôsobte vzhľad Miao na svojom zariadení",
   "settings.general.row.colorScheme.title": "Farebná schéma",
   "settings.general.row.colorScheme.description":
-    "Vyberte, či má OpenCode nasledovať systémovú, svetlú alebo tmavú tému",
+    "Vyberte, či má Miao nasledovať systémovú, svetlú alebo tmavú tému",
   "settings.general.row.theme.title": "Téma",
   "settings.general.row.theme.description": "Prispôsobte tému Miao.",
   "settings.general.row.font.title": "Písmo kódu",

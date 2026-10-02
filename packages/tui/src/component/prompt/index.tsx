@@ -477,12 +477,14 @@ export function Prompt(props: PromptProps) {
 
           const value = text
           const content = await openEditor({
-            renderer,
-            value,
-            cwd:
-              (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
-              project.instance.directory() ||
-              paths.cwd,
+              renderer,
+              value,
+              cwd:
+                (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
+                project.instance.directory() ||
+                paths.cwd,
+          }).catch((error) => {
+            toast.show({ message: errorMessage(error), variant: "error" })
           })
           if (!content) return
           const normalized = normalizePromptContent(content)

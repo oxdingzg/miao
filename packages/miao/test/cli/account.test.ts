@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import stripAnsi from "strip-ansi"
 
-import { defaultConsoleUrl, formatAccountLabel, formatOrgLine } from "../../src/cli/cmd/account"
+import { LoginCommand, formatAccountLabel, formatOrgLine } from "../../src/cli/cmd/account"
 
 describe("console account display", () => {
-  test("uses opencode.ai/console as the default login URL", () => {
-    expect(defaultConsoleUrl).toBe("https://opencode.ai/console")
+  test("requires an explicit Console server URL", () => {
+    expect(LoginCommand.command).toBe("login <url>")
   })
 
   test("includes the account url in account labels", () => {

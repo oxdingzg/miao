@@ -157,10 +157,10 @@ const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.MIAO_MODELS_URL || "https://models.opencode.ai"
+    const source = Flag.MIAO_MODELS_URL || "https://models.dev"
     const filepath = path.join(
       Global.Path.cache,
-      source === "https://models.opencode.ai" ? "models.json" : `models-${Hash.fast(source)}.json`,
+      source === "https://models.dev" ? "models-dev.json" : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.hours(12)
     const lockKey = `models-dev:${filepath}`

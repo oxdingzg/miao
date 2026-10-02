@@ -86,7 +86,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao telah terinstal, tetapi tidak dapat dijalankan",
   "desktop.wsl.error.miaoNotInstalled": "Miao belum terinstal di {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Pembaruan OpenCode selesai, tetapi {{distro}} masih melaporkan {{installed}}; seharusnya {{expected}}",
+    "Pembaruan Miao selesai, tetapi {{distro}} masih melaporkan {{installed}}; seharusnya {{expected}}",
   "desktop.wsl.error.noVersion": "tanpa versi",
   "desktop.wsl.error.serverExited": "Server WSL berhenti setelah dimulai (kode={{code}} sinyal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -241,7 +241,7 @@ export const dict = {
   "provider.connect.status.waiting": "Menunggu otorisasi...",
   "provider.connect.status.failed": "Otorisasi gagal: {{error}}",
   "provider.connect.apiKey.description":
-    "Masukkan kunci API {{provider}} untuk menghubungkan akun Anda dan gunakan model {{provider}} di OpenCode.",
+    "Masukkan kunci API {{provider}} untuk menghubungkan akun Anda dan gunakan model {{provider}} di Miao.",
   "provider.connect.apiKey.label": "Kunci API {{provider}}",
   "provider.connect.apiKey.placeholder": "Kunci API",
   "provider.connect.apiKey.required": "Kunci API diperlukan",
@@ -255,7 +255,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Kunjungi ",
   "provider.connect.oauth.code.visit.link": "tautan ini",
   "provider.connect.oauth.code.visit.suffix":
-    " untuk mendapatkan kode otorisasi guna menghubungkan akun Anda dan menggunakan model {{provider}} di OpenCode.",
+    " untuk mendapatkan kode otorisasi guna menghubungkan akun Anda dan menggunakan model {{provider}} di Miao.",
   "provider.connect.oauth.code.label": "Kode otorisasi {{method}}",
   "provider.connect.oauth.code.placeholder": "Kode otorisasi",
   "provider.connect.oauth.code.required": "Kode otorisasi diperlukan",
@@ -263,7 +263,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Kunjungi ",
   "provider.connect.oauth.auto.visit.link": "tautan ini",
   "provider.connect.oauth.auto.visit.suffix":
-    " dan masukkan kode di bawah untuk menghubungkan akun dan menggunakan model {{provider}} di OpenCode.",
+    " dan masukkan kode di bawah untuk menghubungkan akun dan menggunakan model {{provider}} di Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Kode konfirmasi",
   "provider.connect.toast.connected.title": "{{provider}} terhubung",
   "provider.connect.toast.connected.description": "Model {{provider}} sekarang tersedia untuk digunakan.",
@@ -521,12 +521,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Instal distribusi Linux dari katalog WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL belum terinstal",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) diperlukan sebelum OpenCode dapat menambahkan server WSL",
+    "WSL (Windows Subsystem for Linux) diperlukan sebelum Miao dapat menambahkan server WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL tidak tersedia",
   "wsl.onboarding.wslUnavailable.description": "Miao tidak dapat memverifikasi WSL di komputer ini.",
   "wsl.onboarding.installWsl": "Instal WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Mulai ulang Windows untuk menyelesaikan instalasi WSL, lalu buka kembali OpenCode.",
+    "Mulai ulang Windows untuk menyelesaikan instalasi WSL, lalu buka kembali Miao.",
   "wsl.onboarding.next": "Berikutnya",
   "wsl.onboarding.refresh": "Muat ulang",
   "wsl.onboarding.allDistrosAdded": "Semua distro yang terinstal sudah ditambahkan.",
@@ -722,7 +722,7 @@ export const dict = {
   "error.chain.didYouMean": "Maksud Anda: {{suggestions}}",
   "error.chain.modelNotFound": "Model tidak ditemukan: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Periksa nama penyedia/model di konfigurasi Anda (miao.json)",
-  "error.chain.mcpFailed": 'Server MCP "{{name}}" gagal. Catatan: OpenCode belum mendukung autentikasi MCP.',
+  "error.chain.mcpFailed": 'Server MCP "{{name}}" gagal. Catatan: Miao belum mendukung autentikasi MCP.',
   "error.chain.providerAuthFailed": "Autentikasi penyedia gagal ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Gagal menginisialisasi penyedia "{{provider}}". Periksa kredensial dan konfigurasi.',

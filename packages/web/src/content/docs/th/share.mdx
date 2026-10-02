@@ -3,6 +3,10 @@ title: แบ่งปัน
 description: แบ่งปันการสนทนา Miao ของคุณ
 ---
 
+:::note
+miao has no default sharing backend. Sharing requires an explicit `enterprise.url` in `miao.json`. Console login alone does not enable sharing.
+:::
+
 คุณลักษณะการแชร์ของ Miao ช่วยให้คุณสร้างลิงก์สาธารณะไปยังการสนทนา Miao ของคุณ เพื่อให้คุณสามารถทำงานร่วมกับเพื่อนร่วมทีมหรือรับความช่วยเหลือจากผู้อื่นได้
 
 :::note
@@ -17,7 +21,7 @@ description: แบ่งปันการสนทนา Miao ของคุ�
 
 1. สร้าง URL สาธารณะที่ไม่ซ้ำสำหรับเซสชันของคุณ
 2. ซิงค์ประวัติการสนทนาของคุณกับเซิร์ฟเวอร์ของเรา
-3. ทำให้สามารถเข้าถึงการสนทนาผ่านลิงก์ที่แชร์ได้ — `opncd.ai/s/<share-id>`
+3. ทำให้สามารถเข้าถึงการสนทนาผ่านลิงก์ที่แชร์ได้ — `your-share-server/share/<share-id>`
 
 ---
 
@@ -41,7 +45,7 @@ Miao รองรับโหมดการแชร์สามโหมดท
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "manual"
 }
 ```
@@ -54,7 +58,7 @@ Miao รองรับโหมดการแชร์สามโหมดท
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "auto"
 }
 ```
@@ -69,7 +73,7 @@ Miao รองรับโหมดการแชร์สามโหมดท
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "disabled"
 }
 ```

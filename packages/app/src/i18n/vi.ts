@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao đã được cài đặt nhưng không thể chạy",
   "desktop.wsl.error.miaoNotInstalled": "Miao chưa được cài đặt trong {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Đã cập nhật OpenCode nhưng {{distro}} vẫn báo phiên bản {{installed}}; phiên bản dự kiến là {{expected}}",
+    "Đã cập nhật Miao nhưng {{distro}} vẫn báo phiên bản {{installed}}; phiên bản dự kiến là {{expected}}",
   "desktop.wsl.error.noVersion": "không có phiên bản",
   "desktop.wsl.error.serverExited": "Máy chủ WSL đã thoát sau khi khởi động (mã={{code}} tín hiệu={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -228,7 +228,7 @@ export const dict = {
   "provider.connect.status.waiting": "Đang chờ ủy quyền...",
   "provider.connect.status.failed": "Ủy quyền thất bại: {{error}}",
   "provider.connect.apiKey.description":
-    "Nhập khóa API {{provider}} để kết nối tài khoản và sử dụng các mô hình {{provider}} trong OpenCode.",
+    "Nhập khóa API {{provider}} để kết nối tài khoản và sử dụng các mô hình {{provider}} trong Miao.",
   "provider.connect.apiKey.label": "Khóa API {{provider}}",
   "provider.connect.apiKey.placeholder": "khóa API",
   "provider.connect.apiKey.required": "Cần có khóa API",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Truy cập ",
   "provider.connect.oauth.code.visit.link": "liên kết này",
   "provider.connect.oauth.code.visit.suffix":
-    " để lấy mã ủy quyền, kết nối tài khoản và sử dụng các mô hình {{provider}} trong OpenCode.",
+    " để lấy mã ủy quyền, kết nối tài khoản và sử dụng các mô hình {{provider}} trong Miao.",
   "provider.connect.oauth.code.label": "Mã ủy quyền {{method}}",
   "provider.connect.oauth.code.placeholder": "Mã ủy quyền",
   "provider.connect.oauth.code.required": "Cần có mã ủy quyền",
@@ -250,7 +250,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Truy cập ",
   "provider.connect.oauth.auto.visit.link": "liên kết này",
   "provider.connect.oauth.auto.visit.suffix":
-    " và nhập mã bên dưới để kết nối tài khoản của bạn và sử dụng các mô hình {{provider}} trong OpenCode.",
+    " và nhập mã bên dưới để kết nối tài khoản của bạn và sử dụng các mô hình {{provider}} trong Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Mã xác nhận",
   "provider.connect.toast.connected.title": "{{provider}} đã kết nối",
   "provider.connect.toast.connected.description": "Các mô hình {{provider}} hiện đã sẵn sàng để sử dụng.",
@@ -492,7 +492,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Cài đặt bản phân phối Linux từ danh mục WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL chưa được cài đặt",
   "wsl.onboarding.wslNotInstalled.description":
-    "Cần có WSL (Hệ thống con Windows dành cho Linux) trước khi OpenCode có thể thêm máy chủ WSL",
+    "Cần có WSL (Hệ thống con Windows dành cho Linux) trước khi Miao có thể thêm máy chủ WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL không có sẵn",
   "wsl.onboarding.wslUnavailable.description": "Miao không thể xác minh WSL trên máy này.",
   "wsl.onboarding.installWsl": "Cài đặt WSL",
@@ -672,7 +672,7 @@ export const dict = {
   "error.chain.didYouMean": "Có phải ý bạn là: {{suggestions}}",
   "error.chain.modelNotFound": "Không tìm thấy mô hình: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Kiểm tra tên nhà cung cấp/mô hình cấu hình (miao.json) của bạn",
-  "error.chain.mcpFailed": 'Máy chủ MCP "{{name}}" gặp lỗi. Lưu ý: OpenCode chưa hỗ trợ xác thực MCP.',
+  "error.chain.mcpFailed": 'Máy chủ MCP "{{name}}" gặp lỗi. Lưu ý: Miao chưa hỗ trợ xác thực MCP.',
   "error.chain.providerAuthFailed": "Không xác thực được nhà cung cấp ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Không khởi tạo được nhà cung cấp "{{provider}}". Kiểm tra thông tin xác thực và cấu hình.',

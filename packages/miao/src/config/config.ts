@@ -498,7 +498,7 @@ const layer = Layer.effect(
         const activeAccount = Option.getOrUndefined(
           yield* accountSvc.active().pipe(Effect.catch(() => Effect.succeed(Option.none()))),
         )
-        if (activeAccount?.active_org_id) {
+        if (activeAccount?.active_org_id && process.env.MIAO_CONSOLE_URL === activeAccount.url) {
           const accountID = activeAccount.id
           const orgID = activeAccount.active_org_id
           const url = activeAccount.url

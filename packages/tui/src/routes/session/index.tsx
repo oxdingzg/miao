@@ -985,14 +985,14 @@ export function Session() {
             await writeExport(filepath, transcript)
 
             // Open with EDITOR if available
-            const result = await openEditor({
+            const result = process.env.VISUAL || process.env.EDITOR ? await openEditor({
               renderer,
               value: transcript,
               cwd:
                 (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
                 project.instance.directory() ||
                 paths.cwd,
-            })
+            }) : undefined
             if (result !== undefined) {
               await writeExport(filepath, result)
             }

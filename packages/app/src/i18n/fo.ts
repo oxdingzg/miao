@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao er sett upp men kundi ikki koyra",
   "desktop.wsl.error.miaoNotInstalled": "Miao er ikki sett upp í {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode dagføring liðug men {{distro}} greiðir enn frá {{installed}}; væntað {{expected}}.",
+    "Miao dagføring liðug men {{distro}} greiðir enn frá {{installed}}; væntað {{expected}}.",
   "desktop.wsl.error.noVersion": "eingin útgáva",
   "desktop.wsl.error.serverExited": "WSL-ambætarin steðgaði eftir uppstart (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Bíða eftir heimild...",
   "provider.connect.status.failed": "Heimild miseydnaðist: {{error}}",
   "provider.connect.apiKey.description":
-    "Skriva {{provider}} API-lykilin fyri at knýta kontuna saman og brúka {{provider}}-modell í OpenCode.",
+    "Skriva {{provider}} API-lykilin fyri at knýta kontuna saman og brúka {{provider}}-modell í Miao.",
   "provider.connect.apiKey.label": "{{provider}} API lykil",
   "provider.connect.apiKey.placeholder": "API lykil",
   "provider.connect.apiKey.required": "API lykilin er kravdur",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Vitja ",
   "provider.connect.oauth.code.visit.link": "hesa leinkjuna",
   "provider.connect.oauth.code.visit.suffix":
-    " at savna inn tína heimildarkotu til at knýta tína kontu saman og brúka {{provider}} modellir í OpenCode.",
+    " at savna inn tína heimildarkotu til at knýta tína kontu saman og brúka {{provider}} modellir í Miao.",
   "provider.connect.oauth.code.label": "{{method}} heimildarkoda",
   "provider.connect.oauth.code.placeholder": "Heimildarkoda",
   "provider.connect.oauth.code.required": "Heimildarkoda er kravd",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Vitja ",
   "provider.connect.oauth.auto.visit.link": "hesa leinkjuna",
   "provider.connect.oauth.auto.visit.suffix":
-    " og skriva kotuna niðanfyri fyri at knýta tína kontu saman og brúka {{provider}} modellir í OpenCode.",
+    " og skriva kotuna niðanfyri fyri at knýta tína kontu saman og brúka {{provider}} modellir í Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Staðfestingarkoda",
   "provider.connect.toast.connected.title": "{{provider}} tengt",
   "provider.connect.toast.connected.description": "{{provider}} modellir eru nú tøk at brúka.",
@@ -484,12 +484,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Set upp Linux útbreiðslu frá WSL kataloginum",
   "wsl.onboarding.wslNotInstalled.title": "WSL ikki innstillað",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Undirskipan til Linux) er kravd áðrenn OpenCode kann leggja ein WSL ambætara til",
+    "WSL (Windows Undirskipan til Linux) er kravd áðrenn Miao kann leggja ein WSL ambætara til",
   "wsl.onboarding.wslUnavailable.title": "WSL ikki tøkt",
   "wsl.onboarding.wslUnavailable.description": "Miao kundi ikki staðfesta WSL á hesi maskinuni.",
   "wsl.onboarding.installWsl": "Set upp WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Endurbyrja Windows fyri at klára at seta upp WSL, og opna síðani OpenCode aftur.",
+    "Endurbyrja Windows fyri at klára at seta upp WSL, og opna síðani Miao aftur.",
   "wsl.onboarding.next": "Næsta",
   "wsl.onboarding.refresh": "Fríska upp",
   "wsl.onboarding.allDistrosAdded": "Allar uppsettar distros eru longu lagdar afturat.",
@@ -662,7 +662,7 @@ export const dict = {
   "error.chain.didYouMean": "Meinti tú: {{suggestions}}",
   "error.chain.modelNotFound": "Fyrimynd ikki funnið: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Kanna tíni uppseting (miao.json) veitara/modell nøvn",
-  "error.chain.mcpFailed": 'MCP ambætarin "{{name}}" miseydnaðist. Viðmæli, OpenCode stuðlar ikki MCP sannroynd enn.',
+  "error.chain.mcpFailed": 'MCP ambætarin "{{name}}" miseydnaðist. Viðmæli, Miao stuðlar ikki MCP sannroynd enn.',
   "error.chain.providerAuthFailed": "Veitaragóðkenning miseydnaðist ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Tað eydnaðist ikki at initialisera veitara "{{provider}}". Kanna trúnaðarupplýsingar og uppseting.',

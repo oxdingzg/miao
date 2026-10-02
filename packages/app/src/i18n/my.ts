@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao ကို ထည့်သွင်းထားသော်လည်း မလည်ပတ်နိုင်ပါ။",
   "desktop.wsl.error.miaoNotInstalled": "Miao ကို {{distro}} တွင် ထည့်သွင်းမထားပါ။",
   "desktop.wsl.error.updateVersion":
-    "OpenCode အပ်ဒိတ် ပြီးဆုံးသွားသော်လည်း {{distro}} သည် {{installed}} မှ ဆက်လက်တင်ပြနေပါသည်။ {{expected}} မျှော်လင့်ထားသည်။",
+    "Miao အပ်ဒိတ် ပြီးဆုံးသွားသော်လည်း {{distro}} သည် {{installed}} မှ ဆက်လက်တင်ပြနေပါသည်။ {{expected}} မျှော်လင့်ထားသည်။",
   "desktop.wsl.error.noVersion": "ဗားရှင်းမရှိပါ။",
   "desktop.wsl.error.serverExited": "စတင်ပြီးနောက် WSL ဆာဗာမှ ထွက်ခဲ့သည် (ကုဒ်={{code}} အချက်ပြ={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -222,7 +222,7 @@ export const dict = {
   "provider.connect.status.waiting": "ခွင့်ပြုချက်ကို စောင့်ဆိုင်းနေသည်...",
   "provider.connect.status.failed": "ခွင့်ပြုချက် မအောင်မြင်ပါ- {{error}}",
   "provider.connect.apiKey.description":
-    "သင့်အကောင့်ကို ချိတ်ဆက်ရန်နှင့် OpenCode တွင် {{provider}} မော်ဒယ်များကို အသုံးပြုရန် သင်၏ {{provider}} API သော့ကို ထည့်သွင်းပါ။",
+    "သင့်အကောင့်ကို ချိတ်ဆက်ရန်နှင့် Miao တွင် {{provider}} မော်ဒယ်များကို အသုံးပြုရန် သင်၏ {{provider}} API သော့ကို ထည့်သွင်းပါ။",
   "provider.connect.apiKey.label": "{{provider}} API သော့",
   "provider.connect.apiKey.placeholder": "API သော့",
   "provider.connect.apiKey.required": "API ကီး လိုအပ်သည်။",
@@ -236,7 +236,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "လည်ပတ်ပါ။",
   "provider.connect.oauth.code.visit.link": "ဤလင့်ခ်",
   "provider.connect.oauth.code.visit.suffix":
-    " သို့သွားပြီး သင့်အကောင့်ကို ချိတ်ဆက်ကာ OpenCode တွင် {{provider}} မော်ဒယ်များကို အသုံးပြုရန် ခွင့်ပြုချက်ကုဒ်ကို ရယူပါ။",
+    " သို့သွားပြီး သင့်အကောင့်ကို ချိတ်ဆက်ကာ Miao တွင် {{provider}} မော်ဒယ်များကို အသုံးပြုရန် ခွင့်ပြုချက်ကုဒ်ကို ရယူပါ။",
   "provider.connect.oauth.code.label": "{{method}} ခွင့်ပြုချက်ကုဒ်",
   "provider.connect.oauth.code.placeholder": "ခွင့်ပြုချက်ကုဒ်",
   "provider.connect.oauth.code.required": "ခွင့်ပြုချက်ကုဒ် လိုအပ်သည်။",
@@ -244,7 +244,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "လည်ပတ်ပါ။",
   "provider.connect.oauth.auto.visit.link": "ဤလင့်ခ်",
   "provider.connect.oauth.auto.visit.suffix":
-    "နှင့် သင့်အကောင့်ကို ချိတ်ဆက်ပြီး OpenCode တွင် {{provider}} မော်ဒယ်များကို အသုံးပြုရန် အောက်ပါကုဒ်ကို ရိုက်ထည့်ပါ။",
+    "နှင့် သင့်အကောင့်ကို ချိတ်ဆက်ပြီး Miao တွင် {{provider}} မော်ဒယ်များကို အသုံးပြုရန် အောက်ပါကုဒ်ကို ရိုက်ထည့်ပါ။",
   "provider.connect.oauth.auto.confirmationCode": "အတည်ပြုကုဒ်",
   "provider.connect.toast.connected.title": "{{provider}} ချိတ်ဆက်ထားသည်။",
   "provider.connect.toast.connected.description": "{{provider}} မော်ဒယ်များကို ယခုအသုံးပြုနိုင်ပါပြီ။",
@@ -489,12 +489,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL ကတ်တလောက်မှ Linux ဖြန့်ဖြူးမှုကို ထည့်သွင်းပါ။",
   "wsl.onboarding.wslNotInstalled.title": "WSL ကို ထည့်သွင်းမထားပါ။",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Linux အတွက် Windows Subsystem) ကို OpenCode မှ WSL ဆာဗာ မထည့်မီတွင် လိုအပ်ပါသည်။",
+    "WSL (Linux အတွက် Windows Subsystem) ကို Miao မှ WSL ဆာဗာ မထည့်မီတွင် လိုအပ်ပါသည်။",
   "wsl.onboarding.wslUnavailable.title": "WSL မရနိုင်ပါ။",
   "wsl.onboarding.wslUnavailable.description": "Miao သည် ဤစက်ပေါ်ရှိ WSL ကို အတည်မပြုနိုင်ပါ။",
   "wsl.onboarding.installWsl": "WSL ကို ထည့်သွင်းပါ။",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL ထည့်သွင်းခြင်း အပြီးသတ်ရန် Windows ကို ပြန်လည်စတင်ပါ၊ ထို့နောက် OpenCode ကို ပြန်လည်ဖွင့်ပါ။",
+    "WSL ထည့်သွင်းခြင်း အပြီးသတ်ရန် Windows ကို ပြန်လည်စတင်ပါ၊ ထို့နောက် Miao ကို ပြန်လည်ဖွင့်ပါ။",
   "wsl.onboarding.next": "နောက်တစ်ခု",
   "wsl.onboarding.refresh": "ပြန်လည်စတင်ပါ။",
   "wsl.onboarding.allDistrosAdded": "ထည့်သွင်းထားသည့် distros အားလုံးကို ထည့်သွင်းပြီးဖြစ်သည်။",
@@ -668,7 +668,7 @@ export const dict = {
   "error.chain.modelNotFound": "မော်ဒယ်ကို ရှာမတွေ့ပါ- {{provider}}/{{model}}",
   "error.chain.checkConfig": "သင်၏ config (miao.json) ဝန်ဆောင်မှုပေးသူ/မော်ဒယ်အမည်များကို စစ်ဆေးပါ။",
   "error.chain.mcpFailed":
-    'MCP ဆာဗာ "{{name}}" မအောင်မြင်ပါ။ မှတ်ချက်၊ OpenCode သည် MCP စစ်မှန်ကြောင်းအထောက်အထားမခိုင်လုံသေးပါ။',
+    'MCP ဆာဗာ "{{name}}" မအောင်မြင်ပါ။ မှတ်ချက်၊ Miao သည် MCP စစ်မှန်ကြောင်းအထောက်အထားမခိုင်လုံသေးပါ။',
   "error.chain.providerAuthFailed": "ပံ့ပိုးသူ စစ်မှန်ကြောင်း အထောက်အထား မအောင်မြင်ပါ ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'ဝန်ဆောင်မှုပေးသူ "{{provider}}" ကို စတင်ရန် မအောင်မြင်ပါ။ အထောက်အထားများနှင့် ဖွဲ့စည်းမှုပုံစံကို စစ်ဆေးပါ။',
@@ -945,7 +945,7 @@ export const dict = {
   "settings.general.row.appearance.description": "သင့်စက်ပေါ်တွင် Miao ကို မည်သို့မြင်သည်ကို စိတ်ကြိုက်ပြင်ဆင်ပါ။",
   "settings.general.row.colorScheme.title": "အရောင်အစီအစဉ်",
   "settings.general.row.colorScheme.description":
-    "OpenCode သည် စနစ်၊ အလင်း သို့မဟုတ် အမှောင် အပြင်အဆင်ကို လိုက်နာခြင်း ရှိ၊ မရှိကို ရွေးပါ။",
+    "Miao သည် စနစ်၊ အလင်း သို့မဟုတ် အမှောင် အပြင်အဆင်ကို လိုက်နာခြင်း ရှိ၊ မရှိကို ရွေးပါ။",
   "settings.general.row.theme.title": "အပြင်အဆင်",
   "settings.general.row.theme.description": "Miao ကို ဘယ်လိုပုံစံနဲ့ စိတ်ကြိုက်လုပ်မလဲ။",
   "settings.general.row.font.title": "ကုဒ်ဖောင့်",

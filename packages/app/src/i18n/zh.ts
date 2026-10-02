@@ -89,7 +89,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "已安装 miao，但无法运行",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}} 中未安装 Miao",
   "desktop.wsl.error.updateVersion":
-    "OpenCode 更新已完成，但 {{distro}} 仍报告版本 {{installed}}；预期版本为 {{expected}}",
+    "Miao 更新已完成，但 {{distro}} 仍报告版本 {{installed}}；预期版本为 {{expected}}",
   "desktop.wsl.error.noVersion": "无版本信息",
   "desktop.wsl.error.serverExited": "WSL 服务器启动后退出（code={{code}} signal={{signal}}）",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -265,7 +265,7 @@ export const dict = {
   "provider.connect.status.waiting": "等待授权...",
   "provider.connect.status.failed": "授权失败：{{error}}",
   "provider.connect.apiKey.description":
-    "输入你的 {{provider}} API 密钥以连接账户，并在 OpenCode 中使用 {{provider}} 模型。",
+    "输入你的 {{provider}} API 密钥以连接账户，并在 Miao 中使用 {{provider}} 模型。",
   "provider.connect.apiKey.label": "{{provider}} API 密钥",
   "provider.connect.apiKey.placeholder": "API 密钥",
   "provider.connect.apiKey.required": "API 密钥为必填项",
@@ -700,7 +700,7 @@ export const dict = {
   "error.chain.didYouMean": "你是不是想输入：{{suggestions}}",
   "error.chain.modelNotFound": "未找到模型：{{provider}}/{{model}}",
   "error.chain.checkConfig": "请检查你的配置 (miao.json) 中的 provider/model 名称",
-  "error.chain.mcpFailed": 'MCP 服务器 "{{name}}" 启动失败。注意：OpenCode 暂不支持 MCP 认证。',
+  "error.chain.mcpFailed": 'MCP 服务器 "{{name}}" 启动失败。注意：Miao 暂不支持 MCP 认证。',
   "error.chain.providerAuthFailed": "提供商认证失败（{{provider}}）：{{message}}",
   "error.chain.providerInitFailed": '无法初始化提供商 "{{provider}}"。请检查凭据和配置。',
   "error.chain.configJsonInvalid": "配置文件 {{path}} 不是有效的 JSON(C)",

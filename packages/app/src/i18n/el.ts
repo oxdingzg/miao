@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "ο ανοιχτός κώδικας είναι εγκατεστημένος αλλά δεν ήταν δυνατή η εκτέλεση",
   "desktop.wsl.error.miaoNotInstalled": "Miao δεν είναι εγκατεστημένο στο {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode η ενημέρωση ολοκληρώθηκε αλλά το {{distro}} εξακολουθεί να αναφέρει {{installed}}; αναμενόμενο {{expected}}",
+    "Miao η ενημέρωση ολοκληρώθηκε αλλά το {{distro}} εξακολουθεί να αναφέρει {{installed}}; αναμενόμενο {{expected}}",
   "desktop.wsl.error.noVersion": "χωρίς έκδοση",
   "desktop.wsl.error.serverExited": "WSL έξοδος διακομιστή μετά την εκκίνηση (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,12 +221,12 @@ export const dict = {
   "provider.connect.status.waiting": "Αναμονή για εξουσιοδότηση...",
   "provider.connect.status.failed": "Η εξουσιοδότηση απέτυχε: {{error}}",
   "provider.connect.apiKey.description":
-    "Εισαγάγετε το κλειδί {{provider}} API για να συνδέσετε τον λογαριασμό σας και χρησιμοποιήστε μοντέλα {{provider}} στο OpenCode.",
+    "Εισαγάγετε το κλειδί {{provider}} API για να συνδέσετε τον λογαριασμό σας και χρησιμοποιήστε μοντέλα {{provider}} στο Miao.",
   "provider.connect.apiKey.label": "{{provider}} API κλειδί",
   "provider.connect.apiKey.placeholder": "API κλειδί",
   "provider.connect.apiKey.required": "API απαιτείται κλειδί",
   "provider.connect.miaoZen.line1":
-    "OpenCode Το Zen σάς δίνει πρόσβαση σε ένα επιμελημένο σύνολο αξιόπιστων βελτιστοποιημένων μοντέλων για πράκτορες κωδικοποίησης.",
+    "Miao Το Zen σάς δίνει πρόσβαση σε ένα επιμελημένο σύνολο αξιόπιστων βελτιστοποιημένων μοντέλων για πράκτορες κωδικοποίησης.",
   "provider.connect.miaoZen.line2":
     "Με ένα μόνο κλειδί API θα έχετε πρόσβαση σε μοντέλα όπως Claude, GPT, Gemini, GLM και άλλα.",
   "provider.connect.miaoZen.visit.prefix": "Επίσκεψη ",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Επίσκεψη ",
   "provider.connect.oauth.code.visit.link": "αυτός ο σύνδεσμος",
   "provider.connect.oauth.code.visit.suffix":
-    " για να συλλέξετε τον κωδικό εξουσιοδότησης για να συνδέσετε τον λογαριασμό σας και να χρησιμοποιήσετε {{provider}} μοντέλα στο OpenCode.",
+    " για να συλλέξετε τον κωδικό εξουσιοδότησης για να συνδέσετε τον λογαριασμό σας και να χρησιμοποιήσετε {{provider}} μοντέλα στο Miao.",
   "provider.connect.oauth.code.label": "{{method}} κωδικός εξουσιοδότησης",
   "provider.connect.oauth.code.placeholder": "Κωδικός εξουσιοδότησης",
   "provider.connect.oauth.code.required": "Απαιτείται κωδικός εξουσιοδότησης",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Επίσκεψη ",
   "provider.connect.oauth.auto.visit.link": "αυτός ο σύνδεσμος",
   "provider.connect.oauth.auto.visit.suffix":
-    " και εισαγάγετε τον παρακάτω κωδικό για να συνδέσετε τον λογαριασμό σας και να χρησιμοποιήσετε {{provider}} μοντέλα στο OpenCode.",
+    " και εισαγάγετε τον παρακάτω κωδικό για να συνδέσετε τον λογαριασμό σας και να χρησιμοποιήσετε {{provider}} μοντέλα στο Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Κωδικός επιβεβαίωσης",
   "provider.connect.toast.connected.title": "{{provider}} συνδεδεμένο",
   "provider.connect.toast.connected.description": "{{provider}} μοντέλα είναι πλέον διαθέσιμα για χρήση.",
@@ -487,12 +487,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Εγκαταστήστε μια διανομή Linux από τον κατάλογο WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL δεν έχει εγκατασταθεί",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Υποσύστημα για Linux) απαιτείται για να μπορέσει ο OpenCode να προσθέσει έναν διακομιστή WSL",
+    "WSL (Windows Υποσύστημα για Linux) απαιτείται για να μπορέσει ο Miao να προσθέσει έναν διακομιστή WSL",
   "wsl.onboarding.wslUnavailable.title": "WSL μη διαθέσιμο",
   "wsl.onboarding.wslUnavailable.description": "Miao δεν μπόρεσε να επαληθεύσει το WSL σε αυτό το μηχάνημα.",
   "wsl.onboarding.installWsl": "Εγκατάσταση WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Επανεκκινήστε το Windows για να ολοκληρώσετε την εγκατάσταση του WSL και μετά ανοίξτε ξανά το OpenCode.",
+    "Επανεκκινήστε το Windows για να ολοκληρώσετε την εγκατάσταση του WSL και μετά ανοίξτε ξανά το Miao.",
   "wsl.onboarding.next": "Επόμενο",
   "wsl.onboarding.refresh": "Ανανέωση",
   "wsl.onboarding.allDistrosAdded": "Όλες οι εγκατεστημένες διανομές έχουν ήδη προστεθεί.",
@@ -667,7 +667,7 @@ export const dict = {
   "error.chain.modelNotFound": "Το μοντέλο δεν βρέθηκε: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Ελέγξτε τη διαμόρφωση (miao.json) ονόματα παρόχου/μοντέλων",
   "error.chain.mcpFailed":
-    'MCP διακομιστής "{{name}}" απέτυχε. Σημείωση, το OpenCode δεν υποστηρίζει ακόμη έλεγχο ταυτότητας MCP.',
+    'MCP διακομιστής "{{name}}" απέτυχε. Σημείωση, το Miao δεν υποστηρίζει ακόμη έλεγχο ταυτότητας MCP.',
   "error.chain.providerAuthFailed": "Ο έλεγχος ταυτότητας παρόχου απέτυχε ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Απέτυχε η προετοιμασία του παρόχου "{{provider}}". Ελέγξτε τα διαπιστευτήρια και τη διαμόρφωση.',
@@ -943,7 +943,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Προσαρμογή της εμφάνισης του Miao στη συσκευή σας",
   "settings.general.row.colorScheme.title": "Χρωματικός συνδυασμός",
   "settings.general.row.colorScheme.description":
-    "Επιλέξτε εάν το OpenCode ακολουθεί το σύστημα, το ανοιχτό ή το σκοτεινό θέμα",
+    "Επιλέξτε εάν το Miao ακολουθεί το σύστημα, το ανοιχτό ή το σκοτεινό θέμα",
   "settings.general.row.theme.title": "Θέμα",
   "settings.general.row.theme.description": "Προσαρμογή του τρόπου με τον οποίο έχει θέμα το Miao.",
   "settings.general.row.font.title": "Γραμματοσειρά κώδικα",

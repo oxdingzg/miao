@@ -482,7 +482,7 @@ export const SettingsGeneral: Component = () => {
           description={
             <>
               {language.t("settings.general.row.theme.description")}{" "}
-              <ExternalLink href="https://opencode.ai/docs/themes/">{language.t("common.learnMore")}</ExternalLink>
+              <ExternalLink href="https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/themes.mdx">{language.t("common.learnMore")}</ExternalLink>
             </>
           }
         >

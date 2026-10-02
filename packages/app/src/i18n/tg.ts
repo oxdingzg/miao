@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao насб шудааст, аммо иҷро карда натавонист",
   "desktop.wsl.error.miaoNotInstalled": "Miao дар {{distro}} насб нашудааст",
   "desktop.wsl.error.updateVersion":
-    "OpenCode навсозӣ анҷом ёфт, аммо {{distro}} то ҳол гузориш медиҳад {{installed}}; интизорӣ {{expected}}",
+    "Miao навсозӣ анҷом ёфт, аммо {{distro}} то ҳол гузориш медиҳад {{installed}}; интизорӣ {{expected}}",
   "desktop.wsl.error.noVersion": "версия нест",
   "desktop.wsl.error.serverExited": "WSL сервер пас аз оғозшавӣ хориҷ шуд (рамз = {{code}} сигнал = {{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "Мунтазири иҷозат...",
   "provider.connect.status.failed": "Иҷозат дода нашуд: {{error}}",
   "provider.connect.apiKey.description":
-    "Барои пайваст кардани ҳисоби худ калиди {{provider}} API-ро ворид кунед ва моделҳои {{provider}}-ро дар OpenCode истифода баред.",
+    "Барои пайваст кардани ҳисоби худ калиди {{provider}} API-ро ворид кунед ва моделҳои {{provider}}-ро дар Miao истифода баред.",
   "provider.connect.apiKey.label": "{{provider}} API калид",
   "provider.connect.apiKey.placeholder": "API калид",
   "provider.connect.apiKey.required": "API калид лозим аст",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Ташриф",
   "provider.connect.oauth.code.visit.link": "ин пайванд",
   "provider.connect.oauth.code.visit.suffix":
-    "Барои ҷамъ овардани рамзи иҷозати шумо барои пайваст кардани ҳисоби шумо ва истифода бурдани моделҳои {{provider}} дар OpenCode.",
+    "Барои ҷамъ овардани рамзи иҷозати шумо барои пайваст кардани ҳисоби шумо ва истифода бурдани моделҳои {{provider}} дар Miao.",
   "provider.connect.oauth.code.label": "{{method}} рамзи иҷозат",
   "provider.connect.oauth.code.placeholder": "Рамзи авторизатсия",
   "provider.connect.oauth.code.required": "Рамзи авторизатсия лозим аст",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Ташриф",
   "provider.connect.oauth.auto.visit.link": "ин пайванд",
   "provider.connect.oauth.auto.visit.suffix":
-    "ва рамзи зерро ворид кунед, то ҳисоби худро пайваст кунед ва моделҳои {{provider}}-ро дар OpenCode истифода баред.",
+    "ва рамзи зерро ворид кунед, то ҳисоби худро пайваст кунед ва моделҳои {{provider}}-ро дар Miao истифода баред.",
   "provider.connect.oauth.auto.confirmationCode": "Рамзи тасдиқ",
   "provider.connect.toast.connected.title": "{{provider}} пайваст",
   "provider.connect.toast.connected.description": "{{provider}} моделҳо ҳоло барои истифода дастрасанд.",
@@ -487,12 +487,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Аз каталоги WSL тақсимоти Linux насб кунед",
   "wsl.onboarding.wslNotInstalled.title": "WSL насб нашудааст",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows Subsystem for Linux) лозим аст, то OpenCode сервери WSL илова карда шавад",
+    "WSL (Windows Subsystem for Linux) лозим аст, то Miao сервери WSL илова карда шавад",
   "wsl.onboarding.wslUnavailable.title": "WSL дастрас нест",
   "wsl.onboarding.wslUnavailable.description": "Miao WSL-ро дар ин мошин тафтиш карда натавонист.",
   "wsl.onboarding.installWsl": "Насб кунед WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Барои анҷом додани насби WSL Windows-ро аз нав оғоз кунед, сипас OpenCode-ро боз кунед.",
+    "Барои анҷом додани насби WSL Windows-ро аз нав оғоз кунед, сипас Miao-ро боз кунед.",
   "wsl.onboarding.next": "Баъдӣ",
   "wsl.onboarding.refresh": "Навсозӣ",
   "wsl.onboarding.allDistrosAdded": "Ҳама дистрибюторҳои насбшуда аллакай илова карда шудаанд.",
@@ -665,7 +665,7 @@ export const dict = {
   "error.chain.modelNotFound": "Модели ёфт нашуд: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Номҳои провайдери конфигуратсияи худро (miao.json) санҷед",
   "error.chain.mcpFailed":
-    'MCP сервери "{{name}}" ноком шуд. Дар хотир доред, ки OpenCode тасдиқи MCP-ро ҳанӯз дастгирӣ намекунад.',
+    'MCP сервери "{{name}}" ноком шуд. Дар хотир доред, ки Miao тасдиқи MCP-ро ҳанӯз дастгирӣ намекунад.',
   "error.chain.providerAuthFailed": "Аутентификатсияи провайдер ноком шуд ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'Провайдери "{{provider}}" оғоз карда нашуд. Санҷиши эътимоднома ва конфигуратсия.',
   "error.chain.configJsonInvalid": "Файли танзимот дар {{path}} эътибор надорад JSON(C)",
@@ -934,10 +934,10 @@ export const dict = {
   "settings.general.row.shell.terminalOnly": "танҳо терминал",
   "settings.general.row.appearance.title": "Намуди зоҳирӣ",
   "settings.general.row.appearance.description":
-    "Фармоиш диҳед, ки чӣ гуна OpenCode дар дастгоҳи шумо намуди зоҳирӣ дорад",
+    "Фармоиш диҳед, ки чӣ гуна Miao дар дастгоҳи шумо намуди зоҳирӣ дорад",
   "settings.general.row.colorScheme.title": "Схемаи ранг",
   "settings.general.row.colorScheme.description":
-    "Интихоб кунед, ки OpenCode аз рӯи система, равшанӣ ё мавзӯи торик пайравӣ мекунад",
+    "Интихоб кунед, ки Miao аз рӯи система, равшанӣ ё мавзӯи торик пайравӣ мекунад",
   "settings.general.row.theme.title": "Мавзӯъ",
   "settings.general.row.theme.description": "Чӣ тавр Miao мавзӯъро танзим кунед.",
   "settings.general.row.font.title": "Шрифти код",

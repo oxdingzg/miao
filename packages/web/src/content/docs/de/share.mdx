@@ -3,6 +3,10 @@ title: Teilen
 description: Teile Miao-Unterhaltungen per oeffentlichem Link.
 ---
 
+:::note
+miao has no default sharing backend. Sharing requires an explicit `enterprise.url` in `miao.json`. Console login alone does not enable sharing.
+:::
+
 Mit der Share-Funktion erstellst du oeffentliche Links zu Miao-Unterhaltungen.
 So kannst du einfacher mit dem Team zusammenarbeiten oder Hilfe einholen.
 
@@ -18,7 +22,7 @@ Wenn du eine Unterhaltung teilst, macht Miao Folgendes:
 
 1. Erstellt eine eindeutige oeffentliche URL fuer deine Sitzung
 2. Synchronisiert den Verlauf auf unsere Server
-3. Stellt die Unterhaltung unter `opncd.ai/s/<share-id>` bereit
+3. Stellt die Unterhaltung unter `your-share-server/share/<share-id>` bereit
 
 ---
 
@@ -43,7 +47,7 @@ Um den manuellen Modus explizit in der [Konfiguration](/docs/config) zu setzen:
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "manual"
 }
 ```
@@ -56,7 +60,7 @@ Du kannst automatisches Teilen fuer neue Unterhaltungen aktivieren, indem du in 
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "auto"
 }
 ```
@@ -71,7 +75,7 @@ Du kannst Teilen komplett deaktivieren, indem du in der [Konfiguration](/docs/co
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "disabled"
 }
 ```

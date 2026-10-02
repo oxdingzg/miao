@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao އިންސްޓޯލް ކޮށްފައި އޮތް ނަމަވެސް ހިންގޭ ގޮތެއް ނުވިއެވެ",
   "desktop.wsl.error.miaoNotInstalled": "Miao އަކީ {{distro}} ގައި އިންސްޓޯލް ކުރެވިފައިވާ އެއްޗެއް ނޫނެވެ",
   "desktop.wsl.error.updateVersion":
-    "OpenCode އަޕްޑޭޓް ނިމުނު ނަމަވެސް {{distro}} އަދިވެސް ރިޕޯޓް ކުރަނީ {{installed}}؛ ލަފާކުރެވޭ ގޮތުގައި {{expected}}",
+    "Miao އަޕްޑޭޓް ނިމުނު ނަމަވެސް {{distro}} އަދިވެސް ރިޕޯޓް ކުރަނީ {{installed}}؛ ލަފާކުރެވޭ ގޮތުގައި {{expected}}",
   "desktop.wsl.error.noVersion": "އެއްވެސް ވަރޝަނެއް ނެތެވެ",
   "desktop.wsl.error.serverExited":
     "ސްޓާޓްއަޕް ކުރުމަށްފަހު WSL ސަރވަރ އިން ނުކުމެއްޖެ (code={{code}} signal={{signal}})",
@@ -224,7 +224,7 @@ export const dict = {
   "provider.connect.status.waiting": "ހުއްދައަށް އިންތިޒާރު ކުރަމުން...",
   "provider.connect.status.failed": "ހުއްދަ ދިނުން ނާކާމިޔާބު: {{error}}",
   "provider.connect.apiKey.description":
-    "ތިބާގެ އެކައުންޓް ގުޅުވައި، OpenCode ގައި {{provider}} މޮޑެލްތައް ބޭނުންކުރުމަށް {{provider}} API ކީ ލިޔުއްވާ.",
+    "ތިބާގެ އެކައުންޓް ގުޅުވައި، Miao ގައި {{provider}} މޮޑެލްތައް ބޭނުންކުރުމަށް {{provider}} API ކީ ލިޔުއްވާ.",
   "provider.connect.apiKey.label": "{{provider}} API ކީ އެވެ",
   "provider.connect.apiKey.placeholder": "API ކީ އެވެ",
   "provider.connect.apiKey.required": "API ކީ ބޭނުންވެއެވެ",
@@ -238,7 +238,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "ޒިޔާރަތްކުރުން ",
   "provider.connect.oauth.code.visit.link": "މި ލިންކެވެ",
   "provider.connect.oauth.code.visit.suffix":
-    " އެކައުންޓް ގުޅުވައިދިނުމަށާއި OpenCode ގައި {{provider}} މޮޑެލްތައް ބޭނުންކުރުމަށް އޮތޯރައިޒޭޝަން ކޯޑް އެއްކުރުމަށްޓަކައެވެ.",
+    " އެކައުންޓް ގުޅުވައިދިނުމަށާއި Miao ގައި {{provider}} މޮޑެލްތައް ބޭނުންކުރުމަށް އޮތޯރައިޒޭޝަން ކޯޑް އެއްކުރުމަށްޓަކައެވެ.",
   "provider.connect.oauth.code.label": "{{method}} ހުއްދަ ކޯޑް",
   "provider.connect.oauth.code.placeholder": "ހުއްދަ ކޯޑް",
   "provider.connect.oauth.code.required": "އޮތޯރިޒޭޝަން ކޯޑް ބޭނުންވެއެވެ",
@@ -246,7 +246,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "ޒިޔާރަތްކުރުން ",
   "provider.connect.oauth.auto.visit.link": "މި ލިންކެވެ",
   "provider.connect.oauth.auto.visit.suffix":
-    " އަދި ތިރީގައިވާ ކޯޑް ޖައްސަވައިގެން އެކައުންޓް ގުޅުވައި، OpenCode ގައި {{provider}} މޮޑެލްތައް ބޭނުން ކުރައްވާށެވެ.",
+    " އަދި ތިރީގައިވާ ކޯޑް ޖައްސަވައިގެން އެކައުންޓް ގުޅުވައި، Miao ގައި {{provider}} މޮޑެލްތައް ބޭނުން ކުރައްވާށެވެ.",
   "provider.connect.oauth.auto.confirmationCode": "ކޮންފަރމަންސް ކޯޑް",
   "provider.connect.toast.connected.title": "{{provider}} ގުޅިފައިވެއެވެ",
   "provider.connect.toast.connected.description": "{{provider}} މޮޑެލްތައް މިހާރު ބޭނުންކުރެވޭނެ އެވެ.",
@@ -496,7 +496,7 @@ export const dict = {
   "wsl.onboarding.wslUnavailable.description": "މި މެޝިނުގައި Miao އަށް WSL ޔަގީން ނުކުރެވުނެވެ.",
   "wsl.onboarding.installWsl": "WSL އިންސްޓޯލް ކުރާށެވެ",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL އިންސްޓޯލް ކުރުން ނިންމުމަށް Windows އަލުން ސްޓާޓްކޮށް، ދެން OpenCode އަލުން ހުޅުވާށެވެ.",
+    "WSL އިންސްޓޯލް ކުރުން ނިންމުމަށް Windows އަލުން ސްޓާޓްކޮށް، ދެން Miao އަލުން ހުޅުވާށެވެ.",
   "wsl.onboarding.next": "ދެން",
   "wsl.onboarding.refresh": "ރިފްރެޝް ކޮށްލާށެވެ",
   "wsl.onboarding.allDistrosAdded": "އިންސްޓޯލްކޮށްފައިވާ ހުރިހާ ޑިސްޓްރޯތަކެއް މިހާރުވެސް އިތުރުކޮށްފައިވެއެވެ.",
@@ -672,7 +672,7 @@ export const dict = {
   "error.chain.modelNotFound": "މޮޑެލް ނުފެނޭ: {{provider}}/{{model}}",
   "error.chain.checkConfig": "ތިބާގެ ކޮންފިގް (miao.json) ޕްރޮވައިޑަރ/މޮޑެލް ނަންތައް ޗެކްކުރުން",
   "error.chain.mcpFailed":
-    'MCP ސަރވަރ "{{name}}" ފޭލްވެއްޖެއެވެ. ނޯޓް، OpenCode އިން އަދި MCP އޮތެންޓިކޭޝަން އަށް ސަޕޯޓް ނުކުރެއެވެ.',
+    'MCP ސަރވަރ "{{name}}" ފޭލްވެއްޖެއެވެ. ނޯޓް، Miao އިން އަދި MCP އޮތެންޓިކޭޝަން އަށް ސަޕޯޓް ނުކުރެއެވެ.',
   "error.chain.providerAuthFailed": "ޕްރޮވައިޑަރ އޮތެންޓިކޭޝަން ފެއިލްވެއްޖެ ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'ޕްރޮވައިޑަރ "{{provider}}" އިނިޝިއަލައިޒް ނުކުރެވުނެވެ. ކްރެޑެންޝިއަލްސް އަދި ކޮންފިގްރޭޝަން ޗެކްކުރުން.',
@@ -947,7 +947,7 @@ export const dict = {
   "settings.general.row.appearance.description": "ޑިވައިސްގައި Miao ފެންނަ ގޮތް ކަސްޓަމައިޒް ކުރާށެވެ",
   "settings.general.row.colorScheme.title": "ކުލަ ސްކީމް",
   "settings.general.row.colorScheme.description":
-    "OpenCode އިން ސިސްޓަމް، ލައިޓް، ނުވަތަ ޑާކް ތީމް އަށް ތަބާވާތޯ ހޮވާށެވެ",
+    "Miao އިން ސިސްޓަމް، ލައިޓް، ނުވަތަ ޑާކް ތީމް އަށް ތަބާވާތޯ ހޮވާށެވެ",
   "settings.general.row.theme.title": "ތީމް",
   "settings.general.row.theme.description": "Miao ތީމް ކުރެވިފައިވާ ގޮތް ކަސްޓަމައިޒް ކުރުން.",
   "settings.general.row.font.title": "ކޯޑް ފޮންޓެވެ",

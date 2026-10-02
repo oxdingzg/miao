@@ -82,7 +82,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.miaoCannotRun": "miao འདི་གཞི་བཙུགས་འབད་ཡོད་རུང་ གཡོག་བཀོལ་མ་ཚུགས།",
   "desktop.wsl.error.miaoNotInstalled": "Miao འདི་ {{distro}} ནང་གཞི་བཙུགས་མ་འབད་བས།",
   "desktop.wsl.error.updateVersion":
-    "OpenCode དུས་མཐུན་བཟོ་ཚར་ཡི་ དེ་འབདཝ་ད་ {{distro}}གིས་ ད་ལྟོ་ཡང་ {{installed}} སྙན་ཞུ་འབདཝ་ཨིན། རེ་བ་བསྐྱེད་པའི་ {{expected}}",
+    "Miao དུས་མཐུན་བཟོ་ཚར་ཡི་ དེ་འབདཝ་ད་ {{distro}}གིས་ ད་ལྟོ་ཡང་ {{installed}} སྙན་ཞུ་འབདཝ་ཨིན། རེ་བ་བསྐྱེད་པའི་ {{expected}}",
   "desktop.wsl.error.noVersion": "ཐོན་རིམ་མེད།",
   "desktop.wsl.error.serverExited":
     "WSL སར་བར་འདི་ འགོ་བཙུགས་པའི་ཤུལ་ལས་ ཕྱིར་འཐོན་འབད་ཡོདཔ་ཨིན་ (ཨང་རྟགས་={{code}} བརྡ་རྟགས་={{signal}})",
@@ -224,12 +224,12 @@ export const dict: Record<string, string> = {
   "provider.connect.status.waiting": "གནང་བ་ལུ་སྒུག་སྡོདཔ་ཨིན།",
   "provider.connect.status.failed": "དབང་སྤྲོད་འཐུས་ཤོར་བྱུང་ཡོདཔ།: {{error}}",
   "provider.connect.apiKey.description":
-    "ཁྱོད་རའི་རྩིས་ཐོ་མཐུད་ནིའི་དོན་ལུ་ ཁྱོད་རའི་ {{provider}} API ལྡེ་མིག་བཙུགས་ཞིནམ་ལས་ OpenCode ནང་ལུ་ {{provider}} དཔེ་ཚད་ཚུ་ལག་ལེན་འཐབ།",
+    "ཁྱོད་རའི་རྩིས་ཐོ་མཐུད་ནིའི་དོན་ལུ་ ཁྱོད་རའི་ {{provider}} API ལྡེ་མིག་བཙུགས་ཞིནམ་ལས་ Miao ནང་ལུ་ {{provider}} དཔེ་ཚད་ཚུ་ལག་ལེན་འཐབ།",
   "provider.connect.apiKey.label": "{{provider}} APIལྡེ་མིག།",
   "provider.connect.apiKey.placeholder": "APIལྡེ་མིག།",
   "provider.connect.apiKey.required": "APIལྡེ་མིག་དགོས་མཁོ་ཡོད།",
   "provider.connect.miaoZen.line1":
-    "OpenCode ཟེན་གྱིས་ཁྱོད་ལུ་ གསང་ཡིག་ལས་ཚབ་ཚུ་གི་དོན་ལུ་ བློ་གཏད་ཅན་གྱི་ཡར་འཕེལ་ཅན་གྱི་དཔེ་ཚད་ཚུ་གི་ བཀོད་སྒྲིག་འབད་ཡོད་པའི་ཆ་ཚན་ཅིག་ལུ་འཛུལ་སྤྱོད་བྱིནམ་ཨིན།",
+    "Miao ཟེན་གྱིས་ཁྱོད་ལུ་ གསང་ཡིག་ལས་ཚབ་ཚུ་གི་དོན་ལུ་ བློ་གཏད་ཅན་གྱི་ཡར་འཕེལ་ཅན་གྱི་དཔེ་ཚད་ཚུ་གི་ བཀོད་སྒྲིག་འབད་ཡོད་པའི་ཆ་ཚན་ཅིག་ལུ་འཛུལ་སྤྱོད་བྱིནམ་ཨིན།",
   "provider.connect.miaoZen.line2":
     "API ལྡེ་མིག་རྐྱང་པ་གཅིག་གིས་ ཁྱོད་ཀྱིས་ Claude དང་ GPT དེ་ལས་ Gemini དང་ GLM དེ་ལས་མངམ་བཟུམ་གྱི་དཔེ་ཚད་ཚུ་ལུ་འཛུལ་སྤྱོད་འབད་ཚུགས།",
   "provider.connect.miaoZen.visit.prefix": "འགྱོ་ནི",
@@ -238,7 +238,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.code.visit.prefix": "འགྱོ་ནི",
   "provider.connect.oauth.code.visit.link": "འབྲེལ་མཐུད་འདི།",
   "provider.connect.oauth.code.visit.suffix":
-    "ཁྱོད་རའི་རྩིས་ཐོ་མཐུད་ནིའི་དོན་ལུ་ ཁྱོད་རའི་གནང་བ་ཨང་རྟགས་བསྡུ་ལེན་འབད་ནི་དང་ OpenCode ནང་ལུ་ {{provider}} དཔེ་ཚད་ཚུ་ལག་ལེན་འཐབ་ནི།",
+    "ཁྱོད་རའི་རྩིས་ཐོ་མཐུད་ནིའི་དོན་ལུ་ ཁྱོད་རའི་གནང་བ་ཨང་རྟགས་བསྡུ་ལེན་འབད་ནི་དང་ Miao ནང་ལུ་ {{provider}} དཔེ་ཚད་ཚུ་ལག་ལེན་འཐབ་ནི།",
   "provider.connect.oauth.code.label": "{{method}} དབང་སྤྲོད་ཨང་རྟགས།",
   "provider.connect.oauth.code.placeholder": "དབང་སྤྲོད་ཨང་རྟགས།",
   "provider.connect.oauth.code.required": "དབང་སྤྲོད་ཨང་རྟགས་དགོཔ་ཨིན།",
@@ -246,7 +246,7 @@ export const dict: Record<string, string> = {
   "provider.connect.oauth.auto.visit.prefix": "འགྱོ་ནི",
   "provider.connect.oauth.auto.visit.link": "འབྲེལ་མཐུད་འདི།",
   "provider.connect.oauth.auto.visit.suffix":
-    "དེ་ལས་ ཁྱོད་རའི་རྩིས་ཐོ་མཐུད་ནི་དང་ OpenCode ནང་ལུ་ {{provider}} དཔེ་ཚད་ཚུ་ལག་ལེན་འཐབ།",
+    "དེ་ལས་ ཁྱོད་རའི་རྩིས་ཐོ་མཐུད་ནི་དང་ Miao ནང་ལུ་ {{provider}} དཔེ་ཚད་ཚུ་ལག་ལེན་འཐབ།",
   "provider.connect.oauth.auto.confirmationCode": "ངེས་གཏན་ཨང་རྟགས།",
   "provider.connect.toast.connected.title": "{{provider}}མཐུད་ཡོད།",
   "provider.connect.toast.connected.description": "{{provider}} དཔེ་ཚད་ཚུ་ད་ལག་ལེན་འཐབ་བཏུབ་ཨིན།",
@@ -490,12 +490,12 @@ export const dict: Record<string, string> = {
   "wsl.onboarding.needAnotherDistroHint": "WSL ཐོ་གཞུང་ལས་ Linux བགོ་བཀྲམ་ཅིག་གཞི་བཙུགས་འབད།",
   "wsl.onboarding.wslNotInstalled.title": "WSL གཞི་བཙུགས་མ་འབད་བས།",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (WindowsLinuxཡན་ལག་རིམ་ལུགས་)འདི་ OpenCodeགིས་ WSLསར་བར་ཁ་སྐོང་མ་འབད་བའི་ཧེ་མ་དགོཔ་ཨིན།",
+    "WSL (WindowsLinuxཡན་ལག་རིམ་ལུགས་)འདི་ Miaoགིས་ WSLསར་བར་ཁ་སྐོང་མ་འབད་བའི་ཧེ་མ་དགོཔ་ཨིན།",
   "wsl.onboarding.wslUnavailable.title": "WSL ཐོབ་མི་ཚུགས།",
   "wsl.onboarding.wslUnavailable.description": "Miaoགིས་ འཕྲུལ་ཆས་འདི་གུ་ WSL བདེན་སྦྱོར་འབད་མ་ཚུགས།",
   "wsl.onboarding.installWsl": "WSLགཞི་བཙུགས་འབད།",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL གཞི་བཙུགས་འབད་ནི་མཇུག་བསྡུ་ནིའི་དོན་ལུ་ Windows ལོག་འགོ་བཙུགསཔ་དང་ དེ་ལས་ OpenCode ལོག་ཁ་ཕྱེ།",
+    "WSL གཞི་བཙུགས་འབད་ནི་མཇུག་བསྡུ་ནིའི་དོན་ལུ་ Windows ལོག་འགོ་བཙུགསཔ་དང་ དེ་ལས་ Miao ལོག་ཁ་ཕྱེ།",
   "wsl.onboarding.next": "ཤུལ༌མའི",
   "wsl.onboarding.refresh": "གསརཔ་བཟོ།",
   "wsl.onboarding.allDistrosAdded": "གཞི་བཙུགས་འབད་ཡོད་པའི་ཌིསི་ཊོ་ཚུ་ཆ་མཉམ་ཧེ་མ་ལས་ཁ་སྐོང་བརྐྱབ་ཡོདཔ་ཨིན།",
@@ -673,7 +673,7 @@ export const dict: Record<string, string> = {
   "error.chain.modelNotFound": "དཔེ་ཚད་འཚོལ་མ་ཐོབ།: {{provider}}/{{model}}",
   "error.chain.checkConfig": "ཁྱོད་ཀྱི་རིམ་སྒྲིག་ (miao.json) བྱིན་མི་/དཔེ་ཚད་མིང་ཚུ་ཞིབ་དཔྱད་འབད།",
   "error.chain.mcpFailed":
-    'MCP སར་བར་ "{{name}}" འཐུས་ཤོར་བྱུང་ཡོདཔ། དྲན་འཛིན་ OpenCode གིས་ ད་ལྟོ་ཡང་ MCP བདེན་བཤད་ལུ་རྒྱབ་སྐྱོར་མི་འབད།',
+    'MCP སར་བར་ "{{name}}" འཐུས་ཤོར་བྱུང་ཡོདཔ། དྲན་འཛིན་ Miao གིས་ ད་ལྟོ་ཡང་ MCP བདེན་བཤད་ལུ་རྒྱབ་སྐྱོར་མི་འབད།',
   "error.chain.providerAuthFailed": "བྱིན་མི་བདེན་བཤད་འཐུས་ཤོར་བྱུང་ཡོདཔ།({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'བྱིན་མི་ "{{provider}}" འགོ་བཙུགས་ནི་ལུ་འཐུས་ཤོར་འབྱུང་ཡོདཔ། ངོ་རྟགས་དང་རིམ་སྒྲིག་ཞིབ་དཔྱད་འབད།',
@@ -946,10 +946,10 @@ export const dict: Record<string, string> = {
   "settings.general.row.shell.terminalOnly": "ཊར་མི་ནཱལ་རྐྱངམ་ཅིག།",
   "settings.general.row.appearance.title": "བཟོ་དབྱིབས",
   "settings.general.row.appearance.description":
-    "OpenCodeའདི་ཁྱོད་རའི་ཐབས་འཕྲུལ་གུ་ག་དེ་སྦེ་མཐོངམ་ཨིན་ན་སྲོལ་སྒྲིག་འབད།",
+    "Miaoའདི་ཁྱོད་རའི་ཐབས་འཕྲུལ་གུ་ག་དེ་སྦེ་མཐོངམ་ཨིན་ན་སྲོལ་སྒྲིག་འབད།",
   "settings.general.row.colorScheme.title": "ཚོས་གཞིའི་འཆར་གཞི།",
   "settings.general.row.colorScheme.description":
-    "OpenCode གིས་ རིམ་ལུགས་དང་ འོད་ ཡང་ན་ གནགཔོ་གི་བརྗོད་དོན་ལུ་ རྗེས་སུ་འཇུག་ནི་ཨིན་ན་ གདམ་ཁ་རྐྱབས།",
+    "Miao གིས་ རིམ་ལུགས་དང་ འོད་ ཡང་ན་ གནགཔོ་གི་བརྗོད་དོན་ལུ་ རྗེས་སུ་འཇུག་ནི་ཨིན་ན་ གདམ་ཁ་རྐྱབས།",
   "settings.general.row.theme.title": "བརྗོད༌དོན",
   "settings.general.row.theme.description": "Miaoའདི་བརྗོད་དོན་ག་དེ་སྦེ་ཡོདཔ་ཨིན་ན་སྲོལ་སྒྲིག་འབད།",
   "settings.general.row.font.title": "ཨང་རྟགས་ཡིག་གཟུགས།",

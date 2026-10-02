@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao is geïnstalleerd, maar kan niet worden uitgevoerd",
   "desktop.wsl.error.miaoNotInstalled": "Miao is niet geïnstalleerd in {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "De OpenCode-update is voltooid, maar {{distro}} meldt nog steeds {{installed}}; verwacht: {{expected}}",
+    "De Miao-update is voltooid, maar {{distro}} meldt nog steeds {{installed}}; verwacht: {{expected}}",
   "desktop.wsl.error.noVersion": "geen versie",
   "desktop.wsl.error.serverExited": "WSL-server is na het opstarten afgesloten (code={{code}} signaal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "Wachten op autorisatie...",
   "provider.connect.status.failed": "Autorisatie mislukt: {{error}}",
   "provider.connect.apiKey.description":
-    "Voer je {{provider}}-API-sleutel in om je account te koppelen en {{provider}}-modellen in OpenCode te gebruiken.",
+    "Voer je {{provider}}-API-sleutel in om je account te koppelen en {{provider}}-modellen in Miao te gebruiken.",
   "provider.connect.apiKey.label": "{{provider}}-API-sleutel",
   "provider.connect.apiKey.placeholder": "API-sleutel",
   "provider.connect.apiKey.required": "API-sleutel is vereist",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Ga naar ",
   "provider.connect.oauth.code.visit.link": "deze link",
   "provider.connect.oauth.code.visit.suffix":
-    " om je autorisatiecode op te halen, je account te koppelen en {{provider}}-modellen in OpenCode te gebruiken.",
+    " om je autorisatiecode op te halen, je account te koppelen en {{provider}}-modellen in Miao te gebruiken.",
   "provider.connect.oauth.code.label": "{{method}}-autorisatiecode",
   "provider.connect.oauth.code.placeholder": "Autorisatiecode",
   "provider.connect.oauth.code.required": "Autorisatiecode is vereist",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Ga naar ",
   "provider.connect.oauth.auto.visit.link": "deze link",
   "provider.connect.oauth.auto.visit.suffix":
-    " en voer de onderstaande code in om je account te koppelen en {{provider}}-modellen in OpenCode te gebruiken.",
+    " en voer de onderstaande code in om je account te koppelen en {{provider}}-modellen in Miao te gebruiken.",
   "provider.connect.oauth.auto.confirmationCode": "Bevestigingscode",
   "provider.connect.toast.connected.title": "Verbonden met {{provider}}",
   "provider.connect.toast.connected.description": "{{provider}}-modellen zijn nu beschikbaar voor gebruik.",
@@ -486,12 +486,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Installeer een Linux-distributie uit de WSL-catalogus",
   "wsl.onboarding.wslNotInstalled.title": "WSL niet geïnstalleerd",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows-subsysteem voor Linux) is vereist voordat OpenCode een WSL-server kan toevoegen",
+    "WSL (Windows-subsysteem voor Linux) is vereist voordat Miao een WSL-server kan toevoegen",
   "wsl.onboarding.wslUnavailable.title": "WSL niet beschikbaar",
   "wsl.onboarding.wslUnavailable.description": "Miao kan WSL niet verifiëren op deze machine.",
   "wsl.onboarding.installWsl": "Installeer WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "Start Windows opnieuw om de installatie van WSL te voltooien en open vervolgens OpenCode opnieuw.",
+    "Start Windows opnieuw om de installatie van WSL te voltooien en open vervolgens Miao opnieuw.",
   "wsl.onboarding.next": "Volgende",
   "wsl.onboarding.refresh": "Vernieuwen",
   "wsl.onboarding.allDistrosAdded": "Alle geïnstalleerde distributies zijn al toegevoegd.",
@@ -669,7 +669,7 @@ export const dict = {
   "error.chain.didYouMean": "Bedoelde je: {{suggestions}}",
   "error.chain.modelNotFound": "Model niet gevonden: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Controleer de provider- en modelnamen in je configuratie (miao.json)",
-  "error.chain.mcpFailed": 'MCP-server "{{name}}" is mislukt. Let op: OpenCode ondersteunt nog geen MCP-authenticatie.',
+  "error.chain.mcpFailed": 'MCP-server "{{name}}" is mislukt. Let op: Miao ondersteunt nog geen MCP-authenticatie.',
   "error.chain.providerAuthFailed": "Authenticatie bij aanbieder mislukt ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Kan provider "{{provider}}" niet initialiseren. Controleer de inloggegevens en configuratie.',
@@ -942,7 +942,7 @@ export const dict = {
   "settings.general.row.appearance.description": "Pas aan hoe Miao eruitziet op je apparaat",
   "settings.general.row.colorScheme.title": "Kleurenschema",
   "settings.general.row.colorScheme.description":
-    "Kies of OpenCode het systeemthema, het lichte thema of het donkere thema gebruikt",
+    "Kies of Miao het systeemthema, het lichte thema of het donkere thema gebruikt",
   "settings.general.row.theme.title": "Thema",
   "settings.general.row.theme.description": "Pas het thema van Miao aan.",
   "settings.general.row.font.title": "Codelettertype",

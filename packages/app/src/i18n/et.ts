@@ -81,7 +81,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao on installitud, kuid seda ei saa käivitada",
   "desktop.wsl.error.miaoNotInstalled": "Miao pole installitud asukohta {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "OpenCode värskendus on lõpetatud, kuid {{distro}} teatab endiselt {{installed}}; oodata {{expected}}",
+    "Miao värskendus on lõpetatud, kuid {{distro}} teatab endiselt {{installed}}; oodata {{expected}}",
   "desktop.wsl.error.noVersion": "versiooni pole",
   "desktop.wsl.error.serverExited": "WSL-server sulgus pärast käivitamist (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -220,7 +220,7 @@ export const dict = {
   "provider.connect.status.waiting": "Autoriseerimise ootel...",
   "provider.connect.status.failed": "Autoriseerimine ebaõnnestus: {{error}}",
   "provider.connect.apiKey.description":
-    "Sisestage {{provider}} API võti, et ühendada konto ja kasutada {{provider}} mudeleid OpenCode'is.",
+    "Sisestage {{provider}} API võti, et ühendada konto ja kasutada {{provider}} mudeleid Miao'is.",
   "provider.connect.apiKey.label": "{{provider}} API klahv",
   "provider.connect.apiKey.placeholder": "API klahv",
   "provider.connect.apiKey.required": "Klahv API on nõutav",
@@ -234,7 +234,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Külastage ",
   "provider.connect.oauth.code.visit.link": "see link",
   "provider.connect.oauth.code.visit.suffix":
-    " konto ühendamiseks autoriseerimiskoodi kogumiseks ja {{provider}} mudeli kasutamiseks jaotises OpenCode.",
+    " konto ühendamiseks autoriseerimiskoodi kogumiseks ja {{provider}} mudeli kasutamiseks jaotises Miao.",
   "provider.connect.oauth.code.label": "{{method}} autoriseerimiskood",
   "provider.connect.oauth.code.placeholder": "Autoriseerimiskood",
   "provider.connect.oauth.code.required": "Vaja on autoriseerimiskoodi",
@@ -242,7 +242,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "Külastage ",
   "provider.connect.oauth.auto.visit.link": "see link",
   "provider.connect.oauth.auto.visit.suffix":
-    " ja sisestage allolev kood, et ühendada oma konto ja kasutada {{provider}} mudelit jaotises OpenCode.",
+    " ja sisestage allolev kood, et ühendada oma konto ja kasutada {{provider}} mudelit jaotises Miao.",
   "provider.connect.oauth.auto.confirmationCode": "Kinnituskood",
   "provider.connect.toast.connected.title": "{{provider}} ühendatud",
   "provider.connect.toast.connected.description": "{{provider}} mudelit on nüüd kasutamiseks saadaval.",
@@ -484,7 +484,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "Installige Linux distributsioon kataloogist WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL pole installitud",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (Windows alamsüsteem Linux jaoks) on nõutav, enne kui OpenCode saab lisada WSL serveri",
+    "WSL (Windows alamsüsteem Linux jaoks) on nõutav, enne kui Miao saab lisada WSL serveri",
   "wsl.onboarding.wslUnavailable.title": "WSL pole saadaval",
   "wsl.onboarding.wslUnavailable.description": "Miao ei saanud selles masinas kontrollida WSL.",
   "wsl.onboarding.installWsl": "Installige WSL",
@@ -658,7 +658,7 @@ export const dict = {
   "error.chain.didYouMean": "Kas mõtlesite: {{suggestions}}",
   "error.chain.modelNotFound": "Mudelit ei leitud: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Kontrollige oma konfiguratsiooni (miao.json) pakkuja/mudeli nimesid",
-  "error.chain.mcpFailed": 'MCP server "{{name}}" ebaõnnestus. Pange tähele, OpenCode ei toeta veel MCP autentimist.',
+  "error.chain.mcpFailed": 'MCP server "{{name}}" ebaõnnestus. Pange tähele, Miao ei toeta veel MCP autentimist.',
   "error.chain.providerAuthFailed": "Pakkuja autentimine ebaõnnestus ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Teenusepakkuja "{{provider}}" lähtestamine ebaõnnestus. Kontrollige mandaate ja konfiguratsiooni.',

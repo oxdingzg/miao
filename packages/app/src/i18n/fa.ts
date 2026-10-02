@@ -82,7 +82,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao نصب شده است اما اجرا نمی شود",
   "desktop.wsl.error.miaoNotInstalled": "Miao در {{distro}} نصب نشده است",
   "desktop.wsl.error.updateVersion":
-    "به‌روزرسانی OpenCode به پایان رسید، اما {{distro}} همچنان {{installed}} را گزارش می‌کند. مورد انتظار {{expected}}",
+    "به‌روزرسانی Miao به پایان رسید، اما {{distro}} همچنان {{installed}} را گزارش می‌کند. مورد انتظار {{expected}}",
   "desktop.wsl.error.noVersion": "بدون نسخه",
   "desktop.wsl.error.serverExited": "سرور WSL پس از راه اندازی خارج شد (کد={{code}} سیگنال={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -221,7 +221,7 @@ export const dict = {
   "provider.connect.status.waiting": "در انتظار مجوز...",
   "provider.connect.status.failed": "مجوز انجام نشد: {{error}}",
   "provider.connect.apiKey.description":
-    "کلید API سرویس {{provider}} را وارد کنید تا حساب شما متصل شود و بتوانید از مدل‌های {{provider}} در OpenCode استفاده کنید.",
+    "کلید API سرویس {{provider}} را وارد کنید تا حساب شما متصل شود و بتوانید از مدل‌های {{provider}} در Miao استفاده کنید.",
   "provider.connect.apiKey.label": "کلید {{provider}} API",
   "provider.connect.apiKey.placeholder": "کلید API",
   "provider.connect.apiKey.required": "کلید API مورد نیاز است",
@@ -235,7 +235,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "بازدید کنید ",
   "provider.connect.oauth.code.visit.link": "این لینک",
   "provider.connect.oauth.code.visit.suffix":
-    " برای جمع آوری کد مجوز برای اتصال حساب خود و استفاده از مدل های {{provider}} در OpenCode.",
+    " برای جمع آوری کد مجوز برای اتصال حساب خود و استفاده از مدل های {{provider}} در Miao.",
   "provider.connect.oauth.code.label": "کد مجوز {{method}}",
   "provider.connect.oauth.code.placeholder": "کد مجوز",
   "provider.connect.oauth.code.required": "کد مجوز لازم است",
@@ -243,7 +243,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "بازدید کنید ",
   "provider.connect.oauth.auto.visit.link": "این لینک",
   "provider.connect.oauth.auto.visit.suffix":
-    " و کد زیر را برای اتصال اکانت خود وارد کنید و از مدل های {{provider}} در OpenCode استفاده کنید.",
+    " و کد زیر را برای اتصال اکانت خود وارد کنید و از مدل های {{provider}} در Miao استفاده کنید.",
   "provider.connect.oauth.auto.confirmationCode": "کد تایید",
   "provider.connect.toast.connected.title": "{{provider}} متصل است",
   "provider.connect.toast.connected.description": "مدل های {{provider}} اکنون برای استفاده در دسترس هستند.",
@@ -485,12 +485,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "توزیع Linux را از کاتالوگ WSL نصب کنید",
   "wsl.onboarding.wslNotInstalled.title": "WSL نصب نشده است",
   "wsl.onboarding.wslNotInstalled.description":
-    "WSL (زیر سیستم Windows برای Linux) قبل از اینکه OpenCode بتواند یک سرور WSL اضافه کند لازم است",
+    "WSL (زیر سیستم Windows برای Linux) قبل از اینکه Miao بتواند یک سرور WSL اضافه کند لازم است",
   "wsl.onboarding.wslUnavailable.title": "WSL در دسترس نیست",
   "wsl.onboarding.wslUnavailable.description": "Miao نتوانست WSL را در این دستگاه تأیید کند.",
   "wsl.onboarding.installWsl": "WSL را نصب کنید",
   "wsl.onboarding.windowsRestartRequired":
-    "Windows را مجددا راه اندازی کنید تا نصب WSL به پایان برسد، سپس OpenCode را دوباره باز کنید.",
+    "Windows را مجددا راه اندازی کنید تا نصب WSL به پایان برسد، سپس Miao را دوباره باز کنید.",
   "wsl.onboarding.next": "بعدی",
   "wsl.onboarding.refresh": "تازه کردن",
   "wsl.onboarding.allDistrosAdded": "همه توزیع‌های نصب‌شده قبلاً اضافه شده‌اند.",
@@ -662,7 +662,7 @@ export const dict = {
   "error.chain.modelNotFound": "مدل پیدا نشد: {{provider}}/{{model}}",
   "error.chain.checkConfig": "نام ارائه دهنده/مدل پیکربندی (miao.json) خود را بررسی کنید",
   "error.chain.mcpFailed":
-    'سرور MCP "{{name}}" ناموفق بود. توجه داشته باشید، OpenCode هنوز از احراز هویت MCP پشتیبانی نمی کند.',
+    'سرور MCP "{{name}}" ناموفق بود. توجه داشته باشید، Miao هنوز از احراز هویت MCP پشتیبانی نمی کند.',
   "error.chain.providerAuthFailed": "احراز هویت ارائه دهنده ناموفق بود ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'ارائه دهنده "{{provider}}" راه اندازی نشد. اعتبار و پیکربندی را بررسی کنید.',
   "error.chain.configJsonInvalid": "فایل پیکربندی در {{path}} JSON(C) معتبر نیست",

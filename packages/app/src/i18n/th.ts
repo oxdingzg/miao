@@ -85,7 +85,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "ติดตั้ง miao แล้ว แต่ไม่สามารถเรียกใช้ได้",
   "desktop.wsl.error.miaoNotInstalled": "ไม่ได้ติดตั้ง Miao ใน {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "อัปเดต OpenCode เสร็จแล้ว แต่ {{distro}} ยังคงรายงานเวอร์ชัน {{installed}} ทั้งที่ควรเป็น {{expected}}",
+    "อัปเดต Miao เสร็จแล้ว แต่ {{distro}} ยังคงรายงานเวอร์ชัน {{installed}} ทั้งที่ควรเป็น {{expected}}",
   "desktop.wsl.error.noVersion": "ไม่มีเวอร์ชัน",
   "desktop.wsl.error.serverExited": "เซิร์ฟเวอร์ WSL หยุดทำงานหลังเริ่มต้น (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -239,7 +239,7 @@ export const dict = {
   "provider.connect.status.waiting": "รอการอนุญาต...",
   "provider.connect.status.failed": "การอนุญาตล้มเหลว: {{error}}",
   "provider.connect.apiKey.description":
-    "ป้อนคีย์ API ของ {{provider}} เพื่อเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน OpenCode",
+    "ป้อนคีย์ API ของ {{provider}} เพื่อเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน Miao",
   "provider.connect.apiKey.label": "คีย์ API ของ {{provider}}",
   "provider.connect.apiKey.placeholder": "คีย์ API",
   "provider.connect.apiKey.required": "ต้องใช้คีย์ API",
@@ -253,7 +253,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "เยี่ยมชม ",
   "provider.connect.oauth.code.visit.link": "ลิงก์นี้",
   "provider.connect.oauth.code.visit.suffix":
-    " เพื่อรับรหัสการอนุญาตสำหรับเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน OpenCode",
+    " เพื่อรับรหัสการอนุญาตสำหรับเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน Miao",
   "provider.connect.oauth.code.label": "รหัสการอนุญาต {{method}}",
   "provider.connect.oauth.code.placeholder": "รหัสการอนุญาต",
   "provider.connect.oauth.code.required": "ต้องใช้รหัสการอนุญาต",
@@ -261,7 +261,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "เยี่ยมชม ",
   "provider.connect.oauth.auto.visit.link": "ลิงก์นี้",
   "provider.connect.oauth.auto.visit.suffix":
-    " และป้อนรหัสด้านล่างเพื่อเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน OpenCode",
+    " และป้อนรหัสด้านล่างเพื่อเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน Miao",
   "provider.connect.oauth.auto.confirmationCode": "รหัสยืนยัน",
   "provider.connect.toast.connected.title": "เชื่อมต่อ {{provider}} แล้ว",
   "provider.connect.toast.connected.description": "โมเดล {{provider}} พร้อมใช้งานแล้ว",
@@ -512,12 +512,12 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "ติดตั้งดิสทริบิวชัน Linux จากแค็ตตาล็อก WSL",
   "wsl.onboarding.wslNotInstalled.title": "ยังไม่ได้ติดตั้ง WSL",
   "wsl.onboarding.wslNotInstalled.description":
-    "ต้องมี WSL (Windows Subsystem for Linux) ก่อนที่ OpenCode จะเพิ่มเซิร์ฟเวอร์ WSL ได้",
+    "ต้องมี WSL (Windows Subsystem for Linux) ก่อนที่ Miao จะเพิ่มเซิร์ฟเวอร์ WSL ได้",
   "wsl.onboarding.wslUnavailable.title": "WSL ไม่พร้อมใช้งาน",
   "wsl.onboarding.wslUnavailable.description": "Miao ไม่สามารถตรวจสอบ WSL บนเครื่องนี้ได้",
   "wsl.onboarding.installWsl": "ติดตั้ง WSL",
   "wsl.onboarding.windowsRestartRequired":
-    "รีสตาร์ท Windows เพื่อให้การติดตั้ง WSL เสร็จสมบูรณ์ แล้วเปิด OpenCode อีกครั้ง",
+    "รีสตาร์ท Windows เพื่อให้การติดตั้ง WSL เสร็จสมบูรณ์ แล้วเปิด Miao อีกครั้ง",
   "wsl.onboarding.next": "ถัดไป",
   "wsl.onboarding.refresh": "รีเฟรช",
   "wsl.onboarding.allDistrosAdded": "เพิ่มดิสโทรที่ติดตั้งไว้ทั้งหมดแล้ว",
@@ -698,7 +698,7 @@ export const dict = {
   "error.chain.didYouMean": "คุณหมายถึง: {{suggestions}}",
   "error.chain.modelNotFound": "ไม่พบโมเดล: {{provider}}/{{model}}",
   "error.chain.checkConfig": "ตรวจสอบการกำหนดค่าของคุณ (miao.json) ชื่อผู้ให้บริการ/โมเดล",
-  "error.chain.mcpFailed": 'เซิร์ฟเวอร์ MCP "{{name}}" ล้มเหลว โปรดทราบว่า OpenCode ยังไม่รองรับการตรวจสอบสิทธิ์ MCP',
+  "error.chain.mcpFailed": 'เซิร์ฟเวอร์ MCP "{{name}}" ล้มเหลว โปรดทราบว่า Miao ยังไม่รองรับการตรวจสอบสิทธิ์ MCP',
   "error.chain.providerAuthFailed": "การตรวจสอบสิทธิ์ผู้ให้บริการล้มเหลว ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": 'ไม่สามารถเริ่มต้นผู้ให้บริการ "{{provider}}" ตรวจสอบข้อมูลรับรองและการกำหนดค่า',
   "error.chain.configJsonInvalid": "ไฟล์กำหนดค่าที่ {{path}} ไม่ใช่ JSON(C) ที่ถูกต้อง",

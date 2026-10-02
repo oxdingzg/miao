@@ -124,7 +124,7 @@ export const dict = {
   "provider.connect.status.waiting": "인증 대기 중...",
   "provider.connect.status.failed": "인증 실패: {{error}}",
   "provider.connect.apiKey.description":
-    "{{provider}} API 키를 입력하여 계정을 연결하고 OpenCode에서 {{provider}} 모델을 사용하세요.",
+    "{{provider}} API 키를 입력하여 계정을 연결하고 Miao에서 {{provider}} 모델을 사용하세요.",
   "provider.connect.apiKey.label": "{{provider}} API 키",
   "provider.connect.apiKey.placeholder": "API 키",
   "provider.connect.apiKey.required": "API 키가 필요합니다",
@@ -137,7 +137,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "다음 ",
   "provider.connect.oauth.code.visit.link": "이 링크",
   "provider.connect.oauth.code.visit.suffix":
-    "를 방문하여 인증 코드를 받아 계정을 연결하고 OpenCode에서 {{provider}} 모델을 사용하세요.",
+    "를 방문하여 인증 코드를 받아 계정을 연결하고 Miao에서 {{provider}} 모델을 사용하세요.",
   "provider.connect.oauth.code.label": "{{method}} 인증 코드",
   "provider.connect.oauth.code.placeholder": "인증 코드",
   "provider.connect.oauth.code.required": "인증 코드가 필요합니다",
@@ -145,7 +145,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "다음 ",
   "provider.connect.oauth.auto.visit.link": "이 링크",
   "provider.connect.oauth.auto.visit.suffix":
-    "를 방문하고 아래 코드를 입력하여 계정을 연결하고 OpenCode에서 {{provider}} 모델을 사용하세요.",
+    "를 방문하고 아래 코드를 입력하여 계정을 연결하고 Miao에서 {{provider}} 모델을 사용하세요.",
   "provider.connect.oauth.auto.confirmationCode": "확인 코드",
   "provider.connect.toast.connected.title": "{{provider}} 연결됨",
   "provider.connect.toast.connected.description": "이제 {{provider}} 모델을 사용할 수 있습니다.",
@@ -452,7 +452,7 @@ export const dict = {
   "error.chain.didYouMean": "혹시 {{suggestions}}을(를) 의미하셨나요?",
   "error.chain.modelNotFound": "모델을 찾을 수 없음: {{provider}}/{{model}}",
   "error.chain.checkConfig": "구성(miao.json)의 공급자/모델 이름을 확인하세요",
-  "error.chain.mcpFailed": 'MCP 서버 "{{name}}" 실패. 참고: OpenCode는 아직 MCP 인증을 지원하지 않습니다.',
+  "error.chain.mcpFailed": 'MCP 서버 "{{name}}" 실패. 참고: Miao는 아직 MCP 인증을 지원하지 않습니다.',
   "error.chain.providerAuthFailed": "공급자 인증 실패 ({{provider}}): {{message}}",
   "error.chain.providerInitFailed": '공급자 "{{provider}}" 초기화 실패. 자격 증명과 구성을 확인하세요.',
   "error.chain.configJsonInvalid": "{{path}}의 구성 파일이 유효한 JSON(C)가 아닙니다",
@@ -949,7 +949,7 @@ export const dict = {
   "wsl.onboarding.needAnotherDistroHint": "WSL 카탈로그에서 Linux 배포판을 설치하세요",
   "wsl.onboarding.wslNotInstalled.title": "WSL이 설치되지 않음",
   "wsl.onboarding.wslNotInstalled.description":
-    "OpenCode에서 WSL 서버를 추가하려면 WSL (Windows Subsystem for Linux)이 필요합니다",
+    "Miao에서 WSL 서버를 추가하려면 WSL (Windows Subsystem for Linux)이 필요합니다",
   "wsl.onboarding.wslUnavailable.title": "WSL을 사용할 수 없음",
   "wsl.onboarding.wslUnavailable.description": "Miao에서 이 컴퓨터의 WSL을 확인할 수 없습니다.",
   "wsl.onboarding.installWsl": "WSL 설치",
@@ -1153,7 +1153,7 @@ export const dict = {
   "desktop.wsl.error.miaoCannotRun": "miao가 설치되어 있지만 실행할 수 없습니다",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}}에 Miao가 설치되어 있지 않습니다",
   "desktop.wsl.error.updateVersion":
-    "OpenCode 업데이트가 완료되었지만 {{distro}}에서 여전히 {{installed}} 버전으로 표시됩니다. 예상 버전: {{expected}}",
+    "Miao 업데이트가 완료되었지만 {{distro}}에서 여전히 {{installed}} 버전으로 표시됩니다. 예상 버전: {{expected}}",
   "desktop.wsl.error.noVersion": "버전 없음",
   "desktop.wsl.error.serverExited": "WSL 서버가 시작 후 종료되었습니다(코드={{code}} 신호={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":

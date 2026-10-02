@@ -3,6 +3,10 @@ title: 分享
 description: 分享您的 Miao 對話。
 ---
 
+:::note
+miao 預設不連接分享服務。需要在 `miao.json` 中明確設定 `enterprise.url` 才能啟用分享；僅登入 Console 不會啟用分享。
+:::
+
 Miao 的分享功能允許您建立指向 Miao 對話的公開連結，方便與團隊成員協作或向他人尋求幫助。
 
 :::note
@@ -17,7 +21,7 @@ Miao 的分享功能允許您建立指向 Miao 對話的公開連結，方便與
 
 1. 為您的工作階段建立一個唯一的公開 URL
 2. 將您的對話歷史同步到我們的伺服器
-3. 透過可分享的連結使對話可存取 — `opncd.ai/s/<share-id>`
+3. 透過可分享的連結使對話可存取 — `your-share-server/share/<share-id>`
 
 ---
 
@@ -41,7 +45,7 @@ Miao 支援三種分享模式，用於控制對話的共享方式：
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "manual"
 }
 ```
@@ -54,7 +58,7 @@ Miao 支援三種分享模式，用於控制對話的共享方式：
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "auto"
 }
 ```
@@ -69,7 +73,7 @@ Miao 支援三種分享模式，用於控制對話的共享方式：
 
 ```json title="miao.json"
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://mtty.dev/miao/config.json",
   "share": "disabled"
 }
 ```
