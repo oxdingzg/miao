@@ -49,7 +49,12 @@ export const run = (db: Database.Interface["db"], options: Options) =>
 
     const previous = existingBackup(options.file)
     if (previous)
-      return { status: "migrated", backup: previous, reused: true, ...(yield* SessionBackfill.backfill(db)) }
+      return {
+        status: "migrated",
+        backup: previous,
+        reused: true,
+        ...(yield* SessionBackfill.backfill(db)),
+      } satisfies Result
 
     // The copy needs room for the main file plus whatever the WAL still holds.
     const size = [options.file, `${options.file}-wal`].reduce(
