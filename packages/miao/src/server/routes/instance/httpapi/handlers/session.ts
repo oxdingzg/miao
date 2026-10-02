@@ -36,7 +36,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError } from "../errors"
+import { PermissionNotFoundError, ShareDisabledError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -255,10 +255,19 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     // failures from SessionShare are real possibilities. Map to a typed 500
     // (matches the legacy route behavior which routed any failure through
     // ErrorMiddleware → NamedError.Unknown 500) instead of blanket-mapping
-    // every failure to a 400 BadRequest.
+    // every failure to a 400 BadRequest. Sharing switched off in config is the
+    // exception: it is a refusal the client can fix, so it is a 403 with the reason.
     const share = Effect.fn("SessionHttpApi.share")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* shareSvc.share(ctx.params.sessionID).pipe(Effect.mapError(() => new HttpApiError.InternalServerError({})))
+      yield* shareSvc
+        .share(ctx.params.sessionID)
+        .pipe(
+          Effect.mapError((error) =>
+            error instanceof SessionShare.DisabledError
+              ? new ShareDisabledError({ name: "ShareDisabledError", data: { message: error.message } })
+              : new HttpApiError.InternalServerError({}),
+          ),
+        )
       return yield* requireSession(ctx.params.sessionID)
     })
 

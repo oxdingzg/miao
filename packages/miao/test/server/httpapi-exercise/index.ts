@@ -97,9 +97,7 @@ const scenarios: Scenario[] = [
         Effect.gen(function* () {
           object(body)
           check(body.username === "httpapi-global", "global config update should return patched config")
-          const text = yield* Effect.promise(() =>
-            Bun.file(path.join(exerciseConfigDirectory, "miao.jsonc")).text(),
-          )
+          const text = yield* Effect.promise(() => Bun.file(path.join(exerciseConfigDirectory, "miao.jsonc")).text())
           check(text.includes('"username": "httpapi-global"'), "global config update should write isolated config file")
         }),
       "status",
@@ -1226,7 +1224,10 @@ const scenarios: Scenario[] = [
       200,
       data((todos) => {
         array(todos)
-        check(todos.some((item) => isRecord(item) && item.content === "Exercise todo"), "seeded todo should be listed")
+        check(
+          todos.some((item) => isRecord(item) && item.content === "Exercise todo"),
+          "seeded todo should be listed",
+        )
       }),
       "none",
     ),
@@ -1877,6 +1878,23 @@ const scenarios: Scenario[] = [
       (body, ctx) => {
         object(body)
         check(body.id === ctx.state.id, "share should return the session")
+      },
+      "status",
+    ),
+  http.protected
+    .post("/session/{sessionID}/share", "session.share.disabled")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Share disabled session" }))
+    .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .json(
+      403,
+      (body) => {
+        object(body)
+        check(body.name === "ShareDisabledError", "disabled sharing should be a typed refusal")
+        check(
+          isRecord(body.data) && typeof body.data.message === "string" && body.data.message.includes("miao.json"),
+          "disabled sharing should tell the client how to enable it",
+        )
       },
       "status",
     ),

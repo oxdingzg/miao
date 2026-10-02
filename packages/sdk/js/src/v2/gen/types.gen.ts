@@ -2579,6 +2579,13 @@ export type NotFoundError = {
   }
 }
 
+export type ShareDisabledError = {
+  name: "ShareDisabledError"
+  data: {
+    message: string
+  }
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -10429,6 +10436,10 @@ export type SessionShareErrors = {
    * Bad request
    */
   400: BadRequestError
+  /**
+   * ShareDisabledError
+   */
+  403: ShareDisabledError
   /**
    * NotFoundError
    */

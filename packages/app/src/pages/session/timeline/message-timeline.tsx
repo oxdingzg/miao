@@ -662,6 +662,11 @@ export function MessageTimeline(props: {
     mutationFn: (id: string) => serverSDK().client.session.share({ sessionID: id }),
     onError: (err) => {
       console.error("Failed to share session", err)
+      showToast({
+        title: language.t("toast.session.share.failed.title"),
+        description: errorMessage(err),
+        variant: "error",
+      })
     },
   }))
 

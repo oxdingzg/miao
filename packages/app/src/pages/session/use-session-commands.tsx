@@ -197,18 +197,20 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       return
     }
 
-    const url = await sdk()
+    const result = await sdk()
       .client.session.share({ sessionID })
-      .then((res) => res.data?.share?.url)
-      .catch(() => undefined)
-    if (!url) {
+      .then((res) => ({ url: res.data?.share?.url, reason: undefined }))
+      .catch((error: unknown) => ({ url: undefined, reason: error instanceof Error ? error.message : undefined }))
+    if (!result.url) {
       showToast({
         title: language.t("toast.session.share.failed.title"),
-        description: language.t("toast.session.share.failed.description"),
+        // The server explains refusals such as sharing being disabled in config.
+        description: result.reason || language.t("toast.session.share.failed.description"),
         variant: "error",
       })
       return
     }
+    const url = result.url
 
     await copyShare(url, false)
   }
