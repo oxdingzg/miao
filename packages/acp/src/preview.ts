@@ -1,7 +1,7 @@
 // Reconstructs the file contents an edit permission request would produce, so
 // the client can show a diff and preview the new text before it is written.
-import { readFile } from "node:fs/promises"
-import { isAbsolute, resolve } from "node:path"
+import { readFile, realpath } from "node:fs/promises"
+import { isAbsolute, relative, resolve, sep } from "node:path"
 import { applyPatch } from "diff"
 
 export type FileChange = { readonly path: string; readonly oldText: string; readonly newText: string }
@@ -11,6 +11,20 @@ export type FileChange = { readonly path: string; readonly oldText: string; read
  * (apply_patch). Changes that cannot be reconstructed are left out.
  */
 export async function editChanges(metadata: Readonly<Record<string, unknown>>, cwd: string): Promise<FileChange[]> {
+  const changes = await rawChanges(metadata, cwd)
+  // The core reports canonical paths. When the session directory sits behind a
+  // symlink (macOS /var -> /private/var, a linked workspace), map paths back to
+  // the directory the client opened so its buffers and our previews match.
+  const canonical = await realpath(cwd).catch(() => cwd)
+  if (canonical === cwd) return changes
+  return changes.map((change) => {
+    const rest = relative(canonical, change.path)
+    if (rest === "" || rest.startsWith("..") || isAbsolute(rest)) return change
+    return { ...change, path: cwd.replace(/[\\/]+$/, "") + sep + rest }
+  })
+}
+
+async function rawChanges(metadata: Readonly<Record<string, unknown>>, cwd: string): Promise<FileChange[]> {
   const files = Array.isArray(metadata.files) ? metadata.files.flatMap(patchFile) : []
   if (files.length > 0) {
     const changes = await Promise.all(
