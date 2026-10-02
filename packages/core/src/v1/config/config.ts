@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { NonNegativeInt, PositiveInt, type DeepMutable } from "../../schema"
 import { ConfigExperimental } from "../../config/experimental"
 import { ConfigReference } from "../../config/reference"
+import { ConfigRemote } from "../../config/remote"
 import { ConfigSandbox } from "../../config/sandbox"
 import { ConfigAgentV1 } from "./agent"
 import { ConfigAttachmentV1 } from "./attachment"
@@ -148,6 +149,9 @@ export const Info = Schema.Struct({
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
   }),
   sandbox: Schema.optional(ConfigSandbox.Info).annotate({ description: "OS sandbox for bash commands" }),
+  remote: Schema.optional(ConfigRemote.Info).annotate({
+    description: "Driving sessions from IM apps with `miao remote`",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
