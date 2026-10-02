@@ -76,6 +76,34 @@ await ctx.aisdk.language((event) => {
 })
 ```
 
+## Tool Hooks
+
+`ctx.tool` replaces the legacy `tool.execute.before`, `tool.execute.after`, `tool.definition` and `tool` entries of `Hooks`:
+
+```ts
+await ctx.tool.before(async (event) => {
+  // Throwing rejects the call with a model-visible error.
+  if (event.tool === "read" && String(event.args.filePath).endsWith(".env"))
+    throw new Error("Reading .env is not allowed")
+})
+
+await ctx.tool.after((event) => {
+  event.output = event.output.replaceAll(process.env.SECRET ?? "", "[redacted]")
+})
+
+await ctx.tool.definition((event) => {
+  if (event.tool === "bash") event.description += "\nNever run `rm -rf /`."
+})
+
+await ctx.tool.register({ "my-tool": myTool })
+```
+
+See the Effect README for the event fields and failure semantics; they are identical.
+
+## Legacy `Hooks` Plugins
+
+Plugins written against the V1 `Hooks` API are deprecated. V2 sessions do not load them and none of their hooks run; configuring one logs a single warning. Migrate to `define({ id, setup })`.
+
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:

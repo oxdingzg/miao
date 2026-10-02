@@ -179,8 +179,26 @@ Leaf tools translate only errors they deliberately classify as recoverable. Broa
 - **Stale rejection:** a call never executes a registration other than the one advertised for its provider turn.
 - **Storage encapsulation:** domain output does not change according to model-output bounding or retention policy.
 
+## Plugin Hooks And Custom Tools
+
+Decision 2 of `v1-removal-plan.md` keeps three V1 tool hooks for plugins. `ToolPlugins` (`core/src/tool/plugins.ts`) is a dependency-free Location service shared by the plugin host and the registry, so there is no `PluginBoot -> Tools -> PluginBoot` cycle:
+
+- `ctx.tool.before` runs inside settlement after the stale check and before input decoding. It sees `{ tool, sessionID, callID, agent, args }` and may replace `args`. A failing or throwing hook settles the call as a model-visible error without invoking the tool.
+- `ctx.tool.after` runs on a successful output before bounding. It sees the arguments, the model-facing text as `output`, and the structured output as `metadata`; replacing either replaces that part of the output. A failing hook settles the call as an error. Failed calls do not reach it, as in V1.
+- `ctx.tool.definition` rewrites `description` and `parameters` (input JSON Schema) during materialization. A failing hook is logged and skipped. Without definition hooks the cached definitions are reused unchanged, preserving byte-stable prefixes.
+- Interruption is never translated into a hook rejection.
+
+Custom tools are `@opencode-ai/plugin` `tool({ description, args, execute })` definitions. `CustomTools` (`core/src/tool/custom.ts`) registers them through `Tools.Service`:
+
+- Files match `{tool,tools}/*.{js,ts}` in every config directory, in config order (global, project `.miao`/`.opencode`, `MIAO_CONFIG_DIR`), as V1 did. A default export is named after the file; other exports become `<file>_<export>`. A file that fails to import is logged and skipped.
+- Plugins provide definitions with `ctx.tool.register(...)`; they are registered in a Scope that closes when the plugin unloads.
+- Every call asserts `PermissionV2` under the registered tool name before running, and the definition's `context.ask(...)` maps to the same assertion, so custom tools follow the same policy as built-ins.
+- Discovery and import are deferred: `ToolPlugins.defer` starts them on the first `materialize`, which waits for them (and for plugin boot) so the first provider turn already sees custom and plugin tools, while Location boot and TUI startup never import them.
+
+Legacy V1 `Hooks` plugins are not loaded by V2; configuring one logs a single warning.
+
 ## Follow-Up
 
-Location plugin installation should receive the same narrow `Tools` capability. That requires a separate Location-layer ordering change so built-ins register before plugins without introducing a `PluginBoot -> Tools -> PluginBoot` dependency cycle. The carrier, registrar, and plugin-owned Scope semantics are already suitable; no tool-specific plugin hook is needed.
+Plugin tool registrations and built-ins share Location placement, so the latest registration wins: a plugin or custom tool registered after a built-in of the same name shadows it, as custom tools did in V1. Ordering between plugin boot and built-in registration is not otherwise guaranteed.
 
 Session's current public result shape still exposes managed `outputPaths`. Extending storage encapsulation across the public Session API requires a separate opaque managed-output reference design; paths are not entirely internal today.
