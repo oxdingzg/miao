@@ -1,5 +1,6 @@
 export * as SessionRunnerModel from "./model"
 
+import os from "os"
 import { makeLocationNode } from "../../effect/app-node"
 import { type Model } from "@miao/llm"
 import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
@@ -13,6 +14,7 @@ import { produce } from "immer"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Flag } from "../../flag/flag"
+import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { ModelVariants } from "../../model-variants"
@@ -146,6 +148,8 @@ const withVariant = (
   )
 }
 
+const userAgent = () => `miao/${InstallationVersion} (${os.platform()} ${os.release()}; ${os.arch()})`
+
 const apiName = (model: ModelV2.Info) =>
   model.api.type === "aisdk" ? `${model.api.type}:${model.api.package}` : model.api.type
 
@@ -186,6 +190,9 @@ export const fromCatalogModel = (
     const route = withDefaults(resolved, OpenAIResponses.route).with({
       auth: bearer,
       providerOptions: openAIDefaultOptions(resolved.api.id),
+      // Match the Codex CLI client identity, as the V1 codex plugin did in `chat.headers`.
+      headers:
+        resolved.providerID === ProviderV2.ID.openai ? { originator: "miao", "User-Agent": userAgent() } : undefined,
     })
     if (resolved.providerID === ProviderV2.ID.openai && credential?.type === "oauth") {
       const accountID = credential.metadata?.accountID
