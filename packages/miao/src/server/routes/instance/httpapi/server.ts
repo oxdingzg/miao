@@ -22,6 +22,7 @@ import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
+import { PluginShellEnvironment } from "@/plugin/shell-environment"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
@@ -307,6 +308,8 @@ export function createRoutes(
       ]),
     ),
     Layer.provide(locationServiceMapV2),
+    // Plugin `shell.env` hooks for the V2 bash tool; needs the V1 plugin and instance services below.
+    Layer.provide(PluginShellEnvironment.layer),
 
     Layer.provide(AppNodeBuilderV1.build(app)),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,

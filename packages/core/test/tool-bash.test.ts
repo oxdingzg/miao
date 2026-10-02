@@ -15,6 +15,7 @@ import { PermissionV2 } from "@miao/core/permission"
 import { AppProcess } from "@miao/core/process"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { ShellEnvironment } from "@miao/core/shell/environment"
 import { BashTool } from "@miao/core/tool/bash"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
@@ -30,6 +31,8 @@ const runs: Array<{
   readonly command: string
   readonly cwd?: string
   readonly shell?: string | boolean
+  readonly env?: Record<string, string | undefined>
+  readonly extendEnv?: boolean
   readonly options?: AppProcess.RunOptions
 }> = []
 let denyAction: string | undefined
@@ -49,6 +52,9 @@ const checks: Array<{ readonly shell: string; readonly args: readonly string[] }
 let checkResult: AppProcess.RunResult | undefined
 let configuredShell: string | undefined
 let afterPermission = (_input: PermissionV2.AssertInput): Effect.Effect<void> => Effect.void
+// What an installed `shell.env` source returns, and the inputs it was asked with.
+let pluginEnv: Record<string, string> = {}
+const pluginEnvInputs: ShellEnvironment.Input[] = []
 
 const permission = Layer.succeed(
   PermissionV2.Service,
@@ -77,7 +83,14 @@ const appProcess = Layer.succeed(
           checks.push({ shell: command.command, args: command.args })
           return Effect.succeed(checkResult ?? { ...result, exitCode: 0, output: Buffer.alloc(0) })
         }
-        runs.push({ command: command.command, cwd: command.options.cwd, shell: command.options.shell, options })
+        runs.push({
+          command: command.command,
+          cwd: command.options.cwd,
+          shell: command.options.shell,
+          env: command.options.env,
+          extendEnv: command.options.extendEnv,
+          options,
+        })
         return runFailure ? Effect.fail(runFailure) : Effect.succeed(result)
       }),
   } as unknown as AppProcess.Interface),
@@ -103,6 +116,8 @@ const reset = () => {
   checkResult = undefined
   configuredShell = undefined
   afterPermission = () => Effect.void
+  pluginEnv = {}
+  pluginEnvInputs.length = 0
   result = {
     command: "mock",
     exitCode: 0,
@@ -114,6 +129,21 @@ const reset = () => {
     stderrTruncated: false,
   }
 }
+
+// The real ShellEnvironment with one installed source, as the plugin host installs it.
+const shellEnvironment = Layer.effect(
+  ShellEnvironment.Service,
+  Effect.gen(function* () {
+    const environment = yield* ShellEnvironment.Service
+    yield* environment.install((input) =>
+      Effect.sync(() => {
+        pluginEnvInputs.push(input)
+        return { ...pluginEnv }
+      }),
+    )
+    return environment
+  }),
+).pipe(Layer.provide(ShellEnvironment.layer))
 
 const withTool = <A, E, R>(
   directory: string,
@@ -136,6 +166,7 @@ const withTool = <A, E, R>(
           [AppProcess.node, processLayer],
           [Config.node, config],
           [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+          [ShellEnvironment.node, shellEnvironment],
         ],
       ),
     ),
@@ -428,6 +459,55 @@ describe("BashTool", () => {
                 timeout: true,
                 truncated: false,
               })
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+})
+
+describe("BashTool shell.env", () => {
+  it.live("layers plugin shell.env variables over the inherited environment", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        pluginEnv = { MIAO_PLUGIN_VAR: "from-plugin" }
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: "env", workdir: "." }, "call-env")),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(runs).toMatchObject([{ env: { MIAO_PLUGIN_VAR: "from-plugin" }, extendEnv: true }])
+              // The syntax check parses under the same environment as the run.
+              expect(pluginEnvInputs).toEqual([
+                {
+                  directory: tmp.path,
+                  cwd: realpathSync(tmp.path),
+                  sessionID,
+                  callID: "call-env",
+                },
+              ])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("leaves the process environment untouched when no plugin adds variables", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) => executeTool(registry, call({ command: "env" }))).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(runs[0]?.env).toBeUndefined()
+              expect(runs[0]?.extendEnv).toBeUndefined()
             }),
           ),
         )
@@ -944,6 +1024,27 @@ if (process.platform !== "win32") {
       ),
     )
 
+    it.live("runs with plugin shell.env variables and the inherited PATH", () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) =>
+          Effect.gen(function* () {
+            const settled = yield* Effect.suspend(() => {
+              reset()
+              pluginEnv = { MIAO_PLUGIN_VAR: "from-plugin" }
+              return withTool(
+                tmp.path,
+                (registry) =>
+                  settleTool(registry, call({ command: 'echo "$MIAO_PLUGIN_VAR"; test -n "$PATH" && echo path-ok' })),
+                recordingProcess,
+              )
+            })
+            expect(text(settled)).toContain("from-plugin\npath-ok")
+          }),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    )
+
     it.live("still times out a command that never reads its stdin", () =>
       Effect.acquireUseRelease(
         Effect.promise(() => tmpdir()),
@@ -968,7 +1069,6 @@ test("keeps locked deferred parity TODOs visible", async () => {
     "Port PowerShell parser-based approval reduction (bash commands already split per command with BashArity prefixes).",
     "Replace token-based command-argument external-directory advisories with parser-based detection.",
     "Restore PowerShell and cmd-specific invocation/path handling on Windows.",
-    "Add plugin shell.env environment augmentation once V2 plugin hooks exist.",
     "Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.",
     "Persist background job status and define restart recovery before exposing remote observation.",
     "Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.",
