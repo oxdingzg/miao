@@ -119,6 +119,21 @@ export const isRemoteNotFoundError = (value: unknown): value is RemoteNotFoundEr
 
 export type HealthGetOutput = { readonly healthy: true; readonly version: string; readonly pid: number }
 
+export type CapabilitiesGetInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type CapabilitiesGetOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly backgroundSubagents: boolean }
+}
+
 export type FormattersStatusInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

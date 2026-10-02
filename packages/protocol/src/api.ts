@@ -13,6 +13,7 @@ import { EventGroup, makeEventGroup } from "./groups/event"
 import type { Definition } from "@miao/schema/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
+import { CapabilitiesGroup } from "./groups/capabilities"
 import { FormatterGroup } from "./groups/formatter"
 import { ConfigGroup } from "./groups/config"
 import { LspGroup } from "./groups/lsp"
@@ -45,6 +46,7 @@ const makeApiFromGroup = <
 ) =>
   HttpApi.make("server")
     .add(HealthGroup)
+    .add(CapabilitiesGroup.middleware(locationMiddleware))
     .add(FormatterGroup.middleware(locationMiddleware))
     .add(ConfigGroup.middleware(locationMiddleware))
     .add(LspGroup.middleware(locationMiddleware))

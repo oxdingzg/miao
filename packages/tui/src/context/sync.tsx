@@ -672,9 +672,9 @@ export const {
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.v2.config.providers({ location: { workspace } }, { throwOnError: true })
-      const capabilitiesPromise = sdk.client.experimental.capabilities
-        .get({ workspace }, { throwOnError: true })
-        .then((x) => x.data)
+      const capabilitiesPromise = sdk.client.v2.capabilities
+        .get({ location: { workspace } }, { throwOnError: true })
+        .then((x) => x.data?.data)
         .catch(() => undefined)
       const consoleStatePromise = sdk.client.experimental.console
         .get({ workspace }, { throwOnError: true })

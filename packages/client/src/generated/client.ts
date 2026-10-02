@@ -1,5 +1,7 @@
 import type {
   HealthGetOutput,
+  CapabilitiesGetInput,
+  CapabilitiesGetOutput,
   FormattersStatusInput,
   FormattersStatusOutput,
   ConfigGetInput,
@@ -330,6 +332,20 @@ export function make(options: ClientOptions) {
       get: (requestOptions?: RequestOptions) =>
         request<HealthGetOutput>(
           { method: "GET", path: `/api/health`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
+          requestOptions,
+        ),
+    },
+    capabilities: {
+      get: (input?: CapabilitiesGetInput, requestOptions?: RequestOptions) =>
+        request<CapabilitiesGetOutput>(
+          {
+            method: "GET",
+            path: `/api/capabilities`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
           requestOptions,
         ),
     },

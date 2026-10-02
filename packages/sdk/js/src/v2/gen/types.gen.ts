@@ -11666,6 +11666,45 @@ export type V2HealthGetResponses = {
 
 export type V2HealthGetResponse = V2HealthGetResponses[keyof V2HealthGetResponses]
 
+export type V2CapabilitiesGetData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/capabilities"
+}
+
+export type V2CapabilitiesGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CapabilitiesGetError = V2CapabilitiesGetErrors[keyof V2CapabilitiesGetErrors]
+
+export type V2CapabilitiesGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      backgroundSubagents: boolean
+    }
+  }
+}
+
+export type V2CapabilitiesGetResponse = V2CapabilitiesGetResponses[keyof V2CapabilitiesGetResponses]
+
 export type V2FormatterStatusData = {
   body?: never
   path?: never
