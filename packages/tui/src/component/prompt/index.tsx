@@ -10,7 +10,6 @@ import {
 } from "@opentui/core"
 import type { CommandContext } from "@opentui/keymap"
 import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
-import { registerOpencodeSpinner } from "../register-spinner"
 import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
@@ -19,7 +18,7 @@ import { tint, useTheme } from "../../context/theme"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
-import { Spinner } from "../spinner"
+import { ScannerSpinner, Spinner } from "../spinner"
 import { useSDK } from "../../context/sdk"
 import { useRoute } from "../../context/route"
 import { useProject } from "../../context/project"
@@ -61,7 +60,9 @@ import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
 
-registerOpencodeSpinner()
+// The scanner steps on the shared 80ms animation clock (it used its own 40ms
+// timer), so halve the default 30/9 hold frames to keep the pauses as long.
+const SCANNER_HOLD = { holdStart: 15, holdEnd: 5 }
 
 export type PromptProps = {
   sessionID?: string
@@ -1393,6 +1394,7 @@ export function Prompt(props: PromptProps) {
         inactiveFactor: 0.6,
         // enableFading: false,
         minAlpha: 0.3,
+        ...SCANNER_HOLD,
       }),
       color: createColors({
         color,
@@ -1400,6 +1402,7 @@ export function Prompt(props: PromptProps) {
         inactiveFactor: 0.6,
         // enableFading: false,
         minAlpha: 0.3,
+        ...SCANNER_HOLD,
       }),
     }
   })
@@ -1628,7 +1631,7 @@ export function Prompt(props: PromptProps) {
                 <box flexShrink={0} flexDirection="row" gap={1}>
                   <box marginLeft={1}>
                     <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
-                      <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+                      <ScannerSpinner color={spinnerDef().color} frames={spinnerDef().frames} />
                     </Show>
                   </box>
                   <box flexDirection="row" gap={1} flexShrink={0}>
