@@ -1,4 +1,6 @@
+import { Image } from "@miao/core/image"
 import { SessionV2 } from "@miao/core/session"
+import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -144,12 +146,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.prompt",
         Effect.fn(function* (ctx) {
+          // Last point before the prompt becomes durable, and the only one that
+          // holds the session Location's services, so image attachments are
+          // shrunk to the configured budget here rather than stored at full size.
+          const image = yield* Image.Service
+          const prompt = yield* SessionImageNormalize.promptInput(image, ctx.payload.prompt)
           return {
             data: yield* session
               .prompt({
                 sessionID: ctx.params.sessionID,
                 id: ctx.payload.id,
-                prompt: ctx.payload.prompt,
+                prompt,
                 delivery: ctx.payload.delivery,
                 resume: ctx.payload.resume,
               })

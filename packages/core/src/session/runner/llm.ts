@@ -10,6 +10,7 @@ import {
   type LLMRequest,
   type Model,
   type ProviderErrorEvent,
+  type ToolOutput,
 } from "@miao/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import { and, desc, eq, isNull, ne } from "drizzle-orm"
@@ -22,6 +23,7 @@ import { ModelV2 } from "../../model"
 import { PermissionV2 } from "../../permission"
 import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
+import { Image } from "../../image"
 import { SystemContext } from "../../system-context/index"
 import { Persona } from "../../system-context/persona"
 import { SystemContextRegistry } from "../../system-context/registry"
@@ -46,6 +48,7 @@ import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionTable } from "../sql"
 import { SessionStore } from "../store"
+import { SessionImageNormalize } from "../image-normalize"
 import { SessionTodo } from "../todo"
 import { SessionTitle } from "../title"
 import { LegacyNotMigratedError } from "../error"
@@ -160,6 +163,8 @@ const layer = Layer.effect(
     const permission = yield* PermissionV2.Service
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
+    const image = yield* Image.Service
+    const normalizeToolContent = (content: ToolOutput["content"]) => SessionImageNormalize.toolContent(image, content)
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -500,6 +505,7 @@ const layer = Layer.effect(
         model: stepModel,
         cost: resolved.info.cost,
         snapshot: startSnapshot,
+        normalizeContent: normalizeToolContent,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -1091,6 +1097,7 @@ export const node = makeLocationNode({
     PermissionV2.node,
     Blob.node,
     FSUtil.node,
+    Image.node,
   ],
 })
 

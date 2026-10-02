@@ -17,8 +17,13 @@ import { Tools } from "./tool/tools"
 const MAX_TOOL_NAME = 64
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
 
-/** Bound inline base64 image results so a server cannot blow up a tool call. */
-export const MAX_RESULT_IMAGE_BASE64_BYTES = 5 * 1024 * 1024
+/**
+ * Memory guard, not a content policy: a server must not be able to make us copy
+ * an unbounded string. Images under this size are carried through and shrunk to
+ * the configured image budget before they reach the model, so the ceiling only
+ * has to sit above what shrinking could still rescue.
+ */
+export const MAX_RESULT_IMAGE_BASE64_BYTES = 32 * 1024 * 1024
 
 /** Sanitize an MCP tool name into the canonical tool-name alphabet. */
 export const toolName = (serverID: string, tool: string) =>

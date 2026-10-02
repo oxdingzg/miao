@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Effect, Schema, Stream } from "effect"
-import { LLMEvent } from "@miao/llm"
+import { LLMEvent, type ToolContent } from "@miao/llm"
 import { EventV2 } from "@miao/core/event"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
@@ -12,7 +12,7 @@ import { createLLMEventPublisher } from "@miao/core/session/runner/publish-llm-e
 const sessionID = SessionV2.ID.make("ses_tool_event_test")
 const base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
 
-const capture = () => {
+const capture = (normalizeContent?: (content: ReadonlyArray<ToolContent>) => Effect.Effect<ReadonlyArray<ToolContent>>) => {
   const published: Array<{ readonly type: string; readonly data: unknown }> = []
   const events = EventV2.Service.of({
     publish: (definition, data) =>
@@ -45,6 +45,7 @@ const capture = () => {
         id: ModelV2.ID.make("model"),
         providerID: ProviderV2.ID.make("provider"),
       },
+      normalizeContent,
     }),
   }
 }
@@ -94,6 +95,36 @@ test("provider-executed success retains its compatibility result", async () => {
   await Effect.runPromise(publisher.publish(LLMEvent.toolResult({ ...result, providerExecuted: true })))
   const success = published.find((event) => event.type === "session.next.tool.success.1")
   expect(success?.data).toHaveProperty("result")
+})
+
+test("a settled result is normalized before it becomes durable", async () => {
+  const { published, publisher } = capture((content) =>
+    Effect.succeed(content.map((part) => (part.type === "file" ? { ...part, uri: "data:image/jpeg;base64,small" } : part))),
+  )
+  await Effect.runPromise(publisher.publish(call))
+  await Effect.runPromise(publisher.publish(result))
+
+  const success = published.find((event) => event.type === "session.next.tool.success.1")
+  expect(success?.data).toMatchObject({
+    content: [{ type: "text", text: "Image read successfully" }, { type: "file", uri: "data:image/jpeg;base64,small" }],
+  })
+  // `result` is the provider's own transcript and is not rewritten.
+  expect(success?.data).not.toHaveProperty("result")
+})
+
+test("a provider-executed result is never normalized", async () => {
+  let calls = 0
+  const { published, publisher } = capture((content) => {
+    calls += 1
+    return Effect.succeed(content)
+  })
+  await Effect.runPromise(publisher.publish(LLMEvent.toolCall({ ...call, providerExecuted: true })))
+  await Effect.runPromise(publisher.publish(LLMEvent.toolResult({ ...result, providerExecuted: true })))
+
+  expect(calls).toBe(0)
+  expect(published.find((event) => event.type === "session.next.tool.success.1")?.data).toMatchObject({
+    content: [{ type: "text", text: "Image read successfully" }, { type: "file", uri: `data:image/png;base64,${base64}` }],
+  })
 })
 
 test("binary failure emits no success event", async () => {

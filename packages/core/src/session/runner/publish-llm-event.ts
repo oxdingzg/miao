@@ -13,6 +13,13 @@ type Input = {
   readonly model: ModelV2.Ref
   readonly cost?: ModelV2.Info["cost"]
   readonly snapshot?: string
+  /**
+   * Applied to a settled tool result before it becomes durable. Every tool
+   * reaches this one point, so the bound lives here rather than in each tool.
+   */
+  readonly normalizeContent?: (
+    content: ToolOutput["content"],
+  ) => Effect.Effect<ToolOutput["content"]>
 }
 
 const safe = (value: number | undefined) => Math.max(0, Number.isFinite(value) ? (value ?? 0) : 0)
@@ -395,12 +402,19 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
           })
           return
         }
+        // A provider-executed result is replayed verbatim from the provider's
+        // own transcript, so its content must stay exactly as delivered.
+        const content =
+          provider.executed || input.normalizeContent === undefined
+            ? result.content
+            : yield* input.normalizeContent(result.content)
         yield* events.publish(SessionEvent.Tool.Success, {
           sessionID: input.sessionID,
           timestamp: yield* timestamp,
           assistantMessageID: tool.assistantMessageID,
           callID: event.id,
-          ...result,
+          structured: result.structured,
+          content,
           outputPaths,
           ...(provider.executed ? { result: event.result } : {}),
           provider,
