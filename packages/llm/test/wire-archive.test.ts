@@ -29,7 +29,9 @@ describe("ProviderWireArchive", () => {
     Effect.gen(function* () {
       const lines = yield* Ref.make<ReadonlyArray<ProviderWireArchive.Line>>([])
       const archive = ProviderWireArchive.layerOf((line) => Ref.update(lines, (all) => [...all, line]))
-      const layer = scriptedResponses([body]).pipe(Layer.provideMerge(archive))
+      // Provided to the layer build only, never to the effect's own environment:
+      // a deployment hands the archive to the client, not to every request.
+      const layer = scriptedResponses([body]).pipe(Layer.provide(archive))
 
       const events = Array.from(
         yield* LLMClient.stream(request).pipe(Stream.runCollect, Effect.provide(layer)),
