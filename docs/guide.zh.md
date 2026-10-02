@@ -17,7 +17,7 @@ miao 独立开发，采用 MIT 许可证，与 OpenCode 团队无隶属关系，
 
 ## 2. 安装与升级
 
-需要 macOS / Linux（Windows 构建可用但未完整验证）。
+支持 macOS、Linux 和 Windows。Windows 安装脚本由 CI 验证；Windows 终端里的显示仍在验证中。
 
 ```bash
 # 安装稳定版
@@ -28,6 +28,15 @@ curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash -
 
 # 从本地二进制安装
 ./install --binary /path/to/miao
+```
+
+Windows 用 PowerShell 安装脚本（Windows PowerShell 5.1 或 PowerShell 7），装到 `~\.miao\bin` 并加入用户 PATH：
+
+```powershell
+irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex
+
+# 指定版本
+$env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex
 ```
 
 安装脚本默认会把二进制放到 `~/.miao/bin/miao` 并写入 PATH；用 `--no-modify-path` 可跳过。

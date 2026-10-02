@@ -18,7 +18,7 @@ miao is independently developed under the MIT License and is not affiliated with
 
 ## 2. Install and upgrade
 
-macOS / Linux required (Windows builds exist but are not fully verified).
+macOS, Linux and Windows. The Windows installer is checked in CI; terminal rendering on Windows is still being verified.
 
 ```bash
 # stable
@@ -29,6 +29,15 @@ curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash -
 
 # from a local binary
 ./install --binary /path/to/miao
+```
+
+On Windows, run the PowerShell installer (Windows PowerShell 5.1 or PowerShell 7). It installs to `~\.miao\bin` and adds that directory to your user PATH:
+
+```powershell
+irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex
+
+# a specific version
+$env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1 | iex
 ```
 
 The installer places the binary at `~/.miao/bin/miao` and updates PATH unless `--no-modify-path`.
