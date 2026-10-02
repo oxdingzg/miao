@@ -215,6 +215,25 @@ test("a bash permission prompt shows the stdin script in a scrollable body", asy
   }
 })
 
+test("a bash permission prompt shows the prefix rules that allow always saves", async () => {
+  await using tmp = await tmpdir()
+  const { app } = await mountPermission(tmp.path, 200, () => {}, 0, {
+    ...webfetchRequest,
+    permission: "bash",
+    patterns: ["git add .", 'git commit -m "wip"'],
+    metadata: { command: 'git add . && git commit -m "wip"' },
+    always: ["git add *", "git commit *"],
+  })
+  try {
+    await app.renderOnce()
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("Allow always saves: git add *, git commit *")
+    expect(frame).toContain("Allow once")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("an edit permission prompt shows the file and the diff it will apply", async () => {
   await using tmp = await tmpdir()
   const file = path.join(tmp.path, "src", "hello.ts")

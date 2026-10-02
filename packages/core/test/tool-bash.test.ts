@@ -191,7 +191,7 @@ describe("BashTool", () => {
               combineOutput: true,
               maxOutputBytes: BashTool.MAX_CAPTURE_BYTES,
             })
-            expect(assertions).toMatchObject([{ sessionID, action: "bash", resources: ["pwd"], save: ["pwd"] }])
+            expect(assertions).toMatchObject([{ sessionID, action: "bash", resources: ["pwd"], save: ["pwd *"] }])
           }),
         )
       },
@@ -471,7 +471,7 @@ describe("BashTool stdin and permissions", () => {
     ),
   )
 
-  it.live("keeps the permission request of a command without stdin unchanged", () =>
+  it.live("approves a command without stdin by command, saving its BashArity prefix", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -481,9 +481,54 @@ describe("BashTool stdin and permissions", () => {
             Effect.sync(() => {
               expect(assertions).toHaveLength(1)
               expect(assertions[0]?.resources).toEqual(["git status"])
-              expect(assertions[0]?.save).toEqual(["git status"])
+              expect(assertions[0]?.save).toEqual(["git status *"])
               expect(assertions[0]).not.toHaveProperty("metadata")
               expect(runs[0]?.options).not.toHaveProperty("stdin")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("splits a compound command into one resource and one prefix rule per command", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: 'git add . && git commit -m "wip" | cat' })),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions[0]?.resources).toEqual(["git add .", 'git commit -m "wip"', "cat"])
+              expect(assertions[0]?.save).toEqual(["git add *", "git commit *", "cat *"])
+              expect(runs).toHaveLength(1)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("keeps exact approval for a command with stdin, never a prefix rule", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: "git status && psql", stdin: "select 1;" })),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              const resources = [
+                "git status && psql \n<<stdin\nselect 1;",
+                `git status && psql \n<<stdin sha256:${Hash.sha256("select 1;")}`,
+              ]
+              expect(assertions[0]?.resources).toEqual(resources)
+              expect(assertions[0]?.save).toEqual(resources)
             }),
           ),
         )
@@ -502,6 +547,7 @@ describe("BashTool stdin and permissions", () => {
           Effect.andThen(
             Effect.sync(() => {
               expect(assertions[0]?.resources).toEqual([command, `<<no-stdin\n${command}`])
+              expect(assertions[0]?.save).toEqual([command, `<<no-stdin\n${command}`])
             }),
           ),
         )
@@ -919,8 +965,7 @@ if (process.platform !== "win32") {
 test("keeps locked deferred parity TODOs visible", async () => {
   const source = await fs.readFile(new URL("../src/tool/bash.ts", import.meta.url), "utf8")
   for (const todo of [
-    "Port tree-sitter bash / PowerShell parser-based approval reduction.",
-    "Port BashArity reusable command-prefix approvals.",
+    "Port PowerShell parser-based approval reduction (bash commands already split per command with BashArity prefixes).",
     "Replace token-based command-argument external-directory advisories with parser-based detection.",
     "Restore PowerShell and cmd-specific invocation/path handling on Windows.",
     "Add plugin shell.env environment augmentation once V2 plugin hooks exist.",
