@@ -20,6 +20,8 @@
   （返回 `Attempt{attemptID,url,instructions,mode}`）→ code 用 `attempt.complete({attemptID,code})`、
   auto 用 `attempt.status({attemptID})` 每秒轮询；`toProviderAuth` 保留 V2 `method.id` 供 `methodID`；
   成功后只 `sync.bootstrap()`（不再 `instance.dispose`），并加 `onCleanup` 停止轮询。
+- `experimental.session.background`：V2 下 `foregroundTasks` 恒为空，`session.background` 命令与快捷键
+  永远禁用，已连同 `foregroundTasks` 一并删除。
 - `app` / `project`：`app.agents` → `v2.agent.list`，`sync.tsx` 用 `toAgent` 把 `AgentV2Info` 映射回
   V1 `Agent`（`name←id`，不读 `permissions` 置空，`model←ModelRef`）；`dialog-move-session` 的
   `project.directories` → `v2.project.directories`。无需新端点。
@@ -50,9 +52,16 @@ app 侧：`packages/app/src` 仍有 `protocol === "v1"` 守护的 `client.sessio
 
 ## 下一步
 
-顺序：`config`（core 需下沉合并逻辑）→ `vcs`（core 无 VCS，需下沉）→ `mcp`（core `MCP`）→
-`experimental/workspace`（core `WorkspaceV2`）→ `instance/app` → `sync`。每步固定：core 下沉 →
-协议组 → handler → 生成两套客户端 → 迁 TUI/app → 删 V1 分支 → typecheck/测试 → commit & push。
+剩余组都需要 core/schema 层工作，不是纯客户端迁移：
+
+- `config`：core 的 `Config.Info` 定义在 `packages/core/src/config.ts`，**不在 `@miao/schema`**，protocol 无法引用；
+  需要先把 config schema 落到 `@miao/schema`（或暴露 schema-safe 子集），再补 core 合并（变量替换 V1 有、core 无）。
+- `mcp`：core `MCP` 只做“连接并注册工具”，没有 status/connect/disconnect；需把 `packages/miao/src/mcp` 的运行时状态下沉。
+- `vcs`：core 无 VCS；core `Git` 只有 repo/change，需补 status/diff 的 V2 语义。
+- `experimental/workspace`：需要 WorkspaceV2 的 list/status/create/remove + adapter + warp + console/controlPlane。
+
+顺序：`config` → `vcs` → `mcp` → `experimental/workspace`（含 `instance`/`console`，因为 `instance.dispose` 与 console 切换绑定）。
+每步固定：core 下沉/schema → 协议组 → handler → 生成两套客户端 → 迁 TUI/app → 删 V1 分支 → typecheck/测试 → commit & push。
 
 ## 服务端拆除（P7 收尾，P4 之前或并行）
 
