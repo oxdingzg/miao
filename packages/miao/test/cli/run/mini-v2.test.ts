@@ -37,7 +37,13 @@ const appLayer = AppNodeBuilder.build(
 )
 const it = testEffect(Layer.mergeAll(appLayer, httpApiLayer))
 
+// Every request the client made, to prove the mini paths stay off the V1
+// session, permission, and question routes.
+const requested: string[] = []
+const legacyRoute = /^\/(session|permission|question)(\/|$)/
+
 afterEach(async () => {
+  requested.length = 0
   await disposeAllInstances()
   await resetDatabase()
 })
@@ -55,6 +61,7 @@ function client(directory: string) {
         async (request: RequestInfo | URL, init?: RequestInit) => {
           const source = request instanceof Request ? request : new Request(request, init)
           const url = new URL(source.url)
+          requested.push(url.pathname)
           return globalThis.fetch(new Request(new URL(`${url.pathname}${url.search}`, baseUrl), source))
         },
         { preconnect: globalThis.fetch.preconnect },
@@ -234,6 +241,7 @@ describe("mini on the V2 session API", () => {
         "assistant",
         "system",
       ])
+      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
     }),
   )
 
@@ -306,6 +314,8 @@ describe("mini on the V2 session API", () => {
       )
       // The bash call may or may not ask, depending on the default rules; either way it was answered.
       expect(asked.every((action) => action === "bash")).toBe(true)
+      expect(requested).toContain(`/api/session/${created.id}/prompt`)
+      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
     }).pipe(Effect.provide(TestLLMServer.layer)),
   )
 
@@ -372,6 +382,7 @@ describe("mini on the V2 session API", () => {
         type: "stream.view",
         view: { type: "prompt" },
       })
+      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
     }).pipe(Effect.provide(TestLLMServer.layer)),
   )
 
@@ -414,6 +425,7 @@ describe("mini on the V2 session API", () => {
         sdk.v2.session.status({ sessionID: created.id }, { throwOnError: true }).then((result) => result.data.data),
       )
       expect(status).toEqual({ type: "idle" })
+      expect(requested.filter((path) => legacyRoute.test(path))).toEqual([])
     }).pipe(Effect.provide(TestLLMServer.layer)),
   )
 })
