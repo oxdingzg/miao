@@ -1,5 +1,5 @@
 import path from "path"
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import { AgentV2 } from "@miao/core/agent"
 import { Config } from "@miao/core/config"
@@ -236,6 +236,16 @@ describe("ConfigExternalPlugin", () => {
       })
     }),
   )
+
+  test("recognizes deprecated V1 plugin modules so they are warned about instead of loaded", () => {
+    const legacy = async () => ({ "tool.execute.before": async () => {} })
+    expect(ConfigExternalPlugin.isLegacy({ default: legacy })).toBe(true)
+    expect(ConfigExternalPlugin.isLegacy({ MyPlugin: legacy })).toBe(true)
+    expect(ConfigExternalPlugin.isLegacy({ default: { id: "legacy", server: legacy } })).toBe(true)
+    expect(ConfigExternalPlugin.isLegacy({ default: { id: "v2", effect: () => Effect.void } })).toBe(false)
+    expect(ConfigExternalPlugin.isLegacy({ default: { id: "v2", setup: async () => {} } })).toBe(false)
+    expect(ConfigExternalPlugin.isLegacy({ default: { not: "a plugin" } })).toBe(false)
+  })
 })
 
 const waitForAgent = Effect.fnUntraced(function* (agents: AgentV2.Interface, id: string) {

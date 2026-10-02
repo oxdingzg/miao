@@ -78,6 +78,7 @@ export const Plugin = define({
           if (!entrypoint) return
 
           const mod = yield* Effect.promise(() => import(entrypoint))
+          if (isLegacy(mod)) return yield* warnLegacy(ref.package)
           const value = (yield* Schema.decodeUnknownEffect(PluginModule)(mod)).default
           const plugin = "effect" in value ? value : PluginPromise.fromPromise(value)
           yield* ctx.plugin.add({
@@ -89,3 +90,28 @@ export const Plugin = define({
     }).pipe(Effect.forkScoped({ startImmediately: true }))
   }),
 })
+
+// V1 plugins export a function (or `{ server }`) that returns `Hooks`. V2 does
+// not run them; warn once per plugin per process instead of failing silently.
+const warned = new Set<string>()
+
+export function isLegacy(mod: Record<string, unknown>) {
+  const value = mod.default
+  if (typeof value === "object" && value !== null && "id" in value && ("effect" in value || "setup" in value))
+    return false
+  return Object.values(mod).some(
+    (entry) =>
+      typeof entry === "function" ||
+      (typeof entry === "object" && entry !== null && "server" in entry && typeof entry.server === "function"),
+  )
+}
+
+function warnLegacy(spec: string) {
+  if (warned.has(spec)) return Effect.void
+  warned.add(spec)
+  return Effect.logWarning(
+    `plugin ${spec} uses the deprecated V1 Hooks API and is not loaded in V2 sessions; ` +
+      "migrate it to a V2 plugin (`{ id, effect }` or `{ id, setup }`). " +
+      "V2 supports tool.before/after/definition/register and the agent, aisdk, catalog, command, integration, reference and skill domains.",
+  )
+}
