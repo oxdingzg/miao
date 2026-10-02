@@ -10,6 +10,7 @@ import { DialogMoveSession, type MoveSessionSelection } from "../dialog-move-ses
 import { DialogWorkspaceFileChanges } from "../dialog-workspace-file-changes"
 import { useHomeSessionDestination } from "../../routes/home/session-destination"
 import { useProject } from "../../context/project"
+import { Flag } from "@miao/core/flag/flag"
 
 function moveReminderText(directory: string) {
   return `<system-reminder>The user has changed the current working directory to "${directory}". This is still the same project but at a possibly new location; take this into account when working with any files from now on.</system-reminder>`
@@ -27,23 +28,19 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
   const [creatingDots, setCreatingDots] = createSignal(3)
   const [progress, setProgress] = createSignal<string>()
 
-  async function create(context?: string) {
+  async function create() {
     const projectID = input.projectID()
     if (!projectID) return
     setCreating(true)
     setProgress("Creating copy")
     try {
-      const generated = await sdk.client.experimental.projectCopy.generateName(
-        { projectID, context },
-        { throwOnError: true },
-      )
+      // Without a name the server picks a slug for the copy.
       const result = await sdk.client.v2.projectCopy.create(
         {
           projectID,
           location: { directory: sdk.directory },
           strategy: "git_worktree",
           directory: path.join(paths.worktree, projectID.slice(0, 6)),
-          name: generated.data.name,
         },
         { throwOnError: true },
       )
@@ -101,26 +98,13 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
     ))
   }
 
-  function sessionContext(sessionID: string) {
-    const session = sync.session.get(sessionID)
-    const messages = (sync.data.message[sessionID] ?? [])
-      .slice(-6)
-      .map((message) =>
-        [
-          message.role + ":",
-          ...(sync.data.part[message.id] ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])),
-        ].join(" "),
-      )
-    return [session?.title, ...messages].filter(Boolean).join("\n") || undefined
-  }
-
   async function moveExistingSession(sessionID: string, selection: MoveSessionSelection) {
     const session = sync.session.get(sessionID)
     const status = await sdk.client.vcs.status({ directory: session?.directory }).catch(() => undefined)
     const choice = status?.data?.length ? await DialogWorkspaceFileChanges.show(dialog, status.data) : "no"
     if (!choice) return
     dialog.clear()
-    const directory = selection.type === "new" ? await create(sessionContext(sessionID)) : selection.directory
+    const directory = selection.type === "new" ? await create() : selection.directory
     if (!directory) {
       setProgress(undefined)
       dialog.clear()
@@ -136,20 +120,16 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
         },
         { throwOnError: true },
       )
-      await sdk.client.session
-        .promptAsync({
-          sessionID,
-          directory,
-          noReply: true,
-          parts: [
-            {
-              type: "text",
-              text: moveReminderText(directory),
-              synthetic: true,
-            },
-          ],
-        })
-        .catch(() => undefined)
+      // Admit the reminder without running a turn: the model reads it with the next prompt.
+      await (Flag.MIAO_TUI_V2
+        ? sdk.client.v2.session.prompt({ sessionID, prompt: { text: moveReminderText(directory) }, resume: false })
+        : sdk.client.session.promptAsync({
+            sessionID,
+            directory,
+            noReply: true,
+            parts: [{ type: "text", text: moveReminderText(directory), synthetic: true }],
+          })
+      ).catch(() => undefined)
       dialog.clear()
     } catch (error) {
       toast.error(error)
@@ -163,13 +143,13 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
   const pending = createMemo(() => Boolean(homeDestination?.destination()))
   const pendingNew = createMemo(() => homeDestination?.destination()?.type === "new")
 
-  async function getDirectory(context?: string) {
+  async function getDirectory() {
     const value = homeDestination?.destination()
     if (!value) return
     if (value.type === "directory") {
       return value.directory
     }
-    return await create(context)
+    return await create()
   }
 
   function startSubmit() {
