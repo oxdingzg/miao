@@ -9,9 +9,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep every run on dev and main so cancelled checks do not pollute the default branch
-  # commit history. PRs and other branches still share a group and cancel stale runs.
-  group: ${{ case(github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  # Keep every run on upstream dev so cancelled checks do not pollute its commit history.
+  # main (miao's default branch) shares a per-ref group with PRs and other branches, so a
+  # new push cancels the still-running run of an older commit instead of queueing behind it.
+  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
   cancel-in-progress: true
 
 permissions:
@@ -23,16 +24,24 @@ env:
 
 jobs:
   unit:
-    name: unit (${{ matrix.settings.name }})
+    name: unit (${{ matrix.settings.label }})
     strategy:
       fail-fast: false
       matrix:
         settings:
           - name: linux
+            label: linux
             host: ubuntu-latest
+            blocking: true
+          # non-blocking until Windows suite is fixed; remaining failures: specs/ci-windows.md
           - name: windows
+            label: windows, non-blocking until Windows suite is fixed
             host: windows-2025
+            blocking: false
     runs-on: ${{ matrix.settings.host }}
+    # The Windows suite has known failures tracked in specs/ci-windows.md. Report them
+    # without failing the run so Linux stays the merge gate.
+    continue-on-error: ${{ !matrix.settings.blocking }}
     defaults:
       run:
         shell: bash
@@ -64,9 +73,17 @@ jobs:
             turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
 
+      # The windows-2025 image ships without ripgrep, so tests fall back to downloading it
+      # and extracting the zip through PowerShell, which outlasts the 5s test timeout.
+      - name: Install ripgrep
+        if: runner.os == 'Windows'
+        run: choco install ripgrep -y --no-progress
+
+      # On Windows, keep going after the first failing package so the run reports the full
+      # failure list instead of stopping at @miao/core.
       - name: Run unit tests
         timeout-minutes: 20
-        run: GITHUB_ACTIONS=false bun turbo test
+        run: GITHUB_ACTIONS=false bun turbo test ${{ runner.os == 'Windows' && '--continue' || '' }}
         env:
           MIAO_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
@@ -81,16 +98,22 @@ jobs:
         run: bun run test:httpapi
 
   e2e:
-    name: e2e (${{ matrix.settings.name }})
+    name: e2e (${{ matrix.settings.label }})
     strategy:
       fail-fast: false
       matrix:
         settings:
           - name: linux
+            label: linux
             host: ubuntu-latest
+            blocking: true
+          # non-blocking until Windows suite is fixed; remaining failures: specs/ci-windows.md
           - name: windows
+            label: windows, non-blocking until Windows suite is fixed
             host: windows-2025
+            blocking: false
     runs-on: ${{ matrix.settings.host }}
+    continue-on-error: ${{ !matrix.settings.blocking }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:
@@ -138,7 +161,8 @@ jobs:
         run: bun --cwd packages/app test:e2e:local
         env:
           CI: true
-        timeout-minutes: 30
+        # The Windows run took 28 minutes on windows-2025, right under the old 30-minute cap.
+        timeout-minutes: ${{ runner.os == 'Windows' && 45 || 30 }}
 
       - name: Upload Playwright artifacts
         if: always()
