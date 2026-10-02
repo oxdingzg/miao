@@ -248,9 +248,12 @@ const Endpoint3_20 = (raw: RawClient["server.session"]) => (input: Endpoint3_20I
   )
 
 type Endpoint3_21Request = Parameters<RawClient["server.session"]["session.diff"]>[0]
-type Endpoint3_21Input = { readonly sessionID: Endpoint3_21Request["params"]["sessionID"] }
+type Endpoint3_21Input = {
+  readonly sessionID: Endpoint3_21Request["params"]["sessionID"]
+  readonly messageID?: Endpoint3_21Request["query"]["messageID"]
+}
 const Endpoint3_21 = (raw: RawClient["server.session"]) => (input: Endpoint3_21Input) =>
-  raw["session.diff"]({ params: { sessionID: input["sessionID"] } }).pipe(
+  raw["session.diff"]({ params: { sessionID: input["sessionID"] }, query: { messageID: input["messageID"] } }).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),
   )

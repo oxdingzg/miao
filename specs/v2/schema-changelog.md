@@ -1,5 +1,11 @@
 # V2 Schema Changelog
 
+## 2026-10-02: Per-Turn Session Diff
+
+- `GET /api/session/:sessionID/diff` accepts an optional `messageID` query. With it, the diff spans the turn that answered that user message: from the first `step.started` snapshot after its `session.next.prompted` event to the last `step.ended` snapshot before the next prompted message, or the live worktree while the turn is still open. This is the V2 source for the app's per-turn DiffSummary, which V1 stored as `summary.diffs` on user messages.
+- The `session.summary_*` columns stay V1-only. V1 only ever wrote zero aggregates there (`SessionSummary.summarize`), and no client reads them; V2 neither writes nor needs them.
+- No database or durable event changes.
+
 ## 2026-10-02: Session Status and Failure Events
 
 - Add live `session.next.status` (`{ status: { type: "busy" | "idle" } }`) and `session.next.failed` (`{ error: Session.Error.Unknown, name? }`) to the public event stream. Neither is durable.

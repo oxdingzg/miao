@@ -476,7 +476,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.diff",
         Effect.fn(function* (ctx) {
           return {
-            data: yield* session.diff(ctx.params.sessionID).pipe(
+            data: yield* session.diff(ctx.params.sessionID, { messageID: ctx.query.messageID }).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>
                 Effect.fail(
                   new SessionNotFoundError({
