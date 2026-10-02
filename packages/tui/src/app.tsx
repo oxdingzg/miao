@@ -42,6 +42,7 @@ import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
+import { DialogRemote } from "./component/dialog-remote"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
@@ -695,6 +696,15 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "mcps",
         run: () => {
           dialog.replace(() => <DialogMcp />)
+        },
+      },
+      {
+        name: "remote.manage",
+        title: "Remote control (WeChat, QQ)",
+        category: "Agent",
+        slashName: "remote",
+        run: () => {
+          dialog.replace(() => <DialogRemote />)
         },
       },
       {
