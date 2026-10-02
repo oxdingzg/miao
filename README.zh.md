@@ -91,6 +91,29 @@ V2 自治循环需要显式开启：待办仍未完成时继续推进，同时�
 
 项目配置放在 `.miao/miao.jsonc`，全局配置放在 `~/.config/miao/miao.jsonc`。这些设置都是可选的，调优前请查看 [配置参考](docs/guide.zh.md#4-配置参考)。
 
+## 用微信遥控会话（实验性）
+
+`miao remote` 在 `127.0.0.1` 上同时运行 miao 服务和微信（iLink ClawBot）通道，可以在手机上查看会话、新建会话、发 prompt、审批工具调用、中断。只接受扫码登录者本人的消息，只能遥控 `remote.projects` 里列出的目录。
+
+```sh
+miao remote login wechat   # 用微信扫码登录
+miao remote                # 前台运行；桌面上用 miao attach http://127.0.0.1:4097 打开同一批会话
+miao remote install        # 写入 launchd 配置，并打印加载它的 launchctl 命令
+miao remote status
+```
+
+```jsonc
+{
+  "remote": {
+    "port": 4097,
+    "projects": { "miao": "~/workspace/code/github/miao" },
+    "wechat": { "push_budget_per_day": 4 },
+  },
+}
+```
+
+在微信里发 `/help` 查看命令（`/list`、`/use N`、`/new <项目> [内容]`、`#N 消息`、`/stop`、`/r`、`/status`），审批用 `y7` / `a7` / `n7` 这样的短码回复。微信只允许在你上一条消息之后约两分钟内回复，主动推送也有限流，所以较晚结束的结果会留到你下次发消息（或发 `/r`）时一起回给你。腾讯没有明确允许或禁止第三方 ClawBot 客户端，限制与风险见 [specs/remote-im.md](specs/remote-im.md)。
+
 ## 有数据，也有明确边界的性能优化
 
 miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对照基准。以下摘自已有的同机实测记录，采用 release 构建与中位数：

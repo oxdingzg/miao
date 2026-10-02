@@ -91,6 +91,29 @@ The V2 autonomous loop is opt-in. It continues while todos remain open, with ite
 
 Place this in `.miao/miao.jsonc` for a project or `~/.config/miao/miao.jsonc` globally. These settings are optional; see the [configuration guide](docs/guide.en.md#4-configuration) before tuning them.
 
+## Drive sessions from WeChat (experimental)
+
+`miao remote` runs the miao server on `127.0.0.1` together with a WeChat (iLink ClawBot) channel, so you can list sessions, start one, send prompts, approve tool calls, and interrupt from your phone. Only the person who scanned the login code is heard, and only directories listed in `remote.projects` can be driven.
+
+```sh
+miao remote login wechat   # scan the QR code with WeChat
+miao remote                # foreground; open the same sessions on the desktop with: miao attach http://127.0.0.1:4097
+miao remote install        # writes a launchd agent and prints the launchctl command to load it
+miao remote status
+```
+
+```jsonc
+{
+  "remote": {
+    "port": 4097,
+    "projects": { "miao": "~/workspace/code/github/miao" },
+    "wechat": { "push_budget_per_day": 4 },
+  },
+}
+```
+
+In WeChat send `/help` for commands (`/list`, `/use N`, `/new <project> [prompt]`, `#N message`, `/stop`, `/r`, `/status`). Approval asks arrive as `y7` / `a7` / `n7` codes. WeChat only accepts replies for about two minutes after your last message and throttles proactive messages, so results that finish later are held until you next write (or send `/r`). Tencent neither permits nor forbids third-party ClawBot clients; see [specs/remote-im.md](specs/remote-im.md) for the limits and risks.
+
 ## Performance work you can inspect
 
 miao includes Rust accelerators and benchmarks against this repository's earlier TypeScript implementation. Selected recorded measurements, on the same machine using release builds and medians:
