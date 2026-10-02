@@ -3947,12 +3947,25 @@ export type ConfigV2RemoteWeChat = {
   push_budget_per_day?: number
 }
 
+export type ConfigV2RemoteQq = {
+  api?: string
+  portal?: string
+  markdown?: boolean
+}
+
 export type ConfigV2Remote = {
   port?: number
   projects?: {
     [key: string]: string
   }
   wechat?: ConfigV2RemoteWeChat
+  qq?: ConfigV2RemoteQq
+  connectors?: Array<string>
+  settings?: {
+    [key: string]: {
+      [key: string]: unknown
+    }
+  }
 }
 
 export type PolicyEffect = "allow" | "deny"
