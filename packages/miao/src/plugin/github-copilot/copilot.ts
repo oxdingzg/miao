@@ -370,17 +370,12 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
         output.headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
       }
 
+      // `chat.headers` only fires in the V1 runner, so these read the V1 message routes.
       const parts = await sdk.session
-        .message({
-          path: {
-            id: incoming.message.sessionID,
-            messageID: incoming.message.id,
-          },
-          query: {
-            directory: input.directory,
-          },
-          throwOnError: true,
-        })
+        .message(
+          { sessionID: incoming.message.sessionID, messageID: incoming.message.id, directory: input.directory },
+          { throwOnError: true },
+        )
         .catch(() => undefined)
 
       if (
@@ -397,15 +392,7 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
       }
 
       const session = await sdk.session
-        .get({
-          path: {
-            id: incoming.sessionID,
-          },
-          query: {
-            directory: input.directory,
-          },
-          throwOnError: true,
-        })
+        .get({ sessionID: incoming.sessionID, directory: input.directory }, { throwOnError: true })
         .catch(() => undefined)
       if (!session || !session.data.parentID) return
       // mark subagent sessions as agent initiated matching standard that other copilot tools have

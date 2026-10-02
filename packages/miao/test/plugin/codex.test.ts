@@ -380,7 +380,7 @@ describe("plugin.codex", () => {
       expires: 0,
     }
     const authUpdates: Array<{
-      body: { refresh: string; access: string; expires: number; accountId?: string }
+      auth: { refresh: string; access: string; expires: number; accountId?: string }
     }> = []
     let resolveRefresh: (() => void) | undefined
     const refreshReady = new Promise<void>((resolve) => {
@@ -422,14 +422,14 @@ describe("plugin.codex", () => {
       {
         client: {
           auth: {
-            async set(input: { body: { refresh: string; access: string; expires: number; accountId?: string } }) {
+            async set(input: { auth: { refresh: string; access: string; expires: number; accountId?: string } }) {
               authUpdates.push(input)
               auth = {
                 type: "oauth",
-                refresh: input.body.refresh,
-                access: input.body.access,
-                expires: input.body.expires,
-                ...(input.body.accountId && { accountId: input.body.accountId }),
+                refresh: input.auth.refresh,
+                access: input.auth.access,
+                expires: input.auth.expires,
+                ...(input.auth.accountId && { accountId: input.auth.accountId }),
               }
             },
           },
@@ -461,9 +461,9 @@ describe("plugin.codex", () => {
 
     expect(refreshRequests).toBe(1)
     expect(authUpdates).toHaveLength(1)
-    expect(authUpdates[0]?.body.refresh).toBe("refresh-new")
-    expect(authUpdates[0]?.body.access).toBe(refreshedAccess)
-    expect(authUpdates[0]?.body.accountId).toBe("acc-123")
+    expect(authUpdates[0]?.auth.refresh).toBe("refresh-new")
+    expect(authUpdates[0]?.auth.access).toBe(refreshedAccess)
+    expect(authUpdates[0]?.auth.accountId).toBe("acc-123")
     expect(apiRequests).toEqual([
       { authorization: `Bearer ${refreshedAccess}`, accountId: "acc-123", residency: "eu" },
       { authorization: `Bearer ${refreshedAccess}`, accountId: "acc-123", residency: "eu" },

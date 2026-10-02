@@ -7,7 +7,7 @@ import type {
   WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@opencode-ai/plugin"
 import { Config } from "@/config/config"
-import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { ServerAuth } from "@/server/auth"
 import { CodexAuthPlugin } from "./openai/codex"
 import { Session } from "@/session/session"
@@ -151,8 +151,12 @@ const layer = Layer.effect(
         const client = createOpencodeClient({
           baseUrl: serverUrl?.toString() ?? "http://localhost:4096",
           directory: ctx.directory,
-          headers: ServerAuth.headers(),
-          ...(serverUrl ? {} : { fetch: async (...args) => Server.Default().app.fetch(...args) }),
+          headers: ServerAuth.headers() ?? {},
+          ...(serverUrl
+            ? {}
+            : {
+                fetch: ((request: Request) => Server.Default().app.fetch(request)) as typeof globalThis.fetch,
+              }),
         })
         const cfg = yield* config.get()
         const input: PluginInput = {

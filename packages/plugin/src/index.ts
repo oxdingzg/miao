@@ -1,6 +1,5 @@
 import type {
   Event,
-  createOpencodeClient,
   Project,
   Model,
   Provider,
@@ -10,7 +9,7 @@ import type {
   Part,
   Config as SDKConfig,
 } from "@opencode-ai/sdk"
-import type { Provider as ProviderV2, Model as ModelV2, Auth } from "@opencode-ai/sdk/v2"
+import type { Provider as ProviderV2, Model as ModelV2, Auth, createOpencodeClient } from "@opencode-ai/sdk/v2"
 
 import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
@@ -54,6 +53,11 @@ export type WorkspaceAdapter = {
 }
 
 export type PluginInput = {
+  /**
+   * Client for the running server, generated from its current API (the
+   * `@opencode-ai/sdk/v2` shape: flat parameters such as
+   * `auth.set({ providerID, auth })`). Session work belongs on `client.v2.session`.
+   */
   client: ReturnType<typeof createOpencodeClient>
   project: Project
   directory: string
