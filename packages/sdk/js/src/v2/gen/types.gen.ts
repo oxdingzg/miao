@@ -11587,6 +11587,47 @@ export type V2HealthGetResponses = {
 
 export type V2HealthGetResponse = V2HealthGetResponses[keyof V2HealthGetResponses]
 
+export type V2FormatterStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/formatter"
+}
+
+export type V2FormatterStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2FormatterStatusError = V2FormatterStatusErrors[keyof V2FormatterStatusErrors]
+
+export type V2FormatterStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<{
+      name: string
+      extensions: Array<string>
+      enabled: boolean
+    }>
+  }
+}
+
+export type V2FormatterStatusResponse = V2FormatterStatusResponses[keyof V2FormatterStatusResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never

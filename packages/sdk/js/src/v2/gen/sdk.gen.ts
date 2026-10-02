@@ -268,6 +268,8 @@ import type {
   V2CredentialUpdateResponses,
   V2EventSubscribeErrors,
   V2EventSubscribeResponses,
+  V2FormatterStatusErrors,
+  V2FormatterStatusResponses,
   V2FsFindErrors,
   V2FsFindResponses,
   V2FsListErrors,
@@ -4962,6 +4964,30 @@ export class Health extends HeyApiClient {
   }
 }
 
+export class Formatter2 extends HeyApiClient {
+  /**
+   * Get formatter status
+   *
+   * List the configured formatters and whether each one is available.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2FormatterStatusResponses, V2FormatterStatusErrors, ThrowOnError>({
+      url: "/api/formatter",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Location extends HeyApiClient {
   /**
    * Get location
@@ -7545,6 +7571,11 @@ export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
     return (this._health ??= new Health({ client: this.client }))
+  }
+
+  private _formatter?: Formatter2
+  get formatter(): Formatter2 {
+    return (this._formatter ??= new Formatter2({ client: this.client }))
   }
 
   private _location?: Location

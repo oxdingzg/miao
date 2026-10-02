@@ -635,7 +635,9 @@ export const {
             sdk.client.experimental.resource
               .list({ workspace })
               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
-            sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
+            sdk.client.v2.formatter
+              .status({ location: { workspace } })
+              .then((x) => setStore("formatter", reconcile(x.data?.data ?? []))),
             sdk.client.v2.session
               .active()
               .then((x) => ({
