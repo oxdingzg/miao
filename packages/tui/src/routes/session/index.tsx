@@ -287,7 +287,9 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  // The sidebar's 42 is its content width; its 2+2 padding sits outside it, so
+  // reserve the full column (46) or the main area's last columns are clipped.
+  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 46 : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1137,7 +1139,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
+          <box flexGrow={1} minWidth={0} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
             <Show when={session()}>
               <SessionScrollbox
                 ref={(r) => (scroll = r)}
