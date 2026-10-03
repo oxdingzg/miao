@@ -1,4 +1,6 @@
 import { describe, expect } from "bun:test"
+import fs from "node:fs/promises"
+import os from "node:os"
 import {
   LLMClient,
   LLMError,
@@ -66,9 +68,11 @@ import { ReferenceGuidance } from "@miao/core/reference/guidance"
 import { ModelV2 } from "@miao/core/model"
 import { Location } from "@miao/core/location"
 import { ProviderV2 } from "@miao/core/provider"
-import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
+import { Cause, DateTime, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
+import { ChildProcess } from "effect/unstable/process"
 import { asc, eq } from "drizzle-orm"
+import { AppProcess } from "@miao/core/process"
 import { testEffect } from "./lib/effect"
 
 const requests: LLMRequest[] = []
@@ -175,6 +179,77 @@ const echo = Layer.effectDiscard(
   ),
 )
 const echoNode = makeLocationNode({ name: "test/session-runner-tools", layer: echo, deps: [ToolRegistry.node] })
+
+// A tool that spawns a real process group, so an interrupted turn can be
+// checked against the OS instead of against durable state alone.
+const spawnPidFile = `${os.tmpdir()}/miao-runner-spawn-${process.pid}.pid`
+const spawnTool = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const appProcess = yield* AppProcess.Service
+    const registry = yield* ToolRegistry.Service
+    yield* registry.register({
+      spawn: Tool.make({
+        description: "Run a shell command",
+        input: Schema.Struct({ command: Schema.String }),
+        output: Schema.Struct({ output: Schema.String }),
+        execute: ({ command }) =>
+          appProcess
+            .run(
+              ChildProcess.make(command, [], {
+                shell: process.platform === "win32" ? undefined : "/bin/sh",
+                detached: process.platform !== "win32",
+                forceKillAfter: Duration.seconds(3),
+              }),
+              { combineOutput: true, timeout: Duration.minutes(5) },
+            )
+            .pipe(
+              Effect.map((result) => ({ output: String(result.output ?? "") })),
+              Effect.orDie,
+            ),
+      }),
+    })
+  }),
+)
+const spawnNode = makeLocationNode({
+  name: "test/session-runner-spawn",
+  layer: spawnTool,
+  deps: [ToolRegistry.node, AppProcess.node],
+})
+
+const processAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Reads the pid the spawned shell recorded, waiting for the file to appear.
+const waitForPid = (file: string) =>
+  Effect.gen(function* () {
+    const end = Date.now() + 10_000
+    while (Date.now() < end) {
+      const text = yield* Effect.promise(() => fs.readFile(file, "utf8").catch(() => ""))
+      const pid = Number(text.trim())
+      if (Number.isInteger(pid) && pid > 0) return pid
+      yield* Effect.promise(() => sleep(20))
+    }
+    return yield* Effect.die(new Error(`Spawned process never reported a pid to ${file}`))
+  })
+
+const waitForProcessExit = (pid: number) =>
+  Effect.promise(async () => {
+    const end = Date.now() + 10_000
+    while (Date.now() < end) {
+      if (!processAlive(pid)) return true
+      await sleep(50)
+    }
+    return !processAlive(pid)
+  })
+
 let modelResolveHook = Effect.void
 let modelResolveFailure: SessionRunnerModel.Error | undefined
 let currentModel = model
@@ -293,6 +368,8 @@ const it = testEffect(
       ToolRegistry.node,
       ToolRegistry.toolsNode,
       echoNode,
+      spawnNode,
+      AppProcess.node,
       SessionRunnerModel.node,
       SystemContextRegistry.node,
       SkillGuidance.node,
@@ -3506,6 +3583,114 @@ describe("SessionRunnerLLM", () => {
           ],
         },
       ])
+    }),
+  )
+
+  it.live("kills the spawned process group when the run is interrupted", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* Effect.promise(() => fs.rm(spawnPidFile, { force: true }))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run a long command" }), resume: false })
+      responseStream = Stream.concat(
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-spawn",
+            name: "spawn",
+            input: { command: `echo $$ > ${spawnPidFile}; exec sleep 300` },
+          }),
+        ]),
+        Stream.never,
+      )
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      const pid = yield* waitForPid(spawnPidFile)
+      expect(processAlive(pid)).toBe(true)
+      expect(Array.from(yield* session.active)).toEqual([sessionID])
+
+      yield* session.interrupt(sessionID)
+      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+
+      // Interrupting the run must reach the OS process, not just the fiber.
+      expect(yield* waitForProcessExit(pid)).toBe(true)
+      expect(Array.from(yield* session.active)).toEqual([])
+
+      responseStream = undefined
+      response = []
+      requests.length = 0
+    }),
+  )
+
+  it.live("stops a subagent's spawned process group when the parent run is interrupted", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+
+      yield* setup
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* Effect.promise(() => fs.rm(spawnPidFile, { force: true }))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate a long command" }), resume: false })
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "run long", prompt: "run a long command", subagent_type: "build" },
+          }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-spawn",
+            name: "spawn",
+            input: { command: `echo $$ > ${spawnPidFile}; exec sleep 300` },
+          }),
+        ],
+      ]
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      const pid = yield* waitForPid(spawnPidFile)
+      expect(processAlive(pid)).toBe(true)
+
+      // The command must belong to the subagent's own Session. Task runs its
+      // child through the runner directly, so the coordinator only ever tracks
+      // the parent; checking the child context keeps this test from silently
+      // re-checking the parent's own tool execution.
+      const { db } = yield* Database.Service
+      const children = yield* db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.parent_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+      expect(children).toHaveLength(1)
+      const childContext = yield* (yield* SessionStore.Service).context(children[0]!.id)
+      expect(
+        childContext
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((item) => item.type === "tool" && item.name === "spawn"),
+      ).toMatchObject({ type: "tool", name: "spawn" })
+      expect(Array.from(yield* session.active)).toEqual([sessionID])
+
+      yield* session.interrupt(sessionID)
+      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+
+      // A parent interrupt must reach the subagent's OS work and leave no
+      // orphan drain behind.
+      expect(yield* waitForProcessExit(pid)).toBe(true)
+      expect(Array.from(yield* session.active)).toEqual([])
+
+      responses = undefined
+      response = []
+      requests.length = 0
     }),
   )
 
