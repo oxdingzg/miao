@@ -6,6 +6,8 @@ import { EventV2 } from "@miao/core/event"
 import { Git } from "@miao/core/git"
 import { GitCli } from "@miao/core/git-cli"
 import { ConfigWrite } from "@miao/core/config/write"
+import { FSUtil } from "@miao/core/fs-util"
+import { ProjectDirectories } from "@miao/core/project/directories"
 import { ProjectMetadata } from "@miao/core/project/metadata"
 import { MoveSession } from "@miao/core/control-plane/move-session"
 import { Credential } from "@miao/core/credential"
@@ -45,6 +47,8 @@ const applicationServices = LayerNode.group([
   Git.node,
   GitCli.node,
   ConfigWrite.node,
+  FSUtil.node,
+  ProjectDirectories.node,
   ProjectMetadata.node,
   WorkspaceLive.node,
   MoveSession.node,

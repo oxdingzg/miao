@@ -953,11 +953,17 @@ const Endpoint23_3 = (raw: RawClient["server.project"]) => (input: Endpoint23_3I
     payload: { name: input["name"], icon: input["icon"], commands: input["commands"] },
   }).pipe(Effect.mapError(mapClientError))
 
+type Endpoint23_4Request = Parameters<RawClient["server.project"]["project.initGit"]>[0]
+type Endpoint23_4Input = { readonly location?: Endpoint23_4Request["query"]["location"] }
+const Endpoint23_4 = (raw: RawClient["server.project"]) => (input?: Endpoint23_4Input) =>
+  raw["project.initGit"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
 const adaptGroup23 = (raw: RawClient["server.project"]) => ({
   list: Endpoint23_0(raw),
   current: Endpoint23_1(raw),
   directories: Endpoint23_2(raw),
   update: Endpoint23_3(raw),
+  initGit: Endpoint23_4(raw),
 })
 
 type Endpoint24_0Request = Parameters<RawClient["server.vcs"]["vcs.get"]>[0]

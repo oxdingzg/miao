@@ -255,6 +255,8 @@ import type {
   V2ProjectCurrentResponses,
   V2ProjectDirectoriesErrors,
   V2ProjectDirectoriesResponses,
+  V2ProjectInitGitErrors,
+  V2ProjectInitGitResponses,
   V2ProjectListErrors,
   V2ProjectListResponses,
   V2ProjectUpdateErrors,
@@ -6168,6 +6170,28 @@ export class Project2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Initialize git
+   *
+   * Create a git repository in the requested directory unless it is already in one, and return the project it now belongs to.
+   */
+  public initGit<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).post<V2ProjectInitGitResponses, V2ProjectInitGitErrors, ThrowOnError>({
+      url: "/api/project/git/init",
+      ...options,
+      ...params,
     })
   }
 }

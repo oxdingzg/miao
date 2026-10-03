@@ -170,6 +170,8 @@ import type {
   ProjectsDirectoriesOutput,
   ProjectsUpdateInput,
   ProjectsUpdateOutput,
+  ProjectsInitGitInput,
+  ProjectsInitGitOutput,
   VcsGetInput,
   VcsGetOutput,
   VcsStatusInput,
@@ -1436,6 +1438,18 @@ export function make(options: ClientOptions) {
             body: { name: input["name"], icon: input["icon"], commands: input["commands"] },
             successStatus: 200,
             declaredStatuses: [404, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      initGit: (input?: ProjectsInitGitInput, requestOptions?: RequestOptions) =>
+        request<ProjectsInitGitOutput>(
+          {
+            method: "POST",
+            path: `/api/project/git/init`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [500, 401, 400],
             empty: false,
           },
           requestOptions,
