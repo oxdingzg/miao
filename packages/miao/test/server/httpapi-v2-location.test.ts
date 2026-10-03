@@ -228,6 +228,44 @@ describe("v2 location HttpApi", () => {
     expect(await shell()).toBeUndefined()
   })
 
+  test("stores a key for a provider the config just defined", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const json = (method: string, body: unknown) => ({
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    try {
+      const defined = await request(
+        "/api/config",
+        tmp.path,
+        json("PATCH", {
+          config: {
+            providers: {
+              "custom-e2e": {
+                name: "Custom E2E",
+                api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://example.test", settings: {} },
+                models: { chat: { name: "Chat" } },
+              },
+            },
+          },
+        }),
+      )
+      expect(defined.status).toBe(200)
+
+      const connected = await request("/api/integration/custom-e2e/connect/key", tmp.path, json("POST", { key: "k" }))
+      expect(connected.status).toBe(204)
+      const integration = (await (await request("/api/integration/custom-e2e", tmp.path)).json()) as {
+        data: { connections: { type: string; id: string }[] }
+      }
+      const credentials = integration.data.connections.filter((connection) => connection.type === "credential")
+      expect(credentials).toHaveLength(1)
+      await request(`/api/credential/${credentials[0]!.id}`, tmp.path, { method: "DELETE" })
+    } finally {
+      await request("/api/config", tmp.path, json("PATCH", { config: { providers: { "custom-e2e": null } } }))
+    }
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)

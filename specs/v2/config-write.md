@@ -1,6 +1,6 @@
 # V2 全局配置写入（`PATCH /api/config`）
 
-状态：设计稿，2026-10-03，待确认。P7 剩余项之一：替代 V1 的 `PATCH /global/config` 与随之的
+状态：已实现，2026-10-03（采用方案 A：首次写入时迁移 V1 文件并备份）。P7 剩余项之一：替代 V1 的 `PATCH /global/config` 与随之的
 `global.dispose` / `instance.dispose`，让 app 的设置页（shell、禁用 provider、自定义 provider）在 V2 下可用。
 
 ## 现状（按代码核实）
@@ -71,3 +71,13 @@ app 侧随之：`updateConfig` 改走 `PATCH /api/config` 并发 V2 键（`shell
 ## 不在本轮
 
 - 项目级配置写入、配置文件监听（手改文件后自动生效）、插件 transform 重载。
+
+## 实现记录（2026-10-03）
+
+- core `ConfigWrite`（`9350d16ac`）；`PATCH /api/config` 与位置失效、`config.updated` 事件（`c5c792f1f`）；
+  请求体为 `{ config: {...} }`（codegen 要求 payload 是 struct）。
+- 顺带补齐的 V2 缺口：provider 配置新增 `disabled`，V1 `disabled_providers` 迁移为 `providers.<id>.disabled`
+  （`60d2045c0`）；配置里定义了 `api` 的自定义 provider 自动获得带 key 方法的 integration，才能保存 API key
+  （`f6a8b9b2c`）。
+- app 改走 V2 读写配置、按 integration 删除凭据，去掉 `global.dispose` 与 V1-only 的自定义 provider 入口（`08c52178e`）。
+- 仍未覆盖：V1 `enabled_providers`（白名单）没有 V2 对应；项目级配置写入；手改配置文件后的自动重载。
