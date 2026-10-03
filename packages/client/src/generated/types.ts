@@ -2700,7 +2700,7 @@ export type IntegrationsListOutput = {
               }
           >
         }
-      | { readonly type: "key"; readonly label?: string }
+      | { readonly type: "key"; readonly label?: string; readonly optional?: boolean }
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
     >
     readonly connections: ReadonlyArray<
@@ -2752,7 +2752,7 @@ export type IntegrationsGetOutput = {
               }
           >
         }
-      | { readonly type: "key"; readonly label?: string }
+      | { readonly type: "key"; readonly label?: string; readonly optional?: boolean }
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
     >
     readonly connections: ReadonlyArray<
