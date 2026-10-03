@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message } from "@miao/sdk/v2/client"
+import type { AssistantMessage, Message } from "@miao/schema/view-models"
 
 type Provider = {
   id: string

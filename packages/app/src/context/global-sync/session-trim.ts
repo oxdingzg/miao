@@ -1,4 +1,5 @@
-import type { PermissionRequest, Session } from "@miao/sdk/v2/client"
+import type { Session } from "@miao/schema/view-models"
+import type { PermissionRequest } from "@miao/sdk/v2"
 import { cmp } from "./utils"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 

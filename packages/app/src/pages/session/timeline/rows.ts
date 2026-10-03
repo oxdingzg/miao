@@ -1,6 +1,6 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import type { SessionMessageInfo } from "@/utils/server"
-import { AssistantMessage, Part, SessionStatus, UserMessage } from "@miao/sdk/v2"
+import { AssistantMessage, Part, SessionStatus, UserMessage } from "@miao/schema/view-models"
 import { groupParts, renderable, type PartGroup } from "@miao/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
@@ -217,7 +217,8 @@ export namespace Timeline {
     }
 
     if (error) {
-      const data = error.data?.message
+      const detail = error.data
+      const data = detail && "message" in detail ? detail.message : undefined
       rows.push(
         new TimelineRow.Error({
           userMessageID: userMessage.id,

@@ -1,4 +1,4 @@
-import type { AssistantMessage, FilePart, Message, Part, ToolPart, UserMessage } from "@miao/sdk/v2"
+import type { AssistantMessage, FilePart, Message, Part, ToolPart, UserMessage } from "@miao/schema/view-models"
 import type {
   SessionMessageAssistant,
   SessionMessageAssistantTool,

@@ -1,5 +1,5 @@
 import { checksum } from "@miao/core/util/encode"
-import type { FilePartSource } from "@miao/sdk/v2/client"
+import type { FilePartSource } from "@miao/schema/view-models"
 import { batch, createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"

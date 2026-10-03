@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, Session } from "@miao/sdk/v2/client"
+import type { Session } from "@miao/schema/view-models"
+import type { PermissionRequest } from "@miao/sdk/v2"
 import { base64Encode } from "@miao/core/util/encode"
 import { autoRespondsPermission, isDirectoryAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
 

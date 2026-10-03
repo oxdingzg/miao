@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message, Part, SessionStatus, UserMessage } from "@miao/sdk/v2"
+import type { AssistantMessage, Message, Part, SessionStatus, UserMessage } from "@miao/schema/view-models"
 import type { SessionMessageInfo } from "@/utils/server"
 import { createMemo, type Accessor } from "solid-js"
 import { reuseTimelineRows } from "./row-reconciliation"

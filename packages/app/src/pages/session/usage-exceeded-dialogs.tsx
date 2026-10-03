@@ -1,6 +1,6 @@
 import { useSDK } from "@/context/sdk"
 import { Persist, persisted } from "@/utils/persist"
-import { SessionStatus } from "@miao/sdk/v2"
+import { SessionStatus } from "@miao/schema/view-models"
 import { onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useSessionLayout } from "./session-layout"

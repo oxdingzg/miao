@@ -1,4 +1,4 @@
-import type { Message, Session } from "@miao/sdk/v2/client"
+import type { Message, Session } from "@miao/schema/view-models"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@miao/core/util/encode"
 import { Binary } from "@miao/core/util/binary"

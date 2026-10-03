@@ -1,4 +1,4 @@
-import type { UserMessage } from "@miao/sdk/v2"
+import type { UserMessage } from "@miao/schema/view-models"
 
 type Local = {
   session: {

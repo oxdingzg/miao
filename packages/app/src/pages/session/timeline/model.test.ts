@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage, Message, UserMessage } from "@miao/sdk/v2"
+import type { AssistantMessage, Message, UserMessage } from "@miao/schema/view-models"
 import { isTimelineReady, loadOlderTimeline, selectUserMessages, selectVisibleUserMessages } from "./model"
 
 const user = (id: string) => ({ id, role: "user" }) as UserMessage

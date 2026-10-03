@@ -1,4 +1,4 @@
-import type { Todo } from "@miao/sdk/v2"
+import type { Todo } from "@miao/schema/view-models"
 import { AnimatedNumber } from "@miao/ui/animated-number"
 import { Checkbox } from "@miao/ui/checkbox"
 import { DockTray } from "@miao/ui/dock-surface"

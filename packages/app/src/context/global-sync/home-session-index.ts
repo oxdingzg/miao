@@ -1,4 +1,5 @@
-import type { Event, Session, SessionV2Info, V2SessionListResponse } from "@miao/sdk/v2/client"
+import type { Session, SessionV2Info } from "@miao/schema/view-models"
+import type { Event, V2SessionListResponse } from "@miao/sdk/v2"
 import type { QueryClient } from "@tanstack/solid-query"
 import { trimSessions } from "./session-trim"
 import { pathKey } from "@/utils/path-key"

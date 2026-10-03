@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { AgentApi, CatalogApi, CommandApi, ReferenceApi } from "@/utils/server"
 import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
-import type { Config, MiaoClient, Project } from "@miao/sdk/v2/client"
+import type { Project } from "@miao/schema/view-models"
+import type { Config, MiaoClient } from "@miao/sdk/v2"
 import type { NormalizedProviderListResponse } from "@miao/session-ui/context"
 import {
   bootstrapDirectory,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Part } from "@miao/sdk/v2"
+import type { Part } from "@miao/schema/view-models"
 import { extractPromptFromParts } from "./prompt"
 
 describe("extractPromptFromParts", () => {

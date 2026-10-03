@@ -1,7 +1,7 @@
 import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
 import { readFileContent } from "@/utils/server"
 import type { FileDiffInfo } from "@/utils/server"
-import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/schema/view-models"
 import {
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX,
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN,

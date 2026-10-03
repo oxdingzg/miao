@@ -17,7 +17,7 @@ import {
   type ParentProps,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import type { FileNode } from "@miao/sdk/v2"
+import type { FileNode } from "@miao/schema/view-models"
 
 const MAX_DEPTH = 128
 

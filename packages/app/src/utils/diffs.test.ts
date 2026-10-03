@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { FileDiffInfo } from "@/utils/server"
-import type { SnapshotFileDiff } from "@miao/sdk/v2"
-import type { Message } from "@miao/sdk/v2/client"
+import type { SnapshotFileDiff } from "@miao/schema/view-models"
+import type { Message } from "@miao/schema/view-models"
 import { diffs, message } from "./diffs"
 
 const item = {

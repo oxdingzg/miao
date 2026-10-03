@@ -1,4 +1,4 @@
-import type { FileContent } from "@miao/sdk/v2"
+import type { FileContent } from "@miao/schema/view-models"
 
 export type FileSelection = {
   startLine: number

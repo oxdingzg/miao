@@ -1,4 +1,4 @@
-import type { Session } from "@miao/sdk/v2/client"
+import type { Session } from "@miao/schema/view-models"
 import type { SessionsListInput } from "@miao/client"
 import type { SessionApi, SessionInfo } from "@/utils/server"
 import { withTimestampedFallback } from "./session-title"

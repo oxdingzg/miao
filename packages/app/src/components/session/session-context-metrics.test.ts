@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@miao/sdk/v2/client"
+import type { Message } from "@miao/schema/view-models"
 import { getSessionContext } from "./session-context-metrics"
 
 const assistant = (
