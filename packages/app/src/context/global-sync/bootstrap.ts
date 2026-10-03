@@ -129,7 +129,7 @@ export const loadProjectsQuery = (scope: ServerScope, api: ProjectApi) =>
 
 export async function bootstrapGlobal(input: {
   serverSDK: OpencodeClient
-  serverAPI: CatalogApi & { readonly projects: ProjectApi; readonly config: ConfigApi }
+  serverAPI: CatalogApi & { readonly projects: ProjectApi; readonly config: ConfigApi; readonly location: PathApi }
   scope: ServerScope
   requestFailedTitle: string
   translate: (key: string, vars?: Record<string, string | number>) => string
@@ -143,7 +143,7 @@ export async function bootstrapGlobal(input: {
       input.queryClient.fetchQuery(
         loadProvidersQuery(input.scope, null, input.serverAPI),
       ),
-    () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK)),
+    () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverAPI.location)),
     () =>
       input.queryClient
         .fetchQuery(loadProjectsQuery(input.scope, input.serverAPI.projects))
@@ -256,16 +256,12 @@ export const loadCommands = (
     return api.list({ location: { directory } }).then((result) => [...result.data])
   })
 
-export const loadPathQuery = (
-  scope: ServerScope,
-  directory: string | null,
-  sdk: OpencodeClient,
-) =>
+type PathApi = Pick<ServerApi["location"], "path">
+
+export const loadPathQuery = (scope: ServerScope, directory: string | null, api: PathApi) =>
   queryOptions<Path>({
     queryKey: [scope, directory, "path"],
-    queryFn: async () => {
-      return { state: "", config: "", worktree: "", directory: directory ?? "", home: "" }
-    },
+    queryFn: () => api.path(directory ? { location: { directory } } : undefined),
   })
 
 export const loadReferencesQuery = (
@@ -297,6 +293,7 @@ export async function bootstrapDirectory(input: {
     readonly references: ReferenceListApi
     readonly sessions: SessionApi
     readonly vcs: VcsApi
+    readonly location: PathApi
   }
   store: Store<State>
   setStore: SetStoreFunction<State>
@@ -340,18 +337,15 @@ export async function bootstrapDirectory(input: {
       !seededPath &&
         (() =>
           input.queryClient
-            .ensureQueryData(loadPathQuery(input.scope, input.directory, input.sdk))
+            .ensureQueryData(loadPathQuery(input.scope, input.directory, input.api.location))
             .then((data) => {
               const next = projectID(data.directory ?? input.directory, input.global.project)
               if (next) input.setStore("project", next)
             })),
-      // The V2 API has no branch endpoint yet (only /api/vcs/status and /api/vcs/diff), so the
-      // review pane's "Branch changes" mode still needs the instance `/vcs` route for the branch
-      // and its default branch.
       () =>
         retry(() =>
-          input.sdk.vcs.get().then((result) => {
-            const next = { branch: result.data?.branch, default_branch: result.data?.default_branch }
+          input.api.vcs.get({ location: { directory: input.directory } }).then((result) => {
+            const next = { branch: result.data.branch, default_branch: result.data.default_branch }
             input.setStore("vcs", next)
             input.vcsCache.setStore("value", next)
           }),

@@ -11,7 +11,6 @@ const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mc
 export const LEGACY_V1_FIXTURE = "fixture still models the V1 session API; needs a V2 rewrite"
 
 export interface MockServerConfig {
-  protocol?: "v1" | "v2"
   provider: unknown | (() => unknown)
   integrationMethods?: Record<string, unknown[]>
   onConnectKey?: (input: { integrationID: string; body: unknown }) => void
@@ -81,10 +80,7 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
         config.eventRetry,
       )
     }
-    if (path === "/global/health")
-      return config.protocol === "v2" ? json(route, {}, undefined, 404) : json(route, { healthy: true })
-    if (path === "/api/health" && config.protocol === "v2")
-      return json(route, { healthy: true, version: "2.0.0", pid: 1 })
+    if (path === "/api/health") return json(route, { healthy: true, version: "2.0.0", pid: 1 })
     if (path === "/experimental/capabilities") return json(route, { backgroundSubagents: true })
     if (path === "/provider")
       return json(route, typeof config.provider === "function" ? config.provider() : config.provider)
@@ -184,10 +180,15 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       config.onConnectKey?.({ integrationID: integrationConnect, body: route.request().postDataJSON() })
       return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
     }
-    if (path === "/api/project") return json(route, [config.project])
+    if (path === "/api/project") return json(route, { location: location(config), data: [config.project] })
     if (path === "/api/project/current")
-      return json(route, { id: (config.project as { id?: string }).id, directory: config.directory })
-    if (path.startsWith("/api/project/") && route.request().method() === "PATCH") return json(route, config.project)
+      return json(route, {
+        location: location(config),
+        data: { id: (config.project as { id?: string }).id, directory: config.directory },
+      })
+    if (path.startsWith("/api/project/") && route.request().method() === "PATCH")
+      return json(route, { location: location(config), data: config.project })
+    if (path === "/api/config") return json(route, { location: location(config), data: {} })
     if (path === "/api/path")
       return json(route, {
         state: config.directory,
@@ -209,7 +210,7 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
         data: typeof config.questions === "function" ? config.questions() : (config.questions ?? []),
       })
     if (path === "/api/vcs")
-      return json(route, { location: location(config), data: { branch: "main", defaultBranch: "main" } })
+      return json(route, { location: location(config), data: { branch: "main", default_branch: "main" } })
     if (path === "/api/vcs/status") return json(route, { location: location(config), data: [] })
     if (path === "/api/vcs/diff") return json(route, { location: location(config), data: config.vcsDiff ?? [] })
     if (path === "/api/pty/shells") return json(route, { location: location(config), data: [] })

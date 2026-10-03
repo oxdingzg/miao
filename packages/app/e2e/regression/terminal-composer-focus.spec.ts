@@ -13,7 +13,6 @@ test.use({ viewport: { width: 1440, height: 900 } })
 
 test.beforeEach(async ({ page }) => {
   await mockOpenCodeServer(page, {
-    protocol: "v2",
     directory,
     project: {
       id: projectID,

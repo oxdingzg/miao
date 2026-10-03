@@ -3,7 +3,7 @@ import type { Event } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@miao/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { type Accessor, batch, createMemo, createResource, onCleanup, onMount } from "solid-js"
+import { type Accessor, batch, createMemo, onCleanup, onMount } from "solid-js"
 import { createApiForServer, createSdkForServer, type ServerApi } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -11,7 +11,6 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
-import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
 
 const isAbortError = (error: unknown) =>
@@ -179,8 +178,6 @@ type ServerEventEmitter = ReturnType<typeof createGlobalEmitter<{ [key: string]:
 type ServerSDKBase = {
   server: ServerConnection.Any
   scope: ServerScope
-  protocol: Promise<ServerProtocol>
-  protocolKind: Accessor<ServerProtocol | undefined>
   url: string
   client: ReturnType<typeof createSdkForServer>
   api: CompatibleApi
@@ -211,11 +208,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   })()
 
   const eventApi = createApiForServer({ server: server.http, fetch: eventFetch })
-  const protocol = detectServerProtocol(server.http, platform.fetch ?? globalThis.fetch)
-  const [protocolKind] = createResource(
-    () => protocol,
-    (value) => value,
-  )
   const emitter = createGlobalEmitter<{
     [key: string]: ServerEvent
   }>()
@@ -347,8 +339,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   return {
     server,
     scope,
-    protocol,
-    protocolKind,
     url: server.http.url,
     client: sdk,
     api,
@@ -396,11 +386,6 @@ export const { use: useServerSDK, provider: ServerSDKProvider } = createSimpleCo
   },
 })
 
-export function useServerProtocol() {
-  const serverSDK = useServerSDK()
-  return createMemo(() => serverSDK().protocolKind())
-}
-
 type SDKEventMap = {
   [key in Event["type"]]: Extract<ServerEvent, { type: key }>
 }
@@ -409,7 +394,6 @@ type SDKEventMap = {
 // and letting the compiler infer this shape makes it serialize far more than it can hold.
 export interface DirectorySDK {
   scope: ServerScope
-  protocol: Promise<ServerProtocol>
   directory: string
   client: ReturnType<typeof createSdkForServer>
   api: CompatibleApi
@@ -433,7 +417,6 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase): Direc
 
   return {
     scope: serverSDK.scope,
-    protocol: serverSDK.protocol,
     directory,
     client,
     api: createCompatibleApi({ current: serverSDK.currentApi }),

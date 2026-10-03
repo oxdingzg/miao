@@ -117,7 +117,6 @@ export async function setup(page: Page, input: { messages?: Message[]; settings?
     retry: 20,
   })
   await mockOpenCodeServer(page, {
-    protocol: "v2",
     directory,
     project: {
       id: "proj_e2e_v2",
