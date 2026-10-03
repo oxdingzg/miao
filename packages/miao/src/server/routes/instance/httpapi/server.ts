@@ -3,14 +3,6 @@ import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpClient, HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@miao/core/fs-util"
 import * as Observability from "@miao/core/observability"
-import { Agent } from "@/agent/agent"
-import { Auth } from "@/auth"
-import { BackgroundJob } from "@/background/job"
-import { Command } from "@/command"
-import { Config } from "@/config/config"
-import { Workspace } from "@/control-plane/workspace"
-import { Env } from "@/env"
-import { Format } from "@/format"
 import { GitCli } from "@miao/core/git-cli"
 import { ConfigWrite } from "@miao/core/config/write"
 import { ProjectWorktree } from "@miao/core/project/worktree"
@@ -18,30 +10,14 @@ import { Global } from "@miao/core/global"
 import { ProjectDirectories } from "@miao/core/project/directories"
 import { ProjectMetadata } from "@miao/core/project/metadata"
 import { Git } from "@miao/core/git"
-import { Installation } from "@/installation"
-import { LSP } from "@/lsp/lsp"
-import { MCP } from "@/mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
-import { Permission } from "@/permission"
-import { Plugin } from "@/plugin"
-import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
-import { Vcs } from "@/project/vcs"
-import { ProviderAuth } from "@/provider/auth"
-import { Provider } from "@/provider/provider"
-import { Question } from "@/question"
-import { Skill } from "@/skill"
-import { Discovery } from "@/skill/discovery"
-import { Snapshot } from "@/snapshot"
-import { Storage } from "@/storage/storage"
-import { Worktree } from "@/worktree"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@miao/core/control-plane/move-session"
 import { Database } from "@miao/core/database/database"
-import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
+import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { httpClient } from "@miao/core/effect/app-node-platform"
 import { EventV2 } from "@miao/core/event"
+import { Flag } from "@miao/core/flag/flag"
 import { ModelsDev } from "@miao/core/models-dev"
 import { Npm } from "@miao/core/npm"
 import { PermissionSaved } from "@miao/core/permission/saved"
@@ -114,12 +90,11 @@ const uiRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const client = yield* HttpClient.HttpClient
-    const flags = yield* RuntimeFlags.Service
     // Builds the EventV2 -> GlobalBus relay so in-process TUI clients keep
     // receiving events after the V1 bridge leaves the assembly.
     yield* EventForwarder.Service
     yield* router.add("*", "/*", (request) =>
-      serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
+      serveUIEffect(request, { fs, client, disableEmbeddedWebUi: Flag.MIAO_DISABLE_EMBEDDED_WEB_UI }),
     )
   }),
 ).pipe(Layer.provide(authOnlyRouterLayer))
@@ -135,9 +110,6 @@ const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Database.node,
-  Auth.node,
-  Config.node,
-  Env.node,
   GitCli.node,
   ConfigWrite.node,
   ProjectWorktree.node,
@@ -148,33 +120,11 @@ const app = LayerNode.group([
   // the cwd-based GitCli service above.
   Git.node,
   Ripgrep.node,
-  Storage.node,
-  Snapshot.node,
-  Plugin.node,
   ModelsDev.node,
-  Provider.node,
-  ProviderAuth.node,
-  Agent.node,
-  Skill.node,
-  Discovery.node,
-  Question.node,
-  Permission.node,
   PermissionSaved.node,
   SessionProjector.node,
-  BackgroundJob.node,
-  RuntimeFlags.node,
-  LSP.node,
-  MCP.node,
   McpAuth.node,
-  Command.node,
-  Format.node,
-  Project.node,
-  Vcs.node,
-  Workspace.node,
   WorkspaceLive.node,
-  Worktree.node,
-  Installation.node,
-  InstanceStore.node,
   httpClient,
   EventV2.node,
   ProjectV2.node,
@@ -194,8 +144,8 @@ export function createRoutes(
       compressionLayer,
       corsVaryFix,
       cors(corsOptions),
-      AppNodeBuilderV1.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]]),
-      AppNodeBuilderV1.build(EventForwarder.node, [[LocationServiceMap.node, locationServiceMapV2]]),
+      AppNodeBuilder.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]]),
+      AppNodeBuilder.build(EventForwarder.node, [[LocationServiceMap.node, locationServiceMapV2]]),
       HttpServer.layerServices,
     ]),
     Layer.provide(Layer.succeed(CorsConfig)(corsOptions)),
@@ -203,14 +153,14 @@ export function createRoutes(
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
     Layer.provide(
-      AppNodeBuilderV1.build(SessionV2.node, [
+      AppNodeBuilder.build(SessionV2.node, [
         [LocationServiceMap.node, locationServiceMapV2],
         [SessionExecution.node, SessionExecutionLocal.node],
       ]),
     ),
     Layer.provide(locationServiceMapV2),
     Layer.provide(
-      AppNodeBuilderV1.build(app, [
+      AppNodeBuilder.build(app, [
         [LocationServiceMap.node, locationServiceMapV2],
         [SessionExecution.node, SessionExecutionLocal.node],
       ]),

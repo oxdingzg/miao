@@ -101,6 +101,9 @@ export const Flag = {
   get MIAO_CLIENT() {
     return process.env["MIAO_CLIENT"] ?? "cli"
   },
+  get MIAO_DISABLE_EMBEDDED_WEB_UI() {
+    return truthy("MIAO_DISABLE_EMBEDDED_WEB_UI")
+  },
   // Opt-in raw provider-wire recording. `1`/`true` selects the log directory;
   // any other value is the directory to write into. Read at access time so
   // tests and the CLI can arm it after module load.
