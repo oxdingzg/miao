@@ -197,7 +197,7 @@ miao runs locally without a miao or OpenCode account. Connect your chosen model 
 - Model metadata comes from the public [models.dev](https://models.dev) catalog; builds bundle a snapshot for offline startup. Override it with `MIAO_MODELS_URL` or `MIAO_MODELS_PATH`.
 - Release notes and updates come from [oxdingzg/miao releases](https://github.com/oxdingzg/miao/releases).
 - Sharing has no default backend. Configure `enterprise.url` in `miao.json` to enable a compatible server; shared conversation content is sent only to that configured server.
-- Console accounts are optional external integrations. `miao console login <url>` requires an explicit server URL. To enable remote organization configuration and expose Console OAuth in V2 provider integrations, set `MIAO_CONSOLE_URL`; a custom server can specify `MIAO_CONSOLE_CLIENT_ID`.
+- miao has no Console account or organization support. `MIAO_CONSOLE_URL` only exposes Console OAuth for the OpenCode provider integration; a custom server can specify `MIAO_CONSOLE_CLIENT_ID`.
 - OpenCode Zen / Go remain optional third-party model providers, with their actual OpenCode service names and endpoints.
 
 | Project | What it is | Links |
