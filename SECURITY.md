@@ -2,22 +2,6 @@
 
 **Language:** [English](SECURITY.md) | [中文](SECURITY.zh.md)
 
-## Before you report
-
-This is a small project. It has had no security report yet, so there is no queue
-to join and no backlog to fight through. Two things are asked of a report, and
-neither is about volume:
-
-- **Reproduce it.** Say what you did, what you expected, what happened instead,
-  and on which version. A report someone can follow is a report someone can fix.
-- **Send it because you checked, not because a tool said so.** Scanner output
-  pasted in unreviewed, or a report written by a model that nobody ran, is not
-  yet a report. If a model drafted it, verify the claim against the code
-  yourself and send what you verified.
-
-A report that does this gets read properly. One that does not may be closed with
-a pointer back to this section.
-
 ## Threat Model
 
 ### Overview
@@ -65,14 +49,12 @@ That is the exposure to weigh: not a remote attacker, but any other process on y
 | **MCP server behavior**         | External MCP servers you configure are outside our trust boundary        |
 | **Malicious config files**      | Users control their own config; modifying it is not an attack vector     |
 
----
+## Reporting a Security Issue
 
-# Reporting Security Issues
+Use the GitHub Security Advisory
+["Report a Vulnerability"](https://github.com/oxdingzg/miao/security/advisories/new)
+tab. It stays private until it is published.
 
-We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
-
-To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/oxdingzg/miao/security/advisories/new) tab.
-
-You will get a reply saying what happens next, and after that, how the fix is
-going. There is no security team here and no guaranteed response time: if you
-have heard nothing after a week, follow up on the same thread.
+You will get an answer saying what happens next, and after that, how the fix is
+going. There is no security team here and no response-time commitment - if a
+week passes with no reply, ask again on the same thread.
