@@ -1,5 +1,5 @@
 import type { AssistantMessage, Part, UserMessage } from "@miao/schema/view-models"
-import type { Provider } from "@miao/sdk/v2"
+import type { Provider } from "@miao/schema/view-models"
 import { Locale } from "./locale"
 import * as Model from "./model"
 

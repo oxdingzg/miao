@@ -1,4 +1,4 @@
-import type { Provider } from "@miao/sdk/v2"
+import type { Provider } from "@miao/schema/view-models"
 
 export function parse(value: string) {
   const [providerID, ...modelID] = value.split("/")

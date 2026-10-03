@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceAdapterEntry } from "@miao/sdk/v2"
+import type { Workspace, WorkspaceAdapterEntry } from "@miao/schema/view-models"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { useSync } from "../context/sync"

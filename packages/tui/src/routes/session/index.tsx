@@ -29,7 +29,7 @@ import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useThe
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type { AssistantMessage, Part, ToolPart, UserMessage, TextPart, ReasoningPart } from "@miao/schema/view-models"
-import type { Provider, SessionStatus } from "@miao/sdk/v2"
+import type { Provider, SessionStatus } from "@miao/schema/view-models"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
 import { fileToolSummary, toolDisplay, webSearchProviderLabel } from "../../util/tool-display"
