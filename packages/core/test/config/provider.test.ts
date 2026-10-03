@@ -74,6 +74,9 @@ describe("ConfigProviderPlugin.Plugin", () => {
       yield* addPlugin(config)
 
       expect(required(yield* catalog.provider.get(providerID)).disabled).toBe(true)
+      // A provider the config defines gets an integration that can store an API key.
+      const integrations = yield* Integration.Service
+      expect((yield* integrations.get(Integration.ID.make("custom")))?.methods).toContainEqual({ type: "key" })
       expect((yield* catalog.provider.available()).map((provider) => provider.id)).not.toContain(providerID)
     }),
   )
