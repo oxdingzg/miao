@@ -26,17 +26,42 @@ export const locationQueryOpenApi = OpenApi.annotations({
   },
 })
 
-export const LocationGroup = HttpApiGroup.make("server.location").add(
-  HttpApiEndpoint.get("location.get", "/api/location", {
-    query: LocationQuery,
-    success: Location.Info,
-  })
-    .annotateMerge(locationQueryOpenApi)
-    .annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.location.get",
-        summary: "Get location",
-        description: "Resolve the requested location or the server default location.",
-      }),
-    ),
-)
+// Filesystem paths a client shows or starts from: the user's home, miao's state and config
+// directories, and the checkout root of the requested location ("/" outside a repository).
+export const LocationPath = Schema.Struct({
+  home: Schema.String,
+  state: Schema.String,
+  config: Schema.String,
+  worktree: Schema.String,
+  directory: Schema.String,
+}).annotate({ identifier: "Location.Path" })
+
+export const LocationGroup = HttpApiGroup.make("server.location")
+  .add(
+    HttpApiEndpoint.get("location.get", "/api/location", {
+      query: LocationQuery,
+      success: Location.Info,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.location.get",
+          summary: "Get location",
+          description: "Resolve the requested location or the server default location.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.get("location.path", "/api/path", {
+      query: LocationQuery,
+      success: LocationPath,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.location.path",
+          summary: "Get paths",
+          description: "Get the home, state, config and checkout paths for the requested location.",
+        }),
+      ),
+  )

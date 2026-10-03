@@ -4101,6 +4101,14 @@ export type LocationInfo = {
   }
 }
 
+export type LocationPath = {
+  home: string
+  state: string
+  config: string
+  worktree: string
+  directory: string
+}
+
 export type ProviderRequest = {
   headers: {
     [key: string]: string
@@ -10670,6 +10678,40 @@ export type V2LocationGetResponses = {
 }
 
 export type V2LocationGetResponse = V2LocationGetResponses[keyof V2LocationGetResponses]
+
+export type V2LocationPathData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/path"
+}
+
+export type V2LocationPathErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2LocationPathError = V2LocationPathErrors[keyof V2LocationPathErrors]
+
+export type V2LocationPathResponses = {
+  /**
+   * Location.Path
+   */
+  200: LocationPath
+}
+
+export type V2LocationPathResponse = V2LocationPathResponses[keyof V2LocationPathResponses]
 
 export type V2AgentListData = {
   body?: never

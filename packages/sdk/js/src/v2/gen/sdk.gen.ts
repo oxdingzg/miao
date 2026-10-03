@@ -225,6 +225,8 @@ import type {
   V2IntegrationListResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
+  V2LocationPathErrors,
+  V2LocationPathResponses,
   V2LspStatusErrors,
   V2LspStatusResponses,
   V2McpConnectErrors,
@@ -3720,6 +3722,28 @@ export class Location extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2LocationGetResponses, V2LocationGetErrors, ThrowOnError>({
       url: "/api/location",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get paths
+   *
+   * Get the home, state, config and checkout paths for the requested location.
+   */
+  public path<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2LocationPathResponses, V2LocationPathErrors, ThrowOnError>({
+      url: "/api/path",
       ...options,
       ...params,
     })
