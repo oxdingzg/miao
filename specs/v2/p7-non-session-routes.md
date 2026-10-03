@@ -60,6 +60,19 @@
   发出的未登记类型（`vcs.branch.updated`、`lsp.updated`、`tui.command.execute` 等）会抛错并结束整条订阅，客户端
   只能重连且丢事件。现改为跳过无法编码的事件。
 
+- app 改用 `@miao/client`（`430ebc357`），删除 vendored 的上游 `opencode-ai-client-1.17.13` tarball；session-ui 改用
+  `@miao/schema` 的 `Vcs.Patch`。类型对齐暴露并修复了一批连 miao 服务端时的运行时错误：
+  - **发消息**：旧请求体是扁平的 `{text, files, agents}`，miao 要求 `{prompt: {...}}`，实测返回 400（`Missing key at ["prompt"]`），
+    即 web/desktop app 发不出消息。现改为嵌套结构，并照 TUI 的做法在发送前用 `switchAgent`/`switchModel` 应用所选 agent/模型
+    （miao 的 prompt/command 不带 agent/model）。command/shell 去掉了服务端不认的字段。
+  - `project.current` 返回 `{location, data}`，原代码读 `.id` 得到 `undefined`（子目录 project、工作区目录列表失效）。
+  - provider OAuth 的 status/complete 改用 `/api/integration/attempt/*`。
+  - MCP status/resources 直接使用 miao 的 Record 结构，去掉不存在的 `pending` 状态。
+  - 会话列表新增服务端 `roots` 过滤（`c1938893e`），替代 miao 不支持的 `parentID=null`，避免子代理会话混入列表与分页。
+  - 实时 reducer 与历史投影改按 miao 的消息 schema（synthetic 的 `text`、shell 的 `callID`/`output`、附件 `source`、
+    工具 `pending` 状态与 `structured`/`provider`、reasoning `providerMetadata`、compaction 结算后才出现）。
+  - `/api/vcs/diff` 返回必填 `patch`/`status` 的 `Vcs.Patch`（`c89ec3ce4`）。
+
 ## 现状盘点（2026-10-03 按代码核实）
 
 ### TUI：只剩 4 处 V1 调用
@@ -107,7 +120,7 @@ protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/
 
 ## 剩余工作（按顺序）
 
-1. **app 切到 `@miao/client`**：替换 `createApiForServer`，按类型错误逐个对齐调用点；缺的端点记入第 2 步。
+1. ~~**app 切到 `@miao/client`**~~：已完成（见上）。
 2. **补 V2 端点**（protocol 组 + server handler + `bun run generate`）：~~`pty.shells`~~、~~`project.update`~~、
    ~~`vcs.diff`~~、~~`fs.content`~~ 已完成；剩 `config.update`（全局）、`instance/global dispose`（或用 V2 的配置变更
    自动重载替代）、`workspace.reset`、`project.initGit`（见下一条）。
