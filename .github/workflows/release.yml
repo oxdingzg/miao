@@ -63,8 +63,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Verify native Windows upgrade
+        if: runner.os == 'Windows'
+        working-directory: packages/miao
+        run: bun test test/installation/windows-upgrade.test.ts
+
       - name: Build and upload this platform
-        run: ./packages/miao/script/build.ts --single
+        run: ./packages/miao/script/build.ts --single ${{ runner.os == 'Windows' && '--baseline' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ needs.version.outputs.repo }}
