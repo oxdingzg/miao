@@ -17,8 +17,10 @@
 3. **Workflow `.github/workflows/release.yml`**:
    - `version`: runs `script/version.ts`, creates a **draft** release `vX.Y.Z` for the root `package.json` version with generated release notes, and outputs `version/release/tag/repo`.
    - `cli`: matrix `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64). Each platform runs `bun install` + installs Rust, then `packages/miao/script/build.ts --single` builds the host binary (building and embedding the host native addon first) and uploads `miao-<target>.zip|tar.gz` to the draft release.
-   - `publish`: after all platforms succeed, `gh release edit --draft=false` publishes the release.
+   - `publish`: after all platforms succeed, it appends the SignPath attribution to the release body and runs `gh release edit --draft=false` to publish the release.
 4. **Assets**: `miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`, matching the `install` script and the updater (`Installation.latest` -> `oxdingzg/miao/releases/latest`).
+
+Windows binaries are code-signed under the [SignPath Foundation](https://signpath.org) program: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). The `publish` step adds this attribution to every release body, so the download page names the signer.
 
 ## Changelog
 
