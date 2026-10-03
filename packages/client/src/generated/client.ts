@@ -6,6 +6,8 @@ import type {
   FormattersStatusOutput,
   ConfigGetInput,
   ConfigGetOutput,
+  ConfigUpdateInput,
+  ConfigUpdateOutput,
   ConfigProvidersInput,
   ConfigProvidersOutput,
   ConfigCatalogInput,
@@ -384,6 +386,19 @@ export function make(options: ClientOptions) {
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      update: (input: ConfigUpdateInput, requestOptions?: RequestOptions) =>
+        request<ConfigUpdateOutput>(
+          {
+            method: "PATCH",
+            path: `/api/config`,
+            query: { location: input["location"] },
+            body: { config: input["config"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
             empty: false,
           },
           requestOptions,

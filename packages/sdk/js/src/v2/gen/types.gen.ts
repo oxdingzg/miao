@@ -57,6 +57,7 @@ export type Event =
   | EventSessionError
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventConfigUpdated
   | EventFileEdited
   | EventProjectUpdated
   | EventReferenceUpdated
@@ -1284,6 +1285,13 @@ export type GlobalEvent = {
         type: "installation.update-available"
         properties: {
           version: string
+        }
+      }
+    | {
+        id: string
+        type: "config.updated"
+        properties: {
+          [key: string]: unknown
         }
       }
     | {
@@ -2841,6 +2849,7 @@ export type V2Event =
   | SessionError
   | InstallationUpdated
   | InstallationUpdateAvailable
+  | ConfigUpdated
   | FileEdited
   | ProjectUpdated
   | ReferenceUpdated
@@ -5688,6 +5697,23 @@ export type InstallationUpdateAvailable = {
   }
 }
 
+export type ConfigUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "config.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    [key: string]: unknown
+  }
+}
+
 export type FileEdited = {
   id: string
   metadata?: {
@@ -7098,6 +7124,14 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
+  }
+}
+
+export type EventConfigUpdated = {
+  id: string
+  type: "config.updated"
+  properties: {
+    [key: string]: unknown
   }
 }
 
@@ -10269,6 +10303,49 @@ export type V2ConfigGetResponses = {
 }
 
 export type V2ConfigGetResponse = V2ConfigGetResponses[keyof V2ConfigGetResponses]
+
+export type V2ConfigUpdateData = {
+  body: {
+    config: {
+      [key: string]: unknown
+    }
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/config"
+}
+
+export type V2ConfigUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ConfigUpdateError = V2ConfigUpdateErrors[keyof V2ConfigUpdateErrors]
+
+export type V2ConfigUpdateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type V2ConfigUpdateResponse = V2ConfigUpdateResponses[keyof V2ConfigUpdateResponses]
 
 export type V2ConfigProvidersData = {
   body?: never

@@ -189,6 +189,45 @@ describe("v2 location HttpApi", () => {
     expect(await ids("&roots=true")).toEqual([parent])
   })
 
+  test("writes the global config and serves it to an already opened location", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const patch = (body: unknown) =>
+      request("/api/config", tmp.path, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: body }),
+      })
+    const shell = async () =>
+      ((await (await request("/api/config", tmp.path)).json()) as { data: { shell?: string } }).data.shell
+    expect(await shell()).toBeUndefined()
+
+    const reader = eventStream((await request("/api/event", tmp.path)).body!)
+    expect((await readEvent(reader)).type).toBe("server.connected")
+    try {
+      const written = await patch({ shell: "/bin/test-shell" })
+      expect(written.status).toBe(200)
+      expect(await readEventType(reader, "config.updated")).toMatchObject({ type: "config.updated" })
+      expect(await shell()).toBe("/bin/test-shell")
+      // The test preload points the user config directory at a temporary one; the write lands in its
+      // highest-priority global file, which another test file may already have created.
+      const directory = path.join(process.env.XDG_CONFIG_HOME!, "miao")
+      const files = await Promise.all(
+        ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"].map((name) =>
+          Bun.file(path.join(directory, name))
+            .text()
+            .catch(() => ""),
+        ),
+      )
+      expect(files.some((text) => text.includes("/bin/test-shell"))).toBe(true)
+
+      expect((await patch({ disabled_providers: ["openai"] })).status).toBe(400)
+    } finally {
+      await reader.return(undefined)
+      await patch({ shell: null })
+    }
+    expect(await shell()).toBeUndefined()
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)

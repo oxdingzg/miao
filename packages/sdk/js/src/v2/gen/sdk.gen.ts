@@ -187,6 +187,8 @@ import type {
   V2ConfigGetResponses,
   V2ConfigProvidersErrors,
   V2ConfigProvidersResponses,
+  V2ConfigUpdateErrors,
+  V2ConfigUpdateResponses,
   V2ControlPlaneMoveSessionErrors,
   V2ControlPlaneMoveSessionResponses,
   V2CredentialRemoveErrors,
@@ -3474,6 +3476,46 @@ export class Config3 extends HeyApiClient {
       url: "/api/config",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Update global config
+   *
+   * Merge V2 config keys into the user's global config file (objects merge, null removes a key). A V1-shaped file is migrated to V2 on first write and its original kept as a backup. Locations opened afterwards read the new values.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      config?: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "config" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<V2ConfigUpdateResponses, V2ConfigUpdateErrors, ThrowOnError>({
+      url: "/api/config",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

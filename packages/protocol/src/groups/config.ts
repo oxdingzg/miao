@@ -1,6 +1,7 @@
 import { Location } from "@miao/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { InvalidRequestError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 // These passthroughs use `Schema.Any`, not `Schema.Unknown`. Responses are
@@ -43,6 +44,23 @@ export const ConfigGroup = HttpApiGroup.make("server.config")
           identifier: "v2.config.get",
           summary: "Get config",
           description: "Retrieve the merged configuration for the requested location.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.patch("config.update", "/api/config", {
+      query: LocationQuery,
+      payload: Schema.Struct({ config: Schema.Record(Schema.String, Schema.Unknown) }),
+      success: Location.response(Info),
+      error: InvalidRequestError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.config.update",
+          summary: "Update global config",
+          description:
+            "Merge V2 config keys into the user's global config file (objects merge, null removes a key). A V1-shaped file is migrated to V2 on first write and its original kept as a backup. Locations opened afterwards read the new values.",
         }),
       ),
   )

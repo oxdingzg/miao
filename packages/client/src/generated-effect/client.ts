@@ -37,20 +37,31 @@ type Endpoint3_0Input = { readonly location?: Endpoint3_0Request["query"]["locat
 const Endpoint3_0 = (raw: RawClient["server.config"]) => (input?: Endpoint3_0Input) =>
   raw["config.get"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint3_1Request = Parameters<RawClient["server.config"]["config.providers"]>[0]
-type Endpoint3_1Input = { readonly location?: Endpoint3_1Request["query"]["location"] }
-const Endpoint3_1 = (raw: RawClient["server.config"]) => (input?: Endpoint3_1Input) =>
-  raw["config.providers"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+type Endpoint3_1Request = Parameters<RawClient["server.config"]["config.update"]>[0]
+type Endpoint3_1Input = {
+  readonly location?: Endpoint3_1Request["query"]["location"]
+  readonly config: Endpoint3_1Request["payload"]["config"]
+}
+const Endpoint3_1 = (raw: RawClient["server.config"]) => (input: Endpoint3_1Input) =>
+  raw["config.update"]({ query: { location: input["location"] }, payload: { config: input["config"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
 
-type Endpoint3_2Request = Parameters<RawClient["server.config"]["config.catalog"]>[0]
+type Endpoint3_2Request = Parameters<RawClient["server.config"]["config.providers"]>[0]
 type Endpoint3_2Input = { readonly location?: Endpoint3_2Request["query"]["location"] }
 const Endpoint3_2 = (raw: RawClient["server.config"]) => (input?: Endpoint3_2Input) =>
+  raw["config.providers"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint3_3Request = Parameters<RawClient["server.config"]["config.catalog"]>[0]
+type Endpoint3_3Input = { readonly location?: Endpoint3_3Request["query"]["location"] }
+const Endpoint3_3 = (raw: RawClient["server.config"]) => (input?: Endpoint3_3Input) =>
   raw["config.catalog"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
 const adaptGroup3 = (raw: RawClient["server.config"]) => ({
   get: Endpoint3_0(raw),
-  providers: Endpoint3_1(raw),
-  catalog: Endpoint3_2(raw),
+  update: Endpoint3_1(raw),
+  providers: Endpoint3_2(raw),
+  catalog: Endpoint3_3(raw),
 })
 
 type Endpoint4_0Request = Parameters<RawClient["server.lsp"]["lsp.status"]>[0]

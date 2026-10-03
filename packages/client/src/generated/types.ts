@@ -176,6 +176,22 @@ export type ConfigGetOutput = {
   readonly data: { readonly [x: string]: any }
 }
 
+export type ConfigUpdateInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly config: { readonly config: { readonly [x: string]: unknown } }["config"]
+}
+
+export type ConfigUpdateOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly [x: string]: any }
+}
+
 export type ConfigProvidersInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
