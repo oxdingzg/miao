@@ -13,10 +13,12 @@ export const Plugin = define({
     yield* ctx.integration.transform(
       Effect.fn(function* (integrations) {
         const files = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
+        // A provider the config defines itself (`api`) or reads from the environment (`env`) needs its own
+        // integration, so its credentials can be stored and checked like any built-in provider's.
         const configuredIntegrations = new Set(
           files.flatMap((file) =>
             Object.entries(file.info.providers ?? {}).flatMap(([id, provider]) =>
-              provider.env === undefined ? [] : [id],
+              provider.env === undefined && provider.api === undefined ? [] : [id],
             ),
           ),
         )
@@ -27,6 +29,7 @@ export const Plugin = define({
             integrations.update(integrationID, (integration) => {
               integration.name = item.name ?? integration.name
             })
+            if (item.api !== undefined) integrations.method.update({ integrationID, method: { type: "key" } })
             if (item.env !== undefined) {
               integrations.method.update({
                 integrationID,
