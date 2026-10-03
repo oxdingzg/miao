@@ -49,16 +49,23 @@ V2 自己只在**建会话**（`session-create.ts`）和**改名**（`ProjectMet
 登记出带 `vcs: "git"` 的项目；返回登记后的 `Project.Info`。注意：没有提交也没有 remote 的新仓库，
 ID 解析结果仍是 `global`（V1 行为相同），第一次提交或加 remote 后下一次打开时会迁移到真正的 ID。
 
-### 4. 两个附带功能的去留（需要确认）
+### 4. 两个附带功能（2026-10-03 确认：一起迁移）
 
-- **favicon 图标发现**：只在实验开关 `experimentalIconDiscovery` 下运行。建议**本轮不搬**，留在 V1 随其删除；
-  需要时再作为 `ProjectRegistry` 的后台任务补上。
-- **`time_initialized`**：V1 在执行 `/init` 命令时写入。V2 的命令执行路径不同，建议**本轮不搬**，字段保留、
-  不再更新；目前 app/TUI 都没有读它（已核实 app 与 TUI 源码均无引用）。
+- **favicon 图标发现**：仍由实验开关 `MIAO_EXPERIMENTAL_ICON_DISCOVERY` 控制（core `Flag` 补上同名开关）。
+  登记完成后在位置作用域里后台运行：git 项目、还没有图标 URL/覆盖时，在 worktree 里找最短路径的
+  `favicon.{ico,png,svg,jpg,jpeg,webp}`，转成 data URL 经 `ProjectMetadata.update` 写入（会发 `project.updated`）。
+- **`time_initialized`**：V2 没有 `command.executed` 事件，改在 `V2Session.command` 执行 `init` 命令时，
+  直接更新该会话所属项目的 `time_initialized`。
+
+### 5. 与 `ProjectCopy` 的关系
+
+core 的 `ProjectCopy.refreshAfterBoot` 只做"从已登记的源目录出发发现 git worktree 并补登记"，源目录本身
+目前也靠 V1 写入。`ProjectRegistry` 登记打开的目录后，`ProjectCopy.refreshNode` 改为依赖它，保证先登记再刷新。
 
 ## 测试
 
-- core 单测（真 git 仓库 + 临时数据库）：首次打开登记项目与目录；同仓库第二个检出目录进入 `sandboxes` 与
+- core 单测（真 git 仓库 + 临时数据库）：首次打开登记项目与目录；开关打开时发现 favicon；`init` 命令写入
+  `time_initialized`；同仓库第二个检出目录进入 `sandboxes` 与
   `project_directory`；加 remote 后再打开，ID 迁移且会话、工作区跟过去，`.git/opencode` 写入新 ID；
   `global` 会话在目录变成 git 仓库后改挂；重复登记不产生多余事件。
 - 路由测试：`git/init` 之后 `GET /api/project` 能看到该项目且 `vcs` 为 `git`。
