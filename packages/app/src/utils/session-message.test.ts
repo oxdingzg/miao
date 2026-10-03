@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo } from "@/utils/server"
 import { normalizeSessionMessages } from "./session-message"
 
 describe("normalizeSessionMessages", () => {
@@ -17,21 +17,15 @@ describe("normalizeSessionMessages", () => {
         type: "user",
         text: "inspect @src/client.ts",
         files: [
+          { uri: "data:text/plain;base64,aGVsbG8=", mime: "text/plain", name: "note.txt" },
           {
-            data: "aGVsbG8=",
-            mime: "text/plain",
-            name: "note.txt",
-            source: { type: "inline" },
-          },
-          {
-            data: "ZXhwb3J0IHt9",
+            uri: "data:text/plain;base64,ZXhwb3J0IHt9",
             mime: "text/plain",
             name: "client.ts",
-            source: { type: "inline" },
-            mention: { text: "@src/client.ts", start: 8, end: 22 },
+            source: { text: "@src/client.ts", start: 8, end: 22 },
           },
         ],
-        agents: [{ name: "review", mention: { text: "@review", start: 0, end: 7 } }],
+        agents: [{ name: "review", source: { text: "@review", start: 0, end: 7 } }],
         time: { created: 3 },
       },
       {
@@ -40,8 +34,8 @@ describe("normalizeSessionMessages", () => {
         agent: "build",
         model: { id: "claude", providerID: "anthropic", variant: "high" },
         content: [
-          { type: "reasoning", text: "Thinking", time: { created: 4, completed: 5 } },
-          { type: "text", text: "Result" },
+          { type: "reasoning", id: "rsn_1", text: "Thinking", time: { created: 4, completed: 5 } },
+          { type: "text", id: "txt_1", text: "Result" },
           {
             type: "tool",
             id: "call_1",
@@ -49,7 +43,7 @@ describe("normalizeSessionMessages", () => {
             state: {
               status: "completed",
               input: { filePath: "note.txt" },
-              metadata: { title: "note.txt" },
+              structured: { title: "note.txt" },
               content: [{ type: "text", text: "hello" }],
             },
             time: { created: 5, ran: 6, completed: 7 },
@@ -62,7 +56,6 @@ describe("normalizeSessionMessages", () => {
       {
         id: "msg_5",
         type: "compaction",
-        status: "completed",
         reason: "auto",
         summary: "summary",
         recent: "recent",
@@ -110,7 +103,7 @@ describe("normalizeSessionMessages", () => {
         type: "assistant",
         agent: "build",
         model: { id: "model", providerID: "provider" },
-        content: [{ type: "text", text: "orphan" }],
+        content: [{ type: "text", id: "txt_1", text: "orphan" }],
         time: { created: 2 },
       },
     ] satisfies SessionMessageInfo[]
@@ -123,11 +116,9 @@ describe("normalizeSessionMessages", () => {
       {
         id: "msg_shell",
         type: "shell",
-        shellID: "shell_1",
+        callID: "shell_1",
         command: "printf hello",
-        status: "exited",
-        exit: 0,
-        output: { output: "hello", cursor: 5, size: 5, truncated: false },
+        output: "hello",
         time: { created: 1, completed: 2 },
       },
     ] satisfies SessionMessageInfo[]
@@ -170,7 +161,7 @@ describe("normalizeSessionMessages", () => {
               status: "completed",
               input: { path: "/repo/README.md", oldString: "old", newString: "new" },
               content: [{ type: "text", text: "Edited file successfully" }],
-              metadata: {
+              structured: {
                 files: [
                   {
                     file: "README.md",

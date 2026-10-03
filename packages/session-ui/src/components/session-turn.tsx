@@ -4,7 +4,7 @@ import {
   Message as MessageType,
   Part as PartType,
 } from "@opencode-ai/sdk/v2/client"
-import type { FileDiffInfo } from "@opencode-ai/client/promise"
+import type { Vcs } from "@miao/schema/vcs"
 import type { SessionStatus } from "@opencode-ai/sdk/v2"
 import { useData } from "../context"
 import { useFileComponent } from "@miao/ui/context/file"
@@ -91,7 +91,7 @@ function list<T>(value: T[] | undefined | null, fallback: T[]) {
   return fallback
 }
 
-type SummaryDiff = (SnapshotFileDiff & { file: string }) | FileDiffInfo
+type SummaryDiff = (SnapshotFileDiff & { file: string }) | Vcs.Patch
 
 function summaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
   return typeof value.file === "string"

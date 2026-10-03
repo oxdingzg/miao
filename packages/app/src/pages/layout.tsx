@@ -1170,11 +1170,11 @@ export default function LegacyLayout(props: ParentProps) {
     const refreshDirs = async (target?: string) => {
       if (!target || target === root || canOpen(target)) return canOpen(target)
       const listed = await Promise.resolve(
-        project?.id ?? serverSDK().api.project.current({ location: { directory: root } }),
+        project?.id ?? serverSDK().api.projects.current({ location: { directory: root } }),
       )
-        .then((value) => (typeof value === "string" ? value : value.id))
-        .then((projectID) => serverSDK().api.project.directories({ projectID, location: { directory: root } }))
-        .then((items) => items.map((item) => item.directory).filter((item) => pathKey(item) !== pathKey(root)))
+        .then((value) => (typeof value === "string" ? value : value.data.id))
+        .then((projectID) => serverSDK().api.projects.directories({ projectID, location: { directory: root } }))
+        .then((items) => items.data.map((item) => item.directory).filter((item) => pathKey(item) !== pathKey(root)))
         .catch(() => [] as string[])
       dirs = effectiveWorkspaceOrder(root, [root, ...listed], store.workspaceOrder[root])
       return canOpen(target)
@@ -1218,9 +1218,9 @@ export default function LegacyLayout(props: ParentProps) {
       await Promise.all(
         dirs.map(async (item) => ({
           path: { directory: item },
-          session: await listAllSessions(serverSDK().api.session, {
+          session: await listAllSessions(serverSDK().api.sessions, {
             directory: item,
-            parentID: null,
+            roots: true,
             order: "desc",
           }).catch(() => []),
         })),
@@ -1442,7 +1442,7 @@ export default function LegacyLayout(props: ParentProps) {
     })
     const dismiss = () => dismissToast(progress)
 
-    const sessions = await listAllSessions(serverSDK().api.session, { directory, order: "desc" }).catch(() => [])
+    const sessions = await listAllSessions(serverSDK().api.sessions, { directory, order: "desc" }).catch(() => [])
 
     clearWorkspaceTerminals(
       directory,
@@ -1571,7 +1571,7 @@ export default function LegacyLayout(props: ParentProps) {
     })
 
     const refresh = async () => {
-      const sessions = await listAllSessions(serverSDK().api.session, {
+      const sessions = await listAllSessions(serverSDK().api.sessions, {
         directory: props.directory,
         order: "desc",
       }).catch(() => [])

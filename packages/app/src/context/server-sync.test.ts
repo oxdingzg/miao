@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import type { McpResourcesInput, McpStatusInput, SessionsListInput } from "@miao/client"
+import type { SessionApi, SessionInfo } from "@/utils/server"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
-import type {
-  McpListInput,
-  McpResourceCatalogInput,
-  SessionApi,
-  SessionInfo,
-  SessionListInput,
-} from "@opencode-ai/client/promise"
 import { QueryClient } from "@tanstack/solid-query"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./global-sync/eviction"
 import { estimateRootSessionTotal, loadRootSessions } from "./global-sync/session-load"
@@ -23,21 +18,18 @@ describe("MCP queries", () => {
     const queryClient = new QueryClient()
     const result = await queryClient.fetchQuery(
       loadMcpQuery(ServerScope.local, "/project", {
-        list: async (input: McpListInput = {}) => {
+        status: async (input: McpStatusInput = {}) => {
           calls.push(input)
           return {
             location: { directory: "/project", project: { id: "project", directory: "/project" } },
-            data: [
-              { name: "docs", status: { status: "connected" } },
-              { name: "search", status: { status: "pending" } },
-            ],
+            data: { docs: { status: "connected" }, search: { status: "failed", error: "boom" } },
           }
         },
       } as unknown as McpApi),
     )
 
     expect(calls).toEqual([{ location: { directory: "/project" } }])
-    expect(result).toEqual({ docs: { status: "connected" }, search: { status: "pending" } })
+    expect(result).toEqual({ docs: { status: "connected" }, search: { status: "failed", error: "boom" } })
   })
 
   test("loads and keys the current resource catalog", async () => {
@@ -45,23 +37,18 @@ describe("MCP queries", () => {
     const queryClient = new QueryClient()
     const result = await queryClient.fetchQuery(
       loadMcpResourcesQuery(ServerScope.local, "/project", {
-        resource: {
-          catalog: async (input: McpResourceCatalogInput = {}) => {
-            calls.push(input)
-            return {
-              location: { directory: "/project", project: { id: "project", directory: "/project" } },
-              data: {
-                resources: [{ server: "docs", name: "Guide", uri: "docs://guide" }],
-                templates: [],
-              },
-            }
-          },
+        resources: async (input: McpResourcesInput = {}) => {
+          calls.push(input)
+          return {
+            location: { directory: "/project", project: { id: "project", directory: "/project" } },
+            data: { "docs:Guide": { client: "docs", name: "Guide", uri: "docs://guide" } },
+          }
         },
       } as unknown as McpApi),
     )
 
     expect(calls).toEqual([{ location: { directory: "/project" } }])
-    expect(result).toEqual({ "docs:docs://guide": { server: "docs", name: "Guide", uri: "docs://guide" } })
+    expect(result).toEqual({ "docs:Guide": { client: "docs", name: "Guide", uri: "docs://guide" } })
   })
 })
 
@@ -125,7 +112,7 @@ describe("pickDirectoriesToEvict", () => {
 
 describe("loadRootSessions", () => {
   test("loads and normalizes a limited page of root sessions", async () => {
-    const calls: SessionListInput[] = []
+    const calls: SessionsListInput[] = []
 
     const result = await loadRootSessions({
       api: {
@@ -142,7 +129,7 @@ describe("loadRootSessions", () => {
       expect.objectContaining({ id: "session-1", directory: "dir", slug: "session-1", version: "" }),
     ])
     expect(result.limited).toBe(true)
-    expect(calls).toEqual([{ directory: "dir", parentID: null, limit: 10, order: "desc" }])
+    expect(calls).toEqual([{ directory: "dir", roots: true, limit: 10, order: "desc" }])
   })
 
   test("propagates list failures", () => {

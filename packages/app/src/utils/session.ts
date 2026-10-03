@@ -1,5 +1,6 @@
-import type { SessionApi, SessionInfo, SessionListInput } from "@opencode-ai/client/promise"
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { SessionsListInput } from "@miao/client"
+import type { SessionApi, SessionInfo } from "@/utils/server"
 import { withTimestampedFallback } from "./session-title"
 
 export function normalizeSessionInfo(input: SessionInfo | Session): Session {
@@ -27,7 +28,7 @@ export function normalizeSessionInfo(input: SessionInfo | Session): Session {
   }
 }
 
-export async function listAllSessions(api: Pick<SessionApi, "list">, input: Omit<SessionListInput, "cursor">) {
+export async function listAllSessions(api: Pick<SessionApi, "list">, input: Omit<SessionsListInput, "cursor">) {
   const load = async (cursor?: string): Promise<Session[]> => {
     const result = await api.list({ ...input, limit: input.limit ?? 100, cursor })
     const sessions = result.data.map(normalizeSessionInfo)

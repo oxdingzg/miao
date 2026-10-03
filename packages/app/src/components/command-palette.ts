@@ -1,6 +1,6 @@
 import { getFilename } from "@miao/core/util/path"
+import type { SessionInfo } from "@/utils/server"
 import type { Project } from "@opencode-ai/sdk/v2/client"
-import type { SessionInfo } from "@opencode-ai/client/promise"
 import { useDialog } from "@miao/ui/context/dialog"
 import { createMemo, onCleanup } from "solid-js"
 import { commandPaletteOptions, useCommand, type CommandOption } from "@/context/command"
@@ -146,7 +146,7 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
     server: ServerConnection.key(serverSDK.server),
     opened: serverCtx.projects.list,
     stored: () => serverCtx.sync.data.project,
-    load: (search, signal) => serverSDK.api.session.list({ parentID: null, search, limit: 50 }, { signal }),
+    load: (search, signal) => serverSDK.api.sessions.list({ roots: true, search, limit: 50 }, { signal }),
     untitled: () => language.t("command.session.new"),
     category: () => language.t("command.category.session"),
   })
@@ -220,7 +220,7 @@ export function createServerSessionEntries(props: {
   server: ServerConnection.Key
   opened: () => LocalProject[]
   stored: () => Project[]
-  load: (search: string, signal: AbortSignal) => Promise<{ data: SessionInfo[] }>
+  load: (search: string, signal: AbortSignal) => Promise<{ readonly data: readonly SessionInfo[] }>
   untitled: () => string
   category: () => string
 }) {

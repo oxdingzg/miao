@@ -1,3 +1,4 @@
+import type { CommandInfo, FileDiffInfo, McpResource, McpStatus, SessionMessageInfo } from "@/utils/server"
 import type {
   Agent,
   Config,
@@ -13,9 +14,7 @@ import type {
   Todo,
   VcsInfo,
 } from "@opencode-ai/sdk/v2/client"
-import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
-import type { CommandInfo, McpResource, McpServer, SessionMessageInfo } from "@opencode-ai/client/promise"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 
@@ -62,7 +61,7 @@ export type State = {
   }
   mcp_ready: boolean
   mcp: {
-    [name: string]: McpServer["status"]
+    [name: string]: McpStatus
   }
   mcp_resource: {
     [key: string]: McpResource

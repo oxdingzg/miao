@@ -21,7 +21,6 @@ import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
 import { normalizeSessionInfo } from "@/utils/session"
-import { Event } from "@miao/schema/event"
 import { blobDataUrl } from "@/utils/draft-store"
 
 type PendingPrompt = {
@@ -42,7 +41,7 @@ export type FollowupDraft = {
 }
 
 type FollowupSendInput = {
-  api: DirectorySDK["api"]["session"]
+  api: DirectorySDK["api"]["sessions"]
   serverSync: ServerSync
   sync: DirectorySync
   draft: FollowupDraft
@@ -84,25 +83,16 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         return false
       }
 
-      const messageID = Identifier.ascending("message")
-      await input.api.command({
+      await applySelection(input.api, input.serverSync, {
         sessionID: input.draft.sessionID,
-        id: messageID,
-        command: cmd,
-        arguments: tail.join(" "),
         agent: input.draft.agent,
         model: {
           id: input.draft.model.modelID,
           providerID: input.draft.model.providerID,
           variant: input.draft.variant,
         },
-        files: await Promise.all(
-          images.map(async (attachment) => ({
-            uri: await blobDataUrl(attachment.blob, attachment.mime),
-            name: attachment.filename,
-          })),
-        ),
       })
+      await input.api.command({ sessionID: input.draft.sessionID, command: cmd, arguments: tail.join(" ") })
       return true
     } catch (err) {
       setIdle()
@@ -165,33 +155,40 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
+    await applySelection(input.api, input.serverSync, {
+      sessionID: input.draft.sessionID,
+      agent: input.draft.agent,
+      model: { id: input.draft.model.modelID, providerID: input.draft.model.providerID, variant: input.draft.variant },
+    })
     await input.api.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
-      text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
-      files: requestParts.flatMap((part) => {
-        if (part.type !== "file") return []
-        const text = part.source?.text
-        return [
-          {
-            uri: part.url,
-            name: part.filename,
-            mention: text ? { start: text.start, end: text.end, text: text.value } : undefined,
-          },
-        ]
-      }),
-      agents: requestParts.flatMap((part) =>
-        part.type === "agent"
-          ? [
-              {
-                name: part.name,
-                mention: part.source
-                  ? { start: part.source.start, end: part.source.end, text: part.source.value }
-                  : undefined,
-              },
-            ]
-          : [],
-      ),
+      prompt: {
+        text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
+        files: requestParts.flatMap((part) => {
+          if (part.type !== "file") return []
+          const text = part.source?.text
+          return [
+            {
+              uri: part.url,
+              name: part.filename,
+              source: text ? { start: text.start, end: text.end, text: text.value } : undefined,
+            },
+          ]
+        }),
+        agents: requestParts.flatMap((part) =>
+          part.type === "agent"
+            ? [
+                {
+                  name: part.name,
+                  source: part.source
+                    ? { start: part.source.start, end: part.source.end, text: part.source.value }
+                    : undefined,
+                },
+              ]
+            : [],
+        ),
+      },
     })
     return true
   } catch (err) {
@@ -269,7 +266,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return Promise.resolve()
     }
     return sdk()
-      .api.session.interrupt({ sessionID })
+      .api.sessions.interrupt({ sessionID })
       .catch(() => {})
   }
 
@@ -397,7 +394,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let session = input.info()
     if (!session && isNewSession) {
       const created = await sdk()
-        .api.session.create({
+        .api.sessions.create({
           agent: currentAgent.name,
           model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
           location: { directory: sessionDirectory },
@@ -486,13 +483,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     if (mode === "shell") {
       clearInput()
-      const eventID = Event.ID.create()
       sdk()
-        .api.session.shell({
-          sessionID: session.id,
-          id: eventID,
-          command: text,
-        })
+        .api.sessions.shell({ sessionID: session.id, command: text })
         .catch((err) => {
           showToast({
             title: language.t("prompt.toast.shellSendFailed.title"),
@@ -509,23 +501,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const customCommand = sync().data.command.find((c) => c.name === commandName)
       if (customCommand) {
         clearInput()
-        const messageID = Identifier.ascending("message")
         serverSync().session.set("session_status", session.id, { type: "busy" })
-        sdk()
-          .api.session.command({
-            sessionID: session.id,
-            id: messageID,
-            command: commandName,
-            arguments: args.join(" "),
-            agent,
-            model: { id: model.modelID, providerID: model.providerID, variant },
-            files: await Promise.all(
-              images.map(async (attachment) => ({
-                uri: await blobDataUrl(attachment.blob, attachment.mime),
-                name: attachment.filename,
-              })),
-            ),
-          })
+        const api = sdk().api.sessions
+        applySelection(api, serverSync(), {
+          sessionID: session.id,
+          agent,
+          model: { id: model.modelID, providerID: model.providerID, variant },
+        })
+          .then(() => api.command({ sessionID: session.id, command: commandName, arguments: args.join(" ") }))
           .catch((err) => {
             serverSync().session.set("session_status", session.id, { type: "idle" })
             showToast({
@@ -611,7 +594,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     void sendFollowupDraft({
-      api: sdk().api.session,
+      api: sdk().api.sessions,
       sync: sync(),
       serverSync: serverSync(),
       draft,
@@ -636,4 +619,19 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     abort,
     handleSubmit,
   }
+}
+
+// A prompt or command carries only its text: the session runs with the agent and model stored on it.
+// Apply the composer's selection first, or a model picked after the session started never takes
+// effect. switchModel is a no-op on the server when nothing changed; switchAgent records an event,
+// so it is sent only when the agent differs.
+async function applySelection(
+  api: DirectorySDK["api"]["sessions"],
+  serverSync: ServerSync,
+  input: { sessionID: string; agent: string; model: { id: string; providerID: string; variant?: string } },
+) {
+  if (input.agent && serverSync.session.get(input.sessionID)?.agent !== input.agent)
+    await api.switchAgent({ sessionID: input.sessionID, agent: input.agent })
+  if (!input.model.id || !input.model.providerID) return
+  await api.switchModel({ sessionID: input.sessionID, model: input.model })
 }

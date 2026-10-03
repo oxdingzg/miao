@@ -1,4 +1,5 @@
 import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import type { FileDiffInfo } from "@/utils/server"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { DragDropProvider as DndKitProvider, PointerSensor } from "@dnd-kit/solid"
@@ -24,7 +25,6 @@ import { IconButtonV2 } from "@miao/ui/v2/icon-button-v2"
 import { KeybindV2 } from "@miao/ui/v2/keybind-v2"
 import { TooltipV2 } from "@miao/ui/v2/tooltip-v2"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
-import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@miao/ui/context/dialog"
 

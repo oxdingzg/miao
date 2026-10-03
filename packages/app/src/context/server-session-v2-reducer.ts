@@ -1,13 +1,12 @@
-import type { JsonValue, SessionMessageInfo } from "@opencode-ai/client/promise"
 // Events arrive over SSE in their encoded form, so the reducer reads the encoded union: decoding
 // would turn `timestamp` into a DateTime and hand back values the wire never carries.
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
+import type { JsonValue } from "@miao/client"
+import type { SessionMessageInfo } from "@/utils/server"
 
 type Assistant = Extract<SessionMessageInfo, { type: "assistant" }>
-type Compaction = Extract<SessionMessageInfo, { type: "compaction" }>
 type Shell = Extract<SessionMessageInfo, { type: "shell" }>
 type ToolState = Extract<Assistant["content"][number], { type: "tool" }>["state"]
-// The settled state requires at least one content item; the event carries a plain array.
 type ToolContent = Extract<ToolState, { status: "completed" }>["content"]
 
 export type V2SessionReduction = {
@@ -77,17 +76,13 @@ export function createV2SessionReducer() {
           type: "model-switched",
           metadata: wire(event.metadata),
           model: event.data.model,
-          previous: source.findLast(
-            (item): item is Extract<SessionMessageInfo, { type: "model-switched" | "assistant" }> =>
-              item.type === "model-switched" || item.type === "assistant",
-          )?.model,
           time: { created: event.data.timestamp },
         })
       case "session.next.synthetic":
         return append({
           id: event.data.messageID,
           type: "synthetic",
-          metadata: wire(event.metadata),
+          sessionID: event.data.sessionID,
           text: event.data.text,
           time: { created: event.data.timestamp },
         })
@@ -96,26 +91,18 @@ export function createV2SessionReducer() {
           id: event.data.messageID,
           type: "shell",
           metadata: wire(event.metadata),
-          shellID: event.data.callID,
+          callID: event.data.callID,
           command: event.data.command,
-          status: "running",
+          output: "",
           time: { created: event.data.timestamp },
         })
-      // The settlement event carries the finished text but no exit status of its own, so the
-      // message can only record that the command is no longer running.
       case "session.next.shell.ended":
         return updateMessage<Shell>(
           source,
-          (item): item is Shell => item.type === "shell" && item.shellID === event.data.callID,
+          (item): item is Shell => item.type === "shell" && item.callID === event.data.callID,
           (item) => ({
             ...item,
-            status: "exited",
-            output: {
-              output: event.data.output,
-              cursor: event.data.output.length,
-              size: event.data.output.length,
-              truncated: false,
-            },
+            output: event.data.output,
             time: { ...item.time, completed: event.data.timestamp },
           }),
           sessionID,
@@ -125,9 +112,7 @@ export function createV2SessionReducer() {
         const completed =
           current && current.id !== event.data.assistantMessageID
             ? update(source, current.id, (item) =>
-                item.type === "assistant"
-                  ? { ...item, retry: undefined, time: { ...item.time, completed: event.data.timestamp } }
-                  : item,
+                item.type === "assistant" ? { ...item, time: { ...item.time, completed: event.data.timestamp } } : item,
               )
             : [...source]
         const existing = completed.find((item) => item.id === event.data.assistantMessageID)
@@ -139,7 +124,6 @@ export function createV2SessionReducer() {
                     ...item,
                     agent: event.data.agent,
                     model: event.data.model,
-                    retry: undefined,
                     error: undefined,
                     finish: undefined,
                     snapshot: event.data.snapshot ? { ...item.snapshot, start: event.data.snapshot } : item.snapshot,
@@ -183,7 +167,6 @@ export function createV2SessionReducer() {
           ...item,
           finish: "error",
           error: event.data.error,
-          retry: undefined,
           time: { ...item.time, completed: event.data.timestamp },
         }))
       case "session.next.text.started":
@@ -193,7 +176,7 @@ export function createV2SessionReducer() {
             item.content,
             "text",
             position(stream(sessionID, item.id, source).text, event.data.textID),
-            { type: "text", text: "" },
+            { type: "text", id: event.data.textID, text: "" },
           ),
         }))
       case "session.next.text.delta":
@@ -229,8 +212,9 @@ export function createV2SessionReducer() {
             position(stream(sessionID, item.id, source).reasoning, event.data.reasoningID),
             {
               type: "reasoning",
+              id: event.data.reasoningID,
               text: "",
-              state: wire(event.data.providerMetadata),
+              providerMetadata: wire(event.data.providerMetadata),
               time: { created: event.data.timestamp },
             },
           ),
@@ -257,7 +241,7 @@ export function createV2SessionReducer() {
           (item) => ({
             ...item,
             text: event.data.text,
-            state: wire(event.data.providerMetadata) ?? item.state,
+            providerMetadata: wire(event.data.providerMetadata) ?? item.providerMetadata,
             time: { created: item.time?.created ?? event.data.timestamp, completed: event.data.timestamp },
           }),
         )
@@ -272,27 +256,26 @@ export function createV2SessionReducer() {
                   type: "tool",
                   id: event.data.callID,
                   name: event.data.name,
-                  state: { status: "streaming", input: "" },
+                  state: { status: "pending", input: "" },
                   time: { created: event.data.timestamp },
                 },
               ],
         }))
       case "session.next.tool.input.delta":
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) =>
-          tool.state.status === "streaming"
+          tool.state.status === "pending"
             ? { ...tool, state: { ...tool.state, input: tool.state.input + event.data.delta } }
             : tool,
         )
       case "session.next.tool.input.ended":
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) =>
-          tool.state.status === "streaming" ? { ...tool, state: { ...tool.state, input: event.data.text } } : tool,
+          tool.state.status === "pending" ? { ...tool, state: { ...tool.state, input: event.data.text } } : tool,
         )
       case "session.next.tool.called":
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) => ({
           ...tool,
-          executed: event.data.provider.executed,
-          providerState: wire(event.data.provider.metadata),
-          state: { status: "running", input: wire(event.data.input), metadata: {} },
+          provider: wire(event.data.provider),
+          state: { status: "running", input: wire(event.data.input), structured: {}, content: [] },
           time: { ...tool.time, ran: event.data.timestamp },
         }))
       case "session.next.tool.progress":
@@ -300,7 +283,11 @@ export function createV2SessionReducer() {
           tool.state.status === "running"
             ? {
                 ...tool,
-                state: { ...tool.state, metadata: wire<Record<string, JsonValue>>(event.data.structured) },
+                state: {
+                  ...tool.state,
+                  structured: wire<Record<string, JsonValue>>(event.data.structured),
+                  content: wire<ToolContent>(event.data.content),
+                },
               }
             : tool,
         )
@@ -309,90 +296,59 @@ export function createV2SessionReducer() {
           if (tool.state.status !== "running") return tool
           return {
             ...tool,
-            executed: event.data.provider.executed || tool.executed === true,
-            providerResultState: wire(event.data.provider.metadata),
+            provider: {
+              executed: event.data.provider.executed || tool.provider?.executed === true,
+              metadata: tool.provider?.metadata,
+              resultMetadata: wire(event.data.provider.metadata),
+            },
             state: {
               status: "completed",
               input: tool.state.input,
-              metadata: wire<Record<string, JsonValue>>(event.data.structured),
+              structured: wire<Record<string, JsonValue>>(event.data.structured),
               content: wire<ToolContent>(event.data.content),
+              outputPaths: wire(event.data.outputPaths),
+              result: wire(event.data.result),
             },
             time: { ...tool.time, completed: event.data.timestamp },
           }
         })
       case "session.next.tool.failed":
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) => {
-          if (tool.state.status !== "streaming" && tool.state.status !== "running") return tool
+          if (tool.state.status !== "pending" && tool.state.status !== "running") return tool
           return {
             ...tool,
-            executed: event.data.provider.executed || tool.executed === true,
-            providerResultState: wire(event.data.provider.metadata),
+            provider: {
+              executed: event.data.provider.executed || tool.provider?.executed === true,
+              metadata: tool.provider?.metadata,
+              resultMetadata: wire(event.data.provider.metadata),
+            },
             state: {
               status: "error",
               input: typeof tool.state.input === "string" ? {} : tool.state.input,
-              metadata:
-                wire(event.data.provider.metadata) ?? (tool.state.status === "running" ? tool.state.metadata : {}),
+              structured: tool.state.status === "running" ? tool.state.structured : {},
+              content: tool.state.status === "running" ? tool.state.content : [],
               error: event.data.error,
+              result: wire(event.data.result),
             },
             time: { ...tool.time, completed: event.data.timestamp },
           }
         })
-      // A retry is not addressed to a message, so it lands on whichever turn is still open.
-      case "session.next.retried": {
-        const current = source.findLast((item): item is Assistant => item.type === "assistant" && !item.time.completed)
-        if (!current) return result([...source])
-        return updateAssistant(source, current.id, sessionID, (item) => ({
-          ...item,
-          retry: {
-            attempt: event.data.attempt,
-            at: event.data.timestamp,
-            error: { type: "retry", message: event.data.error.message },
-          },
-        }))
-      }
+      // Retries surface through the session status; compaction streams into the timeline only once
+      // it settles, matching the server projection.
+      case "session.next.retried":
       case "session.next.compaction.started":
+      case "session.next.compaction.delta":
+        return result([...source])
+      case "session.next.compaction.ended":
         return append({
           id: event.data.messageID,
           type: "compaction",
-          status: "running",
           metadata: wire(event.metadata),
-          reason: event.data.reason,
-          summary: "",
-          recent: "",
-          time: { created: event.data.timestamp },
-        })
-      case "session.next.compaction.delta":
-        return updateMessage<Extract<Compaction, { status: "running" }>>(
-          source,
-          (item): item is Extract<Compaction, { status: "running" }> =>
-            item.type === "compaction" && item.status === "running" && item.id === event.data.messageID,
-          (item) => ({
-            ...item,
-            summary: item.summary + event.data.text,
-          }),
-          sessionID,
-        )
-      case "session.next.compaction.ended": {
-        const current = source.findLast(
-          (item): item is Extract<Compaction, { status: "running" }> =>
-            item.type === "compaction" && item.status === "running" && item.id === event.data.messageID,
-        )
-        const settled: Extract<Compaction, { status: "completed" }> = {
-          id: event.data.messageID,
-          type: "compaction",
-          status: "completed",
-          metadata: wire(current?.metadata ?? event.metadata),
           reason: event.data.reason,
           summary: event.data.text,
           recent: event.data.recent,
-          time: current?.time ?? { created: event.data.timestamp },
-        }
-        if (!current) return append(settled)
-        return result(
-          update(source, current.id, () => settled),
-          [settled.id],
-        )
-      }
+          time: { created: event.data.timestamp },
+        })
       default:
         return
     }

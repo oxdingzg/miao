@@ -1,13 +1,10 @@
-import type { McpServer } from "@opencode-ai/client/promise"
-
 export async function toggleMcp(input: {
-  status: McpServer["status"]["status"]
+  status: McpStatus["status"]
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   authenticate: () => Promise<void>
   refresh: () => Promise<void>
 }) {
-  if (input.status === "pending") return
   await {
     connected: input.disconnect,
     needs_auth: input.authenticate,
@@ -17,3 +14,4 @@ export async function toggleMcp(input: {
   }[input.status]()
   await input.refresh()
 }
+import type { McpStatus } from "@/utils/server"

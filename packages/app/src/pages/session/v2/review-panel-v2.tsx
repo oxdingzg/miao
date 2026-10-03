@@ -1,6 +1,6 @@
 import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
+import type { FileDiffInfo } from "@/utils/server"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
-import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX,
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN,

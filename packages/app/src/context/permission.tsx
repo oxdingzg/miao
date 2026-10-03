@@ -236,7 +236,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
 
   const respond: PermissionRespondFn = (request) => {
     if (meta.disposed) return
-    input.sdk.api.permission
+    input.sdk.api.permissions
       .reply({
         sessionID: request.sessionID,
         requestID: request.permissionID,
@@ -248,8 +248,8 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   const list = async (directory: string) => {
-    return input.sdk.api.permission.request
-      .list({ location: { directory } })
+    return input.sdk.api.permissions
+      .listRequests({ location: { directory } })
       .then((result) => result.data.map(normalizePermissionRequest))
   }
 

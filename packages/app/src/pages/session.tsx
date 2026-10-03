@@ -691,7 +691,7 @@ export default function Page() {
         ? () =>
             sdk()
               .api.vcs.diff({ location: { directory: sdk().directory }, mode: mode === "git" ? "working" : mode })
-              .then((result) => result.data)
+              .then((result) => [...result.data])
               .catch((error) => {
                 console.debug("[session-review] failed to load vcs diff", { mode, error })
                 return []
@@ -1725,7 +1725,7 @@ export default function Page() {
       setFollowup("failed", input.sessionID, undefined)
 
       const ok = await sendFollowupDraft({
-        api: sdk().api.session,
+        api: sdk().api.sessions,
         sync: sync(),
         serverSync: serverSync(),
         draft: item,
@@ -1821,13 +1821,13 @@ export default function Page() {
   const halt = (sessionID: string) =>
     busy(sessionID)
       ? sdk()
-          .api.session.interrupt({ sessionID })
+          .api.sessions.interrupt({ sessionID })
           .catch(() => {})
       : Promise.resolve()
 
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {
-      const session = sdk().api.session
+      const session = sdk().api.sessions
       const target = sync()
       const last = target.session.get(input.sessionID)?.revert
       const value = draft(input.messageID)
@@ -1837,7 +1837,7 @@ export default function Page() {
           roll(input.sessionID, { messageID: input.messageID }, target)
           prompt.set(value)
         },
-        request: () => halt(input.sessionID).then(() => session.revert.stage(input)),
+        request: () => halt(input.sessionID).then(() => session.stage(input)),
         complete: () => undefined,
         rollback: () => roll(input.sessionID, last, target),
         fail,
@@ -1850,7 +1850,7 @@ export default function Page() {
       const sessionID = params.id
       if (!sessionID) return
 
-      const session = sdk().api.session
+      const session = sdk().api.sessions
       const target = sync()
       const index = userMessages().findIndex((item) => item.id === id)
       if (index < 0) return
@@ -1869,8 +1869,8 @@ export default function Page() {
         },
         request: () =>
           !next
-            ? halt(sessionID).then(() => session.revert.clear({ sessionID }))
-            : halt(sessionID).then(() => session.revert.stage({ sessionID, messageID: next.id }).then(() => undefined)),
+            ? halt(sessionID).then(() => session.clear({ sessionID }))
+            : halt(sessionID).then(() => session.stage({ sessionID, messageID: next.id }).then(() => undefined)),
         complete: () => undefined,
         rollback: () => roll(sessionID, last, target),
         fail,

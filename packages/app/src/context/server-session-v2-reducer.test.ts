@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo } from "@/utils/server"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import { createV2SessionReducer } from "./server-session-v2-reducer"
 
@@ -195,6 +195,7 @@ describe("v2 session reducer", () => {
         provider: { executed: true },
       },
     })
+    const settled = messages
     apply({
       ...base,
       id: "evt_retry",
@@ -202,10 +203,18 @@ describe("v2 session reducer", () => {
       data: { ...stamp, attempt: 2, error: { message: "retry", isRetryable: true } },
     })
 
+    // Retries surface through the session status, so the projected messages stay as they were.
+    expect(messages).toEqual(settled)
     expect(messages[0]).toMatchObject({
       type: "assistant",
-      retry: { attempt: 2, at: 1, error: { type: "retry", message: "retry" } },
-      content: [{ type: "tool", id: "call_1", state: { status: "completed", content: [{ text: "done" }] } }],
+      content: [
+        {
+          type: "tool",
+          id: "call_1",
+          provider: { executed: true },
+          state: { status: "completed", structured: {}, content: [{ text: "done" }] },
+        },
+      ],
     })
   })
 })

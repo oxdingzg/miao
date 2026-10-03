@@ -1,5 +1,5 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import type { SessionInfo, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionInfo, SessionMessageInfo } from "@/utils/server"
 import type { ServerApi } from "./server"
 
 // Matches the version 2 archive written by `miao export` and read by `miao import`:
@@ -27,8 +27,8 @@ export type SessionExportData = {
 }
 
 export type SessionExportApi = {
-  session: Pick<ServerApi["session"], "get">
-  message: Pick<ServerApi["message"], "list">
+  sessions: Pick<ServerApi["sessions"], "get">
+  messages: Pick<ServerApi["messages"], "list">
 }
 
 // The server rejects message pages larger than 200.
@@ -39,7 +39,7 @@ export async function fetchSessionExport(input: {
   api: SessionExportApi
 }): Promise<SessionExportData> {
   const [session, projection] = await Promise.all([
-    input.api.session.get({ sessionID: input.sessionID }),
+    input.api.sessions.get({ sessionID: input.sessionID }),
     fetchProjection(input.api, input.sessionID),
   ])
 
@@ -70,10 +70,10 @@ async function fetchProjection(
   sessionID: string,
   cursor?: string,
 ): Promise<SessionMessageInfo[]> {
-  const page = await api.message.list(
+  const page = await api.messages.list(
     cursor ? { sessionID, limit: PAGE_LIMIT, cursor } : { sessionID, limit: PAGE_LIMIT, order: "asc" },
   )
-  if (page.data.length < PAGE_LIMIT || !page.cursor.next) return page.data
+  if (page.data.length < PAGE_LIMIT || !page.cursor.next) return [...page.data]
   return [...page.data, ...(await fetchProjection(api, sessionID, page.cursor.next))]
 }
 
