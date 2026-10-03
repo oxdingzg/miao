@@ -1,6 +1,5 @@
 import { OpenApi } from "effect/unstable/httpapi"
 import { OpenCodeHttpApi } from "./api"
-import { QueryBooleanOpenApi } from "./groups/query"
 
 type OpenApiParameter = {
   name: string
@@ -55,18 +54,11 @@ type OpenApiResponse = {
 // Query schemas describe decoded Effect values, but the generated SDK needs the
 // public call shape. These keep SDK callers passing numbers/booleans while the
 // server still decodes string query params at runtime.
+const QueryBooleanOpenApi = {
+  anyOf: [{ type: "boolean" }, { type: "string", enum: ["true", "false"] }],
+}
+
 const QueryParameterSchemas: Record<string, OpenApiSchema> = {
-  "GET /experimental/session start": { type: "number" },
-  "GET /experimental/session roots": QueryBooleanOpenApi,
-  "GET /experimental/session archived": QueryBooleanOpenApi,
-  "GET /find/file limit": { type: "integer", minimum: 1, maximum: 200 },
-  "GET /experimental/session cursor": { type: "number" },
-  "GET /experimental/session limit": { type: "number" },
-  "GET /session start": { type: "number" },
-  "GET /session roots": QueryBooleanOpenApi,
-  "GET /session limit": { type: "number" },
-  "GET /session/{sessionID}/message limit": { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-  "GET /vcs/diff context": { type: "integer", minimum: 0 },
   "GET /api/session limit": { type: "number" },
   "GET /api/session start": { type: "number" },
   "GET /api/session roots": QueryBooleanOpenApi,
