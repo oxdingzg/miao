@@ -3584,10 +3584,10 @@ export type VcsDiffOutput = {
   }
   readonly data: ReadonlyArray<{
     readonly file: string
-    readonly patch?: string
+    readonly patch: string
     readonly additions: number
     readonly deletions: number
-    readonly status?: "added" | "deleted" | "modified"
+    readonly status: "added" | "deleted" | "modified"
   }>
 }
 
