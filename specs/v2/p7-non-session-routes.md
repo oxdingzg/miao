@@ -1,6 +1,6 @@
 # P7 — 非会话旧路由迁 `/api/*`
 
-状态：进行中（2026-10-02 开始）。目标：让 TUI / app / CLI 完全脱离 V1 无前缀路由与 `@opencode-ai/sdk`，
+状态：进行中（2026-10-02 开始，2026-10-03 按代码重新盘点）。目标：让 TUI / app / CLI 完全脱离 V1 无前缀路由与 `@opencode-ai/sdk`，
 使发布二进制的 server 能切到 `packages/server` 的 V2-only assembly，只剩 CLI 外壳。
 
 ## 已完成
@@ -49,35 +49,67 @@
   `LocationInfo.project.directory` 映射回 `instance.path.worktree`）。`packages/tui` 367 测试通过、typecheck 通过。
 - 此前已完成：会话读写全部 V2；app 的协议选择回退（`createV1Api`/`?protocol=v1`）删除。
 
-## 客户端仍在用的 V1 无前缀命名空间（`rg -oN "sdk\.client\.([a-zA-Z]+)\." packages/tui/src`）
+- `mcp`（`0515122fa` status/connect/disconnect、`3f604a5a2` resources）、`workspace`（`0537c126a`）、
+  `control-plane/move-session`（`330141bfc`）、`capabilities`（`c311394b5`）：protocol 组 + handler 已加，
+  TUI 对应调用已迁到 `client.v2.*`。
 
-| 命名空间       | 次数 | V2 现状                               | 迁移目标                                                                              |
-| -------------- | ---- | ------------------------------------- | ------------------------------------------------------------------------------------- |
-| `experimental` | 17   | 无 workspace 组（仅 `project-copy`）  | 新增 `/api/workspace`（list/status/create/…）                                         |
-| `vcs`          | 4    | 无                                    | 新增 `/api/vcs`（status/diff）                                                        |
-| `provider`     | 4    | `/api/provider`、`/api/integration`   | `oauth.authorize/callback` → `integration.oauth.*`；`provider.auth` → `integration.*` |
-| `mcp`          | 4    | 无                                    | 新增 `/api/mcp`（list/add/remove/connect/disconnect/resources）                       |
-| `instance`     | 4    | 无                                    | 新增 `/api/instance`（dispose 等）                                                    |
-| `lsp`          | 2    | 无                                    | 新增 `/api/lsp`（status）                                                             |
-| `config`       | 2    | 无                                    | 新增 `/api/config`（get/update，形状按 V2 Config）                                    |
-| `formatter`    | 1    | 无                                    | 新增 `/api/formatter`（status）                                                       |
-| `auth`         | 1    | `/api/credential`、`/api/integration` | 迁到 `credential`/`integration`                                                       |
-| `app`          | 1    | 无                                    | 新增 `/api/app`（log）或删除调用                                                      |
+## 现状盘点（2026-10-03 按代码核实）
 
-app 侧：`packages/app/src` 仍有 `protocol === "v1"` 守护的 `client.session.*`（`session-archive.ts`、
-`layout.tsx`、`directory-sync.ts`、`home-sessions-controller.tsx`、`server-session.ts`）与 V1 事件兼容层
-（`server-sdk.tsx` 的 `adaptServerEvent`、`server-session.ts`）。V2 已有 archive/rename/get/message/context，
-可逐点去掉 V1 分支。
+### TUI：只剩 4 处 V1 调用
 
-## 剩余（无 V2 支撑，需新服务/协议，非客户端迁移）
+`rg -oN "sdk\.client\.([a-zA-Z]+)\." packages/tui/src` 的非 `v2` 命中：
 
-- `experimental.console.*`（`sync.tsx`、`dialog-console-org.tsx`）：console/账户管理仅 V1 `/experimental/console*`，无 V2 group。
-- `instance.dispose()`（`dialog-console-org.tsx`）：仅 V1 `/instance/dispose`，且与 console 切换绑定。
-- `experimental.resource.list`（`sync.tsx`）：MCP resources，Core MCP 未暴露 resources。
-- `file.read`（`routes/session/index.tsx`）：V2 `fs.read` 为 wildcard、生成客户端无 path 参数，且返回字节而非 `{type,content}`。
+- `experimental.console` ×3（`context/sync.tsx:679`、`component/dialog-console-org.tsx:33,98`）：
+  console/账户切换只有 V1 `/experimental/console*`，没有 V2 group。
+- `instance.dispose` ×1（`dialog-console-org.tsx:106`）：切换 org 后重载实例。
 
-这些要有 V2 端点/服务后才能迁移。此前所有能借现有或新加 V2 端点收口的 TUI V1 调用都已完成：
-session/formatter/lsp/app/project/provider/config/command/skill/auth/vcs/mcp/workspace/controlPlane/capabilities。
+`file.read`（`routes/session/index.tsx` 的 diff 高亮）正在改走新增的 `GET /api/fs/content`（工作区未提交）。
+
+### app：两层问题
+
+**1. 仍调 legacy SDK（`sdk().client.*`，`@opencode-ai/sdk/v2` → 无前缀 V1 路由）**
+
+| 调用 | 位置 | V2 现状 |
+| --- | --- | --- |
+| `file.list` / `file.read` | `context/file.tsx`、`pages/session/review-tab.tsx`、`pages/session/v2/review-panel-v2.tsx` | `fs.list` 已有；`fs.content` 新增中 |
+| `pty.update/get/connectToken/shells` | `components/terminal.tsx`、`settings-general.tsx`、`settings-v2/general-controllers.ts` | `/api/pty/*` 已有，仅剩 `protocol === "v1"` 死分支；`shells` 无 V2 端点 |
+| `project.initGit` | `pages/session.tsx`、`pages/home/home-controller.ts` | 无 |
+| `project.update` | `pages/layout.tsx`、`context/layout.tsx`、`components/edit-project.ts` | 无；V2 下被 `protocol !== "v1"` 直接 return（**重命名项目在 V2 下静默失效**） |
+| `worktree.create/remove/reset` | `pages/layout.tsx` | `/api/workspace` 有 create/remove，无 reset |
+| `instance.dispose` / `global.dispose` | `pages/layout.tsx`、`settings-providers.tsx`、`settings-v2/providers.tsx` | 无 |
+| `global.config.update` | `context/server-sync.tsx` | 无（`GET /api/config` 只读） |
+| `auth.set/remove` | `dialog-custom-provider.tsx`、`settings-providers.tsx`、`settings-v2/providers.tsx` | `/api/credential` 有 update/remove；自定义 provider 在 V2 下被拒（`provider.custom.unavailable`） |
+| `path.get` | `dialog-select-directory*.tsx` | `/api/location`；V2 下被 `protocol !== "v1"` 直接 return |
+| `lsp.status` | `context/server-sync.tsx:137` | `/api/lsp` 已有 |
+| `session.get/messages/message` 兜底 | `context/server-session.ts` | V2 已有，删兜底即可 |
+
+另外 `loadGlobalConfigQuery`（`context/global-sync/bootstrap.ts:107`）现在恒返回 `{}`：**app 在 V2 下读不到配置**。
+
+**2. 新 API 用的是 vendored 上游客户端，不是 `@miao/client`**
+
+`packages/app/src/utils/server.ts` 的 `createApiForServer` 用 `@opencode-ai/client/promise`，来源是
+`packages/app/vendor/opencode-ai-client-1.17.13-v2.tgz`（上游 opencode 1.17.13 的契约）。它的路由集合与 miao
+protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/api/project`（list/update）、`/api/mcp/:name`、
+`/api/mcp/resource`（miao 是 `resources`）、`/api/integration/:id/connect/oauth/:attempt*`（miao 是
+`/api/integration/attempt/*`）、`/api/shell*`、`/api/session/:id/form*` 等。app 实际调用的 `api.vcs.diff`、
+`api.project.update`、`api.pty.shells`、`api.integration.oauth.*`、`api.mcp.connect/disconnect`、`api.resource`
+在 miao 服务端上很可能 404（**待浏览器实测确认**）。修法：app 改用 `@miao/client`，按 miao protocol 补缺失端点，
+删掉 vendor tarball。
+
+`packages/app/V1_API_MIGRATION.md` 已按以上核实结果更新。
+
+## 剩余工作（按顺序）
+
+1. **app 切到 `@miao/client`**：替换 `createApiForServer`，按类型错误逐个对齐调用点；缺的端点记入第 2 步。
+2. **补 V2 端点**（protocol 组 + server handler + `bun run generate`）：`pty.shells`、`project.update`、
+   `project.initGit`、`vcs.diff`、`config.update`（全局）、`instance/global dispose`（或用 V2 的配置变更自动重载替代）、
+   `workspace.reset`、`fs.content`（进行中）。
+3. **app 删 V1 分支**：去掉 `detectServerProtocol` 与全部 `protocol === "v1"` / `!== "v1"` 分支，恢复上表中
+   V2 下静默失效的功能（项目重命名、目录选择、配置读写、自定义 provider）。
+4. **TUI console**：决定 console/org 切换是迁 V2 还是删除（上游 console 服务 fork 不用，倾向删除）。
+5. **服务端拆除**：见下节。
+6. app 类型层：`@opencode-ai/sdk` 的 `Session`/`Message`/`Part` 等类型与 V1 事件兼容层替换为 `@miao/client` 类型
+   （见 `V1_API_MIGRATION.md` 的 Legacy Types 一节），最后移除 `@opencode-ai/sdk` 依赖。
 
 ## 服务端拆除（P7 收尾，P4 之前或并行）
 
@@ -86,7 +118,10 @@ session/formatter/lsp/app/project/provider/config/command/skill/auth/vcs/mcp/wor
 2. `cd packages/client && bun run generate` 重新生成客户端类型。
 3. 迁移 TUI/app 调用点，`rg` 确认不再有非 `v2.*` 的 legacy SDK 调用。
 4. 删除 `packages/miao/src/server/routes/instance/httpapi`（V1 树）与对应 handlers/groups/tests；
-   `server.ts` 切到 `packages/server` 的 V2-only assembly。
+   `server.ts` 切到 `packages/server` 的 V2-only assembly。2026-10-03 仍挂着的 V1 组（`groups/`）：`config`、
+   `control-plane`、`control`、`event`、`experimental`、`file`、`global`、`instance`、`mcp`、`metadata`、`project`、
+   `provider`、`pty`、`query`、`tui`、`workspace`。其中 `tui`（`/tui/*` 远程控制 TUI）、`global/health`、
+   `global/upgrade` 要先确认是否还有调用方（miaotty、`miao attach`、插件）。
 5. `packages/miao` 只剩 CLI 外壳；`packages/miao/src/session|tool` 与旧会话路由组已随 P4 删除（2026-10-03），`app-runtime` 的 V1 层与剩余非会话旧路由在 P7 收尾。
 
 ## 验证（每步）
