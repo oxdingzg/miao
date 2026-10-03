@@ -94,6 +94,8 @@ describe("Config", () => {
       expect(ConfigMigrateV1.isV1({ reference: {} })).toBe(true)
       expect(ConfigMigrateV1.isV1({ shell: "/bin/zsh", model: "anthropic/claude" })).toBe(false)
       expect(ConfigMigrateV1.isV1({ references: {} })).toBe(false)
+      expect(ConfigMigrateV1.isV1({ mcp: { github: { type: "remote", url: "https://example.com/mcp" } } })).toBe(true)
+      expect(ConfigMigrateV1.isV1({ mcp: { servers: {}, timeout: { request: 1000 } } })).toBe(false)
     }),
   )
 
