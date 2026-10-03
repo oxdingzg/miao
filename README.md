@@ -15,6 +15,22 @@
 
 miao focuses on the engineering around the model: **context efficiency, durable sessions, collaboration, and control over long-running work.** Its aim is the same useful result with less waiting and fewer wasted tokens.
 
+## See it in action
+
+![Current miao terminal UI: an inline edit diff, response and context telemetry](docs/images/miao.png?v=20261004)
+
+The terminal and browser captures below use the same **illustrative session**, imported into the real application without a model request. Captured on 2026-10-04 with miao v0.1.0; the opt-in mini interface is from the current v0.1.1 development build and uses its built-in demo mode.
+
+| Choose your provider | Review in the browser |
+| --- | --- |
+| ![Browsing available services in the provider picker](docs/images/miao-providers.gif?v=20261004) | ![Browser workspace with an expanded code diff and a draft follow-up prompt](docs/images/miao-web.png?v=20261004) |
+
+| Compact interactive mode · development preview | Review before allowing an edit · development preview |
+| --- | --- |
+| ![Mini demo with task progress, an edit diff and a multi-select question](docs/images/miao-mini.gif?v=20261004) | ![Mini edit-permission prompt showing the diff and Allow once, Allow always and Reject choices](docs/images/miao-permission.png?v=20261004) |
+
+More short, controllable demos: **[miao on mtty.dev](https://mtty.dev/miao#screens)**.
+
 ## Why miao
 
 ### Choose the model that fits the work
