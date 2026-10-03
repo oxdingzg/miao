@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { Part as PartType } from "@miao/sdk/v2"
+import type { Part as PartType } from "@miao/schema/session-v1"
+import { MessageID, PartID } from "@miao/schema/session-v1"
+import { SessionID } from "@miao/schema/session-id"
 import { partDefaultOpen } from "./part-default-open"
 
 describe("partDefaultOpen", () => {
@@ -48,9 +50,9 @@ describe("partDefaultOpen", () => {
 
 function tool(name: string, metadata: Record<string, unknown>): PartType {
   return {
-    id: `part_${name}`,
-    sessionID: "session",
-    messageID: "message",
+    id: PartID.make(`prt_${name}`),
+    sessionID: SessionID.make("session"),
+    messageID: MessageID.make("msg_message"),
     type: "tool",
     callID: `call_${name}`,
     tool: name,

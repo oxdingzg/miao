@@ -1,4 +1,7 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@miao/sdk/v2"
+import type { Message, Session, Part } from "@miao/schema/session-v1"
+import type { SnapshotFileDiff } from "@miao/schema/vcs"
+import type { SessionStatus } from "@miao/schema/session-status-event"
+import type { Provider } from "@miao/schema/provider-view"
 import type { Vcs } from "@miao/schema/vcs"
 import { createSimpleContext } from "@miao/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"

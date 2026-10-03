@@ -27,10 +27,10 @@ import {
   TextPart,
   ToolPart,
   UserMessage,
-  Todo,
-  QuestionAnswer,
-  QuestionInfo,
-} from "@miao/sdk/v2"
+} from "@miao/schema/session-v1"
+import type { Todo } from "@miao/schema/session-todo"
+import type { QuestionAnswer, QuestionInfo } from "@miao/schema/question"
+import { MessageID, PartID } from "@miao/schema/session-v1"
 import { useData } from "../context"
 import { useFileComponent } from "@miao/ui/context/file"
 import { useDialog } from "@miao/ui/context/dialog"
@@ -775,7 +775,7 @@ export function AssistantParts(props: {
                     const entry = entryAccessor()
                     if (entry.type !== "context") return emptyTools
                     return entry.refs
-                      .map((ref) => part().get(ref.messageID)?.get(ref.partID))
+                      .map((ref) => part().get(MessageID.make(ref.messageID))?.get(PartID.make(ref.partID)))
                       .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
                   },
                   emptyTools,
@@ -795,12 +795,12 @@ export function AssistantParts(props: {
                 const message = createMemo(() => {
                   const entry = entryAccessor()
                   if (entry.type !== "part") return
-                  return msgs().get(entry.ref.messageID)
+                  return msgs().get(MessageID.make(entry.ref.messageID))
                 })
                 const item = createMemo(() => {
                   const entry = entryAccessor()
                   if (entry.type !== "part") return
-                  return part().get(entry.ref.messageID)?.get(entry.ref.partID)
+                  return part().get(MessageID.make(entry.ref.messageID))?.get(PartID.make(entry.ref.partID))
                 })
 
                 return (

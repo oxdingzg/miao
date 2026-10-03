@@ -1,4 +1,4 @@
-import type { FilePartSource } from "@miao/sdk/v2/client"
+import type { FilePartSource } from "@miao/schema/session-v1"
 
 type PromptInputV2PartBase = {
   content: string

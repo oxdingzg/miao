@@ -11,7 +11,7 @@ import type {
   ToolPart,
   FilePart,
   AgentPart,
-} from "@miao/sdk/v2"
+} from "@miao/schema/session-v1"
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@miao/ui/context/file"
 import { SessionTurn } from "./session-turn"

@@ -1,4 +1,4 @@
-import { UserMessage } from "@miao/sdk/v2"
+import type { UserMessage } from "@miao/schema/session-v1"
 import { HoverCard } from "@kobalte/core/hover-card"
 import { ComponentProps, For, Match, Show, createSignal, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "@miao/ui/diff-changes"
