@@ -165,7 +165,7 @@ export type ConfigGetOutput = {
     readonly workspaceID?: string
     readonly project: { readonly id: string; readonly directory: string }
   }
-  readonly data: { readonly [x: string]: JsonValue }
+  readonly data: { readonly [x: string]: any }
 }
 
 export type ConfigProvidersInput = {
@@ -180,7 +180,7 @@ export type ConfigProvidersOutput = {
     readonly workspaceID?: string
     readonly project: { readonly id: string; readonly directory: string }
   }
-  readonly data: { readonly providers: ReadonlyArray<JsonValue>; readonly default: { readonly [x: string]: string } }
+  readonly data: { readonly providers: ReadonlyArray<any>; readonly default: { readonly [x: string]: string } }
 }
 
 export type ConfigCatalogInput = {
@@ -196,7 +196,7 @@ export type ConfigCatalogOutput = {
     readonly project: { readonly id: string; readonly directory: string }
   }
   readonly data: {
-    readonly all: ReadonlyArray<JsonValue>
+    readonly all: ReadonlyArray<any>
     readonly default: { readonly [x: string]: string }
     readonly connected: ReadonlyArray<string>
   }
