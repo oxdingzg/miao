@@ -55,6 +55,15 @@ export interface Target {
 export interface Interface {
   /** Creates a worktree on a fresh `miao/<name>` branch and returns at once; files, events and start scripts follow. */
   readonly create: (target: Target, input?: CreateInput) => Effect.Effect<Info, WorktreeError>
+  /** Picks a unique worktree name and directory without touching git; `detached` omits the branch. */
+  readonly prepare: (
+    target: Target,
+    options?: { readonly name?: string; readonly detached?: boolean },
+  ) => Effect.Effect<Info, WorktreeError>
+  /** Creates a worktree at a prepared name/directory and returns at once; files, events and start scripts follow. */
+  readonly createFromInfo: (target: Target, info: Info, startCommand?: string) => Effect.Effect<void, WorktreeError>
+  /** Lists secondary worktrees of the checkout, excluding the primary one. */
+  readonly list: (target: Target) => Effect.Effect<Info[], WorktreeError>
   readonly remove: (target: Target, input: DirectoryInput) => Effect.Effect<boolean, WorktreeError>
   /** Resets a secondary worktree to the default branch, removing every local change. */
   readonly reset: (target: Target, input: DirectoryInput) => Effect.Effect<boolean, WorktreeError>
@@ -111,15 +120,23 @@ const layer = Layer.effect(
       return undefined
     })
 
-    const candidate = Effect.fnUntraced(function* (target: Target, root: string, name?: string) {
+    const candidate = Effect.fnUntraced(function* (
+      target: Target,
+      root: string,
+      name?: string,
+      detached?: boolean,
+    ) {
       for (const attempt of Array.from({ length: MAX_NAME_ATTEMPTS }, (_, index) => index)) {
         const next = name ? (attempt === 0 ? name : `${name}-${Slug.create()}`) : Slug.create()
         const directory = path.join(root, next)
         if (yield* fs.existsSafe(directory)) continue
-        const branch = `miao/${next}`
-        if ((yield* git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], target.checkout)).code === 0)
+        const branch = detached ? undefined : `miao/${next}`
+        if (
+          branch &&
+          (yield* git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], target.checkout)).code === 0
+        )
           continue
-        return { name: next, directory, branch }
+        return { name: next, directory, ...(branch ? { branch } : {}) }
       }
       return yield* new WorktreeError({ message: "Failed to generate a unique worktree name" })
     })
@@ -175,35 +192,77 @@ const layer = Layer.effect(
         )
       })
 
-    const create = Effect.fn("ProjectWorktree.create")(function* (target: Target, input?: CreateInput) {
+    const prepare = Effect.fn("ProjectWorktree.prepare")(function* (
+      target: Target,
+      options?: { readonly name?: string; readonly detached?: boolean },
+    ) {
       yield* requireGit(target)
       const root = path.join(global.data, "worktree", target.projectID)
       yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
-      const picked = yield* candidate(target, root, input?.name ? slugify(input.name) : undefined)
+      return yield* candidate(target, root, options?.name ? slugify(options.name) : undefined, options?.detached)
+    })
+
+    const createFromInfo = Effect.fn("ProjectWorktree.createFromInfo")(function* (
+      target: Target,
+      info: Info,
+      startCommand?: string,
+    ) {
+      yield* requireGit(target)
       yield* expect(
-        ["worktree", "add", "--no-checkout", "-b", picked.branch, picked.directory],
+        info.branch
+          ? ["worktree", "add", "--no-checkout", "-b", info.branch, info.directory]
+          : ["worktree", "add", "--no-checkout", "--detach", info.directory, "HEAD"],
         target.checkout,
         "Failed to create git worktree",
       )
       // Report the resolved path, the form directory listings and location events use for it.
-      const info = { ...picked, directory: FSUtil.resolve(picked.directory) }
-      yield* record(target.projectID, info.directory, true)
+      const resolved = { ...info, directory: FSUtil.resolve(info.directory) }
+      yield* record(target.projectID, resolved.directory, true)
 
       yield* Effect.gen(function* () {
-        const populated = yield* git(["reset", "--hard"], info.directory)
+        const populated = yield* git(["reset", "--hard"], resolved.directory)
         if (populated.code !== 0)
-          return yield* failed(info.directory, populated.stderr || populated.text || "Failed to populate worktree")
+          return yield* failed(
+            resolved.directory,
+            populated.stderr || populated.text || "Failed to populate worktree",
+          )
         yield* events.publish(
           WorktreeEvent.Ready,
-          { name: info.name, branch: info.branch },
-          { location: { directory: AbsolutePath.make(info.directory) } },
+          { name: resolved.name, ...(resolved.branch ? { branch: resolved.branch } : {}) },
+          { location: { directory: AbsolutePath.make(resolved.directory) } },
         )
-        yield* runStartScripts(info.directory, target.projectID, input?.startCommand)
+        yield* runStartScripts(resolved.directory, target.projectID, startCommand)
       }).pipe(
         Effect.catchCause((cause) => Effect.logError("worktree bootstrap failed", { cause })),
         Effect.forkIn(scope),
+        Effect.asVoid,
       )
-      return info
+    })
+
+    const create = Effect.fn("ProjectWorktree.create")(function* (target: Target, input?: CreateInput) {
+      const picked = yield* prepare(target, { name: input?.name })
+      yield* createFromInfo(target, picked, input?.startCommand)
+      return { ...picked, directory: FSUtil.resolve(picked.directory) }
+    })
+
+    const list = Effect.fn("ProjectWorktree.list")(function* (target: Target) {
+      yield* requireGit(target)
+      const result = yield* expect(["worktree", "list", "--porcelain"], target.checkout, "Failed to read git worktrees")
+      const primary = yield* canonical(target.checkout)
+      const primaryName = path.basename(primary).toLowerCase()
+      return yield* Effect.forEach(parseWorktreeList(result.text), (entry) =>
+        Effect.gen(function* () {
+          if (!entry.path) return undefined
+          const directory = yield* canonical(entry.path)
+          if (directory === primary) return undefined
+          const name = path.basename(directory).toLowerCase()
+          return {
+            name: name === primaryName ? path.basename(path.dirname(directory)) : name,
+            directory,
+            ...(entry.branch ? { branch: entry.branch.replace(/^refs\/heads\//, "") } : {}),
+          }
+        }),
+      ).pipe(Effect.map((items) => items.filter((item): item is Info => item !== undefined)))
     })
 
     const remove = Effect.fn("ProjectWorktree.remove")(function* (target: Target, input: DirectoryInput) {
@@ -331,7 +390,7 @@ const layer = Layer.effect(
       return yield* git(["clean", "-ffdx"], root)
     })
 
-    return Service.of({ create, remove, reset })
+    return Service.of({ create, prepare, createFromInfo, list, remove, reset })
   }),
 )
 
