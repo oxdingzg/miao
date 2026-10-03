@@ -10,6 +10,8 @@ export { Info, Ref, response }
 
 export interface Interface extends Info {
   readonly vcs?: Project.Vcs
+  /** The project ID cached in the repository before this resolution, when it differs from the current one. */
+  readonly previous?: Project.ID
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/Location") {}
@@ -27,6 +29,7 @@ const layer = (ref: Ref) =>
         workspaceID: ref.workspaceID,
         project: { id: resolved.id, directory: resolved.directory },
         vcs: resolved.vcs,
+        previous: resolved.previous === resolved.id ? undefined : resolved.previous,
       })
     }),
   )

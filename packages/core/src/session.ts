@@ -15,6 +15,7 @@ import { EventV2 } from "./event"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
 import { SessionMessageTable, SessionTable, TodoTable } from "./session/sql"
+import { ProjectTable } from "./project/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
@@ -474,6 +475,14 @@ const layer = Layer.effect(
           prompt: Prompt.make({ text }),
           delivery: "steer",
         })
+        // `/init` writes the project's AGENTS.md; record when the project was set up.
+        if (input.command === "init")
+          yield* db
+            .update(ProjectTable)
+            .set({ time_initialized: Date.now() })
+            .where(eq(ProjectTable.id, session.projectID))
+            .run()
+            .pipe(Effect.orDie)
         if (input.resume !== false) yield* execution.wake(session.id)
       }),
       fork: Effect.fn("V2Session.fork")(function* (input) {

@@ -68,6 +68,9 @@ export const Flag = {
   get MIAO_DISABLE_CLAUDE_CODE_PROMPT() {
     return truthy("MIAO_DISABLE_CLAUDE_CODE") || truthy("MIAO_DISABLE_CLAUDE_CODE_PROMPT")
   },
+  get MIAO_EXPERIMENTAL_ICON_DISCOVERY() {
+    return enabledByExperimental("MIAO_EXPERIMENTAL_ICON_DISCOVERY")
+  },
   get MIAO_EXPERIMENTAL_REFERENCES() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_REFERENCES")
   },
