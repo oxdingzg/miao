@@ -55,6 +55,29 @@ function request(headers: Record<string, string>, variant?: string) {
 const decode = Schema.decodeUnknownSync(Config.Info)
 
 describe("ConfigProviderPlugin.Plugin", () => {
+  it.effect("hides a provider the config disables", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const providerID = ProviderV2.ID.make("custom")
+      const config = Config.Service.of({
+        entries: () =>
+          Effect.succeed([
+            new Config.Document({
+              type: "document",
+              info: decode({
+                providers: { custom: { name: "Custom", api: { type: "native", settings: {} }, disabled: true } },
+              }),
+            }),
+          ]),
+      })
+
+      yield* addPlugin(config)
+
+      expect(required(yield* catalog.provider.get(providerID)).disabled).toBe(true)
+      expect((yield* catalog.provider.available()).map((provider) => provider.id)).not.toContain(providerID)
+    }),
+  )
+
   it.effect("keeps configured model variant bodies unchanged", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
