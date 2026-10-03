@@ -6,12 +6,6 @@
 import os from "node:os"
 import path from "node:path"
 import type { OpenCode } from "@miao/client"
-import { SessionID } from "@miao/schema/session-id"
-import { AbsolutePath } from "@miao/schema/schema"
-import { Model } from "@miao/schema/model"
-import { Permission } from "@miao/schema/permission"
-import { Provider } from "@miao/schema/provider"
-import { Question } from "@miao/schema/question"
 import type { Capabilities, Channel, Inbound, SendResult } from "./channel"
 import { readJson, writer } from "./file"
 
@@ -283,7 +277,7 @@ export async function createRouter(options: RouterOptions) {
     const label = sessionLabel(context.user, sessionID, target)
     const busy = watchers.has(sessionID) || sessionID in (await active())
     const admitted = await client.sessions
-      .prompt({ sessionID: SessionID.make(sessionID), prompt: { text }, delivery })
+      .prompt({ sessionID, prompt: { text }, delivery })
       .then((value) => ({ ok: true as const, value }))
       .catch((error: unknown) => ({ ok: false as const, error }))
     if (!admitted.ok) return say(context, `${label} 发送失败：${errorText(admitted.error)}`)
@@ -319,7 +313,7 @@ export async function createRouter(options: RouterOptions) {
         await serial(watcher.key, async () => {
           const user = userState(watcher.key)
           sessionState(sessionID).lastTurn = turn.stats
-          const info = await client.sessions.get({ sessionID: SessionID.make(sessionID) }).catch(() => undefined)
+          const info = await client.sessions.get({ sessionID }).catch(() => undefined)
           const label = sessionLabel(user, sessionID, info)
           const outcome = turn.stats.interrupted ? "已中断" : turn.stats.error ? "出错" : "完成"
           await deliver(
@@ -344,7 +338,7 @@ export async function createRouter(options: RouterOptions) {
 
   // session.wait is a long request; a dropped connection is not the end of the turn.
   async function waitIdle(sessionID: string): Promise<void> {
-    const done = await client.sessions.wait({ sessionID: SessionID.make(sessionID) }, { signal: abort.signal }).then(
+    const done = await client.sessions.wait({ sessionID }, { signal: abort.signal }).then(
       () => true,
       () => false,
     )
@@ -356,7 +350,7 @@ export async function createRouter(options: RouterOptions) {
   }
 
   async function summarize(sessionID: string, watcher: Watcher) {
-    const messages = await client.sessions.context({ sessionID: SessionID.make(sessionID) }).catch(() => [] as ContextMessage[])
+    const messages = await client.sessions.context({ sessionID }).catch(() => [] as ContextMessage[])
     const start = messages.findIndex((message) => message.id === watcher.firstID)
     const turn =
       start >= 0 ? messages.slice(start) : messages.filter((message) => message.time.created >= watcher.startedAt)
@@ -419,7 +413,7 @@ export async function createRouter(options: RouterOptions) {
     if (number === undefined) return say(context, "用法：/use N（先发 /list 看编号）")
     const sessionID = context.user.sessions[String(number)]
     if (!sessionID) return say(context, `没有 #${number}，先发 /list`)
-    const info = await client.sessions.get({ sessionID: SessionID.make(sessionID) }).catch(() => undefined)
+    const info = await client.sessions.get({ sessionID }).catch(() => undefined)
     if (!info) return say(context, `#${number} 已不存在`)
     context.user.current = number
     const note = state.sessions[sessionID]?.local ? "" : `\n注意：它不在 miao remote 的服务里，只能查看，不能驱动`
@@ -434,16 +428,7 @@ export async function createRouter(options: RouterOptions) {
     const directory = projects[alias]
     if (!directory) return say(context, `没有这个项目别名：${alias}\n${projectList()}`)
     const created = await client.sessions
-      .create({
-        location: { directory: AbsolutePath.make(directory) },
-        model: options.model
-          ? {
-              providerID: Provider.ID.make(options.model.providerID),
-              id: Model.ID.make(options.model.id),
-              ...(options.model.variant ? { variant: Model.VariantID.make(options.model.variant) } : {}),
-            }
-          : undefined,
-      })
+      .create({ location: { directory }, model: options.model })
       .then((value) => ({ ok: true as const, value }))
       .catch((error: unknown) => ({ ok: false as const, error }))
     if (!created.ok) return say(context, `新建失败：${errorText(created.error)}`)
@@ -464,7 +449,7 @@ export async function createRouter(options: RouterOptions) {
     const label = sessionLabel(context.user, sessionID, target)
     const watcher = watchers.get(sessionID)
     if (watcher) watcher.interrupted = true
-    const done = await client.sessions.interrupt({ sessionID: SessionID.make(sessionID) }).then(
+    const done = await client.sessions.interrupt({ sessionID }).then(
       () => undefined,
       (error: unknown) => errorText(error),
     )
@@ -475,7 +460,7 @@ export async function createRouter(options: RouterOptions) {
   async function status(context: Context) {
     const sessionID = currentSession(context.user)
     if (!sessionID) return say(context, noCurrent())
-    const info = await client.sessions.get({ sessionID: SessionID.make(sessionID) }).catch(() => undefined)
+    const info = await client.sessions.get({ sessionID }).catch(() => undefined)
     if (!info) return say(context, "当前会话已不存在，发 /list 重新选择")
     const label = sessionLabel(context.user, sessionID, info)
     const running = sessionID in (await active())
@@ -514,13 +499,13 @@ export async function createRouter(options: RouterOptions) {
     if (approval.kind === "question") {
       if (action !== "n") return say(context, `这是一个提问，回复 q${code} 编号 作答，或 n${code} 拒绝`)
       const failed = await client.questions
-        .reject({ sessionID: SessionID.make(approval.sessionID), requestID: Question.ID.make(approval.requestID) })
+        .reject({ sessionID: approval.sessionID, requestID: approval.requestID })
         .then(() => undefined, errorText)
       return say(context, failed ? `拒绝失败：${failed}` : `已拒绝提问 ${code}`)
     }
     const reply = action === "y" ? "once" : action === "a" ? "always" : "reject"
     const failed = await client.permissions
-      .reply({ sessionID: SessionID.make(approval.sessionID), requestID: Permission.ID.make(approval.requestID), reply })
+      .reply({ sessionID: approval.sessionID, requestID: approval.requestID, reply })
       .then(() => undefined, errorText)
     if (failed) return say(context, `审批失败（可能已在别处处理）：${failed}`)
     return say(
@@ -540,7 +525,7 @@ export async function createRouter(options: RouterOptions) {
     if (typeof answers === "string") return say(context, answers)
     delete context.user.approvals[code]
     const failed = await client.questions
-      .reply({ sessionID: SessionID.make(approval.sessionID), requestID: Question.ID.make(approval.requestID), answers })
+      .reply({ sessionID: approval.sessionID, requestID: approval.requestID, answers })
       .then(() => undefined, errorText)
     return say(context, failed ? `作答失败：${failed}` : `已作答 ${code}`)
   }
@@ -614,7 +599,7 @@ export async function createRouter(options: RouterOptions) {
       const user = userState(key)
       if (liveApprovals(user).some((approval) => approval.requestID === requestID)) return
       const code = allocate(user, { ...shape(), sessionID, requestID, expires: now() + ttl })
-      const info = await client.sessions.get({ sessionID: SessionID.make(sessionID) }).catch(() => undefined)
+      const info = await client.sessions.get({ sessionID }).catch(() => undefined)
       await deliver(
         { channel, key, user },
         { kind: "approval", text: render(sessionLabel(user, sessionID, info), code) },
@@ -640,9 +625,9 @@ export async function createRouter(options: RouterOptions) {
 
   async function announcePending(context: Context, sessionID: string, includeLive: boolean) {
     const [permissions, questions, info] = await Promise.all([
-      client.permissions.list({ sessionID: SessionID.make(sessionID) }).catch(() => []),
-      client.questions.list({ sessionID: SessionID.make(sessionID) }).catch(() => []),
-      client.sessions.get({ sessionID: SessionID.make(sessionID) }).catch(() => undefined),
+      client.permissions.list({ sessionID }).catch(() => []),
+      client.questions.list({ sessionID }).catch(() => []),
+      client.sessions.get({ sessionID }).catch(() => undefined),
     ])
     const label = sessionLabel(context.user, sessionID, info)
     const codeFor = (requestID: string, approval: Omit<Approval, "expires" | "sessionID" | "requestID">) => {
@@ -751,7 +736,7 @@ export async function createRouter(options: RouterOptions) {
     const pages = await Promise.all(
       Object.values(projects).map((directory) =>
         client.sessions
-          .list({ directory: AbsolutePath.make(directory), limit: 20, order: "desc" })
+          .list({ directory, limit: 20, order: "desc" })
           .then((page) => page.data)
           .catch(() => []),
       ),
@@ -769,7 +754,7 @@ export async function createRouter(options: RouterOptions) {
   }
 
   async function drivable(user: UserState, sessionID: string): Promise<SessionInfo | string> {
-    const info = await client.sessions.get({ sessionID: SessionID.make(sessionID) }).catch(() => undefined)
+    const info = await client.sessions.get({ sessionID }).catch(() => undefined)
     const number = numberOf(user, sessionID)
     if (!info) return `#${number} 已不存在`
     if (projectOf(info.location.directory) === undefined)
