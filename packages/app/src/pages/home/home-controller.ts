@@ -98,8 +98,7 @@ export function createHomeController() {
             .then(async (files) => {
               const current = () => ctx.sdk.api.projects.current({ location }).then((result) => result.data.id)
               if (files.data.length > 0) return current()
-              const result = await ctx.sdk.client.project.initGit({ directory: item })
-              return result.data?.id ?? current()
+              return ctx.sdk.api.projects.initGit({ location }).then((result) => result.data.id)
             })
             .then((projectID) => ctx.sync.child(item, { bootstrap: false })[1]("project", projectID))
             .catch(() => undefined)

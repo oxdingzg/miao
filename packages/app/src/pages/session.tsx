@@ -1,4 +1,5 @@
 import type { FilePart, Project, UserMessage, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import { normalizeProjectInfo } from "@/context/global-sync/utils"
 import { getFilename } from "@miao/core/util/path"
 import { useDialog } from "@miao/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
@@ -847,11 +848,8 @@ export default function Page() {
   }
 
   const gitMutation = useMutation(() => ({
-    mutationFn: () => sdk().client.project.initGit(),
-    onSuccess: (x) => {
-      if (!x.data) return
-      upsert(x.data)
-    },
+    mutationFn: () => sdk().api.projects.initGit({ location: { directory: sdk().directory } }),
+    onSuccess: (x) => upsert(normalizeProjectInfo(x.data)),
     onError: (err) => {
       showToast({
         variant: "error",
