@@ -27,55 +27,36 @@ function client(directory: string) {
 }
 
 describe("v2 SDK error shape", () => {
-  test("404 with NamedError body throws a real Error carrying the server message", async () => {
+  test("404 with V2 error body throws a real Error carrying the server message", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
     const sdk = client(tmp.path)
 
-    let caught: unknown
-    try {
-      await sdk.session.get({ sessionID: "ses_no_such" }, { throwOnError: true })
-    } catch (e) {
-      caught = e
-    }
+    const caught = await sdk.v2.session
+      .get({ sessionID: "ses_no_such" }, { throwOnError: true })
+      .catch((error: unknown) => error)
 
     expect(caught).toBeInstanceOf(Error)
     const err = caught as Error
-    const cause = err.cause as { body?: any; status?: number }
+    const cause = err.cause as { body?: { _tag: string; message: string; kind?: string }; status?: number }
     expect(err.message).toContain("Session not found")
     expect(cause.status).toBe(404)
     expect(cause.body).toMatchObject({
-      name: "NotFoundError",
-      data: { message: expect.stringContaining("Session not found") },
+      _tag: "SessionNotFoundError",
+      message: expect.stringContaining("Session not found"),
     })
   })
 
-  test("400 schema rejection: SDK extracts the field-level reason from the NamedError body", async () => {
-    // Canary for the #26631 wire shape. Asserts the contract end-to-end:
-    // server emits {name:"BadRequest", data:{message, kind}}, SDK's
-    // wrapClientError extracts .data.message into Error.message. If either
-    // side regresses (#26457 reverted because both layers were missing),
-    // this test fails before users see (empty response body).
+  test("400 schema rejection throws a real Error carrying the V2 server message", async () => {
     await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
     const sdk = client(tmp.path)
-
-    let caught: unknown
-    try {
-      await sdk.sync.history.list({ body: { aggregate: -1 } as any }, { throwOnError: true })
-    } catch (e) {
-      caught = e
-    }
+    const caught = await sdk.v2.session.list({ limit: -1 }, { throwOnError: true }).catch((error: unknown) => error)
 
     expect(caught).toBeInstanceOf(Error)
     const err = caught as Error
-    const cause = err.cause as { body?: any; status?: number }
+    const cause = err.cause as { body: { _tag: string; message: string }; status: number }
     expect(cause.status).toBe(400)
-    expect(cause.body).toMatchObject({
-      name: "BadRequest",
-      data: { kind: expect.stringMatching(/^(Body|Payload)$/) },
-    })
-    expect(typeof cause.body.data.message).toBe("string")
-    expect(cause.body.data.message.length).toBeGreaterThan(0)
-    // Whatever the server put in data.message must be what the user sees.
-    expect(err.message).toBe(cause.body.data.message)
+    expect(cause.body._tag).toBe("InvalidRequestError")
+    expect(cause.body.message.length).toBeGreaterThan(0)
+    expect(err.message).toBe(cause.body.message)
   })
 })
