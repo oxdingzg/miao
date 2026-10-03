@@ -69,7 +69,7 @@ export const DialogFork: Component = () => {
     const dir = base64Encode(sdk().directory)
 
     sdk()
-      .api.session.fork({ sessionID, messageID: item.id })
+      .api.sessions.fork({ sessionID, messageID: item.id })
       .then((forked) => {
         dialog.close()
         prompt.set(restored, undefined, { dir, id: forked.id })

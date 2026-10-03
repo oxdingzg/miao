@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type {
-  AgentListOutput,
-  ModelDefaultOutput,
-  ModelListOutput,
-  ProviderListOutput,
-} from "@opencode-ai/client/promise"
+import type { AgentsListOutput, ModelsDefaultOutput, ModelsListOutput, ProvidersListOutput } from "@miao/client"
 import { directoryKey, normalizeAgentList, normalizePermissionRequest, normalizeProviderList } from "./utils"
 
 describe("normalizeAgentList", () => {
@@ -12,16 +7,15 @@ describe("normalizeAgentList", () => {
     const result = normalizeAgentList([
       {
         id: "build",
-        name: "Build",
         mode: "primary",
         hidden: false,
         color: "primary",
         model: { id: "gpt-5", providerID: "openai", variant: "high" },
-        request: { settings: { temperature: 0.2, topP: 0.9 }, headers: {}, body: {} },
+        request: { headers: {}, body: { temperature: 0.2, top_p: 0.9 } },
         system: "Build software",
         permissions: [{ action: "read", resource: "*", effect: "allow" }],
       },
-    ] as AgentListOutput["data"])
+    ] as AgentsListOutput["data"])
 
     expect(result).toEqual([
       {
@@ -36,7 +30,7 @@ describe("normalizeAgentList", () => {
         model: { providerID: "openai", modelID: "gpt-5" },
         variant: "high",
         prompt: "Build software",
-        options: { temperature: 0.2, topP: 0.9 },
+        options: { temperature: 0.2, top_p: 0.9 },
         steps: undefined,
       },
     ])
@@ -70,15 +64,23 @@ describe("normalizePermissionRequest", () => {
 describe("normalizeProviderList", () => {
   test("groups current models into the app provider catalog", () => {
     const result = normalizeProviderList(
-      [{ id: "openai", name: "OpenAI", package: "@ai-sdk/openai" }] as ProviderListOutput["data"],
+      [
+        {
+          id: "openai",
+          name: "OpenAI",
+          api: { type: "aisdk", package: "@ai-sdk/openai" },
+          request: { headers: {}, body: {} },
+        },
+      ] as ProvidersListOutput["data"],
       [
         {
           id: "gpt-5",
-          modelID: "gpt-5",
           providerID: "openai",
+          api: { id: "gpt-5", type: "aisdk", package: "@ai-sdk/openai" },
+          request: { headers: {}, body: {} },
           name: "GPT-5",
           capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
-          variants: [{ id: "high" }],
+          variants: [{ id: "high", headers: {}, body: {} }],
           time: { released: 1 },
           cost: [{ input: 1, output: 2, cache: { read: 0.1, write: 0.2 } }],
           status: "active",
@@ -87,8 +89,9 @@ describe("normalizeProviderList", () => {
         },
         {
           id: "gpt-old",
-          modelID: "gpt-old",
           providerID: "openai",
+          api: { id: "gpt-old", type: "aisdk", package: "@ai-sdk/openai" },
+          request: { headers: {}, body: {} },
           name: "GPT Old",
           capabilities: { tools: false, input: ["text"], output: ["text"] },
           variants: [],
@@ -98,8 +101,8 @@ describe("normalizeProviderList", () => {
           enabled: true,
           limit: { context: 1, output: 1 },
         },
-      ] as ModelListOutput["data"],
-      { id: "gpt-5", providerID: "openai" } as ModelDefaultOutput["data"],
+      ] as ModelsListOutput["data"],
+      { id: "gpt-5", providerID: "openai" } as ModelsDefaultOutput["data"],
     )
 
     expect(result.connected).toEqual(["openai"])
@@ -116,7 +119,7 @@ describe("normalizeProviderList", () => {
   })
 
   test("preserves an empty current default", () => {
-    expect(normalizeProviderList([] as ProviderListOutput["data"], [], null).defaultModel).toBeNull()
+    expect(normalizeProviderList([] as ProvidersListOutput["data"], [], null).defaultModel).toBeNull()
   })
 })
 

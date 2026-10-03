@@ -1,10 +1,10 @@
-import type { SessionApi } from "@opencode-ai/client/promise"
 import { normalizeSessionInfo } from "@/utils/session"
+import type { SessionApi } from "@/utils/server"
 
 export async function loadRootSessions(input: { api: Pick<SessionApi, "list">; directory: string; limit: number }) {
   const result = await input.api.list({
     directory: input.directory,
-    parentID: null,
+    roots: true,
     limit: input.limit,
     order: "desc",
   })

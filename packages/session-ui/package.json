@@ -38,8 +38,8 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@opencode-ai/client": "file:../app/vendor/opencode-ai-client-1.17.13-v2.tgz",
     "@miao/core": "workspace:*",
+    "@miao/schema": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
     "@miao/ui": "workspace:*",
     "@pierre/diffs": "catalog:",

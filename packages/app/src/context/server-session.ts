@@ -1,6 +1,6 @@
 import { Binary } from "@miao/core/util/binary"
+import type { FileDiffInfo, SessionApi, SessionMessageInfo } from "@/utils/server"
 import { retry } from "@miao/core/util/retry"
-import type { SessionApi, SessionMessageInfo } from "@opencode-ai/client/promise"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type {
   Message,
@@ -12,7 +12,6 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
@@ -24,7 +23,7 @@ import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } fro
 import { createV2SessionReducer, type V2SessionReduction } from "./server-session-v2-reducer"
 import type { ServerApi } from "@/utils/server"
 
-type MessageApi = ServerApi["message"]
+type MessageApi = ServerApi["messages"]
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -39,7 +38,7 @@ function needsOlderTurnRoot(source: readonly SessionMessageInfo[]) {
       message.type === "user" ||
       message.type === "shell" ||
       message.type === "assistant" ||
-      (message.type === "synthetic" && message.description?.trim()),
+      (message.type === "synthetic" && message.text.trim()),
   )
   return boundary?.type === "assistant"
 }
@@ -905,8 +904,7 @@ export function createServerSession(
     const touched = new Set(reduction.touched)
     let parentID: string | undefined
     for (const message of reduction.messages) {
-      if (message.type === "user" || (message.type === "synthetic" && message.description?.trim()))
-        parentID = message.id
+      if (message.type === "user" || (message.type === "synthetic" && message.text.trim())) parentID = message.id
       if (message.type === "shell") {
         if (touched.has(message.id)) touched.add(`${message.id}:assistant`)
         parentID = undefined

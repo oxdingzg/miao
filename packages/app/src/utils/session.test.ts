@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionApi, SessionInfo, SessionListInput } from "@opencode-ai/client/promise"
+import type { SessionsListInput } from "@miao/client"
+import type { SessionApi, SessionInfo } from "@/utils/server"
 import { listAllSessions, normalizeSessionInfo } from "./session"
 
 describe("normalizeSessionInfo", () => {
@@ -48,7 +49,7 @@ describe("normalizeSessionInfo", () => {
 
 describe("listAllSessions", () => {
   test("loads every page in server order and retains the query", async () => {
-    const calls: SessionListInput[] = []
+    const calls: SessionsListInput[] = []
     const pages = new Map<string | undefined, { data: SessionInfo[]; cursor: { next?: string } }>([
       [undefined, { data: [sessionInfo("session-3"), sessionInfo("session-2")], cursor: { next: "next" } }],
       ["next", { data: [sessionInfo("session-1", true)], cursor: {} }],

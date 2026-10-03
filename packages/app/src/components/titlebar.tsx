@@ -207,7 +207,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                 return conn ? { route, sdk: global.ensureServerCtx(conn).sdk } : undefined
               },
               ({ route, sdk }) =>
-                sdk.api.session
+                sdk.api.sessions
                   .get({ sessionID: route.sessionId })
                   .then(normalizeSessionInfo)
                   .catch(() => {}),

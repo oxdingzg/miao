@@ -219,12 +219,12 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (emptyList.has(path)) return json(route, [])
     if (path === "/api/session") {
       const directory = url.searchParams.get("directory")
-      const parentID = url.searchParams.get("parentID")
+      const roots = url.searchParams.get("roots") === "true"
       const limit = Number(url.searchParams.get("limit") ?? 50)
       const offset = Number(url.searchParams.get("cursor") ?? 0)
       const sessions = config.sessions
         .filter((session) => !directory || session.directory === directory)
-        .filter((session) => parentID !== "null" || session.parentID === undefined)
+        .filter((session) => !roots || session.parentID === undefined)
         .filter((session) => {
           const search = url.searchParams.get("search")?.toLowerCase()
           return (

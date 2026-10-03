@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import type { SessionApi } from "@/utils/server"
 import type { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
-import type { SessionApi } from "@opencode-ai/client/promise"
 import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { createServerSession } from "./server-session"
 import type { ServerApi } from "@/utils/server"
 
-type MessageApi = ServerApi["message"]
+type MessageApi = ServerApi["messages"]
 
 const session = (id: string, parentID?: string): Session => ({
   id,

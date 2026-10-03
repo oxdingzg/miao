@@ -248,7 +248,7 @@ function createWorkspaceTerminalSession(
       setStore("all", index, (item) => ({ ...item, ...pty }))
     }
     const doUpdate = async () => {
-      await sdk.api.pty.update({
+      await sdk.api.ptys.update({
         ptyID: pty.id,
         location,
         title: pty.title,
@@ -270,7 +270,7 @@ function createWorkspaceTerminalSession(
     if (!pty) return
     const data = await (async () => {
       return (
-        await sdk.api.pty.create({
+        await sdk.api.ptys.create({
           location,
           title: pty.title,
         })
@@ -315,7 +315,7 @@ function createWorkspaceTerminalSession(
       const focusRequest = options?.focus ? requestFocus(undefined, true) : undefined
 
       const doCreate = async () => {
-        return (await sdk.api.pty.create({ location, title: defaultTitle(nextNumber) })).data
+        return (await sdk.api.ptys.create({ location, title: defaultTitle(nextNumber) })).data
       }
       doCreate()
         .then((data) => {
@@ -419,7 +419,7 @@ function createWorkspaceTerminalSession(
         })
       }
 
-      const removePromise = sdk.api.pty.remove({ ptyID: id, location })
+      const removePromise = sdk.api.ptys.remove({ ptyID: id, location })
       await removePromise.catch((error: unknown) => {
         console.error("Failed to close terminal", error)
       })

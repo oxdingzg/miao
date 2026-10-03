@@ -1,5 +1,6 @@
-import type { IntegrationMethod, IntegrationOauthConnectOutput } from "@opencode-ai/client/promise"
 import { Button } from "@miao/ui/button"
+import type { IntegrationsConnectOauthOutput } from "@miao/client"
+import type { IntegrationMethod } from "@/utils/server"
 import { useDialog } from "@miao/ui/context/dialog"
 import { Dialog } from "@miao/ui/dialog"
 import { Icon } from "@miao/ui/icon"
@@ -420,7 +421,7 @@ function ProviderConnection(props: {
     () => ({ provider: props.provider, directory: directory() }),
     (input) =>
       serverSDK()
-        .api.integration.get({
+        .api.integrations.get({
           integrationID: input.provider,
           location: input.directory ? { directory: input.directory } : undefined,
         })
@@ -435,7 +436,7 @@ function ProviderConnection(props: {
   })
   const [store, setStore] = createStore({
     methodIndex: undefined as undefined | number,
-    authorization: undefined as undefined | IntegrationOauthConnectOutput["data"],
+    authorization: undefined as undefined | IntegrationsConnectOauthOutput["data"],
     promptInputs: undefined as undefined | Record<string, string>,
     state: "pending" as undefined | "pending" | "complete" | "error" | "prompt",
     error: undefined as string | undefined,
@@ -447,7 +448,7 @@ function ProviderConnection(props: {
     | { type: "auth.prompt" }
     | { type: "auth.inputs"; inputs: Record<string, string> }
     | { type: "auth.pending" }
-    | { type: "auth.complete"; authorization: IntegrationOauthConnectOutput["data"] }
+    | { type: "auth.complete"; authorization: IntegrationsConnectOauthOutput["data"] }
     | { type: "auth.error"; error: string }
 
   function dispatch(action: Action) {
@@ -554,7 +555,7 @@ function ProviderConnection(props: {
       }
       dispatch({ type: "auth.pending" })
       await serverSDK()
-        .api.integration.oauth.connect({
+        .api.integrations.connectOauth({
           integrationID: props.provider,
           methodID: method.id,
           inputs: inputs ?? {},
@@ -562,12 +563,10 @@ function ProviderConnection(props: {
         })
         .then((x) => {
           if (!alive.value) return
-          if (props.provider === "opencode" && platform.platform === "desktop") {
-            const url = new URL(x.data.url)
+          const url = new URL(x.data.url)
+          if (props.provider === "opencode" && platform.platform === "desktop")
             url.searchParams.set("client_id", "opencode-desktop")
-            x.data.url = url.href
-          }
-          dispatch({ type: "auth.complete", authorization: x.data })
+          dispatch({ type: "auth.complete", authorization: { ...x.data, url: url.href } })
         })
         .catch((e) => {
           if (!alive.value) return
@@ -663,7 +662,7 @@ function ProviderConnection(props: {
               <div>
                 <List
                   class="px-3"
-                  items={select()?.options ?? []}
+                  items={[...(select()?.options ?? [])]}
                   key={(x) => x.value}
                   current={select()?.options.find((x) => x.value === formStore.value[select()!.key])}
                   onSelect={(value) => {
@@ -828,7 +827,7 @@ function ProviderConnection(props: {
       }
 
       setFormStore("error", undefined)
-      await serverSDK().api.integration.connect.key({
+      await serverSDK().api.integrations.connectKey({
         integrationID: props.provider,
         location: location(),
         key: apiKey,
@@ -959,8 +958,7 @@ function ProviderConnection(props: {
 
       setFormStore("error", undefined)
       const result = await serverSDK()
-        .api.integration.oauth.complete({
-          integrationID: props.provider,
+        .api.integrations.attemptComplete({
           attemptID: store.authorization!.attemptID,
           location: location(),
           code,
@@ -1058,8 +1056,7 @@ function ProviderConnection(props: {
         const authorization = store.authorization
         if (!authorization || !alive.value) return
         const result = await serverSDK()
-          .api.integration.oauth.status({
-            integrationID: props.provider,
+          .api.integrations.attemptStatus({
             attemptID: authorization.attemptID,
             location: location(),
           })

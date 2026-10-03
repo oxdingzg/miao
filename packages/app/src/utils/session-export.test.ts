@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import type { MessagesListInput } from "@miao/client"
+import type { SessionInfo, SessionMessageInfo } from "@/utils/server"
 import { fetchSessionExport, sessionExportFilename } from "./session-export"
-import type { MessageListInput, SessionInfo, SessionMessageInfo } from "@opencode-ai/client/promise"
 
 describe("sessionExportFilename", () => {
   test("generates filename from title", () => {
@@ -43,11 +44,11 @@ describe("fetchSessionExport", () => {
       Array.from({ length: 200 }, (_, index) => user(`msg_${String(index).padStart(3, "0")}`)),
       [user("msg_200")],
     ]
-    const requests: MessageListInput[] = []
+    const requests: MessagesListInput[] = []
     const api = {
-      session: { get: async () => session },
-      message: {
-        list: async (input: MessageListInput) => {
+      sessions: { get: async () => session },
+      messages: {
+        list: async (input: MessagesListInput) => {
           requests.push(input)
           const index = input.cursor ? Number(input.cursor) : 0
           return { data: pages[index], cursor: { previous: null, next: String(index + 1) } }
@@ -84,9 +85,9 @@ describe("fetchSessionExport", () => {
   test("stops paging when the history ends exactly on a full page", async () => {
     const pages = [Array.from({ length: 200 }, (_, index) => user(`msg_${index}`)), []]
     const api = {
-      session: { get: async () => session },
-      message: {
-        list: async (input: MessageListInput) => {
+      sessions: { get: async () => session },
+      messages: {
+        list: async (input: MessagesListInput) => {
           const index = input.cursor ? Number(input.cursor) : 0
           return { data: pages[index], cursor: { next: pages[index].length ? String(index + 1) : null } }
         },
@@ -100,12 +101,12 @@ describe("fetchSessionExport", () => {
 
   test("rejects when the session is missing", async () => {
     const api = {
-      session: {
+      sessions: {
         get: async (): Promise<SessionInfo> => {
           throw new Error("Session not found: ses_missing")
         },
       },
-      message: { list: async () => ({ data: [], cursor: {} }) },
+      messages: { list: async () => ({ data: [], cursor: {} }) },
     }
 
     await expect(fetchSessionExport({ sessionID: "ses_missing", api })).rejects.toThrow(

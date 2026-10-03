@@ -25,7 +25,8 @@ const optimistic: Array<{
 const optimisticSeeded: boolean[] = []
 const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
-const sentShell: Array<{ sessionID: string; id?: string; command: string }> = []
+const sentShell: Array<{ sessionID: string; command: string }> = []
+const selections: unknown[] = []
 const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
 const sentPrompts: string[] = []
@@ -33,6 +34,11 @@ const promptInputs: unknown[] = []
 const sentCommands: unknown[] = []
 const commands: Array<{ name: string }> = []
 let serverSessionSyncs = 0
+
+// Sends are fired without awaiting, and the composer selection is applied before the request.
+const settle = async (done: () => boolean) => {
+  for (let attempt = 0; attempt < 100 && !done(); attempt++) await Bun.sleep(1)
+}
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
@@ -74,7 +80,7 @@ const clientFor = (directory: string) => {
   createdClients.push(directory)
   return {
     api: {
-      session: {
+      sessions: {
         create: async (input: (typeof sessionCreateInputs)[number]) => {
           await createSessionGate
           const location = input.location?.directory ?? directory
@@ -100,8 +106,14 @@ const clientFor = (directory: string) => {
         command: async (input: unknown) => {
           sentCommands.push(input)
         },
-        shell: async (input: { sessionID: string; id?: string; command: string }) => {
+        shell: async (input: { sessionID: string; command: string }) => {
           sentShell.push(input)
+        },
+        switchAgent: async (input: unknown) => {
+          selections.push(input)
+        },
+        switchModel: async (input: unknown) => {
+          selections.push(input)
         },
       },
     },
@@ -235,6 +247,7 @@ beforeAll(async () => {
   mock.module("@/context/server-sync", () => ({
     useServerSync: () => () => ({
       session: {
+        get: () => undefined,
         remember: () => undefined,
         set: () => undefined,
         sync: async () => {
@@ -290,6 +303,7 @@ beforeEach(() => {
   sentPrompts.length = 0
   promptInputs.length = 0
   sentCommands.length = 0
+  selections.length = 0
   commands.length = 0
   promptValue = [{ type: "text", content: "ls", start: 0, end: 2 }]
   params = {}
@@ -347,8 +361,8 @@ describe("prompt submit worktree selection", () => {
       },
     ])
     expect(sentShell).toEqual([
-      expect.objectContaining({ sessionID: "session-1", id: expect.stringMatching(/^evt_/), command: "ls" }),
-      expect.objectContaining({ sessionID: "session-2", id: expect.stringMatching(/^evt_/), command: "ls" }),
+      { sessionID: "session-1", command: "ls" },
+      { sessionID: "session-2", command: "ls" },
     ])
     expect(syncedDirectories).toEqual(["/repo/worktree-a", "/repo/worktree-a", "/repo/worktree-b", "/repo/worktree-b"])
     expect(serverSessionSyncs).toBe(0)
@@ -472,7 +486,7 @@ describe("prompt submit worktree selection", () => {
     const event = { preventDefault: () => undefined } as unknown as Event
 
     await submit.handleSubmit(event)
-    await Bun.sleep(0)
+    await settle(() => sentPrompts.length > 0)
 
     expect(optimistic).toHaveLength(1)
     expect(optimistic[0]).toMatchObject({
@@ -482,11 +496,13 @@ describe("prompt submit worktree selection", () => {
       },
     })
     expect(sentPrompts).toEqual(["/repo/main"])
+    expect(selections).toContainEqual({
+      sessionID: "session-1",
+      model: { id: "model", providerID: "provider", variant: "high" },
+    })
     expect(promptInputs[0]).toMatchObject({
       sessionID: "session-1",
-      text: "ls",
-      files: [],
-      agents: [],
+      prompt: { text: "ls", files: [], agents: [] },
     })
     expect((promptInputs[0] as { id?: string }).id).toStartWith("msg_")
   })
@@ -515,18 +531,14 @@ describe("prompt submit worktree selection", () => {
     })
 
     await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await settle(() => sentCommands.length > 0)
 
-    expect(sentCommands).toEqual([
-      {
-        sessionID: "session-1",
-        id: expect.stringMatching(/^msg_/),
-        command: "review",
-        arguments: "staged changes",
-        agent: "agent",
-        model: { id: "model", providerID: "provider", variant: "high" },
-        files: [],
-      },
+    // The command carries only its text; the composer's agent and model are applied to the session first.
+    expect(selections).toEqual([
+      { sessionID: "session-1", agent: "agent" },
+      { sessionID: "session-1", model: { id: "model", providerID: "provider", variant: "high" } },
     ])
+    expect(sentCommands).toEqual([{ sessionID: "session-1", command: "review", arguments: "staged changes" }])
     expect(serverSessionSyncs).toBe(0)
   })
 

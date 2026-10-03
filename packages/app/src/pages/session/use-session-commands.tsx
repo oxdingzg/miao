@@ -248,7 +248,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const sessionID = params.id
     if (!sessionID) return
     const owner = sessionOwnership.capture()
-    const session = sdk().api.session
+    const session = sdk().api.sessions
     const directory = sdk().directory
     const promptSession = prompt.capture()
     const revert = info()?.revert?.messageID
@@ -266,7 +266,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     await runCommand({
       owner,
       prompt: promptSession,
-      request: () => session.revert.stage({ sessionID, messageID: message.id }),
+      request: () => session.stage({ sessionID, messageID: message.id }),
       updatePrompt: (promptSession) => {
         if (parts) promptSession.set(extractPromptFromParts(parts, { directory }))
       },
@@ -278,7 +278,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const sessionID = params.id
     if (!sessionID) return
     const owner = sessionOwnership.capture()
-    const session = sdk().api.session
+    const session = sdk().api.sessions
     const messages = userMessages()
     const promptSession = prompt.capture()
 
@@ -292,7 +292,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       await runCommand({
         owner,
         prompt: promptSession,
-        request: () => session.revert.clear({ sessionID }),
+        request: () => session.clear({ sessionID }),
         updatePrompt: (promptSession) => promptSession.reset(),
         updateViewport: () => setActiveMessage(messages.at(-1)),
       })
@@ -302,7 +302,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     await runCommand({
       owner,
       prompt: promptSession,
-      request: () => session.revert.stage({ sessionID, messageID: next.id }),
+      request: () => session.stage({ sessionID, messageID: next.id }),
       updatePrompt: () => undefined,
       updateViewport: () => setActiveMessage(messages[boundary]),
     })
@@ -321,7 +321,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       return
     }
 
-    await sdk().api.session.compact({ sessionID })
+    await sdk().api.sessions.compact({ sessionID })
   }
 
   const fork = () => {

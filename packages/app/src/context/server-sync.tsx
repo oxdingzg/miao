@@ -1,3 +1,5 @@
+import type { McpResourcesInput, McpResourcesOutput, McpStatusInput, McpStatusOutput, SessionsActiveOutput } from "@miao/client"
+import type { McpResource, McpStatus } from "@/utils/server"
 import type {
   Config,
   OpencodeClient,
@@ -48,15 +50,6 @@ import type { ServerScope } from "@/utils/server-scope"
 import { createHomeSessionIndexCache } from "./global-sync/home-session-index"
 import { persisted } from "@/utils/persist"
 import type { ServerApi } from "@/utils/server"
-import type {
-  McpListInput,
-  McpListOutput,
-  McpResource,
-  McpResourceCatalogInput,
-  McpResourceCatalogOutput,
-  McpServer,
-  SessionActiveOutput,
-} from "@opencode-ai/client/promise"
 import { toggleMcp } from "./global-sync/mcp"
 import { createServerSession, type ServerSession } from "./server-session"
 
@@ -72,13 +65,11 @@ type GlobalStore = {
 }
 
 type McpListApi = {
-  readonly list: (input?: McpListInput) => Promise<McpListOutput>
+  readonly status: (input?: McpStatusInput) => Promise<McpStatusOutput>
 }
 
 type McpResourceApi = {
-  readonly resource: {
-    readonly catalog: (input?: McpResourceCatalogInput) => Promise<McpResourceCatalogOutput>
-  }
+  readonly resources: (input?: McpResourcesInput) => Promise<McpResourcesOutput>
 }
 
 type ApiQueryOptions<T, K extends readonly unknown[]> = SolidQueryOptions<T, Error, T, K> & {
@@ -87,25 +78,23 @@ type ApiQueryOptions<T, K extends readonly unknown[]> = SolidQueryOptions<T, Err
 }
 
 type SessionActiveApi = {
-  readonly active: () => Promise<SessionActiveOutput>
+  readonly active: () => Promise<SessionsActiveOutput>
 }
 
 export const loadMcpQuery = (
   scope: ServerScope,
   directory: string,
   api: McpListApi,
-): ApiQueryOptions<Record<string, McpServer["status"]>, readonly [ServerScope, string, "mcp"]> =>
+): ApiQueryOptions<Record<string, McpStatus>, readonly [ServerScope, string, "mcp"]> =>
   queryOptions<
-    Record<string, McpServer["status"]>,
+    Record<string, McpStatus>,
     Error,
-    Record<string, McpServer["status"]>,
+    Record<string, McpStatus>,
     readonly [ServerScope, string, "mcp"]
   >({
     queryKey: [scope, directory, "mcp"] as const,
     queryFn: async () => {
-      return api
-        .list({ location: { directory } })
-        .then((result) => Object.fromEntries(result.data.map((server) => [server.name, server.status])))
+      return api.status({ location: { directory } }).then((result) => ({ ...result.data }))
     },
   })
 
@@ -122,11 +111,7 @@ export const loadMcpResourcesQuery = (
   >({
     queryKey: [scope, directory, "mcpResources"] as const,
     queryFn: async () => {
-      return api.resource
-        .catalog({ location: { directory } })
-        .then((result) =>
-          Object.fromEntries(result.data.resources.map((resource) => [`${resource.server}:${resource.uri}`, resource])),
-        )
+      return api.resources({ location: { directory } }).then((result) => ({ ...result.data }))
     },
     placeholderData: {},
   })
@@ -140,8 +125,8 @@ export const loadLspQuery = (scope: ServerScope, directory: string, sdk: Opencod
 export const loadActiveSessionsQuery = (
   scope: ServerScope,
   api: SessionActiveApi,
-): ApiQueryOptions<SessionActiveOutput, readonly [ServerScope, "activeSessions"]> =>
-  queryOptions<SessionActiveOutput, Error, SessionActiveOutput, readonly [ServerScope, "activeSessions"]>({
+): ApiQueryOptions<SessionsActiveOutput, readonly [ServerScope, "activeSessions"]> =>
+  queryOptions<SessionsActiveOutput, Error, SessionsActiveOutput, readonly [ServerScope, "activeSessions"]>({
     queryKey: [scope, "activeSessions"] as const,
     queryFn: () => api.active(),
     enabled: true,
@@ -154,7 +139,7 @@ export const loadActiveSessionsQuery = (
 
 export function seedActiveSessionStatuses(
   session: Pick<ServerSession, "data" | "set">,
-  active: SessionActiveOutput | Record<string, SessionStatus>,
+  active: SessionsActiveOutput | Record<string, SessionStatus>,
 ) {
   for (const sessionID of Object.keys(active)) {
     if (session.data.session_status[sessionID] !== undefined) continue
@@ -171,12 +156,12 @@ function makeQueryOptionsApi(
 ) {
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
-    projects: () => loadProjectsQuery(scope, serverAPI.project),
+    projects: () => loadProjectsQuery(scope, serverAPI.projects),
     providers: (directory: PathKey | null) => loadProvidersQuery(scope, directory, serverAPI),
     path: (directory: PathKey | null) =>
       loadPathQuery(scope, directory, directory ? sdkFor(directory) : serverSDK()),
-    agents: (directory: PathKey) => loadAgentsQuery(scope, directory, serverAPI.agent),
-    references: (directory: PathKey) => loadReferencesQuery(scope, directory, serverAPI.reference),
+    agents: (directory: PathKey) => loadAgentsQuery(scope, directory, serverAPI.agents),
+    references: (directory: PathKey) => loadReferencesQuery(scope, directory, serverAPI.references),
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, serverAPI.mcp),
     mcpResources: (directory: PathKey) => loadMcpResourcesQuery(scope, directory, serverAPI.mcp),
     lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
@@ -207,7 +192,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return sdk
   }
 
-  const session = createServerSession(serverSDK.client, serverSDK.api.session, serverSDK.api.message)
+  const session = createServerSession(serverSDK.client, serverSDK.api.sessions, serverSDK.api.messages)
   const queryOptionsApi = makeQueryOptionsApi(
     serverSDK.scope,
     () => serverSDK.client,
@@ -221,7 +206,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const activeSessionsQuery = useQuery(() =>
     loadActiveSessionsQuery(serverSDK.scope, {
       active: async () => {
-        const active = await serverSDK.api.session.active()
+        const active = await serverSDK.api.sessions.active()
         seedActiveSessionStatuses(session, active)
         for (const sessionID of Object.keys(active)) {
           void session.resolve(sessionID).catch(() => undefined)
@@ -330,7 +315,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       void bootstrapInstance(directory)
     },
     onMcp: (directory, setStore) => {
-      void loadCommands(directory, serverSDK.api.command)
+      void loadCommands(directory, serverSDK.api.commands)
         .then((commands) => setStore("command", commands))
         .catch((err) => {
           showToast({
@@ -383,7 +368,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       .fetchQuery({
         ...queryOptionsApi.sessions(key),
         queryFn: () =>
-          loadRootSessions({ api: serverSDK.api.session, directory, limit })
+          loadRootSessions({ api: serverSDK.api.sessions, directory, limit })
             .then((x) => {
               const nonArchived = (x.data ?? [])
                 .filter((s) => !!s?.id)
@@ -660,10 +645,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         await toggleMcp({
           status,
           connect: async () => {
-            await serverSDK.api.mcp.connect({ server: name, location: { directory: key } })
+            await serverSDK.api.mcp.connect({ name, location: { directory: key } })
           },
           disconnect: async () => {
-            await serverSDK.api.mcp.disconnect({ server: name, location: { directory: key } })
+            await serverSDK.api.mcp.disconnect({ name, location: { directory: key } })
           },
           authenticate: async () => {
             await sdk.mcp.auth.authenticate({ name })

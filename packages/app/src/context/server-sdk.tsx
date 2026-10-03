@@ -278,7 +278,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         }
         abort.signal.addEventListener("abort", onAbort)
         try {
-          const events = eventApi.event.subscribe({ signal: attempt.signal })
+          const events = eventApi.events.subscribe({ signal: attempt.signal })
           let yielded = Date.now()
           for await (const raw of events) {
             // The vendored client's subscription type predates the current protocol: the stream
