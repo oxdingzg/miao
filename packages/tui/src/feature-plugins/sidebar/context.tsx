@@ -1,5 +1,5 @@
-import type { Session } from "@opencode-ai/sdk/v2"
-import type { TuiPlugin, TuiPluginApi, TuiTranscriptAssistant } from "@opencode-ai/plugin/tui"
+import type { Session } from "@miao/sdk/v2"
+import type { TuiPlugin, TuiPluginApi, TuiTranscriptAssistant } from "@miao/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { Currency } from "../../util/currency"
 import { cacheEconomy } from "../../util/cache-economy"
@@ -103,8 +103,25 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   createEffect(() => {
     if (!ticking()) return
     setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    onCleanup(() => clearInterval(timer))
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const schedule = () => {
+      // The row shows tenths below a minute, seconds below an hour and minutes
+      // above it. Tick at that rate instead of waking (and repainting the whole
+      // screen) every second for a cache that can stay fresh for hours.
+      const elapsed = Date.now() - (ttl()?.startedAt ?? Date.now())
+      const step = elapsed < 60_000 ? 1000 : elapsed < 3_600_000 ? 5000 : 60_000
+      timer = setTimeout(() => {
+        if (cancelled) return
+        setNow(Date.now())
+        schedule()
+      }, step)
+    }
+    schedule()
+    onCleanup(() => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    })
   })
 
   // The hit rate alone says nothing about whether caching is still working, so

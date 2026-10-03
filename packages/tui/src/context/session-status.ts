@@ -1,4 +1,4 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2"
+import type { Message, Part } from "@miao/sdk/v2"
 
 export function waitingForResponse(input: { busy: boolean; blocked: boolean; message?: Message; parts: Part[] }) {
   if (!input.busy || input.blocked) return false
@@ -17,20 +17,28 @@ export function watchSessionStatus(input: {
   onStatus?: (status: "busy" | "idle") => void
   onError: (error: unknown) => void
   interval?: number
+  idleInterval?: number
 }) {
   let disposed = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  let last: "busy" | "idle" | undefined
 
   async function poll() {
     await Promise.resolve()
       .then(() => (disposed ? undefined : input.read()))
       .then((status) => {
-        if (!disposed && status !== undefined) input.onStatus?.(status)
+        if (disposed || status === undefined) return
+        last = status
+        input.onStatus?.(status)
       })
       .catch((error: unknown) => {
         if (!disposed) input.onError(error)
       })
-    if (!disposed) timer = setTimeout(() => void poll(), input.interval ?? 1000)
+    // An idle session changes execution ownership rarely, and under Bun every
+    // timer wakeup allocates (a JSC eden collection), so poll far less often
+    // when idle. A busy one keeps the close cadence for a prompt idle flip.
+    const interval = last === "busy" ? (input.interval ?? 1000) : (input.idleInterval ?? 5000)
+    if (!disposed) timer = setTimeout(() => void poll(), interval)
   }
 
   void poll()
