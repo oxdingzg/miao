@@ -1,6 +1,6 @@
 # V2 项目工作树（取代 V1 `/experimental/worktree`）
 
-状态：设计稿，2026-10-03。P7 剩余项：app 的"新建工作区 / 删除 / 重置"仍走 V1 `worktree.create/remove/reset`
+状态：已实现，2026-10-03（`c55e8b36e`）。P7 剩余项：app 的"新建工作区 / 删除 / 重置"仍走 V1 `worktree.create/remove/reset`
 与 `instance.dispose`。本方案是 V1 行为的平移，不改变用户可见语义。
 
 ## 现状（按代码核实）
@@ -37,7 +37,8 @@ V2 现有能力：core `ProjectCopy`（git worktree 策略，`--detach`、不建
    - `POST /api/worktree/reset` `{ directory }` → 先失效该目录的位置服务（取代 app 的 `instance.dispose`），再重置
 3. **app**：`layout.tsx` 的新建 / 删除 / 重置与 `prompt-input/submit.ts` 的"新会话建工作树"改走上述路由；删除
    `instance.dispose` 调用。
-4. **V1**：`Worktree` 改为委托 core 的同一实现（同项目持久化的做法），删 V1 时只删调用方。
+4. **V1**：暂不委托。V1 `Worktree` 还被 V1 控制面的工作树适配器（`control-plane/adapters/worktree.ts`）使用，
+   依赖 core 版本没有的 detached 工作树与列表；这些调用方随 V1 路由与控制面一起删除，过渡期两份实现并存。
 
 ## 测试
 
