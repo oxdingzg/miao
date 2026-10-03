@@ -19,6 +19,18 @@ export function createEventSource() {
   let fn: ((event: GlobalEvent) => void) | undefined
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined
   const pending: Uint8Array[] = []
+  const send = (event: GlobalEvent) => {
+    if (!("properties" in event.payload)) return
+    const chunk = new TextEncoder().encode(
+      `data: ${JSON.stringify({
+        ...event.payload,
+        location: { directory: event.directory, workspaceID: event.workspace },
+        data: event.payload.properties,
+      })}\n\n`,
+    )
+    if (stream) return stream.enqueue(chunk)
+    pending.push(chunk)
+  }
   return {
     source: {
       subscribe: async (handler: (event: GlobalEvent) => void) => {
@@ -31,17 +43,11 @@ export function createEventSource() {
     emit(event: GlobalEvent) {
       if (!fn) throw new Error("event source not ready")
       fn(event)
-      if (!("properties" in event.payload)) return
-      const chunk = new TextEncoder().encode(
-        `data: ${JSON.stringify({
-          ...event.payload,
-          location: { directory: event.directory, workspaceID: event.workspace },
-          data: event.payload.properties,
-        })}\n\n`,
-      )
-      if (stream) return stream.enqueue(chunk)
-      pending.push(chunk)
+      send(event)
     },
+    // Writes only the `/api/event` stream, for a TUI attached over HTTP.
+    send,
+
     response() {
       return new Response(
         new ReadableStream<Uint8Array>({

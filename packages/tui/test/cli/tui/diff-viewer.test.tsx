@@ -22,7 +22,7 @@ test("closing the diff viewer returns to the route it opened from", async () => 
       name: "diff",
       params: { mode: "git", sessionID: "session-1", returnRoute: startRoute },
     })
-    expect(viewer.vcsDiffInput()).toEqual({ directory: "/repo/session", mode: "git", context: 12 })
+    expect(viewer.vcsDiffInput()).toEqual({ location: { directory: "/repo/session" }, mode: "working", context: "12" })
 
     expect(viewer.commands.has("diff.close")).toBe(true)
     viewer.commands.get("diff.close")!.run?.({} as never)
@@ -119,13 +119,13 @@ async function renderDiffViewer(vcsDiff: unknown[], height = 20, initialRoute?: 
     const base = createTuiPluginApi({
       keymap,
       client: {
-        vcs: {
-          diff: async (input: unknown) => {
-            vcsDiffInput = input
-            return { data: vcsDiff }
-          },
-        },
         v2: {
+          vcs: {
+            diff: async (input: unknown) => {
+              vcsDiffInput = input
+              return { data: { data: vcsDiff } }
+            },
+          },
           session: {
             diff: async (input: unknown) => {
               sessionDiffInput = input
@@ -220,7 +220,7 @@ test("branch diff source requests branch VCS diff", async () => {
       name: "diff",
       params: { mode: "branch", sessionID: "session-1", returnRoute: startRoute },
     })
-    expect(viewer.vcsDiffInput()).toEqual({ directory: "/repo/session", mode: "branch", context: 12 })
+    expect(viewer.vcsDiffInput()).toEqual({ location: { directory: "/repo/session" }, mode: "branch", context: "12" })
     expect(viewer.sessionDiffInput()).toBeUndefined()
   } finally {
     viewer.app.renderer.destroy()

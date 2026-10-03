@@ -145,4 +145,31 @@ describe("useEvent", () => {
       app.renderer.destroy()
     }
   })
+
+  test("maps /api/event into the GlobalBus shape when attached over HTTP", async () => {
+    const events = createEventSource()
+    const calls = createFetch(undefined, events)
+    const seen: Event[] = []
+    const workspaces: Array<string | undefined> = []
+    events.send(event(vcs("attached"), { directory: "/tmp/other", workspace: "ws_a" }))
+
+    const app = await testRender(() => (
+      <TestTuiContexts>
+        <SDKProvider url="http://test" directory={directory} fetch={calls.fetch}>
+          <ProjectProvider>
+            <Probe seen={seen} workspaces={workspaces} onReady={() => {}} />
+          </ProjectProvider>
+        </SDKProvider>
+      </TestTuiContexts>
+    ))
+
+    try {
+      await wait(() => seen.length === 1)
+
+      expect(seen).toEqual([vcs("attached")])
+      expect(workspaces).toEqual(["ws_a"])
+    } finally {
+      app.renderer.destroy()
+    }
+  })
 })

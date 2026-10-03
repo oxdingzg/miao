@@ -58,10 +58,20 @@ const featureDefinitions = Event.inventory(
   ...Question.Event.Definitions,
 )
 
+// Bridged events the TUI renders. `Definitions` already lists them through their families;
+// `/api/event` carries only server definitions, so attached TUIs need them here too.
+const tuiBridgeDefinitions = Event.inventory(
+  LspEvent.Updated,
+  VcsEvent.BranchUpdated,
+  TuiEvent.ToastShow,
+  SessionV1.Event.Error,
+)
+
 export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
+  ...tuiBridgeDefinitions,
 )
 
 export const Definitions = Event.inventory(

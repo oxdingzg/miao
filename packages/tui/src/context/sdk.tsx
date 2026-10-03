@@ -1,5 +1,5 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import type { GlobalEvent } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent, V2Event } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
 
@@ -87,14 +87,14 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         while (true) {
           if (abort.signal.aborted || ctrl.signal.aborted) break
 
-          const events = await sdk.global.event({
+          const events = await sdk.v2.event.subscribe({
             signal: ctrl.signal,
             sseMaxRetryAttempts: 0,
           })
 
           for await (const event of events.stream) {
             if (ctrl.signal.aborted) break
-            handleEvent(event)
+            handleEvent(toGlobalEvent(event))
           }
 
           if (timer) clearTimeout(timer)
@@ -136,3 +136,13 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
   },
 })
+
+// `/api/event` carries `{ id, type, data, location }`. The TUI dispatches the GlobalBus shape
+// the in-process worker forwards, so an attached TUI sees events the same way.
+function toGlobalEvent(event: V2Event): GlobalEvent {
+  return {
+    directory: event.location?.directory ?? "global",
+    workspace: event.location?.workspaceID,
+    payload: { id: event.id, type: event.type, properties: event.data } as GlobalEvent["payload"],
+  }
+}
