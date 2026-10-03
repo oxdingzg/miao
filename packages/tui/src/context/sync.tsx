@@ -23,7 +23,6 @@ import type {
   IntegrationInfo,
   VcsInfo,
   SnapshotFileDiff,
-  ConsoleState,
 } from "@opencode-ai/sdk/v2"
 import type { TuiTranscriptMessage } from "@opencode-ai/plugin/tui"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -52,11 +51,6 @@ import { batch, onCleanup, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
-
-const emptyConsoleState: ConsoleState = {
-  consoleManagedProviders: [],
-  switchableOrgCount: 0,
-}
 
 function search<T>(items: T[], target: string, key: (item: T) => string) {
   let left = 0
@@ -189,7 +183,6 @@ export const {
       provider: Provider[]
       provider_default: Record<string, string>
       provider_next: ProviderListResponse
-      console_state: ConsoleState
       capabilities: {
         experimentalBackgroundSubagents: boolean
       }
@@ -234,7 +227,6 @@ export const {
         default: {},
         connected: [],
       },
-      console_state: emptyConsoleState,
       capabilities: {
         experimentalBackgroundSubagents: false,
       },
@@ -676,10 +668,6 @@ export const {
         .get({ location: { workspace } }, { throwOnError: true })
         .then((x) => x.data?.data)
         .catch(() => undefined)
-      const consoleStatePromise = sdk.client.experimental.console
-        .get({ workspace }, { throwOnError: true })
-        .then((x) => x.data)
-        .catch(() => emptyConsoleState)
       const agentsPromise = sdk.client.v2.agent.list({ location: { workspace } }, { throwOnError: true })
       const configPromise = sdk.client.v2.config.get({ location: { workspace } }, { throwOnError: true })
       await Promise.all([
@@ -693,7 +681,6 @@ export const {
         .then(async () => {
           const providersResponse = providersPromise.then((x) => toProviderList(x.data!.data))
           const capabilitiesResponse = capabilitiesPromise
-          const consoleStateResponse = consoleStatePromise
           const agentsResponse = agentsPromise.then((x) => (x.data?.data ?? []).map(toAgent))
           const configResponse = configPromise.then((x) => toConfig(x.data?.data ?? {}))
           const sessionListResponse = args.continue ? sessionListPromise : undefined
@@ -701,23 +688,20 @@ export const {
           return Promise.all([
             providersResponse,
             capabilitiesResponse,
-            consoleStateResponse,
             agentsResponse,
             configResponse,
             ...(sessionListResponse ? [sessionListResponse] : []),
           ]).then((responses) => {
             const providers = responses[0]
             const capabilities = responses[1]
-            const consoleState = responses[2]
-            const agents = responses[3]
-            const config = responses[4]
-            const sessions = responses[5]
+            const agents = responses[2]
+            const config = responses[3]
+            const sessions = responses[4]
 
             batch(() => {
               setStore("provider", reconcile(providers.providers))
               setStore("provider_default", reconcile(providers.default))
               setStore("capabilities", "experimentalBackgroundSubagents", capabilities?.backgroundSubagents === true)
-              setStore("console_state", reconcile(consoleState))
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
               if (sessions !== undefined) setStore("session", reconcile(sessions))
@@ -729,7 +713,6 @@ export const {
           // non-blocking
           void Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
-            consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             // The palette only shows names and descriptions; executing a command
             // resolves its template on the server.
             sdk.client.v2.command
