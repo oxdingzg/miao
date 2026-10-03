@@ -20,8 +20,8 @@ import type {
   IntegrationInfo,
   VcsInfo,
   SnapshotFileDiff,
-} from "@opencode-ai/sdk/v2"
-import type { TuiTranscriptMessage } from "@opencode-ai/plugin/tui"
+} from "@miao/sdk/v2"
+import type { TuiTranscriptMessage } from "@miao/plugin/tui"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "./project"
 import { useEvent } from "./event"
@@ -824,7 +824,10 @@ export const {
           const status = response.data.data.type
           if (signal?.aborted) return status
           const previous = store.session_status[sessionID]?.type
-          setStore("session_status", sessionID, { type: status })
+          // Every store write notifies subscribers, and one tick repaints the
+          // whole screen (see sidebar/context.tsx), so an unchanged idle status
+          // must not be written back once a second.
+          if (previous !== status) setStore("session_status", sessionID, { type: status })
           // An idle transition is also a recovery path for a missed terminal
           // event: fetch the final transcript instead of leaving stale output.
           if (previous === "busy" && status === "idle") v2Refresh.schedule(sessionID)
