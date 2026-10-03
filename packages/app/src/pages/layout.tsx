@@ -1381,7 +1381,7 @@ export default function LegacyLayout(props: ParentProps) {
     setBusy(directory, true)
 
     const result = await serverSDK()
-      .client.worktree.remove({ directory: root, worktreeRemoveInput: { directory } })
+      .api.worktrees.remove({ location: { directory: root }, directory })
       .then((x) => x.data)
       .catch((err) => {
         showToast({
@@ -1446,12 +1446,9 @@ export default function LegacyLayout(props: ParentProps) {
       platform,
       serverSDK().scope,
     )
-    await serverSDK()
-      .client.instance.dispose({ directory })
-      .catch(() => undefined)
-
+    // The server releases the worktree's location before resetting it.
     const result = await serverSDK()
-      .client.worktree.reset({ directory: root, worktreeResetInput: { directory } })
+      .api.worktrees.reset({ location: { directory: root }, directory })
       .then((x) => x.data)
       .catch((err) => {
         showToast({
@@ -1808,7 +1805,7 @@ export default function LegacyLayout(props: ParentProps) {
   const createWorkspace = async (project: LocalProject) => {
     clearSidebarHoverState()
     const created = await serverSDK()
-      .client.worktree.create({ directory: project.worktree })
+      .api.worktrees.create({ location: { directory: project.worktree } })
       .then((x) => x.data)
       .catch((err) => {
         showToast({
@@ -1820,7 +1817,12 @@ export default function LegacyLayout(props: ParentProps) {
 
     if (!created?.directory) return
 
-    setWorkspaceName(created.directory, created.branch ?? getFilename(created.directory), project.id, created.branch)
+    setWorkspaceName(
+      created.directory,
+      created.branch ?? getFilename(created.directory),
+      project.id,
+      created.branch ?? undefined,
+    )
 
     const local = project.worktree
     const key = pathKey(created.directory)

@@ -11,6 +11,7 @@ import {
   type SessionsGetOutput,
 } from "@miao/client"
 import type { Vcs } from "@miao/schema/vcs"
+import type { FileContent } from "@opencode-ai/sdk/v2"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 
@@ -100,4 +101,15 @@ export async function removeProviderCredentials(api: ServerApi, providerID: stri
       connection.type === "credential" ? [api.credentials.remove({ credentialID: connection.id })] : [],
     ),
   )
+}
+
+// The file views render the V1 content shape: `encoding` is present only for base64, and the media type is `mimeType`.
+export async function readFileContent(api: ServerApi, directory: string, path: string): Promise<FileContent> {
+  const result = await api.files.content({ location: { directory }, path })
+  return {
+    type: result.data.type,
+    content: result.data.content,
+    ...(result.data.encoding === "base64" ? { encoding: "base64" as const } : {}),
+    mimeType: result.data.mime,
+  }
 }

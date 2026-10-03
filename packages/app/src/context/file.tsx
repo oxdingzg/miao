@@ -1,4 +1,5 @@
 import { batch, createEffect, createMemo, onCleanup } from "solid-js"
+import { readFileContent } from "@/utils/server"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@miao/ui/context"
 import { showToast } from "@/utils/toast"
@@ -79,10 +80,24 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const tree = createFileTreeStore({
       scope,
       normalizeDir: path.normalizeDir,
-      list: (dir) =>
-        sdk()
-          .client.file.list({ path: dir })
-          .then((x) => x.data ?? []),
+      list: (dir) => {
+        const directory = sdk().directory
+        return sdk()
+          .api.files.list({ location: { directory }, path: dir || undefined })
+          .then((result) =>
+            result.data.map((entry) => {
+              // The tree keys nodes by "/"-separated paths without the trailing separator directories carry here.
+              const relative = entry.path.replaceAll("\\", "/").replace(/\/+$/, "")
+              return {
+                name: relative.split("/").at(-1) ?? relative,
+                path: relative,
+                absolute: `${directory.replace(/[\\/]+$/, "")}/${relative}`,
+                type: entry.type,
+                ignored: false,
+              }
+            }),
+          )
+      },
       onError: (message) => {
         showToast({
           variant: "error",
@@ -180,11 +195,9 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
       setLoading(file)
 
-      const promise = sdk()
-        .client.file.read({ path: file })
-        .then((x) => {
+      const promise = readFileContent(sdk().api, sdk().directory, file)
+        .then((content) => {
           if (scope() !== directory) return
-          const content = x.data
           setLoaded(file, content)
 
           if (!content) return

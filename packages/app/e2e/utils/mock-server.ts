@@ -129,6 +129,23 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
         })),
       })
     }
+    if (path === "/api/fs/content" && config.fileContent) {
+      const content = (await config.fileContent(url.searchParams.get("path") ?? "")) as {
+        type: "text" | "binary"
+        content: string
+        encoding?: string
+        mimeType?: string
+      }
+      return json(route, {
+        location: location(config),
+        data: {
+          type: content.type,
+          content: content.content,
+          encoding: content.encoding === "base64" ? "base64" : "utf8",
+          mime: content.mimeType ?? "text/plain",
+        },
+      })
+    }
     if (path === "/api/fs/find") {
       const type = url.searchParams.get("type")
       const hits = await config.findFiles?.({

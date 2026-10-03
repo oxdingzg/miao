@@ -354,8 +354,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     if (isNewSession) {
       if (worktreeSelection === "create") {
-        const createdWorktree = await client.worktree
-          .create({ directory: projectDirectory })
+        const createdWorktree = await sdk()
+          .api.worktrees.create({ location: { directory: projectDirectory } })
           .then((x) => x.data)
           .catch((err) => {
             showToast({

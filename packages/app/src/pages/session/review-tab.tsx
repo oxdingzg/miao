@@ -1,4 +1,5 @@
 import { createEffect, onCleanup, type JSX } from "solid-js"
+import { readFileContent } from "@/utils/server"
 import type { FileDiffInfo } from "@/utils/server"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
@@ -54,13 +55,10 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
   const layout = useLayout()
 
   const readFile = async (path: string) => {
-    return sdk()
-      .client.file.read({ path })
-      .then((x) => x.data)
-      .catch((error) => {
-        console.debug("[session-review] failed to read file", { path, error })
-        return undefined
-      })
+    return readFileContent(sdk().api, sdk().directory, path).catch((error) => {
+      console.debug("[session-review] failed to read file", { path, error })
+      return undefined
+    })
   }
 
   const handleInteraction = () => {
