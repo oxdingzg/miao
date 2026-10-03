@@ -35,6 +35,7 @@ export const LocationPath = Schema.Struct({
   worktree: Schema.String,
   directory: Schema.String,
 }).annotate({ identifier: "Location.Path" })
+export type LocationPath = Schema.Schema.Type<typeof LocationPath>
 
 export const LocationGroup = HttpApiGroup.make("server.location")
   .add(

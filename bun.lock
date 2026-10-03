@@ -730,6 +730,7 @@
         "@miao/client": "workspace:*",
         "@miao/core": "workspace:*",
         "@miao/plugin": "workspace:*",
+        "@miao/protocol": "workspace:*",
         "@miao/schema": "workspace:*",
         "@miao/sdk": "workspace:*",
         "@miao/ui": "workspace:*",

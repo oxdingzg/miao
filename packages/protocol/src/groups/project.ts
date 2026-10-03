@@ -15,6 +15,7 @@ export const ProjectDirectory = Schema.Struct({
   directory: AbsolutePath,
   strategy: Schema.optional(Schema.String),
 }).annotate({ identifier: "Project.Directory" })
+export type ProjectDirectory = Schema.Codec.Encoded<typeof ProjectDirectory>
 
 export const ProjectGroup = HttpApiGroup.make("server.project")
   .add(
