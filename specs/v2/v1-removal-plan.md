@@ -116,7 +116,7 @@
 | 插件运行时 client | V1 根 SDK | `miao/src/plugin/index.ts:10,150-155` 用 `@miao/sdk` 根导出的 `createMiaoClient` 访问 `Server.Default()` |
 | 插件钩子（V1 `Hooks`） | **只有 V1 代码触发** | `core/src` 里没有任何 `.trigger(`。见 §2.1 |
 | `@miao/plugin` 类型 | 依赖 V1 SDK 类型 | `plugin/src/index.ts:1-12` 从 V1 根导出引入 `Event`、`Message`、`Part`、`Permission`、`Config`、`createMiaoClient`。去掉 V1 根导出 = 第三方插件 API 的破坏性变更 |
-| 旧版 JS SDK `packages/sdk/js` | V1 根导出 + `/v2` 导出 | V1 `src/gen` 已冻结。根导出的消费者：plugin、`miao/src/plugin/index.ts`、`test/server/sdk-v1-smoke.test.ts`、`slack`、`github/`、`script/duplicate-pr.ts`。注意：**`/v2` 导出也大量调用无前缀的旧路由**；按文件计，app 99、tui 56、miao 51、session-ui 16 个文件 import 它。真正的替代者是 `packages/client`（`@miao/client`，只覆盖 `/api/*`）和 `packages/sdk-next`（尚无消费者）。这个 fork 的 release 不发布 SDK 到 npm（`publish.yml` 有上游仓库守卫） |
+| 旧版 JS SDK `packages/sdk/js` | V1 根导出 + `/v2` 导出 | V1 `src/gen` 已冻结。根导出的消费者：plugin、`miao/src/plugin/index.ts`、`test/server/sdk-v1-smoke.test.ts`、`slack`、`github/`、`script/duplicate-pr.ts`。注意：**`/v2` 导出也大量调用无前缀的旧路由**；按文件计，app 99、tui 56、miao 51、session-ui 16 个文件 import 它。真正的替代者是 `packages/client`（`@miao/client`，只覆盖 `/api/*`）和 `packages/sdk-next`（尚无消费者）。当前 `release.yml` 只发布 CLI 产物，不发布 SDK 到 npm；失效的上游发布工作流已删除 |
 | core 内的 V1 层 | 数据迁移依赖 | `core/src/v1/`（19 文件、1,349 行：`session.ts`、`permission.ts`、`config/*`）和 `schema/src/v1/`（`session.ts` 676 行等）。`core/src/session/{projector,backfill,compact,v1-read,legacy-tables,store}.ts` 依赖它做 V1→V2 投影和回退读取。`v1/config/migrate.ts` 是 V1 配置兼容层，V2 配置加载会直接调用（`core/src/config.ts:182-185`） |
 
 ### 1.2 只被 V1 自身或测试引用的代码

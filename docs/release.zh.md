@@ -17,10 +17,12 @@
 3. **工作流 `.github/workflows/release.yml`**：
    - `version`：运行 `script/version.ts`，以根 `package.json` 的版本创建**草稿** release `vX.Y.Z`，并生成 release notes，输出 `version/release/tag/repo`。
    - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
-   - `publish`：所有平台成功后，先把 SignPath 署名追加到 release 说明，再执行 `gh release edit --draft=false` 正式发布。
+   - `publish`：所有平台成功后，先把 Windows 签名状态追加到 release 说明，再执行 `gh release edit --draft=false` 正式发布。
 4. **产物**：`miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`，命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
 
-Windows 二进制通过 [SignPath Foundation](https://signpath.org) 项目进行代码签名:free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)。`publish` 步骤会把这段署名追加到每个 release 说明里，使下载页面写明签名方。
+上述工作流是当前维护的发布入口。每次构建通过 `packages/miao/script/generate.ts` 从 `https://models.dev/api.json` 读取模型目录，也可以用 `MODELS_DEV_API_JSON` 指定本地文件。仓库没有单独提交模型快照的工作流；运行时会独立刷新缓存中的模型目录。
+
+已于 2026-10-03 向 [SignPath Foundation](https://signpath.org) 提交 Windows 代码签名申请。目前等待审核及 CI 签名接入，现有 Windows 二进制尚未签名。`publish` 步骤会在下载页面记录当前状态。审核通过并接入签名后，更新状态并使用署名：Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)。
 
 ## 变更日志
 

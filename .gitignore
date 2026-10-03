@@ -29,6 +29,7 @@ target
 opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
+packages/storybook/debug-storybook.log
 *.bun-build
 tsconfig.tsbuildinfo
 
