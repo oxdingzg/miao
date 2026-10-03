@@ -1,5 +1,5 @@
 diff --git a/chunk-bun-8f4q4e2m.js b/chunk-bun-8f4q4e2m.js
-index ace5f4a..599e970 100644
+index ace5f4a..ada3e64 100644
 --- a/chunk-bun-8f4q4e2m.js
 +++ b/chunk-bun-8f4q4e2m.js
 @@ -6207,7 +6207,7 @@ class ASCIIFontSelectionHelper2 {
@@ -11,7 +11,21 @@ index ace5f4a..599e970 100644
  var DEFAULT_MAX_PENDING_BYTES = 64 * 1024;
  var INITIAL_PENDING_CAPACITY = 256;
  var ESC = 27;
-@@ -6947,6 +6947,11 @@ class StdinParser2 {
+@@ -6921,10 +6921,9 @@ class StdinParser2 {
+               this.markPending();
+               return;
+             }
+-            this.emitKeyOrResponse("unknown", decodeUtf8(bytes.subarray(this.unitStart, this.cursor)));
+-            this.state = { tag: "ground" };
+-            this.consumePrefix(this.cursor);
+-            continue;
++            this.pendingSinceMs = null;
++            this.forceFlush = false;
++            return;
+           }
+           if (byte === 60) {
+             this.cursor += 1;
+@@ -6947,6 +6946,11 @@ class StdinParser2 {
                this.markPending();
                return;
              }
@@ -23,7 +37,7 @@ index ace5f4a..599e970 100644
              this.emitOpaqueResponse("unknown", bytes.subarray(this.unitStart, this.cursor));
              this.state = { tag: "ground" };
              this.consumePrefix(this.cursor);
-@@ -7479,10 +7484,9 @@ class StdinParser2 {
+@@ -7479,10 +7483,9 @@ class StdinParser2 {
                this.markPending();
                return;
              }
@@ -38,7 +52,7 @@ index ace5f4a..599e970 100644
            if (byte >= 48 && byte <= 57 || byte === 59) {
              this.cursor += 1;
 diff --git a/chunk-node-1zjyxy5y.js b/chunk-node-1zjyxy5y.js
-index 28c53d7..f0b8ffb 100644
+index 28c53d7..dda7ea4 100644
 --- a/chunk-node-1zjyxy5y.js
 +++ b/chunk-node-1zjyxy5y.js
 @@ -6241,7 +6241,7 @@ class ASCIIFontSelectionHelper2 {
@@ -50,7 +64,21 @@ index 28c53d7..f0b8ffb 100644
  var DEFAULT_MAX_PENDING_BYTES = 64 * 1024;
  var INITIAL_PENDING_CAPACITY = 256;
  var ESC = 27;
-@@ -6981,6 +6981,11 @@ class StdinParser2 {
+@@ -6955,10 +6955,9 @@ class StdinParser2 {
+               this.markPending();
+               return;
+             }
+-            this.emitKeyOrResponse("unknown", decodeUtf8(bytes.subarray(this.unitStart, this.cursor)));
+-            this.state = { tag: "ground" };
+-            this.consumePrefix(this.cursor);
+-            continue;
++            this.pendingSinceMs = null;
++            this.forceFlush = false;
++            return;
+           }
+           if (byte === 60) {
+             this.cursor += 1;
+@@ -6981,6 +6980,11 @@ class StdinParser2 {
                this.markPending();
                return;
              }
@@ -62,7 +90,7 @@ index 28c53d7..f0b8ffb 100644
              this.emitOpaqueResponse("unknown", bytes.subarray(this.unitStart, this.cursor));
              this.state = { tag: "ground" };
              this.consumePrefix(this.cursor);
-@@ -7513,10 +7518,9 @@ class StdinParser2 {
+@@ -7513,10 +7517,9 @@ class StdinParser2 {
                this.markPending();
                return;
              }
