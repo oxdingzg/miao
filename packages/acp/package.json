@@ -14,8 +14,6 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "0.21.0",
     "@miao/client": "workspace:*",
-    "@miao/schema": "workspace:*",
-    "@miao/protocol": "workspace:*",
     "diff": "catalog:"
   },
   "devDependencies": {

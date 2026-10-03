@@ -56,14 +56,6 @@ import {
   type ToolInput,
 } from "./tool"
 import type { Client, Event, EventOf, Message, Session, Todo } from "./types"
-import { AbsolutePath } from "@miao/schema/schema"
-import { Agent as AgentSchema } from "@miao/schema/agent"
-import { Model } from "@miao/schema/model"
-import { Permission } from "@miao/schema/permission"
-import { Provider } from "@miao/schema/provider"
-import { Question } from "@miao/schema/question"
-import { SessionID } from "@miao/schema/session-id"
-import { SessionsCursor } from "@miao/protocol/groups/session"
 
 export const AuthMethodID = "opencode-login"
 
@@ -85,7 +77,7 @@ type Turn = {
 }
 
 type State = {
-  readonly id: SessionID
+  readonly id: string
   readonly cwd: string
   catalog: Catalog
   model?: ModelKey
@@ -180,7 +172,7 @@ export class MiaoAgent implements Agent {
       const model = defaultModel(catalog)
       const variant = model ? initialVariant(catalog, model) : undefined
       const session = await this.client.sessions.create({
-        location: { directory: AbsolutePath.make(params.cwd) },
+        location: { directory: params.cwd },
         ...(model ? { model: modelRef(model, variant) } : {}),
       })
       const state = this.track(session, catalog, { model, variant })
@@ -213,7 +205,7 @@ export class MiaoAgent implements Agent {
   unstable_forkSession(params: ForkSessionRequest) {
     return guard(async () => {
       this.ignoreMcp(params.mcpServers ?? [])
-      const forked = await this.client.sessions.fork({ sessionID: SessionID.make(params.sessionId) })
+      const forked = await this.client.sessions.fork({ sessionID: params.sessionId })
       const state = this.track(forked, await this.catalog(forked.location.directory || params.cwd))
       await this.replay(state)
       this.announceCommands(state)
@@ -224,8 +216,8 @@ export class MiaoAgent implements Agent {
   listSessions(params: ListSessionsRequest) {
     return guard(async (): Promise<ListSessionsResponse> => {
       const page = await this.client.sessions.list({
-        ...(params.cwd ? { directory: AbsolutePath.make(params.cwd) } : {}),
-        ...(params.cursor ? { cursor: SessionsCursor.make(params.cursor) } : {}),
+        ...(params.cwd ? { directory: params.cwd } : {}),
+        ...(params.cursor ? { cursor: params.cursor } : {}),
         limit: 100,
       })
       return {
@@ -350,7 +342,7 @@ export class MiaoAgent implements Agent {
   }
 
   private async open(sessionId: string, cwd: string) {
-    const session = await this.client.sessions.get({ sessionID: SessionID.make(sessionId) })
+    const session = await this.client.sessions.get({ sessionID: sessionId })
     return this.track(session, await this.catalog(session.location.directory || cwd))
   }
 
@@ -382,7 +374,7 @@ export class MiaoAgent implements Agent {
   private async switchMode(state: State, mode: string) {
     if (!state.catalog.modes.some((item) => item.id === mode))
       throw RequestError.invalidParams({ mode }, `mode not found: ${mode}`)
-    await this.client.sessions.switchAgent({ sessionID: state.id, agent: AgentSchema.ID.make(mode) })
+    await this.client.sessions.switchAgent({ sessionID: state.id, agent: mode })
     state.mode = mode
   }
 
@@ -754,7 +746,7 @@ export class MiaoAgent implements Agent {
     const cached = this.owners.get(sessionID)
     if (cached) return cached
     const resolved = this.client.sessions
-      .get({ sessionID: SessionID.make(sessionID) })
+      .get({ sessionID })
       .then((session) => (session.parentID ? this.owner(session.parentID) : undefined))
       .catch(() => undefined)
     this.owners.set(sessionID, resolved)
@@ -810,7 +802,7 @@ export class MiaoAgent implements Agent {
           .catch(() => undefined)
       })
     await this.client.permissions
-      .reply({ sessionID: SessionID.make(request.sessionID), requestID: Permission.ID.make(request.id), reply })
+      .reply({ sessionID: request.sessionID, requestID: request.id, reply })
       .catch((error: unknown) => this.log(`acp: permission reply ${request.id}: ${String(error)}`))
   }
 
@@ -822,7 +814,7 @@ export class MiaoAgent implements Agent {
   private async question(state: State, request: QuestionRequest) {
     const reject = () =>
       this.client.questions
-        .reject({ sessionID: SessionID.make(request.sessionID), requestID: Question.ID.make(request.id) })
+        .reject({ sessionID: request.sessionID, requestID: request.id })
         .catch((error: unknown) => this.log(`acp: question reject ${request.id}: ${String(error)}`))
     if (request.questions.some((question) => question.multiSelect)) return reject()
     const answers: string[][] = []
@@ -852,7 +844,7 @@ export class MiaoAgent implements Agent {
       answers.push([choice.label])
     }
     await this.client.questions
-      .reply({ sessionID: SessionID.make(request.sessionID), requestID: Question.ID.make(request.id), answers })
+      .reply({ sessionID: request.sessionID, requestID: request.id, answers })
       .catch((error: unknown) => this.log(`acp: question reply ${request.id}: ${String(error)}`))
   }
 
@@ -926,9 +918,9 @@ function stopReason(turn: Turn): PromptResponse["stopReason"] {
 
 function modelRef(model: ModelKey, variant: string | undefined) {
   return {
-    providerID: Provider.ID.make(model.providerID),
-    id: Model.ID.make(model.id),
-    ...(variant && variant !== DefaultVariant ? { variant: Model.VariantID.make(variant) } : {}),
+    providerID: model.providerID,
+    id: model.id,
+    ...(variant && variant !== DefaultVariant ? { variant } : {}),
   }
 }
 
