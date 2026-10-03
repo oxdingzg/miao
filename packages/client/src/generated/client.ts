@@ -160,10 +160,14 @@ import type {
   ProjectCopiesRemoveOutput,
   ProjectCopiesRefreshInput,
   ProjectCopiesRefreshOutput,
+  ProjectsListInput,
+  ProjectsListOutput,
   ProjectsCurrentInput,
   ProjectsCurrentOutput,
   ProjectsDirectoriesInput,
   ProjectsDirectoriesOutput,
+  ProjectsUpdateInput,
+  ProjectsUpdateOutput,
   VcsGetInput,
   VcsGetOutput,
   VcsStatusInput,
@@ -1371,6 +1375,18 @@ export function make(options: ClientOptions) {
         ),
     },
     projects: {
+      list: (input?: ProjectsListInput, requestOptions?: RequestOptions) =>
+        request<ProjectsListOutput>(
+          {
+            method: "GET",
+            path: `/api/project`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
       current: (input?: ProjectsCurrentInput, requestOptions?: RequestOptions) =>
         request<ProjectsCurrentOutput>(
           {
@@ -1391,6 +1407,19 @@ export function make(options: ClientOptions) {
             query: { location: input["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      update: (input: ProjectsUpdateInput, requestOptions?: RequestOptions) =>
+        request<ProjectsUpdateOutput>(
+          {
+            method: "PATCH",
+            path: `/api/project/${encodeURIComponent(input.projectID)}`,
+            query: { location: input["location"] },
+            body: { name: input["name"], icon: input["icon"], commands: input["commands"] },
+            successStatus: 200,
+            declaredStatuses: [404, 401, 400],
             empty: false,
           },
           requestOptions,

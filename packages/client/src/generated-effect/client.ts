@@ -904,25 +904,47 @@ const adaptGroup22 = (raw: RawClient["server.projectCopy"]) => ({
   refresh: Endpoint22_2(raw),
 })
 
-type Endpoint23_0Request = Parameters<RawClient["server.project"]["project.current"]>[0]
+type Endpoint23_0Request = Parameters<RawClient["server.project"]["project.list"]>[0]
 type Endpoint23_0Input = { readonly location?: Endpoint23_0Request["query"]["location"] }
 const Endpoint23_0 = (raw: RawClient["server.project"]) => (input?: Endpoint23_0Input) =>
+  raw["project.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint23_1Request = Parameters<RawClient["server.project"]["project.current"]>[0]
+type Endpoint23_1Input = { readonly location?: Endpoint23_1Request["query"]["location"] }
+const Endpoint23_1 = (raw: RawClient["server.project"]) => (input?: Endpoint23_1Input) =>
   raw["project.current"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint23_1Request = Parameters<RawClient["server.project"]["project.directories"]>[0]
-type Endpoint23_1Input = {
-  readonly projectID: Endpoint23_1Request["params"]["projectID"]
-  readonly location?: Endpoint23_1Request["query"]["location"]
+type Endpoint23_2Request = Parameters<RawClient["server.project"]["project.directories"]>[0]
+type Endpoint23_2Input = {
+  readonly projectID: Endpoint23_2Request["params"]["projectID"]
+  readonly location?: Endpoint23_2Request["query"]["location"]
 }
-const Endpoint23_1 = (raw: RawClient["server.project"]) => (input: Endpoint23_1Input) =>
+const Endpoint23_2 = (raw: RawClient["server.project"]) => (input: Endpoint23_2Input) =>
   raw["project.directories"]({
     params: { projectID: input["projectID"] },
     query: { location: input["location"] },
   }).pipe(Effect.mapError(mapClientError))
 
+type Endpoint23_3Request = Parameters<RawClient["server.project"]["project.update"]>[0]
+type Endpoint23_3Input = {
+  readonly projectID: Endpoint23_3Request["params"]["projectID"]
+  readonly location?: Endpoint23_3Request["query"]["location"]
+  readonly name?: Endpoint23_3Request["payload"]["name"]
+  readonly icon?: Endpoint23_3Request["payload"]["icon"]
+  readonly commands?: Endpoint23_3Request["payload"]["commands"]
+}
+const Endpoint23_3 = (raw: RawClient["server.project"]) => (input: Endpoint23_3Input) =>
+  raw["project.update"]({
+    params: { projectID: input["projectID"] },
+    query: { location: input["location"] },
+    payload: { name: input["name"], icon: input["icon"], commands: input["commands"] },
+  }).pipe(Effect.mapError(mapClientError))
+
 const adaptGroup23 = (raw: RawClient["server.project"]) => ({
-  current: Endpoint23_0(raw),
-  directories: Endpoint23_1(raw),
+  list: Endpoint23_0(raw),
+  current: Endpoint23_1(raw),
+  directories: Endpoint23_2(raw),
+  update: Endpoint23_3(raw),
 })
 
 type Endpoint24_0Request = Parameters<RawClient["server.vcs"]["vcs.get"]>[0]

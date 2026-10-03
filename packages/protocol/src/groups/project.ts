@@ -3,6 +3,7 @@ import { Project } from "@miao/schema/project"
 import { AbsolutePath } from "@miao/schema/schema"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { ProjectNotFoundError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const ProjectCurrent = Schema.Struct({
@@ -16,6 +17,20 @@ export const ProjectDirectory = Schema.Struct({
 }).annotate({ identifier: "Project.Directory" })
 
 export const ProjectGroup = HttpApiGroup.make("server.project")
+  .add(
+    HttpApiEndpoint.get("project.list", "/api/project", {
+      query: LocationQuery,
+      success: Location.response(Schema.Array(Project.Info)),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.project.list",
+          summary: "List projects",
+          description: "List every known project with its display metadata.",
+        }),
+      ),
+  )
   .add(
     HttpApiEndpoint.get("project.current", "/api/project/current", {
       query: LocationQuery,
@@ -42,6 +57,23 @@ export const ProjectGroup = HttpApiGroup.make("server.project")
           identifier: "v2.project.directories",
           summary: "List project directories",
           description: "List the known directories for a project.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.patch("project.update", "/api/project/:projectID", {
+      params: { projectID: Project.ID },
+      query: LocationQuery,
+      payload: Project.UpdateInput,
+      success: Location.response(Project.Info),
+      error: ProjectNotFoundError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.project.update",
+          summary: "Update project",
+          description: "Update a project's name, icon, or workspace start command.",
         }),
       ),
   )

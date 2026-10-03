@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { EventV2 } from "@miao/core/event"
 import { Git } from "@miao/core/git"
 import { GitCli } from "@miao/core/git-cli"
+import { ProjectMetadata } from "@miao/core/project/metadata"
 import { MoveSession } from "@miao/core/control-plane/move-session"
 import { Credential } from "@miao/core/credential"
 import { PermissionSaved } from "@miao/core/permission/saved"
@@ -42,6 +43,7 @@ const applicationServices = LayerNode.group([
   Project.node,
   Git.node,
   GitCli.node,
+  ProjectMetadata.node,
   WorkspaceLive.node,
   MoveSession.node,
 ])

@@ -107,6 +107,47 @@ describe("v2 location HttpApi", () => {
     }
   })
 
+  test("lists and renames projects", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const current = (await (await request("/api/project/current", tmp.path)).json()) as { data: { id: string } }
+
+    const events = await request("/api/event", tmp.path)
+    const reader = eventStream(events.body!)
+    expect((await readEvent(reader)).type).toBe("server.connected")
+
+    const updated = await request(`/api/project/${current.data.id}`, tmp.path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Renamed", icon: { color: "blue" } }),
+    })
+    expect(updated.status).toBe(200)
+    expect(((await updated.json()) as { data: unknown }).data).toMatchObject({
+      id: current.data.id,
+      name: "Renamed",
+      icon: { color: "blue" },
+    })
+    expect(await readEventType(reader, "project.updated")).toMatchObject({
+      data: { id: current.data.id, name: "Renamed" },
+    })
+    await reader.return(undefined)
+
+    // Renaming recorded a project that had no session yet.
+    const listed = (await (await request("/api/project", tmp.path)).json()) as {
+      data: { id: string; worktree: string; name?: string }[]
+    }
+    expect(listed.data.find((project) => project.id === current.data.id)).toMatchObject({
+      worktree: tmp.path,
+      name: "Renamed",
+    })
+
+    const missing = await request("/api/project/prj_missing", tmp.path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "x" }),
+    })
+    expect(missing.status).toBe(404)
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)

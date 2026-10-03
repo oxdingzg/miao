@@ -16,6 +16,7 @@ import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { GitCli } from "@miao/core/git-cli"
+import { ProjectMetadata } from "@miao/core/project/metadata"
 import { Git } from "@miao/core/git"
 import { Installation } from "@/installation"
 import { LSP } from "@/lsp/lsp"
@@ -201,6 +202,7 @@ const app = LayerNode.group([
   Config.node,
   Env.node,
   GitCli.node,
+  ProjectMetadata.node,
   // The location middleware resolves Core's repository-level Git service, which is distinct from
   // the cwd-based GitCli service above.
   Git.node,
