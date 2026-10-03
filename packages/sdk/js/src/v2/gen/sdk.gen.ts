@@ -4058,6 +4058,7 @@ export class Session extends HeyApiClient {
       limit?: number
       order?: "asc" | "desc"
       search?: string
+      roots?: boolean | "true" | "false"
       directory?: string
       project?: string
       subpath?: string
@@ -4074,6 +4075,7 @@ export class Session extends HeyApiClient {
             { in: "query", key: "limit" },
             { in: "query", key: "order" },
             { in: "query", key: "search" },
+            { in: "query", key: "roots" },
             { in: "query", key: "directory" },
             { in: "query", key: "project" },
             { in: "query", key: "subpath" },

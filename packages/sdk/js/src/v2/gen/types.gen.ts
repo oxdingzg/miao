@@ -10631,6 +10631,7 @@ export type V2SessionListData = {
     limit?: number
     order?: "asc" | "desc"
     search?: string
+    roots?: boolean | "true" | "false"
     directory?: string
     project?: string
     subpath?: string

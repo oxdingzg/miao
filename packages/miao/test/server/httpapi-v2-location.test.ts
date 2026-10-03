@@ -165,6 +165,30 @@ describe("v2 location HttpApi", () => {
     await reader.return(undefined)
   })
 
+  test("lists only top-level sessions when roots is set", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const create = await request("/api/session", tmp.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location: { directory: tmp.path } }),
+    })
+    const parent = ((await create.json()) as { data: { id: string } }).data.id
+    const fork = await request(`/api/session/${parent}/fork`, tmp.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    expect(fork.status).toBe(200)
+    const child = ((await fork.json()) as { data: { id: string } }).data.id
+
+    const ids = async (query: string) =>
+      ((await (await request(`/api/session?directory=${encodeURIComponent(tmp.path)}${query}`, tmp.path)).json()) as {
+        data: { id: string }[]
+      }).data.map((session) => session.id)
+    expect((await ids("")).toSorted()).toEqual([parent, child].toSorted())
+    expect(await ids("&roots=true")).toEqual([parent])
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)

@@ -6,7 +6,7 @@ import { SessionTodo } from "@miao/schema/session-todo"
 import { Project } from "@miao/schema/project"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@miao/schema/schema"
 import { Workspace } from "@miao/schema/workspace"
-import { Context, Effect, Encoding, Result, Schema, Struct } from "effect"
+import { Context, Effect, Encoding, Result, Schema, SchemaGetter, Struct } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import {
   ConflictError,
@@ -32,6 +32,15 @@ const SessionsQueryFields = {
     description: "Session order for the first page. Use desc for newest first or asc for oldest first.",
   }),
   search: Schema.optional(Schema.String),
+  roots: Schema.Literals(["true", "false"])
+    .pipe(
+      Schema.decodeTo(Schema.Boolean, {
+        decode: SchemaGetter.transform((value) => value === "true"),
+        encode: SchemaGetter.transform((value) => (value ? "true" : "false")),
+      }),
+      Schema.optional,
+    )
+    .annotate({ description: "Only return top-level sessions, leaving out subagent sessions." }),
 }
 
 const SessionsDirectoryQuery = Schema.Struct({
