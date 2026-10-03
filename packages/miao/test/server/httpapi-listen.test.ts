@@ -4,7 +4,6 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { Flag } from "@miao/core/flag/flag"
 import { Server } from "../../src/server/server"
-import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
@@ -50,9 +49,9 @@ function authorization() {
 }
 
 function socketURL(listener: Awaited<ReturnType<typeof startListener>>, id: string, dir: string, ticket?: string) {
-  const url = new URL(PtyPaths.connect.replace(":ptyID", id), listener.url)
+  const url = new URL(`/api/pty/${id}/connect`, listener.url)
   url.protocol = "ws:"
-  url.searchParams.set("directory", dir)
+  url.searchParams.set("location[directory]", dir)
   url.searchParams.set("cursor", "-1")
   if (ticket) url.searchParams.set("ticket", ticket)
   return url
@@ -64,7 +63,7 @@ async function requestTicket(
   dir: string,
   options?: { ticketHeader?: boolean; origin?: string },
 ) {
-  const response = await fetch(new URL(PtyPaths.connectToken.replace(":ptyID", id), listener.url), {
+  const response = await fetch(new URL(`/api/pty/${id}/connect-token`, listener.url), {
     method: "POST",
     headers: {
       authorization: authorization(),
@@ -80,11 +79,11 @@ async function requestTicket(
 async function connectTicket(listener: Awaited<ReturnType<typeof startListener>>, id: string, dir: string) {
   const response = await requestTicket(listener, id, dir)
   expect(response.status).toBe(200)
-  return (await response.json()) as { ticket: string; expires_in: number }
+  return ((await response.json()) as { data: { ticket: string; expires_in: number } }).data
 }
 
 async function createCat(listener: Awaited<ReturnType<typeof startListener>>, dir: string) {
-  const response = await fetch(new URL(PtyPaths.create, listener.url), {
+  const response = await fetch(new URL("/api/pty", listener.url), {
     method: "POST",
     headers: {
       authorization: authorization(),
@@ -94,7 +93,7 @@ async function createCat(listener: Awaited<ReturnType<typeof startListener>>, di
     body: JSON.stringify({ command: "/bin/cat", title: "listen-smoke" }),
   })
   expect(response.status).toBe(200)
-  return (await response.json()) as { id: string }
+  return ((await response.json()) as { data: { id: string } }).data
 }
 
 async function openSocket(url: URL) {
@@ -172,11 +171,11 @@ describe("HttpApi Server.listen", () => {
     const listener = await startListener()
     let stopped = false
     try {
-      const response = await fetch(new URL(PtyPaths.shells, listener.url), {
+      const response = await fetch(new URL("/api/pty/shells", listener.url), {
         headers: { authorization: authorization(), "x-opencode-directory": tmp.path },
       })
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual(
+      expect(((await response.json()) as { data: unknown[] }).data).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             path: expect.any(String),
@@ -280,7 +279,7 @@ describe("HttpApi Server.listen", () => {
     await withTimeout(listener.stop(), 10_000, "timed out waiting for graceful listener.stop()")
     await withTimeout(listener.stop(), 5_000, "timed out waiting for repeated graceful listener.stop()")
     await expect(
-      fetch(new URL(PtyPaths.shells, listener.url), { headers: { authorization: authorization() } }),
+      fetch(new URL("/api/pty/shells", listener.url), { headers: { authorization: authorization() } }),
     ).rejects.toThrow()
   })
 
@@ -295,7 +294,7 @@ describe("HttpApi Server.listen", () => {
     try {
       // A served API route: unknown paths fall through to the web UI proxy, which
       // needs the network and its upstream to be up.
-      const response = await Server.Default().app.request("/global/health")
+      const response = await Server.Default().app.request("/api/health")
       expect(response.status).toBe(200)
     } finally {
       process.stderr.write = original
@@ -304,7 +303,8 @@ describe("HttpApi Server.listen", () => {
     expect(output).not.toContain("Sent HTTP response")
   })
 
-  test("plugin client requests reuse the listening server instance", async () => {
+  // V1 plugins load on demand under V2; spawning a PTY asks them for its shell environment.
+  testPty("plugin client requests reuse the listening server instance", async () => {
     await using tmp = await tmpdir({
       init: async (directory) => {
         const plugin = path.join(directory, "plugin.ts")
@@ -316,7 +316,7 @@ describe("HttpApi Server.listen", () => {
             "export default async function plugin(input) {",
             `  await Bun.write(${JSON.stringify(initialized)}, (await Bun.file(${JSON.stringify(initialized)}).text().catch(() => "")) + "initialized\\n")`,
             "  setTimeout(async () => {",
-            "    await input.client.config.get()",
+            "    await input.client.v2.config.get()",
             `    await Bun.write(${JSON.stringify(completed)}, "completed")`,
             "  }, 50)",
             "  return {}",
@@ -336,10 +336,11 @@ describe("HttpApi Server.listen", () => {
     let listener: Awaited<ReturnType<typeof startListener>> | undefined
     try {
       listener = await startListener()
-      const response = await fetch(new URL("/config", listener.url), {
+      const pty = await createCat(listener, tmp.path)
+      await fetch(new URL(`/api/pty/${pty.id}`, listener.url), {
+        method: "DELETE",
         headers: { authorization: authorization(), "x-opencode-directory": tmp.path },
       })
-      expect(response.status).toBe(200)
       await withTimeout(
         (async () => {
           while (!(await Bun.file(tmp.extra.completed).exists())) await Bun.sleep(10)
@@ -392,7 +393,7 @@ describe("HttpApi Server.listen", () => {
 
       // Regression for #25698: minting without a directory uses the server cwd
       // and cannot find a PTY registered in a project directory.
-      const ambiguous = await fetch(new URL(PtyPaths.connectToken.replace(":ptyID", info.id), listener.url), {
+      const ambiguous = await fetch(new URL(`/api/pty/${info.id}/connect-token`, listener.url), {
         method: "POST",
         headers: { authorization: authorization(), "x-opencode-ticket": "1" },
       })
@@ -400,7 +401,7 @@ describe("HttpApi Server.listen", () => {
 
       const directoryScoped = await fetch(
         new URL(
-          `${PtyPaths.connectToken.replace(":ptyID", info.id)}?directory=${encodeURIComponent(tmp.path)}`,
+          `/api/pty/${info.id}/connect-token?location[directory]=${encodeURIComponent(tmp.path)}`,
           listener.url,
         ),
         {
@@ -409,7 +410,7 @@ describe("HttpApi Server.listen", () => {
         },
       )
       expect(directoryScoped.status).toBe(200)
-      const mint = (await directoryScoped.json()) as { ticket: string }
+      const mint = ((await directoryScoped.json()) as { data: { ticket: string } }).data
       const scopedWs = await openSocket(socketURL(listener, info.id, tmp.path, mint.ticket))
       scopedWs.close(1000)
 

@@ -84,23 +84,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
     )
   })
 
-  test("documents nested legacy global sync events", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-    const schema = spec.components.schemas.SyncEventSessionCreated
-
-    expect(schema?.required).toEqual(["type", "id", "syncEvent"])
-    expect(schema?.properties?.type?.enum).toEqual(["sync"])
-    expect(schema?.properties?.syncEvent).toMatchObject({
-      required: ["type", "id", "seq", "aggregateID", "data"],
-      properties: {
-        type: { enum: ["session.created.1"] },
-        id: { type: "string" },
-        seq: { type: "number" },
-        aggregateID: { type: "string" },
-      },
-    })
-  })
-
   test("names the v2 event union without the SSE string wrapper collision", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
@@ -291,12 +274,10 @@ describe("PublicApi OpenAPI v2 errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
     for (const route of [
-      ["post", "/mcp/{name}/auth"],
-      ["post", "/mcp/{name}/auth/authenticate"],
-      ["post", "/mcp/{name}/auth/callback"],
-      ["delete", "/mcp/{name}/auth"],
-      ["post", "/mcp/{name}/connect"],
-      ["post", "/mcp/{name}/disconnect"],
+      ["post", "/api/mcp/{name}/auth"],
+      ["delete", "/api/mcp/{name}/auth"],
+      ["post", "/api/mcp/{name}/connect"],
+      ["post", "/api/mcp/{name}/disconnect"],
     ] as const) {
       expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["404"]) ?? "")).toBe(
         "McpServerNotFoundError",
@@ -308,29 +289,29 @@ describe("PublicApi OpenAPI v2 errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
     for (const route of [
-      ["get", "/pty/{ptyID}"],
-      ["put", "/pty/{ptyID}"],
-      ["delete", "/pty/{ptyID}"],
-      ["post", "/pty/{ptyID}/connect-token"],
+      ["get", "/api/pty/{ptyID}"],
+      ["put", "/api/pty/{ptyID}"],
+      ["delete", "/api/pty/{ptyID}"],
+      ["post", "/api/pty/{ptyID}/connect-token"],
     ] as const) {
       expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["404"]) ?? "")).toBe(
         "PtyNotFoundError",
       )
     }
-    expect(componentName(responseRef(spec.paths["/pty/{ptyID}/connect-token"]?.post?.responses?.["403"]) ?? "")).toBe(
-      "PtyForbiddenError",
-    )
     expect(
-      spec.paths["/pty/{ptyID}/connect"]?.get?.parameters
+      componentName(responseRef(spec.paths["/api/pty/{ptyID}/connect-token"]?.post?.responses?.["403"]) ?? ""),
+    ).toBe("ForbiddenError")
+    expect(
+      spec.paths["/api/pty/{ptyID}/connect"]?.get?.parameters
         ?.filter((parameter) => parameter.in === "query")
         .map((parameter) => parameter.name),
-    ).toEqual(["directory", "workspace", "cursor", "ticket"])
+    ).toEqual(["location[directory]", "location[workspace]", "cursor", "ticket"])
   })
 
   test("documents project not-found errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
-    expect(componentName(responseRef(spec.paths["/project/{projectID}"]?.patch?.responses?.["404"]) ?? "")).toBe(
+    expect(componentName(responseRef(spec.paths["/api/project/{projectID}"]?.patch?.responses?.["404"]) ?? "")).toBe(
       "ProjectNotFoundError",
     )
   })
