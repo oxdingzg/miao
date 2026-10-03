@@ -1,11 +1,8 @@
 import { LayerNode } from "@miao/core/effect/layer-node"
-import { and, eq, sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
-import { ProjectDirectoryTable, ProjectTable } from "@miao/core/project/sql"
+import { ProjectTable } from "@miao/core/project/sql"
 import { ProjectDirectories } from "@miao/core/project/directories"
-import { SessionTable } from "@miao/core/session/sql"
-import { WorkspaceTable } from "@miao/core/control-plane/workspace.sql"
-import { Flag } from "@miao/core/flag/flag"
 import { GlobalBus } from "@/bus/global"
 import { which } from "@miao/core/util/which"
 import { Command } from "@/command"
@@ -21,6 +18,8 @@ import { serviceUse } from "@miao/core/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@miao/core/event"
+import { ProjectMetadata } from "@miao/core/project/metadata"
+import { ProjectRegistry } from "@miao/core/project/registry"
 import { Project } from "@miao/schema/project"
 
 export const Info = Project.Info
@@ -139,198 +138,41 @@ const layer = Layer.effect(
         }),
       )
 
-    const fakeVcs = Schema.decodeUnknownSync(Schema.optional(Project.Vcs))(Flag.MIAO_FAKE_VCS)
+    const registryContext = yield* Effect.context<
+      | Database.Service
+      | FSUtil.Service
+      | ProjectDirectories.Service
+      | EventV2.Service
+      | ProjectV2.Service
+      | ProjectMetadata.Service
+    >()
 
     const scope = yield* Scope.Scope
 
-    const migrateProjectId = Effect.fn("Project.migrateProjectId")(function* (
-      oldID: ProjectV2.ID | undefined,
-      newID: ProjectV2.ID,
-    ) {
-      if (!oldID) return
-      if (oldID === ProjectV2.ID.global) return
-      if (oldID === newID) return
-
-      yield* db
-        .transaction(
-          (d) =>
-            Effect.gen(function* () {
-              const oldProject = yield* d.select().from(ProjectTable).where(eq(ProjectTable.id, oldID)).get()
-              const newProject = yield* d.select().from(ProjectTable).where(eq(ProjectTable.id, newID)).get()
-              if (oldProject && !newProject) {
-                yield* d
-                  .insert(ProjectTable)
-                  .values({
-                    ...oldProject,
-                    id: newID,
-                    time_updated: Date.now(),
-                  })
-                  .run()
-              }
-
-              // Project directories may be shared across distinct
-              // checkouts which have diverged. Clear the directory
-              // list and rely on it being re-populated to ensure
-              // accuracy
-              yield* d.delete(ProjectDirectoryTable).where(eq(ProjectDirectoryTable.project_id, oldID)).run()
-
-              yield* d
-                .update(SessionTable)
-                .set({ project_id: newID, time_updated: sql`${SessionTable.time_updated}` })
-                .where(eq(SessionTable.project_id, oldID))
-                .run()
-              yield* d
-                .update(WorkspaceTable)
-                .set({ project_id: newID })
-                .where(eq(WorkspaceTable.project_id, oldID))
-                .run()
-
-              if (oldProject) yield* d.delete(ProjectTable).where(eq(ProjectTable.id, oldID)).run()
-            }),
-          { behavior: "immediate" },
-        )
-        .pipe(Effect.orDie)
-    })
-
-    const saveProjectDirectory = Effect.fn("Project.saveProjectDirectory")(function* (input: {
-      projectID: ProjectV2.ID
-      directory: string
-    }) {
-      if (input.projectID === ProjectV2.ID.global) return
-      const opened = AbsolutePath.make(FSUtil.resolve(input.directory))
-      yield* projectDirectories
-        .create({
-          directory: opened,
-          projectID: input.projectID,
-        })
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("project directory persistence failed", { projectID: input.projectID, cause }),
-          ),
-        )
-    })
-
+    // Registration lives in core so V1 instance boots and V2 locations keep the same project records.
     const fromDirectory = Effect.fn("Project.fromDirectory")(function* (directory: string) {
-      yield* Effect.logInfo("fromDirectory", { directory })
-
       const data = yield* projectV2.resolve(AbsolutePath.make(directory))
-      const worktree = data.id === ProjectV2.ID.make("global") && !data.vcs ? "/" : data.directory
-
-      // Phase 2: upsert
-      const projectID = ProjectV2.ID.make(data.id)
-      yield* migrateProjectId(data.previous ? ProjectV2.ID.make(data.previous) : undefined, projectID)
-      const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, projectID)).get().pipe(Effect.orDie)
-      const existing = row
-        ? fromRow(row)
-        : {
-            id: projectID,
-            worktree,
-            vcs: data.vcs?.type ?? fakeVcs,
-            sandboxes: [] as string[],
-            time: { created: Date.now(), updated: Date.now() },
-          }
-
-      if (flags.experimentalIconDiscovery) yield* discover(existing).pipe(Effect.ignore, Effect.forkIn(scope))
-
-      const result: Info = {
-        ...existing,
-        worktree: projectID === ProjectV2.ID.global ? worktree : existing.worktree,
-        vcs: data.vcs?.type ?? fakeVcs,
-        time: { ...existing.time, updated: Date.now() },
-      }
-      if (
-        projectID !== ProjectV2.ID.global &&
-        data.directory !== result.worktree &&
-        !result.sandboxes.includes(data.directory)
-      )
-        result.sandboxes.push(data.directory)
-      result.sandboxes = yield* Effect.forEach(
-        result.sandboxes,
-        (s) =>
-          fs.exists(s).pipe(
-            Effect.orDie,
-            Effect.map((exists) => (exists ? s : undefined)),
-          ),
-        { concurrency: "unbounded" },
-      ).pipe(Effect.map((arr) => arr.filter((x): x is string => x !== undefined)))
-
-      yield* db
-        .insert(ProjectTable)
-        .values({
-          id: result.id,
-          worktree: AbsolutePath.make(result.worktree),
-          vcs: result.vcs ?? null,
-          name: result.name,
-          icon_url: result.icon?.url,
-          icon_url_override: result.icon?.override,
-          icon_color: result.icon?.color,
-          time_created: result.time.created,
-          time_updated: result.time.updated,
-          time_initialized: result.time.initialized,
-          sandboxes: result.sandboxes.map((sandbox) => AbsolutePath.make(sandbox)),
-          commands: result.commands,
-        })
-        .onConflictDoUpdate({
-          target: ProjectTable.id,
-          set: {
-            worktree: AbsolutePath.make(result.worktree),
-            vcs: result.vcs ?? null,
-            name: result.name,
-            icon_url: result.icon?.url,
-            icon_url_override: result.icon?.override,
-            icon_color: result.icon?.color,
-            time_updated: result.time.updated,
-            time_initialized: result.time.initialized,
-            sandboxes: result.sandboxes.map((sandbox) => AbsolutePath.make(sandbox)),
-            commands: result.commands,
-          },
-        })
-        .run()
-        .pipe(Effect.orDie)
-
-      if (projectID !== ProjectV2.ID.global) {
-        yield* db
-          .update(SessionTable)
-          .set({ project_id: projectID })
-          .where(and(eq(SessionTable.project_id, ProjectV2.ID.global), eq(SessionTable.directory, data.directory)))
-          .run()
-          .pipe(Effect.orDie)
-      }
-
-      yield* saveProjectDirectory({
-        projectID,
+      const project = yield* ProjectRegistry.register({
+        id: data.id,
+        previous: data.previous === data.id ? undefined : data.previous,
         directory: data.directory,
-      })
-
-      yield* emitUpdated(result)
-      if (projectID !== ProjectV2.ID.global && data.vcs?.type === "git") {
-        yield* projectV2.commit({ store: data.vcs.store, id: data.id })
+        vcs: data.vcs,
+      }).pipe(Effect.provideContext(registryContext))
+      if (flags.experimentalIconDiscovery)
+        yield* ProjectRegistry.discoverIcon(project).pipe(
+          Effect.provideContext(registryContext),
+          Effect.ignore,
+          Effect.forkIn(scope),
+        )
+      const worktree = data.id === ProjectV2.ID.global && !data.vcs ? "/" : data.directory
+      return {
+        project: { ...project, sandboxes: [...project.sandboxes] } as Info,
+        sandbox: data.vcs ? data.directory : worktree,
       }
-      return { project: result, sandbox: data.vcs ? data.directory : worktree }
     })
 
     const discover = Effect.fn("Project.discover")(function* (input: Info) {
-      if (input.vcs !== "git") return
-      if (input.icon?.override) return
-      if (input.icon?.url) return
-
-      const matches = yield* fs
-        .glob("**/favicon.{ico,png,svg,jpg,jpeg,webp}", {
-          cwd: input.worktree,
-          absolute: true,
-          include: "file",
-        })
-        .pipe(Effect.orDie)
-      const shortest = matches.sort((a, b) => a.length - b.length)[0]
-      if (!shortest) return
-
-      const buffer = yield* fs.readFile(shortest).pipe(Effect.orDie)
-      const base64 = Buffer.from(buffer).toString("base64")
-      const mime = FSUtil.mimeType(shortest)
-      const url = `data:${mime};base64,${base64}`
-      yield* update({ projectID: input.id, icon: { url } }).pipe(
-        Effect.catchTag("Project.NotFoundError", () => Effect.void),
-      )
+      yield* ProjectRegistry.discoverIcon(input).pipe(Effect.provideContext(registryContext), Effect.orDie)
     })
 
     const list = Effect.fn("Project.list")(function* () {
@@ -475,6 +317,8 @@ export const node = LayerNode.make({
     ProjectV2.node,
     ProjectDirectories.node,
     EventV2Bridge.node,
+    EventV2.node,
+    ProjectMetadata.node,
     RuntimeFlags.node,
     Database.node,
   ],
