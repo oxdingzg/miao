@@ -110,6 +110,24 @@ describe("ProjectWorktree", () => {
     }),
   )
 
+  it.live("prepares a detached worktree, creates it, and lists it", () =>
+    Effect.gen(function* () {
+      const { target } = yield* setup
+      const worktrees = yield* ProjectWorktree.Service
+      const info = yield* worktrees.prepare(target, { detached: true })
+      expect(info.branch).toBeUndefined()
+      expect(info.directory).toBe(path.join(dataRoot, "worktree", projectID, info.name))
+
+      yield* worktrees.createFromInfo(target, { name: info.name, directory: info.directory })
+      expect(yield* waitFor(() => Bun.file(path.join(info.directory, "README.md")).exists())).toBe(true)
+
+      const listed = yield* worktrees.list(target)
+      expect(listed.map((item) => item.name)).toContain(info.name)
+
+      expect(yield* worktrees.remove(target, { directory: info.directory })).toBe(true)
+    }),
+  )
+
   it.live("resets a worktree to the default branch and refuses the primary checkout", () =>
     Effect.gen(function* () {
       const { repo, target } = yield* setup
