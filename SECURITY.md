@@ -1,5 +1,7 @@
 # Security
 
+**Language:** [English](SECURITY.md) | [中文](SECURITY.zh.md)
+
 ## IMPORTANT
 
 We do not accept AI generated security reports. We receive a large number of
