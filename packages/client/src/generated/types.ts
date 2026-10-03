@@ -1,3 +1,5 @@
+import type * as Brand from "effect/Brand"
+
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 
 export type JsonValue =
@@ -139,9 +141,12 @@ export type CapabilitiesGetInput = {
 
 export type CapabilitiesGetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly backgroundSubagents: boolean }
 }
@@ -154,9 +159,12 @@ export type FormattersStatusInput = {
 
 export type FormattersStatusOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly name: string
@@ -173,9 +181,12 @@ export type ConfigGetInput = {
 
 export type ConfigGetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly [x: string]: any }
 }
@@ -189,9 +200,12 @@ export type ConfigUpdateInput = {
 
 export type ConfigUpdateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly [x: string]: any }
 }
@@ -204,9 +218,12 @@ export type ConfigProvidersInput = {
 
 export type ConfigProvidersOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly providers: ReadonlyArray<any>; readonly default: { readonly [x: string]: string } }
 }
@@ -219,9 +236,12 @@ export type ConfigCatalogInput = {
 
 export type ConfigCatalogOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
     readonly all: ReadonlyArray<any>
@@ -238,9 +258,12 @@ export type LspStatusInput = {
 
 export type LspStatusOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly id: string
@@ -257,9 +280,12 @@ export type McpStatusInput = {
 
 export type McpStatusOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
     readonly [x: string]:
@@ -280,9 +306,12 @@ export type McpConnectInput = {
 
 export type McpConnectOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: boolean
 }
@@ -296,9 +325,12 @@ export type McpDisconnectInput = {
 
 export type McpDisconnectOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: boolean
 }
@@ -312,9 +344,12 @@ export type McpAuthenticateInput = {
 
 export type McpAuthenticateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data:
     | { readonly status: "connected" }
@@ -333,9 +368,12 @@ export type McpLogoutInput = {
 
 export type McpLogoutOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data:
     | { readonly status: "connected" }
@@ -353,9 +391,12 @@ export type McpResourcesInput = {
 
 export type McpResourcesOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
     readonly [x: string]: {
@@ -375,9 +416,12 @@ export type LocationGetInput = {
 }
 
 export type LocationGetOutput = {
-  readonly directory: string
-  readonly workspaceID?: string
-  readonly project: { readonly id: string; readonly directory: string }
+  readonly directory: string & Brand.Brand<"AbsolutePath">
+  readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+  readonly project: {
+    readonly id: string & Brand.Brand<"Project.ID">
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+  }
 }
 
 export type LocationPathInput = {
@@ -402,13 +446,20 @@ export type AgentsListInput = {
 
 export type AgentsListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly id: string & Brand.Brand<"AgentV2.ID">
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly request: {
       readonly headers: { readonly [x: string]: string }
       readonly body: { readonly [x: string]: JsonValue }
@@ -429,113 +480,117 @@ export type AgentsListOutput = {
 
 export type SessionsListInput = {
   readonly workspace?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["workspace"]
   readonly limit?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["limit"]
   readonly order?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["order"]
   readonly search?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["search"]
   readonly roots?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["roots"]
   readonly directory?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["directory"]
   readonly project?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["project"]
   readonly subpath?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["subpath"]
   readonly cursor?: {
-    readonly workspace?: string | undefined
+    readonly workspace?: (string & Brand.Brand<"WorkspaceV2.ID">) | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly roots?: boolean | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
+    readonly directory?: (string & Brand.Brand<"AbsolutePath">) | undefined
+    readonly project?: (string & Brand.Brand<"Project.ID">) | undefined
+    readonly subpath?: (string & Brand.Brand<"RelativePath">) | undefined
+    readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
   }["cursor"]
 }
 
 export type SessionsListOutput = {
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly parentID?: string
-    readonly projectID: string
-    readonly agent?: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly id: string & Brand.Brand<"SessionID">
+    readonly parentID?: string & Brand.Brand<"SessionID">
+    readonly projectID: string & Brand.Brand<"Project.ID">
+    readonly agent?: string & Brand.Brand<"AgentV2.ID">
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -545,15 +600,18 @@ export type SessionsListOutput = {
     }
     readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
     readonly title: string
-    readonly location: { readonly directory: string; readonly workspaceID?: string }
-    readonly subpath?: string
+    readonly location: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    }
+    readonly subpath?: string & Brand.Brand<"RelativePath">
     readonly revert?: {
-      readonly messageID: string
+      readonly messageID: string & Brand.Brand<"Session.Message.ID">
       readonly partID?: string
       readonly snapshot?: string
       readonly diff?: string
       readonly files?: ReadonlyArray<{
-        readonly path: string
+        readonly path: string & Brand.Brand<"RelativePath">
         readonly status: "added" | "modified" | "deleted"
         readonly additions: number
         readonly deletions: number
@@ -561,43 +619,78 @@ export type SessionsListOutput = {
       }>
     }
   }>
-  readonly cursor: { readonly previous?: string | null; readonly next?: string | null }
+  readonly cursor: {
+    readonly previous?: (string & Brand.Brand<"SessionsCursor">) | null
+    readonly next?: (string & Brand.Brand<"SessionsCursor">) | null
+  }
 }
 
 export type SessionsCreateInput = {
   readonly id?: {
-    readonly id?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
-    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly id?: (string & Brand.Brand<"SessionID">) | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    } | null
+    readonly location?: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    } | null
   }["id"]
   readonly agent?: {
-    readonly id?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
-    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly id?: (string & Brand.Brand<"SessionID">) | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    } | null
+    readonly location?: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    } | null
   }["agent"]
   readonly model?: {
-    readonly id?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
-    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly id?: (string & Brand.Brand<"SessionID">) | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    } | null
+    readonly location?: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    } | null
   }["model"]
   readonly location?: {
-    readonly id?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
-    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly id?: (string & Brand.Brand<"SessionID">) | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    } | null
+    readonly location?: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    } | null
   }["location"]
 }
 
 export type SessionsCreateOutput = {
   readonly data: {
-    readonly id: string
-    readonly parentID?: string
-    readonly projectID: string
-    readonly agent?: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly id: string & Brand.Brand<"SessionID">
+    readonly parentID?: string & Brand.Brand<"SessionID">
+    readonly projectID: string & Brand.Brand<"Project.ID">
+    readonly agent?: string & Brand.Brand<"AgentV2.ID">
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -607,15 +700,18 @@ export type SessionsCreateOutput = {
     }
     readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
     readonly title: string
-    readonly location: { readonly directory: string; readonly workspaceID?: string }
-    readonly subpath?: string
+    readonly location: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    }
+    readonly subpath?: string & Brand.Brand<"RelativePath">
     readonly revert?: {
-      readonly messageID: string
+      readonly messageID: string & Brand.Brand<"Session.Message.ID">
       readonly partID?: string
       readonly snapshot?: string
       readonly diff?: string
       readonly files?: ReadonlyArray<{
-        readonly path: string
+        readonly path: string & Brand.Brand<"RelativePath">
         readonly status: "added" | "modified" | "deleted"
         readonly additions: number
         readonly deletions: number
@@ -625,17 +721,25 @@ export type SessionsCreateOutput = {
   }
 }["data"]
 
-export type SessionsActiveOutput = { readonly data: { readonly [x: string]: { readonly type: "running" } } }["data"]
+export type SessionsActiveOutput = {
+  readonly data: { readonly [x: string & Brand.Brand<"SessionID">]: { readonly type: "running" } }
+}["data"]
 
-export type SessionsGetInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsGetInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsGetOutput = {
   readonly data: {
-    readonly id: string
-    readonly parentID?: string
-    readonly projectID: string
-    readonly agent?: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly id: string & Brand.Brand<"SessionID">
+    readonly parentID?: string & Brand.Brand<"SessionID">
+    readonly projectID: string & Brand.Brand<"Project.ID">
+    readonly agent?: string & Brand.Brand<"AgentV2.ID">
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -645,15 +749,18 @@ export type SessionsGetOutput = {
     }
     readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
     readonly title: string
-    readonly location: { readonly directory: string; readonly workspaceID?: string }
-    readonly subpath?: string
+    readonly location: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    }
+    readonly subpath?: string & Brand.Brand<"RelativePath">
     readonly revert?: {
-      readonly messageID: string
+      readonly messageID: string & Brand.Brand<"Session.Message.ID">
       readonly partID?: string
       readonly snapshot?: string
       readonly diff?: string
       readonly files?: ReadonlyArray<{
-        readonly path: string
+        readonly path: string & Brand.Brand<"RelativePath">
         readonly status: "added" | "modified" | "deleted"
         readonly additions: number
         readonly deletions: number
@@ -664,25 +771,29 @@ export type SessionsGetOutput = {
 }["data"]
 
 export type SessionsSwitchAgentInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly agent: { readonly agent: string }["agent"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+  readonly agent: { readonly agent: string & Brand.Brand<"AgentV2.ID"> }["agent"]
 }
 
 export type SessionsSwitchAgentOutput = void
 
 export type SessionsSwitchModelInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly model: {
-    readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly model: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
   }["model"]
 }
 
 export type SessionsSwitchModelOutput = void
 
 export type SessionsPromptInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly id?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"Session.Message.ID">) | null
     readonly prompt: {
       readonly text: string
       readonly files?: ReadonlyArray<{
@@ -701,7 +812,7 @@ export type SessionsPromptInput = {
     readonly resume?: boolean | null
   }["id"]
   readonly prompt: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"Session.Message.ID">) | null
     readonly prompt: {
       readonly text: string
       readonly files?: ReadonlyArray<{
@@ -720,7 +831,7 @@ export type SessionsPromptInput = {
     readonly resume?: boolean | null
   }["prompt"]
   readonly delivery?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"Session.Message.ID">) | null
     readonly prompt: {
       readonly text: string
       readonly files?: ReadonlyArray<{
@@ -739,7 +850,7 @@ export type SessionsPromptInput = {
     readonly resume?: boolean | null
   }["delivery"]
   readonly resume?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"Session.Message.ID">) | null
     readonly prompt: {
       readonly text: string
       readonly files?: ReadonlyArray<{
@@ -762,8 +873,8 @@ export type SessionsPromptInput = {
 export type SessionsPromptOutput = {
   readonly data: {
     readonly admittedSeq: number
-    readonly id: string
-    readonly sessionID: string
+    readonly id: string & Brand.Brand<"Session.Message.ID">
+    readonly sessionID: string & Brand.Brand<"SessionID">
     readonly prompt: {
       readonly text: string
       readonly files?: ReadonlyArray<{
@@ -786,7 +897,7 @@ export type SessionsPromptOutput = {
 }["data"]
 
 export type SessionsSkillInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly skill: { readonly skill: string; readonly resume?: boolean | undefined }["skill"]
   readonly resume?: { readonly skill: string; readonly resume?: boolean | undefined }["resume"]
 }
@@ -794,35 +905,45 @@ export type SessionsSkillInput = {
 export type SessionsSkillOutput = void
 
 export type SessionsShellInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly command: { readonly command: string; readonly resume?: boolean | undefined }["command"]
   readonly resume?: { readonly command: string; readonly resume?: boolean | undefined }["resume"]
 }
 
 export type SessionsShellOutput = void
 
-export type SessionsCompactInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsCompactInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsCompactOutput = void
 
-export type SessionsWaitInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsWaitInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsWaitOutput = void
 
 export type SessionsStageInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly messageID: { readonly messageID: string; readonly files?: boolean | undefined }["messageID"]
-  readonly files?: { readonly messageID: string; readonly files?: boolean | undefined }["files"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+  readonly messageID: {
+    readonly messageID: string & Brand.Brand<"Session.Message.ID">
+    readonly files?: boolean | undefined
+  }["messageID"]
+  readonly files?: {
+    readonly messageID: string & Brand.Brand<"Session.Message.ID">
+    readonly files?: boolean | undefined
+  }["files"]
 }
 
 export type SessionsStageOutput = {
   readonly data: {
-    readonly messageID: string
+    readonly messageID: string & Brand.Brand<"Session.Message.ID">
     readonly partID?: string
     readonly snapshot?: string
     readonly diff?: string
     readonly files?: ReadonlyArray<{
-      readonly path: string
+      readonly path: string & Brand.Brand<"RelativePath">
       readonly status: "added" | "modified" | "deleted"
       readonly additions: number
       readonly deletions: number
@@ -831,34 +952,44 @@ export type SessionsStageOutput = {
   }
 }["data"]
 
-export type SessionsClearInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsClearInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsClearOutput = void
 
-export type SessionsCommitInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsCommitInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsCommitOutput = void
 
-export type SessionsContextInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsContextInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsContextOutput = {
   readonly data: ReadonlyArray<
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "agent-switched"
         readonly agent: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "model-switched"
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly text: string
@@ -877,22 +1008,22 @@ export type SessionsContextOutput = {
         readonly type: "user"
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly text: string
         readonly type: "synthetic"
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "system"
         readonly text: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number; readonly completed?: number }
         readonly type: "shell"
@@ -901,12 +1032,16 @@ export type SessionsContextOutput = {
         readonly output: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number; readonly completed?: number }
         readonly type: "assistant"
         readonly agent: string
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
         readonly content: ReadonlyArray<
           | { readonly type: "text"; readonly id: string; readonly text: string }
           | {
@@ -974,7 +1109,11 @@ export type SessionsContextOutput = {
               }
             }
         >
-        readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
+        readonly snapshot?: {
+          readonly start?: string
+          readonly end?: string
+          readonly files?: ReadonlyArray<string & Brand.Brand<"RelativePath">>
+        }
         readonly finish?: string
         readonly cost?: number
         readonly tokens?: {
@@ -991,39 +1130,43 @@ export type SessionsContextOutput = {
         readonly reason: "auto" | "manual"
         readonly summary: string
         readonly recent: string
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
       }
   >
 }["data"]
 
-export type SessionsTodoInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsTodoInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsTodoOutput = {
   readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
 }["data"]
 
 export type SessionsRenameInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly title: { readonly title: string }["title"]
 }
 
 export type SessionsRenameOutput = void
 
 export type SessionsArchiveInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly archived: { readonly archived: boolean }["archived"]
 }
 
 export type SessionsArchiveOutput = void
 
-export type SessionsRemoveInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsRemoveInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsRemoveOutput = void
 
 export type SessionsCommandInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly command: {
     readonly command: string
     readonly arguments: string
@@ -1044,17 +1187,21 @@ export type SessionsCommandInput = {
 export type SessionsCommandOutput = void
 
 export type SessionsForkInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly messageID?: { readonly messageID?: string | undefined }["messageID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+  readonly messageID?: { readonly messageID?: (string & Brand.Brand<"Session.Message.ID">) | undefined }["messageID"]
 }
 
 export type SessionsForkOutput = {
   readonly data: {
-    readonly id: string
-    readonly parentID?: string
-    readonly projectID: string
-    readonly agent?: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly id: string & Brand.Brand<"SessionID">
+    readonly parentID?: string & Brand.Brand<"SessionID">
+    readonly projectID: string & Brand.Brand<"Project.ID">
+    readonly agent?: string & Brand.Brand<"AgentV2.ID">
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -1064,15 +1211,18 @@ export type SessionsForkOutput = {
     }
     readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
     readonly title: string
-    readonly location: { readonly directory: string; readonly workspaceID?: string }
-    readonly subpath?: string
+    readonly location: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    }
+    readonly subpath?: string & Brand.Brand<"RelativePath">
     readonly revert?: {
-      readonly messageID: string
+      readonly messageID: string & Brand.Brand<"Session.Message.ID">
       readonly partID?: string
       readonly snapshot?: string
       readonly diff?: string
       readonly files?: ReadonlyArray<{
-        readonly path: string
+        readonly path: string & Brand.Brand<"RelativePath">
         readonly status: "added" | "modified" | "deleted"
         readonly additions: number
         readonly deletions: number
@@ -1083,13 +1233,13 @@ export type SessionsForkOutput = {
 }["data"]
 
 export type SessionsDiffInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly messageID?: { readonly messageID?: string | undefined }["messageID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+  readonly messageID?: { readonly messageID?: (string & Brand.Brand<"Session.Message.ID">) | undefined }["messageID"]
 }
 
 export type SessionsDiffOutput = {
   readonly data: ReadonlyArray<{
-    readonly path: string
+    readonly path: string & Brand.Brand<"RelativePath">
     readonly status: "added" | "modified" | "deleted"
     readonly additions: number
     readonly deletions: number
@@ -1097,19 +1247,27 @@ export type SessionsDiffOutput = {
   }>
 }["data"]
 
-export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsStatusInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsStatusOutput = { readonly data: { readonly type: "idle" | "busy" } }["data"]
 
-export type SessionsChildrenInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsChildrenInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsChildrenOutput = {
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly parentID?: string
-    readonly projectID: string
-    readonly agent?: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly id: string & Brand.Brand<"SessionID">
+    readonly parentID?: string & Brand.Brand<"SessionID">
+    readonly projectID: string & Brand.Brand<"Project.ID">
+    readonly agent?: string & Brand.Brand<"AgentV2.ID">
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -1119,15 +1277,18 @@ export type SessionsChildrenOutput = {
     }
     readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
     readonly title: string
-    readonly location: { readonly directory: string; readonly workspaceID?: string }
-    readonly subpath?: string
+    readonly location: {
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+      readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    }
+    readonly subpath?: string & Brand.Brand<"RelativePath">
     readonly revert?: {
-      readonly messageID: string
+      readonly messageID: string & Brand.Brand<"Session.Message.ID">
       readonly partID?: string
       readonly snapshot?: string
       readonly diff?: string
       readonly files?: ReadonlyArray<{
-        readonly path: string
+        readonly path: string & Brand.Brand<"RelativePath">
         readonly status: "added" | "modified" | "deleted"
         readonly additions: number
         readonly deletions: number
@@ -1138,7 +1299,7 @@ export type SessionsChildrenOutput = {
 }["data"]
 
 export type SessionsHistoryInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly limit?: { readonly limit?: number | undefined; readonly after?: number | undefined }["limit"]
   readonly after?: { readonly limit?: number | undefined; readonly after?: number | undefined }["after"]
 }
@@ -1146,20 +1307,27 @@ export type SessionsHistoryInput = {
 export type SessionsHistoryOutput = {
   readonly data: ReadonlyArray<
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.created"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
           readonly info: {
-            readonly id: string
-            readonly parentID?: string
-            readonly projectID: string
-            readonly agent?: string
-            readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+            readonly id: string & Brand.Brand<"SessionID">
+            readonly parentID?: string & Brand.Brand<"SessionID">
+            readonly projectID: string & Brand.Brand<"Project.ID">
+            readonly agent?: string & Brand.Brand<"AgentV2.ID">
+            readonly model?: {
+              readonly id: string & Brand.Brand<"ModelV2.ID">
+              readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+              readonly variant?: string & Brand.Brand<"VariantID">
+            }
             readonly cost: number
             readonly tokens: {
               readonly input: number
@@ -1169,15 +1337,18 @@ export type SessionsHistoryOutput = {
             }
             readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
             readonly title: string
-            readonly location: { readonly directory: string; readonly workspaceID?: string }
-            readonly subpath?: string
+            readonly location: {
+              readonly directory: string & Brand.Brand<"AbsolutePath">
+              readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+            }
+            readonly subpath?: string & Brand.Brand<"RelativePath">
             readonly revert?: {
-              readonly messageID: string
+              readonly messageID: string & Brand.Brand<"Session.Message.ID">
               readonly partID?: string
               readonly snapshot?: string
               readonly diff?: string
               readonly files?: ReadonlyArray<{
-                readonly path: string
+                readonly path: string & Brand.Brand<"RelativePath">
                 readonly status: "added" | "modified" | "deleted"
                 readonly additions: number
                 readonly deletions: number
@@ -1190,67 +1361,89 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.info.updated"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
           readonly title?: string
           readonly archived?: boolean
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.agent.switched"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly agent: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.model.switched"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
+          readonly model: {
+            readonly id: string & Brand.Brand<"ModelV2.ID">
+            readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+            readonly variant?: string & Brand.Brand<"VariantID">
+          }
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.moved"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly location: { readonly directory: string; readonly workspaceID?: string }
-          readonly subdirectory?: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly location: {
+            readonly directory: string & Brand.Brand<"AbsolutePath">
+            readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+          }
+          readonly subdirectory?: string & Brand.Brand<"RelativePath">
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.prompted"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly prompt: {
             readonly text: string
             readonly files?: ReadonlyArray<{
@@ -1270,15 +1463,18 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.prompt.admitted"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly prompt: {
             readonly text: string
             readonly files?: ReadonlyArray<{
@@ -1298,84 +1494,110 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.context.updated"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly text: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.synthetic"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly text: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.shell.started"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly command: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.shell.ended"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
           readonly callID: string
           readonly output: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.step.started"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly agent: string
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly model: {
+            readonly id: string & Brand.Brand<"ModelV2.ID">
+            readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+            readonly variant?: string & Brand.Brand<"VariantID">
+          }
           readonly snapshot?: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.step.ended"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
-          readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
+          readonly model?: {
+            readonly id: string & Brand.Brand<"ModelV2.ID">
+            readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+            readonly variant?: string & Brand.Brand<"VariantID">
+          }
           readonly finish: string
           readonly cost: number
           readonly tokens: {
@@ -1385,88 +1607,106 @@ export type SessionsHistoryOutput = {
             readonly cache: { readonly read: number; readonly write: number }
           }
           readonly snapshot?: string
-          readonly files?: ReadonlyArray<string>
+          readonly files?: ReadonlyArray<string & Brand.Brand<"RelativePath">>
           readonly ttft?: number
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.step.failed"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly error: { readonly type: "unknown"; readonly message: string }
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.text.started"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly textID: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.text.ended"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly textID: string
           readonly text: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.tool.input.started"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly name: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.tool.input.ended"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly text: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.tool.called"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly tool: string
           readonly input: { readonly [x: string]: JsonValue }
@@ -1477,15 +1717,18 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.tool.progress"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly structured: { readonly [x: string]: JsonValue }
           readonly content: ReadonlyArray<
@@ -1495,15 +1738,18 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.tool.success"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly structured: { readonly [x: string]: JsonValue }
           readonly content: ReadonlyArray<
@@ -1519,15 +1765,18 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.tool.failed"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly callID: string
           readonly error: { readonly type: "unknown"; readonly message: string }
           readonly result?: JsonValue
@@ -1538,43 +1787,52 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.reasoning.started"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly reasoningID: string
           readonly providerMetadata?: { readonly [x: string]: { readonly [x: string]: JsonValue } }
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.reasoning.ended"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly assistantMessageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
           readonly reasoningID: string
           readonly text: string
           readonly providerMetadata?: { readonly [x: string]: { readonly [x: string]: JsonValue } }
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.retried"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
           readonly attempt: number
           readonly error: {
             readonly message: string
@@ -1587,49 +1845,58 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.compaction.started"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly reason: "auto" | "manual"
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.compaction.ended"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
-          readonly messageID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly reason: "auto" | "manual"
           readonly text: string
           readonly recent: string
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.revert.staged"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
         readonly data: {
           readonly timestamp: number
-          readonly sessionID: string
+          readonly sessionID: string & Brand.Brand<"SessionID">
           readonly revert: {
-            readonly messageID: string
+            readonly messageID: string & Brand.Brand<"Session.Message.ID">
             readonly partID?: string
             readonly snapshot?: string
             readonly diff?: string
             readonly files?: ReadonlyArray<{
-              readonly path: string
+              readonly path: string & Brand.Brand<"RelativePath">
               readonly status: "added" | "modified" | "deleted"
               readonly additions: number
               readonly deletions: number
@@ -1639,46 +1906,63 @@ export type SessionsHistoryOutput = {
         }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.revert.cleared"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
-        readonly data: { readonly timestamp: number; readonly sessionID: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
+        readonly data: { readonly timestamp: number; readonly sessionID: string & Brand.Brand<"SessionID"> }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Event.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.revert.committed"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-        readonly location?: { readonly directory: string; readonly workspaceID?: string }
-        readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
+        readonly location?: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string & Brand.Brand<"SessionID">
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
+        }
       }
   >
   readonly hasMore: boolean
 }
 
 export type SessionsEventsInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly after?: { readonly after?: number | undefined }["after"]
 }
 
 export type SessionsEventsOutput =
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.created"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly info: {
-          readonly id: string
-          readonly parentID?: string
-          readonly projectID: string
-          readonly agent?: string
-          readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly id: string & Brand.Brand<"SessionID">
+          readonly parentID?: string & Brand.Brand<"SessionID">
+          readonly projectID: string & Brand.Brand<"Project.ID">
+          readonly agent?: string & Brand.Brand<"AgentV2.ID">
+          readonly model?: {
+            readonly id: string & Brand.Brand<"ModelV2.ID">
+            readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+            readonly variant?: string & Brand.Brand<"VariantID">
+          }
           readonly cost: number
           readonly tokens: {
             readonly input: number
@@ -1688,15 +1972,18 @@ export type SessionsEventsOutput =
           }
           readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
           readonly title: string
-          readonly location: { readonly directory: string; readonly workspaceID?: string }
-          readonly subpath?: string
+          readonly location: {
+            readonly directory: string & Brand.Brand<"AbsolutePath">
+            readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+          }
+          readonly subpath?: string & Brand.Brand<"RelativePath">
           readonly revert?: {
-            readonly messageID: string
+            readonly messageID: string & Brand.Brand<"Session.Message.ID">
             readonly partID?: string
             readonly snapshot?: string
             readonly diff?: string
             readonly files?: ReadonlyArray<{
-              readonly path: string
+              readonly path: string & Brand.Brand<"RelativePath">
               readonly status: "added" | "modified" | "deleted"
               readonly additions: number
               readonly deletions: number
@@ -1709,67 +1996,89 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.info.updated"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly title?: string
         readonly archived?: boolean
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.agent.switched"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly agent: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.model.switched"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.moved"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly location: { readonly directory: string; readonly workspaceID?: string }
-        readonly subdirectory?: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly location: {
+          readonly directory: string & Brand.Brand<"AbsolutePath">
+          readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+        }
+        readonly subdirectory?: string & Brand.Brand<"RelativePath">
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.prompted"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly prompt: {
           readonly text: string
           readonly files?: ReadonlyArray<{
@@ -1789,15 +2098,18 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.prompt.admitted"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly prompt: {
           readonly text: string
           readonly files?: ReadonlyArray<{
@@ -1817,84 +2129,110 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.context.updated"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly text: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.synthetic"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly text: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.shell.started"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly command: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.shell.ended"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly callID: string
         readonly output: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.step.started"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly agent: string
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
         readonly snapshot?: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.step.ended"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
-        readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
+        readonly model?: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
         readonly finish: string
         readonly cost: number
         readonly tokens: {
@@ -1904,88 +2242,106 @@ export type SessionsEventsOutput =
           readonly cache: { readonly read: number; readonly write: number }
         }
         readonly snapshot?: string
-        readonly files?: ReadonlyArray<string>
+        readonly files?: ReadonlyArray<string & Brand.Brand<"RelativePath">>
         readonly ttft?: number
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.step.failed"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly error: { readonly type: "unknown"; readonly message: string }
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.text.started"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly textID: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.text.ended"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly textID: string
         readonly text: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.tool.input.started"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly name: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.tool.input.ended"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly text: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.tool.called"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly tool: string
         readonly input: { readonly [x: string]: unknown }
@@ -1996,15 +2352,18 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.tool.progress"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly structured: { readonly [x: string]: unknown }
         readonly content: ReadonlyArray<
@@ -2014,15 +2373,18 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.tool.success"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly structured: { readonly [x: string]: unknown }
         readonly content: ReadonlyArray<
@@ -2038,15 +2400,18 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.tool.failed"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly callID: string
         readonly error: { readonly type: "unknown"; readonly message: string }
         readonly result?: unknown
@@ -2057,43 +2422,52 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.reasoning.started"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly reasoningID: string
         readonly providerMetadata?: { readonly [x: string]: { readonly [x: string]: unknown } }
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.reasoning.ended"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly assistantMessageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly assistantMessageID: string & Brand.Brand<"Session.Message.ID">
         readonly reasoningID: string
         readonly text: string
         readonly providerMetadata?: { readonly [x: string]: { readonly [x: string]: unknown } }
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.retried"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly attempt: number
         readonly error: {
           readonly message: string
@@ -2106,49 +2480,58 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.compaction.started"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly reason: "auto" | "manual"
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.compaction.ended"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
-        readonly messageID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
         readonly reason: "auto" | "manual"
         readonly text: string
         readonly recent: string
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.revert.staged"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
       readonly data: {
         readonly timestamp: number
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly revert: {
-          readonly messageID: string
+          readonly messageID: string & Brand.Brand<"Session.Message.ID">
           readonly partID?: string
           readonly snapshot?: string
           readonly diff?: string
           readonly files?: ReadonlyArray<{
-            readonly path: string
+            readonly path: string & Brand.Brand<"RelativePath">
             readonly status: "added" | "modified" | "deleted"
             readonly additions: number
             readonly deletions: number
@@ -2158,49 +2541,71 @@ export type SessionsEventsOutput =
       }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.revert.cleared"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
-      readonly data: { readonly timestamp: number; readonly sessionID: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
+      readonly data: { readonly timestamp: number; readonly sessionID: string & Brand.Brand<"SessionID"> }
     }
   | {
-      readonly id: string
+      readonly id: string & Brand.Brand<"Event.ID">
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.revert.committed"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
-      readonly location?: { readonly directory: string; readonly workspaceID?: string }
-      readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
+      readonly location?: {
+        readonly directory: string & Brand.Brand<"AbsolutePath">
+        readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+      }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string & Brand.Brand<"SessionID">
+        readonly messageID: string & Brand.Brand<"Session.Message.ID">
+      }
     }
 
-export type SessionsInterruptInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionsInterruptInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type SessionsInterruptOutput = void
 
 export type SessionsMessageInput = {
-  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
-  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+  readonly sessionID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly messageID: string & Brand.Brand<"Session.Message.ID">
+  }["sessionID"]
+  readonly messageID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly messageID: string & Brand.Brand<"Session.Message.ID">
+  }["messageID"]
 }
 
 export type SessionsMessageOutput = {
   readonly data:
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "agent-switched"
         readonly agent: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "model-switched"
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly text: string
@@ -2219,22 +2624,22 @@ export type SessionsMessageOutput = {
         readonly type: "user"
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly text: string
         readonly type: "synthetic"
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "system"
         readonly text: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number; readonly completed?: number }
         readonly type: "shell"
@@ -2243,12 +2648,16 @@ export type SessionsMessageOutput = {
         readonly output: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number; readonly completed?: number }
         readonly type: "assistant"
         readonly agent: string
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
         readonly content: ReadonlyArray<
           | { readonly type: "text"; readonly id: string; readonly text: string }
           | {
@@ -2316,7 +2725,11 @@ export type SessionsMessageOutput = {
               }
             }
         >
-        readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
+        readonly snapshot?: {
+          readonly start?: string
+          readonly end?: string
+          readonly files?: ReadonlyArray<string & Brand.Brand<"RelativePath">>
+        }
         readonly finish?: string
         readonly cost?: number
         readonly tokens?: {
@@ -2333,14 +2746,14 @@ export type SessionsMessageOutput = {
         readonly reason: "auto" | "manual"
         readonly summary: string
         readonly recent: string
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
       }
 }["data"]
 
 export type MessagesListInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly limit?: {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
@@ -2361,21 +2774,25 @@ export type MessagesListInput = {
 export type MessagesListOutput = {
   readonly data: ReadonlyArray<
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "agent-switched"
         readonly agent: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "model-switched"
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly text: string
@@ -2394,22 +2811,22 @@ export type MessagesListOutput = {
         readonly type: "user"
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
-        readonly sessionID: string
+        readonly sessionID: string & Brand.Brand<"SessionID">
         readonly text: string
         readonly type: "synthetic"
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly type: "system"
         readonly text: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number; readonly completed?: number }
         readonly type: "shell"
@@ -2418,12 +2835,16 @@ export type MessagesListOutput = {
         readonly output: string
       }
     | {
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number; readonly completed?: number }
         readonly type: "assistant"
         readonly agent: string
-        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly model: {
+          readonly id: string & Brand.Brand<"ModelV2.ID">
+          readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+          readonly variant?: string & Brand.Brand<"VariantID">
+        }
         readonly content: ReadonlyArray<
           | { readonly type: "text"; readonly id: string; readonly text: string }
           | {
@@ -2491,7 +2912,11 @@ export type MessagesListOutput = {
               }
             }
         >
-        readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
+        readonly snapshot?: {
+          readonly start?: string
+          readonly end?: string
+          readonly files?: ReadonlyArray<string & Brand.Brand<"RelativePath">>
+        }
         readonly finish?: string
         readonly cost?: number
         readonly tokens?: {
@@ -2508,7 +2933,7 @@ export type MessagesListOutput = {
         readonly reason: "auto" | "manual"
         readonly summary: string
         readonly recent: string
-        readonly id: string
+        readonly id: string & Brand.Brand<"Session.Message.ID">
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
       }
@@ -2524,25 +2949,28 @@ export type ModelsListInput = {
 
 export type ModelsListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly providerID: string
-    readonly family?: string
+    readonly id: string & Brand.Brand<"ModelV2.ID">
+    readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+    readonly family?: string & Brand.Brand<"Family">
     readonly name: string
     readonly api:
       | {
-          readonly id: string
+          readonly id: string & Brand.Brand<"ModelV2.ID">
           readonly type: "aisdk"
           readonly package: string
           readonly url?: string
           readonly settings?: { readonly [x: string]: JsonValue }
         }
       | {
-          readonly id: string
+          readonly id: string & Brand.Brand<"ModelV2.ID">
           readonly type: "native"
           readonly url?: string
           readonly settings: { readonly [x: string]: JsonValue }
@@ -2558,7 +2986,7 @@ export type ModelsListOutput = {
       readonly variant?: string
     }
     readonly variants: ReadonlyArray<{
-      readonly id: string
+      readonly id: string & Brand.Brand<"VariantID">
       readonly headers: { readonly [x: string]: string }
       readonly body: { readonly [x: string]: JsonValue }
     }>
@@ -2584,25 +3012,28 @@ export type ModelsDefaultInput = {
 
 export type ModelsDefaultOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
-    readonly providerID: string
-    readonly family?: string
+    readonly id: string & Brand.Brand<"ModelV2.ID">
+    readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+    readonly family?: string & Brand.Brand<"Family">
     readonly name: string
     readonly api:
       | {
-          readonly id: string
+          readonly id: string & Brand.Brand<"ModelV2.ID">
           readonly type: "aisdk"
           readonly package: string
           readonly url?: string
           readonly settings?: { readonly [x: string]: JsonValue }
         }
       | {
-          readonly id: string
+          readonly id: string & Brand.Brand<"ModelV2.ID">
           readonly type: "native"
           readonly url?: string
           readonly settings: { readonly [x: string]: JsonValue }
@@ -2618,7 +3049,7 @@ export type ModelsDefaultOutput = {
       readonly variant?: string
     }
     readonly variants: ReadonlyArray<{
-      readonly id: string
+      readonly id: string & Brand.Brand<"VariantID">
       readonly headers: { readonly [x: string]: string }
       readonly body: { readonly [x: string]: JsonValue }
     }>
@@ -2644,13 +3075,16 @@ export type ProvidersListInput = {
 
 export type ProvidersListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly integrationID?: string
+    readonly id: string & Brand.Brand<"ProviderV2.ID">
+    readonly integrationID?: string & Brand.Brand<"Integration.ID">
     readonly name: string
     readonly disabled?: boolean
     readonly api:
@@ -2669,7 +3103,7 @@ export type ProvidersListOutput = {
 }
 
 export type ProvidersGetInput = {
-  readonly providerID: { readonly providerID: string }["providerID"]
+  readonly providerID: { readonly providerID: string & Brand.Brand<"ProviderV2.ID"> }["providerID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2677,13 +3111,16 @@ export type ProvidersGetInput = {
 
 export type ProvidersGetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
-    readonly integrationID?: string
+    readonly id: string & Brand.Brand<"ProviderV2.ID">
+    readonly integrationID?: string & Brand.Brand<"Integration.ID">
     readonly name: string
     readonly disabled?: boolean
     readonly api:
@@ -2709,16 +3146,19 @@ export type IntegrationsListInput = {
 
 export type IntegrationsListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
+    readonly id: string & Brand.Brand<"Integration.ID">
     readonly name: string
     readonly methods: ReadonlyArray<
       | {
-          readonly id: string
+          readonly id: string & Brand.Brand<"Integration.MethodID">
           readonly type: "oauth"
           readonly label: string
           readonly prompts?: ReadonlyArray<
@@ -2746,14 +3186,14 @@ export type IntegrationsListOutput = {
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
     >
     readonly connections: ReadonlyArray<
-      | { readonly type: "credential"; readonly id: string; readonly label: string }
+      | { readonly type: "credential"; readonly id: string & Brand.Brand<"Credential.ID">; readonly label: string }
       | { readonly type: "env"; readonly name: string }
     >
   }>
 }
 
 export type IntegrationsGetInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: string & Brand.Brand<"Integration.ID"> }["integrationID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2761,16 +3201,19 @@ export type IntegrationsGetInput = {
 
 export type IntegrationsGetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"Integration.ID">
     readonly name: string
     readonly methods: ReadonlyArray<
       | {
-          readonly id: string
+          readonly id: string & Brand.Brand<"Integration.MethodID">
           readonly type: "oauth"
           readonly label: string
           readonly prompts?: ReadonlyArray<
@@ -2798,14 +3241,14 @@ export type IntegrationsGetOutput = {
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
     >
     readonly connections: ReadonlyArray<
-      | { readonly type: "credential"; readonly id: string; readonly label: string }
+      | { readonly type: "credential"; readonly id: string & Brand.Brand<"Credential.ID">; readonly label: string }
       | { readonly type: "env"; readonly name: string }
     >
   } | null
 }
 
 export type IntegrationsConnectKeyInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: string & Brand.Brand<"Integration.ID"> }["integrationID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2816,22 +3259,22 @@ export type IntegrationsConnectKeyInput = {
 export type IntegrationsConnectKeyOutput = void
 
 export type IntegrationsConnectOauthInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: string & Brand.Brand<"Integration.ID"> }["integrationID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
   readonly methodID: {
-    readonly methodID: string
+    readonly methodID: string & Brand.Brand<"Integration.MethodID">
     readonly inputs: { readonly [x: string]: string }
     readonly label?: string | undefined
   }["methodID"]
   readonly inputs: {
-    readonly methodID: string
+    readonly methodID: string & Brand.Brand<"Integration.MethodID">
     readonly inputs: { readonly [x: string]: string }
     readonly label?: string | undefined
   }["inputs"]
   readonly label?: {
-    readonly methodID: string
+    readonly methodID: string & Brand.Brand<"Integration.MethodID">
     readonly inputs: { readonly [x: string]: string }
     readonly label?: string | undefined
   }["label"]
@@ -2839,12 +3282,15 @@ export type IntegrationsConnectOauthInput = {
 
 export type IntegrationsConnectOauthOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly attemptID: string
+    readonly attemptID: string & Brand.Brand<"Integration.AttemptID">
     readonly url: string
     readonly instructions: string
     readonly mode: "auto" | "code"
@@ -2856,7 +3302,7 @@ export type IntegrationsConnectOauthOutput = {
 }
 
 export type IntegrationsAttemptStatusInput = {
-  readonly attemptID: { readonly attemptID: string }["attemptID"]
+  readonly attemptID: { readonly attemptID: string & Brand.Brand<"Integration.AttemptID"> }["attemptID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2864,9 +3310,12 @@ export type IntegrationsAttemptStatusInput = {
 
 export type IntegrationsAttemptStatusOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data:
     | {
@@ -2901,7 +3350,7 @@ export type IntegrationsAttemptStatusOutput = {
 }
 
 export type IntegrationsAttemptCompleteInput = {
-  readonly attemptID: { readonly attemptID: string }["attemptID"]
+  readonly attemptID: { readonly attemptID: string & Brand.Brand<"Integration.AttemptID"> }["attemptID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2911,7 +3360,7 @@ export type IntegrationsAttemptCompleteInput = {
 export type IntegrationsAttemptCompleteOutput = void
 
 export type IntegrationsAttemptCancelInput = {
-  readonly attemptID: { readonly attemptID: string }["attemptID"]
+  readonly attemptID: { readonly attemptID: string & Brand.Brand<"Integration.AttemptID"> }["attemptID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2920,7 +3369,7 @@ export type IntegrationsAttemptCancelInput = {
 export type IntegrationsAttemptCancelOutput = void
 
 export type CredentialsUpdateInput = {
-  readonly credentialID: { readonly credentialID: string }["credentialID"]
+  readonly credentialID: { readonly credentialID: string & Brand.Brand<"Credential.ID"> }["credentialID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2930,7 +3379,7 @@ export type CredentialsUpdateInput = {
 export type CredentialsUpdateOutput = void
 
 export type CredentialsRemoveInput = {
-  readonly credentialID: { readonly credentialID: string }["credentialID"]
+  readonly credentialID: { readonly credentialID: string & Brand.Brand<"Credential.ID"> }["credentialID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -2946,13 +3395,16 @@ export type PermissionsListRequestsInput = {
 
 export type PermissionsListRequestsOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly sessionID: string
+    readonly id: string & Brand.Brand<"PermissionV2.ID">
+    readonly sessionID: string & Brand.Brand<"SessionID">
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
@@ -2962,99 +3414,103 @@ export type PermissionsListRequestsOutput = {
 }
 
 export type PermissionsListSavedInput = {
-  readonly projectID?: { readonly projectID?: string | undefined }["projectID"]
+  readonly projectID?: { readonly projectID?: (string & Brand.Brand<"Project.ID">) | undefined }["projectID"]
 }
 
 export type PermissionsListSavedOutput = {
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly projectID: string
+    readonly id: string & Brand.Brand<"PermissionSaved.ID">
+    readonly projectID: string & Brand.Brand<"Project.ID">
     readonly action: string
     readonly resource: string
   }>
 }["data"]
 
-export type PermissionsRemoveSavedInput = { readonly id: { readonly id: string }["id"] }
+export type PermissionsRemoveSavedInput = {
+  readonly id: { readonly id: string & Brand.Brand<"PermissionSaved.ID"> }["id"]
+}
 
 export type PermissionsRemoveSavedOutput = void
 
 export type PermissionsCreateInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
   readonly id?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["id"]
   readonly action: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["action"]
   readonly resources: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["resources"]
   readonly save?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["save"]
   readonly metadata?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["metadata"]
   readonly source?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["source"]
   readonly agent?: {
-    readonly id?: string | null
+    readonly id?: (string & Brand.Brand<"PermissionV2.ID">) | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
-    readonly agent?: string | null
+    readonly agent?: (string & Brand.Brand<"AgentV2.ID">) | null
   }["agent"]
 }
 
 export type PermissionsCreateOutput = {
-  readonly data: { readonly id: string; readonly effect: "allow" | "deny" | "ask" }
+  readonly data: { readonly id: string & Brand.Brand<"PermissionV2.ID">; readonly effect: "allow" | "deny" | "ask" }
 }["data"]
 
-export type PermissionsListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type PermissionsListInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type PermissionsListOutput = {
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly sessionID: string
+    readonly id: string & Brand.Brand<"PermissionV2.ID">
+    readonly sessionID: string & Brand.Brand<"SessionID">
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
@@ -3064,14 +3520,20 @@ export type PermissionsListOutput = {
 }["data"]
 
 export type PermissionsGetInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly sessionID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"PermissionV2.ID">
+  }["sessionID"]
+  readonly requestID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"PermissionV2.ID">
+  }["requestID"]
 }
 
 export type PermissionsGetOutput = {
   readonly data: {
-    readonly id: string
-    readonly sessionID: string
+    readonly id: string & Brand.Brand<"PermissionV2.ID">
+    readonly sessionID: string & Brand.Brand<"SessionID">
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
@@ -3081,8 +3543,14 @@ export type PermissionsGetOutput = {
 }["data"]
 
 export type PermissionsReplyInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly sessionID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"PermissionV2.ID">
+  }["sessionID"]
+  readonly requestID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"PermissionV2.ID">
+  }["requestID"]
   readonly reply: { readonly reply: "once" | "always" | "reject"; readonly message?: string | undefined }["reply"]
   readonly message?: { readonly reply: "once" | "always" | "reject"; readonly message?: string | undefined }["message"]
 }
@@ -3092,19 +3560,22 @@ export type PermissionsReplyOutput = void
 export type FilesContentInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly path: string
+    readonly path: string & Brand.Brand<"RelativePath">
   }["location"]
   readonly path: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly path: string
+    readonly path: string & Brand.Brand<"RelativePath">
   }["path"]
 }
 
 export type FilesContentOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
     readonly type: "text" | "binary"
@@ -3117,21 +3588,27 @@ export type FilesContentOutput = {
 export type FilesListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly path?: string | undefined
+    readonly path?: (string & Brand.Brand<"RelativePath">) | undefined
   }["location"]
   readonly path?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly path?: string | undefined
+    readonly path?: (string & Brand.Brand<"RelativePath">) | undefined
   }["path"]
 }
 
 export type FilesListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
-  readonly data: ReadonlyArray<{ readonly path: string; readonly type: "file" | "directory" }>
+  readonly data: ReadonlyArray<{
+    readonly path: string & Brand.Brand<"RelativePath">
+    readonly type: "file" | "directory"
+  }>
 }
 
 export type FilesFindInput = {
@@ -3163,11 +3640,17 @@ export type FilesFindInput = {
 
 export type FilesFindOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
-  readonly data: ReadonlyArray<{ readonly path: string; readonly type: "file" | "directory" }>
+  readonly data: ReadonlyArray<{
+    readonly path: string & Brand.Brand<"RelativePath">
+    readonly type: "file" | "directory"
+  }>
 }
 
 export type CommandsListInput = {
@@ -3178,16 +3661,23 @@ export type CommandsListInput = {
 
 export type CommandsListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly name: string
     readonly template: string
     readonly description?: string
     readonly agent?: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly model?: {
+      readonly id: string & Brand.Brand<"ModelV2.ID">
+      readonly providerID: string & Brand.Brand<"ProviderV2.ID">
+      readonly variant?: string & Brand.Brand<"VariantID">
+    }
     readonly subtask?: boolean
   }>
 }
@@ -3200,15 +3690,18 @@ export type SkillsListInput = {
 
 export type SkillsListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly name: string
     readonly description?: string
     readonly slash?: boolean
-    readonly location: string
+    readonly location: string & Brand.Brand<"AbsolutePath">
     readonly content: string
   }>
 }
@@ -3223,9 +3716,12 @@ export type PtysShellsInput = {
 
 export type PtysShellsOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{ readonly path: string; readonly name: string; readonly acceptable: boolean }>
 }
@@ -3238,12 +3734,15 @@ export type PtysListInput = {
 
 export type PtysListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
+    readonly id: string & Brand.Brand<"PtyID">
     readonly title: string
     readonly command: string
     readonly args: ReadonlyArray<string>
@@ -3297,12 +3796,15 @@ export type PtysCreateInput = {
 
 export type PtysCreateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"PtyID">
     readonly title: string
     readonly command: string
     readonly args: ReadonlyArray<string>
@@ -3314,7 +3816,7 @@ export type PtysCreateOutput = {
 }
 
 export type PtysGetInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: string & Brand.Brand<"PtyID"> }["ptyID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3322,12 +3824,15 @@ export type PtysGetInput = {
 
 export type PtysGetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"PtyID">
     readonly title: string
     readonly command: string
     readonly args: ReadonlyArray<string>
@@ -3339,7 +3844,7 @@ export type PtysGetOutput = {
 }
 
 export type PtysUpdateInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: string & Brand.Brand<"PtyID"> }["ptyID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3352,12 +3857,15 @@ export type PtysUpdateInput = {
 
 export type PtysUpdateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"PtyID">
     readonly title: string
     readonly command: string
     readonly args: ReadonlyArray<string>
@@ -3369,7 +3877,7 @@ export type PtysUpdateOutput = {
 }
 
 export type PtysRemoveInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: string & Brand.Brand<"PtyID"> }["ptyID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3378,7 +3886,7 @@ export type PtysRemoveInput = {
 export type PtysRemoveOutput = void
 
 export type PtysConnectTokenInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: string & Brand.Brand<"PtyID"> }["ptyID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3386,9 +3894,12 @@ export type PtysConnectTokenInput = {
 
 export type PtysConnectTokenOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly ticket: string; readonly expires_in: number }
 }
@@ -3401,13 +3912,16 @@ export type QuestionsListRequestsInput = {
 
 export type QuestionsListRequestsOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly sessionID: string
+    readonly id: string & Brand.Brand<"QuestionV2.ID">
+    readonly sessionID: string & Brand.Brand<"SessionID">
     readonly questions: ReadonlyArray<{
       readonly question: string
       readonly header: string
@@ -3423,12 +3937,14 @@ export type QuestionsListRequestsOutput = {
   }>
 }
 
-export type QuestionsListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type QuestionsListInput = {
+  readonly sessionID: { readonly sessionID: string & Brand.Brand<"SessionID"> }["sessionID"]
+}
 
 export type QuestionsListOutput = {
   readonly data: ReadonlyArray<{
-    readonly id: string
-    readonly sessionID: string
+    readonly id: string & Brand.Brand<"QuestionV2.ID">
+    readonly sessionID: string & Brand.Brand<"SessionID">
     readonly questions: ReadonlyArray<{
       readonly question: string
       readonly header: string
@@ -3445,16 +3961,28 @@ export type QuestionsListOutput = {
 }["data"]
 
 export type QuestionsReplyInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly sessionID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"QuestionV2.ID">
+  }["sessionID"]
+  readonly requestID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"QuestionV2.ID">
+  }["requestID"]
   readonly answers: { readonly answers: ReadonlyArray<ReadonlyArray<string>> }["answers"]
 }
 
 export type QuestionsReplyOutput = void
 
 export type QuestionsRejectInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly sessionID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"QuestionV2.ID">
+  }["sessionID"]
+  readonly requestID: {
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly requestID: string & Brand.Brand<"QuestionV2.ID">
+  }["requestID"]
 }
 
 export type QuestionsRejectOutput = void
@@ -3467,17 +3995,25 @@ export type ReferencesListInput = {
 
 export type ReferencesListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly name: string
-    readonly path: string
+    readonly path: string & Brand.Brand<"AbsolutePath">
     readonly description?: string
     readonly hidden?: boolean
     readonly source:
-      | { readonly type: "local"; readonly path: string; readonly description?: string; readonly hidden?: boolean }
+      | {
+          readonly type: "local"
+          readonly path: string & Brand.Brand<"AbsolutePath">
+          readonly description?: string
+          readonly hidden?: boolean
+        }
       | {
           readonly type: "git"
           readonly repository: string
@@ -3489,30 +4025,42 @@ export type ReferencesListOutput = {
 }
 
 export type ProjectCopiesCreateInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly projectID: { readonly projectID: string & Brand.Brand<"Project.ID"> }["projectID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
-  readonly strategy: { readonly strategy: string; readonly directory: string; readonly name?: string }["strategy"]
-  readonly directory: { readonly strategy: string; readonly directory: string; readonly name?: string }["directory"]
-  readonly name?: { readonly strategy: string; readonly directory: string; readonly name?: string }["name"]
+  readonly strategy: {
+    readonly strategy: string
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly name?: string
+  }["strategy"]
+  readonly directory: {
+    readonly strategy: string
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly name?: string
+  }["directory"]
+  readonly name?: {
+    readonly strategy: string
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly name?: string
+  }["name"]
 }
 
-export type ProjectCopiesCreateOutput = { readonly directory: string }
+export type ProjectCopiesCreateOutput = { readonly directory: string & Brand.Brand<"AbsolutePath"> }
 
 export type ProjectCopiesRemoveInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly projectID: { readonly projectID: string & Brand.Brand<"Project.ID"> }["projectID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
-  readonly directory: { readonly directory: string; readonly force: boolean }["directory"]
-  readonly force: { readonly directory: string; readonly force: boolean }["force"]
+  readonly directory: { readonly directory: string & Brand.Brand<"AbsolutePath">; readonly force: boolean }["directory"]
+  readonly force: { readonly directory: string & Brand.Brand<"AbsolutePath">; readonly force: boolean }["force"]
 }
 
 export type ProjectCopiesRemoveOutput = void
 
 export type ProjectCopiesRefreshInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly projectID: { readonly projectID: string & Brand.Brand<"Project.ID"> }["projectID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3528,12 +4076,15 @@ export type ProjectsListInput = {
 
 export type ProjectsListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
+    readonly id: string & Brand.Brand<"Project.ID">
     readonly worktree: string
     readonly vcs?: "git"
     readonly name?: string
@@ -3552,15 +4103,21 @@ export type ProjectsCurrentInput = {
 
 export type ProjectsCurrentOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
-  readonly data: { readonly id: string; readonly directory: string }
+  readonly data: {
+    readonly id: string & Brand.Brand<"Project.ID">
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+  }
 }
 
 export type ProjectsDirectoriesInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly projectID: { readonly projectID: string & Brand.Brand<"Project.ID"> }["projectID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3568,15 +4125,21 @@ export type ProjectsDirectoriesInput = {
 
 export type ProjectsDirectoriesOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
-  readonly data: ReadonlyArray<{ readonly directory: string; readonly strategy?: string | null }>
+  readonly data: ReadonlyArray<{
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly strategy?: string | null
+  }>
 }
 
 export type ProjectsUpdateInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly projectID: { readonly projectID: string & Brand.Brand<"Project.ID"> }["projectID"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3599,12 +4162,15 @@ export type ProjectsUpdateInput = {
 
 export type ProjectsUpdateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"Project.ID">
     readonly worktree: string
     readonly vcs?: "git"
     readonly name?: string
@@ -3623,12 +4189,15 @@ export type ProjectsInitGitInput = {
 
 export type ProjectsInitGitOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"Project.ID">
     readonly worktree: string
     readonly vcs?: "git"
     readonly name?: string
@@ -3647,9 +4216,12 @@ export type VcsGetInput = {
 
 export type VcsGetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly branch?: string; readonly default_branch?: string }
 }
@@ -3662,9 +4234,12 @@ export type VcsStatusInput = {
 
 export type VcsStatusOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly file: string
@@ -3694,9 +4269,12 @@ export type VcsDiffInput = {
 
 export type VcsDiffOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
     readonly file: string
@@ -3715,18 +4293,21 @@ export type WorkspaceListInput = {
 
 export type WorkspaceListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly id: string
+    readonly id: string & Brand.Brand<"WorkspaceV2.ID">
     readonly type: string
     readonly name: string
     readonly branch?: string | null
     readonly directory?: string | null
     readonly extra?: JsonValue | null
-    readonly projectID: string
+    readonly projectID: string & Brand.Brand<"Project.ID">
     readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
   }>
 }
@@ -3739,12 +4320,15 @@ export type WorkspaceStatusInput = {
 
 export type WorkspaceStatusOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{
-    readonly workspaceID: string
+    readonly workspaceID: string & Brand.Brand<"WorkspaceV2.ID">
     readonly status: "connected" | "connecting" | "disconnected" | "error"
   }>
 }
@@ -3757,9 +4341,12 @@ export type WorkspaceAdaptersInput = {
 
 export type WorkspaceAdaptersOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: ReadonlyArray<{ readonly type: string; readonly name: string; readonly description: string }>
 }
@@ -3783,18 +4370,21 @@ export type WorkspaceCreateInput = {
 
 export type WorkspaceCreateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"WorkspaceV2.ID">
     readonly type: string
     readonly name: string
     readonly branch?: string | null
     readonly directory?: string | null
     readonly extra?: JsonValue | null
-    readonly projectID: string
+    readonly projectID: string & Brand.Brand<"Project.ID">
     readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
   }
 }
@@ -3807,9 +4397,12 @@ export type WorkspaceSyncListInput = {
 
 export type WorkspaceSyncListOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: boolean
 }
@@ -3818,14 +4411,18 @@ export type WorkspaceWarpInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
-  readonly id: { readonly id: string | null; readonly sessionID: string; readonly copyChanges?: boolean }["id"]
+  readonly id: {
+    readonly id: (string & Brand.Brand<"WorkspaceV2.ID">) | null
+    readonly sessionID: string
+    readonly copyChanges?: boolean
+  }["id"]
   readonly sessionID: {
-    readonly id: string | null
+    readonly id: (string & Brand.Brand<"WorkspaceV2.ID">) | null
     readonly sessionID: string
     readonly copyChanges?: boolean
   }["sessionID"]
   readonly copyChanges?: {
-    readonly id: string | null
+    readonly id: (string & Brand.Brand<"WorkspaceV2.ID">) | null
     readonly sessionID: string
     readonly copyChanges?: boolean
   }["copyChanges"]
@@ -3833,15 +4430,18 @@ export type WorkspaceWarpInput = {
 
 export type WorkspaceWarpOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: boolean
 }
 
 export type WorkspaceRemoveInput = {
-  readonly id: { readonly id: string }["id"]
+  readonly id: { readonly id: string & Brand.Brand<"WorkspaceV2.ID"> }["id"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
@@ -3849,18 +4449,21 @@ export type WorkspaceRemoveInput = {
 
 export type WorkspaceRemoveOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: {
-    readonly id: string
+    readonly id: string & Brand.Brand<"WorkspaceV2.ID">
     readonly type: string
     readonly name: string
     readonly branch?: string | null
     readonly directory?: string | null
     readonly extra?: JsonValue | null
-    readonly projectID: string
+    readonly projectID: string & Brand.Brand<"Project.ID">
     readonly timeUsed: number | "Infinity" | "-Infinity" | "NaN"
   } | null
 }
@@ -3878,9 +4481,12 @@ export type WorktreesCreateInput = {
 
 export type WorktreesCreateOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: { readonly name: string; readonly branch?: string | null; readonly directory: string }
 }
@@ -3894,9 +4500,12 @@ export type WorktreesRemoveInput = {
 
 export type WorktreesRemoveOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: boolean
 }
@@ -3910,9 +4519,12 @@ export type WorktreesResetInput = {
 
 export type WorktreesResetOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: boolean
 }
@@ -3922,27 +4534,30 @@ export type ControlPlaneMoveSessionInput = {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   }["location"]
   readonly sessionID: {
-    readonly sessionID: string
-    readonly destination: { readonly directory: string }
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly destination: { readonly directory: string & Brand.Brand<"AbsolutePath"> }
     readonly moveChanges?: boolean
   }["sessionID"]
   readonly destination: {
-    readonly sessionID: string
-    readonly destination: { readonly directory: string }
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly destination: { readonly directory: string & Brand.Brand<"AbsolutePath"> }
     readonly moveChanges?: boolean
   }["destination"]
   readonly moveChanges?: {
-    readonly sessionID: string
-    readonly destination: { readonly directory: string }
+    readonly sessionID: string & Brand.Brand<"SessionID">
+    readonly destination: { readonly directory: string & Brand.Brand<"AbsolutePath"> }
     readonly moveChanges?: boolean
   }["moveChanges"]
 }
 
 export type ControlPlaneMoveSessionOutput = {
   readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
+    readonly directory: string & Brand.Brand<"AbsolutePath">
+    readonly workspaceID?: string & Brand.Brand<"WorkspaceV2.ID">
+    readonly project: {
+      readonly id: string & Brand.Brand<"Project.ID">
+      readonly directory: string & Brand.Brand<"AbsolutePath">
+    }
   }
   readonly data: null
 }

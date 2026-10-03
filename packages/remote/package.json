@@ -13,7 +13,8 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@miao/client": "workspace:*"
+    "@miao/client": "workspace:*",
+    "@miao/schema": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
