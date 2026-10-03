@@ -196,6 +196,12 @@ import type {
   WorkspaceWarpOutput,
   WorkspaceRemoveInput,
   WorkspaceRemoveOutput,
+  WorktreesCreateInput,
+  WorktreesCreateOutput,
+  WorktreesRemoveInput,
+  WorktreesRemoveOutput,
+  WorktreesResetInput,
+  WorktreesResetOutput,
   ControlPlaneMoveSessionInput,
   ControlPlaneMoveSessionOutput,
   RemoteGetOutput,
@@ -1602,6 +1608,47 @@ export function make(options: ClientOptions) {
             method: "DELETE",
             path: `/api/workspace/${encodeURIComponent(input.id)}`,
             query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    worktrees: {
+      create: (input?: WorktreesCreateInput, requestOptions?: RequestOptions) =>
+        request<WorktreesCreateOutput>(
+          {
+            method: "POST",
+            path: `/api/worktree`,
+            query: { location: input?.["location"] },
+            body: { name: input?.["name"], startCommand: input?.["startCommand"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      remove: (input: WorktreesRemoveInput, requestOptions?: RequestOptions) =>
+        request<WorktreesRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/worktree`,
+            query: { location: input["location"] },
+            body: { directory: input["directory"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      reset: (input: WorktreesResetInput, requestOptions?: RequestOptions) =>
+        request<WorktreesResetOutput>(
+          {
+            method: "POST",
+            path: `/api/worktree/reset`,
+            query: { location: input["location"] },
+            body: { directory: input["directory"] },
             successStatus: 200,
             declaredStatuses: [400, 401],
             empty: false,

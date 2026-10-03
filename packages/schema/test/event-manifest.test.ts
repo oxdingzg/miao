@@ -9,7 +9,7 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(64)
+    expect(EventManifest.ServerDefinitions.length).toBe(66)
     expect(EventManifest.Definitions.length).toBe(93)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,

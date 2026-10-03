@@ -46,6 +46,7 @@ const foundationDefinitions = Event.inventory(
 
 const featureDefinitions = Event.inventory(
   ...ConfigEvent.Definitions,
+  ...WorktreeEvent.Definitions,
   ...FileSystem.Event.Definitions,
   ...Project.Event.Definitions,
   ...Reference.Event.Definitions,
@@ -79,7 +80,6 @@ export const Definitions = Event.inventory(
   ...SessionCompactionEvent.Definitions,
   ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,
-  ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,
 )
 export const Latest = Event.latest(Definitions)
