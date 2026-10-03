@@ -1,4 +1,4 @@
-import { LayerNode } from "../effect/layer-node"
+import { makeGlobalNode } from "../effect/app-node"
 import path from "path"
 import { serviceUse } from "../effect/service-use"
 import { Global } from "../global"
@@ -158,6 +158,6 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node, EffectFlock.node] })
+export const node = makeGlobalNode({ service: Service, layer: layer, deps: [FSUtil.node, EffectFlock.node] })
 
 export * as McpAuth from "./auth"

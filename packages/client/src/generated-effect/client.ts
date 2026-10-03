@@ -96,16 +96,38 @@ const Endpoint5_2 = (raw: RawClient["server.mcp"]) => (input: Endpoint5_2Input) 
     Effect.mapError(mapClientError),
   )
 
-type Endpoint5_3Request = Parameters<RawClient["server.mcp"]["mcp.resources"]>[0]
-type Endpoint5_3Input = { readonly location?: Endpoint5_3Request["query"]["location"] }
-const Endpoint5_3 = (raw: RawClient["server.mcp"]) => (input?: Endpoint5_3Input) =>
+type Endpoint5_3Request = Parameters<RawClient["server.mcp"]["mcp.authenticate"]>[0]
+type Endpoint5_3Input = {
+  readonly name: Endpoint5_3Request["params"]["name"]
+  readonly location?: Endpoint5_3Request["query"]["location"]
+}
+const Endpoint5_3 = (raw: RawClient["server.mcp"]) => (input: Endpoint5_3Input) =>
+  raw["mcp.authenticate"]({ params: { name: input["name"] }, query: { location: input["location"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint5_4Request = Parameters<RawClient["server.mcp"]["mcp.logout"]>[0]
+type Endpoint5_4Input = {
+  readonly name: Endpoint5_4Request["params"]["name"]
+  readonly location?: Endpoint5_4Request["query"]["location"]
+}
+const Endpoint5_4 = (raw: RawClient["server.mcp"]) => (input: Endpoint5_4Input) =>
+  raw["mcp.logout"]({ params: { name: input["name"] }, query: { location: input["location"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint5_5Request = Parameters<RawClient["server.mcp"]["mcp.resources"]>[0]
+type Endpoint5_5Input = { readonly location?: Endpoint5_5Request["query"]["location"] }
+const Endpoint5_5 = (raw: RawClient["server.mcp"]) => (input?: Endpoint5_5Input) =>
   raw["mcp.resources"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
 const adaptGroup5 = (raw: RawClient["server.mcp"]) => ({
   status: Endpoint5_0(raw),
   connect: Endpoint5_1(raw),
   disconnect: Endpoint5_2(raw),
-  resources: Endpoint5_3(raw),
+  authenticate: Endpoint5_3(raw),
+  logout: Endpoint5_4(raw),
+  resources: Endpoint5_5(raw),
 })
 
 type Endpoint6_0Request = Parameters<RawClient["server.location"]["location.get"]>[0]

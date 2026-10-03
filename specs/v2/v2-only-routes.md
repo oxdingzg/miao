@@ -39,8 +39,8 @@ V1 仍挂 16 个组。清点生产调用方后分四类（逐条证据见下）�
 1. `PUT /auth/:providerID`（`auth.set`）：内置插件经插件 `client` 写入 OAuth/令牌——`plugin/openai/codex.ts:374`、
    `xai.ts:253`、`digitalocean.ts:251`、`snowflake-cortex.ts:305,342`。插件运行在服务端进程内，方案：改为直接用
    `Auth` 服务写入，不再绕 HTTP。
-2. `POST /mcp/:name/auth/authenticate`：app 打开需要认证的 MCP 时调用（`app/src/context/server-sync.tsx:655`）。
-   方案：新增 `POST /api/mcp/:name/auth/authenticate`（同语义），app 改调。
+2. ~~`POST /mcp/:name/auth/authenticate`~~：核实发现 MCP OAuth 在 V2 下本已失效（core 连接不带 token），
+   改为把 OAuth 移植进 core，见 `mcp-oauth.md`；app 改调 `POST /api/mcp/:name/auth`。
 3. 控制面远程工作区同步（`control-plane/workspace.ts`）：向远端工作区服务器发 `/global/event`(:187)、
    `/vcs/diff/raw`(:610)、`/vcs/apply`(:626)，以及 `/sync/history|replay|steal`(:328,683,707)。
    **`/sync/*` 在 P4 已删，这条链路现在就是坏的**；远端也是 miao 服务端，去掉 V1 后其余三条也会断。

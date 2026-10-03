@@ -349,6 +349,19 @@ describe("v2 location HttpApi", () => {
     expect(await Bun.file(path.join(info.directory, ".git")).exists()).toBe(false)
   })
 
+  test("rejects MCP OAuth for unknown and local servers", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: { mcp: { local: { type: "local", command: ["true"], enabled: false } } },
+    })
+
+    expect((await request("/api/mcp/missing/auth", tmp.path, { method: "POST" })).status).toBe(404)
+    expect((await request("/api/mcp/missing/auth", tmp.path, { method: "DELETE" })).status).toBe(404)
+    const local = await request("/api/mcp/local/auth", tmp.path, { method: "POST" })
+    expect(local.status).toBe(400)
+    expect(await local.json()).toMatchObject({ _tag: "InvalidRequestError", kind: "Mcp" })
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)

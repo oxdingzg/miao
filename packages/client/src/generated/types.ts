@@ -303,6 +303,48 @@ export type McpDisconnectOutput = {
   readonly data: boolean
 }
 
+export type McpAuthenticateInput = {
+  readonly name: { readonly name: string }["name"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpAuthenticateOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data:
+    | { readonly status: "connected" }
+    | { readonly status: "disabled" }
+    | { readonly status: "failed"; readonly error: string }
+    | { readonly status: "needs_auth" }
+    | { readonly status: "needs_client_registration"; readonly error: string }
+}
+
+export type McpLogoutInput = {
+  readonly name: { readonly name: string }["name"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpLogoutOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data:
+    | { readonly status: "connected" }
+    | { readonly status: "disabled" }
+    | { readonly status: "failed"; readonly error: string }
+    | { readonly status: "needs_auth" }
+    | { readonly status: "needs_client_registration"; readonly error: string }
+}
+
 export type McpResourcesInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

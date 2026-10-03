@@ -224,10 +224,14 @@ import type {
   V2LocationPathResponses,
   V2LspStatusErrors,
   V2LspStatusResponses,
+  V2McpAuthenticateErrors,
+  V2McpAuthenticateResponses,
   V2McpConnectErrors,
   V2McpConnectResponses,
   V2McpDisconnectErrors,
   V2McpDisconnectResponses,
+  V2McpLogoutErrors,
+  V2McpLogoutResponses,
   V2McpResourcesErrors,
   V2McpResourcesResponses,
   V2McpStatusErrors,
@@ -3563,6 +3567,72 @@ export class Mcp2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<V2McpDisconnectResponses, V2McpDisconnectErrors, ThrowOnError>({
       url: "/api/mcp/{name}/disconnect",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Remove MCP credentials
+   *
+   * Forget the stored OAuth credentials of a Model Context Protocol (MCP) server and reconnect it without them.
+   */
+  public logout<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "name" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2McpLogoutResponses, V2McpLogoutErrors, ThrowOnError>({
+      url: "/api/mcp/{name}/auth",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Authenticate MCP server
+   *
+   * Run the OAuth flow for a remote Model Context Protocol (MCP) server: opens a browser on the server host, waits for the authorization callback, stores the tokens, and reconnects. Responds with the resulting status.
+   */
+  public authenticate<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "name" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2McpAuthenticateResponses, V2McpAuthenticateErrors, ThrowOnError>({
+      url: "/api/mcp/{name}/auth",
       ...options,
       ...params,
     })

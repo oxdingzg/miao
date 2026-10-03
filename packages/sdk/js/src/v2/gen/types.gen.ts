@@ -10505,6 +10505,92 @@ export type V2McpDisconnectResponses = {
 
 export type V2McpDisconnectResponse = V2McpDisconnectResponses[keyof V2McpDisconnectResponses]
 
+export type V2McpLogoutData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{name}/auth"
+}
+
+export type V2McpLogoutErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+}
+
+export type V2McpLogoutError = V2McpLogoutErrors[keyof V2McpLogoutErrors]
+
+export type V2McpLogoutResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: McpServerStatus
+  }
+}
+
+export type V2McpLogoutResponse = V2McpLogoutResponses[keyof V2McpLogoutResponses]
+
+export type V2McpAuthenticateData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{name}/auth"
+}
+
+export type V2McpAuthenticateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+}
+
+export type V2McpAuthenticateError = V2McpAuthenticateErrors[keyof V2McpAuthenticateErrors]
+
+export type V2McpAuthenticateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: McpServerStatus
+  }
+}
+
+export type V2McpAuthenticateResponse = V2McpAuthenticateResponses[keyof V2McpAuthenticateResponses]
+
 export type V2McpResourcesData = {
   body?: never
   path?: never
