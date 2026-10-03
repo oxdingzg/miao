@@ -4,12 +4,12 @@ import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
-import { Git } from "../../src/git"
+import { GitCli } from "@miao/core/git-cli"
 import { tmpdir } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const weird = process.platform === "win32" ? "space file.txt" : "tab\tfile.txt"
-const it = testEffect(LayerNode.compile(LayerNode.group([Git.node])))
+const it = testEffect(LayerNode.compile(LayerNode.group([GitCli.node])))
 
 const scopedTmpdir = (options?: Parameters<typeof tmpdir>[0]) =>
   Effect.acquireRelease(
@@ -21,7 +21,7 @@ describe("Git", () => {
   it.live("branch() returns current branch name", () =>
     Effect.gen(function* () {
       const tmp = yield* scopedTmpdir({ git: true })
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const branch = yield* git.branch(tmp.path)
       expect(branch).toBeDefined()
       expect(typeof branch).toBe("string")
@@ -31,7 +31,7 @@ describe("Git", () => {
   it.live("branch() returns undefined for non-git directories", () =>
     Effect.gen(function* () {
       const tmp = yield* scopedTmpdir()
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const branch = yield* git.branch(tmp.path)
       expect(branch).toBeUndefined()
     }),
@@ -42,7 +42,7 @@ describe("Git", () => {
       const tmp = yield* scopedTmpdir({ git: true })
       const hash = (yield* Effect.promise(() => $`git rev-parse HEAD`.cwd(tmp.path).quiet().text())).trim()
       yield* Effect.promise(() => $`git checkout --detach ${hash}`.cwd(tmp.path).quiet())
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const branch = yield* git.branch(tmp.path)
       expect(branch).toBeUndefined()
     }),
@@ -53,7 +53,7 @@ describe("Git", () => {
       const tmp = yield* scopedTmpdir({ git: true })
       yield* Effect.promise(() => $`git branch -M trunk`.cwd(tmp.path).quiet())
       yield* Effect.promise(() => $`git config init.defaultBranch trunk`.cwd(tmp.path).quiet())
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const branch = yield* git.defaultBranch(tmp.path)
       expect(branch?.name).toBe("trunk")
       expect(branch?.ref).toBe("trunk")
@@ -64,7 +64,7 @@ describe("Git", () => {
     Effect.gen(function* () {
       const tmp = yield* scopedTmpdir({ git: true })
       yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, weird), "hello\n", "utf-8"))
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const status = yield* git.status(tmp.path)
       expect(status).toEqual(
         expect.arrayContaining([
@@ -87,7 +87,7 @@ describe("Git", () => {
       yield* Effect.promise(() => $`git checkout -b feature/test`.cwd(tmp.path).quiet())
       yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, weird), "after\n", "utf-8"))
 
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const [base, diff, stats] = yield* Effect.all([
         git.mergeBase(tmp.path, "main"),
         git.diff(tmp.path, "HEAD"),
@@ -125,7 +125,7 @@ describe("Git", () => {
       yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, weird), "after\n", "utf-8"))
       yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "other.txt"), "new\n", "utf-8"))
 
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const [patch, all, capped] = yield* Effect.all([
         git.patch(tmp.path, "HEAD", weird, { context: 2_147_483_647 }),
         git.patchAll(tmp.path, "HEAD", { context: 2_147_483_647 }),
@@ -150,7 +150,7 @@ describe("Git", () => {
       const tmp = yield* scopedTmpdir({ git: true })
       yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, weird), "one\ntwo\n", "utf-8"))
 
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const [patch, stat] = yield* Effect.all([
         git.patchUntracked(tmp.path, weird, { context: 2_147_483_647 }),
         git.statUntracked(tmp.path, weird),
@@ -171,7 +171,7 @@ describe("Git", () => {
       yield* Effect.promise(() => $`git add .`.cwd(tmp.path).quiet())
       yield* Effect.promise(() => $`git commit --no-gpg-sign -m "add binary"`.cwd(tmp.path).quiet())
 
-      const git = yield* Git.Service
+      const git = yield* GitCli.Service
       const text = yield* git.show(tmp.path, "HEAD", "bin.dat")
       expect(text).toBe("")
     }),

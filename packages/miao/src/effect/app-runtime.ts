@@ -7,7 +7,7 @@ import { Database } from "@miao/core/database/database"
 import { Auth } from "@/auth"
 import { Account } from "@/account/account"
 import { Config } from "@/config/config"
-import { Git } from "@/git"
+import { GitCli } from "@miao/core/git-cli"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { Storage } from "@/storage/storage"
 import { Snapshot } from "@/snapshot"
@@ -51,7 +51,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Auth.node,
     Account.node,
     Config.node,
-    Git.node,
+    GitCli.node,
     Storage.node,
     Snapshot.node,
     Plugin.node,

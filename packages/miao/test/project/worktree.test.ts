@@ -4,7 +4,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { FSUtil } from "@miao/core/fs-util"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
-import { Git } from "../../src/git"
+import { GitCli } from "@miao/core/git-cli"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { Worktree } from "../../src/worktree"
@@ -12,7 +12,7 @@ import { disposeAllInstances, provideInstance, TestInstance } from "../fixture/f
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([Worktree.node, FSUtil.node, Git.node]), [
+  LayerNode.compile(LayerNode.group([Worktree.node, FSUtil.node, GitCli.node]), [
     [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ]),
 )
@@ -64,14 +64,14 @@ const withCreatedWorktree = <A, E, R>(
   )
 
 const git = Effect.fn("WorktreeTest.git")(function* (cwd: string, args: string[]) {
-  const service = yield* Git.Service
+  const service = yield* GitCli.Service
   const result = yield* service.run(args, { cwd })
   if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString("utf8")}`)
   return result.text()
 })
 
 const gitResult = Effect.fn("WorktreeTest.gitResult")(function* (cwd: string, args: string[]) {
-  const service = yield* Git.Service
+  const service = yield* GitCli.Service
   return yield* service.run(args, { cwd })
 })
 

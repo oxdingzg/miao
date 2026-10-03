@@ -15,7 +15,7 @@ import {
 } from "../fixture/fixture"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Watcher } from "@miao/core/filesystem/watcher"
-import { Git } from "../../src/git"
+import { GitCli } from "@miao/core/git-cli"
 import { Vcs } from "@/project/vcs"
 import { testEffect } from "../lib/effect"
 
@@ -26,13 +26,13 @@ import { testEffect } from "../lib/effect"
 const weird = process.platform === "win32" ? "space file.txt" : "tab\tfile.txt"
 
 const layer = LayerNode.compile(
-  LayerNode.group([Vcs.node, Git.node, EventV2Bridge.node, FSUtil.node, CrossSpawnSpawner.node]),
+  LayerNode.group([Vcs.node, GitCli.node, EventV2Bridge.node, FSUtil.node, CrossSpawnSpawner.node]),
 )
 const it = testEffect(layer)
 const worktreeIt = testEffect(Layer.mergeAll(layer, testInstanceStoreLayer))
 
 const git = Effect.fn("VcsTest.git")(function* (cwd: string, args: string[]) {
-  const result = yield* Git.Service.use((git) => git.run(args, { cwd }))
+  const result = yield* GitCli.Service.use((git) => git.run(args, { cwd }))
   if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString("utf8")}`)
 })
 
