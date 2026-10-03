@@ -1,6 +1,6 @@
 # V2 项目持久化（取代 V1 `Project.fromDirectory`）
 
-状态：设计稿，2026-10-03，待确认。P7 删除 V1 前的必做项；`POST /api/project/git/init` 依赖它。
+状态：已实现，2026-10-03（附带功能一起迁移）。P7 删除 V1 前的必做项；`POST /api/project/git/init` 依赖它。
 
 ## 现状（按代码核实）
 
@@ -69,3 +69,12 @@ core 的 `ProjectCopy.refreshAfterBoot` 只做"从已登记的源目录出发发
   `project_directory`；加 remote 后再打开，ID 迁移且会话、工作区跟过去，`.git/opencode` 写入新 ID；
   `global` 会话在目录变成 git 仓库后改挂；重复登记不产生多余事件。
 - 路由测试：`git/init` 之后 `GET /api/project` 能看到该项目且 `vcs` 为 `git`。
+
+## 实现记录（2026-10-03）
+
+- core `ProjectRegistry`（`e3f5ee234`）：位置构建时登记；`Location` 新增 `previous`；`ProjectCopy.refreshNode` 依赖它；
+  `V2Session.command` 执行 `init` 时写 `time_initialized`；core `Flag` 新增 `MIAO_EXPERIMENTAL_ICON_DISCOVERY`。
+- V1 `Project.fromDirectory`/`discover` 委托 core（`ae9a3e750`）。
+- `POST /api/project/git/init`（`ef8dff72c`）；app 的项目重命名、改色、编辑项目、初始化 git 改走 V2（`2b0e192f2`）。
+- 顺带修复（`aed819d21`）：刚打开的目录插件尚未启动完时，`session.command` 执行插件提供的命令（`/init`、`/review`）
+  会 404；现在先等插件启动。
