@@ -1,4 +1,4 @@
-import type { Workspace } from "@miao/sdk/v2"
+import type { Workspace } from "@miao/schema/view-models"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { useProject } from "../context/project"

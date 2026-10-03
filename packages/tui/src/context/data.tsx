@@ -1,23 +1,5 @@
-import type {
-  AgentV2Info,
-  CommandV2Info,
-  IntegrationInfo,
-  LocationRef,
-  ModelV2Info,
-  PermissionSavedInfo,
-  PermissionV2Request,
-  ProviderV2Info,
-  QuestionV2Request,
-  ReferenceInfo,
-  SessionMessage,
-  SessionMessageAssistant,
-  SessionMessageAssistantReasoning,
-  SessionMessageAssistantText,
-  SessionMessageAssistantTool,
-  SessionV2Info,
-  SkillV2Info,
-  V2Event,
-} from "@miao/sdk/v2"
+import type { ReferenceInfo, SkillV2Info } from "@miao/schema/view-models"
+import type { AgentV2Info, CommandV2Info, IntegrationInfo, LocationRef, ModelV2Info, PermissionSavedInfo, PermissionV2Request, ProviderV2Info, QuestionV2Request, SessionMessage, SessionMessageAssistant, SessionMessageAssistantReasoning, SessionMessageAssistantText, SessionMessageAssistantTool, SessionV2Info, V2Event } from "@miao/sdk/v2"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
