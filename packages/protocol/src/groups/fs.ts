@@ -19,6 +19,20 @@ const FindQuery = Schema.Struct({
 
 export const FileSystemGroup = HttpApiGroup.make("server.fs")
   .add(
+    HttpApiEndpoint.get("fs.content", "/api/fs/content", {
+      query: Schema.Struct({ ...LocationQuery.fields, path: RelativePath }),
+      success: Location.response(FileSystem.Content),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.fs.content",
+          summary: "Read file content",
+          description: "Read a location-relative file as UTF-8 text or base64 binary content.",
+        }),
+      ),
+  )
+  .add(
     HttpApiEndpoint.get("fs.read", "/api/fs/read/*", {
       query: LocationQuery,
       success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),

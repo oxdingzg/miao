@@ -1,4 +1,8 @@
 export * from "./gen/types.gen.js"
+// Rendering records retained by the TUI are inferred from the event contract;
+// they are not endpoints in the retired V1 session API.
+export type PermissionRequest = import("./gen/types.gen.js").EventPermissionAsked["properties"]
+export type QuestionRequest = import("./gen/types.gen.js").EventQuestionAsked["properties"]
 export type { FileSystemEntry as LocationFileSystemEntry } from "./gen/types.gen.js"
 
 import { createClient } from "./gen/client/client.gen.js"

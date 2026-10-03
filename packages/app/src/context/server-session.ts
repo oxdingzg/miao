@@ -186,8 +186,23 @@ function reconcileFetched<T extends { id: string }>(
 
 type ServerSessionOptions = { retry?: typeof retry }
 
+// The cache still accepts projected rendering records in unit tests. Production
+// supplies the V2 Session and Message APIs below; the SDK has no V1 session routes.
+type SessionReadClient = {
+  session: {
+    get: (input: { sessionID: string }) => Promise<{ data?: Session }>
+    messages: (input: { sessionID: string; limit: number; before?: string }) => Promise<{
+      data?: { info: Message; parts: Part[] }[]
+      response: { headers: Headers }
+    }>
+    message: (input: { sessionID: string; messageID: string }) => Promise<{
+      data?: { info: Message; parts: Part[] }
+    }>
+  }
+}
+
 export function createServerSession(
-  client: OpencodeClient,
+  client: OpencodeClient | SessionReadClient,
   sessionApiOrOptions?: SessionApi | ServerSessionOptions,
   messageApi?: MessageApi,
   currentOptions?: ServerSessionOptions,
@@ -310,7 +325,10 @@ export function createServerSession(
     const active = generation(sessionID)
     const request = sessionApi
       ? sessionApi.get({ sessionID }).then(normalizeSessionInfo)
-      : client.session.get({ sessionID }).then((result) => {
+      : ("session" in client
+          ? client.session.get({ sessionID })
+          : Promise.reject(new Error("V2 Session API is required"))
+        ).then((result) => {
           if (!result.data) throw sessionNotFoundError(sessionID)
           return result.data
         })
@@ -554,9 +572,7 @@ export function createServerSession(
       const normalized = normalizeSessionMessages(sessionID, source)
       return {
         session: normalized.messages.sort(compareMessages),
-        part: [...normalized.parts.entries()]
-          .map(([id, part]) => ({ id, part: part.sort((a, b) => cmp(a.id, b.id)) }))
-          .sort((a, b) => cmp(a.id, b.id)),
+        part: [...normalized.parts.entries()].map(([id, part]) => ({ id, part })).sort((a, b) => cmp(a.id, b.id)),
         source,
         sourceMode: before ? ("older" as const) : ("latest" as const),
         projectSource: true,
@@ -566,6 +582,7 @@ export function createServerSession(
     }
     const response = await (options?.retry ?? retry)(() => {
       onAttempt?.()
+      if (!("session" in client)) throw new Error("V2 Message API is required")
       return client.session.messages({ sessionID, limit, before })
     })
     const items = (response.data ?? []).filter((item) => !!item?.info?.id)
@@ -595,6 +612,7 @@ export function createServerSession(
     }
     const response = await (options?.retry ?? retry)(() => {
       onAttempt?.()
+      if (!("session" in client)) throw new Error("V2 Session API is required")
       return client.session.message({ sessionID, messageID })
     })
     if (!response.data?.info?.id) throw new Error(`Message not found: ${messageID}`)
@@ -695,9 +713,7 @@ export function createServerSession(
             return {
               ...page,
               session: normalized.messages.sort(compareMessages),
-              part: [...normalized.parts.entries()]
-                .map(([id, part]) => ({ id, part: part.sort((a, b) => cmp(a.id, b.id)) }))
-                .sort((a, b) => cmp(a.id, b.id)),
+              part: [...normalized.parts.entries()].map(([id, part]) => ({ id, part })).sort((a, b) => cmp(a.id, b.id)),
             }
           })()
         : page
@@ -925,6 +941,7 @@ export function createServerSession(
   const applyV2 = (event: OpenCodeEventEncoded) => {
     if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
     const sessionID = event.data.sessionID
+    if (event.type === "session.next.status") setData("session_status", sessionID, reconcile(event.data.status))
     const reduction = v2.reduce(data.session_message[sessionID] ?? [], event)
     if (reduction) projectV2(reduction)
 
@@ -1374,6 +1391,7 @@ export function createServerSession(
     async todo(sessionID: string, request?: { force?: boolean }) {
       touch(sessionID)
       if (data.todo[sessionID] !== undefined && !request?.force) return
+      if (!("v2" in client)) throw new Error("V2 Session API is required")
       return runInflight(inflightTodo, sessionID, () => {
         const active = generation(sessionID)
         return (options?.retry ?? retry)(() => client.v2.session.todo({ sessionID })).then((result) => {

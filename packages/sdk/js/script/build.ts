@@ -127,8 +127,7 @@ if (ssePatched === sseSource) {
 }
 await Bun.write(ssePath, ssePatched)
 
-await $`bun prettier --write src/gen`
 await $`bun prettier --write src/v2`
 await $`rm -rf dist`
-await $`bun tsc`
+await $`bun run build:types`
 await $`rm openapi.json`

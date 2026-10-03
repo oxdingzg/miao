@@ -9,6 +9,48 @@ const stamp = { timestamp: 1, sessionID: "ses_1" }
 const model = { id: "model", providerID: "provider" }
 
 describe("v2 session reducer", () => {
+  test("continues existing streams and appends new streams after loading history", () => {
+    const reducer = createV2SessionReducer()
+    const source = [
+      {
+        id: "msg_assistant",
+        type: "assistant" as const,
+        agent: "build",
+        model,
+        time: { created: 1 },
+        content: [{ type: "text" as const, id: "txt_existing", text: "loaded" }],
+      },
+    ]
+    const continued = reducer.reduce(
+      source,
+      event({
+        ...base,
+        id: "evt_existing",
+        type: "session.next.text.delta",
+        data: { ...stamp, assistantMessageID: "msg_assistant", textID: "txt_existing", delta: " history" },
+      }),
+    )!
+    const started = reducer.reduce(
+      continued.messages,
+      event({
+        ...base,
+        id: "evt_new",
+        type: "session.next.text.started",
+        data: { ...stamp, assistantMessageID: "msg_assistant", textID: "txt_new" },
+      }),
+    )!
+    const ended = reducer.reduce(
+      started.messages,
+      event({
+        ...base,
+        id: "evt_end",
+        type: "session.next.text.ended",
+        data: { ...stamp, assistantMessageID: "msg_assistant", textID: "txt_new", text: "new text" },
+      }),
+    )!
+    expect(ended.messages[0]).toMatchObject({ content: [{ text: "loaded history" }, { text: "new text" }] })
+  })
+
   test("projects a prompted input and streaming assistant content", () => {
     const reducer = createV2SessionReducer()
     let messages: SessionMessageInfo[] = []

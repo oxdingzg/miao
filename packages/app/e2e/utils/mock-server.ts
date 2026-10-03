@@ -243,7 +243,9 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       })
     }
     if (path === "/api/session/active") {
-      const statuses = (config.sessionStatus ?? {}) as Record<string, { type?: string }>
+      const statuses = (
+        typeof config.sessionStatus === "function" ? config.sessionStatus() : (config.sessionStatus ?? {})
+      ) as Record<string, { type?: string }>
       return json(route, {
         data: Object.fromEntries(
           Object.entries(statuses).flatMap(([id, status]) =>
@@ -337,6 +339,14 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       })
     }
 
+    const currentMessageMatch = path.match(/^\/api\/session\/([^/]+)\/message\/([^/]+)$/)
+    if (currentMessageMatch) {
+      config.onMessage?.({ sessionID: currentMessageMatch[1], messageID: currentMessageMatch[2] })
+      const message = config.message?.(currentMessageMatch[1], currentMessageMatch[2])
+      if (message === undefined) return json(route, { error: "Message not found" }, undefined, 404)
+      return json(route, { data: currentMessage(message) })
+    }
+
     const messagesMatch = path.match(/^\/session\/([^/]+)\/message$/)
     if (messagesMatch) {
       const token = url.searchParams.get("before") ?? undefined
@@ -410,6 +420,7 @@ export function currentSession(session: { id: string } & Record<string, unknown>
 }
 
 function currentMessage(value: unknown) {
+  if (value && typeof value === "object" && "type" in value) return value
   const item = value as {
     info: Record<string, unknown> & { id: string; role: "user" | "assistant"; time: { created: number } }
     parts: Array<Record<string, unknown> & { type: string }>

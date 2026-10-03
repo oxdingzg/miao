@@ -17,21 +17,28 @@ export type V2SessionReduction = {
 }
 
 export function createV2SessionReducer() {
-  // Stream fragments carry a stable id (`textID`/`reasoningID`) rather than the positional
-  // ordinal the projected message stores, and the message has nowhere to keep that id. Track
-  // arrival order per assistant message so a later delta can still address its content item.
-  const streams = new Map<string, { text: string[]; reasoning: string[] }>()
+  // Preserve stream ordinals across history loads and subsequent live events.
+  const streams = new Map<string, { text: (string | undefined)[]; reasoning: (string | undefined)[] }>()
 
-  const stream = (sessionID: string, assistantMessageID: string) => {
+  const stream = (sessionID: string, assistantMessageID: string, source: readonly SessionMessageInfo[]) => {
     const key = `${sessionID}:${assistantMessageID}`
     const existing = streams.get(key)
     if (existing) return existing
-    const created = { text: [], reasoning: [] }
+    const message = source.find((item) => item.id === assistantMessageID)
+    const content = message?.type === "assistant" ? message.content : []
+    const ids = (type: "text" | "reasoning") =>
+      content
+        .filter((item) => item.type === type)
+        .map((item) => ("id" in item && typeof item.id === "string" ? item.id : undefined))
+    const created = { text: ids("text"), reasoning: ids("reasoning") }
     streams.set(key, created)
     return created
   }
 
-  const reduce = (source: readonly SessionMessageInfo[], event: OpenCodeEventEncoded): V2SessionReduction | undefined => {
+  const reduce = (
+    source: readonly SessionMessageInfo[],
+    event: OpenCodeEventEncoded,
+  ): V2SessionReduction | undefined => {
     if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
     const sessionID = event.data.sessionID
     const result = (messages: SessionMessageInfo[], touched: string[] = []): V2SessionReduction => ({
@@ -185,7 +192,7 @@ export function createV2SessionReducer() {
           content: insertOrdinal(
             item.content,
             "text",
-            position(stream(sessionID, item.id).text, event.data.textID),
+            position(stream(sessionID, item.id, source).text, event.data.textID),
             { type: "text", text: "" },
           ),
         }))
@@ -195,7 +202,7 @@ export function createV2SessionReducer() {
           event.data.assistantMessageID,
           sessionID,
           "text",
-          position(stream(sessionID, event.data.assistantMessageID).text, event.data.textID),
+          position(stream(sessionID, event.data.assistantMessageID, source).text, event.data.textID),
           (item) => ({
             ...item,
             text: item.text + event.data.delta,
@@ -207,7 +214,7 @@ export function createV2SessionReducer() {
           event.data.assistantMessageID,
           sessionID,
           "text",
-          position(stream(sessionID, event.data.assistantMessageID).text, event.data.textID),
+          position(stream(sessionID, event.data.assistantMessageID, source).text, event.data.textID),
           (item) => ({
             ...item,
             text: event.data.text,
@@ -219,7 +226,7 @@ export function createV2SessionReducer() {
           content: insertOrdinal(
             item.content,
             "reasoning",
-            position(stream(sessionID, item.id).reasoning, event.data.reasoningID),
+            position(stream(sessionID, item.id, source).reasoning, event.data.reasoningID),
             {
               type: "reasoning",
               text: "",
@@ -234,7 +241,7 @@ export function createV2SessionReducer() {
           event.data.assistantMessageID,
           sessionID,
           "reasoning",
-          position(stream(sessionID, event.data.assistantMessageID).reasoning, event.data.reasoningID),
+          position(stream(sessionID, event.data.assistantMessageID, source).reasoning, event.data.reasoningID),
           (item) => ({
             ...item,
             text: item.text + event.data.delta,
@@ -246,7 +253,7 @@ export function createV2SessionReducer() {
           event.data.assistantMessageID,
           sessionID,
           "reasoning",
-          position(stream(sessionID, event.data.assistantMessageID).reasoning, event.data.reasoningID),
+          position(stream(sessionID, event.data.assistantMessageID, source).reasoning, event.data.reasoningID),
           (item) => ({
             ...item,
             text: event.data.text,
@@ -323,7 +330,8 @@ export function createV2SessionReducer() {
             state: {
               status: "error",
               input: typeof tool.state.input === "string" ? {} : tool.state.input,
-              metadata: wire(event.data.provider.metadata) ?? (tool.state.status === "running" ? tool.state.metadata : {}),
+              metadata:
+                wire(event.data.provider.metadata) ?? (tool.state.status === "running" ? tool.state.metadata : {}),
               error: event.data.error,
             },
             time: { ...tool.time, completed: event.data.timestamp },
@@ -402,7 +410,7 @@ export function createV2SessionReducer() {
 
 // Stream ids arrive in the order their content item was created, so the first sighting of an id
 // is the position that item occupies among the others of its type.
-function position(list: string[], id: string) {
+function position(list: (string | undefined)[], id: string) {
   const index = list.indexOf(id)
   if (index !== -1) return index
   list.push(id)

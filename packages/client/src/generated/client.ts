@@ -121,6 +121,8 @@ import type {
   PermissionsGetOutput,
   PermissionsReplyInput,
   PermissionsReplyOutput,
+  FilesContentInput,
+  FilesContentOutput,
   FilesListInput,
   FilesListOutput,
   FilesFindInput,
@@ -1108,6 +1110,18 @@ export function make(options: ClientOptions) {
         ),
     },
     files: {
+      content: (input: FilesContentInput, requestOptions?: RequestOptions) =>
+        request<FilesContentOutput>(
+          {
+            method: "GET",
+            path: `/api/fs/content`,
+            query: { location: input["location"], path: input["path"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
       list: (input?: FilesListInput, requestOptions?: RequestOptions) =>
         request<FilesListOutput>(
           {

@@ -2531,9 +2531,9 @@ function useDiffHighlighter(input: {
       return relative
     },
     (relative) =>
-      sdk.client.file
-        .read({ path: relative }, { throwOnError: true })
-        .then((result) => (result.data.type === "text" ? result.data.content : undefined))
+      sdk.client.v2.fs
+        .content({ path: relative }, { throwOnError: true })
+        .then((result) => (result.data.data.type === "text" ? result.data.data.content : undefined))
         .catch(() => undefined),
   )
   return {

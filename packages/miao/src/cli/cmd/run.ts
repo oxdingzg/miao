@@ -24,7 +24,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
 
-type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
+type ModelInput = { providerID: string; modelID: string }
 
 function pick(value: string | undefined): ModelInput | undefined {
   if (!value) return undefined

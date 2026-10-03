@@ -673,29 +673,43 @@ const adaptGroup14 = (raw: RawClient["server.permission"]) => ({
   reply: Endpoint14_6(raw),
 })
 
-type Endpoint15_0Request = Parameters<RawClient["server.fs"]["fs.list"]>[0]
+type Endpoint15_0Request = Parameters<RawClient["server.fs"]["fs.content"]>[0]
 type Endpoint15_0Input = {
   readonly location?: Endpoint15_0Request["query"]["location"]
-  readonly path?: Endpoint15_0Request["query"]["path"]
+  readonly path: Endpoint15_0Request["query"]["path"]
 }
-const Endpoint15_0 = (raw: RawClient["server.fs"]) => (input?: Endpoint15_0Input) =>
+const Endpoint15_0 = (raw: RawClient["server.fs"]) => (input: Endpoint15_0Input) =>
+  raw["fs.content"]({ query: { location: input["location"], path: input["path"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint15_1Request = Parameters<RawClient["server.fs"]["fs.list"]>[0]
+type Endpoint15_1Input = {
+  readonly location?: Endpoint15_1Request["query"]["location"]
+  readonly path?: Endpoint15_1Request["query"]["path"]
+}
+const Endpoint15_1 = (raw: RawClient["server.fs"]) => (input?: Endpoint15_1Input) =>
   raw["fs.list"]({ query: { location: input?.["location"], path: input?.["path"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-type Endpoint15_1Request = Parameters<RawClient["server.fs"]["fs.find"]>[0]
-type Endpoint15_1Input = {
-  readonly location?: Endpoint15_1Request["query"]["location"]
-  readonly query: Endpoint15_1Request["query"]["query"]
-  readonly type?: Endpoint15_1Request["query"]["type"]
-  readonly limit?: Endpoint15_1Request["query"]["limit"]
+type Endpoint15_2Request = Parameters<RawClient["server.fs"]["fs.find"]>[0]
+type Endpoint15_2Input = {
+  readonly location?: Endpoint15_2Request["query"]["location"]
+  readonly query: Endpoint15_2Request["query"]["query"]
+  readonly type?: Endpoint15_2Request["query"]["type"]
+  readonly limit?: Endpoint15_2Request["query"]["limit"]
 }
-const Endpoint15_1 = (raw: RawClient["server.fs"]) => (input: Endpoint15_1Input) =>
+const Endpoint15_2 = (raw: RawClient["server.fs"]) => (input: Endpoint15_2Input) =>
   raw["fs.find"]({
     query: { location: input["location"], query: input["query"], type: input["type"], limit: input["limit"] },
   }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup15 = (raw: RawClient["server.fs"]) => ({ list: Endpoint15_0(raw), find: Endpoint15_1(raw) })
+const adaptGroup15 = (raw: RawClient["server.fs"]) => ({
+  content: Endpoint15_0(raw),
+  list: Endpoint15_1(raw),
+  find: Endpoint15_2(raw),
+})
 
 type Endpoint16_0Request = Parameters<RawClient["server.command"]["command.list"]>[0]
 type Endpoint16_0Input = { readonly location?: Endpoint16_0Request["query"]["location"] }

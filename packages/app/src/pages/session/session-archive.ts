@@ -42,14 +42,13 @@ export function useSessionArchive() {
   const archive = async (sessionID: string) => {
     const session = sync().session.get(sessionID)
     if (!session) return
-    if ((await sdk().protocol) !== "v1") return
 
     const sessions = sync().data.session ?? []
     const index = sessions.findIndex((s) => s.id === sessionID)
     const nextSession = index === -1 ? undefined : (sessions[index + 1] ?? sessions[index - 1])
 
     await sdk()
-      .client.session.update({ sessionID, directory: sdk().directory, time: { archived: Date.now() } })
+      .client.v2.session.archive({ sessionID, archived: true })
       .then(() => {
         sync().set(
           produce((draft) => {

@@ -2986,6 +2986,31 @@ export type PermissionsReplyInput = {
 
 export type PermissionsReplyOutput = void
 
+export type FilesContentInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+    readonly path: string
+  }["location"]
+  readonly path: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+    readonly path: string
+  }["path"]
+}
+
+export type FilesContentOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly type: "text" | "binary"
+    readonly content: string
+    readonly encoding: "utf8" | "base64"
+    readonly mime: string
+  }
+}
+
 export type FilesListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

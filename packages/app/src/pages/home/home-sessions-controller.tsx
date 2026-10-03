@@ -209,16 +209,10 @@ export function createHomeSessionsController(home: HomeController) {
         const ctx = home.server.focusedContext()
         if (!conn || !ctx) return
         const [, setStore] = ctx.sync.child(session.directory)
-        if ((await ctx.sdk.protocol) !== "v1") return
         await archiveHomeSession({
           server: ServerConnection.key(conn),
           session,
-          archive: (sessionID) =>
-            ctx.sdk.client.session.update({
-              sessionID,
-              directory: session.directory,
-              time: { archived: Date.now() },
-            }),
+          archive: (sessionID) => ctx.sdk.client.v2.session.archive({ sessionID, archived: true }),
           remove: () => {
             setStore(
               produce((draft) => {
