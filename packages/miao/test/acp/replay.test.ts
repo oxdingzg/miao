@@ -1,5 +1,9 @@
 // History replay through the V2 ACP adapter: long V2 sessions, legacy (V1-only)
 // sessions before and after `miao db backfill`, and a compacted database.
+import { AbsolutePath } from "@miao/schema/schema"
+import { Model } from "@miao/schema/model"
+import { Provider } from "@miao/schema/provider"
+import { SessionID } from "@miao/schema/session-id"
 import { Database } from "bun:sqlite"
 import { describe, expect } from "bun:test"
 import { copyFile } from "node:fs/promises"
@@ -20,7 +24,7 @@ describe("acp V2 replay", () => {
         const server = yield* opencode.serve({ env: { MIAO_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) } })
         const v2 = OpenCode.make({ baseUrl: server.url })
         const session = yield* Effect.promise(() =>
-          v2.sessions.create({ location: { directory: home }, model: { providerID: "test", id: "test-model" } }),
+          v2.sessions.create({ location: { directory: AbsolutePath.make(home) }, model: { providerID: Provider.ID.make("test"), id: Model.ID.make("test-model") } }),
         )
         // Admitted without running, then promoted together by the last prompt's drain.
         for (const index of Array.from({ length: 449 }, (_, index) => index))
@@ -56,8 +60,8 @@ describe("acp V2 replay", () => {
         const v2 = OpenCode.make({ baseUrl: first.url })
         const modern = yield* Effect.promise(() =>
           v2.sessions.create({
-            location: { directory: fixture.home },
-            model: { providerID: "test", id: "test-model" },
+            location: { directory: AbsolutePath.make(fixture.home) },
+            model: { providerID: Provider.ID.make("test"), id: Model.ID.make("test-model") },
           }),
         )
         yield* fixture.llm.text("modern answer")
@@ -173,7 +177,7 @@ async function countMessages(
   cursor?: string,
 ): Promise<number> {
   const page = await client.messages.list({
-    sessionID,
+    sessionID: SessionID.make(sessionID),
     limit: 200,
     ...(cursor ? { cursor } : { order: "asc" as const }),
   })
