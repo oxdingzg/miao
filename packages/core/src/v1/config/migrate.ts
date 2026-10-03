@@ -29,7 +29,14 @@ const keys = new Set([
 
 export function isV1(input: unknown) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return false
-  return Object.keys(input).some((key) => keys.has(key))
+  return Object.keys(input).some((key) => keys.has(key)) || isV1Mcp(Reflect.get(input, "mcp"))
+}
+
+// Both shapes have `mcp`: V2 nests servers under `servers`, V1 keys them by name. A document whose
+// only V1 field is its MCP servers would otherwise decode as V2 and lose them.
+function isV1Mcp(mcp: unknown) {
+  if (typeof mcp !== "object" || mcp === null || Array.isArray(mcp)) return false
+  return Object.keys(mcp).some((key) => key !== "servers" && key !== "timeout")
 }
 
 export function migrate(info: typeof ConfigV1.Info.Type) {
