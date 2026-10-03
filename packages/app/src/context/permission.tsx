@@ -44,6 +44,8 @@ function isNonAllowRule(rule: unknown) {
 
 function hasPermissionPromptRules(permission: unknown) {
   if (!permission) return false
+  if (Array.isArray(permission))
+    return permission.some((rule) => (rule as { effect?: unknown }).effect !== "allow")
   if (typeof permission === "string") return permission !== "allow"
   if (typeof permission !== "object") return false
   if (Array.isArray(permission)) return false
@@ -453,7 +455,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     isPermissionAllowAll(directory: string) {
       if (meta.disposed) return false
       const [childStore] = input.sync.child(directory)
-      return childStore.config.permission === "allow"
+      // V2 expresses permissions as a ruleset; there is no allow-all mode.
+      return (childStore.config.permissions ?? []).length > 0 &&
+        childStore.config.permissions!.every((rule) => rule.effect === "allow")
     },
   }
 
@@ -465,7 +469,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     permissionsEnabled(directory: string) {
       if (meta.disposed) return false
       const [childStore] = input.sync.child(directory)
-      return hasPermissionPromptRules(childStore.config.permission)
+      return hasPermissionPromptRules(childStore.config.permissions)
     },
   }
 }

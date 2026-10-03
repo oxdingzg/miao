@@ -1,4 +1,5 @@
 import { Button } from "@miao/ui/button"
+import { disabledProviderIDs } from "../context/global-sync/utils"
 import { useDialog } from "@miao/ui/context/dialog"
 import { Dialog } from "@miao/ui/dialog"
 import { IconButton } from "@miao/ui/icon-button"
@@ -118,7 +119,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
     const output = validateCustomProvider({
       form,
       t: language.t,
-      disabledProviders: serverSync().data.config.disabled_providers ?? [],
+      disabledProviders: disabledProviderIDs(serverSync().data.config),
       existingProviderIDs: new Set(serverSync().data.provider.all.keys()),
     })
     batch(() => {

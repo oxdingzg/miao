@@ -2,7 +2,7 @@ import type { CommandInfo, FileDiffInfo, McpResource, McpStatus, SessionMessageI
 import type { Agent, LspStatus, Message, Part, ReferenceInfo, Session, SessionStatus, Todo, VcsInfo } from "@miao/schema/view-models"
 import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import type { LocationPath } from "@miao/protocol/groups/location"
-import type { Config } from "@miao/sdk/v2"
+import type { Config } from "@miao/schema/view-models"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"

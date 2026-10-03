@@ -285,7 +285,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const lspItems = createMemo(() => sync().data.lsp ?? [])
   const lspCount = createMemo(() => lspItems().length)
   const plugins = createMemo(() =>
-    (sync().data.config.plugin ?? []).map((item) => (typeof item === "string" ? item : item[0])),
+    (sync().data.config.plugins ?? []).map((item) => (typeof item === "string" ? item : item.package)),
   )
   const pluginCount = createMemo(() => plugins().length)
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "miao.json"))
