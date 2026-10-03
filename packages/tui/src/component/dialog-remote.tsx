@@ -6,7 +6,7 @@
 // and the daemon starts or stops only after the user confirms the shown commands.
 import { RGBA, TextAttributes } from "@opentui/core"
 import { OpenCode } from "@miao/client"
-import type { Config } from "@miao/sdk/v2"
+import type { Config } from "@miao/schema/view-models"
 import { Flag } from "@miao/core/flag/flag"
 import { createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js"
 import { renderUnicodeCompact } from "uqr"

@@ -14,4 +14,7 @@ export class Policy extends Schema.Class<Policy>("ConfigV2.Experimental.Policy")
 
 export class Experimental extends Schema.Class<Experimental>("ConfigV2.Experimental")({
   policies: Policy.pipe(Schema.Array, Schema.optional),
+  disable_paste_summary: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Disable the TUI paste summary",
+  }),
 }) {}

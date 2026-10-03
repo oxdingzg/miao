@@ -4,9 +4,9 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "module": "nodenext",
+    "module": "esnext",
     "declaration": true,
-    "moduleResolution": "nodenext",
+    "moduleResolution": "bundler",
     "lib": ["es2022", "dom", "dom.iterable"]
   },
   "include": ["src"]
