@@ -55,6 +55,7 @@
     "@miao/schema": "workspace:*",
     "@miao/client": "workspace:*",
     "@miao/plugin": "workspace:*",
+    "@miao/protocol": "workspace:*",
     "@miao/sdk": "workspace:*",
     "@miao/ui": "workspace:*",
     "@opentui/core": "catalog:",

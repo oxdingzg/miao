@@ -8,7 +8,7 @@ import { createEffect, createMemo, createResource, createSignal, For, onCleanup,
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
-import type { LocationPath } from "@miao/sdk/v2/client"
+import type { LocationPath } from "@miao/protocol/groups/location"
 import {
   absoluteTreePath,
   activeTreeNavigation,

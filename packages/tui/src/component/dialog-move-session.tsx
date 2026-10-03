@@ -16,7 +16,7 @@ import { useCommandShortcut } from "../keymap"
 import { useProject } from "../context/project"
 import { Spinner } from "./spinner"
 import { DialogWorkspaceFileChanges } from "./dialog-workspace-file-changes"
-import type { ProjectDirectory } from "@miao/sdk/v2"
+import type { ProjectDirectory } from "@miao/protocol/groups/project"
 import { useRoute } from "../context/route"
 
 export type MoveSessionSelection = { type: "directory"; directory: string; subdirectory: boolean } | { type: "new" }

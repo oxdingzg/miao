@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import type { Workspace } from "@miao/schema/view-models"
-import type { LocationPath } from "@miao/sdk/v2"
+import type { LocationPath } from "@miao/protocol/groups/location"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
