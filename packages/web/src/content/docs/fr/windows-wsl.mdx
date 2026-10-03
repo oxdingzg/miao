@@ -1,14 +1,14 @@
 ---
 title: Windows (WSL)
-description: Exécutez Miao sur Windows avec WSL pour une expérience optimale.
+description: Exécutez MIAO sur Windows avec WSL pour une expérience optimale.
 ---
 
 import { Steps } from "@astrojs/starlight/components"
 
-Même si Miao peut fonctionner directement sur Windows, nous recommandons d'utiliser [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) pour la meilleure expérience. WSL fournit un environnement Linux qui s'intègre parfaitement aux fonctionnalités d'Miao.
+Même si MIAO peut fonctionner directement sur Windows, nous recommandons d'utiliser [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) pour la meilleure expérience. WSL fournit un environnement Linux qui s'intègre parfaitement aux fonctionnalités d'Miao.
 
 :::tip[Pourquoi WSL?]
-WSL offre de meilleures performances du système de fichiers, une prise en charge complète du terminal et la compatibilité avec les outils de développement dont Miao dépend.
+WSL offre de meilleures performances du système de fichiers, une prise en charge complète du terminal et la compatibilité avec les outils de développement dont MIAO dépend.
 :::
 
 ---
@@ -21,15 +21,15 @@ WSL offre de meilleures performances du système de fichiers, une prise en charg
 
    Si ce n'est pas encore fait, [installez WSL](https://learn.microsoft.com/en-us/windows/wsl/install) à l'aide du guide officiel Microsoft.
 
-2. **Installez Miao dans WSL**
+2. **Installez MIAO dans WSL**
 
-   Une fois WSL configuré, ouvrez votre terminal WSL et installez Miao avec l'une des [méthodes d'installation](/docs/).
+   Une fois WSL configuré, ouvrez votre terminal WSL et installez MIAO avec l'une des [méthodes d'installation](/docs/).
 
    ```bash
    curl -fsSL https://opencode.ai/install | bash
    ```
 
-3. **Utilisez Miao depuis WSL**
+3. **Utilisez MIAO depuis WSL**
 
    Allez dans votre dossier de projet (accédez aux fichiers Windows via `/mnt/c/`, `/mnt/d/`, etc.) et lancez Miao.
 
@@ -44,7 +44,7 @@ WSL offre de meilleures performances du système de fichiers, une prise en charg
 
 ## Application bureau + serveur WSL
 
-Si vous préférez utiliser l'application Desktop Miao tout en exécutant le serveur dans WSL:
+Si vous préférez utiliser l'application Desktop MIAO tout en exécutant le serveur dans WSL:
 
 1. **Démarrez le serveur dans WSL** avec `--hostname 0.0.0.0` pour autoriser les connexions externes:
 
@@ -79,7 +79,7 @@ Pour la meilleure expérience web sous Windows:
    miao web --hostname 0.0.0.0
    ```
 
-2. **Accédez-y depuis votre navigateur Windows** à `http://localhost:<port>` (Miao affiche l'URL)
+2. **Accédez-y depuis votre navigateur Windows** à `http://localhost:<port>` (MIAO affiche l'URL)
 
 Lancer `miao web` depuis WSL garantit un accès correct au système de fichiers et une bonne intégration terminal, tout en restant accessible depuis votre navigateur Windows.
 
@@ -108,6 +108,6 @@ Pour une expérience plus fluide, vous pouvez cloner/copier votre dépôt dans l
 
 ## Conseils
 
-- Gardez Miao dans WSL pour les projets stockés sur des lecteurs Windows: l'accès aux fichiers est fluide
-- Utilisez l'[extension WSL de VS Code](https://code.visualstudio.com/docs/remote/wsl) avec Miao pour un flux de travail intégré
-- Votre configuration Miao et vos sessions sont stockées dans l'environnement WSL à `~/.local/share/miao/`
+- Gardez MIAO dans WSL pour les projets stockés sur des lecteurs Windows: l'accès aux fichiers est fluide
+- Utilisez l'[extension WSL de VS Code](https://code.visualstudio.com/docs/remote/wsl) avec MIAO pour un flux de travail intégré
+- Votre configuration MIAO et vos sessions sont stockées dans l'environnement WSL à `~/.local/share/miao/`

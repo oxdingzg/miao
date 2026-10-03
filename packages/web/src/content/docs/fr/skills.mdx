@@ -3,7 +3,7 @@ title: "Compétences des agents"
 description: "Définir un comportement réutilisable via les définitions SKILL.md"
 ---
 
-Les compétences d'agent permettent à Miao de découvrir des instructions réutilisables à partir de votre dépôt ou de votre répertoire personnel.
+Les compétences d'agent permettent à MIAO de découvrir des instructions réutilisables à partir de votre dépôt ou de votre répertoire personnel.
 Les compétences sont chargées à la demande via l'outil natif `skill` : les agents voient les compétences disponibles et peuvent charger le contenu complet en cas de besoin.
 
 ---
@@ -24,7 +24,7 @@ Miao recherche ces emplacements :
 
 ## Comprendre la découverte
 
-Pour les chemins locaux du projet, Miao remonte de votre répertoire de travail actuel jusqu'à ce qu'il atteigne l'arbre de travail git.
+Pour les chemins locaux du projet, MIAO remonte de votre répertoire de travail actuel jusqu'à ce qu'il atteigne l'arbre de travail git.
 Il charge tout `skills/*/SKILL.md` correspondant dans `.miao/` et tout `.claude/skills/*/SKILL.md` ou `.agents/skills/*/SKILL.md` correspondant en cours de route.
 
 Les définitions globales sont également chargées à partir de `~/.config/miao/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md` et `~/.agents/skills/*/SKILL.md`.

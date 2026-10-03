@@ -3,7 +3,7 @@ title: Fehlerbehebung
 description: Haeufige Probleme und schnelle Loesungen.
 ---
 
-Wenn Miao Probleme macht, starte mit Logs und lokal gespeicherten Daten auf der Festplatte.
+Wenn MIAO Probleme macht, starte mit Logs und lokal gespeicherten Daten auf der Festplatte.
 
 ---
 
@@ -12,7 +12,7 @@ Wenn Miao Probleme macht, starte mit Logs und lokal gespeicherten Daten auf der 
 Logdateien werden hier gespeichert:
 
 - **macOS/Linux**: `~/.local/share/miao/log/`
-- **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.local\share\miao\log`
+- **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.local\share\MIAO\log`
 
 Dateinamen enthalten Zeitstempel (z. B. `2025-01-09T123456.log`) und es bleiben die letzten 10 Logs erhalten.
 
@@ -60,7 +60,7 @@ Oeffne deine globale Konfigurationsdatei und suche nach dem `plugin`-Schluessel.
 
 - **macOS/Linux**: `~/.config/miao/miao.json` (oder `~/.config/miao/miao.json`)
 - **macOS/Linux** (aeltere Installationen): `~/.local/share/miao/miao.jsonc`
-- **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.config\miao\miao.jsonc`
+- **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.config\MIAO\miao.jsonc`
 
 Wenn du Plugins konfiguriert hast, deaktiviere sie voruebergehend, indem du den Schluessel entfernst oder auf ein leeres Array setzt:
 
@@ -77,7 +77,7 @@ Miao kann auch lokale Plugins von der Festplatte laden. Verschiebe diese voruebe
 
 - **Globale Plugins**
   - **macOS/Linux**: `~/.config/miao/plugins/`
-  - **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.config\miao\plugins`
+  - **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.config\MIAO\plugins`
 - **Projekt-Plugins** (nur bei projektspezifischer Konfig)
   - `<your-project>/.miao/plugins/`
 
@@ -87,16 +87,16 @@ Wenn die App wieder funktioniert, aktiviere Plugins nacheinander, um den Verursa
 
 ### Cache leeren
 
-Wenn das Deaktivieren von Plugins nicht hilft (oder eine Plugin-Installation haengt), leere den Cache, damit Miao ihn neu aufbauen kann.
+Wenn das Deaktivieren von Plugins nicht hilft (oder eine Plugin-Installation haengt), leere den Cache, damit MIAO ihn neu aufbauen kann.
 
-1. Beende Miao Desktop komplett.
+1. Beende MIAO Desktop komplett.
 2. Loesche das Cache-Verzeichnis:
 
 - **macOS**: Finder -> `Cmd+Shift+G` -> einfuegen: `~/.cache/opencode`
 - **Linux**: loesche `~/.cache/opencode` (oder fuehre aus: `rm -rf ~/.cache/opencode`)
 - **Windows**: Druecke `WIN+R` und fuege ein: `%USERPROFILE%\.cache\miao`
 
-3. Starte Miao Desktop neu.
+3. Starte MIAO Desktop neu.
 
 ---
 
@@ -133,7 +133,7 @@ Unter Linux koennen manche Wayland-Setups leere Fenster oder Compositor-Fehler v
 
 ### Windows: WebView2-Laufzeit
 
-Unter Windows benoetigt Miao Desktop die Microsoft Edge **WebView2 Runtime**. Wenn die App ein leeres Fenster zeigt oder nicht startet, installiere/aktualisiere WebView2 und versuche es erneut.
+Unter Windows benoetigt MIAO Desktop die Microsoft Edge **WebView2 Runtime**. Wenn die App ein leeres Fenster zeigt oder nicht startet, installiere/aktualisiere WebView2 und versuche es erneut.
 
 ---
 
@@ -147,7 +147,7 @@ Wenn du langsame Performance, Dateizugriffsprobleme oder Terminal-Probleme unter
 
 Miao Desktop zeigt Systembenachrichtigungen nur wenn:
 
-- Benachrichtigungen fuer Miao in den OS-Einstellungen aktiviert sind, und
+- Benachrichtigungen fuer MIAO in den OS-Einstellungen aktiviert sind, und
 - das App-Fenster nicht fokussiert ist.
 
 ---
@@ -156,8 +156,8 @@ Miao Desktop zeigt Systembenachrichtigungen nur wenn:
 
 Wenn die App nicht startet und du Einstellungen nicht in der UI loeschen kannst, setze den gespeicherten Zustand der Desktop-App zurueck.
 
-1. Beende Miao Desktop.
-2. Finde und loesche diese Dateien (im App-Data-Verzeichnis von Miao Desktop):
+1. Beende MIAO Desktop.
+2. Finde und loesche diese Dateien (im App-Data-Verzeichnis von MIAO Desktop):
 
 - `miao.settings.dat` (desktop default server URL)
 - `miao.global.dat` und `miao.workspace.*.dat` (UI state like recent servers/projects)
@@ -172,7 +172,7 @@ So findest du das Verzeichnis schnell:
 
 ## Hilfe bekommen
 
-Wenn du Probleme mit Miao hast:
+Wenn du Probleme mit MIAO hast:
 
 1. **Probleme auf GitHub melden**
 
@@ -196,7 +196,7 @@ Hier sind typische Fehlerbilder und wie du sie loest.
 
 ---
 
-### Miao startet nicht
+### MIAO startet nicht
 
 1. Pruefe die Logs auf Fehlermeldungen
 2. Versuche den Start mit `--print-logs`, um Ausgaben im Terminal zu sehen
@@ -252,7 +252,7 @@ Zur Loesung:
 
 ### AI_APICallError und Provider-Paket-Probleme
 
-Wenn du API-Call-Fehler erhaeltst, kann das an veralteten Provider-Paketen liegen. miao installiert Provider-Pakete (OpenAI, Anthropic, Google, etc.) dynamisch bei Bedarf und cached sie lokal.
+Wenn du API-Call-Fehler erhaeltst, kann das an veralteten Provider-Paketen liegen. MIAO installiert Provider-Pakete (OpenAI, Anthropic, Google, etc.) dynamisch bei Bedarf und cached sie lokal.
 
 Um Provider-Paket-Probleme zu loesen:
 
@@ -264,9 +264,9 @@ Um Provider-Paket-Probleme zu loesen:
 
    Unter Windows druecke `WIN+R` und loesche: `%USERPROFILE%\.cache\miao`
 
-2. Starte miao neu, um die neuesten Provider-Pakete zu installieren
+2. Starte MIAO neu, um die neuesten Provider-Pakete zu installieren
 
-Dies zwingt miao, die neuesten Versionen der Provider-Pakete herunterzuladen, was oft Kompatibilitaetsprobleme mit Modellparametern und API-Aenderungen loest.
+Dies zwingt MIAO, die neuesten Versionen der Provider-Pakete herunterzuladen, was oft Kompatibilitaetsprobleme mit Modellparametern und API-Aenderungen loest.
 
 ---
 

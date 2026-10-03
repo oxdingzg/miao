@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Miao CLI opcije i naredbe.
+description: MIAO CLI opcije i naredbe.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Pokrenite Miao terminalski korisnički interfejs.
+Pokrenite MIAO terminalski korisnički interfejs.
 
 ```bash
 miao [project]
@@ -50,7 +50,7 @@ Miao CLI takođe ima sljedeće naredbe.
 
 ### agent
 
-Upravljajte Miao agentima.
+Upravljajte MIAO agentima.
 
 ```bash
 miao agent [command]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-Priključite terminal na već pokrenut Miao backend server pokrenut putem `serve` ili `web` naredbi.
+Priključite terminal na već pokrenut MIAO backend server pokrenut putem `serve` ili `web` naredbi.
 
 ```bash
 miao attach [url]
 ```
 
-Ovo omogućava korištenje TUI-ja sa udaljenim Miao backend-om. Na primjer:
+Ovo omogućava korištenje TUI-ja sa udaljenim MIAO backend-om. Na primjer:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -129,7 +129,7 @@ Miao pokreće lista provajdera na [Models.dev](https://models.dev), tako da mož
 miao auth login
 ```
 
-Kada se Miao pokrene, učitava dobavljače iz datoteke vjerodajnica. I ako postoje neki ključevi definirani u vašim okruženjima ili `.env` fajl u vašem projektu.
+Kada se MIAO pokrene, učitava dobavljače iz datoteke vjerodajnica. I ako postoje neki ključevi definirani u vašim okruženjima ili `.env` fajl u vašem projektu.
 
 ---
 
@@ -312,7 +312,7 @@ miao models --refresh
 
 ### run
 
-Pokrenite Miao u neinteraktivnom modu tako što ćete direktno proslijediti prompt.
+Pokrenite MIAO u neinteraktivnom modu tako što ćete direktno proslijediti prompt.
 
 ```bash
 miao run [message..]
@@ -348,7 +348,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`   | Fajlovi koje treba priložiti poruci                                                           |
 | <nobr><code>{"--format"}</code></nobr>   |        | Format: default (formatiran) ili json (sirovi JSON događaji)                                  |
 | <nobr><code>{"--title"}</code></nobr>    |        | Naslov sesije (koristi skraćeni prompt ako nije navedena vrijednost)                          |
-| <nobr><code>{"--attach"}</code></nobr>   |        | Priključite na pokrenuti Miao server (npr. http://localhost:4096)                         |
+| <nobr><code>{"--attach"}</code></nobr>   |        | Priključite na pokrenuti MIAO server (npr. http://localhost:4096)                         |
 | <nobr><code>{"--password"}</code></nobr> | `-p`   | Lozinka za osnovnu autentifikaciju (zadano: `MIAO_SERVER_PASSWORD`)                       |
 | <nobr><code>{"--username"}</code></nobr> | `-u`   | Korisničko ime za osnovnu autentifikaciju (zadano: `MIAO_SERVER_USERNAME` ili `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |        | Direktorij za pokretanje, ili putanja na udaljenom serveru pri spajanju                       |
@@ -360,7 +360,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Pokrenite Miao headless server za API pristup. Pogledajte [server docs](/docs/server) za kompletan HTTP interfejs.
+Pokrenite MIAO headless server za API pristup. Pogledajte [server docs](/docs/server) za kompletan HTTP interfejs.
 
 ```bash
 miao serve
@@ -381,7 +381,7 @@ Ovo pokreće HTTP server koji pruža API pristup funkcionalnosti Miao-a bez TUI 
 
 ### session
 
-Upravljajte Miao sesijama.
+Upravljajte MIAO sesijama.
 
 ```bash
 miao session [command]
@@ -391,7 +391,7 @@ miao session [command]
 
 #### list
 
-Navedite sve Miao sesije.
+Navedite sve MIAO sesije.
 
 ```bash
 miao session list
@@ -408,7 +408,7 @@ miao session list
 
 ### stats
 
-Prikaži statistiku upotrebe tokena i troškova za vaše Miao sesije.
+Prikaži statistiku upotrebe tokena i troškova za vaše MIAO sesije.
 
 ```bash
 miao stats
@@ -439,13 +439,13 @@ Ako ne unesete ID sesije, od vas će biti zatraženo da odaberete neku od dostup
 
 ### import
 
-Uvezite podatke sesije iz JSON datoteke ili Miao dijeljenog URL-a.
+Uvezite podatke sesije iz JSON datoteke ili MIAO dijeljenog URL-a.
 
 ```bash
 miao import <file>
 ```
 
-Možete uvesti iz lokalne datoteke ili Miao dijeljenog URL-a.
+Možete uvesti iz lokalne datoteke ili MIAO dijeljenog URL-a.
 
 ```bash
 miao import session.json
@@ -456,7 +456,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Pokrenite Miao headless server sa web interfejsom.
+Pokrenite MIAO headless server sa web interfejsom.
 
 ```bash
 miao web
@@ -497,7 +497,7 @@ Ova naredba pokreće ACP server koji komunicira preko stdin/stdout koristeći nd
 
 ### uninstall
 
-Deinstalirajte Miao i uklonite sve povezane datoteke.
+Deinstalirajte MIAO i uklonite sve povezane datoteke.
 
 ```bash
 miao uninstall
@@ -516,7 +516,7 @@ miao uninstall
 
 ### upgrade
 
-Ažurira Miao na najnoviju verziju ili određenu verziju.
+Ažurira MIAO na najnoviju verziju ili određenu verziju.
 
 ```bash
 miao upgrade [target]

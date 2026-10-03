@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: miao CLI 옵션과 명령어.
+description: MIAO CLI 옵션과 명령어.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-`serve` 또는 `web` 명령으로 이미 실행 중인 miao 백엔드 서버에 터미널을 연결합니다.
+`serve` 또는 `web` 명령으로 이미 실행 중인 MIAO 백엔드 서버에 터미널을 연결합니다.
 
 ```bash
 miao attach [url]
 ```
 
-원격 miao 백엔드와 TUI를 연결해 사용할 수 있습니다. 예:
+원격 MIAO 백엔드와 TUI를 연결해 사용할 수 있습니다. 예:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -351,7 +351,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f` | 메시지에 첨부할 파일                                                       |
 | <nobr><code>{"--format"}</code></nobr>   |      | 출력 형식: default(포맷됨) 또는 json(원시 JSON 이벤트)                     |
 | <nobr><code>{"--title"}</code></nobr>    |      | 세션 제목(값이 없으면 프롬프트를 잘라 자동 생성)                           |
-| <nobr><code>{"--attach"}</code></nobr>   |      | 실행 중인 miao 서버에 연결(예: http://localhost:4096)                  |
+| <nobr><code>{"--attach"}</code></nobr>   |      | 실행 중인 MIAO 서버에 연결(예: http://localhost:4096)                  |
 | <nobr><code>{"--password"}</code></nobr> | `-p` | 기본 인증 비밀번호 (기본값: `MIAO_SERVER_PASSWORD`)                    |
 | <nobr><code>{"--username"}</code></nobr> | `-u` | 기본 인증 사용자 이름 (기본값: `MIAO_SERVER_USERNAME` 또는 `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |      | 실행할 디렉터리, 또는 연결 시 원격 서버 경로                               |
@@ -363,13 +363,13 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-API 접근용 headless Miao 서버를 시작합니다. 전체 HTTP 인터페이스는 [server docs](/docs/server)를 참고하세요.
+API 접근용 headless MIAO 서버를 시작합니다. 전체 HTTP 인터페이스는 [server docs](/docs/server)를 참고하세요.
 
 ```bash
 miao serve
 ```
 
-이 명령은 TUI 없이 miao 기능에 접근할 수 있는 HTTP 서버를 시작합니다. `MIAO_SERVER_PASSWORD`를 설정하면 HTTP basic auth가 활성화됩니다(기본 사용자명: `miao`).
+이 명령은 TUI 없이 MIAO 기능에 접근할 수 있는 HTTP 서버를 시작합니다. `MIAO_SERVER_PASSWORD`를 설정하면 HTTP basic auth가 활성화됩니다(기본 사용자명: `miao`).
 
 #### 플래그
 
@@ -442,13 +442,13 @@ miao export [sessionID]
 
 ### import
 
-JSON 파일 또는 Miao 공유 URL에서 세션 데이터를 가져옵니다.
+JSON 파일 또는 MIAO 공유 URL에서 세션 데이터를 가져옵니다.
 
 ```bash
 miao import <file>
 ```
 
-로컬 파일이나 Miao 공유 URL에서 가져올 수 있습니다.
+로컬 파일이나 MIAO 공유 URL에서 가져올 수 있습니다.
 
 ```bash
 miao import session.json
@@ -459,7 +459,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-웹 인터페이스를 포함한 headless Miao 서버를 시작합니다.
+웹 인터페이스를 포함한 headless MIAO 서버를 시작합니다.
 
 ```bash
 miao web

@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: สัญญาณและคำสั่งของ Miao CLI
+description: สัญญาณและคำสั่งของ MIAO CLI
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -11,7 +11,7 @@ Miao CLI จะเริ่มต้น [TUI](/docs/tui) เป็นค่า�
 miao
 ```
 
-นอกจากนี้ยังรับคำสั่งและแฟล็ก ซึ่งช่วยให้คุณใช้ Miao ผ่านโปรแกรมได้
+นอกจากนี้ยังรับคำสั่งและแฟล็ก ซึ่งช่วยให้คุณใช้ MIAO ผ่านโปรแกรมได้
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-เริ่ม TUI เพื่อใช้ Miao แบบโต้ตอบ
+เริ่ม TUI เพื่อใช้ MIAO แบบโต้ตอบ
 
 ```bash
 miao [project]
@@ -50,7 +50,7 @@ Miao CLI ยังมีคำสั่งย่อยอีกมากมา�
 
 ### agent
 
-จัดการเอเจนต์สำหรับ Miao
+จัดการเอเจนต์สำหรับ MIAO
 
 ```bash
 miao agent [command]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-เชื่อมต่อกับเซิร์ฟเวอร์แบ็กเอนด์ Miao ที่กำลังทำงานอยู่ ซึ่งเริ่มต้นผ่านคำสั่ง `serve` หรือ `web`
+เชื่อมต่อกับเซิร์ฟเวอร์แบ็กเอนด์ MIAO ที่กำลังทำงานอยู่ ซึ่งเริ่มต้นผ่านคำสั่ง `serve` หรือ `web`
 
 ```bash
 miao attach [url]
 ```
 
-วิธีนี้ช่วยให้คุณใช้ TUI กับแบ็กเอนด์ Miao ระยะไกลได้ ตัวอย่าง:
+วิธีนี้ช่วยให้คุณใช้ TUI กับแบ็กเอนด์ MIAO ระยะไกลได้ ตัวอย่าง:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -129,7 +129,7 @@ Miao ได้รับการกำหนดค่าไว้ล่วงห
 miao auth login
 ```
 
-เมื่อ Miao เริ่มต้น ระบบจะโหลดข้อมูลรับรองจากไฟล์นี้ ดังนั้นคุณจึงไม่ต้องกังวลกับการตั้งค่าตัวแปรสภาพแวดล้อมหรือไฟล์ `.env` ในโปรเจ็กต์ของคุณ
+เมื่อ MIAO เริ่มต้น ระบบจะโหลดข้อมูลรับรองจากไฟล์นี้ ดังนั้นคุณจึงไม่ต้องกังวลกับการตั้งค่าตัวแปรสภาพแวดล้อมหรือไฟล์ `.env` ในโปรเจ็กต์ของคุณ
 
 ---
 
@@ -306,7 +306,7 @@ miao models anthropic
 | <nobr><code>{"--verbose"}</code></nobr> | แสดงรายละเอียดโมเดลเพิ่มเติม (รวมข้อมูลเมตาเช่นต้นทุน) |
 | <nobr><code>{"--json"}</code></nobr>    | แสดงผลลัพธ์เป็น JSON                                   |
 
-ใช้แฟล็ก `--refresh` เพื่ออัปเดตรายการโมเดลที่แคชไว้ มีประโยชน์เมื่อมีการเพิ่มโมเดลใหม่ให้กับผู้ให้บริการและคุณต้องการเห็นใน Miao
+ใช้แฟล็ก `--refresh` เพื่ออัปเดตรายการโมเดลที่แคชไว้ มีประโยชน์เมื่อมีการเพิ่มโมเดลใหม่ให้กับผู้ให้บริการและคุณต้องการเห็นใน MIAO
 
 ```bash
 miao models --refresh
@@ -316,7 +316,7 @@ miao models --refresh
 
 ### run
 
-รัน Miao โดยไม่ต้องใช้ TUI โดยส่งพรอมต์โดยตรง
+รัน MIAO โดยไม่ต้องใช้ TUI โดยส่งพรอมต์โดยตรง
 
 ```bash
 miao run [message..]
@@ -352,7 +352,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f` | แนบไฟล์ไปกับข้อความ                                                                         |
 | <nobr><code>{"--format"}</code></nobr>   |      | รูปแบบเอาต์พุต: text (จัดรูปแบบ) หรือ json (JSON ดิบ)                                       |
 | <nobr><code>{"--title"}</code></nobr>    |      | ชื่อสำหรับเซสชัน (หากไม่ได้ระบุ จะสร้างจากพรอมต์)                                           |
-| <nobr><code>{"--attach"}</code></nobr>   |      | แนบไปกับเซิร์ฟเวอร์ miao ที่ทำงานอยู่ (เช่น http://localhost:4096)                      |
+| <nobr><code>{"--attach"}</code></nobr>   |      | แนบไปกับเซิร์ฟเวอร์ MIAO ที่ทำงานอยู่ (เช่น http://localhost:4096)                      |
 | <nobr><code>{"--password"}</code></nobr> | `-p` | รหัสผ่านการยืนยันตัวตนพื้นฐาน (ค่าเริ่มต้นคือ `MIAO_SERVER_PASSWORD`)                   |
 | <nobr><code>{"--username"}</code></nobr> | `-u` | ชื่อผู้ใช้การยืนยันตัวตนพื้นฐาน (ค่าเริ่มต้นคือ `MIAO_SERVER_USERNAME` หรือ `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |      | ไดเร็กทอรีสำหรับรัน หรือเส้นทางบนเซิร์ฟเวอร์ระยะไกลเมื่อแนบ                                 |
@@ -364,13 +364,13 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-เริ่มต้นเซิร์ฟเวอร์ Miao headless ที่ให้บริการ API HTTP ดู [เอกสารเซิร์ฟเวอร์](/docs/server) สำหรับรายละเอียด API เต็มรูปแบบ
+เริ่มต้นเซิร์ฟเวอร์ MIAO headless ที่ให้บริการ API HTTP ดู [เอกสารเซิร์ฟเวอร์](/docs/server) สำหรับรายละเอียด API เต็มรูปแบบ
 
 ```bash
 miao serve
 ```
 
-คำสั่งนี้จะเริ่มต้นเซิร์ฟเวอร์ HTTP ให้ API เข้าถึงฟังก์ชันการทำงานของ Miao ได้โดยไม่ต้องมี TUI นอกจากนี้ยังรองรับการตรวจสอบสิทธิ์พื้นฐาน HTTP (ชื่อผู้ใช้เริ่มต้นคือ `miao` และรหัสผ่านระบุโดย `MIAO_SERVER_PASSWORD`)
+คำสั่งนี้จะเริ่มต้นเซิร์ฟเวอร์ HTTP ให้ API เข้าถึงฟังก์ชันการทำงานของ MIAO ได้โดยไม่ต้องมี TUI นอกจากนี้ยังรองรับการตรวจสอบสิทธิ์พื้นฐาน HTTP (ชื่อผู้ใช้เริ่มต้นคือ `miao` และรหัสผ่านระบุโดย `MIAO_SERVER_PASSWORD`)
 
 #### แฟล็ก
 
@@ -385,7 +385,7 @@ miao serve
 
 ### session
 
-จัดการเซสชัน Miao
+จัดการเซสชัน MIAO
 
 ```bash
 miao session [command]
@@ -395,7 +395,7 @@ miao session [command]
 
 #### list
 
-แสดงรายการเซสชัน Miao ทั้งหมด
+แสดงรายการเซสชัน MIAO ทั้งหมด
 
 ```bash
 miao session list
@@ -412,7 +412,7 @@ miao session list
 
 ### stats
 
-แสดงสถิติการใช้งานและค่าใช้จ่ายสำหรับ Miao ของคุณ
+แสดงสถิติการใช้งานและค่าใช้จ่ายสำหรับ MIAO ของคุณ
 
 ```bash
 miao stats
@@ -443,7 +443,7 @@ miao export [sessionID]
 
 ### import
 
-นำเข้าเซสชันจากไฟล์ JSON หรือ URL ที่แชร์ของ Miao
+นำเข้าเซสชันจากไฟล์ JSON หรือ URL ที่แชร์ของ MIAO
 
 ```bash
 miao import <file>
@@ -460,13 +460,13 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-เริ่ม Miao ในโหมดเซิร์ฟเวอร์พร้อมเว็บอินเตอร์เฟส
+เริ่ม MIAO ในโหมดเซิร์ฟเวอร์พร้อมเว็บอินเตอร์เฟส
 
 ```bash
 miao web
 ```
 
-คำสั่งนี้จะเริ่มต้นเซิร์ฟเวอร์ HTTP และเปิดเว็บเบราว์เซอร์เพื่อเข้าถึง Miao ผ่านทางเว็บอินเตอร์เฟส รองรับการตรวจสอบสิทธิ์พื้นฐาน HTTP (ชื่อผู้ใช้เริ่มต้นคือ `miao` และรหัสผ่านระบุโดย `MIAO_SERVER_PASSWORD`)
+คำสั่งนี้จะเริ่มต้นเซิร์ฟเวอร์ HTTP และเปิดเว็บเบราว์เซอร์เพื่อเข้าถึง MIAO ผ่านทางเว็บอินเตอร์เฟส รองรับการตรวจสอบสิทธิ์พื้นฐาน HTTP (ชื่อผู้ใช้เริ่มต้นคือ `miao` และรหัสผ่านระบุโดย `MIAO_SERVER_PASSWORD`)
 
 #### แฟล็ก
 
@@ -501,7 +501,7 @@ miao acp
 
 ### uninstall
 
-ถอนการติดตั้ง Miao และลบข้อมูลการกำหนดค่าทั้งหมด
+ถอนการติดตั้ง MIAO และลบข้อมูลการกำหนดค่าทั้งหมด
 
 ```bash
 miao uninstall
@@ -520,7 +520,7 @@ miao uninstall
 
 ### upgrade
 
-อัปเกรด Miao เป็นเวอร์ชันล่าสุดหรือเวอร์ชันที่ระบุ
+อัปเกรด MIAO เป็นเวอร์ชันล่าสุดหรือเวอร์ชันที่ระบุ
 
 ```bash
 miao upgrade [target]

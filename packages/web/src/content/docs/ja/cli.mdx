@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Miao CLI のオプションとコマンド。
+description: MIAO CLI のオプションとコマンド。
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -11,7 +11,7 @@ Miao CLI は、引数なしで実行すると、デフォルトで [TUI](/docs/t
 miao
 ```
 
-ただし、このページに記載されているようにコマンドも受け入れます。これにより、Miao をプログラム的に操作できるようになります。
+ただし、このページに記載されているようにコマンドも受け入れます。これにより、MIAO をプログラム的に操作できるようになります。
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-`serve` または `web` コマンドを使用して起動された、すでに実行中の Miao バックエンドサーバーにターミナルを接続します。
+`serve` または `web` コマンドを使用して起動された、すでに実行中の MIAO バックエンドサーバーにターミナルを接続します。
 
 ```bash
 miao attach [url]
 ```
 
-これにより、リモート Miao バックエンドで TUI を使用できるようになります。例えば：
+これにより、リモート MIAO バックエンドで TUI を使用できるようになります。例えば：
 
 ```bash
 # Start the backend server for web/mobile access
@@ -305,7 +305,7 @@ miao models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | models.dev からモデルキャッシュを更新します。                   |
 | <nobr><code>{"--verbose"}</code></nobr> | より詳細なモデル出力を使用します (コストなどのメタデータを含む) |
 
-`--refresh` フラグを使用して、キャッシュされたモデルリストを更新します。これは、新しいモデルがプロバイダーに追加され、それを Miao で確認したい場合に便利です。
+`--refresh` フラグを使用して、キャッシュされたモデルリストを更新します。これは、新しいモデルがプロバイダーに追加され、それを MIAO で確認したい場合に便利です。
 
 ```bash
 miao models --refresh
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-プロンプトを直接渡して、非対話モードで miao を実行します。
+プロンプトを直接渡して、非対話モードで MIAO を実行します。
 
 ```bash
 miao run [message..]
@@ -351,7 +351,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`     | メッセージに添付するファイル                                                              |
 | <nobr><code>{"--format"}</code></nobr>   |          | 形式: デフォルト (フォーマット済み) または json (生の JSON イベント)                      |
 | <nobr><code>{"--title"}</code></nobr>    |          | セッションのタイトル (値が指定されていない場合は、切り詰められたプロンプトが使用されます) |
-| <nobr><code>{"--attach"}</code></nobr>   |          | 実行中の miao サーバー (http://localhost:4096 など) に接続します。                    |
+| <nobr><code>{"--attach"}</code></nobr>   |          | 実行中の MIAO サーバー (http://localhost:4096 など) に接続します。                    |
 | <nobr><code>{"--password"}</code></nobr> | `-p`     | Basic 認証パスワード（デフォルトは `MIAO_SERVER_PASSWORD`）                           |
 | <nobr><code>{"--username"}</code></nobr> | `-u`     | Basic 認証ユーザー名（デフォルトは `MIAO_SERVER_USERNAME` または `miao`）         |
 | <nobr><code>{"--dir"}</code></nobr>      |          | 実行ディレクトリ、またはアタッチ時のリモートサーバー上のパス                              |
@@ -363,13 +363,13 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-API アクセスのためにヘッドレス Miao サーバーを起動します。完全な HTTP インターフェイスについては、[サーバーのドキュメント](/docs/server) を確認してください。
+API アクセスのためにヘッドレス MIAO サーバーを起動します。完全な HTTP インターフェイスについては、[サーバーのドキュメント](/docs/server) を確認してください。
 
 ```bash
 miao serve
 ```
 
-これにより、TUI インターフェイスを使用せずに miao 機能への API アクセスを提供する HTTP サーバーが起動します。 `MIAO_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `miao`)。
+これにより、TUI インターフェイスを使用せずに MIAO 機能への API アクセスを提供する HTTP サーバーが起動します。 `MIAO_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `miao`)。
 
 #### フラグ
 
@@ -394,7 +394,7 @@ miao session [command]
 
 #### list
 
-すべての Miao セッションをリストします。
+すべての MIAO セッションをリストします。
 
 ```bash
 miao session list
@@ -442,13 +442,13 @@ miao export [sessionID]
 
 ### import
 
-JSON ファイルまたは Miao 共有 URL からセッションデータをインポートします。
+JSON ファイルまたは MIAO 共有 URL からセッションデータをインポートします。
 
 ```bash
 miao import <file>
 ```
 
-ローカルファイルまたは Miao 共有 URL からインポートできます。
+ローカルファイルまたは MIAO 共有 URL からインポートできます。
 
 ```bash
 miao import session.json
@@ -459,13 +459,13 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Web インターフェイスを使用してヘッドレス Miao サーバーを起動します。
+Web インターフェイスを使用してヘッドレス MIAO サーバーを起動します。
 
 ```bash
 miao web
 ```
 
-これにより、HTTP サーバーが起動し、Web ブラウザが開き、Web インターフェイスを通じて Miao にアクセスします。 `MIAO_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `miao`)。
+これにより、HTTP サーバーが起動し、Web ブラウザが開き、Web インターフェイスを通じて MIAO にアクセスします。 `MIAO_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `miao`)。
 
 #### フラグ
 

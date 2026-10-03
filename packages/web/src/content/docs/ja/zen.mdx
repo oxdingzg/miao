@@ -1,15 +1,15 @@
 ---
 title: OpenCode Zen
-description: Miao によって提供されるモデルの厳選されたリスト。
+description: MIAO によって提供されるモデルの厳選されたリスト。
 ---
 
 import config from "../../../../config.mjs"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Zen は、Miao チームが提供する、テスト済みかつ検証済みのモデルの一覧です。
+OpenCode Zen は、MIAO チームが提供する、テスト済みかつ検証済みのモデルの一覧です。
 
-Zen は Miao のほかのプロバイダーと同じように動作します。OpenCode Zen にログインして API キーを取得できます。これは **完全にオプション** であり、Miao を使うために必須ではありません。
+Zen は MIAO のほかのプロバイダーと同じように動作します。OpenCode Zen にログインして API キーを取得できます。これは **完全にオプション** であり、MIAO を使うために必須ではありません。
 
 ---
 
@@ -35,7 +35,7 @@ OpenCode Zen は、これらのモデルにアクセスできる AI ゲートウ
 
 ## 仕組み
 
-OpenCode Zen は、Miao のほかのプロバイダーと同じように動作します。
+OpenCode Zen は、MIAO のほかのプロバイダーと同じように動作します。
 
 1. **<a href={console}>OpenCode Zen</a>** にサインインし、請求情報を追加して、API キーをコピーします。
 2. TUI で `/connect` コマンドを実行し、OpenCode Zen を選んで API キーを貼り付けます。
@@ -302,7 +302,7 @@ curl https://opencode.ai/zen/v1/systemone \
 
 **DeepSeek V4 Flash Vision Exp:** 画像はサイズに基づいてトークンに変換され、テキストトークンと合わせて入力トークンとして課金されます。 [詳しく見る](https://api-docs.deepseek.com/quick_start/pricing/)。
 
-使用履歴に Haiku、Nano、Flash などの[低コストモデル](/docs/config/#models)が表示されることがあります。Miao はこれらのモデルをセッションタイトルの生成に使用します。
+使用履歴に Haiku、Nano、Flash などの[低コストモデル](/docs/config/#models)が表示されることがあります。MIAO はこれらのモデルをセッションタイトルの生成に使用します。
 
 :::note
 クレジットカード手数料は実費で転嫁されます（各取引につき 4.4% + $0.30）。それ以外の上乗せはありません。
@@ -310,15 +310,15 @@ curl https://opencode.ai/zen/v1/systemone \
 
 無料モデル:
 
-- MiMo-V2.6-Flash Free は期間限定で Miao で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
-- MiMo-V2.5 Free は期間限定で Miao で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
-- Ling 3.0 Flash Fin Free は期間限定で Miao で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
-- Nemotron 3 Ultra Free は期間限定で Miao で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
-- Nemotron 3.5 Lightning Free は期間限定で Miao で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
-- Big Pickle はステルスモデルで、期間限定で Miao で無料提供されています。チームはこの期間中にフィードバックを集め、モデルを改善しています。
-- Space Bunny Free はステルスモデルで、期間限定で Miao で無料提供されています。プロバイダーはゼロ保持ポリシーに従い、データをモデルのトレーニングに使用しません。
-- Muse Spark 1.3 Contributor Free は期間限定で Miao で利用できます。チームはこの期間を活用してフィードバックを収集し、モデルを改善しています。
-- Jev 1.13 Free は期間限定で Miao で利用できます。
+- MiMo-V2.6-Flash Free は期間限定で MIAO で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
+- MiMo-V2.5 Free は期間限定で MIAO で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
+- Ling 3.0 Flash Fin Free は期間限定で MIAO で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
+- Nemotron 3 Ultra Free は期間限定で MIAO で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
+- Nemotron 3.5 Lightning Free は期間限定で MIAO で利用できます。チームはこの期間中にフィードバックを集め、モデルを改善しています。
+- Big Pickle はステルスモデルで、期間限定で MIAO で無料提供されています。チームはこの期間中にフィードバックを集め、モデルを改善しています。
+- Space Bunny Free はステルスモデルで、期間限定で MIAO で無料提供されています。プロバイダーはゼロ保持ポリシーに従い、データをモデルのトレーニングに使用しません。
+- Muse Spark 1.3 Contributor Free は期間限定で MIAO で利用できます。チームはこの期間を活用してフィードバックを収集し、モデルを改善しています。
+- Jev 1.13 Free は期間限定で MIAO で利用できます。
 
 ご不明な点があれば、<a href={email}>お問い合わせください</a>。
 
@@ -429,4 +429,4 @@ Zen のほかのモデルにアクセスしながら、自分の OpenAI また�
 1. コーディングエージェントに最適なモデル/プロバイダーを **Benchmark** すること。
 2. **highest quality** の選択肢にアクセスできるようにし、性能を落としたり、より安価なプロバイダーへルーティングされたりしないこと。
 3. 原価で提供することで **price drops** をそのまま反映し、上乗せは処理手数料のカバー分だけにすること。
-4. ほかのコーディングエージェントでも使えるようにして **no lock-in** を実現し、さらに Miao では常にほかのプロバイダーも使えるようにすること。
+4. ほかのコーディングエージェントでも使えるようにして **no lock-in** を実現し、さらに MIAO では常にほかのプロバイダーも使えるようにすること。

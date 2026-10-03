@@ -24,7 +24,7 @@ en `~/.local/share/miao/auth.json`.
 
 ### Configuration
 
-Vous pouvez personnaliser les fournisseurs via la section `provider` de votre Miao
+Vous pouvez personnaliser les fournisseurs via la section `provider` de votre MIAO
 configuration.
 
 ---
@@ -50,14 +50,14 @@ Vous pouvez personnaliser la base URL pour n'importe quel fournisseur en défini
 
 ## OpenCode Zen
 
-OpenCode Zen est une liste de modèles fournis par l'équipe Miao qui ont été
+OpenCode Zen est une liste de modèles fournis par l'équipe MIAO qui ont été
 testé et vérifié pour fonctionner correctement avec Miao. [En savoir plus](/docs/zen).
 
 :::tip
 Si vous êtes nouveau, nous vous recommandons de commencer par OpenCode Zen.
 :::
 
-1. Exécutez la commande `/connect` dans le TUI, sélectionnez miao et dirigez-vous vers [opencode.ai/auth](https://opencode.ai/auth).
+1. Exécutez la commande `/connect` dans le TUI, sélectionnez MIAO et dirigez-vous vers [opencode.ai/auth](https://opencode.ai/auth).
 
    ```txt
    /connect
@@ -80,13 +80,13 @@ Si vous êtes nouveau, nous vous recommandons de commencer par OpenCode Zen.
    /models
    ```
 
-Il fonctionne comme n’importe quel autre fournisseur dans Miao et son utilisation est totalement facultative.
+Il fonctionne comme n’importe quel autre fournisseur dans MIAO et son utilisation est totalement facultative.
 
 ---
 
 ## OpenCode Go
 
-OpenCode Go est un plan d'abonnement à faible coût qui offre un accès fiable aux modèles de codage ouverts populaires fournis par l'équipe Miao qui ont été
+OpenCode Go est un plan d'abonnement à faible coût qui offre un accès fiable aux modèles de codage ouverts populaires fournis par l'équipe MIAO qui ont été
 testé et vérifié pour fonctionner correctement avec Miao.
 
 1. Exécutez la commande `/connect` dans le TUI, sélectionnez `OpenCode Go` et rendez-vous sur [opencode.ai/auth](https://opencode.ai/zen).
@@ -112,7 +112,7 @@ testé et vérifié pour fonctionner correctement avec Miao.
    /models
    ```
 
-Il fonctionne comme n’importe quel autre fournisseur dans Miao et son utilisation est totalement facultative.
+Il fonctionne comme n’importe quel autre fournisseur dans MIAO et son utilisation est totalement facultative.
 
 ---
 
@@ -156,7 +156,7 @@ Vous ne voyez pas de fournisseur ici ? Soumettez un PR.
 
 ### Amazon Bedrock
 
-Pour utiliser Amazon Bedrock avec Miao :
+Pour utiliser Amazon Bedrock avec MIAO :
 
 1. Rendez-vous sur le **Catalogue de modèles** dans la console Amazon Bedrock et demandez
    accédez aux modèles que vous souhaitez.
@@ -169,7 +169,7 @@ Pour utiliser Amazon Bedrock avec Miao :
 
    #### Variables d'environnement (démarrage rapide)
 
-Définissez l'une de ces variables d'environnement lors de l'exécution de miao :
+Définissez l'une de ces variables d'environnement lors de l'exécution de MIAO :
 
 ```bash
    # Option 1: Using AWS access keys
@@ -314,7 +314,7 @@ Pour les profils d'inférence personnalisés, utilisez le nom du modèle et du f
    ```
 
 :::info
-L'utilisation de votre abonnement Claude Pro/Max dans Miao n'est pas officiellement prise en charge par [Anthropic](https://anthropic.com).
+L'utilisation de votre abonnement Claude Pro/Max dans MIAO n'est pas officiellement prise en charge par [Anthropic](https://anthropic.com).
 :::
 
 ##### Utilisation des clés API
@@ -327,7 +327,7 @@ Ou si vous disposez déjà d'une clé API, vous pouvez sélectionner **Entrer ma
 
 ### Atomic Chat
 
-Vous pouvez configurer miao pour utiliser des modèles locaux via [Atomic Chat](https://atomic.chat), une application de bureau qui exécute des LLM locaux derrière un serveur API compatible OpenAI (point de terminaison par défaut `http://127.0.0.1:1337/v1`).
+Vous pouvez configurer MIAO pour utiliser des modèles locaux via [Atomic Chat](https://atomic.chat), une application de bureau qui exécute des LLM locaux derrière un serveur API compatible OpenAI (point de terminaison par défaut `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -376,7 +376,7 @@ Si vous rencontrez des erreurs « Je suis désolé, mais je ne peux pas vous aid
 2. Accédez à [Azure AI Foundry](https://ai.azure.com/) et déployez un modèle.
 
    :::note
-   Le nom du déploiement doit correspondre au nom du modèle pour que miao fonctionne correctement.
+   Le nom du déploiement doit correspondre au nom du modèle pour que MIAO fonctionne correctement.
    :::
 
 3. Exécutez la commande `/connect` et recherchez **Azure**.
@@ -423,7 +423,7 @@ Ou ajoutez-le à votre profil bash :
 2. Accédez à [Azure AI Foundry](https://ai.azure.com/) et déployez un modèle.
 
    :::note
-   Le nom du déploiement doit correspondre au nom du modèle pour que miao fonctionne correctement.
+   Le nom du déploiement doit correspondre au nom du modèle pour que MIAO fonctionne correctement.
    :::
 
 3. Exécutez la commande `/connect` et recherchez **Azure Cognitive Services**.
@@ -915,7 +915,7 @@ Pour utiliser Google Vertex AI avec Miao :
 Définissez-les lors de l'exécution de miao.
 
 ```bash
-   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json GOOGLE_CLOUD_PROJECT=your-project-id miao
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json GOOGLE_CLOUD_PROJECT=your-project-id MIAO
 ```
 
 Ou ajoutez-les à votre profil bash.
@@ -1068,7 +1068,7 @@ Helicone prend en charge les en-têtes personnalisés pour des fonctionnalités 
         "baseURL": "https://ai-gateway.helicone.ai",
         "headers": {
           "Helicone-Cache-Enabled": "true",
-          "Helicone-User-Id": "miao",
+          "Helicone-User-Id": "MIAO",
         },
       },
     },
@@ -1526,7 +1526,7 @@ SAP AI Core donne accès à plus de 40 modèles de OpenAI, Anthropic, Google, Am
 Ou définissez la variable d'environnement `AICORE_SERVICE_KEY` :
 
 ```bash
-   AICORE_SERVICE_KEY='{"clientid":"...","clientsecret":"...","url":"...","serviceurls":{"AI_API_URL":"..."}}' miao
+   AICORE_SERVICE_KEY='{"clientid":"...","clientsecret":"...","url":"...","serviceurls":{"AI_API_URL":"..."}}' MIAO
 ```
 
 Ou ajoutez-le à votre profil bash :
@@ -1538,7 +1538,7 @@ Ou ajoutez-le à votre profil bash :
 4. Définissez éventuellement l'ID de déploiement et le groupe de ressources :
 
    ```bash
-   AICORE_DEPLOYMENT_ID=your-deployment-id AICORE_RESOURCE_GROUP=your-resource-group miao
+   AICORE_DEPLOYMENT_ID=your-deployment-id AICORE_RESOURCE_GROUP=your-resource-group MIAO
    ```
 
    :::note

@@ -1,9 +1,9 @@
 ---
 title: Plugins
-description: Schreiben Sie Ihre eigenen Plugins, um Miao zu erweitern.
+description: Schreiben Sie Ihre eigenen Plugins, um MIAO zu erweitern.
 ---
 
-Mit Plugins können Sie Miao erweitern, indem Sie verschiedene Ereignisse einbinden und das Verhalten anpassen. Sie können Plugins erstellen, um neue Funktionen hinzuzufügen, externe Dienste zu integrieren oder das Standardverhalten von Miao zu ändern.
+Mit Plugins können Sie MIAO erweitern, indem Sie verschiedene Ereignisse einbinden und das Verhalten anpassen. Sie können Plugins erstellen, um neue Funktionen hinzuzufügen, externe Dienste zu integrieren oder das Standardverhalten von MIAO zu ändern.
 
 Beispiele finden Sie im von der Community erstellten [plugins](/docs/ecosystem#plugins).
 
@@ -210,7 +210,7 @@ Plugins können Ereignisse abonnieren, wie unten im Abschnitt „Beispiele“ ge
 
 ## Beispiele
 
-Hier sind einige Beispiele für Plugins, mit denen Sie Miao erweitern können.
+Hier sind einige Beispiele für Plugins, mit denen Sie MIAO erweitern können.
 
 ---
 
@@ -241,7 +241,7 @@ Wenn Sie die Miao-Desktop-App verwenden, kann diese automatisch Systembenachrich
 
 ### .env-Schutz
 
-Verhindern Sie, dass Miao `.env`-Dateien liest:
+Verhindern Sie, dass MIAO `.env`-Dateien liest:
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -276,7 +276,7 @@ export const InjectEnvPlugin = async () => {
 
 ### Benutzerdefinierte Tools
 
-Plugins können Miao auch benutzerdefinierte Tools hinzufügen:
+Plugins können MIAO auch benutzerdefinierte Tools hinzufügen:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -299,13 +299,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-Der `tool`-Helfer erstellt ein benutzerdefiniertes Tool, das Miao aufrufen kann. Es verwendet eine Zod-Schemafunktion und gibt eine Tooldefinition zurück mit:
+Der `tool`-Helfer erstellt ein benutzerdefiniertes Tool, das MIAO aufrufen kann. Es verwendet eine Zod-Schemafunktion und gibt eine Tooldefinition zurück mit:
 
 - `description`: Was das Tool macht
 - `args`: Zod-Schema für die Argumente des Tools
 - `execute`: Funktion, die ausgeführt wird, wenn das Tool aufgerufen wird
 
-Ihre benutzerdefinierten Tools stehen neben den integrierten Tools für Miao zur Verfügung.
+Ihre benutzerdefinierten Tools stehen neben den integrierten Tools für MIAO zur Verfügung.
 
 ---
 

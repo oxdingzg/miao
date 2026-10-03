@@ -1,9 +1,9 @@
 ---
 title: Eklentiler
-description: Miao'u genişletmek için kendi eklentilerinizi yazın.
+description: MIAO'u genişletmek için kendi eklentilerinizi yazın.
 ---
 
-Eklentiler, çeşitli olaylara bağlanarak ve davranışı özelleştirerek Miao'u genişletmenize olanak tanır. Yeni özellikler eklemek, harici hizmetlerle entegrasyon sağlamak veya Miao'un varsayılan davranışını değiştirmek için eklentiler oluşturabilirsiniz.
+Eklentiler, çeşitli olaylara bağlanarak ve davranışı özelleştirerek MIAO'u genişletmenize olanak tanır. Yeni özellikler eklemek, harici hizmetlerle entegrasyon sağlamak veya MIAO'un varsayılan davranışını değiştirmek için eklentiler oluşturabilirsiniz.
 
 Örnekler için topluluk tarafından oluşturulan [eklentilere](/docs/ecosystem#plugins) göz atın.
 
@@ -117,7 +117,7 @@ Eklenti işlevi şunları alır:
 - `project`: Mevcut proje bilgisi.
 - `directory`: Güncel çalışma dizini.
 - `worktree`: Git çalışma ağacı yolu.
-- `client`: Yapay zeka ile etkileşim kurmak için bir Miao SDK istemcisi.
+- `client`: Yapay zeka ile etkileşim kurmak için bir MIAO SDK istemcisi.
 - `$`: Bun'un komutları yürütmek için kullandığı [shell API](https://bun.com/docs/runtime/shell).
 
 ---
@@ -276,7 +276,7 @@ export const InjectEnvPlugin = async () => {
 
 ### Özel araçlar
 
-Eklentiler ayrıca Miao'a özel araçlar da ekleyebilir:
+Eklentiler ayrıca MIAO'a özel araçlar da ekleyebilir:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -299,13 +299,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-`tool` yardımcısı, Miao'un çağırabileceği özel bir araç oluşturur. Bir Zod şeması işlevini alır ve aşağıdakileri içeren bir araç tanımı döndürür:
+`tool` yardımcısı, MIAO'un çağırabileceği özel bir araç oluşturur. Bir Zod şeması işlevini alır ve aşağıdakileri içeren bir araç tanımı döndürür:
 
 - `description`: Araç ne yapar?
 - `args`: Aracın argümanları için Zod şeması
 - `execute`: Araç çağrıldığında çalışan fonksiyon
 
-Özel araçlarınız, yerleşik araçların yanı sıra Miao'a da hazır olacaktır.
+Özel araçlarınız, yerleşik araçların yanı sıra MIAO'a da hazır olacaktır.
 
 :::note
 Eğer bir eklenti aracı yerleşik bir araçla aynı adı kullanırsa, eklenti aracı öncelik kazanır.

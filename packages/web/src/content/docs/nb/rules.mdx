@@ -3,7 +3,7 @@ title: Regler
 description: Set custom instructions for Miao.
 ---
 
-Du kan gi tilpassede instruksjoner for å Miao ved å opprette en `AGENTS.md`-fil. Dette ligner på Cursors regler. Den inneholder instruksjoner som vil bli inkludert i LLMs kontekst for å tilpasse oppførselen til ditt spesifikke prosjekt.
+Du kan gi tilpassede instruksjoner for å MIAO ved å opprette en `AGENTS.md`-fil. Dette ligner på Cursors regler. Den inneholder instruksjoner som vil bli inkludert i LLMs kontekst for å tilpasse oppførselen til ditt spesifikke prosjekt.
 
 ---
 
@@ -15,7 +15,7 @@ For å lage en ny `AGENTS.md` fil, kan du kjøre kommandoen `/init` i Miao.
 Du bør sjekke inn prosjektets `AGENTS.md`-fil i Git.
 :::
 
-Dette vil skanne prosjektet og alt dets innhold for å forstå hva prosjektet handler om og generere en `AGENTS.md`-fil med det. Dette hjelper Miao å navigere i prosjektet bedre.
+Dette vil skanne prosjektet og alt dets innhold for å forstå hva prosjektet handler om og generere en `AGENTS.md`-fil med det. Dette hjelper MIAO å navigere i prosjektet bedre.
 
 Hvis du har en eksisterende `AGENTS.md`-fil, vil denne prøve å legge til den.
 
@@ -68,7 +68,7 @@ Siden dette ikke er forpliktet til Git eller delt med teamet ditt, anbefaler vi 
 
 ### Claude Code-kompatibilitet
 
-For brukere som migrerer fra Claude Code, støtter Miao Claude Codes filkonvensjoner som fallbacks:
+For brukere som migrerer fra Claude Code, støtter MIAO Claude Codes filkonvensjoner som fallbacks:
 
 - **Prosjektregler**: `CLAUDE.md` i prosjektkatalogen din (brukes hvis ingen `AGENTS.md` eksisterer)
 - **Globale regler**: `~/.claude/CLAUDE.md` (brukes hvis ingen `~/.config/miao/AGENTS.md` eksisterer)
@@ -86,7 +86,7 @@ export MIAO_DISABLE_CLAUDE_CODE_SKILLS=1 # Disable only .claude/skills
 
 ## Forrang
 
-Når Miao starter, ser den etter regelfiler i denne rekkefølgen:
+Når MIAO starter, ser den etter regelfiler i denne rekkefølgen:
 
 1. **Lokale filer** ved å gå opp fra gjeldende katalog (`AGENTS.md`, `CLAUDE.md`)
 2. **Global fil** på `~/.config/miao/AGENTS.md`
@@ -126,7 +126,7 @@ Alle instruksjonsfilene er kombinert med `AGENTS.md`-filene dine.
 
 ## Referere til eksterne filer
 
-Selv om Miao ikke automatisk analyserer filreferanser i `AGENTS.md`, kan du oppnå lignende funksjonalitet på to måter:
+Selv om MIAO ikke automatisk analyserer filreferanser i `AGENTS.md`, kan du oppnå lignende funksjonalitet på to måter:
 
 ### Bruker miao.json
 
@@ -141,7 +141,7 @@ Den anbefalte tilnærmingen er å bruke feltet `instructions` i `miao.json`:
 
 ### Manuelle instruksjoner i AGENTS.md
 
-Du kan lære Miao å lese eksterne filer ved å gi eksplisitte instruksjoner i `AGENTS.md`. Her er et praktisk eksempel:
+Du kan lære MIAO å lese eksterne filer ved å gi eksplisitte instruksjoner i `AGENTS.md`. Her er et praktisk eksempel:
 
 ```markdown title="AGENTS.md"
 # TypeScript Project Rules
@@ -173,7 +173,7 @@ Denne tilnærmingen lar deg:
 - Lage modulære, gjenbrukbare regelfiler
 - Dele regler på tvers av prosjekter via symbolkoblinger eller git-undermoduler
 - Holde AGENTS.md kortfattet mens du refererer til detaljerte retningslinjer
-- Sørge for at Miao laster filer kun når det er nødvendig for den spesifikke oppgaven
+- Sørge for at MIAO laster filer kun når det er nødvendig for den spesifikke oppgaven
 
 :::tip
 For monorepos eller prosjekter med delte standarder er bruk av `miao.json` med glob-mønstre (som `packages/*/AGENTS.md`) mer vedlikeholdbart enn manuelle instruksjoner.

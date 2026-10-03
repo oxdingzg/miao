@@ -1,6 +1,6 @@
 ---
 title: ACP-understøttelse
-description: Brug Miao i enhver ACP-kompatibel editor.
+description: Brug MIAO i enhver ACP-kompatibel editor.
 ---
 
 Miao understøtter [Agent Client Protocol](https://agentclientprotocol.com) eller (ACP), så du kan bruge det direkte i kompatible editorer og IDE'er.
@@ -15,9 +15,9 @@ ACP er en åben protokol, der standardiserer kommunikation mellem kodeeditorer o
 
 ## Konfiguration
 
-For at bruge Miao via ACP, konfigurer din editor til at køre kommandoen `miao acp`.
+For at bruge MIAO via ACP, konfigurer din editor til at køre kommandoen `miao acp`.
 
-Kommandoen starter Miao som en ACP-kompatibel underproces, der kommunikerer med din editor over JSON-RPC via stdio.
+Kommandoen starter MIAO som en ACP-kompatibel underproces, der kommunikerer med din editor over JSON-RPC via stdio.
 
 Nedenfor er eksempler på populære editorer, der understøtter ACP.
 
@@ -25,7 +25,7 @@ Nedenfor er eksempler på populære editorer, der understøtter ACP.
 
 ### Zed
 
-Installer Miao fra [Zeds ACP-register](https://zed.dev/docs/ai/external-agents#registry) ved at køre `zed: acp registry` i kommandopaletten.
+Installer MIAO fra [Zeds ACP-register](https://zed.dev/docs/ai/external-agents#registry) ved at køre `zed: acp registry` i kommandopaletten.
 
 Hvis du i stedet vil bruge en brugerdefineret Miao-eksekverbar fil, skal du føje den til din [Zed](https://zed.dev)-konfiguration (`~/.config/zed/settings.json`):
 
@@ -85,7 +85,7 @@ Tilføj til din [JetBrains IDE](https://www.jetbrains.com/) acp.json i henhold t
 }
 ```
 
-For at åbne den skal du bruge den nye 'Miao'-agent i AI Chat-agentvælgeren.
+For at åbne den skal du bruge den nye 'MIAO'-agent i AI Chat-agentvælgeren.
 
 ---
 
@@ -124,7 +124,7 @@ Hvis du har brug for at videregive miljøvariabler:
 
 ### CodeCompanion.nvim
 
-For at bruge Miao som en ACP-agent i [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), skal du tilføje følgende til din Neovim-konfiguration:
+For at bruge MIAO som en ACP-agent i [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), skal du tilføje følgende til din Neovim-konfiguration:
 
 ```lua
 require("codecompanion").setup({
@@ -139,7 +139,7 @@ require("codecompanion").setup({
 })
 ```
 
-Denne konfiguration sætter CodeCompanion til at bruge Miao som ACP-agent til chat.
+Denne konfiguration sætter CodeCompanion til at bruge MIAO som ACP-agent til chat.
 
 Hvis du har brug for at sende miljøvariabler (som `MIAO_API_KEY`), henvises til [Konfiguration af adaptere: Miljøvariabler](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) i CodeCompanion.nvim-dokumentationen for alle detaljer.
 

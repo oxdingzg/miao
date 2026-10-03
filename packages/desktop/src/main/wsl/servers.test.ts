@@ -29,11 +29,11 @@ test("starts every configured WSL server on initialization", () => {
 test("rejects an update that did not install the desktop version", () => {
   expect(() => expectOpencodeVersion("1.16.2", "1.16.2")).not.toThrow()
   expect(() => expectOpencodeVersion("1.14.35", "1.16.2")).toThrow(
-    "Miao update finished but Debian still reports 1.14.35; expected 1.16.2",
+    "MIAO update finished but Debian still reports 1.14.35; expected 1.16.2",
   )
 })
 
-test("restarts an existing distro server after updating Miao", () => {
+test("restarts an existing distro server after updating MIAO", () => {
   expect(
     wslServerIdToRestart(
       [
@@ -104,7 +104,7 @@ test("derives a required Windows restart from the post-install runtime probe", (
   expect(pendingRestartAfterWslInstall({ available: true, version: "WSL version: 2.6.1", error: null })).toBe(false)
 })
 
-test("ignores stale background Miao checks after removing a WSL server", async () => {
+test("ignores stale background MIAO checks after removing a WSL server", async () => {
   persistedServers = []
   releaseOpencodeResolve = undefined
   const controller = createWslServersController(

@@ -1,13 +1,13 @@
 ---
 title: TUI
-description: Korištenje korisničkog interfejsa Miao terminala.
+description: Korištenje korisničkog interfejsa MIAO terminala.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
 Miao pruža interaktivni terminalski interfejs ili TUI za rad na vašim projektima sa LLM.
 
-Pokretanje Miao pokreće TUI za trenutni direktorij.
+Pokretanje MIAO pokreće TUI za trenutni direktorij.
 
 ```bash
 miao
@@ -57,7 +57,7 @@ Izlaz naredbe se dodaje u razgovor kao rezultat alata.
 
 ## Naredbe
 
-Kada koristite Miao TUI, možete upisati `/` nakon čega slijedi ime komande da biste brzo izvršili radnje. na primjer:
+Kada koristite MIAO TUI, možete upisati `/` nakon čega slijedi ime komande da biste brzo izvršili radnje. na primjer:
 
 ```bash frame="none"
 /help
@@ -396,7 +396,7 @@ Ovo je odvojeno od `miao.json`, koji konfiguriše ponašanje servera/izvršavanj
 
 - `theme` - Postavlja vašu UI temu. [Saznajte više](/docs/themes).
 - `keybinds` - Prilagođava prečice na tastaturi. [Saznajte više](/docs/keybinds).
-- `leader_timeout` - Kontroliše koliko dugo Miao čeka nakon leader key. Podrazumijevano je `2000`.
+- `leader_timeout` - Kontroliše koliko dugo MIAO čeka nakon leader key. Podrazumijevano je `2000`.
 - `scroll_acceleration.enabled` - ​​Omogućite ubrzanje pomicanja u macOS stilu za glatko, prirodno pomicanje. Kada je omogućeno, brzina pomicanja se povećava brzim pokretima pomicanja i ostaje precizna za sporije pokrete. **Ova postavka ima prednost nad `scroll_speed` i nadjačava je kada je omogućena.**
 - `scroll_speed` - ​​Kontrolira koliko brzo TUI skroluje kada se koriste komande za pomeranje (minimum: `0.001`, podržava decimalne vrijednosti). Podrazumevano je `3`. **Napomena: Ovo se zanemaruje ako je `scroll_acceleration.enabled` postavljeno na `true`.**
 - `diff_style` - Kontrolira prikazivanje razlike. `"auto"` se prilagođava širini terminala, `"stacked"` uvijek prikazuje raspored u jednoj koloni.
@@ -407,7 +407,7 @@ Koristite `MIAO_TUI_CONFIG` da učitate prilagođenu putanju TUI konfiguracije.
 
 ### Attention
 
-Attention omogućava da vas TUI obavijesti kada Miao čeka odgovor, treba odobrenje dozvole, prijavi grešku sesije ili završi sesiju. Omogućite ga pomoću `attention.enabled`; ugrađeni događaji reproduciraju zvuk kada se dogode. Desktop obavještenja se šalju samo kada prozor terminala nije u fokusu i ne koriste se za subagent događaje.
+Attention omogućava da vas TUI obavijesti kada MIAO čeka odgovor, treba odobrenje dozvole, prijavi grešku sesije ili završi sesiju. Omogućite ga pomoću `attention.enabled`; ugrađeni događaji reproduciraju zvuk kada se dogode. Desktop obavještenja se šalju samo kada prozor terminala nije u fokusu i ne koriste se za subagent događaje.
 
 - `enabled` - Omogućava sva obavještenja i zvukove za Attention. Podrazumijevano je `false`.
 - `notifications` - Kada je Attention omogućen, dozvoljava TUI-ju da šalje desktop obavještenja putem terminala. Podrazumijevano je `true`.

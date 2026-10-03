@@ -1,6 +1,6 @@
 ---
 title: ACP Desteği
-description: miao'u ACP uyumlu herhangi bir editörde kullanın.
+description: MIAO'u ACP uyumlu herhangi bir editörde kullanın.
 ---
 
 miao, [Agent Client Protocol](https://agentclientprotocol.com) veya (ACP) dosyalarını destekleyerek onu doğrudan uyumlu editörlerde ve IDE'lerde kullanmanızı sağlar.
@@ -17,7 +17,7 @@ ACP, kod editörleri ile AI kodlama ajanları arasındaki iletişimi standartla�
 
 miao'u ACP aracılığıyla kullanmak için düzenleyicinizi `miao acp` komutunu çalıştıracak şekilde yapılandırın.
 
-Komut, miao'u, editörünüzle stdio aracılığıyla JSON-RPC üzerinden iletişim kuran ACP uyumlu bir alt süreç olarak başlatır.
+Komut, MIAO'u, editörünüzle stdio aracılığıyla JSON-RPC üzerinden iletişim kuran ACP uyumlu bir alt süreç olarak başlatır.
 
 Aşağıda ACP'yi destekleyen popüler düzenleyicilere ilişkin örnekler verilmiştir.
 
@@ -25,9 +25,9 @@ Aşağıda ACP'yi destekleyen popüler düzenleyicilere ilişkin örnekler veril
 
 ### Zed
 
-Komut Paleti’nde `zed: acp registry` komutunu çalıştırarak Miao’u [Zed ACP Kayıt Defteri](https://zed.dev/docs/ai/external-agents#registry) üzerinden yükleyin.
+Komut Paleti’nde `zed: acp registry` komutunu çalıştırarak MIAO’u [Zed ACP Kayıt Defteri](https://zed.dev/docs/ai/external-agents#registry) üzerinden yükleyin.
 
-Bunun yerine özel bir Miao çalıştırılabilir dosyası kullanmak için [Zed](https://zed.dev) yapılandırmanıza (`~/.config/zed/settings.json`) ekleyin:
+Bunun yerine özel bir MIAO çalıştırılabilir dosyası kullanmak için [Zed](https://zed.dev) yapılandırmanıza (`~/.config/zed/settings.json`) ekleyin:
 
 ```json title="~/.config/zed/settings.json"
 {
@@ -85,7 +85,7 @@ Açmak için **Komut Paleti**'ndeki `agent: new thread` eylemini kullanın.
 }
 ```
 
-Açmak için AI Chat agent seçicisindeki yeni 'Miao' ajanını kullanın.
+Açmak için AI Chat agent seçicisindeki yeni 'MIAO' ajanını kullanın.
 
 ---
 
@@ -139,7 +139,7 @@ require("codecompanion").setup({
 })
 ```
 
-Bu yapılandırma, CodeCompanion'ı miao'u sohbet için ACP ajanı olarak kullanacak şekilde ayarlar.
+Bu yapılandırma, CodeCompanion'ı MIAO'u sohbet için ACP ajanı olarak kullanacak şekilde ayarlar.
 
 Ortam değişkenlerini (`MIAO_API_KEY` gibi) iletmeniz gerekiyorsa, tüm ayrıntılar için CodeCompanion.nvim belgelerindeki [Configuring Adapters: Environment Variables](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key)'ye bakın.
 
@@ -153,7 +153,7 @@ miao, terminalde olduğu gibi ACP aracılığıyla aynı şekilde çalışır. T
 
 - Yerleşik araçlar (dosya işlemleri, terminal komutları vb.)
 - Özel araçlar ve slash komutları
-- miao yapılandırmanızda yapılandırılmış MCP sunucuları
+- MIAO yapılandırmanızda yapılandırılmış MCP sunucuları
 - `AGENTS.md`'dan projeye özel kurallar
 - Özel biçimlendiriciler ve linter'lar
 - Aracılar ve izin sistemi

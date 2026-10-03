@@ -3,7 +3,7 @@ title: Agenten-Skills
 description: "Definiere wiederverwendbares Verhalten ueber SKILL.md"
 ---
 
-Agent Skills erlauben Miao, wiederverwendbare Anweisungen aus deinem Repo oder Home-Verzeichnis zu finden.
+Agent Skills erlauben MIAO, wiederverwendbare Anweisungen aus deinem Repo oder Home-Verzeichnis zu finden.
 Sie werden bei Bedarf ueber das native `skill`-Tool geladen, wenn ein Agent sie wirklich braucht.
 
 ---
@@ -24,7 +24,7 @@ Miao sucht in folgenden Pfaden:
 
 ## Discovery verstehen
 
-Bei projektlokalen Pfaden laeuft Miao vom aktuellen Verzeichnis nach oben bis zum Git-Worktree.
+Bei projektlokalen Pfaden laeuft MIAO vom aktuellen Verzeichnis nach oben bis zum Git-Worktree.
 Dabei werden passende `skills/*/SKILL.md` in `.miao/` sowie passende Dateien unter `.claude/skills/*/SKILL.md` und `.agents/skills/*/SKILL.md` geladen.
 
 Globale Definitionen kommen zusaetzlich aus `~/.config/miao/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md` und `~/.agents/skills/*/SKILL.md`.

@@ -1,12 +1,12 @@
 ---
 title: الخادم
-description: تفاعل مع خادم miao عبر HTTP.
+description: تفاعل مع خادم MIAO عبر HTTP.
 ---
 
 import config from "../../../../config.mjs"
 export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
 
-يشغّل الأمر `miao serve` خادما HTTP دون واجهة ويعرض نقطة نهاية OpenAPI يمكن لعميل miao استخدامها.
+يشغّل الأمر `miao serve` خادما HTTP دون واجهة ويعرض نقطة نهاية OpenAPI يمكن لعميل MIAO استخدامها.
 
 ---
 
@@ -51,12 +51,12 @@ MIAO_SERVER_PASSWORD=your-password miao serve
 وتُستخدم هذه النقطة أيضا لتوليد [SDK](/docs/sdk).
 
 :::tip
-استخدم خادم miao للتفاعل مع miao برمجيا.
+استخدم خادم MIAO للتفاعل مع MIAO برمجيا.
 :::
 
-تتيح هذه البنية لـ miao دعم عدة عملاء وتمكّنك من التفاعل مع miao برمجيا.
+تتيح هذه البنية لـ MIAO دعم عدة عملاء وتمكّنك من التفاعل مع MIAO برمجيا.
 
-يمكنك تشغيل `miao serve` لبدء خادم مستقل. إذا كانت واجهة miao في terminal (TUI)
+يمكنك تشغيل `miao serve` لبدء خادم مستقل. إذا كانت واجهة MIAO في terminal (TUI)
 قيد التشغيل، فسيبدأ `miao serve` خادما جديدا.
 
 ---
@@ -65,7 +65,7 @@ MIAO_SERVER_PASSWORD=your-password miao serve
 
 عند بدء الـ TUI تقوم بتعيين منفذ واسم مضيف عشوائيا. يمكنك بدلا من ذلك تمرير [الخيارات](/docs/cli) `--hostname` و `--port`، ثم استخدامهما للاتصال بخادمها.
 
-يمكن استخدام نقطة النهاية [`/tui`](#tui) للتحكم في الـ TUI عبر الخادم. على سبيل المثال، يمكنك تعبئة الموجّه مسبقا أو تشغيله. يُستخدم هذا الإعداد بواسطة ملحقات Miao لـ [IDE](/docs/ide).
+يمكن استخدام نقطة النهاية [`/tui`](#tui) للتحكم في الـ TUI عبر الخادم. على سبيل المثال، يمكنك تعبئة الموجّه مسبقا أو تشغيله. يُستخدم هذا الإعداد بواسطة ملحقات MIAO لـ [IDE](/docs/ide).
 
 ---
 
@@ -83,7 +83,7 @@ http://<hostname>:<port>/doc
 
 ## واجهات API
 
-يعرض خادم miao واجهات API التالية.
+يعرض خادم MIAO واجهات API التالية.
 
 ---
 

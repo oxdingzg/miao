@@ -3,7 +3,7 @@ title: Fejlfinding
 description: Almindelige problemer, og hvordan de løses.
 ---
 
-For at fejlfinde problemer med Miao, start med at tjekke logfilerne og de lokale data, den gemmer på disken.
+For at fejlfinde problemer med MIAO, start med at tjekke logfilerne og de lokale data, den gemmer på disken.
 
 ---
 
@@ -12,7 +12,7 @@ For at fejlfinde problemer med Miao, start med at tjekke logfilerne og de lokale
 Logfiler skrives til:
 
 - **macOS/Linux**: `~/.local/share/miao/log/`
-- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.local\share\miao\log`
+- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.local\share\MIAO\log`
 
 Logfiler navngives med tidsstempler (f.eks. `2025-01-09T123456.log`) og de sidste 10 logfiler beholdes.
 
@@ -59,7 +59,7 @@ Hvis skrivebordsappen går ned ved opstart, hænger eller opfører sig mærkelig
 
 - **macOS/Linux**: `~/.config/miao/miao.json` (eller `~/.config/miao/miao.json`)
 - **macOS/Linux** (ældre installationer): `~/.local/share/miao/miao.jsonc`
-- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\miao\miao.jsonc`
+- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\MIAO\miao.jsonc`
 
 Hvis du har konfigureret plugins, deaktiver dem midlertidigt ved at fjerne nøglen eller sætte den til et tomt array:
 
@@ -76,7 +76,7 @@ Miao kan også indlæse lokale plugins fra disken. Flyt disse midlertidigt væk 
 
 - **Globale plugins**
   - **macOS/Linux**: `~/.config/miao/plugins/`
-  - **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\miao\plugins`
+  - **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\MIAO\plugins`
 - **Projektplugins** (kun hvis du bruger konfiguration per projekt)
   - `<your-project>/.miao/plugins/`
 
@@ -86,16 +86,16 @@ Hvis appen begynder at fungere igen, aktiverer du plugins én ad gangen for at f
 
 ### Ryd cachen
 
-Hvis deaktivering af plugins ikke hjælper (eller en plugin-installation sidder fast), tøm cachen så Miao kan genopbygge den.
+Hvis deaktivering af plugins ikke hjælper (eller en plugin-installation sidder fast), tøm cachen så MIAO kan genopbygge den.
 
-1. Afslut Miao Desktop helt.
+1. Afslut MIAO Desktop helt.
 2. Slet cache-mappen:
 
 - **macOS**: Finder -> `Cmd+Shift+G` -> indsæt `~/.cache/opencode`
 - **Linux**: slet `~/.cache/opencode` (eller kør `rm -rf ~/.cache/opencode`)
 - **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.cache\miao`
 
-3. Start Miao Desktop på ny.
+3. Start MIAO Desktop på ny.
 
 ---
 
@@ -132,7 +132,7 @@ På Linux kan nogle Wayland-opsætninger forårsage tomme vinduer eller komposit
 
 ### Windows: WebView2-runtime
 
-På Windows kræver Miao Desktop Microsoft Edge **WebView2 Runtime**. Hvis appen åbnes i et tomt vindue eller ikke starter, installer/opdater WebView2 og prøv igen.
+På Windows kræver MIAO Desktop Microsoft Edge **WebView2 Runtime**. Hvis appen åbnes i et tomt vindue eller ikke starter, installer/opdater WebView2 og prøv igen.
 
 ---
 
@@ -146,7 +146,7 @@ Hvis du oplever langsom ydeevne, problemer med filadgang eller terminalproblemer
 
 Miao Desktop viser kun systemvarsler når:
 
-- varsler er aktiveret for Miao i dine OS-indstillinger, og
+- varsler er aktiveret for MIAO i dine OS-indstillinger, og
 - appvinduet ikke er fokuseret.
 
 ---
@@ -155,8 +155,8 @@ Miao Desktop viser kun systemvarsler når:
 
 Hvis appen ikke starter og du ikke kan slette indstillingerne fra UI, nulstil skrivebordsappens gemte tilstand.
 
-1. Afslut Miao Desktop.
-2. Find og slet disse filer (de findes i Miao Desktop-appens datamappe):
+1. Afslut MIAO Desktop.
+2. Find og slet disse filer (de findes i MIAO Desktop-appens datamappe):
 
 - `miao.settings.dat` (skrivebordsstandardserver URL)
 - `miao.global.dat` og `miao.workspace.*.dat` (UI tilstand som nylige servere/projekter)
@@ -171,7 +171,7 @@ Sådan finder du mappen hurtigt:
 
 ## Få hjælp
 
-Hvis du oplever problemer med Miao:
+Hvis du oplever problemer med MIAO:
 
 1. **Rapporter problemer på GitHub**
 
@@ -195,7 +195,7 @@ Her er nogle almindelige problemer og hvordan du kan løse dem.
 
 ---
 
-### Miao vil ikke starte
+### MIAO vil ikke starte
 
 1. Tjek logfilerne for fejlmeddelelser
 2. Prøv at køre med `--print-logs` for at se output i terminalen
@@ -252,7 +252,7 @@ For at løse dette:
 
 ### AI_APICallError og udbyderpakkeproblemer
 
-Hvis du støder på API-kaldsfejl, kan dette skyldes forældede udbyderpakker. miao installerer dynamisk udbyderpakker (OpenAI, Anthropic, Google, etc.) efter behov og cacher dem lokalt.
+Hvis du støder på API-kaldsfejl, kan dette skyldes forældede udbyderpakker. MIAO installerer dynamisk udbyderpakker (OpenAI, Anthropic, Google, etc.) efter behov og cacher dem lokalt.
 
 For at løse problemer med udbyderpakke:
 
@@ -264,9 +264,9 @@ For at løse problemer med udbyderpakke:
 
    På Windows, tryk `WIN+R` og slet: `%USERPROFILE%\.cache\miao`
 
-2. Start miao på ny for at installere de nyeste udbyderpakker på ny
+2. Start MIAO på ny for at installere de nyeste udbyderpakker på ny
 
-Dette vil tvinge miao til at downloade de nyeste versioner af udbyderpakkerne, som ofte løser kompatibilitetsproblemer med modelparametre og API-ændringer.
+Dette vil tvinge MIAO til at downloade de nyeste versioner af udbyderpakkerne, som ofte løser kompatibilitetsproblemer med modelparametre og API-ændringer.
 
 ---
 

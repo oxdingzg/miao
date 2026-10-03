@@ -1,6 +1,6 @@
 ---
 title: ACP サポート
-description: ACP 互換エディターで Miao を使用します。
+description: ACP 互換エディターで MIAO を使用します。
 ---
 
 Miao は [Agent Client Protocol](https://agentclientprotocol.com) または (ACP) をサポートしているため、互換性のあるエディターや IDE で直接使用できます。
@@ -14,9 +14,9 @@ ACP は、コードエディターと AI コーディングエージェント間
 
 ## 設定
 
-ACP 経由で Miao を使用するには、`miao acp` コマンドを実行するようにエディタを設定します。
+ACP 経由で MIAO を使用するには、`miao acp` コマンドを実行するようにエディタを設定します。
 
-このコマンドは、stdio 経由で JSON-RPC 経由でエディターと通信する ACP 互換のサブプロセスとして Miao を開始します。
+このコマンドは、stdio 経由で JSON-RPC 経由でエディターと通信する ACP 互換のサブプロセスとして MIAO を開始します。
 
 以下は、ACP をサポートする一般的なエディタの例です。
 
@@ -24,9 +24,9 @@ ACP 経由で Miao を使用するには、`miao acp` コマンドを実行す�
 
 ### Zed
 
-コマンドパレットで `zed: acp registry` を実行し、[Zed ACP レジストリ](https://zed.dev/docs/ai/external-agents#registry)から Miao をインストールします。
+コマンドパレットで `zed: acp registry` を実行し、[Zed ACP レジストリ](https://zed.dev/docs/ai/external-agents#registry)から MIAO をインストールします。
 
-代わりにカスタムの Miao 実行ファイルを使用する場合は、[Zed](https://zed.dev) の設定 (`~/.config/zed/settings.json`) に追加します。
+代わりにカスタムの MIAO 実行ファイルを使用する場合は、[Zed](https://zed.dev) の設定 (`~/.config/zed/settings.json`) に追加します。
 
 ```json title="~/.config/zed/settings.json"
 {
@@ -84,7 +84,7 @@ ACP 経由で Miao を使用するには、`miao acp` コマンドを実行す�
 }
 ```
 
-これを開くには、AI Chat エージェントセレクターで新しい「Miao」エージェントを使用します。
+これを開くには、AI Chat エージェントセレクターで新しい「MIAO」エージェントを使用します。
 
 ---
 
@@ -123,7 +123,7 @@ ACP 経由で Miao を使用するには、`miao acp` コマンドを実行す�
 
 ### CodeCompanion.nvim
 
-[CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) で Miao を ACP エージェントとして使用するには、以下を Neovim 構成に追加します。
+[CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) で MIAO を ACP エージェントとして使用するには、以下を Neovim 構成に追加します。
 
 ```lua
 require("codecompanion").setup({
@@ -138,7 +138,7 @@ require("codecompanion").setup({
 })
 ```
 
-この構成は、Miao をチャットの ACP エージェントとして使用するように CodeCompanion をセットアップします。
+この構成は、MIAO をチャットの ACP エージェントとして使用するように CodeCompanion をセットアップします。
 
 環境変数 (`MIAO_API_KEY` など) を渡す必要がある場合、詳細については、CodeCompanion.nvim ドキュメントの「[アダプターの構成: 環境変数](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key)」を参照してください。
 
@@ -152,7 +152,7 @@ Miao は、ACP 経由でもターミナル内で動作するのと同じよう�
 
 - 組み込みツール (ファイル操作、ターミナルコマンドなど)
 - カスタムツールとスラッシュコマンド
-- Miao 設定で構成された MCP サーバー
+- MIAO 設定で構成された MCP サーバー
 - `AGENTS.md` のプロジェクト固有のルール
 - カスタムフォーマッタとリンター
 - エージェントと権限システム

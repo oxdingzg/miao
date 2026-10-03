@@ -1,9 +1,9 @@
 ---
 title: Konfigurasjon
-description: Ved å bruke miao JSON-konfigurasjonen.
+description: Ved å bruke MIAO JSON-konfigurasjonen.
 ---
 
-Du kan konfigurere Miao ved å bruke en JSON konfigurasjonsfil.
+Du kan konfigurere MIAO ved å bruke en JSON konfigurasjonsfil.
 
 ---
 
@@ -35,7 +35,7 @@ Konfigurasjonsfiler er **slått sammen**, ikke erstattet.
 
 Konfigurasjonsfiler slås sammen, ikke erstattes. Innstillinger fra følgende konfigurasjonsplasseringer kombineres. Senere konfigurasjoner overstyrer tidligere kun for motstridende nøkler. Ikke-motstridende innstillinger fra alle konfigurasjoner er bevart.
 
-For eksempel, hvis din globale konfigurasjon setter `theme: "miao"` og `autoupdate: true`, og prosjektkonfigurasjonen setter `model: "anthropic/claude-sonnet-4-5"`, vil den endelige konfigurasjonen inkludere alle tre innstillingene.
+For eksempel, hvis din globale konfigurasjon setter `theme: "MIAO"` og `autoupdate: true`, og prosjektkonfigurasjonen setter `model: "anthropic/claude-sonnet-4-5"`, vil den endelige konfigurasjonen inkludere alle tre innstillingene.
 
 ---
 
@@ -110,7 +110,7 @@ Legg til `miao.json` i prosjektroten din. Prosjektkonfigurasjon har den høyeste
 Plasser prosjektspesifikk konfigurasjon i roten til prosjektet ditt.
 :::
 
-Når Miao starter opp, ser den etter en konfigurasjonsfil i gjeldende katalog eller går opp til nærmeste Git-katalog.
+Når MIAO starter opp, ser den etter en konfigurasjonsfil i gjeldende katalog eller går opp til nærmeste Git-katalog.
 
 Det er også trygt å sjekke inn dette i Git og bruker samme skjema som det globale.
 
@@ -240,7 +240,7 @@ Du kan konfigurere leverandørene og modellene du vil bruke i Miao-konfigurasjon
 }
 ```
 
-Alternativet `small_model` konfigurerer en egen modell for lette oppgaver som tittelgenerering. Som standard prøver Miao å bruke en rimeligere modell hvis en er tilgjengelig fra leverandøren din, ellers faller den tilbake til hovedmodellen din.
+Alternativet `small_model` konfigurerer en egen modell for lette oppgaver som tittelgenerering. Som standard prøver MIAO å bruke en rimeligere modell hvis en er tilgjengelig fra leverandøren din, ellers faller den tilbake til hovedmodellen din.
 
 Leverandøralternativer kan inkludere `timeout` og `setCacheKey`:
 
@@ -352,7 +352,7 @@ Du kan angi standard agent ved å bruke alternativet `default_agent`. Dette best
 }
 ```
 
-Standardagenten må være en primæragent (ikke en underagent). Dette kan være en innebygd agent som `"build"` eller `"plan"`, eller en [egendefinert agent](/docs/agents) du har definert. Hvis den angitte agenten ikke eksisterer eller er en subagent, vil Miao falle tilbake til `"build"` med en advarsel.
+Standardagenten må være en primæragent (ikke en underagent). Dette kan være en innebygd agent som `"build"` eller `"plan"`, eller en [egendefinert agent](/docs/agents) du har definert. Hvis den angitte agenten ikke eksisterer eller er en subagent, vil MIAO falle tilbake til `"build"` med en advarsel.
 
 Denne innstillingen gjelder for alle grensesnitt: TUI, CLI (`miao run`), skrivebordsapp og GitHub Action.
 
@@ -464,7 +464,7 @@ Du kan konfigurere kodeformatere gjennom alternativet `formatter`.
 
 ### Tillatelser
 
-Som standard **tillater Miao alle operasjoner** uten å kreve eksplisitt godkjenning. Du kan endre dette ved å bruke alternativet `permission`.
+Som standard **tillater MIAO alle operasjoner** uten å kreve eksplisitt godkjenning. Du kan endre dette ved å bruke alternativet `permission`.
 
 Slik sikrer du at verktøyene `edit` og `bash` krever brukergodkjenning:
 
@@ -537,7 +537,7 @@ Du kan konfigurere MCP-servere du vil bruke gjennom alternativet `mcp`.
 
 ### Utvidelser
 
-[Plugins](/docs/plugins) utvider Miao med tilpassede verktøy, kroker og integrasjoner.
+[Plugins](/docs/plugins) utvider MIAO med tilpassede verktøy, kroker og integrasjoner.
 
 Plasser plugin-filer i `.miao/plugins/` eller `~/.config/miao/plugins/`. Du kan også laste inn plugins fra npm gjennom alternativet `plugin`.
 
@@ -602,7 +602,7 @@ Du kan spesifisere en godkjenningsliste over leverandører gjennom alternativet 
 }
 ```
 
-Dette er nyttig når du vil begrense Miao til kun å bruke spesifikke leverandører i stedet for å deaktivere dem én etter én.
+Dette er nyttig når du vil begrense MIAO til kun å bruke spesifikke leverandører i stedet for å deaktivere dem én etter én.
 
 :::note
 `disabled_providers` har prioritet over `enabled_providers`.

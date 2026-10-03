@@ -98,7 +98,7 @@ Lista modela se može mijenjati dok testiramo i dodajemo nove.
 
 ## Gdje ga mogu koristiti?
 
-OpenCode Go je osmišljen za [Miao](https://opencode.ai) i druge agente za programiranje
+OpenCode Go je osmišljen za [MIAO](https://opencode.ai) i druge agente za programiranje
 koji šalju slične vrste zahtjeva. Saobraćaj se nadzire radi otkrivanja zloupotrebe koja
 drugim korisnicima narušava iskustvo.
 
@@ -117,13 +117,13 @@ s OpenCode Go. Ipak, ne garantiramo da će nastaviti raditi i u budućnosti.
 
 | Klijent           | Podrška za sesije                                                                                                                                                                                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | Buildovi koji sadrže [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) šalju zaglavlje u glavnim i pomoćnim Miao zahtjevima. Ispravka je spojena nakon verzije v0.21.0; samo to izdanje je ne sadrži.                             |
+| **Hermes**        | Buildovi koji sadrže [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) šalju zaglavlje u glavnim i pomoćnim MIAO zahtjevima. Ispravka je spojena nakon verzije v0.21.0; samo to izdanje je ne sadrži.                             |
 | **Claude Code**   | Go prepoznaje njegovo izvorno zaglavlje sesije. Wrapper za prilagođeno zaglavlje nije potreban.                                                                                                                                                            |
 | **Codex**         | Go prepoznaje njegovo izvorno zaglavlje sesije. Neke verzije i proxy konfiguracije ga i dalje izostavljaju; sačuvajte zaglavlje sesije pri prosljeđivanju zahtjeva.                                                                                        |
 | **ZCode**         | Go prepoznaje njegovo izvorno zaglavlje sesije. Naš [zahtjev za `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) i dalje je otvoren, ali slanje tog konkretnog zaglavlja više nije potrebno.                                          |
 | **Pi**            | Trenutni buildovi šalju informacije o sesiji za Miao. Ažurirajte starije instalacije.                                                                                                                                                                  |
 | **jcode**         | Ažurirajte na **v0.81.6 ili noviju**, koja uključuje [ispravku zaglavlja sesije](https://github.com/1jehuang/jcode/issues/1167).                                                                                                                           |
-| **Kilo Code CLI** | Buildovi koji sadrže [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) vraćaju Miao zaglavlja sesije. Ova ispravka obuhvata CLI, ali ne i VS Code ekstenziju. Pogledajte [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
+| **Kilo Code CLI** | Buildovi koji sadrže [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) vraćaju MIAO zaglavlja sesije. Ova ispravka obuhvata CLI, ali ne i VS Code ekstenziju. Pogledajte [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
 
 ### Poznati problematični klijenti
 
@@ -342,7 +342,7 @@ Također možete pristupiti Go modelima putem sljedećih API endpointa.
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-[Model id](/docs/config/#models) u vašoj Miao konfiguraciji
+[Model id](/docs/config/#models) u vašoj MIAO konfiguraciji
 koristi format `opencode-go/<model-id>`. Na primjer, za Kimi K3, koristili biste
 `opencode-go/kimi-k3` u svojoj konfiguraciji.
 
@@ -410,4 +410,4 @@ Napravili smo OpenCode Go da bismo:
 1. Učinili AI programiranje **dostupnim** većem broju ljudi putem povoljne pretplate.
 2. Pružili **pouzdan** pristup najboljim otvorenim modelima za programiranje.
 3. Odabrali modele koji su **testirani i benchmarkovani** za upotrebu od strane agenata za programiranje.
-4. Osigurali da **nema zaključavanja (no lock-in)**, omogućavajući vam da uz Miao koristite i bilo kojeg drugog provajdera.
+4. Osigurali da **nema zaključavanja (no lock-in)**, omogućavajući vam da uz MIAO koristite i bilo kojeg drugog provajdera.

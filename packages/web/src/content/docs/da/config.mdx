@@ -1,9 +1,9 @@
 ---
 title: Konfiguration
-description: Ved at bruge Miao JSON konfig.
+description: Ved at bruge MIAO JSON konfig.
 ---
 
-Du kan konfigurere Miao ved hjælp af en JSON-konfigurationsfil.
+Du kan konfigurere MIAO ved hjælp af en JSON-konfigurationsfil.
 
 ---
 
@@ -110,7 +110,7 @@ Tilføj `miao.json` i dit projektrod. Project config har den højeste forrang bl
 Placer projektspecifik konfiguration i roden af ​​dit projekt.
 :::
 
-Når Miao starter op, søger den efter en konfigurationsfil i den aktuelle mappe eller går op til den nærmeste Git-mappe.
+Når MIAO starter op, søger den efter en konfigurationsfil i den aktuelle mappe eller går op til den nærmeste Git-mappe.
 
 Dette er også sikkert at blive tjekket ind i Git og bruger det samme skema som det globale.
 
@@ -240,7 +240,7 @@ Du kan konfigurere de udbydere og modeller, du vil bruge i din Miao-konfiguratio
 }
 ```
 
-Indstillingen `small_model` konfigurerer en separat model til lette opgaver som titelgenerering. Som standard forsøger Miao at bruge en billigere model, hvis en er tilgængelig fra din udbyder, ellers falder den tilbage til din hovedmodel.
+Indstillingen `small_model` konfigurerer en separat model til lette opgaver som titelgenerering. Som standard forsøger MIAO at bruge en billigere model, hvis en er tilgængelig fra din udbyder, ellers falder den tilbage til din hovedmodel.
 
 Udbydermuligheder kan omfatte `timeout` og `setCacheKey`:
 
@@ -352,7 +352,7 @@ Du kan indstille standardagenten ved at bruge indstillingen `default_agent`. Det
 }
 ```
 
-Standardagenten skal være en primær agent (ikke en subagent). Dette kan være en indbygget agent som `"build"` eller `"plan"`, eller en [custom agent](/docs/agents), du har defineret. Hvis den angivne agent ikke eksisterer eller er en underagent, vil Miao falde tilbage til `"build"` med en advarsel.
+Standardagenten skal være en primær agent (ikke en subagent). Dette kan være en indbygget agent som `"build"` eller `"plan"`, eller en [custom agent](/docs/agents), du har defineret. Hvis den angivne agent ikke eksisterer eller er en underagent, vil MIAO falde tilbage til `"build"` med en advarsel.
 
 Denne indstilling gælder på tværs af alle grænseflader: TUI, CLI (`miao run`), desktop-app og GitHub Action.
 
@@ -464,7 +464,7 @@ Du kan konfigurere kodeformatere gennem indstillingen `formatter`.
 
 ### Tilladelse (`permission`)
 
-Som standard miao **tillader alle operationer** uden at kræve eksplicit godkendelse. Du kan ændre dette ved at bruge indstillingen `permission`.
+Som standard MIAO **tillader alle operationer** uden at kræve eksplicit godkendelse. Du kan ændre dette ved at bruge indstillingen `permission`.
 
 For at sikre, at værktøjerne `edit` og `bash` for eksempel kræver brugergodkendelse:
 
@@ -537,7 +537,7 @@ Du kan konfigurere MCP-servere, som du vil bruge, gennem indstillingen `mcp`.
 
 ### Plugin
 
-[Plugins](/docs/plugins) udvide Miao med brugerdefinerede værktøjer, kroge og integrationer.
+[Plugins](/docs/plugins) udvide MIAO med brugerdefinerede værktøjer, kroge og integrationer.
 
 Placer plugin-filer i `.miao/plugins/` eller `~/.config/miao/plugins/`. Du kan også indlæse plugins fra npm gennem indstillingen `plugin`.
 
@@ -602,7 +602,7 @@ Du kan angive en tilladelsesliste over udbydere gennem muligheden `enabled_provi
 }
 ```
 
-Dette er nyttigt, når du vil begrænse Miao til kun at bruge specifikke udbydere i stedet for at deaktivere dem én efter én.
+Dette er nyttigt, når du vil begrænse MIAO til kun at bruge specifikke udbydere i stedet for at deaktivere dem én efter én.
 
 :::note
 `disabled_providers` har prioritet over `enabled_providers`.

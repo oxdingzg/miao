@@ -1,9 +1,9 @@
 ---
 title: Konfiguracja
-description: Ustawienia Miao w pliku JSON.
+description: Ustawienia MIAO w pliku JSON.
 ---
 
-Możesz dostosować Miao za pomocą pliku konfiguracyjnego JSON.
+Możesz dostosować MIAO za pomocą pliku konfiguracyjnego JSON.
 
 ---
 
@@ -33,7 +33,7 @@ Pliki konfiguracyjne są **łączone**, a nie nadpisywane.
 
 Pliki konfiguracyjne są łączone ze sobą. Ustawienia z lokalizacji o wyższym priorytecie nadpisują ustawienia z lokalizacji o niższym priorytecie tylko w przypadku konfliktów kluczy. Ustawienia niekolidujące ze wszystkich źródeł są zachowywane.
 
-Na przykład, jeśli konfiguracja globalna ustawi `theme: "miao"` i `autoupdate: true`, a konfiguracja projektu ustawi `model: "anthropic/claude-sonnet-4-5"`, ostateczna konfiguracja będzie zawierać wszystkie trzy ustawienia.
+Na przykład, jeśli konfiguracja globalna ustawi `theme: "MIAO"` i `autoupdate: true`, a konfiguracja projektu ustawi `model: "anthropic/claude-sonnet-4-5"`, ostateczna konfiguracja będzie zawierać wszystkie trzy ustawienia.
 
 ---
 
@@ -94,7 +94,7 @@ Możesz włączyć serwer w konfiguracji projektu:
 
 ### Globalna
 
-Umieść swoją globalną konfigurację Miao w `~/.config/miao/miao.json`. Użyj jej do ustawień ogólnych dla użytkownika, takich jak dostawcy, modele i uprawnienia.
+Umieść swoją globalną konfigurację MIAO w `~/.config/miao/miao.json`. Użyj jej do ustawień ogólnych dla użytkownika, takich jak dostawcy, modele i uprawnienia.
 
 Dla ustawień specyficznych dla TUI, użyj `~/.config/miao/tui.json`.
 
@@ -112,7 +112,7 @@ Dla ustawień TUI specyficznych dla projektu, dodaj plik `tui.json` obok niego.
 Umieść konfigurację specyficzną dla projektu w katalogu głównym projektu.
 :::
 
-Kiedy Miao się uruchamia, szuka pliku konfiguracyjnego w katalogu głównym repozytorium Git.
+Kiedy MIAO się uruchamia, szuka pliku konfiguracyjnego w katalogu głównym repozytorium Git.
 
 Może on być przechowywany w Git i mieć ten sam schemat, co konfiguracja globalna.
 
@@ -235,7 +235,7 @@ Możesz skonfigurować dostawców i modele, których chcesz używać, za pomocą
 }
 ```
 
-Opcja `small_model` konfiguruje oddzielny model do lżejszych zadań, takich jak generowanie tytułów. Domyślnie Miao wybiera tańszy model od tego samego dostawcy, jeśli jest dostępny, w przeciwnym razie powraca do modelu głównego.
+Opcja `small_model` konfiguruje oddzielny model do lżejszych zadań, takich jak generowanie tytułów. Domyślnie MIAO wybiera tańszy model od tego samego dostawcy, jeśli jest dostępny, w przeciwnym razie powraca do modelu głównego.
 
 Opcje dostawcy mogą zawierać `timeout` i `setCacheKey`:
 
@@ -347,7 +347,7 @@ Domyślnego agenta można ustawić za pomocą opcji `default_agent`. Określa to
 }
 ```
 
-Agent domyślny musi być agentem typu `primary` (nie `subagent`). Może to być agent wbudowany, taki jak `"build"` lub `"plan"`, albo zdefiniowany przez Ciebie [agent niestandardowy](/docs/agents). Jeśli agent nie istnieje lub jest subagentem, Miao powróci do `"build"` z ostrzeżeniem.
+Agent domyślny musi być agentem typu `primary` (nie `subagent`). Może to być agent wbudowany, taki jak `"build"` lub `"plan"`, albo zdefiniowany przez Ciebie [agent niestandardowy](/docs/agents). Jeśli agent nie istnieje lub jest subagentem, MIAO powróci do `"build"` z ostrzeżeniem.
 
 Dotyczy to wszystkich interfejsów: TUI, CLI (`miao run`), aplikacji desktopowej i GitHub Actions.
 
@@ -427,7 +427,7 @@ Miao może automatycznie pobierać nowe wersje. Możesz to kontrolować za pomoc
 ```
 
 Jeśli nie chcesz automatycznych aktualizacji, ale chcesz być powiadamiany o nowych wersjach, ustaw `autoupdate` na `"notify"`.
-Działa to tylko wtedy, gdy Miao nie został zainstalowany przez menedżera pakietów, takiego jak Homebrew.
+Działa to tylko wtedy, gdy MIAO nie został zainstalowany przez menedżera pakietów, takiego jak Homebrew.
 
 ---
 
@@ -459,7 +459,7 @@ Możesz skonfigurować formatery kodu za pomocą opcji `formatter`.
 
 ### Permissions (Uprawnienia)
 
-Domyślnie Miao **zezwala na wszystkie działania** bez konieczności zatwierdzania. Możesz to zmienić za pomocą opcji `permission`.
+Domyślnie MIAO **zezwala na wszystkie działania** bez konieczności zatwierdzania. Możesz to zmienić za pomocą opcji `permission`.
 
 Na przykład, aby wymagać zatwierdzenia dla narzędzi `edit` i `bash`:
 
@@ -530,7 +530,7 @@ Skonfiguruj serwery MCP, których chcesz używać, za pomocą opcji `mcp`.
 
 ### Plugins (Wtyczki)
 
-[Wtyczki](/docs/plugins) rozszerzają Miao o niestandardowe narzędzia, hooki i integracje.
+[Wtyczki](/docs/plugins) rozszerzają MIAO o niestandardowe narzędzia, hooki i integracje.
 
 Umieść pliki wtyczek w `.miao/plugins/` lub `~/.config/miao/plugins/`. Możesz także załadować wtyczkę z npm za pomocą opcji `plugin`.
 
@@ -594,7 +594,7 @@ Możesz określić listę dozwolonych dostawców za pomocą `enabled_providers`.
 }
 ```
 
-Jest to przydatne, gdy chcesz ograniczyć użycie Miao tylko do określonych dostawców.
+Jest to przydatne, gdy chcesz ograniczyć użycie MIAO tylko do określonych dostawców.
 
 :::note
 `disabled_providers` ma pierwszeństwo przed `enabled_providers`.

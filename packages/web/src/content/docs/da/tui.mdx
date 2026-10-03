@@ -7,7 +7,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components"
 
 Miao giver en interaktiv terminalgrænseflade eller TUI til at arbejde med dine projekter med en LLM.
 
-At køre Miao starter TUI for den nuværende mappe.
+At køre MIAO starter TUI for den nuværende mappe.
 
 ```bash
 miao
@@ -57,7 +57,7 @@ Outputtet fra kommandoen tilføjes til samtalen som et værktøjsresultat.
 
 ## Kommandoer
 
-Når du bruger Miao TUI, kan du skrive `/` efterfulgt af et kommandonavn for hurtigt at udføre handlinger. For eksempel:
+Når du bruger MIAO TUI, kan du skrive `/` efterfulgt af et kommandonavn for hurtigt at udføre handlinger. For eksempel:
 
 ```bash frame="none"
 /help
@@ -390,7 +390,7 @@ Dette er adskilt fra `miao.json`, som konfigurerer server-/kørselstidsadfærd.
 
 - `theme` - Indstiller dit brugergrænsefladetema. [Læs mere](/docs/themes).
 - `keybinds` - Tilpasser tastaturgenveje. [Læs mere](/docs/keybinds).
-- `leader_timeout` - Styrer hvor længe Miao venter efter leader key. Standard er `2000`.
+- `leader_timeout` - Styrer hvor længe MIAO venter efter leader key. Standard er `2000`.
 - `scroll_acceleration.enabled` - Aktiver rulleacceleration i macOS-stil for jævn, naturlig rulning. Når aktiveret, øger rullehastigheden med hurtige rullebevægelser og forbliver præcis for langsommere bevægelser. **Denne indstilling har forrang over `scroll_speed` og tilsidesætter den, når den er aktiveret.**
 - `scroll_speed` - Styrer hvor hurtigt TUI ruller, når du bruger rullekommandoer (minimum: `0.001`, understøtter decimalværdier). Standard er `3`. **Bemærk: Dette ignoreres hvis `scroll_acceleration.enabled` er sat til `true`.**
 - `diff_style` - Styrer diff-gengivelse. `"auto"` tilpasser sig terminalbredde, `"stacked"` viser altid et enkeltkolonne-layout.
@@ -401,7 +401,7 @@ Brug `MIAO_TUI_CONFIG` til at indlæse en brugerdefineret TUI-konfigurationssti.
 
 ### Attention
 
-Attention lader TUI give dig besked, når Miao venter på et svar, kræver godkendelse af en tilladelse, rapporterer en sessionsfejl eller har afsluttet en session. Aktivér det med `attention.enabled`; indbyggede hændelser afspiller en lyd, når de sker. Skrivebordsnotifikationer sendes kun, når terminalvinduet ikke er i fokus, og bruges ikke til subagent-hændelser.
+Attention lader TUI give dig besked, når MIAO venter på et svar, kræver godkendelse af en tilladelse, rapporterer en sessionsfejl eller har afsluttet en session. Aktivér det med `attention.enabled`; indbyggede hændelser afspiller en lyd, når de sker. Skrivebordsnotifikationer sendes kun, når terminalvinduet ikke er i fokus, og bruges ikke til subagent-hændelser.
 
 - `enabled` - Aktiverer alle notifikationer og lyde for Attention. Standard er `false`.
 - `notifications` - Når Attention er aktiveret, lader dette TUI sende skrivebordsnotifikationer via terminalen. Standard er `true`.

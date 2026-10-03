@@ -1,11 +1,11 @@
 ---
 title: GitLab
-description: Use Miao in GitLab issues and merge requests.
+description: Use MIAO in GitLab issues and merge requests.
 ---
 
 Miao integrates with your GitLab workflow through your GitLab CI/CD pipeline or with GitLab Duo.
 
-In both cases, Miao will run on your GitLab runners.
+In both cases, MIAO will run on your GitLab runners.
 
 ---
 
@@ -13,21 +13,21 @@ In both cases, Miao will run on your GitLab runners.
 
 Miao works in a regular GitLab pipeline. You can build it into a pipeline as a [CI component](https://docs.gitlab.com/ee/ci/components/)
 
-Here we are using a community-created CI/CD component for Miao — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+Here we are using a community-created CI/CD component for MIAO — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Features
 
-- **Use custom configuration per job**: Configure Miao with a custom configuration directory, for example `./config/#custom-directory` to enable or disable functionality per Miao invocation.
-- **Minimal setup**: The CI component sets up Miao in the background, you only need to create the Miao configuration and the initial prompt.
+- **Use custom configuration per job**: Configure MIAO with a custom configuration directory, for example `./config/#custom-directory` to enable or disable functionality per MIAO invocation.
+- **Minimal setup**: The CI component sets up MIAO in the background, you only need to create the MIAO configuration and the initial prompt.
 - **Flexible**: The CI component supports several inputs for customizing its behavior
 
 ---
 
 ### Setup
 
-1. Store your Miao authentication JSON as a File type CI environment variables under **Settings** > **CI/CD** > **Variables**. Make sure to mark them as "Masked and hidden".
+1. Store your MIAO authentication JSON as a File type CI environment variables under **Settings** > **CI/CD** > **Variables**. Make sure to mark them as "Masked and hidden".
 2. Add the following to your `.gitlab-ci.yml` file.
 
    ```yaml title=".gitlab-ci.yml"
@@ -47,16 +47,16 @@ For more inputs and use cases [check out the docs](https://gitlab.com/explore/ca
 ## GitLab Duo
 
 Miao integrates with your GitLab workflow.
-Mention `@opencode` in a comment, and Miao will execute tasks within your GitLab CI pipeline.
+Mention `@opencode` in a comment, and MIAO will execute tasks within your GitLab CI pipeline.
 
 ---
 
 ### Features
 
-- **Triage issues**: Ask Miao to look into an issue and explain it to you.
-- **Fix and implement**: Ask Miao to fix an issue or implement a feature.
+- **Triage issues**: Ask MIAO to look into an issue and explain it to you.
+- **Fix and implement**: Ask MIAO to fix an issue or implement a feature.
   It will create a new branch and raise a merge request with the changes.
-- **Secure**: Miao runs on your GitLab runners.
+- **Secure**: MIAO runs on your GitLab runners.
 
 ---
 
@@ -158,7 +158,7 @@ You can refer to the [GitLab CLI agents docs](https://docs.gitlab.com/user/duo_a
 
 ### Examples
 
-Here are some examples of how you can use Miao in GitLab.
+Here are some examples of how you can use MIAO in GitLab.
 
 :::tip
 You can configure to use a different trigger phrase than `@opencode`.

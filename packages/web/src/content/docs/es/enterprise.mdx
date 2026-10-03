@@ -1,6 +1,6 @@
 ---
 title: Empresa
-description: Usar Miao de forma segura en su organización.
+description: Usar MIAO de forma segura en su organización.
 ---
 
 import config from "../../../../config.mjs"
@@ -12,7 +12,7 @@ Miao Enterprise es para organizaciones que desean garantizar que su código y su
 Miao no almacena ningún código ni datos de contexto.
 :::
 
-Para comenzar con Miao Enterprise:
+Para comenzar con MIAO Enterprise:
 
 1. Haz una prueba interna con tu equipo.
 2. **<a href={email}>Contáctenos</a>** para analizar los precios y las opciones de implementación.
@@ -27,10 +27,10 @@ Miao es de código abierto y no almacena ningún código ni datos de contexto, p
 
 ### Manejo de datos
 
-**Miao no almacena su código ni datos de contexto.** Todo el procesamiento se realiza localmente o mediante llamadas directas API a su proveedor de IA.
+**MIAO no almacena su código ni datos de contexto.** Todo el procesamiento se realiza localmente o mediante llamadas directas API a su proveedor de IA.
 
 Esto significa que, siempre que uses un proveedor de confianza o un
-AI gateway interno, puedes usar Miao de forma segura.
+AI gateway interno, puedes usar MIAO de forma segura.
 
 La única advertencia aquí es la característica opcional `/share`.
 
@@ -63,13 +63,13 @@ Le recomendamos que desactive esto para su prueba.
 
 ## Precios
 
-Usamos un modelo por puesto para Miao Enterprise. Si tiene su propia puerta de enlace LLM, no cobramos por los tokens utilizados. Para obtener más detalles sobre precios y opciones de implementación, **<a href={email}>contáctenos</a>**.
+Usamos un modelo por puesto para MIAO Enterprise. Si tiene su propia puerta de enlace LLM, no cobramos por los tokens utilizados. Para obtener más detalles sobre precios y opciones de implementación, **<a href={email}>contáctenos</a>**.
 
 ---
 
 ## Implementación
 
-Una vez que haya completado su prueba y esté listo para usar Miao en
+Una vez que haya completado su prueba y esté listo para usar MIAO en
 su organización, puede **<a href={email}>contáctenos</a>** para discutir
 opciones de fijación de precios y de implementación.
 
@@ -77,7 +77,7 @@ opciones de fijación de precios y de implementación.
 
 ### Configuración central
 
-Podemos configurar Miao para usar una única configuración central para toda su organización.
+Podemos configurar MIAO para usar una única configuración central para toda su organización.
 
 Esta configuración centralizada puede integrarse con su proveedor de SSO y garantiza que todos los usuarios accedan únicamente a su puerta de enlace de IA interna.
 
@@ -85,15 +85,15 @@ Esta configuración centralizada puede integrarse con su proveedor de SSO y gara
 
 ### Integración SSO
 
-A través de la configuración central, Miao puede integrarse con el proveedor de SSO de su organización para la autenticación.
+A través de la configuración central, MIAO puede integrarse con el proveedor de SSO de su organización para la autenticación.
 
-Esto permite a Miao obtener credenciales para su puerta de enlace interna de IA a través de su sistema de gestión de identidad existente.
+Esto permite a MIAO obtener credenciales para su puerta de enlace interna de IA a través de su sistema de gestión de identidad existente.
 
 ---
 
 ### Puerta de enlace interna de IA
 
-Con la configuración central, Miao también se puede configurar para usar solo su puerta de enlace AI interna.
+Con la configuración central, MIAO también se puede configurar para usar solo su puerta de enlace AI interna.
 
 También puede desactivar todos los demás proveedores de IA, asegurándose de que todas las solicitudes pasen por la infraestructura aprobada de su organización.
 
@@ -111,16 +111,16 @@ Esto se encuentra actualmente en nuestra hoja de ruta. Si está interesado, **<a
 ## Preguntas frecuentes
 
 <details>
-<summary>¿Qué es Miao Enterprise?</summary>
+<summary>¿Qué es MIAO Enterprise?</summary>
 
 Miao Enterprise es para organizaciones que desean garantizar que su código y sus datos nunca abandonen su infraestructura. Puede hacerlo mediante el uso de una configuración centralizada que se integra con su SSO y su puerta de enlace AI interna.
 
 </details>
 
 <details>
-<summary>¿Cómo empiezo con Miao Enterprise?</summary>
+<summary>¿Cómo empiezo con MIAO Enterprise?</summary>
 
-Simplemente comience con una prueba interna con su equipo. Miao de forma predeterminada no almacena su código ni datos de contexto, lo que facilita el inicio.
+Simplemente comience con una prueba interna con su equipo. MIAO de forma predeterminada no almacena su código ni datos de contexto, lo que facilita el inicio.
 
 Luego **<a href={email}>contáctenos</a>** para analizar los precios y las opciones de implementación.
 
@@ -134,9 +134,9 @@ Ofrecemos precios empresariales por asiento. Si tiene su propia puerta de enlace
 </details>
 
 <details>
-<summary>¿Están mis datos seguros con Miao Enterprise?</summary>
+<summary>¿Están mis datos seguros con MIAO Enterprise?</summary>
 
-Sí. Miao no almacena su código ni datos de contexto. Todo el procesamiento se realiza localmente o mediante llamadas directas API a su proveedor de IA. Con la configuración central y la integración de SSO, sus datos permanecen seguros dentro de la infraestructura de su organización.
+Sí. MIAO no almacena su código ni datos de contexto. Todo el procesamiento se realiza localmente o mediante llamadas directas API a su proveedor de IA. Con la configuración central y la integración de SSO, sus datos permanecen seguros dentro de la infraestructura de su organización.
 
 </details>
 
@@ -151,7 +151,7 @@ Para configurar la autenticación con su registro privado:
 npm login --registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 ```
 
-Esto crea `~/.npmrc` con detalles de autenticación. Miao automáticamente
+Esto crea `~/.npmrc` con detalles de autenticación. MIAO automáticamente
 recoge esto.
 
 :::caution
@@ -165,6 +165,6 @@ registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 //your-company.jfrog.io/api/npm/npm-virtual/:_authToken=${NPM_AUTH_TOKEN}
 ```
 
-Los desarrolladores deben iniciar sesión en el registro privado antes de ejecutar Miao para garantizar que los paquetes se puedan instalar desde su registro empresarial.
+Los desarrolladores deben iniciar sesión en el registro privado antes de ejecutar MIAO para garantizar que los paquetes se puedan instalar desde su registro empresarial.
 
 </details>

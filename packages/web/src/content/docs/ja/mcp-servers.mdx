@@ -3,7 +3,7 @@ title: MCPサーバー
 description: ローカルおよびリモートの MCP ツールを追加します。
 ---
 
-_Model Context Protocol_ (MCP) を使用して、Miao に外部ツールを追加できます。 Miao は、ローカルサーバーとリモートサーバーの両方をサポートします。
+_Model Context Protocol_ (MCP) を使用して、MIAO に外部ツールを追加できます。 MIAO は、ローカルサーバーとリモートサーバーの両方をサポートします。
 
 MCP ツールを追加すると、組み込みツールとともに LLM で自動的に使用できるようになります。
 
@@ -23,7 +23,7 @@ MCP サーバーはコンテキストに追加されるため、どのサーバ�
 
 ## 有効化
 
-MCP サーバーは、`mcp` の下の [Miao 設定](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) で定義できます。各 MCP を一意の名前で追加します。 LLM にプロンプ​​トを表示するときに、その MCP を名前で参照できます。
+MCP サーバーは、`mcp` の下の [MIAO 設定](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) で定義できます。各 MCP を一意の名前で追加します。 LLM にプロンプ​​トを表示するときに、その MCP を名前で参照できます。
 
 ```jsonc title="miao.json" {6}
 {
@@ -189,7 +189,7 @@ Miao は、リモート MCP サーバーの OAuth 認証を自動的に処理し
 }
 ```
 
-サーバーが認証を必要とする場合、Miao を初めて使用しようとすると、認証を求めるプロンプトが表示されます。そうでない場合は、`miao mcp auth <server-name>` を使用して [flow](#authenticating) を手動でトリガーできます。
+サーバーが認証を必要とする場合、MIAO を初めて使用しようとすると、認証を求めるプロンプトが表示されます。そうでない場合は、`miao mcp auth <server-name>` を使用して [flow](#authenticating) を手動でトリガーできます。
 
 ---
 
@@ -238,7 +238,7 @@ miao mcp list
 miao mcp logout my-oauth-server
 ```
 
-`mcp auth` コマンドは、認証のためにブラウザを開きます。承認後、Miao はトークンを `~/.local/share/miao/mcp-auth.json` に安全に保存します。
+`mcp auth` コマンドは、認証のためにブラウザを開きます。承認後、MIAO はトークンを `~/.local/share/miao/mcp-auth.json` に安全に保存します。
 
 ---
 
@@ -291,7 +291,7 @@ miao mcp debug my-oauth-server
 
 ## 管理
 
-MCP は、組み込みツールと並んで、Miao のツールとして利用できます。したがって、他のツールと同様に、Miao 設定を通じてそれらを管理できます。
+MCP は、組み込みツールと並んで、MIAO のツールとして利用できます。したがって、他のツールと同様に、MIAO 設定を通じてそれらを管理できます。
 
 ---
 
@@ -423,7 +423,7 @@ MCP サーバーツールはサーバー名をプレフィックスとして登�
 miao mcp auth sentry
 ```
 
-これにより、ブラウザウィンドウが開き、OAuth フローが完了し、Miao が Sentry アカウントに接続されます。
+これにより、ブラウザウィンドウが開き、OAuth フローが完了し、MIAO が Sentry アカウントに接続されます。
 
 認証が完了すると、プロンプトで Sentry ツールを使用して、問題、プロジェクト、エラーデータをクエリできるようになります。
 

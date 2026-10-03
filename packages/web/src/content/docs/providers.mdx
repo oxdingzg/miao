@@ -11,7 +11,7 @@ Miao uses the [AI SDK](https://ai-sdk.dev/) and [Models.dev](https://models.dev)
 To add a provider you need to:
 
 1. Add the API keys for the provider using the `/connect` command.
-2. Configure the provider in your Miao config.
+2. Configure the provider in your MIAO config.
 
 ---
 
@@ -24,7 +24,7 @@ in `~/.local/share/miao/auth.json`.
 
 ### Config
 
-You can customize the providers through the `provider` section in your Miao
+You can customize the providers through the `provider` section in your MIAO
 config.
 
 ---
@@ -86,7 +86,7 @@ Both options take an array of model IDs — the same IDs shown in the `/models` 
 
 ## OpenCode Zen
 
-OpenCode Zen is a list of models provided by the Miao team that have been
+OpenCode Zen is a list of models provided by the MIAO team that have been
 tested and verified to work well with Miao. [Learn more](/docs/zen).
 
 :::tip
@@ -116,13 +116,13 @@ If you are new, we recommend starting with OpenCode Zen.
    /models
    ```
 
-It works like any other provider in Miao and is completely optional to use.
+It works like any other provider in MIAO and is completely optional to use.
 
 ---
 
 ## OpenCode Go
 
-OpenCode Go is a low cost subscription plan that provides reliable access to popular open coding models provided by the Miao team that have been
+OpenCode Go is a low cost subscription plan that provides reliable access to popular open coding models provided by the MIAO team that have been
 tested and verified to work well with Miao.
 
 1. Run the `/connect` command in the TUI, select `OpenCode Go`, and head to [opencode.ai/auth](https://opencode.ai/zen).
@@ -148,7 +148,7 @@ tested and verified to work well with Miao.
    /models
    ```
 
-It works like any other provider in Miao and is completely optional to use.
+It works like any other provider in MIAO and is completely optional to use.
 
 ---
 
@@ -192,7 +192,7 @@ Don't see a provider here? Submit a PR.
 
 ### Amazon Bedrock
 
-To use Amazon Bedrock with Miao:
+To use Amazon Bedrock with MIAO:
 
 1. Head over to the **Model catalog** in the Amazon Bedrock console and request
    access to the models you want.
@@ -207,7 +207,7 @@ To use Amazon Bedrock with Miao:
 
    #### Environment Variables (Quick Start)
 
-   Set one of these environment variables while running miao:
+   Set one of these environment variables while running MIAO:
 
    ```bash
    # Option 1: Using AWS access keys
@@ -357,11 +357,11 @@ For custom inference profiles, use the model and provider name in the key and se
 There are plugins that allow you to use your Claude Pro/Max models with
 Miao. Anthropic explicitly prohibits this.
 
-Previous versions of Miao came bundled with these plugins but that is no
+Previous versions of MIAO came bundled with these plugins but that is no
 longer the case as of 1.3.0
 
 Other companies support freedom of choice with developer tooling - you can use
-the following subscriptions in Miao with zero setup:
+the following subscriptions in MIAO with zero setup:
 
 - ChatGPT Plus
 - Github Copilot
@@ -372,7 +372,7 @@ the following subscriptions in Miao with zero setup:
 
 ### Atomic Chat
 
-You can configure miao to use local models through [Atomic Chat](https://atomic.chat), a desktop application that runs local LLMs behind an OpenAI-compatible API server (default endpoint `http://127.0.0.1:1337/v1`).
+You can configure MIAO to use local models through [Atomic Chat](https://atomic.chat), a desktop application that runs local LLMs behind an OpenAI-compatible API server (default endpoint `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -421,7 +421,7 @@ If you encounter "I'm sorry, but I cannot assist with that request" errors, try 
 2. Go to [Azure AI Foundry](https://ai.azure.com/) and deploy a model.
 
    :::note
-   The deployment name must match the model name for miao to work properly.
+   The deployment name must match the model name for MIAO to work properly.
    :::
 
 3. Run the `/connect` command and search for **Azure**.
@@ -486,7 +486,7 @@ Miao does not query Azure management APIs or discover deployments. Select a mode
 }
 ```
 
-Assign your identity the inference role required by the deployment: **Cognitive Services OpenAI User** for Azure OpenAI models or **Cognitive Services User** for other Foundry models. Miao refreshes access tokens through the Azure CLI, including versions earlier than 2.54.0, so you only need to sign in again when the CLI session expires.
+Assign your identity the inference role required by the deployment: **Cognitive Services OpenAI User** for Azure OpenAI models or **Cognitive Services User** for other Foundry models. MIAO refreshes access tokens through the Azure CLI, including versions earlier than 2.54.0, so you only need to sign in again when the CLI session expires.
 
 ---
 
@@ -499,7 +499,7 @@ Assign your identity the inference role required by the deployment: **Cognitive 
 2. Go to [Azure AI Foundry](https://ai.azure.com/) and deploy a model.
 
    :::note
-   The deployment name must match the model name for miao to work properly.
+   The deployment name must match the model name for MIAO to work properly.
    :::
 
 3. Run the `/connect` command and search for **Azure Cognitive Services**.
@@ -636,7 +636,7 @@ Cloudflare AI Gateway lets you access models from OpenAI, Anthropic, Workers AI,
    /models
    ```
 
-   You can also add models through your miao config.
+   You can also add models through your MIAO config.
 
    ```json title="miao.json"
    {
@@ -794,7 +794,7 @@ DigitalOcean's [Inference Engine](https://docs.digitalocean.com/products/inferen
 
 Miao supports two authentication methods:
 
-- **OAuth (Recommended)** — Sign in to your DigitalOcean account; Miao uses your DigitalOcean API token directly for inference and discovers your Inference Routers.
+- **OAuth (Recommended)** — Sign in to your DigitalOcean account; MIAO uses your DigitalOcean API token directly for inference and discovers your Inference Routers.
 - **Model Access Key** — Paste an existing key from the DigitalOcean console.
 
 #### OAuth (Recommended)
@@ -868,9 +868,9 @@ export DIGITALOCEAN_ACCESS_TOKEN=your-model-access-key
 
 #### Inference Routers
 
-Inference Routers let you define a routing policy across multiple models — picking the cheapest, fastest, or most appropriate model per request based on the task. After OAuth, Miao surfaces each router as `router:<router-name>` in the model picker.
+Inference Routers let you define a routing policy across multiple models — picking the cheapest, fastest, or most appropriate model per request based on the task. After OAuth, MIAO surfaces each router as `router:<router-name>` in the model picker.
 
-Selecting a router model is a drop-in replacement for any other model — Miao forwards your request and DigitalOcean picks the underlying model based on your router's policy. Learn more about [Inference Routers](https://docs.digitalocean.com/products/inference/how-to/use-inference-router/)
+Selecting a router model is a drop-in replacement for any other model — MIAO forwards your request and DigitalOcean picks the underlying model based on your router's policy. Learn more about [Inference Routers](https://docs.digitalocean.com/products/inference/how-to/use-inference-router/)
 
 ---
 
@@ -979,7 +979,7 @@ Selecting a router model is a drop-in replacement for any other model — Miao f
 ### GitLab Duo
 
 :::caution[Experimental]
-GitLab Duo support in Miao is experimental. Features, configuration, and
+GitLab Duo support in MIAO is experimental. Features, configuration, and
 behavior may change in future releases.
 :::
 
@@ -1033,14 +1033,14 @@ for full requirements.
 
 :::note
 You can also specify 'GITLAB_TOKEN' environment variable if you don't want
-to store token in miao auth storage.
+to store token in MIAO auth storage.
 :::
 
 ##### Self-Hosted GitLab
 
 :::note[compliance note]
 Miao uses a small model for some AI tasks like generating the session title.
-It is configured to use gpt-5-nano by default, hosted by Zen. To lock Miao
+It is configured to use gpt-5-nano by default, hosted by Zen. To lock MIAO
 to only use your own GitLab-hosted instance, add the following to your
 `miao.json` file. It is also recommended to disable session sharing.
 
@@ -1125,12 +1125,12 @@ Customize through `miao.json`:
 
 DAP workflow models provide an alternative execution path that routes tool calls
 through GitLab's Duo Workflow Service (DWS) instead of the standard agentic chat.
-When a `duo-workflow-*` model is selected, Miao will:
+When a `duo-workflow-*` model is selected, MIAO will:
 
 1. Discover available models from your GitLab namespace
 2. Present a selection picker if multiple models are available
 3. Cache the selected model to disk for fast subsequent startups
-4. Route tool execution requests through Miao's permission-gated tool system
+4. Route tool execution requests through MIAO's permission-gated tool system
 
 Available DAP workflow models follow the `duo-workflow-*` naming convention and
 are dynamically discovered from your GitLab instance.
@@ -1152,7 +1152,7 @@ This plugin provides comprehensive GitLab repository management capabilities inc
 
 ### GitHub Copilot
 
-To use your GitHub Copilot subscription with miao:
+To use your GitHub Copilot subscription with MIAO:
 
 :::note
 Some models might need a [Pro+
@@ -1187,7 +1187,7 @@ subscription](https://github.com/features/copilot/plans) to use.
 
 ### GMI Cloud
 
-To use GMI Cloud with Miao:
+To use GMI Cloud with MIAO:
 
 1. Head over to the [GMI Cloud console](https://console.gmicloud.ai/) to create an API key. You can also review the [API reference](https://docs.gmicloud.ai/inference-engine/api-reference/llm-api-reference) for the endpoint details.
 
@@ -1216,7 +1216,7 @@ To use GMI Cloud with Miao:
 
 ### Google Vertex AI
 
-To use Google Vertex AI with Miao:
+To use Google Vertex AI with MIAO:
 
 1. Head over to the **Model Garden** in the Google Cloud Console and check the
    models available in your region.
@@ -1345,7 +1345,7 @@ For more providers and advanced features like caching and rate limiting, check t
 
 #### Optional Configs
 
-In the event you see a feature or model from Helicone that isn't configured automatically through miao, you can always configure it yourself.
+In the event you see a feature or model from Helicone that isn't configured automatically through MIAO, you can always configure it yourself.
 
 Here's [Helicone's Model Directory](https://helicone.ai/models), you'll need this to grab the IDs of the models you want to add.
 
@@ -1398,7 +1398,7 @@ Helicone supports custom headers for features like caching, user tracking, and s
 
 ##### Session tracking
 
-Helicone's [Sessions](https://docs.helicone.ai/features/sessions) feature lets you group related LLM requests together. Use the [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) plugin to automatically log each Miao conversation as a session in Helicone.
+Helicone's [Sessions](https://docs.helicone.ai/features/sessions) feature lets you group related LLM requests together. Use the [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) plugin to automatically log each MIAO conversation as a session in Helicone.
 
 ```bash
 npm install -g opencode-helicone-session
@@ -1412,7 +1412,7 @@ Add it to your config.
 }
 ```
 
-The plugin injects `Helicone-Session-Id` and `Helicone-Session-Name` headers into your requests. In Helicone's Sessions page, you'll see each Miao conversation listed as a separate session.
+The plugin injects `Helicone-Session-Id` and `Helicone-Session-Name` headers into your requests. In Helicone's Sessions page, you'll see each MIAO conversation listed as a separate session.
 
 ##### Common Helicone headers
 
@@ -1429,7 +1429,7 @@ See the [Helicone Header Directory](https://docs.helicone.ai/helicone-headers/he
 
 ### llama.cpp
 
-You can configure miao to use local models through [llama.cpp's](https://github.com/ggml-org/llama.cpp) llama-server utility
+You can configure MIAO to use local models through [llama.cpp's](https://github.com/ggml-org/llama.cpp) llama-server utility
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
@@ -1496,7 +1496,7 @@ IO.NET offers 17 models optimized for various use cases:
 
 ### LM Studio
 
-You can configure miao to use local models through LM Studio.
+You can configure MIAO to use local models through LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
@@ -1691,7 +1691,7 @@ export NVIDIA_API_KEY=nvapi-your-key-here
 
 ### Ollama
 
-You can configure miao to use local models through Ollama.
+You can configure MIAO to use local models through Ollama.
 
 :::tip
 Ollama can automatically configure itself for Miao. See the [Ollama integration docs](https://docs.ollama.com/integrations/opencode) for details.
@@ -1733,7 +1733,7 @@ If tool calls aren't working, try increasing `num_ctx` in Ollama. Start around 1
 
 ### Ollama Cloud
 
-To use Ollama Cloud with Miao:
+To use Ollama Cloud with MIAO:
 
 1. Head over to [https://ollama.com/](https://ollama.com/) and sign in or create an account.
 
@@ -1756,7 +1756,7 @@ To use Ollama Cloud with Miao:
    └ enter
    ```
 
-6. **Important**: Before using cloud models in Miao, you must pull the model information locally:
+6. **Important**: Before using cloud models in MIAO, you must pull the model information locally:
 
    ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1799,7 +1799,7 @@ We recommend signing up for [ChatGPT Plus or Pro](https://chatgpt.com/pricing).
 
 ##### Compute residency
 
-For ChatGPT OAuth, Miao automatically applies a regional inference residency requirement when one is advertised by your workspace credentials. It forwards the compute residency value from the credential instead of maintaining a fixed list of regions. Data residency at rest does not imply regional inference.
+For ChatGPT OAuth, MIAO automatically applies a regional inference residency requirement when one is advertised by your workspace credentials. It forwards the compute residency value from the credential instead of maintaining a fixed list of regions. Data residency at rest does not imply regional inference.
 
 ##### Using API keys
 
@@ -1809,7 +1809,7 @@ If you already have an API key, you can select **Manually enter API Key** and pa
 
 ### OpenCode Zen
 
-OpenCode Zen is a list of tested and verified models provided by the Miao team. [Learn more](/docs/zen).
+OpenCode Zen is a list of tested and verified models provided by the MIAO team. [Learn more](/docs/zen).
 
 1. Sign in to **<a href={console}>OpenCode Zen</a>** and click **Create API Key**.
 
@@ -1819,7 +1819,7 @@ OpenCode Zen is a list of tested and verified models provided by the Miao team. 
    /connect
    ```
 
-3. Enter your Miao API key.
+3. Enter your MIAO API key.
 
    ```txt
    ┌ API key
@@ -1861,7 +1861,7 @@ OpenCode Zen is a list of tested and verified models provided by the Miao team. 
    /models
    ```
 
-   You can also add additional models through your miao config.
+   You can also add additional models through your MIAO config.
 
    ```json title="miao.json" {6}
    {
@@ -1876,7 +1876,7 @@ OpenCode Zen is a list of tested and verified models provided by the Miao team. 
    }
    ```
 
-5. You can also customize them through your miao config. Here's an example of specifying a provider
+5. You can also customize them through your MIAO config. Here's an example of specifying a provider
 
    ```json title="miao.json"
    {
@@ -1925,7 +1925,7 @@ OpenCode Zen is a list of tested and verified models provided by the Miao team. 
    /models
    ```
 
-   You can also add additional models through your miao config.
+   You can also add additional models through your MIAO config.
 
    ```json title="miao.json" {6}
    {
@@ -1940,7 +1940,7 @@ OpenCode Zen is a list of tested and verified models provided by the Miao team. 
    }
    ```
 
-5. You can also customize them through your miao config. Here's an example of specifying a provider
+5. You can also customize them through your MIAO config. Here's an example of specifying a provider
 
    ```json title="miao.json"
    {
@@ -2209,7 +2209,7 @@ To use [Scaleway Generative APIs](https://www.scaleway.com/en/docs/generative-ap
 
 [Snowflake Cortex](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api) gives you access to frontier models (Claude, OpenAI GPT-5, and more) via an OpenAI-compatible API. All inference runs within the Snowflake perimeter and is billed in Snowflake credits. For per-model rates, see the [Snowflake Service Consumption Table](https://www.snowflake.com/legal-files/CreditConsumptionTable.pdf).
 
-Don't have a Snowflake account? [Sign up for a free trial](https://signup.snowflake.com/?utm_source=miao&utm_medium=docs&utm_campaign=cortex-provider).
+Don't have a Snowflake account? [Sign up for a free trial](https://signup.snowflake.com/?utm_source=MIAO&utm_medium=docs&utm_campaign=cortex-provider).
 
 miao's core workflow for coding, editing files, and running commands relies on tool calling. Only the Claude and OpenAI families within Snowflake Cortex support this. The provider is limited to those families to support the core workflow.
 
@@ -2247,7 +2247,7 @@ Miao supports two authentication methods:
 
 4. Optionally enter a Snowflake role to scope the session (e.g. `SYSADMIN`). Leave blank to use your default role.
 
-5. Complete sign-in in the browser that opens. Miao captures the OAuth callback automatically and stores the token — no copy/paste needed.
+5. Complete sign-in in the browser that opens. MIAO captures the OAuth callback automatically and stores the token — no copy/paste needed.
 
 6. Run the `/models` command to select a model.
 
@@ -2285,7 +2285,7 @@ If you prefer to paste a token directly, or if `SNOWFLAKE$LOCAL_APPLICATION` is 
 
 #### Environment variable
 
-For CI or headless environments, set a PAT or JWT before starting miao:
+For CI or headless environments, set a PAT or JWT before starting MIAO:
 
 ```bash
 export SNOWFLAKE_ACCOUNT=myorg-myaccount
@@ -2389,7 +2389,7 @@ Vercel AI Gateway lets you access models from OpenAI, Anthropic, Google, xAI, an
    /models
    ```
 
-You can also customize models through your miao config. Here's an example of specifying provider routing order.
+You can also customize models through your MIAO config. Here's an example of specifying provider routing order.
 
 ```json title="miao.json"
 {
@@ -2430,9 +2430,9 @@ Two ways to authenticate: a SuperGrok subscription via device-code OAuth or a pa
    /connect
    ```
 
-2. Select **SuperGrok Subscription**. Miao opens xAI's verification link with the user code pre-populated when supported.
+2. Select **SuperGrok Subscription**. MIAO opens xAI's verification link with the user code pre-populated when supported.
 
-3. Approve the consent screen. If xAI asks for a code, enter the user code displayed by Miao. Miao polls xAI's token endpoint and stores the resulting OAuth tokens once you approve.
+3. Approve the consent screen. If xAI asks for a code, enter the user code displayed by Miao. MIAO polls xAI's token endpoint and stores the resulting OAuth tokens once you approve.
 
 4. Run the `/models` command to select a Grok model.
 
@@ -2523,7 +2523,7 @@ Miao refreshes the OAuth access token automatically. Any Grok or X Premium plan 
    /models
    ```
 
-   You can also add additional models through your miao config.
+   You can also add additional models through your MIAO config.
 
    ```json title="miao.json" {6}
    {
@@ -2666,7 +2666,7 @@ Configuration details:
 - **limit.context**: Maximum input tokens the model accepts.
 - **limit.output**: Maximum tokens the model can generate.
 
-The `limit` fields allow Miao to understand how much context you have left. Standard providers pull these from models.dev automatically.
+The `limit` fields allow MIAO to understand how much context you have left. Standard providers pull these from models.dev automatically.
 
 ---
 
@@ -2679,7 +2679,7 @@ If you are having trouble with configuring a provider, check the following:
 
    This doesn't apply to providers like Amazon Bedrock, that rely on environment variables for their auth.
 
-2. For custom providers, check the miao config and:
-   - Make sure the provider ID used in the `/connect` command matches the ID in your miao config.
+2. For custom providers, check the MIAO config and:
+   - Make sure the provider ID used in the `/connect` command matches the ID in your MIAO config.
    - The right npm package is used for the provider. For example, use `@ai-sdk/cerebras` for Cerebras. And for all other OpenAI-compatible providers, use `@ai-sdk/openai-compatible` (for `/v1/chat/completions`); if a model uses `/v1/responses`, use `@ai-sdk/openai`. For mixed setups under one provider, you can override per model via `provider.npm`.
    - Check correct API endpoint is used in the `options.baseURL` field.

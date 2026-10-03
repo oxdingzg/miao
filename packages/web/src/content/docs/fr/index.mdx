@@ -7,9 +7,9 @@ import { Tabs, TabItem } from "@astrojs/starlight/components"
 import config from "../../../../config.mjs"
 export const console = config.console
 
-[**Miao**](/) est un agent de codage d'IA open source. Il est disponible sous forme d'interface basée sur un terminal, d'application de bureau ou d'extension IDE.
+[**MIAO**](/) est un agent de codage d'IA open source. Il est disponible sous forme d'interface basée sur un terminal, d'application de bureau ou d'extension IDE.
 
-![Miao TUI avec le thème miao](../../../assets/lander/screenshot.png)
+![MIAO TUI avec le thème MIAO](../../../assets/lander/screenshot.png)
 
 Commençons.
 
@@ -17,7 +17,7 @@ Commençons.
 
 #### Prérequis
 
-Pour utiliser Miao dans votre terminal, vous aurez besoin de :
+Pour utiliser MIAO dans votre terminal, vous aurez besoin de :
 
 1. Un émulateur de terminal moderne comme :
    - [WezTerm](https://wezterm.org), multiplateforme
@@ -31,7 +31,7 @@ Pour utiliser Miao dans votre terminal, vous aurez besoin de :
 
 ## Installation
 
-Le moyen le plus simple d'installer Miao est d'utiliser le script d'installation.
+Le moyen le plus simple d'installer MIAO est d'utiliser le script d'installation.
 
 ```bash
 curl -fsSL https://opencode.ai/install | bash
@@ -79,7 +79,7 @@ Vous pouvez également l'installer avec les commandes suivantes :
   brew install anomalyco/tap/opencode
   ```
 
-  > Nous vous recommandons d'utiliser le tap Miao pour les versions les plus récentes. La formule officielle `brew install miao` est maintenue par l'équipe Homebrew et est mise à jour moins fréquemment.
+  > Nous vous recommandons d'utiliser le tap MIAO pour les versions les plus récentes. La formule officielle `brew install miao` est maintenue par l'équipe Homebrew et est mise à jour moins fréquemment.
 
 - **Via Paru sur Arch Linux**
 
@@ -124,7 +124,7 @@ Pour une expérience optimale sur Windows, nous vous recommandons d'utiliser le 
   docker run -it --rm ghcr.io/anomalyco/opencode
   ```
 
-Le support de l'installation de Miao sur Windows à l'aide de Bun est actuellement en cours de développement.
+Le support de l'installation de MIAO sur Windows à l'aide de Bun est actuellement en cours de développement.
 
 Vous pouvez également récupérer le binaire dans les [Releases](https://github.com/anomalyco/opencode/releases).
 
@@ -132,12 +132,12 @@ Vous pouvez également récupérer le binaire dans les [Releases](https://github
 
 ## Configuration
 
-Avec Miao, vous pouvez utiliser n'importe quel fournisseur de LLM en configurant ses clés API.
+Avec MIAO, vous pouvez utiliser n'importe quel fournisseur de LLM en configurant ses clés API.
 
 Si vous débutez avec les fournisseurs de LLM, nous vous recommandons d'utiliser [OpenCode Zen](/docs/zen).
 C'est une liste curée de modèles qui ont été testés et vérifiés par l'équipe Miao.
 
-1. Exécutez la commande `/connect` dans le TUI, sélectionnez miao et allez sur [opencode.ai/auth](https://opencode.ai/auth).
+1. Exécutez la commande `/connect` dans le TUI, sélectionnez MIAO et allez sur [opencode.ai/auth](https://opencode.ai/auth).
 
    ```txt
    /connect
@@ -172,25 +172,25 @@ Et exécutez Miao.
 miao
 ```
 
-Ensuite, initialisez Miao pour le projet en exécutant la commande suivante.
+Ensuite, initialisez MIAO pour le projet en exécutant la commande suivante.
 
 ```bash frame="none"
 /init
 ```
 
-Cela permettra à Miao d'analyser votre projet et de créer un fichier `AGENTS.md` à la racine du projet.
+Cela permettra à MIAO d'analyser votre projet et de créer un fichier `AGENTS.md` à la racine du projet.
 
 :::tip
 Vous devez valider le fichier `AGENTS.md` de votre projet dans Git.
 :::
 
-Cela aide Miao à comprendre la structure du projet et les modèles de codage utilisés.
+Cela aide MIAO à comprendre la structure du projet et les modèles de codage utilisés.
 
 ---
 
 ## Utilisation
 
-Vous êtes maintenant prêt à utiliser Miao pour travailler sur votre projet. N'hésitez pas à lui demander n'importe quoi !
+Vous êtes maintenant prêt à utiliser MIAO pour travailler sur votre projet. N'hésitez pas à lui demander n'importe quoi !
 
 Si vous débutez dans l'utilisation d'un agent de codage IA, voici quelques exemples qui pourraient aider.
 
@@ -198,7 +198,7 @@ Si vous débutez dans l'utilisation d'un agent de codage IA, voici quelques exem
 
 ### Poser des questions
 
-Vous pouvez demander à Miao de vous expliquer la base de code.
+Vous pouvez demander à MIAO de vous expliquer la base de code.
 
 :::tip
 Utilisez la touche `@` pour effectuer une recherche floue de fichiers dans le projet.
@@ -214,7 +214,7 @@ Ceci est utile s'il y a une partie de la base de code sur laquelle vous n'avez p
 
 ### Ajouter des fonctionnalités
 
-Vous pouvez demander à Miao d'ajouter de nouvelles fonctionnalités à votre projet. Cependant, nous recommandons d’abord de lui demander de créer un plan.
+Vous pouvez demander à MIAO d'ajouter de nouvelles fonctionnalités à votre projet. Cependant, nous recommandons d’abord de lui demander de créer un plan.
 
 1. **Créer un plan**
 
@@ -234,10 +234,10 @@ Décrivons maintenant ce que nous voulons qu'il fasse.
    From this screen, the user can undelete a note or permanently delete it.
 ```
 
-Vous souhaitez donner à Miao suffisamment de détails pour comprendre ce que vous voulez. Ça aide pour lui parler comme si vous parliez à un développeur junior de votre équipe.
+Vous souhaitez donner à MIAO suffisamment de détails pour comprendre ce que vous voulez. Ça aide pour lui parler comme si vous parliez à un développeur junior de votre équipe.
 
 :::tip
-Donnez à Miao beaucoup de contexte et d'exemples pour l'aider à comprendre ce que vous voulez.
+Donnez à MIAO beaucoup de contexte et d'exemples pour l'aider à comprendre ce que vous voulez.
 :::
 
 2. **Itérer sur le plan**
@@ -273,7 +273,7 @@ Et demandez-lui d'apporter les modifications.
 
 ### Apporter des modifications
 
-Pour des modifications plus simples, vous pouvez demander à Miao de construire directement sans avoir à revoir le plan au préalable.
+Pour des modifications plus simples, vous pouvez demander à MIAO de construire directement sans avoir à revoir le plan au préalable.
 
 ```txt frame="none" "@packages/functions/src/settings.ts" "@packages/functions/src/notes.ts"
 We need to add authentication to the /settings route. Take a look at how this is
@@ -281,13 +281,13 @@ handled in the /notes route in @packages/functions/src/notes.ts and implement
 the same logic in @packages/functions/src/settings.ts
 ```
 
-Vous devez fournir suffisamment de détails pour qu'Miao effectue les bonnes modifications.
+Vous devez fournir suffisamment de détails pour qu'MIAO effectue les bonnes modifications.
 
 ---
 
 ### Annuler les modifications
 
-Disons que vous demandez à Miao d'apporter quelques modifications.
+Disons que vous demandez à MIAO d'apporter quelques modifications.
 
 ```txt frame="none" "@packages/functions/src/api/index.ts"
 Can you refactor the function in @packages/functions/src/api/index.ts?
@@ -305,7 +305,7 @@ Miao annulera désormais les modifications que vous avez apportées et affichera
 Can you refactor the function in @packages/functions/src/api/index.ts?
 ```
 
-À partir de là, vous pouvez modifier l'invite et demander à Miao de réessayer.
+À partir de là, vous pouvez modifier l'invite et demander à MIAO de réessayer.
 
 :::tip
 Vous pouvez exécuter `/undo` plusieurs fois pour annuler plusieurs modifications.
@@ -321,7 +321,7 @@ Ou vous **pouvez refaire** les modifications à l'aide de la commande `/redo`.
 
 ## Partager
 
-Les conversations que vous avez avec Miao peuvent être [partagées avec votre équipe](/docs/share).
+Les conversations que vous avez avec MIAO peuvent être [partagées avec votre équipe](/docs/share).
 
 ```bash frame="none"
 /share
@@ -341,4 +341,4 @@ Voici un [exemple de conversation](https://opencode.ai/s/4XP1fce5) avec Miao.
 
 Et c'est tout ! Vous êtes désormais un pro de l'utilisation de Miao.
 
-Pour vous l'approprier, nous vous recommandons de [choisir un thème](/docs/themes), [de personnaliser les raccourcis clavier](/docs/keybinds), de [configurer les formateurs de code](/docs/formatters), de [créer des commandes personnalisées](/docs/commands) ou de jouer avec la [Miao Config](/docs/config).
+Pour vous l'approprier, nous vous recommandons de [choisir un thème](/docs/themes), [de personnaliser les raccourcis clavier](/docs/keybinds), de [configurer les formateurs de code](/docs/formatters), de [créer des commandes personnalisées](/docs/commands) ou de jouer avec la [MIAO Config](/docs/config).

@@ -1,6 +1,6 @@
 ---
 title: Enterprise
-description: Brug af Miao sikkert i din organisation.
+description: Brug af MIAO sikkert i din organisation.
 ---
 
 import config from "../../../../config.mjs"
@@ -12,7 +12,7 @@ Miao Enterprise er for organisationer, der ønsker at sikre, at deres kode og da
 Miao gemmer ingen af ​​din kode eller kontekstdata.
 :::
 
-Sådan kommer du i gang med Miao Enterprise:
+Sådan kommer du i gang med MIAO Enterprise:
 
 1. Lav en prøvetur internt med dit team.
 2. **<a href={email}>Kontakt os</a>** for at diskutere priser og implementeringsmuligheder.
@@ -27,10 +27,10 @@ Miao er open source og gemmer ingen af ​​din kode eller kontekstdata, så di
 
 ### Datahåndtering
 
-**Miao gemmer ikke din kode eller kontekstdata.** Al behandling sker lokalt eller gennem direkte API-opkald til din AI-udbyder.
+**MIAO gemmer ikke din kode eller kontekstdata.** Al behandling sker lokalt eller gennem direkte API-opkald til din AI-udbyder.
 
 Det betyder, at så længe du bruger en udbyder, du stoler på, eller en intern
-AI-gateway, du kan bruge Miao sikkert.
+AI-gateway, du kan bruge MIAO sikkert.
 
 Den eneste advarsel her er den valgfrie `/share`-funktion.
 
@@ -63,13 +63,13 @@ Vi anbefaler, at du deaktiverer dette for din prøveperiode.
 
 ## Priser
 
-Vi bruger en per-sæde-model til Miao Enterprise. Hvis du har din egen LLM-gateway, kræver vi ikke betaling for brugte tokens. For yderligere oplysninger om priser og implementeringsmuligheder, **<a href={email}>kontakt os</a>**.
+Vi bruger en per-sæde-model til MIAO Enterprise. Hvis du har din egen LLM-gateway, kræver vi ikke betaling for brugte tokens. For yderligere oplysninger om priser og implementeringsmuligheder, **<a href={email}>kontakt os</a>**.
 
 ---
 
 ## Implementering
 
-Når du har afsluttet din prøveperiode, og du er klar til at bruge Miao kl
+Når du har afsluttet din prøveperiode, og du er klar til at bruge MIAO kl
 din organisation, kan du **<a href={email}>kontakte os</a>** for at diskutere
 prissætning og implementeringsmuligheder.
 
@@ -77,7 +77,7 @@ prissætning og implementeringsmuligheder.
 
 ### Central konfiguration
 
-Vi kan konfigurere Miao til at bruge en enkelt central konfiguration for hele din organisation.
+Vi kan konfigurere MIAO til at bruge en enkelt central konfiguration for hele din organisation.
 
 Denne centraliserede konfiguration kan integreres med din SSO-udbyder og sikrer, at alle brugere kan få adgang til din interne AI-gateway.
 
@@ -85,15 +85,15 @@ Denne centraliserede konfiguration kan integreres med din SSO-udbyder og sikrer,
 
 ### SSO-integration
 
-Gennem den centrale konfiguration kan Miao integreres med din organisationer SSO-udbyder til godkendelse.
+Gennem den centrale konfiguration kan MIAO integreres med din organisationer SSO-udbyder til godkendelse.
 
-Denne giver Miao mulighed for at få legitimationsoplysninger til din interne AI-gateway gennem dette eksisterende identitetsadministrationssystem.
+Denne giver MIAO mulighed for at få legitimationsoplysninger til din interne AI-gateway gennem dette eksisterende identitetsadministrationssystem.
 
 ---
 
 ### Intern AI-gateway
 
-Med den centrale konfiguration kan Miao også konfigureres til kun at bruge din interne AI-gateway.
+Med den centrale konfiguration kan MIAO også konfigureres til kun at bruge din interne AI-gateway.
 
 Du kan også deaktivere alle andre AI-udbydere og sikre, at alle anmodninger går gennem din organisations godkendte infrastruktur.
 
@@ -111,16 +111,16 @@ Dette er i øjeblikket på vores køreplan. Hvis du er interesseret, **<a href={
 ## FAQ
 
 <details>
-<summary>Hvad er Miao Enterprise?</summary>
+<summary>Hvad er MIAO Enterprise?</summary>
 
 Miao Enterprise er for organisationer, der ønsker at sikre, at deres kode og data aldrig forlader deres infrastruktur. Det kan gøre dette ved at bruge en centraliseret konfiguration, der integreres med din SSO og interne AI-gateway.
 
 </details>
 
 <details>
-<summary>Hvordan kommer jeg i gang med Miao Enterprise?</summary>
+<summary>Hvordan kommer jeg i gang med MIAO Enterprise?</summary>
 
-Du skal blot starte med en intern prøveperiode med dit team. Miao gemmer som standard ikke din kode eller kontekstdata, hvilket gør det nemt at komme i gang.
+Du skal blot starte med en intern prøveperiode med dit team. MIAO gemmer som standard ikke din kode eller kontekstdata, hvilket gør det nemt at komme i gang.
 
 Så **<a href={email}>kontakt os</a>** for at diskutere priser og implementeringsmuligheder.
 
@@ -134,9 +134,9 @@ Vi tilbyder virksomhedspriser pr. sæde. Hvis du har din egen LLM-gateway, kræv
 </details>
 
 <details>
-<summary>Er mine data sikret med Miao Enterprise?</summary>
+<summary>Er mine data sikret med MIAO Enterprise?</summary>
 
-Ja. Miao gemmer ikke din kode eller kontekstdata. Al behandling sker lokalt eller gennem direkte API-opkald til din AI-udbyder. Med central konfiguration og SSO-integration forbliver dine data sikre i din organisationers infrastruktur.
+Ja. MIAO gemmer ikke din kode eller kontekstdata. Al behandling sker lokalt eller gennem direkte API-opkald til din AI-udbyder. Med central konfiguration og SSO-integration forbliver dine data sikre i din organisationers infrastruktur.
 
 </details>
 
@@ -151,7 +151,7 @@ Sådan konfigurerer du godkendelse med dit private register:
 npm login --registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 ```
 
-Dette opretter `~/.npmrc` med godkendelsesdetaljer. Miao vil automatisk
+Dette opretter `~/.npmrc` med godkendelsesdetaljer. MIAO vil automatisk
 samle dette op.
 
 :::caution
@@ -165,6 +165,6 @@ registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 //your-company.jfrog.io/api/npm/npm-virtual/:_authToken=${NPM_AUTH_TOKEN}
 ```
 
-Udviklere skal være logget ind på det private register, før de kører Miao for at sikre, at pakker kan installeres fra din virksomhedsregistrering.
+Udviklere skal være logget ind på det private register, før de kører MIAO for at sikre, at pakker kan installeres fra din virksomhedsregistrering.
 
 </details>

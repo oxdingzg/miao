@@ -1,6 +1,6 @@
 ---
 title: Formattere
-description: Miao bruker språkspesifikke formattere.
+description: MIAO bruker språkspesifikke formattere.
 ---
 
 Miao formaterer automatisk filer etter at de er skrevet eller redigert ved hjelp av språkspesifikke formattere. Dette sikrer at koden som genereres følger kodestilene til prosjektet ditt.
@@ -39,13 +39,13 @@ Miao kommer med flere innebygde formattere for populære språk og rammeverk. Ne
 | oxfmt (Eksperimentell) | .js, .jsx, .ts, .tsx                                                                                    | `oxfmt` avhengighet i `package.json` og et [eksperimentelt env variabel flagg](/docs/cli/#experimental) |
 | ormolu                 | .hs                                                                                                     | `ormolu` kommando tilgjengelig                                                                          |
 
-Så hvis prosjektet ditt har `prettier` i `package.json`, vil Miao automatisk bruke det.
+Så hvis prosjektet ditt har `prettier` i `package.json`, vil MIAO automatisk bruke det.
 
 ---
 
 ## Slik fungerer det
 
-Når Miao skriver eller redigerer en fil, gjør den:
+Når MIAO skriver eller redigerer en fil, gjør den:
 
 1. Kontrollerer filtypen mot alle aktiverte formattere.
 2. Kjører riktig formateringskommando på filen.

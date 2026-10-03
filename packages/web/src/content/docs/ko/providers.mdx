@@ -11,7 +11,7 @@ Miao는 [AI SDK](https://ai-sdk.dev/) 및 [Models.dev](https://models.dev)를 �
 필요한 공급자를 추가하려면:
 
 1. `/connect` 명령을 사용하여 공급자의 API 키를 추가하십시오.
-2. Miao 구성에서 공급자를 구성하십시오.
+2. MIAO 구성에서 공급자를 구성하십시오.
 
 ---
 
@@ -49,7 +49,7 @@ Miao 설정의 `provider` 섹션을 통해 공급자를 사용자 정의할 수 
 
 ## OpenCode Zen
 
-OpenCode Zen은 Miao 팀이 Miao와 잘 작동하도록 테스트하고 검증한 모델 목록입니다. [더 알아보기](/docs/zen).
+OpenCode Zen은 MIAO 팀이 Miao와 잘 작동하도록 테스트하고 검증한 모델 목록입니다. [더 알아보기](/docs/zen).
 
 :::tip
 처음이라면 OpenCode Zen으로 시작하는 것이 좋습니다.
@@ -84,7 +84,7 @@ Miao의 다른 공급자처럼 작동하며 사용은 완전히 선택 사항입
 
 ## OpenCode Go
 
-OpenCode Go는 Miao 팀이 테스트하고 검증하여 Miao와 잘 작동하는 인기 있는 오픈 코딩 모델에 안정적으로 액세스할 수 있는 저렴한 구독 요금제입니다.
+OpenCode Go는 MIAO 팀이 테스트하고 검증하여 Miao와 잘 작동하는 인기 있는 오픈 코딩 모델에 안정적으로 액세스할 수 있는 저렴한 구독 요금제입니다.
 
 1. TUI에서 `/connect` 명령을 실행하고 `OpenCode Go`를 선택한 뒤 [opencode.ai/auth](https://opencode.ai/zen)로 이동하십시오.
 
@@ -1069,7 +1069,7 @@ Helicone는 캐싱, 사용자 추적 및 세션 관리와 같은 기능을 위�
 
 ##### 세션 추적
 
-Helicone의 [Sessions](https://docs.helicone.ai/features/sessions) 기능을 사용하면 관련 LLM 요청을 그룹화할 수 있습니다. [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) 플러그인을 사용하여 각 Miao 대화를 Helicone 세션으로 자동 기록하십시오.
+Helicone의 [Sessions](https://docs.helicone.ai/features/sessions) 기능을 사용하면 관련 LLM 요청을 그룹화할 수 있습니다. [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) 플러그인을 사용하여 각 MIAO 대화를 Helicone 세션으로 자동 기록하십시오.
 
 ```bash
 npm install -g opencode-helicone-session
@@ -1083,7 +1083,7 @@ npm install -g opencode-helicone-session
 }
 ```
 
-이 플러그인은 `Helicone-Session-Id` 및 `Helicone-Session-Name` 헤더를 요청에 주입합니다. Helicone의 세션 페이지에서 각 Miao 대화가 별도의 세션으로 나열되는 것을 볼 수 있습니다.
+이 플러그인은 `Helicone-Session-Id` 및 `Helicone-Session-Name` 헤더를 요청에 주입합니다. Helicone의 세션 페이지에서 각 MIAO 대화가 별도의 세션으로 나열되는 것을 볼 수 있습니다.
 
 ##### 공통 Helicone 헤더
 
@@ -1397,7 +1397,7 @@ Miao로 Ollama Cloud를 사용하려면:
 
 ### OpenCode Zen
 
-OpenCode Zen은 Miao 팀에서 제공하는 테스트 및 검증된 모델 목록입니다. [더 알아보기](/docs/zen).
+OpenCode Zen은 MIAO 팀에서 제공하는 테스트 및 검증된 모델 목록입니다. [더 알아보기](/docs/zen).
 
 1. **<a href={console}>OpenCode Zen</a>**에 로그인하고 **Create API Key**를 클릭합니다.
 
@@ -1407,7 +1407,7 @@ OpenCode Zen은 Miao 팀에서 제공하는 테스트 및 검증된 모델 목�
    /connect
    ```
 
-3. Miao API 키를 입력하십시오.
+3. MIAO API 키를 입력하십시오.
 
    ```txt
    ┌ API key
@@ -1464,7 +1464,7 @@ OpenCode Zen은 Miao 팀에서 제공하는 테스트 및 검증된 모델 목�
    }
    ```
 
-5. 또한 Miao 구성을 통해 사용자 정의할 수도 있습니다. 다음은 공급자 순서를 지정하는 예입니다.
+5. 또한 MIAO 구성을 통해 사용자 정의할 수도 있습니다. 다음은 공급자 순서를 지정하는 예입니다.
 
    ```json title="miao.json"
    {
@@ -1978,7 +1978,7 @@ Miao에서 모든 OpenAI 호환 공급자를 사용할 수 있습니다. 대부�
 
    Amazon Bedrock과 같이 인증을 위해 환경 변수에 의존하는 공급자에는 적용되지 않습니다.
 
-2. 사용자 정의 공급자의 경우, Miao 구성을 확인하고 다음을 수행하십시오:
-   - `/connect` 명령에 사용된 공급자 ID가 Miao 구성의 ID와 일치하는지 확인하십시오.
+2. 사용자 정의 공급자의 경우, MIAO 구성을 확인하고 다음을 수행하십시오:
+   - `/connect` 명령에 사용된 공급자 ID가 MIAO 구성의 ID와 일치하는지 확인하십시오.
    - 공급자에 올바른 npm 패키지가 사용되었는지 확인하십시오. 예를 들어 Cerebras에는 `@ai-sdk/cerebras`를 사용하고, 다른 모든 OpenAI 호환 공급자에는 `@ai-sdk/openai-compatible`을 사용하십시오.
    - `options.baseURL` 필드에 올바른 API 엔드포인트가 사용되었는지 확인하십시오.

@@ -3,7 +3,7 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
-  "desktop.menu.app": "Miao",
+  "desktop.menu.app": "MIAO",
   "desktop.menu.file": "Dosya",
   "desktop.menu.edit": "Düzen",
   "desktop.menu.view": "Görünüm",
@@ -43,11 +43,11 @@ export const dict = {
   "desktop.menu.nextProject": "Sonraki proje",
   "desktop.menu.minimize": "Simge durumuna küçült",
   "desktop.menu.maximize": "Ekranı kapla",
-  "desktop.menu.documentation": "Miao belgeleri",
+  "desktop.menu.documentation": "MIAO belgeleri",
   "desktop.menu.supportForum": "Destek forumu",
   "desktop.menu.shareFeedback": "Geri bildirim paylaş",
   "desktop.menu.reportBug": "Hata bildir",
-  "desktop.menu.ariaLabel": "Miao menüsü",
+  "desktop.menu.ariaLabel": "MIAO menüsü",
 
   "desktop.updater.dialog.checkFailed.message": "Güncellemeler kontrol edilemedi.",
   "desktop.updater.dialog.checkFailed.title": "Güncelleme hatası",
@@ -62,9 +62,9 @@ export const dict = {
   "desktop.recovery.action.exportLogs": "Günlükleri dışa aktar",
   "desktop.recovery.action.keepWaiting": "Beklemeye devam et",
   "desktop.recovery.action.quit": "Çık",
-  "desktop.recovery.loadFailed": "Miao yüklenemedi",
-  "desktop.recovery.terminated": "Miao penceresi beklenmedik şekilde sonlandırıldı",
-  "desktop.recovery.unresponsive": "Miao yanıt vermiyor",
+  "desktop.recovery.loadFailed": "MIAO yüklenemedi",
+  "desktop.recovery.terminated": "MIAO penceresi beklenmedik şekilde sonlandırıldı",
+  "desktop.recovery.unresponsive": "MIAO yanıt vermiyor",
   "desktop.recovery.unresponsive.detail":
     "Uygulamayı yeniden başlatabilir, günlükleri açabilir veya beklemeye devam edebilirsiniz.",
   "desktop.recovery.loadFailed.detail": "Pencere: {{window}}\nURL: {{url}}\nHata: {{code}} {{description}}",
@@ -84,13 +84,13 @@ export const dict = {
   "desktop.wsl.error.executeDistro": "Dağıtımda komutlar çalıştırılamıyor",
   "desktop.wsl.error.installWsl": "WSL kurulamadı",
   "desktop.wsl.error.installDistro": "Dağıtım kurulamadı: {{distro}}",
-  "desktop.wsl.error.installOpencode": "Miao kurulamadı",
+  "desktop.wsl.error.installOpencode": "MIAO kurulamadı",
   "desktop.wsl.error.alreadyAdded": "{{distro}} zaten eklendi",
   "desktop.wsl.error.miaoMissing": "miao bu dağıtımda kurulu değil",
   "desktop.wsl.error.miaoCannotRun": "miao kurulu ancak çalıştırılamadı",
-  "desktop.wsl.error.miaoNotInstalled": "Miao, {{distro}} içinde kurulu değil",
+  "desktop.wsl.error.miaoNotInstalled": "MIAO, {{distro}} içinde kurulu değil",
   "desktop.wsl.error.updateVersion":
-    "Miao güncellemesi tamamlandı ancak {{distro}} hâlâ {{installed}} sürümünü bildiriyor; beklenen sürüm: {{expected}}",
+    "MIAO güncellemesi tamamlandı ancak {{distro}} hâlâ {{installed}} sürümünü bildiriyor; beklenen sürüm: {{expected}}",
   "desktop.wsl.error.noVersion": "sürüm yok",
   "desktop.wsl.error.serverExited": "WSL sunucusu başlatıldıktan sonra kapandı (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -229,7 +229,7 @@ export const dict = {
   "dialog.model.manage.description": "Model seçicide hangi modellerin görüneceğini özelleştirin.",
   "dialog.model.manage.provider.toggle": "Tüm {{provider}} modellerini aç/kapat",
 
-  "dialog.model.unpaid.freeModels.title": "Miao tarafından sunulan ücretsiz modeller",
+  "dialog.model.unpaid.freeModels.title": "MIAO tarafından sunulan ücretsiz modeller",
   "dialog.model.unpaid.addMore.title": "Popüler sağlayıcılardan daha fazla model ekleyin",
   "dialog.model.unpaid.viewMoreProviders": "70'ten fazla sağlayıcı daha görüntüle",
 
@@ -245,7 +245,7 @@ export const dict = {
   "provider.connect.status.waiting": "Yetkilendirme bekleniyor...",
   "provider.connect.status.failed": "Yetkilendirme başarısız: {{error}}",
   "provider.connect.apiKey.description":
-    "{{provider}} hesabınızı bağlamak ve Miao'da {{provider}} modellerini kullanmak için API anahtarınızı girin.",
+    "{{provider}} hesabınızı bağlamak ve MIAO'da {{provider}} modellerini kullanmak için API anahtarınızı girin.",
   "provider.connect.apiKey.label": "{{provider}} API anahtarı",
   "provider.connect.apiKey.placeholder": "API anahtarı",
   "provider.connect.apiKey.required": "API anahtarı gerekli",
@@ -259,7 +259,7 @@ export const dict = {
   "provider.connect.oauth.code.visit.prefix": "Yetkilendirme kodunuzu almak için ",
   "provider.connect.oauth.code.visit.link": "bu bağlantıya",
   "provider.connect.oauth.code.visit.suffix":
-    " gidin; ardından hesabınızı bağlayarak Miao'da {{provider}} modellerini kullanın.",
+    " gidin; ardından hesabınızı bağlayarak MIAO'da {{provider}} modellerini kullanın.",
   "provider.connect.oauth.code.label": "{{method}} yetkilendirme kodu",
   "provider.connect.oauth.code.placeholder": "Yetkilendirme kodu",
   "provider.connect.oauth.code.required": "Yetkilendirme kodu gerekli",
@@ -267,7 +267,7 @@ export const dict = {
   "provider.connect.oauth.auto.visit.prefix": "",
   "provider.connect.oauth.auto.visit.link": "Bu bağlantıya",
   "provider.connect.oauth.auto.visit.suffix":
-    " tıklayarak aşağıdaki kodu girin ve hesabınızı bağlayarak Miao'da {{provider}} modellerini kullanın.",
+    " tıklayarak aşağıdaki kodu girin ve hesabınızı bağlayarak MIAO'da {{provider}} modellerini kullanın.",
   "provider.connect.oauth.auto.confirmationCode": "Onay kodu",
   "provider.connect.toast.connected.title": "{{provider}} bağlandı",
   "provider.connect.toast.connected.description": "{{provider}} modelleri artık kullanımda.",
@@ -446,7 +446,7 @@ export const dict = {
   "dialog.directory.readError": "Bu klasör okunamıyor",
 
   "dialog.server.title": "Sunucular",
-  "dialog.server.description": "Bu uygulamanın hangi Miao sunucusuna bağlanacağını değiştirin.",
+  "dialog.server.description": "Bu uygulamanın hangi MIAO sunucusuna bağlanacağını değiştirin.",
   "dialog.server.search.placeholder": "Sunucu ara",
   "dialog.server.empty": "Henüz sunucu yok",
   "dialog.server.add.title": "Sunucu ekle",
@@ -481,7 +481,7 @@ export const dict = {
   "wsl.server.retryStart": "Başlatmayı yeniden dene",
   "wsl.server.updating": "Güncelleniyor...",
   "wsl.onboarding.step.distro": "Dağıtım seç",
-  "wsl.onboarding.step.miao": "Miao",
+  "wsl.onboarding.step.miao": "MIAO",
   "wsl.onboarding.checkingRuntime": "WSL kontrol ediliyor...",
   "wsl.onboarding.restartRequired": "WSL kurulumunu tamamlamak için Windows'un yeniden başlatılması gerekiyor.",
   "wsl.onboarding.ready": "WSL hazır.",
@@ -495,16 +495,16 @@ export const dict = {
   "wsl.onboarding.openDistroOnce": "Kurulumu tamamlamak için {{distro}} dağıtımını bir kez açın.",
   "wsl.onboarding.finishingDistro": "{{distro}} kurulumu tamamlanıyor.",
   "wsl.onboarding.pickDistro": "Bir dağıtım seçin veya aşağıdan bir dağıtım kurun.",
-  "wsl.onboarding.checkingOpencode": "Miao kontrol ediliyor...",
-  "wsl.onboarding.checkingOpencodeIn": "{{distro}} içinde Miao kontrol ediliyor...",
-  "wsl.onboarding.updatingOpencode": "Miao güncelleniyor...",
-  "wsl.onboarding.updatingOpencodeIn": "{{distro}} içinde Miao güncelleniyor...",
-  "wsl.onboarding.updateOpencodeIn": "{{distro}} içindeki Miao'u güncelleyin.",
-  "wsl.onboarding.updateOpencode": "Miao'u güncelle",
-  "wsl.onboarding.miaoReadyIn": "{{distro}} içinde Miao hazır.",
-  "wsl.onboarding.miaoReady": "Miao hazır.",
-  "wsl.onboarding.installOpencodeIn": "Miao'u {{distro}} içine kurun.",
-  "wsl.onboarding.installOpencode": "Miao'u kur",
+  "wsl.onboarding.checkingOpencode": "MIAO kontrol ediliyor...",
+  "wsl.onboarding.checkingOpencodeIn": "{{distro}} içinde MIAO kontrol ediliyor...",
+  "wsl.onboarding.updatingOpencode": "MIAO güncelleniyor...",
+  "wsl.onboarding.updatingOpencodeIn": "{{distro}} içinde MIAO güncelleniyor...",
+  "wsl.onboarding.updateOpencodeIn": "{{distro}} içindeki MIAO'u güncelleyin.",
+  "wsl.onboarding.updateOpencode": "MIAO'u güncelle",
+  "wsl.onboarding.miaoReadyIn": "{{distro}} içinde MIAO hazır.",
+  "wsl.onboarding.miaoReady": "MIAO hazır.",
+  "wsl.onboarding.installOpencodeIn": "MIAO'u {{distro}} içine kurun.",
+  "wsl.onboarding.installOpencode": "MIAO'u kur",
   "wsl.onboarding.chooseDistroFirst": "Önce bir dağıtım seçin.",
   "wsl.onboarding.loadFailed": "WSL durumu yüklenemedi.",
   "wsl.onboarding.loading": "Yükleniyor...",
@@ -512,19 +512,19 @@ export const dict = {
   "wsl.onboarding.checkAgain": "Tekrar kontrol et",
   "wsl.onboarding.distroStatus.ready": "Hazır",
   "wsl.onboarding.distroStatus.checking": "Kontrol ediliyor...",
-  "wsl.onboarding.distroStatus.miaoMissing": "Miao kurulu değil",
+  "wsl.onboarding.distroStatus.miaoMissing": "MIAO kurulu değil",
   "wsl.onboarding.distroStatus.missingTools": "bash ve curl eksik",
   "wsl.onboarding.distroStatus.unsupported": "Desteklenmiyor · WSL 2 kullanın",
   "wsl.onboarding.needAnotherDistro": "Başka bir dağıtım mı gerekiyor?",
   "wsl.onboarding.needAnotherDistroHint": "WSL kataloğundan bir Linux dağıtımı kurun",
   "wsl.onboarding.wslNotInstalled.title": "WSL kurulu değil",
   "wsl.onboarding.wslNotInstalled.description":
-    "Miao'un WSL sunucusu ekleyebilmesi için önce WSL (Linux için Windows Alt Sistemi) kurulmalıdır",
+    "MIAO'un WSL sunucusu ekleyebilmesi için önce WSL (Linux için Windows Alt Sistemi) kurulmalıdır",
   "wsl.onboarding.wslUnavailable.title": "WSL kullanılamıyor",
-  "wsl.onboarding.wslUnavailable.description": "Miao bu makinede WSL'yi doğrulayamadı.",
+  "wsl.onboarding.wslUnavailable.description": "MIAO bu makinede WSL'yi doğrulayamadı.",
   "wsl.onboarding.installWsl": "WSL'yi kur",
   "wsl.onboarding.windowsRestartRequired":
-    "WSL kurulumunu tamamlamak için Windows'u yeniden başlatın, ardından Miao'u tekrar açın.",
+    "WSL kurulumunu tamamlamak için Windows'u yeniden başlatın, ardından MIAO'u tekrar açın.",
   "wsl.onboarding.next": "İleri",
   "wsl.onboarding.refresh": "Yenile",
   "wsl.onboarding.allDistrosAdded": "Kurulu tüm dağıtımlar zaten eklenmiş.",
@@ -549,7 +549,7 @@ export const dict = {
   "help.tabs.title": "Sekmelerle tanışın",
   "help.tabs.description": "Çalışmalarınızı ve etkin oturumlarınızı sekmelerle düzenleyin",
   "help.tabs.date": "14 Temmuz",
-  "help.tabs.introduction": "Miao Desktop artık sekmeler üzerine kurulu.",
+  "help.tabs.introduction": "MIAO Desktop artık sekmeler üzerine kurulu.",
   "help.tabs.sessions":
     "Bir sekmede yeni oturum başlatın veya projelerinizden mevcut bir oturumu açın. Yeni bir işe başlarken yeni sekme açın, işiniz bittiğinde sekmeyi kapatın.",
   "help.tabs.organize":
@@ -673,7 +673,7 @@ export const dict = {
   "toast.session.listFailed.title": "{{project}} için oturumlar yüklenemedi",
 
   "toast.update.title": "Güncelleme mevcut",
-  "toast.update.description": "Miao'un yeni bir sürümü ({{version}}) yüklemeye hazır.",
+  "toast.update.description": "MIAO'un yeni bir sürümü ({{version}}) yüklemeye hazır.",
   "toast.update.action.installRestart": "Yükle ve yeniden başlat",
   "toast.update.action.notYet": "Şimdi değil",
 
@@ -688,7 +688,7 @@ export const dict = {
   "error.page.action.checking": "Kontrol ediliyor...",
   "error.page.action.checkUpdates": "Güncellemeleri kontrol et",
   "error.page.action.updateTo": "{{version}} sürümüne güncelle",
-  "error.page.report.prefix": "Lütfen bu hatayı Miao ekibine",
+  "error.page.report.prefix": "Lütfen bu hatayı MIAO ekibine",
   "error.page.report.discord": "GitHub üzerinden bildirin",
   "error.page.version": "Sürüm: {{version}}",
 
@@ -708,7 +708,7 @@ export const dict = {
   "error.chain.modelNotFound": "Model bulunamadı: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Yapılandırma dosyanızdaki (miao.json) sağlayıcı/model adlarını kontrol edin",
   "error.chain.mcpFailed":
-    'MCP sunucusu "{{name}}" çalıştırılamadı. Not: Miao henüz MCP kimlik doğrulamasını desteklemiyor.',
+    'MCP sunucusu "{{name}}" çalıştırılamadı. Not: MIAO henüz MCP kimlik doğrulamasını desteklemiyor.',
   "error.chain.providerAuthFailed": "Sağlayıcı kimlik doğrulaması başarısız ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" sağlayıcısı başlatılamadı. Kimlik bilgilerini ve yapılandırmayı kontrol edin.',
@@ -889,7 +889,7 @@ export const dict = {
   "sidebar.workspaces.enable": "Çalışma alanlarını etkinleştir",
   "sidebar.workspaces.disable": "Çalışma alanlarını devre dışı bırak",
   "sidebar.gettingStarted.title": "Başlarken",
-  "sidebar.gettingStarted.line1": "Miao ücretsiz modeller içerir, böylece hemen başlayabilirsiniz.",
+  "sidebar.gettingStarted.line1": "MIAO ücretsiz modeller içerir, böylece hemen başlayabilirsiniz.",
   "sidebar.gettingStarted.line2": "Claude, GPT, Gemini vb. modelleri kullanmak için herhangi bir sağlayıcı bağlayın.",
   "sidebar.project.recentSessions": "Son oturumlar",
   "sidebar.project.viewAllSessions": "Tüm oturumları görüntüle",
@@ -897,7 +897,7 @@ export const dict = {
   "sidebar.empty.title": "Açık proje yok",
   "sidebar.empty.description": "Başlamak için bir proje açın",
 
-  "app.name.desktop": "Miao Masaüstü",
+  "app.name.desktop": "MIAO Masaüstü",
 
   "settings.section.desktop": "Masaüstü",
   "settings.section.server": "Sunucu",
@@ -905,7 +905,7 @@ export const dict = {
   "settings.tab.shortcuts": "Kısayollar",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL entegrasyonu",
-  "settings.desktop.wsl.description": "Miao sunucusunu Windows'ta WSL içinde çalıştırın.",
+  "settings.desktop.wsl.description": "MIAO sunucusunu Windows'ta WSL içinde çalıştırın.",
 
   "settings.general.section.appearance": "Görünüm",
   "settings.general.section.advanced": "Gelişmiş",
@@ -916,19 +916,19 @@ export const dict = {
   "settings.general.section.display": "Ekran",
 
   "settings.general.row.language.title": "Dil",
-  "settings.general.row.language.description": "Miao'un görünüm dilini değiştirin",
+  "settings.general.row.language.description": "MIAO'un görünüm dilini değiştirin",
   "settings.general.row.shell.title": "Terminal Kabuğu",
   "settings.general.row.shell.description":
     "Terminalinizde kullanılacak kabuğu seçin. Uyumlu kabuklar, ajan araç çağrılarında da kullanılır.",
   "settings.general.row.shell.autoDefault": "Otomatik (Varsayılan)",
   "settings.general.row.shell.terminalOnly": "yalnızca terminal",
   "settings.general.row.appearance.title": "Görünüm",
-  "settings.general.row.appearance.description": "Miao'un cihazınızdaki görünümünü özelleştirin",
+  "settings.general.row.appearance.description": "MIAO'un cihazınızdaki görünümünü özelleştirin",
   "settings.general.row.colorScheme.title": "Renk şeması",
   "settings.general.row.colorScheme.description":
-    "Miao'un sistem, açık veya koyu temayı takip etip etmeyeceğini seçin",
+    "MIAO'un sistem, açık veya koyu temayı takip etip etmeyeceğini seçin",
   "settings.general.row.theme.title": "Tema",
-  "settings.general.row.theme.description": "Miao'un temasını özelleştirin.",
+  "settings.general.row.theme.description": "MIAO'un temasını özelleştirin.",
   "settings.general.row.font.title": "Kod yazı tipi",
   "settings.general.row.font.description": "Kod bloklarında kullanılan yazı tipini özelleştirin",
   "settings.general.row.terminalFont.title": "Terminal yazı tipi",
@@ -985,7 +985,7 @@ export const dict = {
   "settings.general.row.releaseNotes.description": "Güncellemelerden sonra Yenilikler bildirimlerini göster",
 
   "settings.updates.row.startup.title": "Başlangıçta güncellemeleri kontrol et",
-  "settings.updates.row.startup.description": "Miao başladığında otomatik güncelleme kontrolü yap",
+  "settings.updates.row.startup.description": "MIAO başladığında otomatik güncelleme kontrolü yap",
   "settings.updates.row.check.title": "Güncellemeleri kontrol et",
   "settings.updates.row.check.description": "Elle güncelleme kontrolü yap ve varsa yükle",
   "settings.updates.action.checkNow": "Şimdi kontrol et",
@@ -993,7 +993,7 @@ export const dict = {
   "settings.updates.action.downloading": "İndiriliyor...",
   "settings.updates.action.installing": "Kuruluyor...",
   "settings.updates.toast.latest.title": "Güncelsiniz",
-  "settings.updates.toast.latest.description": "Miao'un en son sürümünü kullanıyorsunuz.",
+  "settings.updates.toast.latest.description": "MIAO'un en son sürümünü kullanıyorsunuz.",
 
   "sound.option.none": "Yok",
   "sound.option.alert01": "Uyarı 01",

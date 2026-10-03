@@ -1,13 +1,13 @@
 ---
 title: SDK
-description: Miao サーバー用の型安全な JS クライアント。
+description: MIAO サーバー用の型安全な JS クライアント。
 ---
 
 import config from "../../../../config.mjs"
 export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
 
 Miao JS/TS SDK は、サーバーと対話するための型安全なクライアントを提供します。
-これを使用して、統合を構築し、Miao をプログラムで制御します。
+これを使用して、統合を構築し、MIAO をプログラムで制御します。
 
 [サーバーの仕組みについての詳細](/docs/server) をご覧ください。たとえば、コミュニティによって構築された [projects](/docs/ecosystem#projects) をチェックしてください。
 
@@ -69,7 +69,7 @@ miao.server.close()
 
 ## クライアントのみ
 
-すでに実行中の Miao のインスタンスがある場合は、それに接続するためのクライアントインスタンスを作成できます。
+すでに実行中の MIAO のインスタンスがある場合は、それに接続するためのクライアントインスタンスを作成できます。
 
 ```javascript
 import { createOpencodeClient } from "@opencode-ai/sdk"

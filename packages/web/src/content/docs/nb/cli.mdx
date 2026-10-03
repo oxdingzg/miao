@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Miao CLI-alternativer og kommandoer.
+description: MIAO CLI-alternativer og kommandoer.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -11,7 +11,7 @@ Miao CLI starter som standard [TUI](/docs/tui) når den kjøres uten noen argume
 miao
 ```
 
-Men den godtar også kommandoer som dokumentert på denne siden. Dette lar deg samhandle med Miao programmatisk.
+Men den godtar også kommandoer som dokumentert på denne siden. Dette lar deg samhandle med MIAO programmatisk.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -129,7 +129,7 @@ Miao drives av leverandørlisten på [Models.dev](https://models.dev), så du ka
 miao auth login
 ```
 
-Når Miao starter opp, laster den leverandørene fra filen med påloggingsinformasjon. Og hvis det er noen nøkler definert i miljøene dine eller en `.env`-fil i prosjektet ditt.
+Når MIAO starter opp, laster den leverandørene fra filen med påloggingsinformasjon. Og hvis det er noen nøkler definert i miljøene dine eller en `.env`-fil i prosjektet ditt.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Kjør Miao i ikke-interaktiv modus ved å sende en melding direkte.
+Kjør MIAO i ikke-interaktiv modus ved å sende en melding direkte.
 
 ```bash
 miao run [message..]
@@ -442,13 +442,13 @@ Hvis du ikke gir en økt ID, blir du bedt om å velge fra tilgjengelige økter.
 
 ### import
 
-Importer øktdata fra en JSON-fil eller en Miao share-URL.
+Importer øktdata fra en JSON-fil eller en MIAO share-URL.
 
 ```bash
 miao import <file>
 ```
 
-Du kan importere fra en lokal fil eller en Miao share-URL.
+Du kan importere fra en lokal fil eller en MIAO share-URL.
 
 ```bash
 miao import session.json
@@ -465,7 +465,7 @@ Start en headless Miao-server med et webgrensesnitt.
 miao web
 ```
 
-Dette starter en HTTP-server og åpner en nettleser for å få tilgang til Miao via et nettgrensesnitt. Sett `MIAO_SERVER_PASSWORD` for å aktivere HTTP grunnleggende autentisering (brukernavn er standard til `miao`).
+Dette starter en HTTP-server og åpner en nettleser for å få tilgang til MIAO via et nettgrensesnitt. Sett `MIAO_SERVER_PASSWORD` for å aktivere HTTP grunnleggende autentisering (brukernavn er standard til `miao`).
 
 #### Flagg
 
@@ -500,7 +500,7 @@ Denne kommandoen starter en ACP-server som kommuniserer via stdin/stdout ved å 
 
 ### uninstall
 
-Avinstaller Miao og fjern alle relaterte filer.
+Avinstaller MIAO og fjern alle relaterte filer.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Oppdaterer Miao til siste versjon eller en spesifikk versjon.
+Oppdaterer MIAO til siste versjon eller en spesifikk versjon.
 
 ```bash
 miao upgrade [target]

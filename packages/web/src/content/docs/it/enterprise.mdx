@@ -1,6 +1,6 @@
 ---
 title: Enterprise
-description: Usa Miao in sicurezza nella tua organizzazione.
+description: Usa MIAO in sicurezza nella tua organizzazione.
 ---
 
 import config from "../../../../config.mjs"
@@ -12,7 +12,7 @@ Miao Enterprise e pensato per organizzazioni che vogliono assicurarsi che codice
 Miao non memorizza alcun tuo codice o dato di contesto.
 :::
 
-Per iniziare con Miao Enterprise:
+Per iniziare con MIAO Enterprise:
 
 1. Fai una prova interna con il tuo team.
 2. **<a href={email}>Contattaci</a>** per parlare di prezzi e opzioni di implementazione.
@@ -27,9 +27,9 @@ Miao e open source e non memorizza alcun tuo codice o dato di contesto, quindi i
 
 ### Gestione dati
 
-**Miao non memorizza il tuo codice o i tuoi dati di contesto.** Tutta l'elaborazione avviene in locale o tramite chiamate API dirette al tuo provider AI.
+**MIAO non memorizza il tuo codice o i tuoi dati di contesto.** Tutta l'elaborazione avviene in locale o tramite chiamate API dirette al tuo provider AI.
 
-Questo significa che, finche usi un provider di cui ti fidi o un gateway AI interno, puoi usare Miao in modo sicuro.
+Questo significa che, finche usi un provider di cui ti fidi o un gateway AI interno, puoi usare MIAO in modo sicuro.
 
 L'unica eccezione e la funzione opzionale `/share`.
 
@@ -62,19 +62,19 @@ Ti consigliamo di disabilitarla durante la prova.
 
 ## Prezzi
 
-Usiamo un modello per-seat per Miao Enterprise. Se hai un tuo gateway LLM, non addebitiamo i token usati. Per maggiori dettagli su prezzi e opzioni di implementazione, **<a href={email}>contattaci</a>**.
+Usiamo un modello per-seat per MIAO Enterprise. Se hai un tuo gateway LLM, non addebitiamo i token usati. Per maggiori dettagli su prezzi e opzioni di implementazione, **<a href={email}>contattaci</a>**.
 
 ---
 
 ## Distribuzione
 
-Quando hai completato la prova e sei pronto a usare Miao nella tua organizzazione, puoi **<a href={email}>contattarci</a>** per discutere prezzi e opzioni di implementazione.
+Quando hai completato la prova e sei pronto a usare MIAO nella tua organizzazione, puoi **<a href={email}>contattarci</a>** per discutere prezzi e opzioni di implementazione.
 
 ---
 
 ### Configurazione centralizzata
 
-Possiamo configurare Miao per usare un'unica config centralizzata per tutta l'organizzazione.
+Possiamo configurare MIAO per usare un'unica config centralizzata per tutta l'organizzazione.
 
 Questa config centralizzata puo integrarsi col provider SSO e garantisce che tutti gli utenti accedano solo al gateway AI interno.
 
@@ -82,15 +82,15 @@ Questa config centralizzata puo integrarsi col provider SSO e garantisce che tut
 
 ### Integrazione SSO
 
-Tramite la config centralizzata, Miao puo integrarsi col provider SSO della tua organizzazione per l'autenticazione.
+Tramite la config centralizzata, MIAO puo integrarsi col provider SSO della tua organizzazione per l'autenticazione.
 
-Questo consente a Miao di ottenere credenziali per il gateway AI interno tramite il sistema di identity management esistente.
+Questo consente a MIAO di ottenere credenziali per il gateway AI interno tramite il sistema di identity management esistente.
 
 ---
 
 ### Gateway AI interno
 
-Con la config centralizzata, Miao puo anche essere configurato per usare solo il tuo gateway AI interno.
+Con la config centralizzata, MIAO puo anche essere configurato per usare solo il tuo gateway AI interno.
 
 Puoi anche disabilitare tutti gli altri provider AI, assicurandoti che tutte le richieste passino dall'infrastruttura approvata dalla tua organizzazione.
 
@@ -107,16 +107,16 @@ Questa funzionalita e nella nostra roadmap. Se ti interessa, **<a href={email}>f
 ## FAQ
 
 <details>
-<summary>Che cos'e Miao Enterprise?</summary>
+<summary>Che cos'e MIAO Enterprise?</summary>
 
 Miao Enterprise e pensato per organizzazioni che vogliono assicurarsi che codice e dati non escano mai dalla propria infrastruttura. Questo e possibile grazie a una config centralizzata che si integra con SSO e con il gateway AI interno.
 
 </details>
 
 <details>
-<summary>Come posso iniziare con Miao Enterprise?</summary>
+<summary>Come posso iniziare con MIAO Enterprise?</summary>
 
-Inizia semplicemente con una prova interna con il tuo team. Per impostazione predefinita Miao non memorizza il tuo codice o i dati di contesto, quindi e facile partire.
+Inizia semplicemente con una prova interna con il tuo team. Per impostazione predefinita MIAO non memorizza il tuo codice o i dati di contesto, quindi e facile partire.
 
 Poi **<a href={email}>contattaci</a>** per discutere prezzi e opzioni di implementazione.
 
@@ -130,9 +130,9 @@ Offriamo pricing enterprise per-seat. Se hai un tuo gateway LLM, non addebitiamo
 </details>
 
 <details>
-<summary>I miei dati sono al sicuro con Miao Enterprise?</summary>
+<summary>I miei dati sono al sicuro con MIAO Enterprise?</summary>
 
-Si. Miao non memorizza il tuo codice o i dati di contesto. Tutta l'elaborazione avviene in locale o tramite chiamate API dirette al tuo provider AI. Con config centralizzata e integrazione SSO, i dati restano all'interno dell'infrastruttura della tua organizzazione.
+Si. MIAO non memorizza il tuo codice o i dati di contesto. Tutta l'elaborazione avviene in locale o tramite chiamate API dirette al tuo provider AI. Con config centralizzata e integrazione SSO, i dati restano all'interno dell'infrastruttura della tua organizzazione.
 
 </details>
 
@@ -147,7 +147,7 @@ Per configurare l'autenticazione col registry privato:
 npm login --registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 ```
 
-Questo crea `~/.npmrc` con i dettagli di autenticazione. Miao lo rilevera automaticamente.
+Questo crea `~/.npmrc` con i dettagli di autenticazione. MIAO lo rilevera automaticamente.
 
 :::caution
 Devi essere autenticato nel registry privato prima di eseguire Miao.
@@ -160,6 +160,6 @@ registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 //your-company.jfrog.io/api/npm/npm-virtual/:_authToken=${NPM_AUTH_TOKEN}
 ```
 
-Gli sviluppatori devono essere autenticati nel registry privato prima di eseguire Miao per garantire che i pacchetti possano essere installati dal registry enterprise.
+Gli sviluppatori devono essere autenticati nel registry privato prima di eseguire MIAO per garantire che i pacchetti possano essere installati dal registry enterprise.
 
 </details>

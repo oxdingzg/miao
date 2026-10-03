@@ -1,9 +1,9 @@
 ---
 title: Suporte ACP
-description: Use o miao em qualquer editor compatível com ACP.
+description: Use o MIAO em qualquer editor compatível com ACP.
 ---
 
-O miao suporta o [Agent Client Protocol](https://agentclientprotocol.com) ou (ACP), permitindo que você o utilize diretamente em editores e IDEs compatíveis.
+O MIAO suporta o [Agent Client Protocol](https://agentclientprotocol.com) ou (ACP), permitindo que você o utilize diretamente em editores e IDEs compatíveis.
 
 :::tip
 Para uma lista de editores e ferramentas que suportam ACP, confira o [relatório de progresso do ACP](https://zed.dev/blog/acp-progress-report#available-now).
@@ -15,9 +15,9 @@ O ACP é um protocolo aberto que padroniza a comunicação entre editores de có
 
 ## Configuração
 
-Para usar miao via ACP, configure seu editor para executar o comando `miao acp`.
+Para usar MIAO via ACP, configure seu editor para executar o comando `miao acp`.
 
-Este comando inicia o miao como um subprocesso compatível com ACP que se comunica com seu editor via JSON-RPC através do stdio.
+Este comando inicia o MIAO como um subprocesso compatível com ACP que se comunica com seu editor via JSON-RPC através do stdio.
 
 Abaixo estão exemplos para editores populares que suportam ACP.
 
@@ -25,9 +25,9 @@ Abaixo estão exemplos para editores populares que suportam ACP.
 
 ### Zed
 
-Instale o Miao pelo [Registro ACP do Zed](https://zed.dev/docs/ai/external-agents#registry) executando `zed: acp registry` na Paleta de Comandos.
+Instale o MIAO pelo [Registro ACP do Zed](https://zed.dev/docs/ai/external-agents#registry) executando `zed: acp registry` na Paleta de Comandos.
 
-Para usar um executável personalizado do Miao, adicione-o à configuração do [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
+Para usar um executável personalizado do MIAO, adicione-o à configuração do [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
 
 ```json title="~/.config/zed/settings.json"
 {
@@ -85,7 +85,7 @@ Adicione ao seu acp.json do [JetBrains IDE](https://www.jetbrains.com/) de acord
 }
 ```
 
-Para abri-lo, use o novo agente 'miao' no seletor de agentes do AI Chat.
+Para abri-lo, use o novo agente 'MIAO' no seletor de agentes do AI Chat.
 
 ---
 
@@ -124,7 +124,7 @@ Se você precisar passar variáveis de ambiente:
 
 ### CodeCompanion.nvim
 
-Para usar miao como um agente ACP no [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), adicione o seguinte à sua configuração do Neovim:
+Para usar MIAO como um agente ACP no [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), adicione o seguinte à sua configuração do Neovim:
 
 ```lua
 require("codecompanion").setup({
@@ -139,13 +139,13 @@ require("codecompanion").setup({
 })
 ```
 
-Esta configuração configura o CodeCompanion para usar miao como o agente ACP para chat.
+Esta configuração configura o CodeCompanion para usar MIAO como o agente ACP para chat.
 
 Se você precisar passar variáveis de ambiente (como `MIAO_API_KEY`), consulte [Configurando Adaptadores: Variáveis de Ambiente](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) na documentação do CodeCompanion.nvim para detalhes completos.
 
 ## Suporte
 
-O miao funciona da mesma forma via ACP como funciona no terminal. Todos os recursos são suportados:
+O MIAO funciona da mesma forma via ACP como funciona no terminal. Todos os recursos são suportados:
 
 :::note
 Alguns comandos de barra integrados, como `/undo` e `/redo`, atualmente não são suportados.
@@ -153,7 +153,7 @@ Alguns comandos de barra integrados, como `/undo` e `/redo`, atualmente não sã
 
 - Ferramentas integradas (operações de arquivo, comandos de terminal, etc.)
 - Ferramentas personalizadas e comandos de barra
-- Servidores MCP configurados na sua configuração do miao
+- Servidores MCP configurados na sua configuração do MIAO
 - Regras específicas do projeto do `AGENTS.md`
 - Formatadores e linters personalizados
 - Sistema de agentes e permissões

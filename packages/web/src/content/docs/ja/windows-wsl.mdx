@@ -1,6 +1,6 @@
 ---
 title: Windows (WSL)
-description: WSL を使って Windows で Miao を使う。
+description: WSL を使って Windows で MIAO を使う。
 ---
 
 import { Steps } from "@astrojs/starlight/components"
@@ -8,7 +8,7 @@ import { Steps } from "@astrojs/starlight/components"
 Miao は Windows で直接実行できますが、より快適に使うには [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) の利用をおすすめします。WSL は Miao の機能とスムーズに連携する Linux 環境を提供します。
 
 :::tip[WSL を使う理由]
-WSL を使うと、ファイルシステム性能、ターミナルサポート、Miao が依存する開発ツールとの互換性が向上します。
+WSL を使うと、ファイルシステム性能、ターミナルサポート、MIAO が依存する開発ツールとの互換性が向上します。
 :::
 
 ---
@@ -21,17 +21,17 @@ WSL を使うと、ファイルシステム性能、ターミナルサポート�
 
    まだの場合は、Microsoft 公式ガイドを使って [WSL をインストール](https://learn.microsoft.com/en-us/windows/wsl/install) します。
 
-2. **WSL で Miao をインストールする**
+2. **WSL で MIAO をインストールする**
 
-   WSL の準備ができたら WSL のターミナルを開き、[インストール方法](/docs/) のいずれかで Miao をインストールします。
+   WSL の準備ができたら WSL のターミナルを開き、[インストール方法](/docs/) のいずれかで MIAO をインストールします。
 
    ```bash
    curl -fsSL https://opencode.ai/install | bash
    ```
 
-3. **WSL から Miao を使う**
+3. **WSL から MIAO を使う**
 
-   プロジェクトディレクトリに移動し（Windows ファイルは `/mnt/c/` や `/mnt/d/` などからアクセス）、Miao を実行します。
+   プロジェクトディレクトリに移動し（Windows ファイルは `/mnt/c/` や `/mnt/d/` などからアクセス）、MIAO を実行します。
 
    ```bash
    cd /mnt/c/Users/YourName/project
@@ -82,7 +82,7 @@ Windows で Web 利用を快適にするには:
 
 2. **Windows のブラウザからアクセスする**
 
-   `http://localhost:<port>` にアクセスします（URL は Miao が表示します）。
+   `http://localhost:<port>` にアクセスします（URL は MIAO が表示します）。
 
 WSL から `miao web` を実行すると、適切なファイルシステムアクセスとターミナル統合を維持したまま、Windows ブラウザから利用できます。
 
@@ -104,13 +104,13 @@ miao
 ```
 
 :::tip
-よりスムーズに使うには、リポジトリを WSL のファイルシステム（例: `~/code/`）にクローンまたはコピーして、そこで Miao を実行することをおすすめします。
+よりスムーズに使うには、リポジトリを WSL のファイルシステム（例: `~/code/`）にクローンまたはコピーして、そこで MIAO を実行することをおすすめします。
 :::
 
 ---
 
 ## ヒント
 
-- Windows ドライブ上のプロジェクトでも、Miao は WSL で実行するとファイルアクセスがスムーズです
-- Miao と一緒に VS Code の [WSL 拡張機能](https://code.visualstudio.com/docs/remote/wsl) を使うと統合的な開発フローを構築できます
-- Miao の設定とセッションは WSL 環境内の `~/.local/share/miao/` に保存されます
+- Windows ドライブ上のプロジェクトでも、MIAO は WSL で実行するとファイルアクセスがスムーズです
+- MIAO と一緒に VS Code の [WSL 拡張機能](https://code.visualstudio.com/docs/remote/wsl) を使うと統合的な開発フローを構築できます
+- MIAO の設定とセッションは WSL 環境内の `~/.local/share/miao/` に保存されます
