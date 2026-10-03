@@ -87,9 +87,8 @@ jobs:
           set -euo pipefail
           release="v${{ needs.version.outputs.version }}"
           repo="${{ needs.version.outputs.repo }}"
-          # Update this status when SignPath approves the application and CI signs the binaries.
           notes=$(gh release view "$release" --repo "$repo" --json body -q .body)
-          footer='Windows code signing: application submitted to [SignPath Foundation](https://signpath.org) on 2026-10-03; approval and CI signing integration are pending. Current Windows binaries are unsigned.'
+          footer='Windows binaries are currently unsigned.'
           { printf '%s\n\n---\n\n' "$notes"; printf '%s\n' "$footer"; } > body.md
           gh release edit "$release" --repo "$repo" --draft=false --notes-file body.md
         env:

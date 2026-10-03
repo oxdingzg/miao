@@ -65,7 +65,7 @@ irm https://mtty.dev/miao/install.ps1 | iex   # Windows: PowerShell 5.1 or 7
 
 Windows terminal rendering is still being verified; see the [Windows verification notes](docs/windows-vt-verification.en.md).
 
-The application for Windows code signing through the [SignPath Foundation](https://signpath.org) was submitted on 2026-10-03. Approval and CI signing integration are pending; current Windows binaries are unsigned.
+Windows binaries are currently unsigned.
 
 ```bash
 curl -fsSL https://mtty.dev/miao/install | bash   # redirects to this repo's install script
