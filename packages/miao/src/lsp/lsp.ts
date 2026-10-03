@@ -47,13 +47,8 @@ export const DocumentSymbol = Schema.Struct({
 }).annotate({ identifier: "DocumentSymbol" })
 export type DocumentSymbol = typeof DocumentSymbol.Type
 
-export const Status = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  root: Schema.String,
-  status: Schema.Literals(["connected", "error"]),
-}).annotate({ identifier: "LSPStatus" })
-export type Status = typeof Status.Type
+import { Status } from "@miao/schema/lsp-view"
+export { Status } from "@miao/schema/lsp-view"
 
 enum SymbolKind {
   File = 1,

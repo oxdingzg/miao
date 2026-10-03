@@ -11,12 +11,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { errorMessage } from "@/util/error"
 import * as Formatter from "./formatter"
 
-export const Status = Schema.Struct({
-  name: Schema.String,
-  extensions: Schema.Array(Schema.String),
-  enabled: Schema.Boolean,
-}).annotate({ identifier: "FormatterStatus" })
-export type Status = Schema.Schema.Type<typeof Status>
+import { Status } from "@miao/schema/format-view"
+export { Status } from "@miao/schema/format-view"
 
 export interface Interface {
   readonly init: () => Effect.Effect<void>

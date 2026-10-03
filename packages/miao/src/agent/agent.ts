@@ -1,3 +1,5 @@
+import { Info } from "@miao/schema/agent-view"
+export { Info } from "@miao/schema/agent-view"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { PermissionV1 } from "@miao/core/v1/permission"
 import { Config } from "@/config/config"
@@ -34,28 +36,7 @@ import { PluginV2 } from "@miao/core/plugin"
 // Managed tool-output files are re-readable without an external-directory prompt.
 const TOOL_OUTPUT_GLOB = path.join(Global.Path.data, "tool-output", "*")
 
-export const Info = Schema.Struct({
-  name: Schema.String,
-  description: Schema.optional(Schema.String),
-  mode: Schema.Literals(["subagent", "primary", "all"]),
-  native: Schema.optional(Schema.Boolean),
-  hidden: Schema.optional(Schema.Boolean),
-  topP: Schema.optional(Schema.Finite),
-  temperature: Schema.optional(Schema.Finite),
-  color: Schema.optional(Schema.String),
-  permission: PermissionV1.Ruleset,
-  model: Schema.optional(
-    Schema.Struct({
-      modelID: ModelV2.ID,
-      providerID: ProviderV2.ID,
-    }),
-  ),
-  variant: Schema.optional(Schema.String),
-  prompt: Schema.optional(Schema.String),
-  options: Schema.Record(Schema.String, Schema.Unknown),
-  steps: Schema.optional(Schema.Finite),
-}).annotate({ identifier: "Agent" })
-export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
+
 
 const GeneratedAgent = Schema.Struct({
   identifier: Schema.String,
