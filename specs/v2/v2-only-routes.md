@@ -34,10 +34,14 @@
   `AppNodeBuilder`；UI 路由改用 core `Flag.MIAO_DISABLE_EMBEDDED_WEB_UI`（新增于 `core/src/flag/flag.ts`），
   不再依赖 V1 `RuntimeFlags`。V1 插件服务端测试（`httpapi-listen` 的 plugin client、`httpapi-v2-pty` 的
   plugin shell env）随废弃路径删除。
-- 剩余（第 2 层收尾）：把 `/doc`（`public.ts`/`api.ts`/`public-schemas.ts`）、内嵌 UI（`serveUIEffect` 的
-  虚拟模块 `miao-web-ui.gen.ts`）、`ServerAuth`、error/compression/cors-vary 中间件与 `EventForwarder` 的
-  宿主搬进 `packages/server` 或参数化注入，让发布二进制直接构建 `packages/server` 的 route assembly，
-  `packages/miao` 只剩 CLI 外壳（listener/mDNS/websocket 与 UI 资源仍属外壳）。
+- 装配迁移完成（同日晚）：发布二进制改用 `packages/server` 的 route assembly。新增
+  `packages/server/src/assembly.ts`（`createRoutes({ cors, remote, auth, extensions })`，含 `/api/*`、
+  error/compression/cors-vary、auth、location、遥测与 core 服务图）；error/compression/cors-vary 中间件
+  从 miao 移入 `packages/server/src/middleware/`。`ServerAuth` 统一到 `@miao/server/auth`（读 core
+  `Flag.MIAO_SERVER_*`，默认用户名 `miao`），`packages/miao/src/server/auth.ts` 改为再导出。
+  miao 侧只剩 host 特有的 `extensions`（`/doc` 的 `PublicApi`、内嵌 UI 的 `serveUIEffect` 虚拟模块、
+  `EventForwarder`）与 listener/mDNS/websocket，`server/routes/.../server.ts` 成为薄封装：
+  `createAssembly({ auth: ServerAuth.Config.layer, extensions: Extensions.layer })`。
 
 ## 目标与分层
 

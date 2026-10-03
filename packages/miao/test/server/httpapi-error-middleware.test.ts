@@ -4,7 +4,7 @@ import { describe, expect } from "bun:test"
 import { ConfigErrorV1 } from "@miao/core/v1/config/error"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
-import { errorLayer } from "../../src/server/routes/instance/httpapi/middleware/error"
+import { errorLayer } from "@miao/server/middleware/error"
 import { NotFoundError } from "../../src/storage/storage"
 import { testEffect } from "../lib/effect"
 
