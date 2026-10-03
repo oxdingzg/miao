@@ -3539,6 +3539,30 @@ export type ProjectsUpdateOutput = {
   }
 }
 
+export type ProjectsInitGitInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type ProjectsInitGitOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly id: string
+    readonly worktree: string
+    readonly vcs?: "git"
+    readonly name?: string
+    readonly icon?: { readonly url?: string; readonly override?: string; readonly color?: string }
+    readonly commands?: { readonly start?: string }
+    readonly time: { readonly created: number; readonly updated: number; readonly initialized?: number }
+    readonly sandboxes: ReadonlyArray<string>
+  }
+}
+
 export type VcsGetInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

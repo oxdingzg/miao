@@ -3,7 +3,7 @@ import { Project } from "@miao/schema/project"
 import { AbsolutePath } from "@miao/schema/schema"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { ProjectNotFoundError } from "../errors"
+import { ProjectNotFoundError, UnknownError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const ProjectCurrent = Schema.Struct({
@@ -74,6 +74,22 @@ export const ProjectGroup = HttpApiGroup.make("server.project")
           identifier: "v2.project.update",
           summary: "Update project",
           description: "Update a project's name, icon, or workspace start command.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("project.initGit", "/api/project/git/init", {
+      query: LocationQuery,
+      success: Location.response(Project.Info),
+      error: UnknownError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.project.initGit",
+          summary: "Initialize git",
+          description:
+            "Create a git repository in the requested directory unless it is already in one, and return the project it now belongs to.",
         }),
       ),
   )

@@ -13690,6 +13690,47 @@ export type V2ProjectUpdateResponses = {
 
 export type V2ProjectUpdateResponse = V2ProjectUpdateResponses[keyof V2ProjectUpdateResponses]
 
+export type V2ProjectInitGitData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/project/git/init"
+}
+
+export type V2ProjectInitGitErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type V2ProjectInitGitError = V2ProjectInitGitErrors[keyof V2ProjectInitGitErrors]
+
+export type V2ProjectInitGitResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Project
+  }
+}
+
+export type V2ProjectInitGitResponse = V2ProjectInitGitResponses[keyof V2ProjectInitGitResponses]
+
 export type V2VcsGetData = {
   body?: never
   path?: never

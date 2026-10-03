@@ -266,6 +266,44 @@ describe("v2 location HttpApi", () => {
     }
   })
 
+  test("registers a project when its directory is first opened", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const current = (await (await request("/api/project/current", tmp.path)).json()) as { data: { id: string } }
+    const listed = (await (await request("/api/project", tmp.path)).json()) as {
+      data: { id: string; worktree: string; vcs?: string }[]
+    }
+    expect(listed.data.find((project) => project.id === current.data.id)).toMatchObject({
+      worktree: tmp.path,
+      vcs: "git",
+    })
+  })
+
+  test("initializes git and records when /init ran", async () => {
+    await using tmp = await tmpdir()
+    const initialized = await request("/api/project/git/init", tmp.path, { method: "POST" })
+    expect(initialized.status).toBe(200)
+    expect(((await initialized.json()) as { data: unknown }).data).toMatchObject({ vcs: "git", worktree: tmp.path })
+    expect(await Bun.file(path.join(tmp.path, ".git", "HEAD")).exists()).toBe(true)
+
+    await using repo = await tmpdir({ git: true })
+    const created = await request("/api/session", repo.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location: { directory: repo.path } }),
+    })
+    const session = ((await created.json()) as { data: { id: string; projectID: string } }).data
+    const command = await request(`/api/session/${session.id}/command`, repo.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "init", arguments: "", resume: false }),
+    })
+    expect(command.status).toBe(204)
+    const projects = (await (await request("/api/project", repo.path)).json()) as {
+      data: { id: string; time: { initialized?: number } }[]
+    }
+    expect(projects.data.find((project) => project.id === session.projectID)?.time.initialized).toBeNumber()
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)
