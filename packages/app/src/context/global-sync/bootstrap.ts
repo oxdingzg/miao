@@ -1,12 +1,11 @@
 import type { AgentsListInput, AgentsListOutput, CommandsListInput, CommandsListOutput, ProjectsCurrentInput, ProjectsCurrentOutput, ProjectsListOutput, ReferencesListInput, ReferencesListOutput } from "@miao/client"
-import type { CatalogApi, CommandInfo, SessionApi } from "@/utils/server"
+import type { CatalogApi, CommandInfo, ProviderAuthResponse, SessionApi } from "@/utils/server"
 import type {
   Config,
   OpencodeClient,
-  Path,
+  LocationPath,
   PermissionRequest,
   Project,
-  ProviderAuthResponse,
   QuestionRequest,
   ReferenceInfo,
   Session,
@@ -36,7 +35,7 @@ import type { ServerApi } from "@/utils/server"
 
 type GlobalStore = {
   ready: boolean
-  path: Path
+  path: LocationPath
   project: Project[]
   provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
@@ -259,7 +258,7 @@ export const loadCommands = (
 type PathApi = Pick<ServerApi["location"], "path">
 
 export const loadPathQuery = (scope: ServerScope, directory: string | null, api: PathApi) =>
-  queryOptions<Path>({
+  queryOptions<LocationPath>({
     queryKey: [scope, directory, "path"],
     queryFn: () => api.path(directory ? { location: { directory } } : undefined),
   })
@@ -302,7 +301,7 @@ export async function bootstrapDirectory(input: {
   translate: (key: string, vars?: Record<string, string | number>) => string
   global: {
     config: Config
-    path: Path
+    path: LocationPath
     project: Project[]
     provider: NormalizedProviderListResponse
   }

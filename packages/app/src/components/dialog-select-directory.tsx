@@ -9,7 +9,7 @@ import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { cleanPickerInput, createDirectorySearch, displayPickerPath } from "./directory-picker-domain"
-import type { Path } from "@opencode-ai/sdk/v2/client"
+import type { LocationPath } from "@opencode-ai/sdk/v2/client"
 
 interface DialogSelectDirectoryProps {
   title?: string
@@ -62,7 +62,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const missingHome = createMemo(() => !sync.data.path.home)
   const [fallbackPath] = createResource(
     () => (missingHome() ? true : undefined),
-    async (): Promise<Path | undefined> => {
+    async (): Promise<LocationPath | undefined> => {
       return sdk.api.location.path().catch(() => undefined)
     },
     { initialValue: undefined },
