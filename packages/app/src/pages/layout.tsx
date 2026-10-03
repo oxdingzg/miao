@@ -1282,13 +1282,9 @@ export default function LegacyLayout(props: ParentProps) {
     const name = next === getFilename(project.worktree) ? "" : next
 
     if (project.id && project.id !== "global") {
-      const sdk = serverSDK()
-      if ((await sdk.protocol) !== "v1") return
-      const result = await sdk.client.project
-        .update({ projectID: project.id, directory: project.worktree, name })
+      const result = await serverSDK()
+        .api.projects.update({ projectID: project.id, location: { directory: project.worktree }, name })
         .then((response) => response.data)
-      if (!result) return
-      // const result = await serverSDK().api.project.update({ projectID: project.id, name })
       serverSync().set("project", (items) =>
         items.map((item) => (item.id === result.id ? normalizeProjectInfo(result) : item)),
       )
