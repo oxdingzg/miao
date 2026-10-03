@@ -1,13 +1,18 @@
 # HttpApi Route Patterns
 
+This directory only assembles the server: `server.ts` mounts the `/api/*` routes, the OpenAPI document,
+and the embedded UI, and `api.ts`/`public.ts` build the public document. Endpoints are declared in
+`packages/protocol/src/groups` and implemented in `packages/server/src/handlers`; the patterns below apply
+there.
+
 Use `HttpApiBuilder.group(...)` for normal HTTP endpoints, including streaming HTTP responses such as server-sent events. Handlers should yield stable services once while building the handler layer, then close over those services in endpoint implementations.
 
 ```ts
-export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (handlers) =>
+export const WorktreeHandler = HttpApiBuilder.group(Api, "server.worktree", (handlers) =>
   Effect.gen(function* () {
-    const auth = yield* Auth.Service
+    const worktrees = yield* ProjectWorktree.Service
 
-    return handlers.handle("authSet", ({ params, payload }) => auth.set(params.providerID, payload).pipe(Effect.orDie))
+    return handlers.handle("worktree.create", (ctx) => response(worktrees.create(target, ctx.payload)))
   }),
 )
 ```
@@ -15,16 +20,6 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
 For SSE endpoints, stay in `HttpApiBuilder.group(...)` and return `HttpServerResponse.stream(...)` from the handler. Annotate the endpoint success schema with `HttpApiSchema.asText({ contentType: "text/event-stream" })` so OpenAPI documents the stream content type.
 
 Use `HttpApiBuilder.group(...)` with `handleRaw(...)` for declared endpoints that need the raw request or response, including WebSocket upgrade routes. This keeps endpoint middleware, routing context, and OpenAPI metadata on one typed route tree.
-
-```ts
-export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-connect", (handlers) =>
-  Effect.gen(function* () {
-    const pty = yield* Pty.Service
-
-    return handlers.handleRaw("connect", (ctx) => connectPty(ctx.request, pty))
-  }),
-)
-```
 
 Use raw `HttpRouter.use(...)` only for routes outside the declared API surface, such as a catch-all UI fallback.
 

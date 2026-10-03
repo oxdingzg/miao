@@ -39,7 +39,7 @@
 - SDK 的 V1 根导出、`src/gen`、旧 smoke test 和 `duplicate-pr.ts` 已删除并重新生成 `/v2` SDK；插件类型、run 的 prompt 类型与 SDK 示例已调整。旧 Copilot `chat.*` 钩子及其测试删除，V2 provider-request 测试仍覆盖逐请求头。迁移指南写入 CHANGELOG。非会话 legacy SDK 命名空间仍在，P7 尚未完成。
 - app 的五处归档操作改走 V2；新增 `/api/fs/content`，TUI diff 高亮已迁移。原生 V2 e2e 夹具已添加，reasoning、reducer、transport 三个 spec 共 18 个测试恢复。它们发现并修复了内容按 ID 排序、idle 事件未更新状态以及加载历史后新 stream 覆盖原内容的问题。
 - P6 剩余：其余 `LEGACY_V1_FIXTURE` 用例和 performance 夹具；每轮 DiffSummary / inline comment；原生附件与引用的渲染归一化；`server-session` 的旧投影 unit-test adapter 及 V1 事件兼容层。不要只删 fixme 而不迁移夹具。
-- P7 剩余：console、PTY、config 写入、project 元数据、worktree 等无前缀调用与 V1 server assembly / AppRuntime。`p7-non-session-routes.md` 的早期计数已过时，应重新扫描调用点。
+- P7 进展（2026-10-03）：console 删除；PTY、config 写入、project 元数据、worktree、MCP OAuth 迁到 `/api/*`；服务端只挂 V2 路由，V1 路由树已删除（见 `v2-only-routes.md`）。剩余：第 2 层——迁走 V2 路由仍依赖的 V1 桥接服务（`Plugin`、`Provider`、`EventV2Bridge`、`WorkspaceV2Bridge` 等）与 `AppRuntime` 的 V1 层，发布二进制改用 `packages/server` 装配。
 - P3 已完成 `miao-main.db` 的一致性备份与副本 backfill / compact 演练。备份和压缩副本分别位于 `~/.local/share/miao/retirement-20261003/main-before.db`、`main-rehearsal.db`。副本 2230.4 MB → 254.1 MB，删除 104297 个 legacy event 和 2 张表；`quick_check` 为 ok，foreign-key 检查无输出；59 个 session、8964 个 session_message、134 个 session_input、24 个 context epoch 的逐行双向 EXCEPT 均为 0，session list / stats 冒烟通过。
 - **真库未压缩**：4132 服务仍运行 `0.0.21`，并打开 `miao-main.db`；升级并重启这个旧读写进程之前不能删除真库的 message / part。本次未停止服务、未删备份、未开始一周观察；restore 合并演练也尚未执行。检查过的构建机默认数据目录未发现需要迁移的 miao 库，不能据此断言其他目录或用户下没有库。
 

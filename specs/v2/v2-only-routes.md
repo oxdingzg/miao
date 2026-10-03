@@ -1,6 +1,23 @@
 # 服务端只挂 V2 路由（P7 收尾第 1 层）
 
-状态：设计稿，2026-10-03。
+状态：第 1 层已实现，2026-10-03（`cd03f9ec3` 起，至 `20a62f874`）。
+
+实施结果与方案的出入：
+
+- C.2 改为把 MCP OAuth 整体移植进 core（`mcp-oauth.md`），因为 V2 下它本已失效。
+- 旧 SDK 类型：`PublicApi` 只含 V2 后，客户端仍当作视图模型使用的 V1 形状类型经 `public-schemas.ts` 的
+  `ClientSchemas` 作为 `AdditionalSchemas` 保留（Provider、Model、Config、Command、Agent、Auth、
+  ProviderAuthMethod、VcsFileDiff、FormatterStatus、Workspace、McpStatus、LspStatus、FileNode、FileContent）。
+  只由 V1 路由响应派生的类型改为本地定义或 V2 类型：TUI 的 `GlobalEvent`（GlobalBus 包装）与
+  `ProviderCatalog`，app 的 `ProviderAuthResponse` / `ProviderListResponse`，`Path` → `LocationPath`，
+  `ProjectDirectories` → `ProjectDirectory[]`。
+- 一并删除的中间件：`legacy-route`、`instance-context`、`workspace-routing`、`proxy`、`fence`、V1
+  `schema-error`，以及 `lifecycle.ts` 的 `disposeMiddleware`（只有 V1 handler 会标记实例销毁）。
+- V1 插件在 V2 下按需加载：只有插件的 shell/pty 环境桥接（如创建 PTY、bash 工具）会触发加载。
+- 已知测试缺口：`/api/event` 跳过未声明事件的行为原由 `/tui/open-help` 触发测试，`/tui` 删除后 HTTP 上已无
+  可触发未声明事件的路由，该测试随之删除（逻辑仍在 `server/src/handlers/event.ts`）。
+
+剩余：第 2 层（迁走桥接服务、发布二进制改用 `packages/server` 装配）。
 
 ## 目标与分层
 

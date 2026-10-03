@@ -143,11 +143,8 @@ protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/
    在 `makeApi`（`packages/protocol/src/api.ts`）与 `packages/server/src/api.ts` 注册。
 2. `cd packages/client && bun run generate` 重新生成客户端类型。
 3. 迁移 TUI/app 调用点，`rg` 确认不再有非 `v2.*` 的 legacy SDK 调用。
-4. 删除 `packages/miao/src/server/routes/instance/httpapi`（V1 树）与对应 handlers/groups/tests；
-   `server.ts` 切到 `packages/server` 的 V2-only assembly。2026-10-03 仍挂着的 V1 组（`groups/`）：`config`、
-   `control-plane`、`control`、`event`、`experimental`、`file`、`global`、`instance`、`mcp`、`metadata`、`project`、
-   `provider`、`pty`、`query`、`tui`、`workspace`。其中 `tui`（`/tui/*` 远程控制 TUI）、`global/health`、
-   `global/upgrade` 要先确认是否还有调用方（miaotty、`miao attach`、插件）。
+4. ~~删除 V1 路由树~~（2026-10-03 完成，见 `v2-only-routes.md`）：`groups/`、`handlers/` 与 V1 专用中间件已删，
+   服务端只挂 `/api/*`、OpenAPI 文档与内嵌 UI；`/tui/*`、`/global/*`、远程工作区同步一并删除。
 5. `packages/miao` 只剩 CLI 外壳；`packages/miao/src/session|tool` 与旧会话路由组已随 P4 删除（2026-10-03），`app-runtime` 的 V1 层与剩余非会话旧路由在 P7 收尾。
 
 ## 验证（每步）
