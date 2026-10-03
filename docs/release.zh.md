@@ -17,8 +17,10 @@
 3. **工作流 `.github/workflows/release.yml`**：
    - `version`：运行 `script/version.ts`，以根 `package.json` 的版本创建**草稿** release `vX.Y.Z`，并生成 release notes，输出 `version/release/tag/repo`。
    - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
-   - `publish`：所有平台成功后执行 `gh release edit --draft=false`，正式发布。
+   - `publish`：所有平台成功后，先把 SignPath 署名追加到 release 说明，再执行 `gh release edit --draft=false` 正式发布。
 4. **产物**：`miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`，命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
+
+Windows 二进制通过 [SignPath Foundation](https://signpath.org) 项目进行代码签名:free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)。`publish` 步骤会把这段署名追加到每个 release 说明里，使下载页面写明签名方。
 
 ## 变更日志
 

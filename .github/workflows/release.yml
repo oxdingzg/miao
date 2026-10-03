@@ -83,6 +83,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Publish the draft release
-        run: gh release edit "v${{ needs.version.outputs.version }}" --draft=false --repo "${{ needs.version.outputs.repo }}"
+        run: |
+          set -euo pipefail
+          release="v${{ needs.version.outputs.version }}"
+          repo="${{ needs.version.outputs.repo }}"
+          # The SignPath Foundation's open-source program asks the download
+          # page to name it, so put the attribution on every release.
+          notes=$(gh release view "$release" --repo "$repo" --json body -q .body)
+          footer='Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).'
+          { printf '%s\n\n---\n\n' "$notes"; printf '%s\n' "$footer"; } > body.md
+          gh release edit "$release" --repo "$repo" --draft=false --notes-file body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
