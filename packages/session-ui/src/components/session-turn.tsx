@@ -1,7 +1,7 @@
-import { AssistantMessage, Message as MessageType, Part as PartType } from "@miao/schema/session-v1"
-import type { SnapshotFileDiff } from "@miao/schema/vcs"
+import { AssistantMessage, Message as MessageType, Part as PartType } from "@miao/schema/view-models"
+import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import type { Vcs } from "@miao/schema/vcs"
-import type { SessionStatus } from "@miao/schema/session-status-event"
+import type { SessionStatus } from "@miao/schema/view-models"
 import { useData } from "../context"
 import { useFileComponent } from "@miao/ui/context/file"
 
