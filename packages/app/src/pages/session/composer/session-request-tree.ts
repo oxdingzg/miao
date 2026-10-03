@@ -1,5 +1,5 @@
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 
 function sessionTreeRequest<T>(
   session: Session[],

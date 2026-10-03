@@ -26,12 +26,14 @@ import { MCP } from "./mcp"
 import { Model as ModelV2 } from "./model"
 import { Permission } from "./permission"
 import { PermissionSaved } from "./permission-saved"
+import { PermissionV1 } from "./permission-v1"
 import { Project as ProjectV2 } from "./project"
 import { PromptInput as PromptInputV2 } from "./prompt-input"
 import { Provider as ProviderV2 } from "./provider"
 import { ProviderAuthView } from "./provider-auth-view"
 import { ProviderView } from "./provider-view"
 import { Question } from "./question"
+import { QuestionV1 } from "./question-v1"
 import { Reference } from "./reference"
 import { SessionInfo } from "./session-info"
 import { SessionMessage as SessionMessageV2 } from "./session-message"
@@ -104,12 +106,12 @@ export type SessionStatus = Wire<typeof SessionStatusEvent.Info>
 export type Todo = Wire<typeof SessionTodo.Info>
 
 // Question / permission.
-export type QuestionRequest = Wire<typeof Question.Request>
+export type QuestionRequest = Wire<typeof QuestionV1.Request>
 export type QuestionInfo = Wire<typeof Question.Info>
 export type QuestionAnswer = Wire<typeof Question.Answer>
 export type QuestionV2Request = Wire<typeof Question.Request>
 export type QuestionV2Answer = Wire<typeof Question.Answer>
-export type PermissionRequest = Wire<typeof Permission.Request>
+export type PermissionRequest = Wire<typeof PermissionV1.Request>
 export type PermissionV2Request = Wire<typeof Permission.Request>
 export type PermissionSavedInfo = Wire<typeof PermissionSaved.Info>
 

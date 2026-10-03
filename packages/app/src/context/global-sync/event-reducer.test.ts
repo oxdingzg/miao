@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part, Project, Session } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"

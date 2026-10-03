@@ -1,5 +1,5 @@
 import type { Message, Part, SessionStatus, Todo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import type { FileDiffInfo, SessionMessageInfo } from "@/utils/server"
 
 export const SESSION_CACHE_LIMIT = 40

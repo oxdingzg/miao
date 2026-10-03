@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest } from "@miao/schema/view-models"
 import { trimSessions } from "./session-trim"
 
 const session = (input: { id: string; parentID?: string; created: number; updated?: number; archived?: number }) =>
