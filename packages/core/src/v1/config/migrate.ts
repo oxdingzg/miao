@@ -76,12 +76,14 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
       typeof plugin === "string" ? plugin : { package: plugin[0], options: plugin[1] },
     ),
     experimental:
-      (info.experimental?.policies || info.experimental?.disable_paste_summary !== undefined) && {
-        ...(info.experimental.policies ? { policies: info.experimental.policies } : {}),
-        ...(info.experimental.disable_paste_summary !== undefined
-          ? { disable_paste_summary: info.experimental.disable_paste_summary }
-          : {}),
-      },
+      info.experimental?.policies || info.experimental?.disable_paste_summary !== undefined
+        ? {
+            ...(info.experimental.policies ? { policies: info.experimental.policies } : {}),
+            ...(info.experimental.disable_paste_summary !== undefined
+              ? { disable_paste_summary: info.experimental.disable_paste_summary }
+              : {}),
+          }
+        : undefined,
     providers: providers(info.provider, info.disabled_providers),
   }
 }
