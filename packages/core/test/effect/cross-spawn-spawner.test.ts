@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { Effect, Exit, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
@@ -254,6 +254,36 @@ describe("cross-spawn spawner", () => {
         )
         const done = yield* Effect.promise(() => gone(pid))
         expect(done).toBe(true)
+      }),
+    )
+
+    fx.effect(
+      "kills the whole process group when the owning fiber is interrupted",
+      Effect.gen(function* () {
+        if (process.platform === "win32") return
+
+        const reported = yield* Deferred.make<string>()
+        const fiber = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const handle = yield* ChildProcessSpawner.ChildProcessSpawner.use((svc) =>
+              svc.spawn(
+                js(`
+                  const { spawn } = require("node:child_process")
+                  const child = spawn("sleep", ["300"], { stdio: "ignore" })
+                  console.log(child.pid)
+                  setInterval(() => {}, 10_000)
+                `),
+              ),
+            )
+            yield* Deferred.succeed(reported, yield* decodeByteStream(Stream.take(handle.stdout, 1)))
+            return yield* Effect.never
+          }),
+        ).pipe(Effect.forkChild)
+
+        const grandchild = Number(yield* Deferred.await(reported))
+        expect(alive(grandchild)).toBe(true)
+        yield* Fiber.interrupt(fiber)
+        expect(yield* Effect.promise(() => gone(grandchild))).toBe(true)
       }),
     )
 
