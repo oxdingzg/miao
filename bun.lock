@@ -650,6 +650,7 @@
       "dependencies": {
         "@miao/core": "workspace:*",
         "@miao/protocol": "workspace:*",
+        "@miao/schema": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
       },

@@ -1,6 +1,7 @@
 export * as EventManifest from "./event-manifest"
 
 import { Catalog } from "./catalog"
+import { ConfigEvent } from "./config-event"
 import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
@@ -44,6 +45,7 @@ const foundationDefinitions = Event.inventory(
 )
 
 const featureDefinitions = Event.inventory(
+  ...ConfigEvent.Definitions,
   ...FileSystem.Event.Definitions,
   ...Project.Event.Definitions,
   ...Reference.Event.Definitions,
