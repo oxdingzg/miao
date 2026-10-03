@@ -36,8 +36,9 @@ export function watchSessionStatus(input: {
       })
     // An idle session changes execution ownership rarely, and under Bun every
     // timer wakeup allocates (a JSC eden collection), so poll far less often
-    // when idle. A busy one keeps the close cadence for a prompt idle flip.
-    const interval = last === "busy" ? (input.interval ?? 1000) : (input.idleInterval ?? 5000)
+    // when idle. A busy — or still unknown after a failed read — one keeps the
+    // close cadence so a prompt idle flip and error recovery stay responsive.
+    const interval = last === "idle" ? (input.idleInterval ?? 5000) : (input.interval ?? 1000)
     if (!disposed) timer = setTimeout(() => void poll(), interval)
   }
 
