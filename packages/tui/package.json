@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "@miao/core": "workspace:*",
+    "@miao/schema": "workspace:*",
     "@miao/client": "workspace:*",
     "@miao/plugin": "workspace:*",
     "@miao/sdk": "workspace:*",

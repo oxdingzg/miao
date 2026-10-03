@@ -1,26 +1,5 @@
-import type {
-  Message,
-  UserMessage,
-  Agent,
-  Provider,
-  Session,
-  Part,
-  Config,
-  Todo,
-  Command,
-  PermissionRequest,
-  QuestionRequest,
-  LspStatus,
-  McpStatus,
-  McpServerStatus,
-  McpResource,
-  FormatterStatus,
-  SessionStatus,
-  ProviderAuthMethod,
-  IntegrationInfo,
-  VcsInfo,
-  SnapshotFileDiff,
-} from "@miao/sdk/v2"
+import type { Message, UserMessage, Session, Part, VcsInfo, SnapshotFileDiff } from "@miao/schema/view-models"
+import type { Agent, Provider, Config, Todo, Command, PermissionRequest, QuestionRequest, LspStatus, McpStatus, McpServerStatus, McpResource, FormatterStatus, SessionStatus, ProviderAuthMethod, IntegrationInfo } from "@miao/sdk/v2"
 import type { TuiTranscriptMessage } from "@miao/plugin/tui"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "./project"

@@ -5,7 +5,7 @@ import { useTheme } from "../../context/theme"
 import { waitingForResponse, watchSessionStatus } from "../../context/session-status"
 import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
-import type { Part, ReasoningPart, ToolPart } from "@miao/sdk/v2"
+import type { Part, ReasoningPart, ToolPart } from "@miao/schema/view-models"
 
 // Claude Code reports a turn as `[running|ran] N shell commands` on one live
 // status line. miao's V2 core emits one assistant message per provider turn, so
