@@ -929,7 +929,22 @@ type Endpoint24_1Input = { readonly location?: Endpoint24_1Request["query"]["loc
 const Endpoint24_1 = (raw: RawClient["server.vcs"]) => (input?: Endpoint24_1Input) =>
   raw["vcs.status"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup24 = (raw: RawClient["server.vcs"]) => ({ get: Endpoint24_0(raw), status: Endpoint24_1(raw) })
+type Endpoint24_2Request = Parameters<RawClient["server.vcs"]["vcs.diff"]>[0]
+type Endpoint24_2Input = {
+  readonly location?: Endpoint24_2Request["query"]["location"]
+  readonly mode: Endpoint24_2Request["query"]["mode"]
+  readonly context?: Endpoint24_2Request["query"]["context"]
+}
+const Endpoint24_2 = (raw: RawClient["server.vcs"]) => (input: Endpoint24_2Input) =>
+  raw["vcs.diff"]({ query: { location: input["location"], mode: input["mode"], context: input["context"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+const adaptGroup24 = (raw: RawClient["server.vcs"]) => ({
+  get: Endpoint24_0(raw),
+  status: Endpoint24_1(raw),
+  diff: Endpoint24_2(raw),
+})
 
 type Endpoint25_0Request = Parameters<RawClient["server.workspace"]["workspace.list"]>[0]
 type Endpoint25_0Input = { readonly location?: Endpoint25_0Request["query"]["location"] }

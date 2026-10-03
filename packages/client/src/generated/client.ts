@@ -166,6 +166,8 @@ import type {
   VcsGetOutput,
   VcsStatusInput,
   VcsStatusOutput,
+  VcsDiffInput,
+  VcsDiffOutput,
   WorkspaceListInput,
   WorkspaceListOutput,
   WorkspaceStatusInput,
@@ -1399,6 +1401,18 @@ export function make(options: ClientOptions) {
             method: "GET",
             path: `/api/vcs/status`,
             query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      diff: (input: VcsDiffInput, requestOptions?: RequestOptions) =>
+        request<VcsDiffOutput>(
+          {
+            method: "GET",
+            path: `/api/vcs/diff`,
+            query: { location: input["location"], mode: input["mode"], context: input["context"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
             empty: false,
