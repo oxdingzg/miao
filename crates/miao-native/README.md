@@ -2,15 +2,15 @@
 
 Rust PoC for the plan in `docs/rust-rewrite-feasibility.en.md` / `.zh.md`. It covers the pieces
 that are pure computation (edit matching, patch application, diff), one subprocess-free capability
-(git status via `gix`), and one platform capability JS cannot provide (a macOS seatbelt sandbox).
+(git status via `gix`), and one platform capability JS cannot provide (the macOS seatbelt and
+Linux Landlock sandbox).
 
 ## Layout
 
 - `src/lib.rs`: nine edit replacers, `replace()`, `diffStats`, `unifiedPatch`, `deriveNewContents`,
   `gitStatus`, and Rust unit tests.
-- `src/bin/miao-run.rs`: `miao-run`, a macOS seatbelt sandbox wrapper.
+- `src/bin/miao-run.rs`: `miao-run`, an OS sandbox wrapper (macOS seatbelt / Linux Landlock).
 - `build.ts`: builds the cdylib with cargo and copies it to `miao-native.node`.
-- `../../packages/miao/test/tool/edit-native.test.ts`: parity tests against the TS implementations.
 
 ## Build
 
@@ -22,12 +22,10 @@ cargo build --release       # also builds target/release/miao-run (the sandbox b
 ## Test
 
 ```sh
-cargo test --release        # 17 lib + 4 bin Rust unit tests
-bun test test/tool/edit-native.test.ts   # from packages/miao/, parity vs the TS implementations
+cargo test --release        # lib + bin Rust unit tests
 ```
 
-Both JS suites skip themselves when the artifact is missing, so they do not break the normal
-`packages/miao` suite.
+The JS parity suites that compared against the V1 TS tools were removed with the V1 tools.
 
 ## API
 
@@ -40,7 +38,7 @@ deriveNewContents(chunks, filePath, originalText) -> { content, unifiedDiff, bom
 gitStatus(path) -> Array<{ path, status }>
 ```
 
-`replaceOnly` throws the same error messages as the TS `replace()`; `applyEdit` is `replaceOnly`
+`replaceOnly` throws the same error messages as the removed V1 TS `replace()`; `applyEdit` is `replaceOnly`
 plus diff statistics. `deriveNewContents` ports `deriveNewContentsFromChunks` from
 `packages/miao/src/patch/index.ts`. `gitStatus` uses `gix` and returns worktree-vs-index changes
 (`added` / `modified` / `deleted` / `renamed` / `copied`).
@@ -61,14 +59,14 @@ miao-run --workdir <dir> [--allow-path <dir>]... [--allow-network] [--compat] [-
 - `--deny-report <file>` writes `{"denied":[...],"exitCode":n}` so the caller can escalate a denial.
 - `--print-profile` prints the generated seatbelt profile and exits; the command's stderr names the
   path a denial blocked, which is the fastest way to find what to allow next.
-- On non-macOS it runs the command unsandboxed.
+- On platforms without a backend (Windows) it runs the command unsandboxed.
 
 ### Escalating denials
 
-`packages/miao/src/tool/sandbox.ts` (`runSandboxed`) is the integration seam: it runs the command,
-reads `--deny-report`, calls `ask(denied)` to get the paths the user approves, and retries with more
-`--allow-path` entries (up to `maxAttempts`). An empty approval aborts. It is not wired into the
-bash tool yet; the intended wiring is to pass the bash permission prompt as `ask`.
+`packages/core/src/sandbox.ts` and `packages/core/src/sandbox/runner.ts` are the integration seam:
+`Sandbox.wrap` runs the command, reads `--deny-report`, and the V2 `bash` tool requests
+`external_directory` approval for the blocked directories, then retries with them writable. It is
+wired into the V2 `bash` tool.
 
 
 ## PoC results (measured, same machine, release)
@@ -116,5 +114,6 @@ straight into the output, the unified diff buffer is preallocated, and there is 
 
 ## Status
 
-Not wired into production. `packages/miao` still uses the TS implementations, subprocess `git`,
-and rule-based permissions.
+The native edit/patch paths are not wired into any shipped tool: V2's edit/patch tools are
+TypeScript. The sandbox runner is wired into the V2 `bash` tool through `@miao/core/sandbox`.
+In-process `gitStatus` remains a prototype; the default Git path is still subprocess-based.

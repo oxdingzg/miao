@@ -1,7 +1,7 @@
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import { InstanceState } from "@/effect/instance-state"
-import { SessionID } from "@/session/schema"
+import { SessionV2 } from "@miao/core/session"
 import { QuestionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { QuestionV1 } from "@miao/schema/question-v1"
@@ -47,7 +47,7 @@ interface State {
 
 export interface Interface {
   readonly ask: (input: {
-    sessionID: SessionID
+    sessionID: SessionV2.ID
     questions: ReadonlyArray<Info>
     tool?: Tool
   }) => Effect.Effect<ReadonlyArray<Answer>, RejectedError>
@@ -85,7 +85,7 @@ const layer = Layer.effect(
     )
 
     const ask = Effect.fn("Question.ask")(function* (input: {
-      sessionID: SessionID
+      sessionID: SessionV2.ID
       questions: ReadonlyArray<Info>
       tool?: Tool
     }) {

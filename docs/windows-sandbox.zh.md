@@ -37,12 +37,12 @@
 - 读：允许（系统文件、只读路径正常读取）。
 - 网络：默认拒绝；`--allow-network` 放行。
 - 进程树：能随 `miao-run` 一起被终止（不遗留孤儿进程）。
-- 不接生产：仍由 `MIAO_NATIVE` / 沙箱开关门控，找不到后端时回退并**明确报告**，不静默。
+- 门控：仅在 `sandbox` 配置或 `MIAO_SANDBOX` 开启时运行沙箱；找不到后端时回退并**明确报告**，不静默。
 
 ## 2. 现状
 
 - 沙箱逻辑在 `crates/miao-sandbox`：`profile()`（seatbelt 文本）、`apply_linux_restrictions()`（landlock）、`supported()`。
-- `miao-run`（`crates/miao-native/src/bin/miao-run.rs`）与主二进制的隐藏 `__sandbox-run`（`packages/miao/src/tool/sandbox-runner.ts`）都调用这个 crate；release 走自执行，dev/测试走 `miao-run`。
+- `miao-run`（`crates/miao-native/src/bin/miao-run.rs`）与主二进制的隐藏 `__sandbox-run`（`packages/miao/src/sandbox-runner.ts`，转导 `@miao/core/sandbox/runner`）都调用这个 crate；release 走自执行，dev/测试走 `miao-run`。
 - macOS：`sandbox-exec -p <seatbelt profile>`。
 - Linux：进程内 landlock（写白名单 + TCP bind/connect 默认禁），已在真机验证；集成测试见 `crates/miao-native/tests/linux-sandbox.rs`。
 - Windows：**没有后端**，当前走 `#[cfg(not(any(target_os = "macos", target_os = "linux")))]` 分支，打印 `no sandbox backend` 后**直接运行**。
@@ -101,7 +101,7 @@
 4. Job object：创建、设 `KILL_ON_JOB_CLOSE`、`AssignProcessToJobObject`。
 5. 退出码透传、stderr 收集；`--deny-report` 按第 4 节结论处理。
 6. 修改 `main` 的 `#[cfg(not(any(macos,linux)))]` 分支：Windows 走新后端；其余平台保留"无沙箱"提示。
-7. TS 侧无需改动：仍由 `resolveMiaoRun()` / `runSandboxed` 调用 sidecar。
+7. TS 侧无需改动：仍由 `SandboxRunner.resolve()` / `SandboxRunner.run()` 调用同一 CLI（`miao-run` 或 `__sandbox-run`）。
 
 ## 6. 验证
 
@@ -147,7 +147,7 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 
 - 6.1 矩阵在真机全过；6.2 的集成测试在 CI 通过（或显式记录的跳过）。
 - 无 AppContainer 权限时：明确报错并按配置回退，**不静默**。
-- 不改动 macOS / Linux 行为；`MIAO_NATIVE` / 沙箱开关门控，未接入生产。
+- 不改动 macOS / Linux 行为；沙箱开关由 `sandbox` 配置 / `MIAO_SANDBOX` 门控；Windows 后端尚未实现。
 
 ## 8. 风险
 
@@ -161,7 +161,7 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 - `crates/miao-sandbox/src/lib.rs`（seatbelt / landlock / 后端分派与 `supported()`）
 - `crates/miao-native/src/bin/miao-run.rs`（dev/测试用 runner，调用 `miao-sandbox`）
 - `crates/miao-native/tests/linux-sandbox.rs`（Linux 强制集成测试，作为 Windows 版的模板）
-- `packages/miao/src/tool/sandbox.ts`（`resolveSandboxRunner` / `runSandboxed` / `sandboxAvailable`）
-- `packages/miao/src/tool/sandbox-runner.ts`（release 自执行的隐藏 `__sandbox-run` 实现）
+- `packages/core/src/sandbox/runner.ts`（`resolve` / `backend`）与 `packages/core/src/sandbox.ts`（`Sandbox.Service`）
+- `packages/miao/src/sandbox-runner.ts`（release 自执行的隐藏 `__sandbox-run` 实现）
 - `.github/workflows/native.yml`（`native` / `sandbox-linux` job，新增 `sandbox-windows`）
 - `docs/rust-rewrite-feasibility.zh.md`（沙箱在整体计划中的位置）

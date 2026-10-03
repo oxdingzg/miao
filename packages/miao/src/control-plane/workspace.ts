@@ -1,6 +1,6 @@
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { httpClient } from "@miao/core/effect/app-node-platform"
-import { Context, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effect"
+import { Context, DateTime, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effect"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { Database } from "@miao/core/database/database"
@@ -21,11 +21,10 @@ import { WorkspaceTable } from "@miao/core/control-plane/workspace.sql"
 import { getAdapter, registeredAdapters } from "./adapters"
 import { type Target, type WorkspaceInfo, WorkspaceInfo as WorkspaceInfoSchema } from "./types"
 import { WorkspaceV2 } from "@miao/core/workspace"
-import { Session } from "@/session/session"
-import { SessionPrompt } from "@/session/prompt"
+import { SessionV2 } from "@miao/core/session"
+import { SessionEvent } from "@miao/core/session/event"
 import { SessionTable } from "@miao/core/session/sql"
-import { SessionID } from "@/session/schema"
-import { NotFoundError } from "@/storage/storage"
+import { Location } from "@miao/core/location"
 import { errorData } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
@@ -70,7 +69,7 @@ export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const SessionWarpInput = Schema.Struct({
   workspaceID: Schema.NullOr(WorkspaceV2.ID),
-  sessionID: SessionID,
+  sessionID: SessionV2.ID,
   copyChanges: Schema.optional(Schema.Boolean),
 })
 export type SessionWarpInput = Schema.Schema.Type<typeof SessionWarpInput>
@@ -93,7 +92,7 @@ export class SessionEventsNotFoundError extends Schema.TaggedErrorClass<SessionE
   "WorkspaceSessionEventsNotFoundError",
   {
     message: Schema.String,
-    sessionID: SessionID,
+    sessionID: SessionV2.ID,
   },
 ) {}
 
@@ -102,7 +101,7 @@ export class SessionWarpHttpError extends Schema.TaggedErrorClass<SessionWarpHtt
   {
     message: Schema.String,
     workspaceID: WorkspaceV2.ID,
-    sessionID: SessionID,
+    sessionID: SessionV2.ID,
     status: Schema.Number,
     body: Schema.String,
   },
@@ -154,8 +153,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const auth = yield* Auth.Service
-    const session = yield* Session.Service
-    const prompt = yield* SessionPrompt.Service
+    const session = yield* SessionV2.Service
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2Bridge.Service
     const vcs = yield* Vcs.Service
@@ -556,6 +554,21 @@ const layer = Layer.effect(
       return info
     })
 
+    const setWorkspace = Effect.fn("Workspace.setWorkspace")(function* (input: {
+      sessionID: SessionV2.ID
+      workspaceID: WorkspaceV2.ID | null | undefined
+    }) {
+      const info = yield* session.get(input.sessionID).pipe(Effect.orDie)
+      yield* events.publish(SessionEvent.Moved, {
+        sessionID: input.sessionID,
+        location: Location.Ref.make({
+          directory: info.location.directory,
+          ...(input.workspaceID ? { workspaceID: input.workspaceID } : {}),
+        }),
+        timestamp: yield* DateTime.now,
+      })
+    })
+
     const sessionWarp = Effect.fn("Workspace.sessionWarp")(function* (input: SessionWarpInput) {
       return yield* Effect.gen(function* () {
         const current = yield* db
@@ -580,8 +593,6 @@ const layer = Layer.effect(
                   }),
                 ),
               )
-            } else {
-              yield* prompt.cancel(input.sessionID)
             }
 
             // "claim" this session so any future events coming from
@@ -621,7 +632,7 @@ const layer = Layer.effect(
         }
 
         if (input.workspaceID === null) {
-          yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: undefined })
+          yield* setWorkspace({ sessionID: input.sessionID, workspaceID: undefined })
 
           return
         }
@@ -637,7 +648,7 @@ const layer = Layer.effect(
         const target = yield* WorkspaceAdapterRuntime.target(space)
 
         if (target.type === "local") {
-          yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
+          yield* setWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
 
           return
         }
@@ -709,7 +720,7 @@ const layer = Layer.effect(
           })
         }
 
-        yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
+        yield* setWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
       })
     })
 
@@ -794,7 +805,7 @@ const layer = Layer.effect(
       yield* Effect.forEach(
         sessions.filter((sessionInfo) => !sessionInfo.parentID || !sessionIDs.has(sessionInfo.parentID)),
         (sessionInfo) =>
-          session.remove(sessionInfo.id).pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.void)),
+          session.remove(sessionInfo.id).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void)),
         { discard: true },
       )
 
@@ -952,8 +963,7 @@ export const node = LayerNode.make({
   layer: layer,
   deps: [
     Auth.node,
-    Session.node,
-    SessionPrompt.node,
+    SessionV2.node,
     httpClient,
     EventV2Bridge.node,
     Vcs.node,

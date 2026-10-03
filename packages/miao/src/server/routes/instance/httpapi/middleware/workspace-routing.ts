@@ -2,11 +2,9 @@ import { WorkspaceV2 } from "@miao/core/workspace"
 import type { Target } from "@/control-plane/types"
 import { Workspace } from "@/control-plane/workspace"
 import { WorkspaceAdapterRuntime } from "@/control-plane/workspace-adapter-runtime"
-import { Session } from "@/session/session"
 import { HttpApiProxy } from "./proxy"
 import * as Fence from "@/server/shared/fence"
-import { getWorkspaceRouteSessionID, isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
-import { NotFoundError } from "@/storage/storage"
+import { isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
 import { Flag } from "@miao/core/flag/flag"
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -54,7 +52,6 @@ export class WorkspaceRoutingMiddleware extends HttpApiMiddleware.Service<
   WorkspaceRoutingMiddleware,
   {
     provides: WorkspaceRouteContext
-    requires: Session.Service
   }
 >()("@miao/ExperimentalHttpApiWorkspaceRouting") {}
 
@@ -159,14 +156,13 @@ function planWorkspaceRequest(
 
 function planRequest(
   request: HttpServerRequest.HttpServerRequest,
-  session?: Session.Info,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const url = requestURL(request)
     const envWorkspaceID = configuredWorkspaceID()
     const workspaceID = url.pathname.startsWith("/api/")
-      ? selectedV2WorkspaceID(url, session?.workspaceID)
-      : selectedWorkspaceID(url, session?.workspaceID)
+      ? selectedV2WorkspaceID(url)
+      : selectedWorkspaceID(url)
     if (workspaceID === InvalidWorkspaceID) return RequestPlan.InvalidWorkspace()
     const workspace = yield* resolveWorkspace(workspaceID, envWorkspaceID)
 
@@ -179,7 +175,7 @@ function planRequest(
     }
 
     return RequestPlan.Local({
-      directory: session?.directory || defaultDirectory(request, url),
+      directory: defaultDirectory(request, url),
       workspaceID: envWorkspaceID ?? workspaceID,
     })
   })
@@ -215,21 +211,11 @@ function routeHttpApiWorkspace<E>(
 ): Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   E,
-  Session.Service | Workspace.Service | HttpServerRequest.HttpServerRequest | Socket.WebSocketConstructor
+  Workspace.Service | HttpServerRequest.HttpServerRequest | Socket.WebSocketConstructor
 > {
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
-    const sessionID = getWorkspaceRouteSessionID(requestURL(request))
-    const session = sessionID
-      ? yield* Session.Service.use((svc) => svc.get(sessionID)).pipe(
-          Effect.catchIf(
-            (error): error is NotFoundError => NotFoundError.isInstance(error),
-            () => Effect.succeed(undefined),
-          ),
-          Effect.catchDefect(() => Effect.succeed(undefined)),
-        )
-      : undefined
-    const plan = yield* planRequest(request, session)
+    const plan = yield* planRequest(request)
     return yield* routeWorkspace(client, effect, plan)
   })
 }

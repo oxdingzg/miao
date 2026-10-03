@@ -1,4 +1,4 @@
-# opencode database guide
+# miao package guide
 
 ## Database
 
@@ -8,9 +8,9 @@
 ## Development server
 
 - Running `bun dev` from `packages/miao` starts the live interactive TUI. Do not run it as a blocking foreground command when you need to inspect the result.
-- Start it in `tmux` instead: `tmux new-session -d -s opencode-dev 'bun dev'`.
-- Capture the current TUI output with: `tmux capture-pane -pt opencode-dev`.
-- Stop the session explicitly when done: `tmux kill-session -t opencode-dev`.
+- Start it in `tmux` instead: `tmux new-session -d -s miao-dev 'bun dev'`.
+- Capture the current TUI output with: `tmux capture-pane -pt miao-dev`.
+- Stop the session explicitly when done: `tmux kill-session -t miao-dev`.
 
 # Module shape
 
@@ -57,19 +57,19 @@ export * as Foo from "."
 
 ## Multi-sibling directories
 
-For directories with several independent modules (e.g. `src/session/`,
-`src/config/`), keep each sibling as its own file with its own self-reexport,
+For directories with several independent modules (e.g. `src/config/`,
+`src/effect/`), keep each sibling as its own file with its own self-reexport,
 and do not add a barrel `index.ts`. Consumers import the specific sibling:
 
 ```ts
-import { SessionRetry } from "@/session/retry"
-import { SessionStatus } from "@/session/status"
+import { ConfigAgent } from "@/config/agent"
+import { InstanceState } from "@/effect/instance-state"
 ```
 
 Barrels in multi-sibling directories force every import through the barrel to
 evaluate every sibling, which defeats tree-shaking and slows module load.
 
-# opencode Effect rules
+# miao Effect rules
 
 Use these rules when writing or migrating Effect code.
 

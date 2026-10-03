@@ -17,7 +17,7 @@ const args = hideBin(process.argv)
 // command graph.
 const sandboxIndex = process.argv.indexOf("__sandbox-run")
 if (sandboxIndex !== -1) {
-  const { sandboxRun } = await import("./tool/sandbox-runner")
+  const { sandboxRun } = await import("./sandbox-runner")
   process.exit(await sandboxRun(process.argv.slice(sandboxIndex + 1)))
 }
 

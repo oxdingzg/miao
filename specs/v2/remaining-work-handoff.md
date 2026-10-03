@@ -4,6 +4,11 @@ Everything still open in the V2 rebuild, written so a `miao-dev` session can exe
 end-to-end without re-deriving context. Each workstream states its goal, exact entry points,
 steps, acceptance checks, and a suggested commit.
 
+> Status (2026-10-03): Stage 5 has landed. The V1 session runtime, its tools, and the
+> `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` routes are deleted; every shipped
+> client runs V2. The remaining work below is the legacy JS SDK (P5) and the non-session legacy
+> routes (P7); the Workstream B sections are historical.
+
 Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
 `specs/v2/session-messaging.md`, `specs/v2/todo.md`, `specs/v2/session.md`,
 `specs/storage/session-storage-hardening.md`.
@@ -349,9 +354,9 @@ Each is an independent slice. Add a focused test whenever the check is mechanica
 - Acceptance: process A appends, process B tails all rows with no gaps.
 
 ### G12 — syscall-level mutation confinement
-- Where: core has none; `packages/miao/src/tool/sandbox-runner.ts` (macOS seatbelt / Linux Landlock,
-  `miao __sandbox-run`) is a V1-side primitive.
-- Do: wire a core-owned OS sandbox into V2 tool execution (workdir + allowed paths + network),
+- Where: `packages/core/src/sandbox.ts` (`Sandbox.Service`) and `packages/core/src/sandbox/{runner,policy}.ts`.
+- Do: the V2 `bash` tool wraps each command through this layer and escalates denials. Extend the
+  same core-owned sandbox to the other mutating tools (workdir + allowed paths + network),
   fail-closed, model-visible denials.
 - Acceptance: a mutating tool inside the sandbox cannot write outside allowed paths; network denied
   when configured; denials surface as tool errors.

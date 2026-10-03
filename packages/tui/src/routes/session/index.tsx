@@ -1835,7 +1835,7 @@ function GenericTool(props: ToolProps) {
       <Show when={output() && ctx.showGenericToolOutput()}>
         <FileToolResult
           summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")}
-          color={theme.textMuted}
+          color={theme.text}
         />
       </Show>
       <Show when={details()}>
@@ -2138,7 +2138,7 @@ function Shell(props: ToolProps) {
       <Show when={expanded() ? output() : preview()}>
         <FileToolResult
           summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")}
-          color={theme.textMuted}
+          color={theme.text}
         />
       </Show>
       <Show when={details()}>
@@ -2715,7 +2715,7 @@ function ApplyPatch(props: ToolProps) {
                 </InlineTool>
                 <FileToolResult
                   summary={file.type === "delete" ? `Removed ${file.deletions} lines` : "Updated file"}
-                  color={theme.textMuted}
+                  color={theme.text}
                 >
                   <Show when={expanded() && file.patch.trim().length > 0}>
                     <Diff diff={file.patch} filePath={file.filePath} />

@@ -11,12 +11,16 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
-import { Session } from "@/session/session"
+import { SessionV2 } from "@miao/core/session"
+import { SessionExecution } from "@miao/core/session/execution"
+import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location-services"
+import { Location } from "@miao/core/location"
+import { AbsolutePath } from "@miao/core/schema"
 import { Database } from "@miao/core/database/database"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { Server } from "../../src/server/server"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, provideInstance, tmpdirScoped } from "../fixture/fixture"
+import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { Project } from "../../src/project/project"
@@ -26,8 +30,12 @@ import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 const originalWorkspaces = Flag.MIAO_EXPERIMENTAL_WORKSPACES
 const appLayer = AppNodeBuilder.build(
-  LayerNode.group([Project.node, Session.node, Workspace.node, InstanceStore.node, Database.node, Ripgrep.node]),
-  [[InstanceStore.bootstrapNode, InstanceBootstrap.node]],
+  LayerNode.group([Project.node, SessionV2.node, Workspace.node, InstanceStore.node, Database.node, Ripgrep.node]),
+  [
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    [SessionExecution.node, SessionExecution.noopLayer],
+    [LocationServiceMap.node, locationServiceMapLayer],
+  ],
 )
 const it = testEffect(Layer.mergeAll(appLayer, httpApiLayer))
 
@@ -216,7 +224,8 @@ describe("workspace HttpApi", () => {
       const workspace = (yield* created.json) as Workspace.Info
       expect(workspace).toMatchObject({ type: "local-test", name: "local-test" })
 
-      const session = yield* Session.use.create({}).pipe(provideInstance(dir))
+      const sessions = yield* SessionV2.Service
+      const session = yield* sessions.create({ location: Location.Ref.make({ directory: AbsolutePath.make(dir) }) })
       const warped = yield* request(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -299,7 +308,8 @@ describe("workspace HttpApi", () => {
   it.live("returns a declared not found error when warping into a missing workspace", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const session = yield* Session.use.create({}).pipe(provideInstance(dir))
+      const sessions = yield* SessionV2.Service
+      const session = yield* sessions.create({ location: Location.Ref.make({ directory: AbsolutePath.make(dir) }) })
       const workspaceID = WorkspaceV2.ID.ascending("wrk_missing_warp")
 
       const response = yield* request(WorkspacePaths.warp, dir, {
@@ -475,70 +485,4 @@ describe("workspace HttpApi", () => {
     }),
   )
 
-  it.live("proxies remote workspace requests selected from session ownership", () =>
-    Effect.gen(function* () {
-      Flag.MIAO_EXPERIMENTAL_WORKSPACES = true
-      const dir = yield* tmpdirScoped({ git: true })
-      const proxied: ProxiedRequest[] = []
-      const remote = listenRemoteHttp((request) => {
-        proxied.push(request)
-        const url = new URL(request.url)
-        if (url.pathname === "/base/global/event") return eventStreamResponse()
-        if (url.pathname === "/base/sync/history") return Response.json([])
-        return Response.json({ proxied: true, path: new URL(request.url).pathname })
-      })
-
-      const project = yield* Project.use.fromDirectory(dir)
-      registerAdapter(
-        project.project.id,
-        "remote-session-target",
-        remoteAdapter(path.join(dir, ".remote-session"), `http://127.0.0.1:${remote.port}/base`),
-      )
-      const created = yield* requestDefault(WorkspacePaths.list, dir, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "remote-session-target", branch: null }),
-      })
-      const workspace = (yield* created.json) as Workspace.Info
-      const sessionResponse = yield* requestDefault("/session", dir, { method: "POST" })
-      const session = (yield* sessionResponse.json) as Session.Info
-      const warped = yield* requestDefault(WorkspacePaths.warp, dir, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: workspace.id, sessionID: session.id }),
-      })
-      expect(warped.status).toBe(204)
-
-      try {
-        const response = yield* requestDefault(`http://localhost/session/${session.id}/message`, dir, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
-        })
-
-        const responseBody = yield* response.text
-        expect({ status: response.status, body: responseBody }).toMatchObject({ status: 200 })
-        expect(JSON.parse(responseBody)).toEqual({ proxied: true, path: `/base/session/${session.id}/message` })
-        expect(proxied.filter((item) => new URL(item.url).pathname === `/base/session/${session.id}/message`)).toEqual([
-          expect.objectContaining({
-            url: `http://127.0.0.1:${remote.port}/base/session/${session.id}/message`,
-            method: "POST",
-          }),
-        ])
-
-        const aborted = yield* request(`http://localhost/session/${session.id}/abort`, dir, { method: "POST" })
-        expect(aborted.status).toBe(200)
-        expect(proxied.filter((item) => new URL(item.url).pathname === `/base/session/${session.id}/abort`)).toEqual([
-          expect.objectContaining({
-            url: `http://127.0.0.1:${remote.port}/base/session/${session.id}/abort`,
-            method: "POST",
-            body: "",
-          }),
-        ])
-      } finally {
-        void remote.stop(true)
-        yield* requestDefault(WorkspacePaths.remove.replace(":id", workspace.id), dir, { method: "DELETE" })
-      }
-    }),
-  )
 })

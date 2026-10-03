@@ -13,8 +13,6 @@ import { Env } from "@/env"
 import { Plugin } from "@/plugin"
 import { Provider } from "@/provider/provider"
 import { ProviderError } from "@/provider/error"
-import { MessageV2 } from "@/session/message-v2"
-import { SessionRetry } from "@/session/retry"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -117,9 +115,6 @@ it.live("configured chunkTimeout raises a retryable response stream error when S
             }
           })
           expect(error).toBeInstanceOf(ProviderError.ResponseStreamError)
-          expect(
-            SessionRetry.retryable(MessageV2.fromError(error, { providerID: model.providerID }), model.providerID),
-          ).toEqual({ message: "SSE read timed out" })
         }),
       { config: providerConfig(server.url, { chunkTimeout: 50 }) },
     )

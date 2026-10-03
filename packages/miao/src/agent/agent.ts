@@ -5,7 +5,6 @@ import { serviceUse } from "@miao/core/effect/service-use"
 import { Provider } from "@/provider/provider"
 
 import { generateObject, streamObject, type ModelMessage } from "ai"
-import { Truncate } from "@/tool/truncate"
 import { Auth } from "../auth"
 import { ProviderTransform } from "@/provider/transform"
 
@@ -31,6 +30,9 @@ import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location
 import { Reference } from "@miao/core/reference"
 import { Location } from "@miao/core/location"
 import { PluginV2 } from "@miao/core/plugin"
+
+// Managed tool-output files are re-readable without an external-directory prompt.
+const TOOL_OUTPUT_GLOB = path.join(Global.Path.data, "tool-output", "*")
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -106,7 +108,7 @@ const layer = Layer.effect(
             }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
           : []
         const whitelistedDirs = [
-          Truncate.GLOB,
+          TOOL_OUTPUT_GLOB,
           path.join(Global.Path.tmp, "*"),
           ...skillDirs.map((dir) => path.join(dir, "*")),
           ...referenceDirs.map((dir) => path.join(dir, "*")),
@@ -294,19 +296,19 @@ const layer = Layer.effect(
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
         }
 
-        // Ensure Truncate.GLOB is allowed unless explicitly configured
+        // Ensure TOOL_OUTPUT_GLOB is allowed unless explicitly configured
         for (const name in agents) {
           const agent = agents[name]
           const explicit = agent.permission.some((r) => {
             if (r.permission !== "external_directory") return false
             if (r.action !== "deny") return false
-            return r.pattern === Truncate.GLOB
+            return r.pattern === TOOL_OUTPUT_GLOB
           })
           if (explicit) continue
 
           agents[name].permission = Permission.merge(
             agents[name].permission,
-            Permission.fromConfig({ external_directory: { [Truncate.GLOB]: "allow" } }),
+            Permission.fromConfig({ external_directory: { [TOOL_OUTPUT_GLOB]: "allow" } }),
           )
         }
 

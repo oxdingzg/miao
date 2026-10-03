@@ -3,11 +3,11 @@
 Use `HttpApiBuilder.group(...)` for normal HTTP endpoints, including streaming HTTP responses such as server-sent events. Handlers should yield stable services once while building the handler layer, then close over those services in endpoint implementations.
 
 ```ts
-export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
+export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (handlers) =>
   Effect.gen(function* () {
-    const session = yield* Session.Service
+    const auth = yield* Auth.Service
 
-    return handlers.handle("list", () => session.list())
+    return handlers.handle("authSet", ({ params, payload }) => auth.set(params.providerID, payload).pipe(Effect.orDie))
   }),
 )
 ```

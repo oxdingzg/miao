@@ -9,13 +9,13 @@
 ### R1. 打包与分发（已解决）（高）
 - 证据：`packages/miao/script/build.ts` 用 `bun build --compile` 产出**单文件**二进制，原生依赖（`@ff-labs/fff-bun` 等）从 node_modules 内嵌。
 - addon：新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测）。release 用 `--single`，每个平台 runner 先跑 `packages/native/build.ts` 构建**宿主** addon，非宿主 target 自动隐藏，避免把错平台 `.node` 打进包。
-- 沙箱 sidecar：不再需要随包分发独立的 `miao-run`。沙箱逻辑抽到 `crates/miao-sandbox`，由 addon 暴露 `sandboxProfile`（macOS profile）与 `sandboxRestrict`（Linux landlock）；编译后的主二进制通过隐藏命令 `__sandbox-run` **自执行**运行沙箱子进程（`build.ts` 定义 `MIAO_PACKAGED`，`resolveSandboxRunner()` 据此返回 `process.execPath` + `__sandbox-run`）。单文件、每平台天然对应、复用同一签名/公证。`miao-run` 仅保留给 dev/测试与 `MIAO_RUN` 覆盖。
+- 沙箱 sidecar：不再需要随包分发独立的 `miao-run`。沙箱逻辑抽到 `crates/miao-sandbox`，由 addon 暴露 `sandboxProfile`（macOS profile）与 `sandboxRestrict`（Linux landlock）；编译后的主二进制通过隐藏命令 `__sandbox-run` **自执行**运行沙箱子进程（`build.ts` 定义 `MIAO_PACKAGED`，`SandboxRunner.resolve()` 据此返回 `process.execPath` + `__sandbox-run`）。单文件、每平台天然对应、复用同一签名/公证。`miao-run` 仅保留给 dev/测试与 `MIAO_RUN` 覆盖。
 - 已实测：`miao-preview __sandbox-run --print-profile`、workdir 内写入成功、workdir 外写入被拒并写出 deny-report。
 
 ### R2. CI 现在是假绿（高）
-- 证据：`packages/miao/test/tool/edit-native.test.ts` 里 `withNative = native ? describe : describe.skip`、`withMiaoRun` 同理，`.node`/`miao-run` 不存在就整体 skip。
+- 证据：撰写时 `packages/miao/test/tool/*-native.test.ts` 里用 `withNative = native ? describe : describe.skip`（`withMiaoRun` 同理），`.node`/`miao-run` 不存在就整体 skip。这些测试已随 V1 工具删除；当前原生覆盖是 Rust 单元测试加 `packages/core/test/sandbox-policy.test.ts`、`packages/core/test/tool-bash-sandbox.test.ts`。
 - 后果：不构建 Rust 的 CI 会“通过”，但实际一个 native 用例都没跑。任何 Rust 回归都没人发现。
-- 缓解：接入前把“构建 Rust + 跑 parity 且**不允许 skip**”加进 CI，作为硬门槛。
+- 缓解：`.github/workflows/native.yml` 的 `native` 与 `sandbox-linux` job 会构建 Rust 并跑沙箱测试，作为硬门槛。
 
 ### R3. 同步调用阻塞事件循环（高）
 - 证据：`core/git.ts` / `snapshot` 的 git 都是 `ChildProcess`（异步 Effect）；而我们的 `gitStatus` 是**同步 napi 调用**。JS 单线程，同步调用期间 TUI 渲染、其它 session 的 fiber、SSE 都停。
@@ -54,14 +54,14 @@
 
 ### R9. 平台与废弃（高）
 - 现有后端：macOS seatbelt（`sandbox-exec`）+ Linux landlock（TCP 禁网，ABI v4 BestEffort）；Windows 仍无后端 → **跨平台行为不一致**，且 `sandbox-exec` 已被 Apple 标记废弃、未来 macOS 可能移除。
-- 缓解：Windows 后端（AppContainer + Job object）规格见 [windows-sandbox](windows-sandbox.zh.md)，待实现；`sandboxAvailable()` 在无后端的平台返回 false，调用方回退。
+- 缓解：Windows 后端（AppContainer + Job object）规格见 [windows-sandbox](windows-sandbox.zh.md)，待实现；`SandboxRunner.available()` 在无后端的平台返回 false，调用方回退。
 
 ### R10. 误杀正常流程（高）
 - 默认禁网会直接打断 `npm install`、`git fetch`、以及子命令里的模型调用；deny-by-default 会拦工具链/缓存的写入。
 - escalation 依赖解析 stderr：macOS seatbelt 报 `Operation not permitted`，Linux landlock 报 `Permission denied`（已实测），且 shell 前缀不一（`sh: /path: …` vs `sh: 1: cannot create /path: …`）。解析器现同时匹配两种字样并从首个 `/` 取路径，但仍是启发式：无 `/` 的相对路径、或程序内部静默拒绝会漏判 → 用户看到“莫名其妙失败”。不能作为唯一 escalation 依据。
 
 ### R11. 语义变化与产品决策（中）
-- 已接入为 **opt-in**（`MIAO_SANDBOX=1`）：shell 工具用正常权限流程已批准的目录（`scan.dirs`）预填沙箱白名单，尽量不出现"已批准但又被内核拒"；被内核拒的路径再走 `external_directory` 追问并重试。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 才禁）。**默认开还是 opt-in 仍是产品决策**。
+- 已接入为 **opt-in**（`MIAO_SANDBOX=1` 或 `sandbox.mode: "workspace-write"`）：V2 `bash` 工具用当前 Location、命令工作目录、临时目录与配置的 `writable_roots` 预填沙箱可写根，尽量不出现"已批准但又被内核拒"；被内核拒的路径再走 `external_directory` 追问，批准后带该目录重跑。默认放行网络（`MIAO_SANDBOX_DENY_NETWORK=1` 才禁）。**默认开还是 opt-in 仍是产品决策**。
 
 ## 五、工程与供应链
 
@@ -76,10 +76,10 @@
 
 ## 六、建议的接入顺序与门槛
 
-1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；CI 加 `MIAO_NATIVE_REQUIRED=1` 与 `native`/`sandbox-linux` job，强制构建 + parity 不允许 skip（R2）。
-2. **先接风险最低的**：`edit` 匹配、`apply_patch`（纯函数、同步、结果可完全对比、已有 parity），并保留 feature flag 回退。
+1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；`native`/`sandbox-linux` CI job 强制构建并运行沙箱测试（R2）。
+2. ~~先接风险最低的~~ → **未采用**：native `edit`/`apply_patch` 只被 V1 工具消费，而这些工具已删除；V2 的 `edit`／`patch` 保持 TypeScript 实现。
 3. **git 后置**：先做 async/worker 封装（R3），并补 snapshot **全链路**（含 add/write-tree）基准；只在能覆盖大头时才接。
-4. **sandbox 作为可选能力**：已 opt-in 接入 shell 工具（`MIAO_SANDBOX=1`）并可回退；Linux 后端已补；默认开启仍待定。不要用 stderr 解析做 escalation 的唯一依据。
+4. **sandbox 作为可选能力**：已 opt-in 接入 V2 `bash` 工具（`MIAO_SANDBOX=1` 或 `sandbox.mode`）并可回退；Linux 后端已补；默认开启仍待定。不要用 stderr 解析做 escalation 的唯一依据。
 5. 每一步都以“现有测试全绿 + 新 parity 不 skip + 内存/RSS 基线”作为验收。
 
 ## 结论

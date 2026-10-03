@@ -1,12 +1,12 @@
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { TuiEvent } from "@/server/tui-event"
-import { Session } from "@/session/session"
+import { SessionV2 } from "@miao/core/session"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { nextTuiRequest, submitTuiResponse } from "@/server/shared/tui-control"
 import { InstanceHttpApi } from "../api"
 import { CommandPayload, TuiPublishPayload } from "../groups/tui"
-import * as SessionError from "./session-errors"
+import * as ApiError from "../errors"
 
 const commandAliases = {
   session_new: "session.new",
@@ -26,7 +26,7 @@ const commandAliases = {
 export const tuiHandlers = HttpApiBuilder.group(InstanceHttpApi, "tui", (handlers) =>
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
-    const session = yield* Session.Service
+    const session = yield* SessionV2.Service
     const publishCommand = (command: typeof TuiEvent.CommandExecute.data.Type.command | undefined) =>
       events.publish(TuiEvent.CommandExecute, { command } as typeof TuiEvent.CommandExecute.data.Type)
 
@@ -98,7 +98,9 @@ export const tuiHandlers = HttpApiBuilder.group(InstanceHttpApi, "tui", (handler
       payload: typeof TuiEvent.SessionSelect.data.Type
     }) {
       if (!ctx.payload.sessionID.startsWith("ses")) return yield* new HttpApiError.BadRequest({})
-      yield* SessionError.mapStorageNotFound(session.get(ctx.payload.sessionID))
+      yield* session
+        .get(ctx.payload.sessionID)
+        .pipe(Effect.mapError(() => ApiError.notFound(`Session not found: ${ctx.payload.sessionID}`)))
       yield* events.publish(TuiEvent.SessionSelect, ctx.payload)
       return true
     })

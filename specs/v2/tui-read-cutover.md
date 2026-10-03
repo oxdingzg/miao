@@ -6,6 +6,10 @@ Make the TUI render sessions from the V2 API (`/api/session/*`) instead of the l
 behind a flag first, then by default. This is Stage 3/4 of `specs/v2/v1-retirement.md` for the TUI
 surface. It must not leave the daily TUI half-switched.
 
+> Status (2026-10-03): landed and then superseded. The TUI always reads and writes V2; the
+> `MIAO_TUI_V2` flag and the V1 fallback were removed with the V1 runtime. The design below is
+> historical.
+
 ## Current state (verified)
 
 - The TUI talks to the legacy SDK (`@opencode-ai/sdk`): `sdk.client.session.*`, `config.providers`,

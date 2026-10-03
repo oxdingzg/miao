@@ -134,39 +134,35 @@ miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对
 | patch Unicode 归一化，20k 行 | 13.06 ms        | 5.21 ms   | 2.5×  |
 | git status，10 个文件        | 12.3 ms         | 1.0 ms    | 11.9× |
 
-这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。原生 edit／patch 接入和可选的 macOS / Linux 内核沙箱目前位于兼容工具路径；V2 使用独立工具实现。进程内 Git 仍属原型。完整数据和可用范围见 [对比说明](docs/miao-vs-opencode.zh.md)。
+这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。表中 edit／patch 加速属于已被删除的 V1 兼容工具；V2 的 edit／patch 是 TypeScript 实现。Rust addon 目前仍为可选的 OS 沙箱 runner 提供支持，进程内 Git 仍属原型。完整数据和可用范围见 [对比说明](docs/miao-vs-opencode.zh.md)。
 
 ## 当前状态与架构
 
-miao 处于 pre-1.0。终端界面和受支持的浏览器连接默认使用 V2，V1 保留用于兼容。V2 核心采用 Effect 服务、按 Location 限定的工具、持久化输入箱、事件记录与 Context Epoch。执行协调目前限于本进程，尚未实现集群执行和崩溃后自动续跑。
+miao 处于 pre-1.0。V1 会话运行时及其旧 `/session/*` 路由已删除，所有已发布客户端都运行单一 V2 内核。V2 采用 Effect 服务、按 Location 限定的工具、持久化输入箱、事件记录与 Context Epoch。执行协调目前限于本进程，尚未实现集群执行和崩溃后自动续跑。
 
-| 能力                                               | 可用状态                                 |
-| -------------------------------------------------- | ---------------------------------------- |
-| V2 会话、持久化输入、Context Epoch、项目内会话消息 | 已实现                                   |
-| 自治续跑、费用预算、输出裁剪与压缩调优             | 按需开启；各设置行为不同                 |
-| Code Mode（`MIAO_EXPERIMENTAL_CODE_MODE=1`）       | 实验功能                                 |
-| 原生 edit／patch                                   | 兼容运行时；启用方法和限制见对比文档     |
-| bash 的 OS 沙箱                                    | V2 与兼容运行时；通过 `sandbox` 配置开启 |
-| 生成的客户端与内嵌 Effect host                     | 私有工作区包，API 仍在演进               |
+| 能力                                                       | 可用状态                                                       |
+| ---------------------------------------------------------- | -------------------------------------------------------------- |
+| V2 会话、持久化输入、Context Epoch、项目内会话消息         | 已实现                                                         |
+| 自治续跑、费用预算、输出裁剪与压缩调优                     | 按需开启；各设置行为不同                                       |
+| Code Mode（`MIAO_EXPERIMENTAL_CODE_MODE=1`）               | 实验功能                                                       |
+| bash 的 OS 沙箱                                            | V2；通过 `sandbox` 配置或 `MIAO_SANDBOX=1` 开启（macOS/Linux） |
+| 旧库数据迁移（`miao db backfill` / `compact` / `restore`） | 为 V2 之前的数据库保留                                         |
+| 生成的客户端与内嵌 Effect host                             | 私有工作区包，API 仍在演进                                     |
 
-### V1 与 V2 的区别
+### 从 V1 到 V2
 
-V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内核。两者共用同一个数据库和配置，但会话的执行方式不同。V1 正在退役，见 [specs/architecture.md](specs/architecture.md)。
+V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内核。V1 会话运行时、旧工具，以及 `/session/*`、`/permission/*`、`/question/*`、`/sync/*` 路由均已删除，所有已发布客户端都运行 V2。仍保留两处兼容面：读取 V2 之前历史的数据库迁移层，以及仍在迁移到 `/api/*` 的非会话旧路由。
 
-| 方面        | V1（继承自 opencode）                                      | V2（miao 内核）                                                          |
-| ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 代码位置    | `packages/miao/src/session` 与旧工具                       | `packages/core`，按 Schema → Core / Protocol → Server 分层               |
-| 发送 prompt | 收到即执行                                                 | 先写入持久化输入箱再执行，进程崩溃也不丢                                 |
-| 运行中插话  | 先保存，正在运行的循环在下一步读到它；不区分 steer / queue | steer（在下一个安全点并入当前回合）或 queue（等本回合结束再执行）        |
-| 回合循环    | 一个大循环包住工具调用                                     | 每个模型回合只调用一次 `llm.stream`，续跑前从存储重新加载历史            |
-| 存储        | `message` / `part` 表                                      | 事件日志加投影，每个会话有递增的 `seq`，可从任意位置回放                 |
-| 上下文      | 每次请求重新拼装                                           | Context Epoch：稳定基线加按时间追加的更新，缓存前缀保持稳定              |
-| API         | 旧的 `/session/*` 路由与旧版 JS SDK                        | 用 Effect Schema 定义的 `/api/session/*`，客户端由 schema 生成           |
-| 工具与权限  | 旧工具；bash 权限按子命令前缀匹配                          | 按 Location 限定的工具与权限；bash 支持 OS 沙箱、执行前语法检查、`stdin` |
-| 插件        | 支持全部插件钩子                                           | 部分 `chat.*` 钩子尚未调用                                               |
-| 费用与缓存  | 基本用量                                                   | 每回合用量与费用、TTFT、缓存命中率与未命中原因、费用预算                 |
-| 跨会话协作  | 无                                                         | 子会话（`task`）、`list_sessions` / `send_message`                       |
-| 使用方      | 旧版 JS SDK 与 `/session/*` 路由                           | 默认 TUI、`--mini`、ACP、`miao run`、Web 应用、`miao remote`             |
+| 关注点                                         | 状态                                            |
+| ---------------------------------------------- | ----------------------------------------------- |
+| 会话执行、工具、权限                           | 仅 V2                                           |
+| `/session/*` 路由与 JS SDK 的旧会话方法        | 服务端不再提供                                  |
+| 旧的 `message` / `part` 表                     | `miao db backfill` 读取；`miao db compact` 删除 |
+| 可移植的导出与导入（`miao export` / `import`） | 保留                                            |
+| 旧形状配置                                     | V2 配置加载器仍可读取                           |
+| 非会话旧路由（`/config`、`/mcp`、`/lsp` 等）   | 仍在提供；正在迁移到 `/api/*`                   |
+
+见 [specs/v2/v1-retirement.md](specs/v2/v1-retirement.md) 与 [specs/architecture.md](specs/architecture.md)。
 
 日常用 `miao` 正式版，源码迭代用 `miao-dev`，编译验证用 `miao-preview`。源码中的新能力可能尚未包含在已安装的发行版里。
 

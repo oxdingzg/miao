@@ -10,15 +10,19 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
 ### R1. Packaging and distribution (solved) (High)
 - Evidence: `packages/miao/script/build.ts` uses `bun build --compile` to produce a **single-file** binary; native dependencies (`@ff-labs/fff-bun`, etc.) are embedded from node_modules.
 - Addon: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified). A release uses `--single`, so each platform runner builds the **host** addon (`packages/native/build.ts`) and hides it for non-host targets so a wrong-platform `.node` is not embedded.
-- Sandbox sidecar: no separate `miao-run` needs to ship. The sandbox logic moved to `crates/miao-sandbox`, exposed by the addon as `sandboxProfile` (macOS profile) and `sandboxRestrict` (Linux Landlock); the compiled binary runs sandboxed children by **self-executing** through the hidden `__sandbox-run` command (`build.ts` defines `MIAO_PACKAGED`, and `resolveSandboxRunner()` returns `process.execPath` + `__sandbox-run`). Single file, naturally per-platform, one signature/notarization. `miao-run` stays only for dev/tests and `MIAO_RUN` overrides.
+- Sandbox sidecar: no separate `miao-run` needs to ship. The sandbox logic moved to `crates/miao-sandbox`, exposed by the addon as `sandboxProfile` (macOS profile) and `sandboxRestrict` (Linux Landlock); the compiled binary runs sandboxed children by **self-executing** through the hidden `__sandbox-run` command (`build.ts` defines `MIAO_PACKAGED`, and `SandboxRunner.resolve()` returns `process.execPath` + `__sandbox-run`). Single file, naturally per-platform, one signature/notarization. `miao-run` stays only for dev/tests and `MIAO_RUN` overrides.
 - Verified: `miao-preview __sandbox-run --print-profile`, a write inside the workdir succeeds, a write outside is denied, and the deny-report is written.
 
 ### R2. CI is currently passing falsely (High)
-- Evidence: `packages/miao/test/tool/edit-native.test.ts` uses `withNative = native ? describe : describe.skip`
-  and likewise `withMiaoRun`; when the `.node` / `miao-run` is absent the whole suite is skipped.
+- Evidence: when this was written, the JS native suites in `packages/miao/test/tool/*-native.test.ts`
+  used `withNative = native ? describe : describe.skip` (and `withMiaoRun` likewise), so an absent
+  `.node` / `miao-run` skipped the whole suite. Those suites were removed with the V1 tools; the
+  current native coverage is the Rust unit tests plus `packages/core/test/sandbox-policy.test.ts`
+  and `packages/core/test/tool-bash-sandbox.test.ts`.
 - Consequence: CI that does not build Rust goes "green" while running zero native cases; any Rust
   regression goes unnoticed.
-- Mitigation: before integrating, add "build Rust + run parity, **no skipping allowed**" to CI as a hard gate.
+- Mitigation: the `native` and `sandbox-linux` jobs in `.github/workflows/native.yml` build Rust and
+  run the sandbox tests as a hard gate.
 
 ### R3. Synchronous calls block the event loop (High)
 - Evidence: git in `core/git.ts` / `snapshot` goes through `ChildProcess` (async Effect), while our
@@ -75,7 +79,7 @@ Current parity is mostly ASCII; the following produce **different results**, not
   there is still no Windows backend, so **behavior is inconsistent across platforms**, and
   `sandbox-exec` is deprecated by Apple and may be removed in a future macOS.
 - Mitigation: the Windows backend (AppContainer + Job object) is specced in
-  [windows-sandbox](windows-sandbox.en.md) and remains to be implemented; `sandboxAvailable()` returns
+  [windows-sandbox](windows-sandbox.en.md) and remains to be implemented; `SandboxRunner.available()` returns
   false where there is no backend and callers fall back.
 
 ### R10. Blocking legitimate workflows (High)
@@ -89,11 +93,12 @@ Current parity is mostly ASCII; the following produce **different results**, not
   not be the only escalation signal.
 
 ### R11. Semantic change and product decision (Medium)
-- Wired as **opt-in** (`MIAO_SANDBOX=1`): the shell tool seeds the sandbox allowlist from the
-  directories the normal permission flow already approved (`scan.dirs`), so "approved but denied by
-  the kernel" is minimized; paths the kernel still denies go through an `external_directory` prompt
-  and retry. Network is allowed by default (`MIAO_SANDBOX_DENY_NETWORK=1` denies it). Default-on vs
-  opt-in **remains a product decision**.
+- Wired as **opt-in** (`MIAO_SANDBOX=1` or `sandbox.mode: "workspace-write"`): the V2 `bash` tool
+  seeds the sandbox writable roots from the active Location, the command's working directory, temp
+  directories, and configured `writable_roots`, so "approved but denied by the kernel" is minimized;
+  paths the kernel still denies go through an `external_directory` prompt and the command is rerun
+  with them allowed. Network is allowed by default (`MIAO_SANDBOX_DENY_NETWORK=1` denies it).
+  Default-on vs opt-in **remains a product decision**.
 
 ## 5. Engineering and supply chain
 
@@ -110,16 +115,15 @@ Current parity is mostly ASCII; the following produce **different results**, not
 
 ## 6. Recommended order and gates
 
-1. ~~Solve R1/R2 first~~ -> **solved**: per-platform addon build plus sandbox self-exec (R1), and CI
-   with `MIAO_NATIVE_REQUIRED=1` and the `native`/`sandbox-linux` jobs forcing a Rust build and
-   parity with no skipping (R2).
-2. **Integrate the lowest-risk pieces first**: `edit` matching and `apply_patch` (pure, synchronous,
-  fully comparable, parity already exists), behind a feature flag with fallback.
+1. ~~Solve R1/R2 first~~ -> **solved**: per-platform addon build plus sandbox self-exec (R1), and the
+   `native`/`sandbox-linux` CI jobs forcing a Rust build and running the sandbox tests (R2).
+2. ~~Integrate the lowest-risk pieces first~~ -> **not taken**: native `edit`/`apply_patch` were only
+   consumed by the V1 tools, which have been removed; V2's `edit`/`patch` stay TypeScript.
 3. **Defer git**: build the async/worker wrapper first (R3) and add a snapshot **full-path** benchmark
    (including add/write-tree); only integrate when it covers the dominant cost.
-4. **Sandbox as an optional capability**: now wired opt-in into the shell tool (`MIAO_SANDBOX=1`) with a
-   fallback; the Linux backend is in; default-on is still open. Do not rely on stderr parsing as the
-   only escalation signal.
+4. **Sandbox as an optional capability**: now wired opt-in into the V2 `bash` tool (`MIAO_SANDBOX=1` or
+   `sandbox.mode`) with a fallback; the Linux backend is in; default-on is still open. Do not rely on
+   stderr parsing as the only escalation signal.
 5. Every step gates on "existing tests green + new parity not skipped + a memory/RSS baseline".
 
 ## Conclusion

@@ -20,28 +20,14 @@ import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
 import { Question } from "@/question"
 import { Permission } from "@/permission"
-import { Todo } from "@/session/todo"
-import { Session } from "@/session/session"
-import { SessionStatus } from "@/session/status"
-import { SessionRunState } from "@/session/run-state"
-import { SessionProcessor } from "@/session/processor"
-import { SessionCompaction } from "@/session/compaction"
-import { SessionRevert } from "@/session/revert"
-import { SessionSummary } from "@/session/summary"
-import { SessionPrompt } from "@/session/prompt"
-import { Instruction } from "@/session/instruction"
-import { LLM } from "@/session/llm"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Command } from "@/command"
-import { Truncate } from "@/tool/truncate"
-import { ToolRegistry } from "@/tool/registry"
 import { Format } from "@/format"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
-import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
 import { Installation } from "@/installation"
 import { Npm } from "@miao/core/npm"
@@ -53,6 +39,9 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
+import { SessionExecution } from "@miao/core/session/execution"
+import { SessionExecutionLocal } from "@miao/core/session/execution/local"
+import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location-services"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
@@ -74,36 +63,26 @@ export const AppLayer = AppNodeBuilderV1.build(
     Discovery.node,
     Question.node,
     Permission.node,
-    Todo.node,
-    Session.node,
     SessionProjector.node,
     SessionStore.node,
-    SessionStatus.node,
     BackgroundJob.node,
     RuntimeFlags.node,
     EventV2Bridge.node,
-    SessionRunState.node,
-    SessionProcessor.node,
-    SessionCompaction.node,
-    SessionRevert.node,
-    SessionSummary.node,
-    SessionPrompt.node,
-    Instruction.node,
-    LLM.node,
     LSP.node,
     MCP.node,
     McpAuth.node,
     Command.node,
-    Truncate.node,
-    ToolRegistry.node,
     Format.node,
     InstanceStore.node,
     Project.node,
     Vcs.node,
-    Workspace.node,
     Worktree.node,
     Installation.node,
   ]),
+  [
+    [LocationServiceMap.node, buildLocationServiceMap()],
+    [SessionExecution.node, SessionExecutionLocal.node],
+  ],
 ).pipe(Layer.provideMerge(AppNodeBuilderV1.build(Ripgrep.node)), Layer.provideMerge(Observability.layer))
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })

@@ -87,7 +87,7 @@ session/formatter/lsp/app/project/provider/config/command/skill/auth/vcs/mcp/wor
 3. 迁移 TUI/app 调用点，`rg` 确认不再有非 `v2.*` 的 legacy SDK 调用。
 4. 删除 `packages/miao/src/server/routes/instance/httpapi`（V1 树）与对应 handlers/groups/tests；
    `server.ts` 切到 `packages/server` 的 V2-only assembly。
-5. `packages/miao` 只剩 CLI 外壳；`packages/miao/src/session|tool`、`app-runtime` 的 V1 层随 P4 删除。
+5. `packages/miao` 只剩 CLI 外壳；`packages/miao/src/session|tool` 与旧会话路由组已随 P4 删除（2026-10-03），`app-runtime` 的 V1 层与剩余非会话旧路由在 P7 收尾。
 
 ## 验证（每步）
 

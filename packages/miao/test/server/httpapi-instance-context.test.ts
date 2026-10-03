@@ -12,7 +12,6 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { Project } from "../../src/project/project"
-import { Session } from "../../src/session/session"
 import { disposeMiddleware, markInstanceForDisposal } from "../../src/server/routes/instance/httpapi/lifecycle"
 import {
   InstanceContextMiddleware,
@@ -127,7 +126,6 @@ const probeHandlers = HttpApiBuilder.group(ProbeApi, "probe", (handlers) =>
 const probeRoutes = HttpApiBuilder.layer(ProbeApi).pipe(
   Layer.provide(probeHandlers),
   Layer.provide(instanceContextTestLayer),
-  Layer.provide(Layer.mock(Session.Service)({})),
 )
 
 const serveProbe = () => probeRoutes.pipe(HttpRouter.serve, Layer.build)

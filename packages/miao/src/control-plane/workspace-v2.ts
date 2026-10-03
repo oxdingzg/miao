@@ -2,10 +2,10 @@ export * as WorkspaceV2Bridge from "./workspace-v2"
 
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { WorkspaceV2 } from "@miao/core/workspace"
+import { SessionV2 } from "@miao/core/session"
 import { Cause, Effect, Layer } from "effect"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
-import { SessionID } from "@/session/schema"
 import { listAdapters } from "./adapters"
 import { Workspace } from "./workspace"
 
@@ -63,7 +63,7 @@ const layer = Layer.effect(
             { directory: scope.directory },
             workspace.sessionWarp({
               workspaceID: input.id,
-              sessionID: SessionID.make(input.sessionID),
+              sessionID: SessionV2.ID.make(input.sessionID),
               copyChanges: input.copyChanges,
             }),
           ),

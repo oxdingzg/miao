@@ -167,16 +167,15 @@ Configure local or remote servers under `mcp.servers`; their tools appear as
 - With `formatter: true`, `edit` / `write` / `apply_patch` run the matching formatter on success.
 - The sidebar shows LSP connection status; **a config change requires restarting miao**.
 
-### 5.6 Kernel-level sandbox (compatibility runtime, opt-in)
+### 5.6 Kernel-level sandbox (opt-in)
 
-The sandbox integration belongs to the compatibility shell tool in `packages/miao/src/tool`. The default V2 `bash` tool does not use this runner. For compatibility TUI testing on a supported macOS / Linux host:
+The V2 `bash` tool can run each command under the OS sandbox: seatbelt on macOS, Landlock on Linux. Windows has no backend. Enable it in config:
 
-```bash
-MIAO_SANDBOX=1 miao
-MIAO_SANDBOX=1 MIAO_SANDBOX_DENY_NETWORK=1 miao
+```jsonc
+{ "sandbox": { "mode": "workspace-write", "network": true } }
 ```
 
-The packaged backend must be available. Supported backends restrict writes; the compatibility shell permits network by default unless explicitly denied. Do not infer kernel confinement for V2 from these flags. See the [integration matrix](miao-vs-opencode.en.md#native-tools-and-sandbox-where-they-apply) for scope and platform limitations.
+`MIAO_SANDBOX=1` and `MIAO_SANDBOX_DENY_NETWORK=1` override the config. `workspace-write` leaves reads unrestricted and allows writes only to the active Location, the command's working directory, temp directories, `writable_roots`, and paths you approve after a blocked write (the command is rerun with the added directory). Network is allowed unless denied. If the sandbox is requested but no backend is available, `on_unavailable` defaults to `"warn"` and the command runs unsandboxed; set `"fail"` to refuse instead. See the [integration matrix](miao-vs-opencode.en.md#native-tools-and-sandbox-where-they-apply) for platform limits.
 
 ### 5.7 Cost and cache telemetry
 
@@ -226,11 +225,11 @@ This optional project configuration combines continued todo work, a scheduling b
 
 ## 6. Runtime status and ongoing work
 
-The TUI and the browser app only use the V2 session protocol; the V1 compatibility runtime is being retired.
+All shipped clients use the single V2 session runtime; the V1 session runtime and its `/session/*` routes have been removed.
 
-- [V1 retirement](../specs/v2/v1-retirement.md) tracks the migration and remaining compatibility surfaces.
+- [V1 retirement](../specs/v2/v1-retirement.md) records the removal and the remaining compatibility surfaces (database migration and non-session legacy routes).
 - [Session storage](../specs/storage/session-storage-hardening.md) tracks storage design. Use `miao db stats`, `miao db vacuum`, and JSONL exports to inspect and maintain local records.
-- Automatic post-crash execution continuation and clustered ownership are not implemented. Native tool and kernel sandbox integrations remain compatibility-path features; see the [availability matrix](miao-vs-opencode.en.md).
+- Automatic post-crash execution continuation and clustered ownership are not implemented. The OS sandbox is built into the V2 `bash` tool but remains opt-in; see the [availability matrix](miao-vs-opencode.en.md).
 
 ## 7. FAQ
 
@@ -251,8 +250,8 @@ manual toggle still works.
 Use native-currency pricing (`providers.<id>.models.<m>.cost`), or switch display currency with
 `/currency`.
 
-**Compatibility native (Rust) path problems?**
-In the compatibility tool path, `MIAO_NATIVE=0` disables the addon. V2 uses separate tools; see the comparison matrix.
+**Native (Rust) addon problems?**
+`MIAO_NATIVE=0` disables the addon. The V2 edit/patch tools are TypeScript; the addon backs the OS sandbox runner. See the [comparison matrix](miao-vs-opencode.en.md).
 
 **Can it keep working autonomously like a single long run?**
 Use the `loop` config (§5.8), or an external loop `miao run --continue "...continue..."`.
@@ -267,13 +266,15 @@ polluted; edits and commands follow the configured permission rules.
 miao db path              # database path
 miao db stats             # per-table/event usage (find bloat)
 miao db vacuum            # checkpoint + VACUUM to reclaim free pages
-miao db backfill          # convert legacy V1 session messages to the V2 projection (idempotent, opt-in)
+miao db backfill          # project legacy V1 session messages into the V2 schema (idempotent)
+miao db compact           # after backfill: drop the retired message/part tables and their events
 miao export <sessionID> --format jsonl
 MIAO_CONFIG=/path/miao.jsonc miao
 ```
 
-Logs live in `~/.local/share/miao/log/`. Database bloat comes mainly from legacy V1 per-delta
-events; until V1 is retired, use `miao db stats` to monitor and `vacuum` to reclaim free pages.
+Logs live in `~/.local/share/miao/log/`. In databases written before V2, bloat comes mainly from
+legacy per-delta events; use `miao db stats` to monitor, `miao db compact` to retire the old tables,
+and `vacuum` to reclaim free pages.
 
 ## 9. Development
 

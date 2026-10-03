@@ -7,23 +7,31 @@ on:
     paths:
       - "crates/miao-native/**"
       - "crates/miao-sandbox/**"
-      - "packages/miao/src/tool/edit.ts"
-      - "packages/miao/test/tool/edit-native.test.ts"
-      - "packages/miao/test/tool/git-native.test.ts"
-      - "packages/miao/test/tool/text-native.test.ts"
-      - "packages/miao/test/tool/walk-native.test.ts"
-      - "packages/miao/test/tool/shell-native.test.ts"
+      - "packages/native/**"
+      - "packages/core/src/sandbox.ts"
+      - "packages/core/src/sandbox/**"
+      - "packages/core/src/tool/edit.ts"
+      - "packages/core/src/tool/edit-fuzzy.ts"
+      - "packages/core/src/tool/apply-patch.ts"
+      - "packages/core/test/sandbox-policy.test.ts"
+      - "packages/core/test/tool-bash-sandbox.test.ts"
+      - "packages/miao/src/sandbox-runner.ts"
+      - "packages/miao/src/index.ts"
       - ".github/workflows/native.yml"
   pull_request:
     paths:
       - "crates/miao-native/**"
       - "crates/miao-sandbox/**"
-      - "packages/miao/src/tool/edit.ts"
-      - "packages/miao/test/tool/edit-native.test.ts"
-      - "packages/miao/test/tool/git-native.test.ts"
-      - "packages/miao/test/tool/text-native.test.ts"
-      - "packages/miao/test/tool/walk-native.test.ts"
-      - "packages/miao/test/tool/shell-native.test.ts"
+      - "packages/native/**"
+      - "packages/core/src/sandbox.ts"
+      - "packages/core/src/sandbox/**"
+      - "packages/core/src/tool/edit.ts"
+      - "packages/core/src/tool/edit-fuzzy.ts"
+      - "packages/core/src/tool/apply-patch.ts"
+      - "packages/core/test/sandbox-policy.test.ts"
+      - "packages/core/test/tool-bash-sandbox.test.ts"
+      - "packages/miao/src/sandbox-runner.ts"
+      - "packages/miao/src/index.ts"
       - ".github/workflows/native.yml"
   workflow_dispatch:
 
@@ -77,12 +85,24 @@ jobs:
         run: bun run build.ts
         working-directory: packages/native
 
-      - name: Native parity (no skipping allowed)
-        run: bun test test/tool/edit-native.test.ts test/tool/git-native.test.ts test/tool/text-native.test.ts test/tool/walk-native.test.ts test/tool/shell-native.test.ts
-        working-directory: packages/miao
+      - name: Sandbox tests
+        run: bun test test/sandbox-policy.test.ts test/tool-bash-sandbox.test.ts
+        working-directory: packages/core
         env:
           MIAO_NATIVE: "1"
           MIAO_NATIVE_REQUIRED: "1"
+
+      - name: Self-exec sandbox smoke (seatbelt)
+        run: |
+          set -euo pipefail
+          D=$(mktemp -d)
+          bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo ok > $D/ok.txt"
+          test -f "$D/ok.txt"
+          if bun src/index.ts __sandbox-run --workdir "$D" -- sh -c "echo x > $HOME/miao-escape.txt"; then
+            echo "outside write unexpectedly succeeded"
+            exit 1
+          fi
+          test ! -f "$HOME/miao-escape.txt"
 
   sandbox-linux:
     name: sandbox-linux

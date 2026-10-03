@@ -22,7 +22,6 @@ const subcommands: Array<[string, Loader]> = [
   ["skill", () => import("./skill").then((m) => m.SkillCommand)],
   ["snapshot", () => import("./snapshot").then((m) => m.SnapshotCommand)],
   ["startup", () => import("./startup").then((m) => m.StartupCommand)],
-  ["agent", () => import("./agent").then((m) => m.AgentCommand)],
   ["v2", () => import("./v2").then((m) => m.V2Command)],
 ]
 

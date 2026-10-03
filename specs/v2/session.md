@@ -148,7 +148,7 @@ Failure:
 
 ## V1 Runtime Context Parity
 
-This is the canonical checklist for model-visible runtime context still needed before the V2 runner replaces V1. Keep each behavior in its owning boundary rather than treating all model-visible text as a durable Context Source. Update this table in the PR that changes a status.
+This is the canonical checklist for model-visible runtime context in the V2 runner. V1 has been removed, so the table now tracks V2 completeness rather than a cutover gate. Keep each behavior in its owning boundary rather than treating all model-visible text as a durable Context Source. Update this table in the PR that changes a status.
 
 Status: `complete` is usable in the native V2 path, `partial` covers only part of V1 behavior, and `missing` has no native V2 equivalent.
 
@@ -174,7 +174,7 @@ Status: `complete` is usable in the native V2 path, `partial` covers only part o
 | Prompt/reference expansion | File, directory, media, and MCP-resource materialization                 | partial  | Materialize and normalize sources instead of lowering unresolved attachment metadata.                                                  |
 | Prompt/reference expansion | Agent-reference expansion                                                | missing  | Produce permission-aware model-visible task guidance.                                                                                  |
 | Prompt/reference expansion | Configured-reference expansion                                           | missing  | Resolve aliases and emit durable model-visible reference context or failures.                                                          |
-| Prompt/reference expansion | Native synthetic expansion replay                                        | partial  | V2 replays synthetic messages but only the V1 compatibility path creates them.                                                         |
+| Prompt/reference expansion | Native synthetic expansion replay                                        | missing  | The V1 path that created synthetic messages is removed; V2 must create them before it can replay them.                                 |
 
 Provider timeout, retry, and watchdog policy is intentionally deferred. The runner does not impose a universal provider-stream inactivity or absolute timeout. A future slice should design configurable policy around provider behavior, durable failure reporting, and local drain-chain release rather than hardcoding one default for every provider.
 
@@ -227,7 +227,7 @@ resolve one path relative to the Location or a named project reference
 -> page directory results with one-based offset and next cursor
 ```
 
-V2 `bash` uses the normal permission semantics: configured agent rules plus saved project approvals, with `ask` as the default when no rule matches. Bash is not sandboxed: the spawned shell runs with the host user's filesystem, process, and network authority. Structured external `workdir` resolution remains an enforced `external_directory` authority check. Best-effort scans of absolute command arguments produce advisory warnings only; they are not sandbox boundaries and do not request or enforce `external_directory` approval.
+V2 `bash` uses the normal permission semantics: configured agent rules plus saved project approvals, with `ask` as the default when no rule matches. The OS sandbox is available but off by default: enabling `sandbox.mode: "workspace-write"` or `MIAO_SANDBOX=1` wraps each command with macOS seatbelt or Linux Landlock (`packages/core/src/sandbox.ts`). When the sandbox is off or unavailable, the spawned shell runs with the host user's filesystem, process, and network authority. Structured external `workdir` resolution remains an enforced `external_directory` authority check. Best-effort scans of absolute command arguments produce advisory warnings only; they are not sandbox boundaries and do not request or enforce `external_directory` approval.
 
 The first V2 `apply_patch` leaf supports add, update, and delete hunks. It parses every hunk, resolves every mutation target, approves external directories, approves one edit batch, and preflights approved update/delete targets before committing operations sequentially. A later commit-time failure leaves earlier operations applied and returns an explicit partial-application report. Moves and atomic rollback remain separate follow-ups rather than implied behavior.
 
@@ -242,7 +242,9 @@ The first V2 `apply_patch` leaf supports add, update, and delete hunks. It parse
 
 ## Remove Dedicated `session.init` Route
 
-The dedicated `POST /session/:sessionID/init` endpoint exists only as a compatibility wrapper around the normal `/init` command flow.
+> Status (2026-10-03): done. The V1 `/session/*` route group was removed; there is no `session.init` endpoint. The plan below is historical.
+
+The dedicated `POST /session/:sessionID/init` endpoint existed only as a compatibility wrapper around the normal `/init` command flow.
 
 Current behavior:
 

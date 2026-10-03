@@ -57,6 +57,7 @@ export function readModelRecord(value: object) {
     if (!entry || typeof entry !== "object") continue
     const model = entry as Partial<ModelRef>
     if (typeof model.providerID !== "string" || typeof model.modelID !== "string") continue
+    if (!model.providerID || !model.modelID) continue
     result[name] = { providerID: model.providerID, modelID: model.modelID }
   }
   return result

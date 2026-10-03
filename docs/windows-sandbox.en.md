@@ -37,12 +37,12 @@ Add a Windows backend to `crates/miao-sandbox` so the guarantee matches macOS se
 - Read: allowed (system files and read-only paths work normally).
 - Network: denied by default; `--allow-network` permits it.
 - Process tree: terminated together with `miao-run` (no orphans).
-- Not in production: still gated by `MIAO_NATIVE` / the sandbox switch; when no backend exists, fall back and **report explicitly**, never silently.
+- Gated: the sandbox runs only when `sandbox` config or `MIAO_SANDBOX` enables it; when no backend exists, fall back and **report explicitly**, never silently.
 
 ## 2. Current state
 
 - Sandbox logic lives in `crates/miao-sandbox`: `profile()` (seatbelt text), `apply_linux_restrictions()` (landlock), `supported()`.
-- Both `miao-run` (`crates/miao-native/src/bin/miao-run.rs`) and the main binary's hidden `__sandbox-run` (`packages/miao/src/tool/sandbox-runner.ts`) call this crate; release self-executes, dev/tests use `miao-run`.
+- Both `miao-run` (`crates/miao-native/src/bin/miao-run.rs`) and the main binary's hidden `__sandbox-run` (`packages/miao/src/sandbox-runner.ts`, re-exporting `@miao/core/sandbox/runner`) call this crate; release self-executes, dev/tests use `miao-run`.
 - macOS: `sandbox-exec -p <seatbelt profile>`.
 - Linux: in-process landlock (write allowlist + TCP bind/connect denied), verified on a real host; integration tests in `crates/miao-native/tests/linux-sandbox.rs`.
 - Windows: **no backend**; it currently hits `#[cfg(not(any(target_os = "macos", target_os = "linux")))]`, prints `no sandbox backend`, and runs **unsandboxed**.
@@ -101,7 +101,7 @@ Add a Windows backend to `crates/miao-sandbox` so the guarantee matches macOS se
 4. Job object: create, set `KILL_ON_JOB_CLOSE`, `AssignProcessToJobObject`.
 5. Propagate exit code, collect stderr; handle `--deny-report` per section 4.
 6. Change the `#[cfg(not(any(macos,linux)))]` branch in `main`: Windows goes through the new backend; other platforms keep the "no sandbox" notice.
-7. TS side: `resolveSandboxRunner()` / `runSandboxed` pick the runner (`miao-run` or `__sandbox-run`) and call the same CLI, so no format change; the Windows spawn path is invoked by the runner.
+7. TS side: `SandboxRunner.resolve()` / `SandboxRunner.run()` pick the runner (`miao-run` or `__sandbox-run`) and call the same CLI, so no format change; the Windows spawn path is invoked by the runner.
 
 ## 6. Verification
 
@@ -144,7 +144,7 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 
 - The 6.1 matrix passes on the real machine; the 6.2 integration tests pass in CI (or an explicitly recorded skip).
 - Without AppContainer privileges: explicit error and a configured fallback, **not silent**.
-- macOS / Linux behavior unchanged; `MIAO_NATIVE` / sandbox switch gated; not wired into production.
+- macOS / Linux behavior unchanged; the sandbox switch is gated by `sandbox` config / `MIAO_SANDBOX`; the Windows backend is not implemented.
 
 ## 8. Risks
 
@@ -158,7 +158,7 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 - `crates/miao-sandbox/src/lib.rs` (seatbelt / landlock / backend dispatch and `supported()`)
 - `crates/miao-native/src/bin/miao-run.rs` (dev/test runner, calls `miao-sandbox`)
 - `crates/miao-native/tests/linux-sandbox.rs` (Linux enforcement tests; template for the Windows version)
-- `packages/miao/src/tool/sandbox.ts` (`resolveSandboxRunner` / `runSandboxed` / `sandboxAvailable`)
-- `packages/miao/src/tool/sandbox-runner.ts` (the hidden `__sandbox-run` implementation for release self-exec)
+- `packages/core/src/sandbox/runner.ts` (`resolve` / `backend`) and `packages/core/src/sandbox.ts` (`Sandbox.Service`)
+- `packages/miao/src/sandbox-runner.ts` (the hidden `__sandbox-run` implementation for release self-exec)
 - `.github/workflows/native.yml` (`native` / `sandbox-linux` jobs; add `sandbox-windows`)
 - `docs/rust-rewrite-feasibility.en.md` (where the sandbox sits in the overall plan)

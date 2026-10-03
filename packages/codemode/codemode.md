@@ -85,12 +85,10 @@ attach them to the outer result, but the program receives only the structured to
 
 ### V2 OpenCode adapter
 
-This section describes the `v2` branch integration. On `dev`, CodeMode is integrated through
-`packages/miao/src/tool/code-mode.ts`, where nested MCP calls run the `tool.execute.before` and
-`tool.execute.after` plugin hooks.
+This section describes the V2 integration; the pre-V2 `dev` path in
+`packages/miao/src/tool/code-mode.ts` was removed with the V1 tools.
 
-CodeMode is integrated into V2 through `packages/core/src/tool/registry.ts` and
-`packages/core/src/tool/execute.ts`:
+CodeMode is integrated into V2 through `packages/core/src/tool/registry.ts`:
 
 - Core has one canonical `Tool` representation. Location-scoped producers register direct or deferred tools through
   `Tools.Service`.
