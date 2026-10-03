@@ -148,6 +148,23 @@ describe("v2 location HttpApi", () => {
     expect(missing.status).toBe(404)
   })
 
+  test("keeps the event stream open past events the protocol does not declare", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const reader = eventStream((await request("/api/event", tmp.path)).body!)
+    expect((await readEvent(reader)).type).toBe("server.connected")
+
+    // `tui.command.execute` is a V1 bridge event outside the public V2 event union.
+    expect((await request("/tui/open-help", tmp.path, { method: "POST" })).status).toBe(200)
+    const created = await request("/api/session", tmp.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location: { directory: tmp.path } }),
+    })
+    expect(created.status).toBe(200)
+    expect((await readEventType(reader, "session.next.created")).type).toBe("session.next.created")
+    await reader.return(undefined)
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)
