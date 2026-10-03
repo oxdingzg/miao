@@ -13,6 +13,7 @@
 //         → OpenTUI split-footer renderer writes to terminal
 import type {
   OpencodeClient,
+  Part,
   PermissionRequest,
   QuestionRequest,
   QuestionV2Answer,
@@ -27,10 +28,12 @@ export type RunFilePart = {
   mime: string
 }
 
-type PromptModel = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
-type PromptInput = Parameters<OpencodeClient["session"]["prompt"]>[0]
+type PromptModel = { providerID: string; modelID: string }
 
-export type RunPromptPart = NonNullable<PromptInput["parts"]>[number]
+export type RunPromptPart =
+  | (Omit<Extract<Part, { type: "text" }>, "sessionID" | "messageID" | "id"> & { id?: string })
+  | (Omit<Extract<Part, { type: "file" }>, "sessionID" | "messageID" | "id"> & { id?: string })
+  | (Omit<Extract<Part, { type: "agent" }>, "sessionID" | "messageID" | "id"> & { id?: string })
 
 export type RunCommand = NonNullable<Awaited<ReturnType<OpencodeClient["command"]["list"]>>["data"]>[number]
 

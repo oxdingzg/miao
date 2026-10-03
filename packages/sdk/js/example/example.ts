@@ -1,56 +1,31 @@
-import { createOpencodeClient, createOpencodeServer } from "@opencode-ai/sdk"
-import { pathToFileURL } from "bun"
+import { createOpencodeClient, createOpencodeServer } from "@opencode-ai/sdk/v2"
+import path from "path"
+import { pathToFileURL } from "node:url"
+import { readdir } from "node:fs/promises"
 
 const server = await createOpencodeServer()
-const client = createOpencodeClient({ baseUrl: server.url })
+const client = createOpencodeClient({ baseUrl: server.url, throwOnError: true })
 
-const input = await Array.fromAsync(new Bun.Glob("packages/core/*.ts").scan())
-
-const tasks: Promise<void>[] = []
-for await (const file of input) {
-  console.log("processing", file)
-  const session = await client.session.create()
-  tasks.push(
-    client.session.prompt({
-      path: { id: session.data.id },
-      body: {
-        parts: [
-          {
-            type: "file",
-            mime: "text/plain",
-            url: pathToFileURL(file).href,
+try {
+  await Promise.all(
+    (await readdir("packages/core/src"))
+      .filter((file) => file.endsWith(".ts"))
+      .map(async (file) => {
+        const created = await client.v2.session.create(
+          { location: { directory: process.cwd() } },
+          { throwOnError: true },
+        )
+        await client.v2.session.prompt({
+          sessionID: created.data.data.id,
+          prompt: {
+            text: "Write tests for every public function in this file.",
+            files: [{ uri: pathToFileURL(path.resolve("packages/core/src", file)).href, name: file }],
           },
-          {
-            type: "text",
-            text: `Write tests for every public function in this file.`,
-          },
-        ],
-      },
-    }),
+        })
+        await client.v2.session.wait({ sessionID: created.data.data.id })
+        console.log("done", file)
+      }),
   )
-  console.log("done", file)
+} finally {
+  server.close()
 }
-
-await Promise.all(
-  input.map(async (file) => {
-    const session = await client.session.create()
-    console.log("processing", file)
-    await client.session.prompt({
-      path: { id: session.data.id },
-      body: {
-        parts: [
-          {
-            type: "file",
-            mime: "text/plain",
-            url: pathToFileURL(file).href,
-          },
-          {
-            type: "text",
-            text: `Write tests for every public function in this file.`,
-          },
-        ],
-      },
-    })
-    console.log("done", file)
-  }),
-)

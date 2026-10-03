@@ -10,6 +10,30 @@ to add a section here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **miao**: Windows binary installations upgrade through native PowerShell 5.1,
+  including system proxy support, release verification, and replacement of a running
+  executable with rollback on failure. Errors identify the failing phase. Windows
+  releases also include the x64 baseline archive for CPUs without AVX2.
+- **app**: session archiving uses the V2 archive endpoint. Streaming preserves content
+  order and existing text when new fragments arrive after loading history, and native
+  idle events update the session status.
+
+### Changed
+
+- **sdk / plugin**: remove the V1 SDK root, client, and server exports. Import
+  `createOpencodeClient` and `createOpencodeServer` from `@opencode-ai/sdk/v2` and use
+  `client.v2.session` for sessions. Plugin clients use that same SDK; function-returning
+  V1 `Hooks` remain deprecated and do not run in V2 sessions. New plugins should use
+  `define` from `@opencode-ai/plugin/v2/promise` or `/v2/effect`, with
+  `ctx.tool.before`, `after`, `definition`, and `register` for tool customization.
+
+### Added
+
+- **protocol**: `GET /api/fs/content` returns location-scoped UTF-8 text or base64 binary
+  content. The TUI diff highlighter now uses this endpoint.
+
 ## [0.0.35] - 2026-10-03
 
 Published release: [v0.0.35](https://github.com/oxdingzg/miao/releases/tag/v0.0.35).

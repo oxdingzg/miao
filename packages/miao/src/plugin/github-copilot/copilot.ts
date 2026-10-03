@@ -39,8 +39,7 @@ function imgMsg(msg: any): boolean {
   if (typeof content === "string") return content === SYNTHETIC_ATTACHMENT_PROMPT
   if (!Array.isArray(content)) return false
   return content.some(
-    (part: any) =>
-      (part?.type === "text" || part?.type === "input_text") && part.text === SYNTHETIC_ATTACHMENT_PROMPT,
+    (part: any) => (part?.type === "text" || part?.type === "input_text") && part.text === SYNTHETIC_ATTACHMENT_PROMPT,
   )
 }
 
@@ -56,7 +55,6 @@ function fix(model: Model, url: string): Model {
 }
 
 export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
-  const sdk = input.client
   let models: Record<string, Model> = {}
   return {
     provider: {
@@ -338,67 +336,6 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
           },
         },
       ],
-    },
-    "chat.params": async (incoming, output) => {
-      if (!incoming.model.providerID.includes("github-copilot")) return
-
-      // Match github copilot cli, omit maxOutputTokens for gpt models
-      if (incoming.model.api.id.includes("gpt")) {
-        output.maxOutputTokens = undefined
-      }
-
-      // GitHub Copilot's /v1/messages shim rejects the GA `eager_input_streaming`
-      // field on tool definitions ("Extra inputs are not permitted"). Opt out of
-      // the @ai-sdk/anthropic default so it stops injecting the field.
-      if (incoming.model.api.npm === "@ai-sdk/anthropic") {
-        output.options.toolStreaming = false
-      }
-    },
-    "experimental.provider.small_model": async (incoming, output) => {
-      if (incoming.provider.id !== "github-copilot") return
-      // GitHub exposes utility models for title generation without including them in the picker.
-      output.model = UTILITY_MODELS.map((id) => models[id]).find((model) => model !== undefined)
-    },
-    "chat.headers": async (incoming, output) => {
-      if (!incoming.model.providerID.includes("github-copilot")) return
-
-      output.headers["X-GitHub-Api-Version"] = API_VERSION
-      output.headers["X-Interaction-Id"] = incoming.sessionID
-      if (incoming.agent === "title") {
-        output.headers["X-Interaction-Type"] = "agent-session-name-generation"
-      }
-
-      if (incoming.model.api.npm === "@ai-sdk/anthropic") {
-        output.headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
-      }
-
-      // `chat.headers` only fires in the V1 runner, so these read the V1 message routes.
-      const parts = await sdk.session
-        .message(
-          { sessionID: incoming.message.sessionID, messageID: incoming.message.id, directory: input.directory },
-          { throwOnError: true },
-        )
-        .catch(() => undefined)
-
-      if (
-        parts?.data.parts?.some(
-          (part) =>
-            part.type === "compaction" ||
-            // Auto-compaction resumes via a synthetic user text part. Treat only
-            // that marked followup as agent-initiated so manual prompts stay user-initiated.
-            (part.type === "text" && part.synthetic && part.metadata?.compaction_continue === true),
-        )
-      ) {
-        output.headers["x-initiator"] = "agent"
-        return
-      }
-
-      const session = await sdk.session
-        .get({ sessionID: incoming.sessionID, directory: input.directory }, { throwOnError: true })
-        .catch(() => undefined)
-      if (!session || !session.data.parentID) return
-      // mark subagent sessions as agent initiated matching standard that other copilot tools have
-      output.headers["x-initiator"] = "agent"
     },
   }
 }

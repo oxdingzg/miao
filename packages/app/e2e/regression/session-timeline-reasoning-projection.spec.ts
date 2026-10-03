@@ -1,14 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
-import {
-  assistantMessage,
-  reasoningPart,
-  setupTimeline,
-  status,
-  textPart,
-  toolPart,
-  userMessage,
-} from "../performance/timeline-stability/fixture"
+import { assistant, reasoning, setup, status, text, tool, user, partID } from "../utils/session-v2"
 
 const profiles = [
   { name: "summaries off no reasoning", summaries: false, reasoning: "", other: false, thinking: true, body: false },
@@ -57,19 +48,18 @@ const profiles = [
 
 for (const profile of profiles) {
   test(`projects busy reasoning profile ${profile.name}`, async ({ page }) => {
-    test.fixme(profile.name === "summaries on visible reasoning", LEGACY_V1_FIXTURE)
-    const reasoningID = `prt_reasoning_matrix_${profiles.indexOf(profile)}`
+    const reasoningID = partID("reasoning")
     const parts = [
-      ...(profile.reasoning ? [reasoningPart(reasoningID, profile.reasoning)] : []),
+      ...(profile.reasoning ? [reasoning(profile.reasoning)] : []),
       ...(profile.other
-        ? [toolPart(`prt_reasoning_tool_${profiles.indexOf(profile)}`, "skill", "running", { name: "inspect" })]
+        ? [tool(`call_reasoning_${profiles.indexOf(profile)}`, "skill", "running", { name: "inspect" })]
         : []),
     ]
-    const timeline = await setupTimeline(page, {
-      messages: [userMessage(), assistantMessage(parts, { completed: false })],
+    const timeline = await setup(page, {
+      messages: [user(), assistant(parts, { completed: false })],
       settings: { showReasoningSummaries: profile.summaries },
     })
-    await timeline.send(status("busy"), 150)
+    await timeline.send(status("busy"))
 
     await expect(page.locator('[data-timeline-row="Thinking"]')).toHaveCount(profile.thinking ? 1 : 0)
     await expect(page.locator(`[data-timeline-part-id="${reasoningID}"]`)).toHaveCount(profile.body ? 1 : 0)
@@ -80,17 +70,13 @@ for (const profile of profiles) {
 }
 
 test("does not infer reasoning visibility from provider identity", async ({ page }) => {
-  test.fixme(true, LEGACY_V1_FIXTURE)
-  const timeline = await setupTimeline(page, {
-    messages: [
-      userMessage(),
-      assistantMessage([textPart("prt_provider_text", "No reasoning payload")], { completed: false }),
-    ],
+  const timeline = await setup(page, {
+    messages: [user(), assistant([text("No reasoning payload")], { completed: false })],
     settings: { showReasoningSummaries: true },
   })
-  await timeline.send(status("busy"), 150)
+  await timeline.send(status("busy"))
 
   await expect(page.locator('[data-timeline-row="Thinking"]')).toHaveCount(0)
   await expect(page.locator('[data-timeline-part-id*="reasoning"]')).toHaveCount(0)
-  await expect(page.locator('[data-timeline-part-id="prt_provider_text"]')).toBeVisible()
+  await expect(page.locator(`[data-timeline-part-id="${partID("text")}"]`)).toBeVisible()
 })

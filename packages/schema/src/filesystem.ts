@@ -12,6 +12,14 @@ const Edited = define({
 export const Event = { Edited, Definitions: inventory(Edited) }
 
 export interface Entry extends Schema.Schema.Type<typeof Entry> {}
+export const Content = Schema.Struct({
+  type: Schema.Literals(["text", "binary"]),
+  content: Schema.String,
+  encoding: Schema.Literals(["utf8", "base64"]),
+  mime: Schema.String,
+}).annotate({ identifier: "FileSystem.ReadContent" })
+export type Content = typeof Content.Type
+
 export const Entry = Schema.Struct({
   path: RelativePath,
   type: Schema.Literals(["file", "directory"]),
