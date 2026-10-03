@@ -9,6 +9,8 @@ import type {
 import { Config } from "@/config/config"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { ServerAuth } from "@/server/auth"
+import { Auth } from "@/auth"
+import type { InternalPluginInput } from "./auth-store"
 import { CodexAuthPlugin } from "./openai/codex"
 import { SessionV1 } from "@miao/core/v1/session"
 import { NamedError } from "@miao/core/util/error"
@@ -65,7 +67,7 @@ export function experimentalWebSocketsEnabled(input: { enabled: boolean; channel
 }
 
 // Built-in plugins that are directly imported (not installed from npm)
-function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
+function internalPlugins(flags: RuntimeFlags.Info): Array<(input: InternalPluginInput) => ReturnType<PluginInstance>> {
   return [
     // Temporary rollout: pre-release builds use WebSockets by default; releases require explicit opt-in.
     (input) =>
@@ -133,6 +135,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const authStore = yield* Auth.Service
     const config = yield* Config.Service
     const flags = yield* RuntimeFlags.Service
 
@@ -176,9 +179,28 @@ const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
+        const internalInput: InternalPluginInput = {
+          ...input,
+          get serverUrl() {
+            return input.serverUrl
+          },
+          auth: {
+            set: (providerID, info) =>
+              bridge.promise(
+                authStore
+                  .set(providerID, info)
+                  .pipe(
+                    Effect.catch((error) =>
+                      Effect.logWarning("failed to persist plugin credential", { providerID, error }),
+                    ),
+                  ),
+              ),
+          },
+        }
+
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
           const init = yield* Effect.tryPromise({
-            try: () => plugin(input),
+            try: () => plugin(internalInput),
             catch: errorMessage,
           }).pipe(
             Effect.tapError((error) => Effect.logError("failed to load internal plugin", { name: plugin.name, error })),
@@ -321,7 +343,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node],
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Auth.node],
 })
 
 export * as Plugin from "."

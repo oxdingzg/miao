@@ -18,12 +18,10 @@ function makeInput() {
       auth = next
     },
     input: {
-      client: {
-        auth: {
-          set: async (request: any) => {
-            setCalls.push(request)
-            auth = request.auth
-          },
+      auth: {
+        set: async (providerID: string, next: any) => {
+          setCalls.push({ providerID, auth: next })
+          auth = next
         },
       },
     } as any,

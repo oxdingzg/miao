@@ -1,4 +1,5 @@
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import type { Hooks } from "@opencode-ai/plugin"
+import type { InternalPluginInput } from "./auth-store"
 import type { Model } from "@opencode-ai/sdk/v2"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { OauthCallbackPage } from "@miao/core/oauth/page"
@@ -221,7 +222,7 @@ function parseRoutersJSON(raw: string | undefined): RouterEntry[] {
   }
 }
 
-export async function DigitalOceanAuthPlugin(input: PluginInput): Promise<Hooks> {
+export async function DigitalOceanAuthPlugin(input: InternalPluginInput): Promise<Hooks> {
   return {
     provider: {
       id: "digitalocean",
@@ -248,12 +249,7 @@ export async function DigitalOceanAuthPlugin(input: PluginInput): Promise<Hooks>
               routers: JSON.stringify(routers.map((r) => ({ name: r.name, uuid: r.uuid, description: r.description }))),
               routers_fetched_at: String(Date.now()),
             }
-            await input.client.auth
-              .set({
-                providerID: "digitalocean",
-                auth: { type: "api", key: ctx.auth.key, metadata: updated },
-              })
-              .catch(() => {})
+            await input.auth.set("digitalocean", { type: "api", key: ctx.auth.key, metadata: updated }).catch(() => {})
           } else if (result.status === 401 || result.status === 403) {
           } else if (result.status !== 0) {
           }
