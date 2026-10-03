@@ -93,6 +93,7 @@ jobs:
           MIAO_NATIVE_REQUIRED: "1"
 
       - name: Self-exec sandbox smoke (seatbelt)
+        working-directory: packages/miao
         run: |
           set -euo pipefail
           D=$(mktemp -d)
