@@ -13,6 +13,7 @@ import { Slug } from "../util/slug"
 import { EventV2 } from "../event"
 import { Database } from "../database/database"
 import { Location } from "../location"
+import { ProjectRegistry } from "./registry"
 import { Event } from "@miao/schema/project-directories"
 import { ProjectCopy } from "@miao/schema/project-copy"
 
@@ -288,5 +289,6 @@ export const node = makeLocationNode({
 export const refreshNode = makeLocationNode({
   name: "project-copy-refresh",
   layer: Layer.effectDiscard(refreshAfterBoot),
-  deps: [node, Location.node],
+  // Copies are discovered from the directories the registry records, so it runs first.
+  deps: [node, Location.node, ProjectRegistry.node],
 })

@@ -24,6 +24,7 @@ import { PluginV2 } from "./plugin"
 import { PluginInternal } from "./plugin/internal"
 import { Policy } from "./policy"
 import { ProjectCopy } from "./project/copy"
+import { ProjectRegistry } from "./project/registry"
 import { Pty } from "./pty"
 import { QuestionV2 } from "./question"
 import { Reference } from "./reference"
@@ -57,6 +58,7 @@ export const locationServices = LayerNode.group([
   AISDK.node,
   PluginV2.node,
   PluginInternal.node,
+  ProjectRegistry.node,
   ProjectCopy.node,
   ProjectCopy.refreshNode,
   FileSystemSearch.node,
