@@ -23,6 +23,7 @@
     "./context/sync": "./src/context/sync.tsx",
     "./context/session-v2": "./src/context/session-v2.ts",
     "./context/session-v2-write": "./src/context/session-v2-write.ts",
+    "./context/v2-adapters": "./src/context/v2-adapters.ts",
     "./context/theme": "./src/context/theme.tsx",
     "./context/editor": "./src/context/editor.ts",
     "./context/clipboard": "./src/context/clipboard.tsx",

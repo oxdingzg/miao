@@ -16,7 +16,7 @@
 // The tick counter prevents stale idle events from resolving the wrong turn.
 // We also re-check live session status before resolving an idle event so a
 // delayed idle from an older turn cannot complete a newer busy turn.
-import type { GlobalEvent, OpencodeClient } from "@opencode-ai/sdk/v2"
+import type { OpencodeClient } from "@opencode-ai/sdk/v2"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
 import { makeRuntime } from "@/effect/run-service"
@@ -178,33 +178,14 @@ function isSessionEvent(value: unknown): value is SessionV2Event {
   return typeof Reflect.get(properties, "sessionID") === "string"
 }
 
-function isGlobalEvent(value: unknown): value is GlobalEvent {
+// `/api/event` carries the payload in `data`; the reducers read it as `properties`.
+function streamEvent(value: unknown): SessionV2Event | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false
-  }
-
-  const payload = Reflect.get(value, "payload")
-  return !!payload && typeof payload === "object"
-}
-
-function globalPayloadEvent(value: unknown): SessionV2Event | undefined {
-  if (!isGlobalEvent(value)) {
     return undefined
   }
 
-  return isSessionEvent(value.payload) ? value.payload : undefined
-}
-
-function isMatchingDisposeEvent(value: unknown, directory: string | undefined): boolean {
-  if (!directory || !isGlobalEvent(value)) {
-    return false
-  }
-
-  if (value.directory !== directory) {
-    return false
-  }
-
-  return value.payload.type === "server.instance.disposed"
+  const event = { type: Reflect.get(value, "type"), properties: Reflect.get(value, "data") }
+  return isSessionEvent(event) ? event : undefined
 }
 
 // Events that prove the session started working on the current turn. Stream
@@ -431,7 +412,7 @@ function createLayer(input: StreamInput) {
         const events = yield* Scope.provide(scope)(
           Effect.acquireRelease(
             Effect.promise(() =>
-              input.sdk.global.event({
+              input.sdk.v2.event.subscribe({
                 signal: abort.signal,
               }),
             ),
@@ -1159,13 +1140,7 @@ function createLayer(input: StreamInput) {
                   return
                 }
 
-                if (isMatchingDisposeEvent(item, input.directory)) {
-                  yield* fail(new Error("instance disposed"))
-                  yield* closeScope()
-                  return
-                }
-
-                const event = globalPayloadEvent(item)
+                const event = streamEvent(item)
                 if (!event) {
                   return
                 }

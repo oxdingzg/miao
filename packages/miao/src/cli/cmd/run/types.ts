@@ -12,9 +12,13 @@
 //       → footer.ts queues commits and patches the footer view
 //         → OpenTUI split-footer renderer writes to terminal
 import type {
+  Agent,
+  Command,
+  McpResource,
   OpencodeClient,
   Part,
   PermissionRequest,
+  Provider,
   QuestionRequest,
   QuestionV2Answer,
   ToolPart,
@@ -35,9 +39,9 @@ export type RunPromptPart =
   | (Omit<Extract<Part, { type: "file" }>, "sessionID" | "messageID" | "id"> & { id?: string })
   | (Omit<Extract<Part, { type: "agent" }>, "sessionID" | "messageID" | "id"> & { id?: string })
 
-export type RunCommand = NonNullable<Awaited<ReturnType<OpencodeClient["command"]["list"]>>["data"]>[number]
+export type RunCommand = Command
 
-export type RunProvider = NonNullable<Awaited<ReturnType<OpencodeClient["provider"]["list"]>>["data"]>["all"][number]
+export type RunProvider = Provider
 
 export type RunPrompt = {
   messageID?: string
@@ -57,11 +61,9 @@ export type FooterQueuedPrompt = {
   prompt: RunPrompt
 }
 
-export type RunAgent = NonNullable<Awaited<ReturnType<OpencodeClient["app"]["agents"]>>["data"]>[number]
+export type RunAgent = Agent
 
-type RunResourceMap = NonNullable<Awaited<ReturnType<OpencodeClient["experimental"]["resource"]["list"]>>["data"]>
-
-export type RunResource = RunResourceMap[string]
+export type RunResource = McpResource
 
 export type RunInput = {
   sdk: OpencodeClient

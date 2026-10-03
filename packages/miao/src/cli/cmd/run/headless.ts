@@ -61,7 +61,7 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
   // The signal cancels the SSE read on shutdown. Without it the pending next()
   // keeps the generator busy, so iterator.return() waits for the next server
   // event — up to a heartbeat interval when the session has gone quiet.
-  const events = await client.event.subscribe(undefined, { signal: abort.signal })
+  const events = await client.v2.event.subscribe({ signal: abort.signal })
   const watching = watch()
 
   await applySelection(input)
@@ -274,10 +274,11 @@ async function context(client: OpencodeClient, sessionID: string): Promise<Sessi
   return result.data.data
 }
 
+// `/api/event` carries the payload in `data`.
 function asEvent(value: unknown) {
   const type = field(value, "type")
   if (typeof type !== "string") return undefined
-  return { type, properties: field(value, "properties") }
+  return { type, properties: field(value, "data") }
 }
 
 function field(value: unknown, key: string): unknown {

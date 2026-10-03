@@ -492,8 +492,8 @@ export const RunCommand = effectCmd({
           return directory ?? root
         }
 
-        const next = await sdk.path
-          .get()
+        const next = await sdk.v2.location
+          .path()
           .then((x) => x.data?.directory)
           .catch(() => undefined)
         if (next) {
@@ -534,9 +534,9 @@ export const RunCommand = effectCmd({
         if (!args.agent) return undefined
         const name = args.agent
 
-        const modes = await sdk.app
-          .agents(undefined, { throwOnError: true })
-          .then((x) => x.data ?? [])
+        const modes = await sdk.v2.agent
+          .list(undefined, { throwOnError: true })
+          .then((x) => x.data.data)
           .catch(() => undefined)
 
         if (!modes) {
@@ -548,7 +548,7 @@ export const RunCommand = effectCmd({
           return undefined
         }
 
-        const agent = modes.find((a) => a.name === name)
+        const agent = modes.find((a) => a.id === name)
         if (!agent) {
           UI.println(
             UI.Style.TEXT_WARNING_BOLD + "!",

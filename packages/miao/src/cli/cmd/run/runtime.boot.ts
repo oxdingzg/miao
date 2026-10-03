@@ -7,6 +7,7 @@
 // none block each other.
 import { Context, Effect, Layer } from "effect"
 import { resolve } from "@miao/tui/config"
+import { toProviderCatalog, toProviderList } from "@miao/tui/context/v2-adapters"
 import { TuiConfig } from "@/config/tui"
 import { makeRuntime } from "@/effect/run-service"
 import { reusePendingTask } from "./runtime.shared"
@@ -96,17 +97,17 @@ const layer = Layer.effect(
       model: RunInput["model"],
     ) {
       const connected = yield* Effect.promise(() =>
-        sdk.config
-          .providers({ directory })
-          .then((item) => item.data?.providers)
+        sdk.v2.config
+          .providers({ location: { directory } })
+          .then((item) => (item.data ? toProviderList(item.data.data).providers : undefined))
           .catch(() => undefined),
       )
       const providers = yield* Effect.promise(() =>
         connected
           ? Promise.resolve(connected)
-          : sdk.provider
-              .list()
-              .then((item) => item.data?.all ?? [])
+          : sdk.v2.config
+              .catalog({ location: { directory } })
+              .then((item) => (item.data ? toProviderCatalog(item.data.data).all : []))
               .catch(() => []),
       )
       const limits = Object.fromEntries(

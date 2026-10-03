@@ -74,6 +74,11 @@ function defer<T>() {
   return { promise, resolve }
 }
 
+// V2 location routes answer `{ location, data }`.
+function located<T>(data: T) {
+  return { location: { directory: "/tmp", project: { id: "project-1", directory: "/tmp" } }, data }
+}
+
 function ok<T>(data: T) {
   return Promise.resolve({
     data,
@@ -143,10 +148,10 @@ describe("run interactive runtime", () => {
     const providers = defer<void>()
 
     const sdk = new OpencodeClient()
-    spyOn(sdk.config, "providers").mockImplementation(async () => {
+    spyOn(sdk.v2.config, "providers").mockImplementation(async () => {
       providersStarted.resolve()
       await providers.promise
-      return ok({ providers: [provider], default: {} })
+      return ok(located({ providers: [provider], default: {} }))
     })
     spyOn(sdk.v2.session, "context").mockImplementation(() =>
       ok({
@@ -162,9 +167,9 @@ describe("run interactive runtime", () => {
     )
     spyOn(sdk.v2.session, "messages").mockImplementation(() => ok({ data: [], cursor: {} }))
     spyOn(sdk.v2.session, "get").mockRejectedValue(new Error("not needed"))
-    spyOn(sdk.app, "agents").mockImplementation(() => ok([]))
-    spyOn(sdk.experimental.resource, "list").mockImplementation(() => ok({}))
-    spyOn(sdk.command, "list").mockImplementation(() => ok([]))
+    spyOn(sdk.v2.agent, "list").mockImplementation(() => ok(located([])))
+    spyOn(sdk.v2.mcp, "resources").mockImplementation(() => ok(located({})))
+    spyOn(sdk.v2.command, "list").mockImplementation(() => ok(located([])))
 
     const task = runInteractiveMode(
       {
