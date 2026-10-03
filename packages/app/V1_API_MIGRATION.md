@@ -99,7 +99,7 @@ These calls are retained as fallback adapters. The current production path suppl
   - `src/context/file.tsx`
   - `src/pages/session/review-tab.tsx`
   - `src/pages/session/v2/review-panel-v2.tsx`
-- [ ] Migrate path discovery from `GET /path` to `GET /api/location`.
+- [x] Migrate path discovery from `GET /path` to `GET /api/path` (`4d01ae5e2`).
   - `src/components/dialog-select-directory.tsx`
   - `src/components/dialog-select-directory-v2.tsx`
   - Still `sdk.client.path.get`, and skipped entirely when the protocol is not `v1`.
@@ -197,7 +197,7 @@ These calls are retained as fallback adapters. The current production path suppl
 - [x] Migrate PTY creation, reads, updates, and deletion from `/pty` to `/api/pty`.
   - `src/context/terminal.tsx`
   - `src/components/terminal.tsx`
-- [ ] Migrate shell listing from `GET /pty/shells` to `GET /api/pty/shells` (miao serves no `/api/pty/shells`; the V1 call is still used behind `protocol === "v1"`).
+- [x] Migrate shell listing from `GET /pty/shells` to `GET /api/pty/shells` (`4d01ae5e2`).
   - `src/components/settings-general.tsx`
   - `src/components/settings-v2/general.tsx`
 - [x] Migrate connection tokens from `POST /pty/:ptyID/connect-token` to `POST /api/pty/:ptyID/connect-token`.
@@ -219,7 +219,7 @@ These are not V1 network requests, but they keep the UI coupled to V1 data contr
 - [ ] Remove the `@opencode-ai/sdk` runtime dependency after all legacy calls and types are gone.
   - `package.json`
 - [x] Replace the vendored `@opencode-ai/client` (`vendor/opencode-ai-client-1.17.13-v2.tgz`) with `@miao/client` (`430ebc357`).
-- [ ] Remove `detectServerProtocol` and every `protocol === "v1"` / `!== "v1"` branch.
+- [x] Remove `detectServerProtocol` and every `protocol === "v1"` / `!== "v1"` branch (`4d01ae5e2`).
   - `src/utils/server-protocol.ts`, `src/utils/terminal-websocket-url.ts`, `src/components/terminal.tsx`, settings and layout call sites
 
 ## Test Infrastructure
