@@ -12,12 +12,10 @@ function makeInput(opts?: { failSet?: boolean }) {
   const setCalls: Array<Record<string, unknown>> = []
   return {
     input: {
-      client: {
-        auth: {
-          set: async (req: Record<string, unknown>) => {
-            setCalls.push(req)
-            if (opts?.failSet) throw new Error("auth.set boom")
-          },
+      auth: {
+        set: async (providerID: string, auth: unknown) => {
+          setCalls.push({ providerID, auth })
+          if (opts?.failSet) throw new Error("auth.set boom")
         },
       },
     } as any,

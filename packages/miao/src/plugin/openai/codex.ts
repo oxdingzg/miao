@@ -1,4 +1,5 @@
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import type { Hooks } from "@opencode-ai/plugin"
+import type { InternalPluginInput } from "../auth-store"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import os from "os"
@@ -270,7 +271,10 @@ function waitForOAuthCallback(pkce: PkceCodes, state: string): Promise<TokenResp
   })
 }
 
-export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPluginOptions = {}): Promise<Hooks> {
+export async function CodexAuthPlugin(
+  input: InternalPluginInput,
+  options: CodexAuthPluginOptions = {},
+): Promise<Hooks> {
   const issuer = options.issuer ?? ISSUER
   const codexApiEndpoint = options.codexApiEndpoint ?? CODEX_API_ENDPOINT
   let websocketFetchInstalled = false
@@ -371,15 +375,12 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 refreshPromise = refreshAccessToken(currentAuth.refresh, issuer)
                   .then(async (tokens) => {
                     const accountId = extractAccountId(tokens) || authWithAccount.accountId
-                    await input.client.auth.set({
-                      providerID: "openai",
-                      auth: {
-                        type: "oauth",
-                        refresh: tokens.refresh_token,
-                        access: tokens.access_token,
-                        expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-                        ...(accountId && { accountId }),
-                      },
+                    await input.auth.set("openai", {
+                      type: "oauth",
+                      refresh: tokens.refresh_token,
+                      access: tokens.access_token,
+                      expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+                      ...(accountId && { accountId }),
                     })
                     return {
                       access: tokens.access_token,

@@ -380,6 +380,7 @@ describe("plugin.codex", () => {
       expires: 0,
     }
     const authUpdates: Array<{
+      providerID: string
       auth: { refresh: string; access: string; expires: number; accountId?: string }
     }> = []
     let resolveRefresh: (() => void) | undefined
@@ -420,20 +421,20 @@ describe("plugin.codex", () => {
 
     const hooks = await CodexAuthPlugin(
       {
-        client: {
-          auth: {
-            async set(input: { auth: { refresh: string; access: string; expires: number; accountId?: string } }) {
-              authUpdates.push(input)
-              auth = {
-                type: "oauth",
-                refresh: input.auth.refresh,
-                access: input.auth.access,
-                expires: input.auth.expires,
-                ...(input.auth.accountId && { accountId: input.auth.accountId }),
-              }
-            },
+        client: {} as never,
+        auth: {
+          async set(providerID: string, info: unknown) {
+            const next = info as { refresh: string; access: string; expires: number; accountId?: string }
+            authUpdates.push({ providerID, auth: next })
+            auth = {
+              type: "oauth",
+              refresh: next.refresh,
+              access: next.access,
+              expires: next.expires,
+              ...(next.accountId && { accountId: next.accountId }),
+            }
           },
-        } as never,
+        },
         project: {} as never,
         directory: "",
         worktree: "",

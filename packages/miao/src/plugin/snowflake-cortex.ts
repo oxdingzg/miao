@@ -1,4 +1,5 @@
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import type { Hooks } from "@opencode-ai/plugin"
+import type { InternalPluginInput } from "./auth-store"
 import { OAUTH_DUMMY_KEY } from "../auth"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { OauthCallbackPage } from "@miao/core/oauth/page"
@@ -263,7 +264,7 @@ function waitForOAuthCallback(account: string, pkce: PkceCodes, state: string): 
   })
 }
 
-export async function SnowflakeCortexAuthPlugin(_input: PluginInput): Promise<Hooks> {
+export async function SnowflakeCortexAuthPlugin(_input: InternalPluginInput): Promise<Hooks> {
   const prompts = [
     {
       type: "text" as const,
@@ -302,16 +303,13 @@ export async function SnowflakeCortexAuthPlugin(_input: PluginInput): Promise<Ho
             const tokens = await refreshAccessToken(oauth.accountId, oauth.refresh)
             const refreshedRefresh = tokens.refresh_token || oauth.refresh
             const refreshedExpires = Date.now() + (tokens.expires_in ?? 600) * 1000
-            await _input.client.auth
-              .set({
-                providerID: "snowflake-cortex",
-                auth: {
-                  type: "oauth",
-                  access: tokens.access_token,
-                  refresh: refreshedRefresh,
-                  expires: refreshedExpires,
-                  ...(oauth.accountId && { accountId: oauth.accountId }),
-                },
+            await _input.auth
+              .set("snowflake-cortex", {
+                type: "oauth",
+                access: tokens.access_token,
+                refresh: refreshedRefresh,
+                expires: refreshedExpires,
+                ...(oauth.accountId && { accountId: oauth.accountId }),
               })
               .catch(() => {})
           } catch {}
@@ -339,16 +337,13 @@ export async function SnowflakeCortexAuthPlugin(_input: PluginInput): Promise<Ho
                   .then(async (tokens) => {
                     const refreshedRefresh = tokens.refresh_token || refreshToken
                     const refreshedExpires = Date.now() + (tokens.expires_in ?? 600) * 1000
-                    await _input.client.auth
-                      .set({
-                        providerID: "snowflake-cortex",
-                        auth: {
-                          type: "oauth",
-                          access: tokens.access_token,
-                          refresh: refreshedRefresh,
-                          expires: refreshedExpires,
-                          ...(accountId && { accountId }),
-                        },
+                    await _input.auth
+                      .set("snowflake-cortex", {
+                        type: "oauth",
+                        access: tokens.access_token,
+                        refresh: refreshedRefresh,
+                        expires: refreshedExpires,
+                        ...(accountId && { accountId }),
                       })
                       .catch(() => {})
                     return {

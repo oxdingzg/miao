@@ -1,4 +1,5 @@
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import type { Hooks } from "@opencode-ai/plugin"
+import type { InternalPluginInput } from "./auth-store"
 import { OAUTH_DUMMY_KEY } from "../auth"
 import { InstallationVersion } from "@miao/core/installation/version"
 
@@ -202,7 +203,7 @@ interface RefreshResult {
   expires: number
 }
 
-export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOptions = {}): Promise<Hooks> {
+export async function XaiAuthPlugin(input: InternalPluginInput, options: XaiAuthPluginOptions = {}): Promise<Hooks> {
   return {
     auth: {
       provider: "xai",
@@ -250,15 +251,12 @@ export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOp
                     // the on-disk state stale but the in-memory result is still valid for
                     // this turn. The next live refresh against the stale disk state will
                     // 4xx and force re-login — a known cross-process limitation.
-                    await input.client.auth
-                      .set({
-                        providerID: "xai",
-                        auth: {
-                          type: "oauth",
-                          access: tokens.access_token,
-                          refresh: refreshedRefresh,
-                          expires: refreshedExpires,
-                        },
+                    await input.auth
+                      .set("xai", {
+                        type: "oauth",
+                        access: tokens.access_token,
+                        refresh: refreshedRefresh,
+                        expires: refreshedExpires,
                       })
                       .catch(() => {})
                     return { access: tokens.access_token, refresh: refreshedRefresh, expires: refreshedExpires }
