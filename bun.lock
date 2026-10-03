@@ -546,6 +546,7 @@
       "version": "0.0.35",
       "dependencies": {
         "@ai-sdk/provider": "3.0.8",
+        "@miao/schema": "workspace:*",
         "@miao/sdk": "workspace:*",
         "effect": "catalog:",
         "zod": "catalog:",

@@ -1,22 +1,5 @@
-import type {
-  AgentPart,
-  AssistantMessage,
-  MiaoClient,
-  Event,
-  FilePart,
-  LspStatus,
-  McpStatus,
-  Todo,
-  Part,
-  Provider,
-  PermissionRequest,
-  QuestionRequest,
-  Session,
-  SessionStatus,
-  TextPart,
-  UserMessage,
-  Config as SdkConfig,
-} from "@miao/sdk/v2"
+import type { AgentPart, AssistantMessage, FilePart, LspStatus, McpStatus, Todo, Part, Provider, PermissionRequest, QuestionRequest, Session, SessionStatus, TextPart, UserMessage, Config } from "@miao/schema/view-models"
+import type { MiaoClient, Event } from "@miao/sdk/v2"
 import type { CliRenderer, KeyEvent, RGBA, Renderable, SlotMode } from "@opentui/core"
 import type { Binding, Keymap } from "@opentui/keymap"
 import {
@@ -375,7 +358,7 @@ export type TuiKV = {
 
 export type TuiState = {
   readonly ready: boolean
-  readonly config: SdkConfig
+  readonly config: Config
   readonly provider: ReadonlyArray<Provider>
   readonly path: {
     state: string
@@ -418,7 +401,7 @@ type TuiAttentionConfigView = {
   sounds: Partial<Record<TuiAttentionSoundName, string>>
 }
 
-type TuiConfigView = Pick<PluginConfig, "$schema" | "plugin"> & {
+type TuiConfigView = Pick<Config, "$schema" | "plugins"> & {
   theme?: string
   scroll_speed?: number
   scroll_acceleration?: { enabled: boolean }
