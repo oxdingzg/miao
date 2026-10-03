@@ -65,6 +65,9 @@ class Model extends Schema.Class<Model>("ConfigV2.Model")({
 
 export class Info extends Schema.Class<Info>("ConfigV2.Provider")({
   name: Schema.String.pipe(Schema.optional),
+  disabled: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Hide this provider and its models, even when credentials for it exist",
+  }),
   env: Schema.String.pipe(Schema.Array, Schema.optional),
   api: ProviderV2.Api.pipe(Schema.optional),
   request: Request.pipe(Schema.optional),

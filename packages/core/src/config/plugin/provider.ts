@@ -52,6 +52,7 @@ export const Plugin = define({
             const providerID = id
             catalog.provider.update(providerID, (provider) => {
               if (item.name !== undefined) provider.name = item.name
+              if (item.disabled !== undefined) provider.disabled = item.disabled
               if (item.api !== undefined) provider.api = { ...item.api }
               if (item.request !== undefined) {
                 Object.assign(provider.request.headers, item.request.headers)

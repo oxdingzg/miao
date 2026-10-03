@@ -69,7 +69,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
       typeof plugin === "string" ? plugin : { package: plugin[0], options: plugin[1] },
     ),
     experimental: info.experimental?.policies && { policies: info.experimental.policies },
-    providers: providers(info.provider),
+    providers: providers(info.provider, info.disabled_providers),
   }
 }
 
@@ -164,9 +164,15 @@ function migrateMcp(info: ConfigMCPV1.Info) {
   }
 }
 
-function providers(info?: Readonly<Record<string, ConfigProviderV1.Info>>) {
-  if (!info) return undefined
-  return Object.fromEntries(Object.entries(info).map(([name, provider]) => [name, migrateProvider(provider)]))
+function providers(info?: Readonly<Record<string, ConfigProviderV1.Info>>, disabled?: ReadonlyArray<string>) {
+  if (!info && !disabled?.length) return undefined
+  const migrated = Object.fromEntries(
+    Object.entries(info ?? {}).map(([name, provider]) => [name, migrateProvider(provider)]),
+  )
+  return Object.fromEntries([
+    ...Object.entries(migrated),
+    ...(disabled ?? []).map((name) => [name, { ...migrated[name], disabled: true }] as const),
+  ])
 }
 
 function migrateProvider(info: ConfigProviderV1.Info) {

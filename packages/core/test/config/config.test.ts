@@ -97,6 +97,21 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("migrates disabled providers onto their V2 provider entries", () =>
+    Effect.sync(() => {
+      const migrated = Schema.decodeUnknownSync(Config.Info)(
+        ConfigMigrateV1.migrate(
+          Schema.decodeUnknownSync(ConfigV1.Info)({
+            provider: { custom: { name: "Custom" } },
+            disabled_providers: ["custom", "openai"],
+          }),
+        ),
+      )
+      expect(migrated.providers?.custom).toMatchObject({ name: "Custom", disabled: true })
+      expect(migrated.providers?.openai).toMatchObject({ disabled: true })
+    }),
+  )
+
   it.effect("migrates arbitrary v1 configuration into valid v2 configuration", () =>
     Effect.sync(() => {
       FastCheck.assert(
