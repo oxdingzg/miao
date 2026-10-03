@@ -91,7 +91,7 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { stdinPreview } from "../../util/stdin-preview"
 import { createTranscriptWindow } from "../../util/transcript-window"
-import { createDiffContextHighlighter } from "../../util/diff-context-highlight"
+import { createDiffHighlighter } from "../../util/diff-context-highlight"
 import { shellSegments } from "../../util/shell-highlight"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
@@ -2552,8 +2552,7 @@ function useDiffHighlighter(input: {
     ready: () => !current.loading,
     client: createMemo(() => {
       const text = current()
-      if (text === undefined) return undefined
-      return createDiffContextHighlighter({ patch: input.patch(), current: text })
+      return createDiffHighlighter({ patch: input.patch(), current: text })
     }),
   }
 }

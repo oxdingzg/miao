@@ -1048,6 +1048,12 @@ function getSyntaxRules(theme: Theme) {
       },
     },
     {
+      scope: ["diff.removed.text"],
+      style: {
+        foreground: theme.syntaxVariable,
+      },
+    },
+    {
       scope: ["diff.minus"],
       style: {
         foreground: theme.diffRemoved,

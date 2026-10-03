@@ -4,7 +4,8 @@ import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { createTwoFilesPatch } from "diff"
 import parsers from "../../../src/parsers-config"
-import { createDiffContextHighlighter } from "../../../src/util/diff-context-highlight"
+import { createDiffContextHighlighter, createDiffHighlighter } from "../../../src/util/diff-context-highlight"
+import { DEFAULT_THEMES, generateSyntax, resolveTheme } from "../../../src/theme"
 
 addDefaultParsers(parsers.parsers)
 
@@ -62,4 +63,44 @@ test("a rendered diff that opens inside a docstring highlights its code with fil
 test("without file context the same diff loses keyword highlighting after the docstring", async () => {
   const spans = await keywordSpans(undefined, 1500)
   expect(spans).not.toContain("if")
+}, 30000)
+
+test("deleted rows render in one foreground while added and context rows keep syntax colors", async () => {
+  const before = "def sample():\n    return 1\n"
+  const after = "def sample():\n    return 2\n"
+  const patch = createTwoFilesPatch("a.py", "a.py", before, after)
+  const removed = RGBA.fromHex("#f8f8f2")
+  const theme = resolveTheme(DEFAULT_THEMES.miao, "dark")
+  const style = generateSyntax(theme)
+  for (const view of ["unified", "split"] as const) {
+    for (const current of [after, undefined, "file changed since this patch"]) {
+      const app = await testRender(
+        () => (
+          <diff
+            diff={patch}
+            view={view}
+            filetype="python"
+            syntaxStyle={style}
+            treeSitterClient={createDiffHighlighter({ patch, current })}
+            width="100%"
+          />
+        ),
+        { width: 100, height: 20 },
+      )
+      try {
+        const deadline = Date.now() + 5000
+        while (Date.now() < deadline) {
+          await app.renderOnce()
+          if (app.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.equals(removed)))) break
+          await Bun.sleep(25)
+        }
+        const spans = app.captureSpans().lines.flatMap((line) => line.spans)
+        expect(spans.filter((span) => span.fg.equals(removed)).map((span) => span.text).join("")).toContain("return 1")
+        expect(spans.filter((span) => span.fg.equals(theme.syntaxKeyword)).map((span) => span.text.trim())).toContain("return")
+      } finally {
+        app.renderer.destroy()
+      }
+    }
+  }
+  style.destroy()
 }, 30000)
