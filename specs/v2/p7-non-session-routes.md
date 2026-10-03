@@ -123,7 +123,7 @@ protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/
 1. ~~**app 切到 `@miao/client`**~~：已完成（见上）。
 2. **补 V2 端点**（protocol 组 + server handler + `bun run generate`）：~~`pty.shells`~~、~~`project.update`~~、
    ~~`vcs.diff`~~、~~`fs.content`~~、~~`config.update`~~（见 `config-write.md`；`global.dispose` 已由配置写入后的位置
-   失效替代）已完成；剩 `workspace.reset`（及 app 里随之的 `instance.dispose`）。~~`project.initGit`~~ 与项目持久化已完成，见
+   失效替代）已完成；~~`workspace.reset`~~：工作树新建 / 删除 / 重置改走 `/api/worktree`（见 `project-worktree.md`），`instance.dispose` 由服务端释放位置取代。~~`project.initGit`~~ 与项目持久化已完成，见
    `project-persistence.md`。
    - **项目持久化下沉 core（删 V1 前必做）**：`ProjectTable` 的行目前只由 V1 `Project.fromDirectory` 完整维护
      （项目 ID 迁移、sandboxes、`time_initialized`），V2 只在建会话（`session-create.ts`）和改名时 insert-or-ignore。

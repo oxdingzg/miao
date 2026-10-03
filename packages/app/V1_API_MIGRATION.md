@@ -93,9 +93,9 @@ These calls are retained as fallback adapters. The current production path suppl
 
 ## Filesystem
 
-- [ ] Migrate file listing from `GET /file` to `GET /api/fs/list`.
+- [x] Migrate file listing from `GET /file` to `GET /api/fs/list` (gitignored entries are no longer marked).
   - `src/context/file.tsx`
-- [ ] Migrate file reads from `GET /file/content` to `GET /api/fs/content` (endpoint in progress).
+- [x] Migrate file reads from `GET /file/content` to `GET /api/fs/content`.
   - `src/context/file.tsx`
   - `src/pages/session/review-tab.tsx`
   - `src/pages/session/v2/review-panel-v2.tsx`
@@ -117,11 +117,11 @@ These calls are retained as fallback adapters. The current production path suppl
   - `src/components/edit-project.ts`
   - `src/pages/layout.tsx`
   - miao has no `PATCH /api/project/:projectID`; the V1 call is skipped when the protocol is not `v1`, so rename is a no-op on V2.
-- [ ] Migrate experimental worktree listing, creation, removal, and reset from `/experimental/worktree`.
+- [x] Migrate experimental worktree listing, creation, removal, and reset from `/experimental/worktree` to `/api/worktree`.
   - `src/pages/layout.tsx`
   - `src/components/prompt-input/submit.ts`
   - Listing now uses `GET /api/project/:projectID/directories`; create, removal, and reset remain (`/api/workspace` has create/remove, no reset).
-- [ ] Migrate instance disposal from `POST /instance/dispose`.
+- [x] Remove instance disposal (`POST /instance/dispose`); the server releases a worktree location before reset and removal.
   - `src/pages/layout.tsx`
 
 ## VCS
