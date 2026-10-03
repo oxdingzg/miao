@@ -131,7 +131,7 @@ test("ignores stale background MIAO checks after removing a WSL server", async (
   expect(controller.getState().opencodeChecks).toEqual({})
 })
 
-test("ignores stale startup Miao checks after removing a WSL server", async () => {
+test("ignores stale startup MIAO checks after removing a WSL server", async () => {
   persistedServers = [{ id: "wsl:Debian", distro: "Debian" }]
   releaseOpencodeResolve = undefined
   const controller = createWslServersController(
@@ -150,7 +150,7 @@ test("ignores stale startup Miao checks after removing a WSL server", async () =
   expect(controller.getState().opencodeChecks).toEqual({})
 })
 
-test("probes addable distros in parallel before checking Miao", async () => {
+test("probes addable distros in parallel before checking MIAO", async () => {
   persistedServers = []
   const started: string[] = []
   const release = new Map<string, () => void>()
