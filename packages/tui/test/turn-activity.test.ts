@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { lastOutputAt, turnActivity } from "../src/routes/session/activity"
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { Part } from "@miao/sdk/v2"
 
 const base = { id: "part", sessionID: "ses_test", messageID: "msg_assistant" }
 

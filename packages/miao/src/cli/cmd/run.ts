@@ -21,7 +21,7 @@ import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
-import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
+import { createMiaoClient, type MiaoClient, type ToolPart } from "@miao/sdk/v2"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
 
 type ModelInput = { providerID: string; modelID: string }
@@ -339,7 +339,7 @@ export const RunCommand = effectCmd({
         ? ServerAuth.headers({ password: args.password, username: args.username })
         : undefined
       const attachSDK = (dir?: string) => {
-        return createOpencodeClient({
+        return createMiaoClient({
           baseUrl: args.attach!,
           directory: dir,
           headers: attachHeaders,
@@ -427,7 +427,7 @@ export const RunCommand = effectCmd({
 
       // Session routes use V2; the V1 routes write the retired V1 tables, which
       // fail once a database has been compacted.
-      async function sessionV2(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
+      async function sessionV2(sdk: MiaoClient): Promise<SessionInfo | undefined> {
         const where = directory ?? root
         const pick = async (id: string) => {
           if (!args.fork) {
@@ -464,12 +464,12 @@ export const RunCommand = effectCmd({
       }
 
       // Sharing was removed; the interactive runtime still takes this hook.
-      async function share(_sdk: OpencodeClient, _sessionID: string) {}
+      async function share(_sdk: MiaoClient, _sessionID: string) {}
 
       // The selected agent and model are switched on the new session, which is
       // what a V2 prompt then runs with.
       async function createFreshSessionV2(
-        sdk: OpencodeClient,
+        sdk: MiaoClient,
         input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
       ): Promise<SessionInfo> {
         const created = await sdk.v2.session
@@ -487,7 +487,7 @@ export const RunCommand = effectCmd({
         return { id: created.id, title: name ?? created.title }
       }
 
-      async function current(sdk: OpencodeClient): Promise<string> {
+      async function current(sdk: MiaoClient): Promise<string> {
         if (!args.attach) {
           return directory ?? root
         }
@@ -530,7 +530,7 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function attachAgent(sdk: OpencodeClient) {
+      async function attachAgent(sdk: MiaoClient) {
         if (!args.agent) return undefined
         const name = args.agent
 
@@ -570,7 +570,7 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function pickAgent(sdk: OpencodeClient) {
+      async function pickAgent(sdk: MiaoClient) {
         if (!args.agent) return undefined
         if (args.attach) {
           return attachAgent(sdk)
@@ -579,7 +579,7 @@ export const RunCommand = effectCmd({
         return localAgent()
       }
 
-      async function execute(sdk: OpencodeClient) {
+      async function execute(sdk: MiaoClient) {
         const sess = await sessionV2(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
@@ -733,7 +733,7 @@ export const RunCommand = effectCmd({
         if (auth) headers.set("Authorization", auth)
         return Server.Default().app.fetch(new Request(request, { headers }))
       }) as typeof globalThis.fetch
-      const sdk = createOpencodeClient({
+      const sdk = createMiaoClient({
         baseUrl: "http://opencode.internal",
         fetch: fetchFn,
         directory,

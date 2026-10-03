@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import {
-  OpencodeClient,
+  MiaoClient,
   type PermissionV2Request,
   type QuestionV2Request,
   type SessionMessage,
-} from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
 import { createSessionTransport } from "@/cli/cmd/run/stream.transport"
 import type { FooterApi, FooterEvent, LocalReplayRow, RunFilePart, StreamCommit } from "@/cli/cmd/run/types"
 
@@ -299,7 +299,7 @@ function sdk(
     shell?: (params: unknown) => Promise<unknown>
   } = {},
 ) {
-  const client = new OpencodeClient()
+  const client = new MiaoClient()
   const calls: Calls = { prompt: [], command: [], shell: [], agent: [], model: [] }
   const session = client.v2.session
   const stub = (target: object, name: string, impl: (...args: never[]) => unknown) => {

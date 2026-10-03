@@ -7,9 +7,9 @@ import type {
   Message,
   Part,
   Config as SDKConfig,
-} from "@opencode-ai/sdk/v2"
-import type { PermissionV2Request } from "@opencode-ai/sdk/v2"
-import type { Provider as ProviderV2, Model as ModelV2, Auth, createOpencodeClient } from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
+import type { PermissionV2Request } from "@miao/sdk/v2"
+import type { Provider as ProviderV2, Model as ModelV2, Auth, createMiaoClient } from "@miao/sdk/v2"
 
 import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
@@ -55,10 +55,10 @@ export type WorkspaceAdapter = {
 export type PluginInput = {
   /**
    * Client for the running server, generated from its current API (the
-   * `@opencode-ai/sdk/v2` shape: flat parameters such as
+   * `@miao/sdk/v2` shape: flat parameters such as
    * `auth.set({ providerID, auth })`). Session work belongs on `client.v2.session`.
    */
-  client: ReturnType<typeof createOpencodeClient>
+  client: ReturnType<typeof createMiaoClient>
   project: Project
   directory: string
   worktree: string
@@ -78,8 +78,8 @@ export type Config = Omit<SDKConfig, "plugin"> & {
 /**
  * @deprecated V1 plugin entry point. V2 sessions (the default runtime) do not load
  * V1 plugins, so none of their `Hooks` run there; configuring one logs a one-time
- * warning. Write a V2 plugin with `define` from `@opencode-ai/plugin/v2/promise` or
- * `@opencode-ai/plugin/v2/effect` instead.
+ * warning. Write a V2 plugin with `define` from `@miao/plugin/v2/promise` or
+ * `@miao/plugin/v2/effect` instead.
  */
 export type Plugin = (input: PluginInput, options?: PluginOptions) => Promise<Hooks>
 
@@ -232,7 +232,7 @@ export type AuthOuathResult = AuthOAuthResult
 /**
  * @deprecated V1 hooks. Third-party hooks are not triggered by V2 sessions.
  *
- * V2 equivalents (`PluginContext` from `@opencode-ai/plugin/v2/*`):
+ * V2 equivalents (`PluginContext` from `@miao/plugin/v2/*`):
  * - `tool.execute.before` / `tool.execute.after` / `tool.definition` -> `ctx.tool.before` / `ctx.tool.after` / `ctx.tool.definition`
  * - `tool` -> `ctx.tool.register`, or a `{tool,tools}/*.ts` file in a config directory
  * - `auth` / `provider` -> `ctx.integration` and `ctx.catalog`

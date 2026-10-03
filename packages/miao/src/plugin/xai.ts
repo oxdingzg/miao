@@ -1,4 +1,4 @@
-import type { Hooks } from "@opencode-ai/plugin"
+import type { Hooks } from "@miao/plugin"
 import type { InternalPluginInput } from "./auth-store"
 import { OAUTH_DUMMY_KEY } from "../auth"
 import { InstallationVersion } from "@miao/core/installation/version"

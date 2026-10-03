@@ -1,6 +1,6 @@
 # V1 API Migration Checklist
 
-The app is currently hybrid. In this document, V1 refers to the legacy unprefixed server APIs used by `@opencode-ai/sdk/v2`, despite the SDK package name.
+The app is currently hybrid. In this document, V1 refers to the legacy unprefixed server APIs used by `@miao/sdk/v2`, despite the SDK package name.
 
 > Re-audited against the code on 2026-10-03 (see `specs/v2/p7-non-session-routes.md`). Two corrections to earlier ticks:
 >
@@ -216,7 +216,7 @@ These are not V1 network requests, but they keep the UI coupled to V1 data contr
 - [ ] Replace current agent, provider, and model adapters to legacy SDK structures.
   - `src/context/global-sync/utils.ts`
 - [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`, `Project`, `FileNode`, `FileDiffInfo`, and `Event` types throughout app state and rendering.
-- [ ] Remove the `@opencode-ai/sdk` runtime dependency after all legacy calls and types are gone.
+- [ ] Remove the `@miao/sdk` runtime dependency after all legacy calls and types are gone.
   - `package.json`
 - [x] Replace the vendored `@opencode-ai/client` (`vendor/opencode-ai-client-1.17.13-v2.tgz`) with `@miao/client` (`430ebc357`).
 - [x] Remove `detectServerProtocol` and every `protocol === "v1"` / `!== "v1"` branch (`4d01ae5e2`).

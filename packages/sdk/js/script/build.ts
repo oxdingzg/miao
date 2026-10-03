@@ -9,9 +9,16 @@ import path from "path"
 
 import { createClient } from "@hey-api/openapi-ts"
 
-const opencode = path.resolve(dir, "../../miao")
+const miao = path.resolve(dir, "../../miao")
 
-await $`bun dev generate > ${dir}/openapi.json`.cwd(opencode)
+// The CLI imports this SDK while exporting OpenAPI. Bootstrap a missing or
+// pre-rename client from the committed contract before asking the CLI for the live one.
+const generatedClient = Bun.file(path.join(dir, "src/v2/gen/sdk.gen.ts"))
+if (!(await generatedClient.exists()) || !(await generatedClient.text()).includes("export class MiaoClient")) {
+  await generate(path.join(dir, "../openapi.json"))
+}
+
+await $`bun dev generate > ${dir}/openapi.json`.cwd(miao)
 
 const document = (await Bun.file("./openapi.json").json()) as {
   components?: { schemas?: Record<string, unknown> }
@@ -44,32 +51,7 @@ if (schemas) {
   await Bun.write("./openapi.json", JSON.stringify(document))
 }
 
-await createClient({
-  input: "./openapi.json",
-  output: {
-    path: "./src/v2/gen",
-    tsConfigPath: path.join(dir, "tsconfig.json"),
-    clean: true,
-  },
-  plugins: [
-    {
-      name: "@hey-api/typescript",
-      exportFromIndex: false,
-    },
-    {
-      name: "@hey-api/sdk",
-      instance: "OpencodeClient",
-      exportFromIndex: false,
-      auth: false,
-      paramsStructure: "flat",
-    },
-    {
-      name: "@hey-api/client-fetch",
-      exportFromIndex: false,
-      baseUrl: "http://localhost:4096",
-    },
-  ],
-})
+await generate("./openapi.json")
 
 const generatedTypes = await Bun.file("./src/v2/gen/types.gen.ts").text()
 if (/export type SessionNext\w+1 =/.test(generatedTypes)) {
@@ -131,3 +113,32 @@ await $`bun prettier --write src/v2`
 await $`rm -rf dist`
 await $`bun run build:types`
 await $`rm openapi.json`
+
+async function generate(input: string) {
+  return createClient({
+    input,
+    output: {
+      path: "./src/v2/gen",
+      tsConfigPath: path.join(dir, "tsconfig.json"),
+      clean: true,
+    },
+    plugins: [
+      {
+        name: "@hey-api/typescript",
+        exportFromIndex: false,
+      },
+      {
+        name: "@hey-api/sdk",
+        instance: "MiaoClient",
+        exportFromIndex: false,
+        auth: false,
+        paramsStructure: "flat",
+      },
+      {
+        name: "@hey-api/client-fetch",
+        exportFromIndex: false,
+        baseUrl: "http://localhost:4096",
+      },
+    ],
+  })
+}

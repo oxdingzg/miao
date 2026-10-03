@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin/tool"
+import { tool } from "@miao/plugin/tool"
 
 // Default export: registered under the file name, `greet`.
 export default tool({

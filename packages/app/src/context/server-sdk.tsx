@@ -1,5 +1,5 @@
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
-import type { Event } from "@opencode-ai/sdk/v2/client"
+import type { Event } from "@miao/sdk/v2/client"
 import { createSimpleContext } from "@miao/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"

@@ -8,7 +8,7 @@ import { Dialog } from "@miao/ui/dialog"
 import { List } from "@miao/ui/list"
 import { showToast } from "@/utils/toast"
 import { extractPromptFromParts } from "@/utils/prompt"
-import type { TextPart as SDKTextPart } from "@opencode-ai/sdk/v2/client"
+import type { TextPart as SDKTextPart } from "@miao/sdk/v2/client"
 import { base64Encode } from "@miao/core/util/encode"
 import { useLanguage } from "@/context/language"
 

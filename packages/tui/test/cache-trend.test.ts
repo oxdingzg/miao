@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage } from "@miao/sdk/v2"
 import { cacheTrend } from "../src/util/cache-trend"
 
 /** A turn whose input is `read` cached tokens plus `fresh` uncached ones. */

@@ -1,6 +1,6 @@
-import type { Hooks } from "@opencode-ai/plugin"
+import type { Hooks } from "@miao/plugin"
 import type { InternalPluginInput } from "./auth-store"
-import type { Model } from "@opencode-ai/sdk/v2"
+import type { Model } from "@miao/sdk/v2"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { OauthCallbackPage } from "@miao/core/oauth/page"
 import { createServer } from "http"

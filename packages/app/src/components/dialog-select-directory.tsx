@@ -9,7 +9,7 @@ import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { cleanPickerInput, createDirectorySearch, displayPickerPath } from "./directory-picker-domain"
-import type { LocationPath } from "@opencode-ai/sdk/v2/client"
+import type { LocationPath } from "@miao/sdk/v2/client"
 
 interface DialogSelectDirectoryProps {
   title?: string

@@ -4,7 +4,7 @@ import type {
   PermissionRequest,
   Project,
   Provider,
-} from "@opencode-ai/sdk/v2/client"
+} from "@miao/sdk/v2/client"
 import type { AgentsListOutput, ModelsDefaultOutput, ModelsListOutput, ProvidersListOutput } from "@miao/client"
 import type { PermissionV2Request, Project as CurrentProject, ProviderListResponse } from "@/utils/server"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"

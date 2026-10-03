@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { OpencodeClient } from "@opencode-ai/sdk/v2"
+import { MiaoClient } from "@miao/sdk/v2"
 import { runInteractiveMode } from "@/cli/cmd/run/runtime"
 import type { FooterApi, RunProvider } from "@/cli/cmd/run/types"
 
 type SessionMessage = NonNullable<
-  Awaited<ReturnType<OpencodeClient["v2"]["session"]["context"]>>["data"]
+  Awaited<ReturnType<MiaoClient["v2"]["session"]["context"]>>["data"]
 >["data"][number]
 
 const provider: RunProvider = {
@@ -147,7 +147,7 @@ describe("run interactive runtime", () => {
     const providersStarted = defer<void>()
     const providers = defer<void>()
 
-    const sdk = new OpencodeClient()
+    const sdk = new MiaoClient()
     spyOn(sdk.v2.config, "providers").mockImplementation(async () => {
       providersStarted.resolve()
       await providers.promise

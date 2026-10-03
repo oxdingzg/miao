@@ -13,7 +13,7 @@
 
 **miao 是一个开源 AI 编程代理，让你在终端里完成真实工程任务，也看清任务消耗了多少时间和费用。** 使用你选择的模型，让代理理解仓库、修改代码、执行命令并验证结果。
 
-miao 基于 [opencode](https://github.com/anomalyco/opencode)，把重点放在模型周围的工程能力上：**上下文效率、持久化会话、代理协作，以及长任务的执行控制。** 目标是用更少的等待、更少浪费的 token，得到同样有用的结果。
+miao 把重点放在模型周围的工程能力上：**上下文效率、持久化会话、代理协作，以及长任务的执行控制。** 目标是用更少的等待、更少浪费的 token，得到同样有用的结果。
 
 ## 为什么选择 miao
 
@@ -195,4 +195,4 @@ cd packages/miao
 bun typecheck
 ```
 
-miao 是基于 opencode 的 MIT 许可衍生作品，独立开发与发布，与 OpenCode 团队无隶属关系，也未获得其背书。详见 [LICENSE](LICENSE)。
+miao 采用 MIT 许可证。详见 [LICENSE](LICENSE)。

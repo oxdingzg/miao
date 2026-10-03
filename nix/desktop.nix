@@ -44,17 +44,18 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   desktopItems = lib.optional stdenv.hostPlatform.isLinux (makeDesktopItem {
-    name = "ai.opencode.desktop";
-    desktopName = "OpenCode";
+    name = "ai.miao.desktop";
+    desktopName = "miao";
     exec = "miao-desktop %U";
-    icon = "ai.opencode.desktop";
-    # Electron 41 derives X11 WM_CLASS from app.name.
-    startupWMClass = "OpenCode";
+    icon = "ai.miao.desktop";
+    # Match the Linux identity configured by electron-builder.
+    startupWMClass = "ai.miao.desktop";
     categories = [ "Development" ];
   });
 
   env = miao.env // {
     ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
+    MIAO_CHANNEL = "prod";
   };
 
   postPatch =
@@ -104,24 +105,24 @@ stdenv.mkDerivation (finalAttrs: {
   + lib.optionalString stdenv.hostPlatform.isDarwin ''
     mkdir -p $out/Applications
     mv dist/mac*/*.app $out/Applications
-    makeWrapper "$out/Applications/OpenCode.app/Contents/MacOS/OpenCode" $out/bin/opencode-desktop
+    makeWrapper "$out/Applications/miao.app/Contents/MacOS/miao" $out/bin/miao-desktop
   ''
   + lib.optionalString stdenv.hostPlatform.isLinux ''
-    mkdir -p $out/opt/opencode-desktop
-    cp -r dist/linux*-unpacked/{resources,LICENSE*} $out/opt/opencode-desktop
+    mkdir -p $out/opt/miao-desktop
+    cp -r dist/linux*-unpacked/{resources,LICENSE*} $out/opt/miao-desktop
     install -Dm644 resources/icons/32x32.png \
-      "$out/share/icons/hicolor/32x32/apps/ai.opencode.desktop.png"
+      "$out/share/icons/hicolor/32x32/apps/ai.miao.desktop.png"
     install -Dm644 resources/icons/64x64.png \
-      "$out/share/icons/hicolor/64x64/apps/ai.opencode.desktop.png"
+      "$out/share/icons/hicolor/64x64/apps/ai.miao.desktop.png"
     install -Dm644 resources/icons/128x128.png \
-      "$out/share/icons/hicolor/128x128/apps/ai.opencode.desktop.png"
+      "$out/share/icons/hicolor/128x128/apps/ai.miao.desktop.png"
     install -Dm644 resources/icons/128x128@2x.png \
-      "$out/share/icons/hicolor/256x256/apps/ai.opencode.desktop.png"
+      "$out/share/icons/hicolor/256x256/apps/ai.miao.desktop.png"
     install -Dm644 resources/icons/icon.png \
-      "$out/share/icons/hicolor/512x512/apps/ai.opencode.desktop.png"
-    install -Dm644 resources/ai.opencode.desktop.metainfo.xml \
-      "$out/share/metainfo/ai.opencode.desktop.metainfo.xml"
-    makeWrapper ${lib.getExe electron} $out/bin/opencode-desktop \
+      "$out/share/icons/hicolor/512x512/apps/ai.miao.desktop.png"
+    install -Dm644 resources/ai.miao.desktop.metainfo.xml \
+      "$out/share/metainfo/ai.miao.desktop.metainfo.xml"
+    makeWrapper ${lib.getExe electron} $out/bin/miao-desktop \
      --inherit-argv0 \
      --set ELECTRON_FORCE_IS_PACKAGED 1 \
      --add-flags $out/opt/miao-desktop/resources/app.asar \
@@ -136,8 +137,8 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   meta = {
-    description = "OpenCode Desktop App";
+    description = "miao Desktop App";
     mainProgram = "miao-desktop";
-    inherit (opencode.meta) homepage license platforms;
+    inherit (miao.meta) homepage license platforms;
   };
 })

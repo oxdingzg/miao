@@ -5677,12 +5677,10 @@ export type ConfigV2Remote = {
   }
 }
 
-export type PolicyEffect = "allow" | "deny"
-
 export type ConfigV2ExperimentalPolicy = {
-  action: "provider.use"
-  effect: PolicyEffect
+  effect: "allow" | "deny"
   resource: string
+  action: "provider.use"
 }
 
 export type BadRequestError = {

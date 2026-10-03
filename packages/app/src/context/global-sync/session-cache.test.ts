@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { FileDiffInfo } from "@/utils/server"
-import type { Message, Part, PermissionRequest, QuestionRequest, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, PermissionRequest, QuestionRequest, SessionStatus, Todo } from "@miao/sdk/v2/client"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
 
 const msg = (id: string, sessionID: string) =>

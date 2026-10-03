@@ -96,14 +96,14 @@ V1 仍挂 16 个组。清点生产调用方后分四类（逐条证据见下）�
 
 ## 旧 SDK 与插件 API 的连带影响
 
-- `miao generate` → `PublicApi` 生成 OpenAPI → `packages/sdk/js` 生成 `@opencode-ai/sdk/v2`。实测：只留 V2 后
+- `miao generate` → `PublicApi` 生成 OpenAPI → `packages/sdk/js` 生成 `@miao/sdk/v2`。实测：只留 V2 后
   重新生成，根命名空间方法（`client.config.*`、`client.global.*` 等）和只被 V1 路由引用的类型一起消失，
   tui 61、miao 128、cli 49、plugin 11、session-ui 9 处类型错误。错误大多是**类型**（`Config`、`Provider`、
   `Model`、`Agent`、`Command`、`Workspace`、`Path`、`FileContent`、`VcsFileDiff`、`LspStatus`、`McpStatus`、
   `GlobalEvent`、`ProviderAuthMethod`、`Auth` …），不是调用。
 - 方案：把这些类型对应的 Schema 加进 `PublicApi` 的 `HttpApi.AdditionalSchemas`，生成器照常产出类型；
   路由方法随路由消失。这样第 1 层不必改写各包的类型 import；类型改从 `@miao/client` 取留待以后。
-- **插件 `client`**（`plugin/index.ts:151`，`createOpencodeClient`）的根命名空间同时消失。仓内插件只用到
+- **插件 `client`**（`plugin/index.ts:151`，`createMiaoClient`）的根命名空间同时消失。仓内插件只用到
   `auth.set`（见 C.1）；第三方插件若调用 `client.config.get`、`client.tui.*`、`client.app.log` 等会失效——
   这是插件 API 的破坏性变更。`client.v2.*` 不受影响。
 - `/doc` 改为输出只含 V2 的文档（`PublicApi` 本身变成只含 V2）。

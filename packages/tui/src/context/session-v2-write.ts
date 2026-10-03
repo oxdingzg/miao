@@ -1,5 +1,5 @@
 import path from "node:path"
-import type { PromptInput } from "@opencode-ai/sdk/v2"
+import type { PromptInput } from "@miao/sdk/v2"
 
 type PromptPartLike = {
   readonly type: string

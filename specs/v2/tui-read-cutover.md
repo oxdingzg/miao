@@ -12,11 +12,11 @@ surface. It must not leave the daily TUI half-switched.
 
 ## Current state (verified)
 
-- The TUI talks to the legacy SDK (`@opencode-ai/sdk`): `sdk.client.session.*`, `config.providers`,
+- The TUI talks to the legacy SDK (`@miao/sdk`): `sdk.client.session.*`, `config.providers`,
   `provider.list`, `app.agents`, `command.list`, `lsp.status`, and per-session message/event sync
   in `packages/tui/src/context/sync.tsx`. Messages come from `sync.data.message[sessionID]`.
 - It builds its own screen from the V1 session route `packages/tui/src/routes/session/index.tsx`.
-- A separate V2 client exists at `@opencode-ai/sdk/v2` with `createOpencodeClient`.
+- A separate V2 client exists at `@miao/sdk/v2` with `createMiaoClient`.
 - V2 read semantics (just landed): a `legacy` (never projected) or `mixed` session is **readable**
   through `session.context` (mapped from `message`/`part`), but **continuing** it
   (`session.prompt`) fails with `Session.LegacyNotMigratedError` until `miao db backfill` runs.
@@ -26,7 +26,7 @@ surface. It must not leave the daily TUI half-switched.
 - **Flag**: `MIAO_TUI_V2` now defaults to on (V2 read and write); set `MIAO_TUI_V2=0` to fall back to
   the V1 read/write path. It started default-off for the read slice and was flipped on with the
   Stage 4 write flip.
-- **Client**: when the flag is set, create a V2 client (`@opencode-ai/sdk/v2`) for the same server
+- **Client**: when the flag is set, create a V2 client (`@miao/sdk/v2`) for the same server
   URL alongside the legacy one.
 - **Messages**: for the open session, read `v2.session.context({ sessionID })` for the projected
   message list and subscribe to `v2.session.events({ sessionID })` for live updates, in place of

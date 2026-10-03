@@ -1,4 +1,4 @@
-import type { Message } from "@opencode-ai/sdk/v2"
+import type { Message } from "@miao/sdk/v2"
 import { expect, test } from "bun:test"
 import type { PendingPrompt } from "../src/context/pending-prompts"
 import { createPendingPrompts } from "../src/context/pending-prompts"

@@ -35,7 +35,7 @@ await Bun.file(`./dist/${pkg.name}/package.json`).write(
       bin: { miao: "./bin/miao" },
       version,
       license: pkg.license,
-      repository: { type: "git", url: "git+https://github.com/anomalyco/opencode.git" },
+      repository: { type: "git", url: "git+https://github.com/oxdingzg/miao.git" },
       os: ["darwin", "linux", "win32"],
       cpu: ["arm64", "x64"],
       optionalDependencies: binaries,

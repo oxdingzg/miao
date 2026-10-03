@@ -2,14 +2,14 @@ import type { AgentsListInput, AgentsListOutput, CommandsListInput, CommandsList
 import type { CatalogApi, CommandInfo, ProviderAuthResponse, SessionApi } from "@/utils/server"
 import type {
   Config,
-  OpencodeClient,
+  MiaoClient,
   LocationPath,
   PermissionRequest,
   Project,
   QuestionRequest,
   ReferenceInfo,
   Session,
-} from "@opencode-ai/sdk/v2/client"
+} from "@miao/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@miao/core/util/path"
 import { retry } from "@miao/core/util/retry"
@@ -127,7 +127,7 @@ export const loadProjectsQuery = (scope: ServerScope, api: ProjectApi) =>
   })
 
 export async function bootstrapGlobal(input: {
-  serverSDK: OpencodeClient
+  serverSDK: MiaoClient
   serverAPI: CatalogApi & { readonly projects: ProjectApi; readonly config: ConfigApi; readonly location: PathApi }
   scope: ServerScope
   requestFailedTitle: string
@@ -281,7 +281,7 @@ export async function bootstrapDirectory(input: {
   directory: string
   scope: ServerScope
   mcp: boolean
-  sdk: OpencodeClient
+  sdk: MiaoClient
   api: CatalogApi & {
     readonly agents: AgentListApi
     readonly commands: CommandListApi

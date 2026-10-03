@@ -1,6 +1,6 @@
 # P7 — 非会话旧路由迁 `/api/*`
 
-状态：进行中（2026-10-02 开始，2026-10-03 按代码重新盘点）。目标：让 TUI / app / CLI 完全脱离 V1 无前缀路由与 `@opencode-ai/sdk`，
+状态：进行中（2026-10-02 开始，2026-10-03 按代码重新盘点）。目标：让 TUI / app / CLI 完全脱离 V1 无前缀路由与 `@miao/sdk`，
 使发布二进制的 server 能切到 `packages/server` 的 V2-only assembly，只剩 CLI 外壳。
 
 ## 已完成
@@ -86,7 +86,7 @@ console 组织切换整体删除（2026-10-03，用户决定不迁移）：TUI �
 
 ### app：两层问题
 
-**1. 仍调 legacy SDK（`sdk().client.*`，`@opencode-ai/sdk/v2` → 无前缀 V1 路由）**
+**1. 仍调 legacy SDK（`sdk().client.*`，`@miao/sdk/v2` → 无前缀 V1 路由）**
 
 | 调用 | 位置 | V2 现状 |
 | --- | --- | --- |
@@ -134,8 +134,8 @@ protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/
    插件页签与旧版布局的服务器列表不再只在 V1 下显示。
 4. **TUI console**：决定 console/org 切换是迁 V2 还是删除（上游 console 服务 fork 不用，倾向删除）。
 5. **服务端拆除**：见下节。
-6. app 类型层：`@opencode-ai/sdk` 的 `Session`/`Message`/`Part` 等类型与 V1 事件兼容层替换为 `@miao/client` 类型
-   （见 `V1_API_MIGRATION.md` 的 Legacy Types 一节），最后移除 `@opencode-ai/sdk` 依赖。
+6. app 类型层：`@miao/sdk` 的 `Session`/`Message`/`Part` 等类型与 V1 事件兼容层替换为 `@miao/client` 类型
+   （见 `V1_API_MIGRATION.md` 的 Legacy Types 一节），最后移除 `@miao/sdk` 依赖。
 
 ## 服务端拆除（P7 收尾，P4 之前或并行）
 

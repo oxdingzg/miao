@@ -11,11 +11,11 @@ import type { McpResource, McpStatus, ProviderAuthResponse } from "@/utils/serve
 import type {
   Config,
   LspStatus,
-  OpencodeClient,
+  MiaoClient,
   LocationPath,
   Project,
   SessionStatus,
-} from "@opencode-ai/sdk/v2/client"
+} from "@miao/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@miao/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -174,9 +174,9 @@ export function seedActiveSessionStatuses(
 
 function makeQueryOptionsApi(
   scope: ServerScope,
-  serverSDK: () => OpencodeClient,
+  serverSDK: () => MiaoClient,
   serverAPI: ServerApi,
-  sdkFor: (dir: PathKey) => OpencodeClient,
+  sdkFor: (dir: PathKey) => MiaoClient,
 ) {
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverAPI.config),
@@ -199,7 +199,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const owner = getOwner()
   if (!owner) throw new Error("ServerSync must be created within owner")
 
-  const sdkCache = new Map<string, OpencodeClient>()
+  const sdkCache = new Map<string, MiaoClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
   const sessionMeta = new Map<string, { limit: number }>()

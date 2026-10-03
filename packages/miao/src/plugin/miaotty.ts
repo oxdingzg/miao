@@ -1,5 +1,5 @@
-import type { Event } from "@opencode-ai/sdk/v2"
-import type { Hooks, Plugin } from "@opencode-ai/plugin"
+import type { Event } from "@miao/sdk/v2"
+import type { Hooks, Plugin } from "@miao/plugin"
 
 // miao-term's terminal, mtty (named miaotty up to v0.0.5), spawns every pane
 // with MTTY_PANE_ID and MTTY_CLI set (and, during the rename, the MIAOTTY_*

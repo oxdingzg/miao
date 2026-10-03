@@ -1,6 +1,6 @@
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
 import type { FileDiffInfo } from "@/utils/server"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message } from "@miao/sdk/v2/client"
 
 type Diff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
 

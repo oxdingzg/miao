@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@miao/sdk/v2/client"
 import { Avatar } from "@miao/ui/avatar"
 import { Icon } from "@miao/ui/icon"
 import { Icon as IconV2 } from "@miao/ui/v2/icon"

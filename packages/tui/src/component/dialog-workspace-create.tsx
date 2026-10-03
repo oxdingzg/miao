@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceAdapterEntry } from "@opencode-ai/sdk/v2"
+import type { Workspace, WorkspaceAdapterEntry } from "@miao/sdk/v2"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { useSync } from "../context/sync"

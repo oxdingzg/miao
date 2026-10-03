@@ -1,4 +1,4 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { createMiaoClient } from "@miao/sdk/v2"
 // The core session module drags in the database; the TUI thread only needs the ID schema.
 import { SessionSchema } from "@miao/core/session/schema"
 import { Schema } from "effect"
@@ -21,7 +21,7 @@ export async function validateSession(input: {
     throw new Error(`Invalid session ID: ${error instanceof Error ? error.message : "unknown error"}`, { cause: error })
   }
 
-  const result = await createOpencodeClient({
+  const result = await createMiaoClient({
     baseUrl: input.url,
     directory: input.directory,
     fetch: input.fetch,

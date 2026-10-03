@@ -3,7 +3,7 @@
 // Reads the V2 session transcript and extracts user turn text for the prompt
 // history ring. Also finds the most recently used variant for the current
 // model so the footer can pre-select it.
-import type { Message, Part } from "@opencode-ai/sdk/v2"
+import type { Message, Part } from "@miao/sdk/v2"
 import { promptCopy, promptSame } from "./prompt.shared"
 import { loadTranscript, transcriptMessages } from "./session-v2"
 import type { RunInput, RunPrompt } from "./types"

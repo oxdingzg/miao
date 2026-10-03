@@ -1,7 +1,7 @@
 export * as ToolPlugins from "./plugins"
 
 import { ToolFailure } from "@miao/llm"
-import type { ToolDefinition as PluginToolDefinition } from "@opencode-ai/plugin/tool"
+import type { ToolDefinition as PluginToolDefinition } from "@miao/plugin/tool"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import type { State } from "../state"

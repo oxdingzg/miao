@@ -8,13 +8,13 @@
 
 ## 1. What miao helps you do
 
-miao is an open-source coding agent with a terminal UI, HTTP server, and browser interface. It builds on [opencode](https://github.com/anomalyco/opencode) and focuses on the work around model calls: durable sessions, context efficiency, collaboration, and visible cost.
+miao is an open-source coding agent with a terminal UI, HTTP server, and browser interface. It focuses on the work around model calls: durable sessions, context efficiency, collaboration, and visible cost.
 
-Use it to explore a repository, implement a change, investigate a failing test, or delegate focused research. Connect the providers you prefer, configure project tools, and continue the conversation as the task evolves. Model selection and MCP are part of the inherited workflow; miao's runtime work is described in the [overview](../README.md) and [availability comparison](miao-vs-opencode.en.md).
+Use it to explore a repository, implement a change, investigate a failing test, or delegate focused research. Connect the providers you prefer, configure project tools, and continue the conversation as the task evolves. Model selection and MCP are part of the workflow; miao's runtime work is described in the [overview](../README.md) and [availability comparison](miao-vs-opencode.en.md).
 
 A useful first task is: “Find the cause of this failure, make the smallest appropriate fix, run the relevant checks, and explain the diff.” Add constraints while the agent works rather than starting a second conversation.
 
-miao is independently developed under the MIT License and is not affiliated with or endorsed by the OpenCode team. This guide describes the current checkout; installed releases may lag source changes.
+miao is developed under the MIT License. This guide describes the current checkout; installed releases may lag source changes.
 
 ## 2. Install and upgrade
 

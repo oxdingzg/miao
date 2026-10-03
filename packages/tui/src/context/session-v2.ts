@@ -1,5 +1,5 @@
-import type { Part, SessionMessage } from "@opencode-ai/sdk/v2"
-import type { TuiTranscriptMessage } from "@opencode-ai/plugin/tui"
+import type { Part, SessionMessage } from "@miao/sdk/v2"
+import type { TuiTranscriptMessage } from "@miao/plugin/tui"
 
 /**
  * A V2 durable session event that changes the transcript and therefore needs a

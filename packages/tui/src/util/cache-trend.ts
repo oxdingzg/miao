@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage } from "@miao/sdk/v2"
 
 /**
  * Which way the cache hit rate is moving over recent turns. Any single turn

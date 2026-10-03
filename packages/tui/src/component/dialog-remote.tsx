@@ -5,7 +5,8 @@
 // no daemon answers, logins run in this process (the host injects RemoteLocal)
 // and the daemon starts or stops only after the user confirms the shown commands.
 import { RGBA, TextAttributes } from "@opentui/core"
-import { createOpencodeClient, type Config } from "@opencode-ai/sdk/v2"
+import { OpenCode } from "@miao/client"
+import type { Config } from "@miao/sdk/v2"
 import { Flag } from "@miao/core/flag/flag"
 import { createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js"
 import { renderUnicodeCompact } from "uqr"
@@ -150,39 +151,16 @@ export function createRemoteApi(input: {
   headers?: Record<string, string>
   fetch?: typeof fetch
 }): RemoteApi {
-  const client = createOpencodeClient({ baseUrl: input.url, headers: input.headers, fetch: input.fetch }).v2.remote
-  const fail = (error: unknown): never => {
-    const message =
-      typeof error === "object" && error !== null && "message" in error ? String(error.message) : String(error)
-    throw new Error(message)
-  }
+  const client = OpenCode.make({ baseUrl: input.url, headers: input.headers, fetch: input.fetch }).remote
   return {
-    status: () =>
-      client.get({ signal: AbortSignal.timeout(2000) }).then(
-        (result) => (result.data ? (result.data as DaemonStatus) : undefined),
-        () => undefined,
-      ),
-    login: (connector) =>
-      client.login.start({ connector }, { throwOnError: true }).then((result) => result.data.flow, fail),
-    events: (flow, signal) => ({
-      [Symbol.asyncIterator]: async function* () {
-        // A finished flow ends the stream; do not reconnect and replay it.
-        const result = await client.login.events({ flow }, { signal, sseMaxRetryAttempts: 1 })
-        // The SSE client yields each event's parsed data; the generated type models the envelope.
-        for await (const step of result.stream) yield step as unknown as LoginStep
-      },
-    }),
-    input: (flow, value) =>
-      client.login.input({ flow, remoteLoginAnswer: { value } }, { throwOnError: true }).then(() => undefined, fail),
-    cancel: (flow) => client.login.cancel({ flow }).then(() => undefined),
-    remove: (connector, account) =>
-      client.account.remove({ connector, account }, { throwOnError: true }).then(() => undefined, fail),
-    pair: (connector, account) =>
-      client.account
-        .pair({ connector, account }, { throwOnError: true })
-        .then((result) => result.data as LoginStep, fail),
-    test: (connector, account) =>
-      client.account.test({ connector, account }, { throwOnError: true }).then((result) => result.data, fail),
+    status: () => client.get({ signal: AbortSignal.timeout(2000) }).catch(() => undefined),
+    login: (connector) => client.login({ connector }).then((result) => result.flow),
+    events: (flow, signal) => client.loginEvents({ flow }, { signal }),
+    input: (flow, value) => client.loginInput({ flow, value }),
+    cancel: (flow) => client.loginCancel({ flow }),
+    remove: (connector, account) => client.remove({ connector, account }),
+    pair: (connector, account) => client.pair({ connector, account }),
+    test: (connector, account) => client.test({ connector, account }),
   }
 }
 

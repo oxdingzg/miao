@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import path from "node:path"
 import { Effect, Exit, Layer, Scope } from "effect"
-import { tool } from "@opencode-ai/plugin/tool"
+import { tool } from "@miao/plugin/tool"
 import { AgentV2 } from "@miao/core/agent"
 import { Config } from "@miao/core/config"
 import { Database } from "@miao/core/database/database"

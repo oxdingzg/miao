@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@miao/sdk/v2/client"
 import { type Accessor, createMemo, For, Show, Suspense } from "solid-js"
 import { Spinner } from "@miao/ui/spinner"
 import { ScrollView } from "@miao/ui/scroll-view"

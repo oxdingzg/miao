@@ -28,11 +28,11 @@ Terminal UI issues, including rendering, keybindings, scrolling, terminal compat
 
 ### Desktop / Web
 
-Desktop application and browser-based app issues, including `opencode web`, desktop-specific UI behavior, packaging, and web view problems.
+Desktop application and browser-based app issues, including `miao web`, desktop-specific UI behavior, packaging, and web view problems.
 
 ### Core
 
-Core opencode server and harness issues, including sqlite, snapshots, memory, API behavior, agent context construction, tool execution, provider integrations, model behavior, documentation, and larger architectural features.
+Core miao server and harness issues, including sqlite, snapshots, memory, API behavior, agent context construction, tool execution, provider integrations, model behavior, documentation, and larger architectural features.
 
 ### Inference
 

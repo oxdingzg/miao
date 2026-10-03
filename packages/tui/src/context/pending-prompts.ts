@@ -1,5 +1,5 @@
 import { createStore, produce } from "solid-js/store"
-import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2"
+import type { Message, Part, UserMessage } from "@miao/sdk/v2"
 
 export type PendingPrompt = {
   info: UserMessage

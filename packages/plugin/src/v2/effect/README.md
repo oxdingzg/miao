@@ -10,7 +10,7 @@ The public server client will be exposed separately. It is intentionally not par
 ## Defining A Plugin
 
 ```ts
-import { define } from "@opencode-ai/plugin/v2/effect"
+import { define } from "@miao/plugin/v2/effect"
 import { Effect } from "effect"
 
 export const Plugin = define({
@@ -106,7 +106,7 @@ yield *
     if (event.tool === "bash") event.description += "\nNever run `rm -rf /`."
   })
 
-// Register `tool({ ... })` definitions from `@opencode-ai/plugin/tool`.
+// Register `tool({ ... })` definitions from `@miao/plugin/tool`.
 yield * ctx.tool.register({ "my-tool": myTool })
 ```
 
@@ -114,7 +114,7 @@ Events carry `tool`, `sessionID`, `callID` and `agent`. A failing `before`/`afte
 
 ## Legacy `Hooks` Plugins
 
-Plugins written against the V1 `Hooks` API (a function returning hooks, exported from `@opencode-ai/plugin`) are deprecated. V2 sessions do not load them and none of their hooks run; configuring one logs a single warning. V2 supports the domains listed above (`agent`, `aisdk`, `catalog`, `command`, `integration`, `reference`, `skill`) plus `tool`. Custom tool files in `{tool,tools}/*.{js,ts}` keep working unchanged.
+Plugins written against the V1 `Hooks` API (a function returning hooks, exported from `@miao/plugin`) are deprecated. V2 sessions do not load them and none of their hooks run; configuring one logs a single warning. V2 supports the domains listed above (`agent`, `aisdk`, `catalog`, `command`, `integration`, `reference`, `skill`) plus `tool`. Custom tool files in `{tool,tools}/*.{js,ts}` keep working unchanged.
 
 ## Reloading A Domain
 

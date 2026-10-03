@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { OpencodeClient, type Provider } from "@opencode-ai/sdk/v2"
+import { MiaoClient, type Provider } from "@miao/sdk/v2"
 import type { Resolved } from "@miao/tui/config"
 import { TuiConfig } from "@/config/tui"
 import { resolveDiffStyle, resolveModelInfo, resolveRunTuiConfig } from "@/cli/cmd/run/runtime.boot"
@@ -161,7 +161,7 @@ describe("run runtime boot", () => {
   })
 
   test("prefers configured providers for model selector data", async () => {
-    const sdk = new OpencodeClient()
+    const sdk = new MiaoClient()
     const data: {
       all: Provider[]
       default: Record<string, string>
@@ -230,7 +230,7 @@ describe("run runtime boot", () => {
   })
 
   test("falls back to provider list when configured providers are unavailable", async () => {
-    const sdk = new OpencodeClient()
+    const sdk = new MiaoClient()
     const data: {
       all: Provider[]
       default: Record<string, string>

@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js"
-import type { PermissionRequest } from "@opencode-ai/sdk/v2"
+import type { PermissionRequest } from "@miao/sdk/v2"
 import { Button } from "@miao/ui/button"
 import { DockPrompt } from "@miao/session-ui/dock-prompt"
 import { Icon } from "@miao/ui/icon"
