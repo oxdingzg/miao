@@ -22,7 +22,7 @@
 
 上述工作流是当前维护的发布入口。每次构建通过 `packages/miao/script/generate.ts` 从 `https://models.dev/api.json` 读取模型目录，也可以用 `MODELS_DEV_API_JSON` 指定本地文件。仓库没有单独提交模型快照的工作流；运行时会独立刷新缓存中的模型目录。
 
-已于 2026-10-03 向 [SignPath Foundation](https://signpath.org) 提交 Windows 代码签名申请。目前等待审核及 CI 签名接入，现有 Windows 二进制尚未签名。`publish` 步骤会在下载页面记录当前状态。审核通过并接入签名后，更新状态并使用署名：Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)。
+目前 Windows 二进制尚未签名。`publish` 步骤会在下载页面记录当前状态。
 
 ## 变更日志
 

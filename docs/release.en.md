@@ -22,7 +22,7 @@
 
 The release workflow above is the maintained publication path. Each build loads the model catalog through `packages/miao/script/generate.ts` from `https://models.dev/api.json`, or from a local file selected by `MODELS_DEV_API_JSON`. There is no separate workflow that commits model snapshots to the repository; the runtime refreshes its cached catalog independently.
 
-The application for Windows code signing through the [SignPath Foundation](https://signpath.org) was submitted on 2026-10-03. Approval and CI signing integration are pending; current Windows binaries are unsigned. The `publish` step records this status on the download page. After approval and signing integration, update the status and use the attribution: “Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).”
+Windows binaries are currently unsigned. The `publish` step records this status on the download page.
 
 ## Changelog
 
