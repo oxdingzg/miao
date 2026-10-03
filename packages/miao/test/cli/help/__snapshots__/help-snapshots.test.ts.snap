@@ -134,19 +134,18 @@ miao debug
 debugging and troubleshooting tools
 
 Commands:
-  miao debug config        show resolved configuration
-  miao debug lsp           LSP debugging utilities
-  miao debug rg            ripgrep debugging utilities
-  miao debug file          file system debugging utilities
-  miao debug scrap         list all known projects
-  miao debug skill         list all available skills
-  miao debug snapshot      snapshot debugging utilities
-  miao debug startup       print startup timing
-  miao debug agent <name>  show agent configuration details
-  miao debug v2            debug v2 catalog and built-in plugins
-  miao debug info          show debug information
-  miao debug paths         show global paths (data, config, cache, state)
-  miao debug wait          wait indefinitely (for debugging)
+  miao debug config    show resolved configuration
+  miao debug lsp       LSP debugging utilities
+  miao debug rg        ripgrep debugging utilities
+  miao debug file      file system debugging utilities
+  miao debug scrap     list all known projects
+  miao debug skill     list all available skills
+  miao debug snapshot  snapshot debugging utilities
+  miao debug startup   print startup timing
+  miao debug v2        debug v2 catalog and built-in plugins
+  miao debug info      show debug information
+  miao debug paths     show global paths (data, config, cache, state)
+  miao debug wait      wait indefinitely (for debugging)
 
 Options:
   -h, --help        show help                                                              [boolean]

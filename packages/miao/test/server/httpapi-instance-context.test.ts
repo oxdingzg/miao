@@ -98,7 +98,10 @@ const ProbeApi = HttpApi.make("instance-context-probe").add(
   HttpApiGroup.make("probe")
     .add(
       HttpApiEndpoint.get("get", "/probe", { query: WorkspaceRoutingQuery, success: ProbeResult }),
-      HttpApiEndpoint.get("session", "/session", { query: WorkspaceRoutingQuery, success: ProbeResult }),
+      HttpApiEndpoint.get("workspace", "/experimental/workspace", {
+        query: WorkspaceRoutingQuery,
+        success: ProbeResult,
+      }),
       HttpApiEndpoint.post("dispose", "/dispose-probe", {
         query: WorkspaceRoutingQuery,
         success: Schema.Boolean,
@@ -111,7 +114,7 @@ const ProbeApi = HttpApi.make("instance-context-probe").add(
 const probeHandlers = HttpApiBuilder.group(ProbeApi, "probe", (handlers) =>
   handlers
     .handle("get", () => probeInstanceContext)
-    .handle("session", () => probeInstanceContext)
+    .handle("workspace", () => probeInstanceContext)
     .handle(
       "dispose",
       Effect.fn("InstanceContextProbe.dispose")(function* () {
@@ -199,7 +202,7 @@ describe("HttpApi instance context middleware", () => {
       })
       yield* serveProbe()
 
-      const response = yield* HttpClientRequest.get(`/session?workspace=${workspace.id}`).pipe(
+      const response = yield* HttpClientRequest.get(`/experimental/workspace?workspace=${workspace.id}`).pipe(
         HttpClientRequest.setHeader("x-opencode-directory", dir),
         HttpClient.execute,
       )
@@ -306,13 +309,13 @@ describe("HttpApi instance context middleware", () => {
         type: "instance-context-fixed-workspace-control-plane",
         directory: workspaceDir,
       })
-      // /session is matched by isLocalWorkspaceRoute, so shouldStayOnControlPlane
+      // /experimental/workspace is matched by isLocalWorkspaceRoute, so shouldStayOnControlPlane
       // is true. Combined with the env override, the route must stay Local with
       // the configured workspace id (not divert to the requested workspace's
       // local directory).
       yield* serveProbe()
 
-      const response = yield* HttpClientRequest.get(`/session?workspace=${workspace.id}`).pipe(
+      const response = yield* HttpClientRequest.get(`/experimental/workspace?workspace=${workspace.id}`).pipe(
         HttpClientRequest.setHeader("x-opencode-directory", dir),
         HttpClient.execute,
       )
