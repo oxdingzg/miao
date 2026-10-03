@@ -1,7 +1,16 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import type { GlobalEvent, V2Event } from "@opencode-ai/sdk/v2"
+import type { Event, V2Event } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
+
+// The GlobalBus envelope the TUI dispatches: an event with the directory and workspace it belongs to.
+// The in-process bus also carries `sync` copies of durable events, which the TUI skips.
+export type GlobalEvent = {
+  directory: string
+  project?: string
+  workspace?: string
+  payload: Event | { id?: string; type: "sync"; syncEvent: unknown }
+}
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -143,6 +152,6 @@ function toGlobalEvent(event: V2Event): GlobalEvent {
   return {
     directory: event.location?.directory ?? "global",
     workspace: event.location?.workspaceID,
-    payload: { id: event.id, type: event.type, properties: event.data } as GlobalEvent["payload"],
+    payload: { id: event.id, type: event.type, properties: event.data } as Event,
   }
 }

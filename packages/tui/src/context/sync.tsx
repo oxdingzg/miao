@@ -16,7 +16,6 @@ import type {
   McpResource,
   FormatterStatus,
   SessionStatus,
-  ProviderListResponse,
   ProviderAuthMethod,
   IntegrationInfo,
   VcsInfo,
@@ -37,7 +36,7 @@ import {
   type OlderHistory,
 } from "./session-v2"
 import { sessionInfo } from "./session-v2-read"
-import { toAgent, toCommand, toProviderCatalog, toProviderList } from "./v2-adapters"
+import { toAgent, toCommand, toProviderCatalog, toProviderList, type ProviderCatalog } from "./v2-adapters"
 import { createSessionRefreshScheduler } from "./session-refresh"
 import { createPendingPrompts } from "./pending-prompts"
 import { promptInputFromParts } from "./session-v2-write"
@@ -132,7 +131,7 @@ export const {
       status: "loading" | "partial" | "complete"
       provider: Provider[]
       provider_default: Record<string, string>
-      provider_next: ProviderListResponse
+      provider_next: ProviderCatalog
       capabilities: {
         experimentalBackgroundSubagents: boolean
       }

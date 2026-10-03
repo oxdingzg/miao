@@ -1,5 +1,5 @@
 import { batch } from "solid-js"
-import type { Path, Workspace } from "@opencode-ai/sdk/v2"
+import type { LocationPath, Workspace } from "@opencode-ai/sdk/v2"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
@@ -17,7 +17,7 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
       config: "",
       worktree: "",
       directory: sdk.directory ?? "",
-    } satisfies Path
+    } satisfies LocationPath
 
     const [store, setStore] = createStore({
       project: {
