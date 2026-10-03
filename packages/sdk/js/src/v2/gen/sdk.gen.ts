@@ -268,6 +268,8 @@ import type {
   V2PtyListResponses,
   V2PtyRemoveErrors,
   V2PtyRemoveResponses,
+  V2PtyShellsErrors,
+  V2PtyShellsResponses,
   V2PtyUpdateErrors,
   V2PtyUpdateResponses,
   V2QuestionRequestListErrors,
@@ -5550,6 +5552,28 @@ export class Event2 extends HeyApiClient {
 }
 
 export class Pty2 extends HeyApiClient {
+  /**
+   * List available shells
+   *
+   * List the shells installed on the server host and whether each can run a terminal session.
+   */
+  public shells<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2PtyShellsResponses, V2PtyShellsErrors, ThrowOnError>({
+      url: "/api/pty/shells",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * List PTY sessions
    *

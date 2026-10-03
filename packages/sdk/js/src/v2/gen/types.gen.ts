@@ -2884,6 +2884,12 @@ export type V2Event =
 
 export type V2EventStream = string
 
+export type PtyShell = {
+  path: string
+  name: string
+  acceptable: boolean
+}
+
 export type ForbiddenError = {
   _tag: "ForbiddenError"
   message: string
@@ -12807,6 +12813,43 @@ export type V2EventSubscribeResponses = {
 }
 
 export type V2EventSubscribeResponse = V2EventSubscribeResponses[keyof V2EventSubscribeResponses]
+
+export type V2PtyShellsData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/pty/shells"
+}
+
+export type V2PtyShellsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2PtyShellsError = V2PtyShellsErrors[keyof V2PtyShellsErrors]
+
+export type V2PtyShellsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<PtyShell>
+  }
+}
+
+export type V2PtyShellsResponse = V2PtyShellsResponses[keyof V2PtyShellsResponses]
 
 export type V2PtyListData = {
   body?: never
