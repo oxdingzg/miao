@@ -121,12 +121,17 @@ export const make = <Key, E>(options: {
         start(key, next, false)
       })
 
+    // Interrupting stops the current drain but must not cancel work that was
+    // already queued behind it. `pendingWake` therefore survives the interrupt,
+    // and `settle` hands off to a successor drain that promotes the admitted
+    // input. Clearing it here would strand durable input with no owner: the
+    // session would report idle while its inbox still holds unpromoted rows,
+    // and only a brand-new prompt would ever wake them again.
     const interrupt = (key: Key): Effect.Effect<void> =>
       Effect.suspend(() => {
         const entry = active.get(key)
         if (entry?.owner === undefined) return Effect.void
         entry.stopping = true
-        entry.pendingWake = false
         return Fiber.interrupt(entry.owner)
       })
 

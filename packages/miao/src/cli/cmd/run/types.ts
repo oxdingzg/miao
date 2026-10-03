@@ -94,7 +94,6 @@ export type FooterState = {
   duration: string
   usage: string
   first: boolean
-  interrupt: number
   exit: number
 }
 

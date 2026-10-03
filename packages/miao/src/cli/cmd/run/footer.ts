@@ -21,9 +21,9 @@
 //   - The renderer's DESTROY event triggers destroy() so the footer
 //     doesn't outlive the renderer.
 //
-// Ctrl-c clears a live prompt draft first; otherwise interrupt and exit use a
-// two-press pattern where the first press shows a hint and the second press
-// within 5 seconds actually fires the action.
+// Ctrl-c clears a live prompt draft first; otherwise interrupt fires on the
+// first press and exit uses a two-press pattern where the second press within
+// 5 seconds actually closes the run.
 import { CliRenderEvents, type CliRenderer, type KeyEvent, type Renderable, type TreeSitterClient } from "@opentui/core"
 import type { Keymap } from "@opentui/keymap"
 import { render } from "@opentui/solid"
@@ -137,7 +137,6 @@ function eventPatch(next: FooterEvent): FooterPatch | undefined {
       phase: "running",
       status: "sending prompt",
       queue: next.queue,
-      interrupt: 0,
       exit: 0,
     }
   }
@@ -205,7 +204,6 @@ export class RunFooter implements FooterApi {
   private promptRoute: FooterPromptRoute = { type: "composer" }
   private subagentMenuRows = SUBAGENT_ROWS
   private autocomplete = false
-  private interruptTimeout: NodeJS.Timeout | undefined
   private exitTimeout: NodeJS.Timeout | undefined
   private noticeTimeout: NodeJS.Timeout | undefined
   private noticeRestoreStatus = ""
@@ -244,7 +242,6 @@ export class RunFooter implements FooterApi {
       duration: "",
       usage: "",
       first: options.first,
-      interrupt: 0,
       exit: 0,
     })
     this.state = state
@@ -452,7 +449,6 @@ export class RunFooter implements FooterApi {
         this.clearNoticeTimer()
       }
       if (next.type === "turn.send") {
-        this.clearInterruptTimer()
         this.clearExitTimer()
       }
       this.patch(patch)
@@ -491,16 +487,8 @@ export class RunFooter implements FooterApi {
       duration: typeof next.duration === "string" ? next.duration : prev.duration,
       usage: typeof next.usage === "string" ? next.usage : prev.usage,
       first: typeof next.first === "boolean" ? next.first : prev.first,
-      interrupt:
-        typeof next.interrupt === "number" && Number.isFinite(next.interrupt)
-          ? Math.max(0, Math.floor(next.interrupt))
-          : prev.interrupt,
       exit:
         typeof next.exit === "number" && Number.isFinite(next.exit) ? Math.max(0, Math.floor(next.exit)) : prev.exit,
-    }
-
-    if (state.phase === "idle") {
-      state.interrupt = 0
     }
 
     this.setState(state)
@@ -682,13 +670,12 @@ export class RunFooter implements FooterApi {
   }
 
   private handleInputClear = (): void => {
-    this.clearInterruptTimer()
     this.clearExitTimer()
-    if (this.state().interrupt === 0 && this.state().exit === 0) {
+    if (this.state().exit === 0) {
       return
     }
 
-    this.patch({ interrupt: 0, exit: 0 })
+    this.patch({ exit: 0 })
   }
 
   // Resizes the footer to fit the current view. Permission and question views
@@ -904,15 +891,6 @@ export class RunFooter implements FooterApi {
       .catch(() => {})
   }
 
-  private clearInterruptTimer(): void {
-    if (!this.interruptTimeout) {
-      return
-    }
-
-    clearTimeout(this.interruptTimeout)
-    this.interruptTimeout = undefined
-  }
-
   private clearNoticeTimer(reset = true): void {
     if (!this.noticeTimeout) {
       if (reset) {
@@ -926,18 +904,6 @@ export class RunFooter implements FooterApi {
     if (reset) {
       this.noticeRestoreStatus = ""
     }
-  }
-
-  private armInterruptTimer(): void {
-    this.clearInterruptTimer()
-    this.interruptTimeout = setTimeout(() => {
-      this.interruptTimeout = undefined
-      if (this.isGone || this.state().phase !== "running") {
-        return
-      }
-
-      this.patch({ interrupt: 0 })
-    }, 5000)
   }
 
   private clearExitTimer(): void {
@@ -961,24 +927,13 @@ export class RunFooter implements FooterApi {
     }, 5000)
   }
 
-  // Two-press interrupt: first press shows a hint ("esc again to interrupt"),
-  // second press within 5 seconds fires onInterrupt. The timer resets the
-  // counter if the user doesn't follow through.
+  // A single press interrupts: the current turn stops and whatever input is
+  // already queued behind it resumes on its own.
   private handleInterrupt = (): boolean => {
     if (this.isClosed || this.state().phase !== "running") {
       return false
     }
 
-    const next = this.state().interrupt + 1
-    this.patch({ interrupt: next })
-
-    if (next < 2) {
-      this.armInterruptTimer()
-      return true
-    }
-
-    this.clearInterruptTimer()
-    this.patch({ interrupt: 0 })
     this.setNotice("interrupting")
     this.options.onInterrupt?.()
     return true
@@ -989,9 +944,8 @@ export class RunFooter implements FooterApi {
       return true
     }
 
-    this.clearInterruptTimer()
     const next = this.state().exit + 1
-    this.patch({ exit: next, interrupt: 0 })
+    this.patch({ exit: next })
 
     if (next < 2) {
       this.armExitTimer()
@@ -1089,7 +1043,6 @@ export class RunFooter implements FooterApi {
     this.flush()
     this.destroyed = true
     this.notifyClose()
-    this.clearInterruptTimer()
     this.clearExitTimer()
     this.clearNoticeTimer()
     this.renderer.off(CliRenderEvents.DESTROY, this.handleDestroy)

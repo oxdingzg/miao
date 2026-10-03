@@ -2511,11 +2511,10 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("preserves durable queued input for a later wake after interruption", () =>
+  it.effect("promotes durable queued input after interruption without an explicit resume", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt current work" }), resume: false })
 
       requests.length = 0
@@ -2539,12 +2538,12 @@ describe("SessionRunnerLLM", () => {
       })
       yield* session.interrupt(sessionID)
       expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
-      expect(requests).toHaveLength(1)
-      expect(yield* SessionInput.hasPending(db, sessionID, "queue")).toBe(true)
-      const resumed = yield* session.resume(sessionID).pipe(Effect.forkChild)
+
+      // Interrupting hands the queued input to a successor drain on its own, so
+      // the queued text must reach the next request without an explicit resume.
       while (requests.length < 2) yield* Effect.yieldNow
       yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(resumed)
+      yield* session.wait(sessionID)
       streamGate = undefined
       streamStarted = undefined
 
@@ -2554,11 +2553,10 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("preserves durable steering input for a later resume after interruption", () =>
+  it.effect("promotes durable steering input after interruption without an explicit resume", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt current work" }), resume: false })
 
       requests.length = 0
@@ -2581,13 +2579,12 @@ describe("SessionRunnerLLM", () => {
       })
       yield* session.interrupt(sessionID)
       expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
-      expect(requests).toHaveLength(1)
-      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(true)
 
-      const resumed = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      // Interrupting hands the steering input to a successor drain on its own, so
+      // the steering text must reach the next request without an explicit resume.
       while (requests.length < 2) yield* Effect.yieldNow
       yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(resumed)
+      yield* session.wait(sessionID)
       streamGate = undefined
       streamStarted = undefined
 
