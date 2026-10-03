@@ -88,7 +88,7 @@ Du kan bruke `~` eller `$HOME` i starten av et mønster for å referere til hjem
 
 ### Eksterne kataloger
 
-Bruk `external_directory` for å tillate verktøyanrop som berører stier utenfor arbeidskatalogen der Miao ble startet. Dette gjelder alle verktøy som tar en bane som input (for eksempel `read`, `edit`, `glob`, `grep` og mange `bash`-kommandoer).
+Bruk `external_directory` for å tillate verktøyanrop som berører stier utenfor arbeidskatalogen der MIAO ble startet. Dette gjelder alle verktøy som tar en bane som input (for eksempel `read`, `edit`, `glob`, `grep` og mange `bash`-kommandoer).
 
 Hjemmeutvidelse (som `~/...`) påvirker bare hvordan et mønster skrives. Den gjør ikke en ekstern bane til en del av det gjeldende arbeidsområdet, så stier utenfor arbeidskatalogen må fortsatt tillates via `external_directory`.
 
@@ -146,7 +146,7 @@ Miao-tillatelser tastes inn etter verktøynavn, pluss et par sikkerhetsvakter:
 
 ## Standarder
 
-Hvis du ikke spesifiserer noe, starter Miao fra tillatte standardinnstillinger:
+Hvis du ikke spesifiserer noe, starter MIAO fra tillatte standardinnstillinger:
 
 - De fleste tillatelser er satt til `"allow"` som standard.
 - `doom_loop` og `external_directory` er standard til `"ask"`.
@@ -169,7 +169,7 @@ Hvis du ikke spesifiserer noe, starter Miao fra tillatte standardinnstillinger:
 
 ## Hva "ask" gjør
 
-Når Miao ber om godkjenning, gir brukergrensesnittet tre alternativer:
+Når MIAO ber om godkjenning, gir brukergrensesnittet tre alternativer:
 
 - `once` — godkjenne nettopp denne forespørselen
 - `always` — godkjenn fremtidige forespørsler som samsvarer med de foreslåtte mønstrene (for resten av den nåværende Miao-økten)

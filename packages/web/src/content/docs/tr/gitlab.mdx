@@ -1,11 +1,11 @@
 ---
 title: GitLab
-description: GitLab sorunlarında ve birleştirme isteklerinde miao'u kullanın.
+description: GitLab sorunlarında ve birleştirme isteklerinde MIAO'u kullanın.
 ---
 
 miao, GitLab CI/CD işlem hattınız veya GitLab Duo aracılığıyla GitLab iş akışınızla bütünleşir.
 
-Her iki durumda da miao, GitLab çalıştırıcılarınızda çalışacaktır.
+Her iki durumda da MIAO, GitLab çalıştırıcılarınızda çalışacaktır.
 
 ---
 
@@ -13,21 +13,21 @@ Her iki durumda da miao, GitLab çalıştırıcılarınızda çalışacaktır.
 
 miao normal bir GitLab işlem hattında çalışır. Bunu bir [CI component](https://docs.gitlab.com/ee/ci/components/) olarak bir işlem hattına oluşturabilirsiniz.
 
-Burada miao için topluluk tarafından oluşturulan bir CI/CD bileşeni kullanıyoruz — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+Burada MIAO için topluluk tarafından oluşturulan bir CI/CD bileşeni kullanıyoruz — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Özellikler
 
-- **İş başına özel işlemleri kullanın**: miao parçalarının kullanıma veya devre dışı bırakmak için miao'u özel bir yapılandırma dizini ile yapılandırın; örneğin `./config/#custom-directory`.
-- **Minimum kurulum**: CI bileşeni miao'u arka planda kurar; yalnızca miao yapılandırmasını ve ilk istemi oluşturmanız gerekir.
+- **İş başına özel işlemleri kullanın**: MIAO parçalarının kullanıma veya devre dışı bırakmak için MIAO'u özel bir yapılandırma dizini ile yapılandırın; örneğin `./config/#custom-directory`.
+- **Minimum kurulum**: CI bileşeni MIAO'u arka planda kurar; yalnızca MIAO yapılandırmasını ve ilk istemi oluşturmanız gerekir.
 - **Esnek**: CI bileşeni, davranışını özelleştirmek için çeşitli girişleri destekler
 
 ---
 
 ### Kurulum
 
-1. miao kimlik doğrulamanızı JSON **Ayarlar** > **CI/CD** > **Değişkenler** altında Dosya türü CI ortam değişkenleri olarak saklayın. Bunları "Maskeli ve gizli" olarak işaretlediğinizden emin olun.
+1. MIAO kimlik doğrulamanızı JSON **Ayarlar** > **CI/CD** > **Değişkenler** altında Dosya türü CI ortam değişkenleri olarak saklayın. Bunları "Maskeli ve gizli" olarak işaretlediğinizden emin olun.
 2. Aşağıdakileri `.gitlab-ci.yml` dosyanıza ekleyin.
 
    ```yaml title=".gitlab-ci.yml"
@@ -47,16 +47,16 @@ Daha fazla girdi ve bu bileşene yönelik kullanım durumları için [check out 
 ## GitLab Duo
 
 miao, GitLab iş akışınızla bütünleşir.
-Bir yorumda `@opencode`'dan bahsedin; miao, GitLab CI işlem hattınızdaki görevleri yürütecektir.
+Bir yorumda `@opencode`'dan bahsedin; MIAO, GitLab CI işlem hattınızdaki görevleri yürütecektir.
 
 ---
 
 ### Özellikler
 
-- **Sorunları önceliklendirin**: miao'dan bir sorunu araştırıp size açıklamasını isteyin.
-- **Düzelt ve uygula**: miao'dan bir sorunu düzeltmesini veya bir özelliği uygulamasını isteyin.
+- **Sorunları önceliklendirin**: MIAO'dan bir sorunu araştırıp size açıklamasını isteyin.
+- **Düzelt ve uygula**: MIAO'dan bir sorunu düzeltmesini veya bir özelliği uygulamasını isteyin.
   Yeni bir dal oluşturacak ve değişikliklerle birlikte bir birleştirme isteği oluşturacaktır.
-- **Güvenli**: miao, GitLab çalıştırıcılarınızda çalışır.
+- **Güvenli**: MIAO, GitLab çalıştırıcılarınızda çalışır.
 
 ---
 
@@ -158,7 +158,7 @@ Ayrıntılı talimatlar için [GitLab CLI agents docs](https://docs.gitlab.com/u
 
 ### Örnekler
 
-GitLab'da miao'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabilirsiniz.
+GitLab'da MIAO'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabilirsiniz.
 
 :::tip
 `@opencode`'dan farklı bir tetikleyici ifade kullanacak şekilde yapılandırabilirsiniz.

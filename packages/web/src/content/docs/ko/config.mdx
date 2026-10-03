@@ -1,6 +1,6 @@
 ---
 title: Config
-description: Using the Miao JSON config.
+description: Using the MIAO JSON config.
 ---
 
 JSON config 파일로 Miao를 설정할 수 있습니다.
@@ -95,7 +95,7 @@ Remote config는 가장 먼저 로드되어 기본 레이어 역할을 합니다
 
 ### Global
 
-전역 Miao config는 `~/.config/miao/miao.json`에 두세요. provider, model, permissions 같은 사용자 전체 기본 설정은 전역 config로 관리하세요.
+전역 MIAO config는 `~/.config/miao/miao.json`에 두세요. provider, model, permissions 같은 사용자 전체 기본 설정은 전역 config로 관리하세요.
 
 TUI 관련 설정은 `~/.config/miao/tui.json`을 사용하세요.
 
@@ -199,7 +199,7 @@ TUI 관련 설정에는 전용 `tui.json` (또는 `tui.jsonc`) 파일을 사용�
 
 - `port` - 수신할 포트입니다.
 - `hostname` - 수신할 호스트명입니다. `mdns`가 활성화되어 있고 hostname이 없으면 기본값은 `0.0.0.0`입니다.
-- `mdns` - mDNS service discovery를 활성화합니다. 네트워크 내 다른 기기에서 Miao server를 찾을 수 있습니다.
+- `mdns` - mDNS service discovery를 활성화합니다. 네트워크 내 다른 기기에서 MIAO server를 찾을 수 있습니다.
 - `mdnsDomain` - mDNS service의 custom 도메인 이름입니다. 기본값은 `miao.local`입니다. 같은 네트워크에서 여러 인스턴스를 실행할 때 유용합니다.
 - `cors` - 브라우저 기반 client에서 HTTP server를 사용할 때 허용할 추가 CORS origin입니다. 값은 전체 origin(scheme + host + optional port) 형식이어야 하며, 예: `https://app.example.com`.
 

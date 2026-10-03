@@ -5,13 +5,13 @@ description: Opcje i polecenia wiersza poleceń Miao.
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-CLI Miao domyślnie uruchamia [TUI](/docs/tui), gdy wywołasz je bez argumentów.
+CLI MIAO domyślnie uruchamia [TUI](/docs/tui), gdy wywołasz je bez argumentów.
 
 ```bash
 miao
 ```
 
-CLI obsługuje też polecenia opisane na tej stronie, więc możesz używać Miao programowo.
+CLI obsługuje też polecenia opisane na tej stronie, więc możesz używać MIAO programowo.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -44,7 +44,7 @@ miao [project]
 
 ## Polecenia
 
-Interfejs CLI Miao zawiera także dodatkowe polecenia.
+Interfejs CLI MIAO zawiera także dodatkowe polecenia.
 
 ---
 
@@ -60,7 +60,7 @@ miao agent [command]
 
 ### attach
 
-Dołącz terminal do już działającego serwera backendu Miao uruchomionego za pomocą `serve` lub `web`.
+Dołącz terminal do już działającego serwera backendu MIAO uruchomionego za pomocą `serve` lub `web`.
 
 ```bash
 miao attach [url]
@@ -129,7 +129,7 @@ Miao integruje się z wieloma dostawcami. Możesz użyć `miao auth login`, aby 
 miao auth login
 ```
 
-Podczas uruchamiania Miao ładuje dostawców z pliku poświadczeń, a także ze zmiennych środowiskowych lub pliku `.env` w Twoim projekcie.
+Podczas uruchamiania MIAO ładuje dostawców z pliku poświadczeń, a także ze zmiennych środowiskowych lub pliku `.env` w Twoim projekcie.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Uruchom Miao w trybie nieinteraktywnym, przekazując bezpośrednio prompt.
+Uruchom MIAO w trybie nieinteraktywnym, przekazując bezpośrednio prompt.
 
 ```bash
 miao run [message..]
@@ -351,7 +351,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`  | Pliki do załączenia do wiadomości                                                                     |
 | <nobr><code>{"--format"}</code></nobr>   |       | Format wyjściowy: `default` (sformatowany) lub `json` (surowy JSON)                                   |
 | <nobr><code>{"--title"}</code></nobr>    |       | Tytuł sesji (jeśli nie podano, zostanie wygenerowany z promptu)                                       |
-| <nobr><code>{"--attach"}</code></nobr>   |       | Dołącz do działającego serwera Miao (np. http://localhost:4096)                                   |
+| <nobr><code>{"--attach"}</code></nobr>   |       | Dołącz do działającego serwera MIAO (np. http://localhost:4096)                                   |
 | <nobr><code>{"--password"}</code></nobr> | `-p`  | Hasło uwierzytelniania podstawowego (domyślnie `MIAO_SERVER_PASSWORD`)                            |
 | <nobr><code>{"--username"}</code></nobr> | `-u`  | Nazwa użytkownika uwierzytelniania podstawowego (domyślnie `MIAO_SERVER_USERNAME` lub `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |       | Katalog do uruchomienia lub ścieżka na zdalnym serwerze podczas dołączania                            |
@@ -363,13 +363,13 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Uruchom serwer Miao (bez interfejsu) w celu uzyskania dostępu do API. Pełny opis API HTTP znajduje się w [dokumentacji serwera](/docs/server).
+Uruchom serwer MIAO (bez interfejsu) w celu uzyskania dostępu do API. Pełny opis API HTTP znajduje się w [dokumentacji serwera](/docs/server).
 
 ```bash
 miao serve
 ```
 
-Uruchamia to serwer HTTP, który zapewnia dostęp do API Miao bez interfejsu TUI. Ustaw `MIAO_SERVER_PASSWORD`, aby włączyć podstawowe uwierzytelnianie HTTP (domyślna nazwa użytkownika to `miao`).
+Uruchamia to serwer HTTP, który zapewnia dostęp do API MIAO bez interfejsu TUI. Ustaw `MIAO_SERVER_PASSWORD`, aby włączyć podstawowe uwierzytelnianie HTTP (domyślna nazwa użytkownika to `miao`).
 
 #### Flagi
 
@@ -459,13 +459,13 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Uruchom serwer Miao z interfejsem internetowym.
+Uruchom serwer MIAO z interfejsem internetowym.
 
 ```bash
 miao web
 ```
 
-Uruchamia to serwer HTTP i udostępnia Miao przez interfejs przeglądarkowy. Ustaw `MIAO_SERVER_PASSWORD`, aby włączyć podstawowe uwierzytelnianie HTTP (domyślna nazwa użytkownika to `miao`).
+Uruchamia to serwer HTTP i udostępnia MIAO przez interfejs przeglądarkowy. Ustaw `MIAO_SERVER_PASSWORD`, aby włączyć podstawowe uwierzytelnianie HTTP (domyślna nazwa użytkownika to `miao`).
 
 #### Flagi
 
@@ -500,7 +500,7 @@ Uruchamia serwer ACP, który komunikuje się przez stdin/stdout przy użyciu JSO
 
 ### uninstall
 
-Odinstaluj Miao i usuń wszystkie powiązane pliki.
+Odinstaluj MIAO i usuń wszystkie powiązane pliki.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Aktualizuj Miao do najnowszej lub określonej wersji.
+Aktualizuj MIAO do najnowszej lub określonej wersji.
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## Flagi globalne
 
-Interfejs CLI Miao przyjmuje następujące flagi globalne dla każdego polecenia.
+Interfejs CLI MIAO przyjmuje następujące flagi globalne dla każdego polecenia.
 
 | Flaga                                      | Skrót | Opis                                        |
 | ------------------------------------------ | ----- | ------------------------------------------- |

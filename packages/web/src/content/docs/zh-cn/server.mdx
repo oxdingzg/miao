@@ -1,12 +1,12 @@
 ---
 title: 服务器
-description: 通过 HTTP 与 miao 服务器交互。
+description: 通过 HTTP 与 MIAO 服务器交互。
 ---
 
 import config from "../../../../config.mjs"
 export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
 
-`miao serve` 命令运行一个无界面的 HTTP 服务器，暴露一个 OpenAPI 端点供 miao 客户端使用。
+`miao serve` 命令运行一个无界面的 HTTP 服务器，暴露一个 OpenAPI 端点供 MIAO 客户端使用。
 
 ---
 
@@ -49,12 +49,12 @@ MIAO_SERVER_PASSWORD=your-password miao serve
 当你运行 `miao` 时，它会启动一个 TUI 和一个服务器。TUI 是与服务器通信的客户端。服务器暴露一个 OpenAPI 3.1 规范端点。该端点也用于生成 [SDK](/docs/sdk)。
 
 :::tip
-使用 miao 服务器以编程方式与 miao 交互。
+使用 MIAO 服务器以编程方式与 MIAO 交互。
 :::
 
-这种架构让 miao 支持多个客户端，并允许你以编程方式与 miao 交互。
+这种架构让 MIAO 支持多个客户端，并允许你以编程方式与 MIAO 交互。
 
-你可以运行 `miao serve` 来启动一个独立的服务器。如果你已经在运行 miao TUI，`miao serve` 会启动一个新的服务器。
+你可以运行 `miao serve` 来启动一个独立的服务器。如果你已经在运行 MIAO TUI，`miao serve` 会启动一个新的服务器。
 
 ---
 
@@ -62,7 +62,7 @@ MIAO_SERVER_PASSWORD=your-password miao serve
 
 当你启动 TUI 时，它会随机分配端口和主机名。你也可以传入 `--hostname` 和 `--port` [标志](/docs/cli)，然后用它来连接对应的服务器。
 
-[`/tui`](#tui) 端点可用于通过服务器驱动 TUI。例如，你可以预填充或运行一个提示词。此方式被 Miao [IDE](/docs/ide) 插件所使用。
+[`/tui`](#tui) 端点可用于通过服务器驱动 TUI。例如，你可以预填充或运行一个提示词。此方式被 MIAO [IDE](/docs/ide) 插件所使用。
 
 ---
 

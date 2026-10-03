@@ -3,7 +3,7 @@ title: Troubleshooting
 description: Common issues and how to resolve them.
 ---
 
-To debug issues with Miao, start by checking the logs and local data it stores on disk.
+To debug issues with MIAO, start by checking the logs and local data it stores on disk.
 
 ---
 
@@ -12,7 +12,7 @@ To debug issues with Miao, start by checking the logs and local data it stores o
 Log files are written to:
 
 - **macOS/Linux**: `~/.local/share/miao/log/`
-- **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.local\share\miao\log`
+- **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.local\share\MIAO\log`
 
 Log files are named with timestamps (e.g., `2025-01-09T123456.log`) and the most recent 10 log files are kept.
 
@@ -39,7 +39,7 @@ This directory contains:
 
 ## Uninstall
 
-To uninstall the Miao CLI and remove its related files, run:
+To uninstall the MIAO CLI and remove its related files, run:
 
 ```bash
 miao uninstall
@@ -47,7 +47,7 @@ miao uninstall
 
 The command shows what will be removed and asks for confirmation. See the [CLI reference](/docs/cli#uninstall) for options to keep your configuration or application data.
 
-To remove Miao Desktop, uninstall the application through your operating system's app management tools.
+To remove MIAO Desktop, uninstall the application through your operating system's app management tools.
 
 ---
 
@@ -73,7 +73,7 @@ Open your global config file and look for a `plugin` key.
 
 - **macOS/Linux**: `~/.config/miao/miao.json` (or `~/.config/miao/miao.json`)
 - **macOS/Linux** (older installs): `~/.local/share/miao/miao.jsonc`
-- **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.config\miao\miao.jsonc`
+- **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.config\MIAO\miao.jsonc`
 
 If you have plugins configured, temporarily disable them by removing the key or setting it to an empty array:
 
@@ -90,7 +90,7 @@ Miao can also load local plugins from disk. Temporarily move these out of the wa
 
 - **Global plugins**
   - **macOS/Linux**: `~/.config/miao/plugins/`
-  - **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.config\miao\plugins`
+  - **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.config\MIAO\plugins`
 - **Project plugins** (only if you use per-project config)
   - `<your-project>/.miao/plugins/`
 
@@ -100,16 +100,16 @@ If the app starts working again, re-enable plugins one at a time to find which o
 
 ### Clear the cache
 
-If disabling plugins doesn't help (or a plugin install is stuck), clear the cache so Miao can rebuild it.
+If disabling plugins doesn't help (or a plugin install is stuck), clear the cache so MIAO can rebuild it.
 
-1. Quit Miao Desktop completely.
+1. Quit MIAO Desktop completely.
 2. Delete the cache directory:
 
 - **macOS**: Finder -> `Cmd+Shift+G` -> paste `~/.cache/opencode`
 - **Linux**: delete `~/.cache/opencode` (or run `rm -rf ~/.cache/opencode`)
 - **Windows**: Press `WIN+R` and paste `%USERPROFILE%\.cache\miao`
 
-3. Restart Miao Desktop.
+3. Restart MIAO Desktop.
 
 ---
 
@@ -146,13 +146,13 @@ On Linux, some Wayland setups can cause blank windows or compositor errors.
 
 ### Windows: WebView2 runtime
 
-On Windows, Miao Desktop requires the Microsoft Edge **WebView2 Runtime**. If the app opens to a blank window or won't start, install/update WebView2 and try again.
+On Windows, MIAO Desktop requires the Microsoft Edge **WebView2 Runtime**. If the app opens to a blank window or won't start, install/update WebView2 and try again.
 
 ---
 
 ### Windows: General performance issues
 
-If you're experiencing slow performance, file access issues, or terminal problems on Windows, try using [WSL (Windows Subsystem for Linux)](/docs/windows-wsl). WSL provides a Linux environment that works more seamlessly with Miao's features.
+If you're experiencing slow performance, file access issues, or terminal problems on Windows, try using [WSL (Windows Subsystem for Linux)](/docs/windows-wsl). WSL provides a Linux environment that works more seamlessly with MIAO's features.
 
 ---
 
@@ -160,7 +160,7 @@ If you're experiencing slow performance, file access issues, or terminal problem
 
 Miao Desktop only shows system notifications when:
 
-- notifications are enabled for Miao in your OS settings, and
+- notifications are enabled for MIAO in your OS settings, and
 - the app window is not focused.
 
 ---
@@ -169,8 +169,8 @@ Miao Desktop only shows system notifications when:
 
 If the app won't start and you can't clear settings from inside the UI, reset the desktop app's saved state.
 
-1. Quit Miao Desktop.
-2. Find and delete these files (they live in the Miao Desktop app data directory):
+1. Quit MIAO Desktop.
+2. Find and delete these files (they live in the MIAO Desktop app data directory):
 
 - `miao.settings.dat` (desktop default server URL)
 - `miao.global.dat` and `miao.workspace.*.dat` (UI state like recent servers/projects)
@@ -185,7 +185,7 @@ To find the directory quickly:
 
 ## Getting help
 
-If you're experiencing issues with Miao:
+If you're experiencing issues with MIAO:
 
 1. **Report issues on GitHub**
 
@@ -209,7 +209,7 @@ Here are some common issues and how to resolve them.
 
 ---
 
-### Miao won't start
+### MIAO won't start
 
 1. Check the logs for error messages
 2. Try running with `--print-logs` to see output in the terminal
@@ -266,7 +266,7 @@ To resolve this:
 
 ### AI_APICallError and provider package issues
 
-If you encounter API call errors, this may be due to outdated provider packages. miao dynamically installs provider packages (OpenAI, Anthropic, Google, etc.) as needed and caches them locally.
+If you encounter API call errors, this may be due to outdated provider packages. MIAO dynamically installs provider packages (OpenAI, Anthropic, Google, etc.) as needed and caches them locally.
 
 To resolve provider package issues:
 
@@ -278,9 +278,9 @@ To resolve provider package issues:
 
    On Windows, press `WIN+R` and delete: `%USERPROFILE%\.cache\miao`
 
-2. Restart miao to reinstall the latest provider packages
+2. Restart MIAO to reinstall the latest provider packages
 
-This will force miao to download the most recent versions of provider packages, which often resolves compatibility issues with model parameters and API changes.
+This will force MIAO to download the most recent versions of provider packages, which often resolves compatibility issues with model parameters and API changes.
 
 ---
 

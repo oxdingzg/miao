@@ -1,17 +1,17 @@
 ---
 title: CLI
-description: Miao CLI options and commands.
+description: MIAO CLI options and commands.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-The Miao CLI by default starts the [TUI](/docs/tui) when run without any arguments.
+The MIAO CLI by default starts the [TUI](/docs/tui) when run without any arguments.
 
 ```bash
 miao
 ```
 
-But it also accepts commands as documented on this page. This allows you to interact with Miao programmatically.
+But it also accepts commands as documented on this page. This allows you to interact with MIAO programmatically.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Start the Miao terminal user interface.
+Start the MIAO terminal user interface.
 
 ```bash
 miao [project]
@@ -48,7 +48,7 @@ miao [project]
 
 ## Commands
 
-The Miao CLI also has the following commands.
+The MIAO CLI also has the following commands.
 
 ---
 
@@ -98,13 +98,13 @@ miao agent list
 
 ### attach
 
-Attach a terminal to an already running Miao backend server started via `serve` or `web` commands.
+Attach a terminal to an already running MIAO backend server started via `serve` or `web` commands.
 
 ```bash
 miao attach [url]
 ```
 
-This allows using the TUI with a remote Miao backend. For example:
+This allows using the TUI with a remote MIAO backend. For example:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -145,7 +145,7 @@ Miao is powered by the provider list at [Models.dev](https://models.dev), so you
 miao auth login
 ```
 
-When Miao starts up it loads the providers from the credentials file. And if there are any keys defined in your environments or a `.env` file in your project.
+When MIAO starts up it loads the providers from the credentials file. And if there are any keys defined in your environments or a `.env` file in your project.
 
 ##### Flags
 
@@ -338,7 +338,7 @@ miao models --refresh
 
 ### run
 
-Run miao in non-interactive mode by passing a prompt directly.
+Run MIAO in non-interactive mode by passing a prompt directly.
 
 ```bash
 miao run [message..]
@@ -374,7 +374,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`  | File(s) to attach to message                                               |
 | <nobr><code>{"--format"}</code></nobr>   |       | Format: default (formatted) or json (raw JSON events)                      |
 | <nobr><code>{"--title"}</code></nobr>    |       | Title for the session (uses truncated prompt if no value provided)         |
-| <nobr><code>{"--attach"}</code></nobr>   |       | Attach to a running miao server (e.g., http://localhost:4096)          |
+| <nobr><code>{"--attach"}</code></nobr>   |       | Attach to a running MIAO server (e.g., http://localhost:4096)          |
 | <nobr><code>{"--password"}</code></nobr> | `-p`  | Basic auth password (defaults to `MIAO_SERVER_PASSWORD`)               |
 | <nobr><code>{"--username"}</code></nobr> | `-u`  | Basic auth username (defaults to `MIAO_SERVER_USERNAME` or `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |       | Directory to run in, or path on the remote server when attaching           |
@@ -387,13 +387,13 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Start a headless Miao server for API access. Check out the [server docs](/docs/server) for the full HTTP interface.
+Start a headless MIAO server for API access. Check out the [server docs](/docs/server) for the full HTTP interface.
 
 ```bash
 miao serve
 ```
 
-This starts an HTTP server that provides API access to miao functionality without the TUI interface. Set `MIAO_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `miao`).
+This starts an HTTP server that provides API access to MIAO functionality without the TUI interface. Set `MIAO_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `miao`).
 
 #### Flags
 
@@ -409,7 +409,7 @@ This starts an HTTP server that provides API access to miao functionality withou
 
 ### session
 
-Manage Miao sessions.
+Manage MIAO sessions.
 
 ```bash
 miao session [command]
@@ -419,7 +419,7 @@ miao session [command]
 
 #### list
 
-List all Miao sessions.
+List all MIAO sessions.
 
 ```bash
 miao session list
@@ -436,7 +436,7 @@ miao session list
 
 #### delete
 
-Delete an Miao session.
+Delete an MIAO session.
 
 ```bash
 miao session delete <sessionID>
@@ -446,7 +446,7 @@ miao session delete <sessionID>
 
 ### stats
 
-Show token usage and cost statistics for your Miao sessions.
+Show token usage and cost statistics for your MIAO sessions.
 
 ```bash
 miao stats
@@ -483,13 +483,13 @@ If you don't provide a session ID, you'll be prompted to select from available s
 
 ### import
 
-Import session data from a JSON file or Miao share URL.
+Import session data from a JSON file or MIAO share URL.
 
 ```bash
 miao import <file>
 ```
 
-You can import from a local file or an Miao share URL.
+You can import from a local file or an MIAO share URL.
 
 ```bash
 miao import session.json
@@ -500,13 +500,13 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Start a headless Miao server with a web interface.
+Start a headless MIAO server with a web interface.
 
 ```bash
 miao web
 ```
 
-This starts an HTTP server and opens a web browser to access Miao through a web interface. Set `MIAO_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `miao`).
+This starts an HTTP server and opens a web browser to access MIAO through a web interface. Set `MIAO_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `miao`).
 
 #### Flags
 
@@ -614,7 +614,7 @@ miao debug [command]
 
 ### uninstall
 
-Uninstall Miao and remove all related files.
+Uninstall MIAO and remove all related files.
 
 ```bash
 miao uninstall
@@ -633,7 +633,7 @@ miao uninstall
 
 ### upgrade
 
-Updates miao to the latest version or a specific version.
+Updates MIAO to the latest version or a specific version.
 
 ```bash
 miao upgrade [target]
@@ -661,7 +661,7 @@ miao upgrade v0.1.48
 
 ## Global Flags
 
-The miao CLI takes the following global flags.
+The MIAO CLI takes the following global flags.
 
 | Flag                                       | Short | Description                          |
 | ------------------------------------------ | ----- | ------------------------------------ |

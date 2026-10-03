@@ -9,7 +9,7 @@ export const email = `mailto:${config.email}`
 
 OpenCode Go, popüler açık kodlama modellerine güvenilir erişim sağlayan düşük maliyetli **aylık 10$ aboneliğidir**.
 
-Go, Miao'daki diğer sağlayıcılar gibi çalışır. OpenCode Go'ya abone olur ve API anahtarınızı alırsınız. Bu **tamamen isteğe bağlıdır** ve Miao'u kullanmak için bunu kullanmanıza gerek yoktur.
+Go, MIAO'daki diğer sağlayıcılar gibi çalışır. OpenCode Go'ya abone olur ve API anahtarınızı alırsınız. Bu **tamamen isteğe bağlıdır** ve MIAO'u kullanmak için bunu kullanmanıza gerek yoktur.
 
 Öncelikle uluslararası kullanıcılar için tasarlanmıştır ve dünya genelinde istikrarlı erişim sağlar.
 
@@ -37,7 +37,7 @@ OpenCode Go, bu modellere **aylık 10$** karşılığında erişmenizi sağlar.
 
 ## Nasıl çalışır?
 
-OpenCode Go, Miao'daki diğer sağlayıcılar gibi çalışır.
+OpenCode Go, MIAO'daki diğer sağlayıcılar gibi çalışır.
 
 1. **<a href={console}>OpenCode Zen</a>**'e giriş yapın, Go'ya abone olun ve API anahtarınızı kopyalayın.
 2. TUI'de `/connect` komutunu çalıştırın, `OpenCode Go`yu seçin ve API anahtarınızı yapıştırın.
@@ -88,7 +88,7 @@ Test edip yenilerini ekledikçe model listesi değişebilir.
 
 ## Nerede kullanabilirim?
 
-OpenCode Go, [Miao](https://opencode.ai) ve benzer türde istekler üreten diğer kodlama aracıları için tasarlanmıştır.
+OpenCode Go, [MIAO](https://opencode.ai) ve benzer türde istekler üreten diğer kodlama aracıları için tasarlanmıştır.
 Trafik, diğer kullanıcıların deneyimini olumsuz etkileyen kötüye kullanımlara karşı izlenir.
 
 İstemciniz şunları yapmalıdır:
@@ -104,13 +104,13 @@ Ancak gelecekte de çalışmaya devam edeceklerini garanti etmiyoruz.
 
 | İstemci           | Oturum desteği                                                                                                                                                                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Hermes**        | [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) içeren derlemeler, ana ve yardımcı Miao isteklerinde başlığı gönderir. Düzeltme v0.21.0'dan sonra birleştirilmiştir; dolayısıyla v0.21.0 sürümü tek başına bu düzeltmeyi içermez. |
+| **Hermes**        | [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) içeren derlemeler, ana ve yardımcı MIAO isteklerinde başlığı gönderir. Düzeltme v0.21.0'dan sonra birleştirilmiştir; dolayısıyla v0.21.0 sürümü tek başına bu düzeltmeyi içermez. |
 | **Claude Code**   | Go, Claude Code'un yerel oturum başlığını tanır. Özel başlık ekleyen bir sarmalayıcı gerekmez.                                                                                                                                                               |
 | **Codex**         | Go, Codex'in yerel oturum başlığını tanır. Bazı sürümler ve proxy yapılandırmaları hâlâ bu başlığı göndermemektedir; istekleri iletirken oturum başlığını koruyun.                                                                                           |
 | **ZCode**         | Go, ZCode'un yerel oturum başlığını tanır. [`x-opencode-session` talebimiz](https://github.com/zai-org/feedback/issues/492) hâlâ açıktır ancak artık özellikle bu başlığın gönderilmesi gerekli değildir.                                                    |
-| **Pi**            | Güncel derlemeler Miao için oturum bilgilerini gönderir. Eski kurulumları güncelleyin.                                                                                                                                                                   |
+| **Pi**            | Güncel derlemeler MIAO için oturum bilgilerini gönderir. Eski kurulumları güncelleyin.                                                                                                                                                                   |
 | **jcode**         | [Oturum başlığı düzeltmesini](https://github.com/1jehuang/jcode/issues/1167) içeren **v0.81.6 veya sonraki bir sürüme** güncelleyin.                                                                                                                         |
-| **Kilo Code CLI** | [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) içeren derlemeler Miao oturum başlıklarını geri getirir. Bu düzeltme CLI'ı kapsar, VS Code uzantısını kapsamaz. Bkz. [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723).     |
+| **Kilo Code CLI** | [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) içeren derlemeler MIAO oturum başlıklarını geri getirir. Bu düzeltme CLI'ı kapsar, VS Code uzantısını kapsamaz. Bkz. [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723).     |
 
 ### Sorunlu Olduğu Bilinen İstemciler
 
@@ -393,4 +393,4 @@ OpenCode Go'yu şu amaçlarla oluşturduk:
 1. Düşük maliyetli bir abonelik ile yapay zeka destekli kodlamayı daha fazla kişi için **erişilebilir** kılmak.
 2. En iyi açık kodlama modellerine **güvenilir** erişim sağlamak.
 3. Kodlama aracısı (agent) kullanımı için **test edilmiş ve kıyaslanmış** modelleri bir araya getirmek.
-4. Miao ile diğer sağlayıcıları da kullanmanıza olanak tanıyarak **kilitlenme (vendor lock-in) olmamasını** sağlamak.
+4. MIAO ile diğer sağlayıcıları da kullanmanıza olanak tanıyarak **kilitlenme (vendor lock-in) olmamasını** sağlamak.

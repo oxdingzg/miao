@@ -11,7 +11,7 @@ Miao koristi [AI SDK](https://ai-sdk.dev/) i [Models.dev](https://models.dev) za
 Za dodavanje provajdera potrebno je:
 
 1. Dodajte API ključeve za provajdera koristeći naredbu `/connect`.
-2. Konfigurirajte dobavljača u vašoj Miao konfiguraciji.
+2. Konfigurirajte dobavljača u vašoj MIAO konfiguraciji.
 
 ---
 
@@ -24,7 +24,7 @@ u `~/.local/share/miao/auth.json`.
 
 ### Konfiguracija
 
-Možete prilagoditi dobavljače putem odjeljka `provider` u vašem Miao
+Možete prilagoditi dobavljače putem odjeljka `provider` u vašem MIAO
 config.
 
 ---
@@ -50,14 +50,14 @@ Možete prilagoditi osnovni URL za bilo kojeg provajdera postavljanjem opcije `b
 
 ## OpenCode Zen
 
-OpenCode Zen je lista modela koje je obezbedio Miao tim koji su bili
+OpenCode Zen je lista modela koje je obezbedio MIAO tim koji su bili
 testirano i potvrđeno da dobro radi sa Miao. [Saznajte više](/docs/zen).
 
 :::tip
 Ako ste novi, preporučujemo da počnete sa OpenCode Zen.
 :::
 
-1. Pokrenite naredbu `/connect` u TUI-u, odaberite miao i idite na [opencode.ai/auth](https://opencode.ai/auth).
+1. Pokrenite naredbu `/connect` u TUI-u, odaberite MIAO i idite na [opencode.ai/auth](https://opencode.ai/auth).
 
 ```txt
    /connect
@@ -80,13 +80,13 @@ Ako ste novi, preporučujemo da počnete sa OpenCode Zen.
    /models
 ```
 
-Radi kao i svaki drugi provajder u Miao i potpuno je opcionalan za korištenje.
+Radi kao i svaki drugi provajder u MIAO i potpuno je opcionalan za korištenje.
 
 ---
 
 ## OpenCode Go
 
-OpenCode Go je jeftin plan pretplate koji pruža pouzdan pristup popularnim modelima otvorenog kodiranja koje pruža Miao tim i koji su testirani i verificirani da dobro rade s Miao-om.
+OpenCode Go je jeftin plan pretplate koji pruža pouzdan pristup popularnim modelima otvorenog kodiranja koje pruža MIAO tim i koji su testirani i verificirani da dobro rade s Miao-om.
 
 1. Pokrenite naredbu `/connect` u TUI-u, odaberite `OpenCode Go` i idite na [opencode.ai/auth](https://opencode.ai/zen).
 
@@ -111,7 +111,7 @@ OpenCode Go je jeftin plan pretplate koji pruža pouzdan pristup popularnim mode
    /models
    ```
 
-Radi kao i svaki drugi provajder u Miao i potpuno je opcionalan za korištenje.
+Radi kao i svaki drugi provajder u MIAO i potpuno je opcionalan za korištenje.
 
 ---
 
@@ -155,7 +155,7 @@ Ne vidite provajdera ovdje? Pošaljite PR.
 
 ### Amazon Bedrock
 
-Da biste koristili Amazon Bedrock s Miao:
+Da biste koristili Amazon Bedrock s MIAO:
 
 1. Idite na **Katalog modela** na Amazon Bedrock konzoli i zatražite
    pristup modelima koje želite.
@@ -168,7 +168,7 @@ Da biste koristili Amazon Bedrock s Miao:
 
    #### Varijable okruženja (Brzi početak)
 
-   Postavite jednu od ovih varijabli okruženja dok pokrećete miao:
+   Postavite jednu od ovih varijabli okruženja dok pokrećete MIAO:
 
 ```bash
    # Option 1: Using AWS access keys
@@ -326,7 +326,7 @@ Ili ako već imate API ključ, možete odabrati **Ručno unesite API ključ** i 
 
 ### Atomic Chat
 
-Možete konfigurirati miao za korištenje lokalnih modela preko [Atomic Chata](https://atomic.chat) — desktop aplikacije koja pokreće lokalne LLM-ove iza OpenAI-kompatibilnog API servera (zadana krajnja tačka `http://127.0.0.1:1337/v1`).
+Možete konfigurirati MIAO za korištenje lokalnih modela preko [Atomic Chata](https://atomic.chat) — desktop aplikacije koja pokreće lokalne LLM-ove iza OpenAI-kompatibilnog API servera (zadana krajnja tačka `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -375,7 +375,7 @@ Ako naiđete na greške "Žao mi je, ali ne mogu pomoći s tim zahtjevom", poku�
 2. Idite na [Azure AI Foundry](https://ai.azure.com/) i implementirajte model.
 
    :::note
-   Ime implementacije mora odgovarati imenu modela da bi miao ispravno radio.
+   Ime implementacije mora odgovarati imenu modela da bi MIAO ispravno radio.
    :::
 
 3. Pokrenite naredbu `/connect` i potražite **Azure**.
@@ -422,7 +422,7 @@ Ili ga dodajte na svoj bash profil:
 2. Idite na [Azure AI Foundry](https://ai.azure.com/) i implementirajte model.
 
    :::note
-   Ime implementacije mora odgovarati imenu modela da bi miao ispravno radio.
+   Ime implementacije mora odgovarati imenu modela da bi MIAO ispravno radio.
    :::
 
 3. Pokrenite naredbu `/connect` i potražite **Azure kognitivne usluge**.
@@ -554,7 +554,7 @@ Ili ga postavite kao varijablu okruženja.
    /models
 ```
 
-Također možete dodati modele kroz svoju miao konfiguraciju.
+Također možete dodati modele kroz svoju MIAO konfiguraciju.
 
 ```json title="miao.json"
 {
@@ -753,14 +753,14 @@ Dostupna su tri modela bazirana na Claudeu:
 
 :::note
 Također možete odrediti 'GITLAB_TOKEN' varijablu okruženja ako ne želite
-da pohrani token u miao auth memoriju.
+da pohrani token u MIAO auth memoriju.
 :::
 
 ##### Samostalni GitLab
 
 :::note[Napomena o usklađenosti]
 Miao koristi mali model za neke AI zadatke kao što je generiranje naslova sesije.
-Podrazumevano je konfigurisan da koristi gpt-5-nano, a hostuje ga Zen. Da zaključate Miao
+Podrazumevano je konfigurisan da koristi gpt-5-nano, a hostuje ga Zen. Da zaključate MIAO
 da biste koristili samo svoju vlastitu instancu koju hostuje GitLab, dodajte sljedeće u svoju
 `miao.json` fajl. Također se preporučuje da onemogućite dijeljenje sesije.
 
@@ -856,7 +856,7 @@ Ovaj dodatak pruža sveobuhvatne mogućnosti upravljanja GitLab repozitorijumom,
 
 ### GitHub Copilot
 
-Da biste koristili svoju GitHub Copilot pretplatu s miao:
+Da biste koristili svoju GitHub Copilot pretplatu s MIAO:
 
 :::note
 Neki modeli će možda trebati [Pro+
@@ -893,7 +893,7 @@ Neki modeli moraju biti ručno omogućeni u vašim [postavkama GitHub Copilot](h
 
 ### Google Vertex AI
 
-Za korištenje Google Vertex AI s Miao:
+Za korištenje Google Vertex AI s MIAO:
 
 1. Idite do **Model Garden** u Google Cloud Console i provjerite
    modeli dostupni u vašoj regiji.
@@ -1075,7 +1075,7 @@ Helicone podržava prilagođena zaglavlja za funkcije kao što su keširanje, pr
 
 ##### Praćenje sesije
 
-Heliconeova funkcija [Sessions](https://docs.helicone.ai/features/sessions) vam omogućava da grupišete povezane LLM zahtjeve zajedno. Koristite dodatak [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) da automatski prijavite svaki Miao razgovor kao sesiju u Helicone-u.
+Heliconeova funkcija [Sessions](https://docs.helicone.ai/features/sessions) vam omogućava da grupišete povezane LLM zahtjeve zajedno. Koristite dodatak [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) da automatski prijavite svaki MIAO razgovor kao sesiju u Helicone-u.
 
 ```bash
 npm install -g opencode-helicone-session
@@ -1089,7 +1089,7 @@ Dodajte ga u svoju konfiguraciju.
 }
 ```
 
-Dodatak ubacuje zaglavlja `Helicone-Session-Id` i `Helicone-Session-Name` u vaše zahtjeve. Na stranici Helicone Sessions, vidjet ćete svaki Miao razgovor naveden kao zasebna sesija.
+Dodatak ubacuje zaglavlja `Helicone-Session-Id` i `Helicone-Session-Name` u vaše zahtjeve. Na stranici Helicone Sessions, vidjet ćete svaki MIAO razgovor naveden kao zasebna sesija.
 
 ##### Uobičajena Helicone zaglavlja
 
@@ -1106,7 +1106,7 @@ Pogledajte [Helicone Header Directory](https://docs.helicone.ai/helicone-headers
 
 ### llama.cpp
 
-Možete konfigurirati miao za korištenje lokalnih modela putem [llama.cpp's](https://github.com/ggml-org/llama.cpp) uslužnog programa llama-server
+Možete konfigurirati MIAO za korištenje lokalnih modela putem [llama.cpp's](https://github.com/ggml-org/llama.cpp) uslužnog programa llama-server
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
@@ -1173,7 +1173,7 @@ IO.NET nudi 17 modela optimiziranih za različite slučajeve upotrebe:
 
 ### LM Studio
 
-Možete konfigurirati miao za korištenje lokalnih modela preko LM Studio.
+Možete konfigurirati MIAO za korištenje lokalnih modela preko LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
@@ -1290,7 +1290,7 @@ Da biste koristili Kimi K2 iz Moonshot AI:
 
 ### Ollama
 
-Možete konfigurirati miao za korištenje lokalnih modela putem Ollame.
+Možete konfigurirati MIAO za korištenje lokalnih modela putem Ollame.
 
 :::tip
 Ollama se može automatski konfigurirati za Miao. Pogledajte [Ollama integracijske dokumente](https://docs.ollama.com/integrations/opencode) za detalje.
@@ -1332,7 +1332,7 @@ Ako pozivi alata ne rade, pokušajte povećati `num_ctx` u Ollama. Počnite oko 
 
 ### Ollama Cloud
 
-Da biste koristili Ollama Cloud s Miao:
+Da biste koristili Ollama Cloud s MIAO:
 
 1. Idite na [https://ollama.com/](https://ollama.com/) i prijavite se ili kreirajte račun.
 
@@ -1355,7 +1355,7 @@ Da biste koristili Ollama Cloud s Miao:
    └ enter
 ```
 
-6. **Važno**: Prije upotrebe modela oblaka u Miao, morate lokalno povući informacije o modelu:
+6. **Važno**: Prije upotrebe modela oblaka u MIAO, morate lokalno povući informacije o modelu:
 
 ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1404,7 +1404,7 @@ Ako već imate API ključ, možete odabrati **Ručno unesite API ključ** i zali
 
 ### OpenCode Zen
 
-OpenCode Zen je lista testiranih i verifikovanih modela koju je obezbedio Miao tim. [Saznajte više](/docs/zen).
+OpenCode Zen je lista testiranih i verifikovanih modela koju je obezbedio MIAO tim. [Saznajte više](/docs/zen).
 
 1. Prijavite se na **<a href={console}>OpenCode Zen</a>** i kliknite na **Kreiraj API ključ**.
 
@@ -1414,7 +1414,7 @@ OpenCode Zen je lista testiranih i verifikovanih modela koju je obezbedio Miao t
    /connect
 ```
 
-3. Unesite svoj Miao API ključ.
+3. Unesite svoj MIAO API ključ.
 
 ```txt
    ┌ API key
@@ -1456,7 +1456,7 @@ OpenCode Zen je lista testiranih i verifikovanih modela koju je obezbedio Miao t
    /models
 ```
 
-Također možete dodati dodatne modele putem vaše miao konfiguracije.
+Također možete dodati dodatne modele putem vaše MIAO konfiguracije.
 
 ```json title="miao.json" {6}
 {
@@ -1471,7 +1471,7 @@ Također možete dodati dodatne modele putem vaše miao konfiguracije.
 }
 ```
 
-5. Također ih možete prilagoditi putem vaše miao konfiguracije. Evo primjera navođenja provajdera
+5. Također ih možete prilagoditi putem vaše MIAO konfiguracije. Evo primjera navođenja provajdera
 
 ```json title="miao.json"
 {
@@ -1720,7 +1720,7 @@ Vercel AI Gateway vam omogućava da pristupite modelima iz OpenAI, Anthropic, Go
    /models
 ```
 
-Također možete prilagoditi modele kroz svoju miao konfiguraciju. Evo primjera specificiranja redoslijeda usmjeravanja dobavljača.
+Također možete prilagoditi modele kroz svoju MIAO konfiguraciju. Evo primjera specificiranja redoslijeda usmjeravanja dobavljača.
 
 ```json title="miao.json"
 {
@@ -1830,7 +1830,7 @@ Ako ste pretplaćeni na **GLM plan kodiranja**, odaberite **Z.AI plan kodiranja*
    /models
 ```
 
-Također možete dodati dodatne modele putem vaše miao konfiguracije.
+Također možete dodati dodatne modele putem vaše MIAO konfiguracije.
 
 ```json title="miao.json" {6}
 {
@@ -1974,7 +1974,7 @@ Detalji konfiguracije:
 - **limit.context**: Maksimalni ulazni tokeni koje model prihvata.
 - **limit.output**: Maksimalni tokeni koje model može generirati.
 
-Polja `limit` omogućavaju Miao da shvati koliko vam je konteksta ostalo. Standardni dobavljači ih automatski preuzimaju sa models.dev.
+Polja `limit` omogućavaju MIAO da shvati koliko vam je konteksta ostalo. Standardni dobavljači ih automatski preuzimaju sa models.dev.
 
 ---
 
@@ -1987,7 +1987,7 @@ Ako imate problema s konfiguracijom provajdera, provjerite sljedeće:
 
    Ovo se ne odnosi na dobavljače kao što je Amazon Bedrock, koji se oslanjaju na varijable okruženja za svoju autentifikaciju.
 
-2. Za prilagođene provajdere, provjerite Miao konfiguraciju i:
-   - Uvjerite se da ID provajdera korišten u naredbi `/connect` odgovara ID-u u vašoj miao konfiguraciji.
+2. Za prilagođene provajdere, provjerite MIAO konfiguraciju i:
+   - Uvjerite se da ID provajdera korišten u naredbi `/connect` odgovara ID-u u vašoj MIAO konfiguraciji.
    - Za provajdera se koristi pravi npm paket. Na primjer, koristite `@ai-sdk/cerebras` za Cerebras. A za sve ostale OpenAI kompatibilne provajdere, koristite `@ai-sdk/openai-compatible`.
    - Provjerite da li se ispravna krajnja tačka API-ja koristi u polju `options.baseURL`.

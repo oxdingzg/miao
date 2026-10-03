@@ -3,7 +3,7 @@ title: References
 description: Add local directories and Git repositories as project references.
 ---
 
-References give Miao access to directories outside the current project. Use them to make documentation, shared libraries, examples, or another repository available while you work.
+References give MIAO access to directories outside the current project. Use them to make documentation, shared libraries, examples, or another repository available while you work.
 
 References are configured by alias in `miao.json` or `miao.json`.
 
@@ -60,7 +60,7 @@ You can also use a string shorthand:
 
 ## Git repositories
 
-Use `repository` to reference a Git repository. Miao materializes the repository in its local repository cache and makes the checked-out source available as a reference directory.
+Use `repository` to reference a Git repository. MIAO materializes the repository in its local repository cache and makes the checked-out source available as a reference directory.
 
 ```jsonc title="miao.json"
 {
@@ -73,7 +73,7 @@ Use `repository` to reference a Git repository. Miao materializes the repository
 }
 ```
 
-`repository` accepts Git URLs, host/path references, and GitHub `owner/repo` shorthand. The optional `branch` field selects a branch or ref. Without `branch`, Miao uses the repository's default branch.
+`repository` accepts Git URLs, host/path references, and GitHub `owner/repo` shorthand. The optional `branch` field selects a branch or ref. Without `branch`, MIAO uses the repository's default branch.
 
 You can use string shorthand when you do not need a branch, description, or other options:
 

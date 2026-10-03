@@ -15,7 +15,7 @@ You can switch between agents during a session or invoke them with the `@` menti
 
 ## Types
 
-There are two types of agents in Miao; primary agents and subagents.
+There are two types of agents in MIAO; primary agents and subagents.
 
 ---
 
@@ -88,7 +88,7 @@ A fast, read-only agent for exploring codebases. Cannot modify files. Use this w
 
 _Mode_: `subagent`
 
-A read-only agent for external docs and dependency research. Use this when you need to clone a dependency repository into Miao's managed cache, inspect library source, or cross-reference local code against upstream implementations without modifying your workspace.
+A read-only agent for external docs and dependency research. Use this when you need to clone a dependency repository into MIAO's managed cache, inspect library source, or cross-reference local code against upstream implementations without modifying your workspace.
 
 ---
 
@@ -284,7 +284,7 @@ Temperature values typically range from 0.0 to 1.0:
 }
 ```
 
-If no temperature is specified, Miao uses model-specific defaults; typically 0 for most models, 0.55 for Qwen models.
+If no temperature is specified, MIAO uses model-specific defaults; typically 0 for most models, 0.55 for Qwen models.
 
 ---
 
@@ -344,7 +344,7 @@ Specify a custom system prompt file for this agent with the `prompt` config. The
 }
 ```
 
-This path is relative to where the config file is located. So this works for both the global Miao config and the project specific config.
+This path is relative to where the config file is located. So this works for both the global MIAO config and the project specific config.
 
 ---
 
@@ -366,7 +366,7 @@ If you don’t specify a model, primary agents use the [model globally configure
 }
 ```
 
-The model ID in your Miao config uses the format `provider/model-id`. For example, if you're using [OpenCode Zen](/docs/zen), you would use `opencode/gpt-5.1-codex` for GPT 5.1 Codex.
+The model ID in your MIAO config uses the format `provider/model-id`. For example, if you're using [OpenCode Zen](/docs/zen), you would use `opencode/gpt-5.1-codex` for GPT 5.1 Codex.
 
 ---
 

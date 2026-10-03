@@ -15,7 +15,7 @@ Você pode alternar entre agentes durante uma sessão ou invocá-los com a menç
 
 ## Tipos
 
-Existem dois tipos de agentes no miao; agentes primários e subagentes.
+Existem dois tipos de agentes no MIAO; agentes primários e subagentes.
 
 ---
 
@@ -88,7 +88,7 @@ Um agente rápido e somente leitura para explorar bases de código. Não pode mo
 
 _Modo_: `subagent`
 
-Um agente somente leitura para pesquisa em documentação externa e dependências. Use-o quando você precisar clonar o repositório de uma dependência para o cache gerenciado do Miao, inspecionar o código-fonte de uma biblioteca ou cruzar o código local com implementações upstream sem modificar seu workspace.
+Um agente somente leitura para pesquisa em documentação externa e dependências. Use-o quando você precisar clonar o repositório de uma dependência para o cache gerenciado do MIAO, inspecionar o código-fonte de uma biblioteca ou cruzar o código local com implementações upstream sem modificar seu workspace.
 
 ---
 
@@ -285,7 +285,7 @@ Os valores de temperatura geralmente variam de 0.0 a 1.0:
 }
 ```
 
-Se nenhuma temperatura for especificada, o miao usa padrões específicos do modelo; tipicamente 0 para a maioria dos modelos, 0.55 para modelos Qwen.
+Se nenhuma temperatura for especificada, o MIAO usa padrões específicos do modelo; tipicamente 0 para a maioria dos modelos, 0.55 para modelos Qwen.
 
 ---
 
@@ -345,7 +345,7 @@ Especifique um arquivo de prompt do sistema personalizado para este agente com a
 }
 ```
 
-Este caminho é relativo ao local onde o arquivo de configuração está localizado. Portanto, isso funciona tanto para a configuração global do miao quanto para a configuração específica do projeto.
+Este caminho é relativo ao local onde o arquivo de configuração está localizado. Portanto, isso funciona tanto para a configuração global do MIAO quanto para a configuração específica do projeto.
 
 ---
 
@@ -367,7 +367,7 @@ Se você não especificar um modelo, os agentes primários usam o [modelo config
 }
 ```
 
-O ID do modelo em sua configuração do miao usa o formato `provider/model-id`. Por exemplo, se você estiver usando [OpenCode Zen](/docs/zen), você usaria `opencode/gpt-5.1-codex` para GPT 5.1 Codex.
+O ID do modelo em sua configuração do MIAO usa o formato `provider/model-id`. Por exemplo, se você estiver usando [OpenCode Zen](/docs/zen), você usaria `opencode/gpt-5.1-codex` para GPT 5.1 Codex.
 
 ---
 

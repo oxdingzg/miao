@@ -1,9 +1,9 @@
 ---
 title: دعم ACP
-description: استخدم Miao في أي محرر متوافق مع ACP.
+description: استخدم MIAO في أي محرر متوافق مع ACP.
 ---
 
-يدعم Miao بروتوكول [Agent Client Protocol](https://agentclientprotocol.com) أو (ACP)، مما يتيح لك استخدامه مباشرة في المحررات وبيئات التطوير المتكاملة (IDEs) المتوافقة.
+يدعم MIAO بروتوكول [Agent Client Protocol](https://agentclientprotocol.com) أو (ACP)، مما يتيح لك استخدامه مباشرة في المحررات وبيئات التطوير المتكاملة (IDEs) المتوافقة.
 
 :::tip
 للاطلاع على قائمة بالمحررات والأدوات التي تدعم ACP، راجع [ACP progress report](https://zed.dev/blog/acp-progress-report#available-now).
@@ -15,9 +15,9 @@ ACP بروتوكول مفتوح يوحّد آلية التواصل بين محر
 
 ## الإعداد
 
-لاستخدام Miao عبر ACP، اضبط محررك ليشغّل الأمر `miao acp`.
+لاستخدام MIAO عبر ACP، اضبط محررك ليشغّل الأمر `miao acp`.
 
-يشغّل هذا الأمر Miao كعملية فرعية متوافقة مع ACP تتواصل مع محررك عبر JSON-RPC باستخدام stdio.
+يشغّل هذا الأمر MIAO كعملية فرعية متوافقة مع ACP تتواصل مع محررك عبر JSON-RPC باستخدام stdio.
 
 فيما يلي أمثلة لمحررات شائعة تدعم ACP.
 
@@ -25,9 +25,9 @@ ACP بروتوكول مفتوح يوحّد آلية التواصل بين محر
 
 ### Zed
 
-ثبّت Miao من [سجل ACP في Zed](https://zed.dev/docs/ai/external-agents#registry) عبر تشغيل `zed: acp registry` من لوحة الأوامر.
+ثبّت MIAO من [سجل ACP في Zed](https://zed.dev/docs/ai/external-agents#registry) عبر تشغيل `zed: acp registry` من لوحة الأوامر.
 
-لاستخدام ملف Miao تنفيذي مخصص بدلاً من ذلك، أضفه إلى إعدادات [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
+لاستخدام ملف MIAO تنفيذي مخصص بدلاً من ذلك، أضفه إلى إعدادات [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
 
 ```json title="~/.config/zed/settings.json"
 {
@@ -85,7 +85,7 @@ ACP بروتوكول مفتوح يوحّد آلية التواصل بين محر
 }
 ```
 
-لفتحه، اختر الوكيل الجديد 'Miao' من محدد الوكلاء في AI Chat.
+لفتحه، اختر الوكيل الجديد 'MIAO' من محدد الوكلاء في AI Chat.
 
 ---
 
@@ -124,7 +124,7 @@ ACP بروتوكول مفتوح يوحّد آلية التواصل بين محر
 
 ### CodeCompanion.nvim
 
-لاستخدام Miao كوكيل ACP في [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim)، أضف التالي إلى إعدادات Neovim:
+لاستخدام MIAO كوكيل ACP في [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim)، أضف التالي إلى إعدادات Neovim:
 
 ```lua
 require("codecompanion").setup({
@@ -139,13 +139,13 @@ require("codecompanion").setup({
 })
 ```
 
-يضبط هذا الإعداد CodeCompanion لاستخدام Miao كوكيل ACP للدردشة.
+يضبط هذا الإعداد CodeCompanion لاستخدام MIAO كوكيل ACP للدردشة.
 
 إذا احتجت إلى تمرير متغيرات البيئة (مثل `MIAO_API_KEY`)، فارجع إلى [Configuring Adapters: Environment Variables](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) ضمن توثيق CodeCompanion.nvim للاطلاع على التفاصيل كاملة.
 
 ## الدعم
 
-يعمل Miao عبر ACP بالطريقة نفسها التي يعمل بها في terminal. جميع الميزات مدعومة:
+يعمل MIAO عبر ACP بالطريقة نفسها التي يعمل بها في terminal. جميع الميزات مدعومة:
 
 :::note
 بعض أوامر الشرطة المائلة المضمنة مثل `/undo` و`/redo` غير مدعومة حاليا.
@@ -153,7 +153,7 @@ require("codecompanion").setup({
 
 - الأدوات المضمنة (عمليات الملفات، أوامر terminal، إلخ.)
 - الأدوات المخصصة وأوامر الشرطة المائلة
-- خوادم MCP المضبوطة في إعدادات Miao
+- خوادم MCP المضبوطة في إعدادات MIAO
 - قواعد خاصة بالمشروع من `AGENTS.md`
 - المنسقات (formatters) والمدققات (linters) المخصصة
 - نظام الوكلاء والأذونات

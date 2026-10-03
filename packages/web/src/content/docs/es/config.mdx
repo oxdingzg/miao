@@ -1,9 +1,9 @@
 ---
 title: Configuración
-description: Usando la configuración Miao JSON.
+description: Usando la configuración MIAO JSON.
 ---
 
-Puede configurar Miao usando un archivo de configuración JSON.
+Puede configurar MIAO usando un archivo de configuración JSON.
 
 ---
 
@@ -34,7 +34,7 @@ Los archivos de configuración se **fusionan**, no se reemplazan.
 
 Los archivos de configuración se fusionan, no se reemplazan. Se combinan las configuraciones de las siguientes ubicaciones de configuración. Las configuraciones posteriores anulan las anteriores solo para claves en conflicto. Se conservan las configuraciones no conflictivas de todas las configuraciones.
 
-Por ejemplo, si su configuración global establece `theme: "miao"` y `autoupdate: true`, y la configuración de su proyecto establece `model: "anthropic/claude-sonnet-4-5"`, la configuración final incluirá las tres configuraciones.
+Por ejemplo, si su configuración global establece `theme: "MIAO"` y `autoupdate: true`, y la configuración de su proyecto establece `model: "anthropic/claude-sonnet-4-5"`, la configuración final incluirá las tres configuraciones.
 
 ---
 
@@ -95,7 +95,7 @@ Puede habilitar servidores específicos en su configuración local:
 
 ### Global
 
-Coloque su configuración global Miao en `~/.config/miao/miao.json`. Utilice la configuración global para las preferencias de todo el usuario, como temas, proveedores o combinaciones de teclas.
+Coloque su configuración global MIAO en `~/.config/miao/miao.json`. Utilice la configuración global para las preferencias de todo el usuario, como temas, proveedores o combinaciones de teclas.
 
 La configuración global anula los valores predeterminados de la organización remota.
 
@@ -109,7 +109,7 @@ Agregue `miao.json` en la raíz de su proyecto. La configuración del proyecto t
 Coloque la configuración específica del proyecto en la raíz de su proyecto.
 :::
 
-Cuando se inicia Miao, busca un archivo de configuración en el directorio actual o recorre hasta el directorio Git más cercano.
+Cuando se inicia MIAO, busca un archivo de configuración en el directorio actual o recorre hasta el directorio Git más cercano.
 
 Esto también es seguro para registrarlo en Git y utiliza el mismo esquema que el global.
 
@@ -228,7 +228,7 @@ Puede administrar las herramientas que un LLM puede usar a través de la opción
 
 ### Modelos
 
-Puede configurar los proveedores y modelos que desea utilizar en su configuración Miao a través de las opciones `provider`, `model` y `small_model`.
+Puede configurar los proveedores y modelos que desea utilizar en su configuración MIAO a través de las opciones `provider`, `model` y `small_model`.
 
 ```json title="miao.json"
 {
@@ -239,7 +239,7 @@ Puede configurar los proveedores y modelos que desea utilizar en su configuraci�
 }
 ```
 
-La opción `small_model` configura un modelo separado para tareas livianas como la generación de títulos. De forma predeterminada, Miao intenta utilizar un modelo más económico si su proveedor tiene uno disponible; de ​​lo contrario, recurre a su modelo principal.
+La opción `small_model` configura un modelo separado para tareas livianas como la generación de títulos. De forma predeterminada, MIAO intenta utilizar un modelo más económico si su proveedor tiene uno disponible; de ​​lo contrario, recurre a su modelo principal.
 
 Las opciones de proveedores pueden incluir `timeout` y `setCacheKey`:
 
@@ -301,7 +301,7 @@ Los tokens de portador (`AWS_BEARER_TOKEN_BEDROCK` o `/connect`) tienen priorida
 
 ### Temas
 
-Puede configurar el tema que desea usar en su configuración Miao a través de la opción `theme`.
+Puede configurar el tema que desea usar en su configuración MIAO a través de la opción `theme`.
 
 ```json title="miao.json"
 {
@@ -351,7 +351,7 @@ Puede configurar el agente predeterminado usando la opción `default_agent`. Est
 }
 ```
 
-El agente predeterminado debe ser un agente principal (no un subagente). Puede ser un agente integrado como `"build"` o `"plan"`, o un [agente personalizado](/docs/agents) que haya definido. Si el agente especificado no existe o es un subagente, Miao recurrirá a `"build"` con una advertencia.
+El agente predeterminado debe ser un agente principal (no un subagente). Puede ser un agente integrado como `"build"` o `"plan"`, o un [agente personalizado](/docs/agents) que haya definido. Si el agente especificado no existe o es un subagente, MIAO recurrirá a `"build"` con una advertencia.
 
 Esta configuración se aplica en todas las interfaces: TUI, CLI (`miao run`), aplicación de escritorio y GitHub Acción.
 
@@ -463,7 +463,7 @@ Puede configurar formateadores de código a través de la opción `formatter`.
 
 ### Permisos
 
-De forma predeterminada, miao **permite todas las operaciones** sin requerir aprobación explícita. Puede cambiar esto usando la opción `permission`.
+De forma predeterminada, MIAO **permite todas las operaciones** sin requerir aprobación explícita. Puede cambiar esto usando la opción `permission`.
 
 Por ejemplo, para garantizar que las herramientas `edit` y `bash` requieran la aprobación del usuario:
 
@@ -534,7 +534,7 @@ Puede configurar los servidores MCP que desee utilizar a través de la opción `
 
 ### Complementos
 
-Los [complementos](/docs/plugins) amplían Miao con herramientas, enlaces e integraciones personalizados.
+Los [complementos](/docs/plugins) amplían MIAO con herramientas, enlaces e integraciones personalizados.
 
 Coloque los archivos de complemento en `.miao/plugins/` o `~/.config/miao/plugins/`. También puedes cargar complementos desde npm a través de la opción `plugin`.
 
@@ -599,7 +599,7 @@ Puede especificar una lista de proveedores permitidos a través de la opción `e
 }
 ```
 
-Esto es útil cuando desea restringir Miao para que utilice únicamente proveedores específicos en lugar de deshabilitarlos uno por uno.
+Esto es útil cuando desea restringir MIAO para que utilice únicamente proveedores específicos en lugar de deshabilitarlos uno por uno.
 
 :::note
 El `disabled_providers` tiene prioridad sobre `enabled_providers`.

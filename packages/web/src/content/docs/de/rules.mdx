@@ -1,25 +1,25 @@
 ---
 title: Regeln
-description: Lege eigene Anweisungen fuer miao fest.
+description: Lege eigene Anweisungen fuer MIAO fest.
 ---
 
-Du kannst miao ueber eine `AGENTS.md`-Datei mit eigenen Anweisungen steuern.
+Du kannst MIAO ueber eine `AGENTS.md`-Datei mit eigenen Anweisungen steuern.
 Das ist aehnlich zu den Regeln in Cursor und wird direkt in den LLM-Kontext geladen.
 
 ---
 
 ## Initialisierung
 
-Um eine neue `AGENTS.md` zu erstellen, fuehre in miao den Befehl `/init` aus.
+Um eine neue `AGENTS.md` zu erstellen, fuehre in MIAO den Befehl `/init` aus.
 
 :::tip
 Du solltest die `AGENTS.md` deines Projekts in Git committen.
 :::
 
 Der Befehl scannt dein Projekt und erzeugt daraus eine passende `AGENTS.md`.
-So kann miao sich in deinem Code besser orientieren.
+So kann MIAO sich in deinem Code besser orientieren.
 
-Wenn bereits eine `AGENTS.md` existiert, versucht miao sie zu erweitern.
+Wenn bereits eine `AGENTS.md` existiert, versucht MIAO sie zu erweitern.
 
 ---
 
@@ -74,7 +74,7 @@ Da diese Datei nicht in Git landet und nicht mit dem Team geteilt wird, eignet s
 
 ### Claude Code-Kompatibilität
 
-Wenn du von Claude Code kommst, unterstuetzt Miao dessen Dateikonventionen als Fallback:
+Wenn du von Claude Code kommst, unterstuetzt MIAO dessen Dateikonventionen als Fallback:
 
 - **Projektregeln**: `CLAUDE.md` im Projekt (wenn keine `AGENTS.md` existiert)
 - **Globale Regeln**: `~/.claude/CLAUDE.md` (wenn keine `~/.config/miao/AGENTS.md` existiert)
@@ -92,7 +92,7 @@ export MIAO_DISABLE_CLAUDE_CODE_SKILLS=1 # Disable only .claude/skills
 
 ## Rangfolge
 
-Beim Start sucht miao in dieser Reihenfolge nach Regeldateien:
+Beim Start sucht MIAO in dieser Reihenfolge nach Regeldateien:
 
 1. **Lokale Dateien** beim Hochlaufen ab dem aktuellen Verzeichnis (`AGENTS.md`, `CLAUDE.md`)
 2. **Globale Datei** unter `~/.config/miao/AGENTS.md`
@@ -150,7 +150,7 @@ Empfohlen ist das `instructions`-Feld in der `miao.json`:
 
 ### Manuelle Anweisungen in AGENTS.md
 
-Du kannst miao explizit anweisen, externe Dateien zu lesen.
+Du kannst MIAO explizit anweisen, externe Dateien zu lesen.
 Hier ein praxisnahes Beispiel:
 
 ```markdown title="AGENTS.md"

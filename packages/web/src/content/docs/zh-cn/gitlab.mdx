@@ -1,11 +1,11 @@
 ---
 title: GitLab
-description: 在 GitLab issue 和合并请求中使用 Miao。
+description: 在 GitLab issue 和合并请求中使用 MIAO。
 ---
 
 Miao 通过 GitLab CI/CD 流水线或 GitLab Duo 与你的 GitLab 工作流集成。
 
-在这两种情况下，Miao 都将在你的 GitLab Runner 上运行。
+在这两种情况下，MIAO 都将在你的 GitLab Runner 上运行。
 
 ---
 
@@ -13,21 +13,21 @@ Miao 通过 GitLab CI/CD 流水线或 GitLab Duo 与你的 GitLab 工作流集�
 
 Miao 可以在常规的 GitLab 流水线中运行。你可以将其作为 [CI 组件](https://docs.gitlab.com/ee/ci/components/) 集成到流水线中。
 
-这里我们使用的是社区创建的 Miao CI/CD 组件 — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode)。
+这里我们使用的是社区创建的 MIAO CI/CD 组件 — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode)。
 
 ---
 
 ### 功能特性
 
-- **按任务自定义配置**：使用自定义配置目录来配置 Miao，例如 `./config/#custom-directory`，以便为每次 Miao 调用启用或禁用特定功能。
-- **最小化配置**：CI 组件会在后台完成 Miao 的设置，你只需创建 Miao 配置和初始提示词即可。
+- **按任务自定义配置**：使用自定义配置目录来配置 MIAO，例如 `./config/#custom-directory`，以便为每次 MIAO 调用启用或禁用特定功能。
+- **最小化配置**：CI 组件会在后台完成 MIAO 的设置，你只需创建 MIAO 配置和初始提示词即可。
 - **灵活可定制**：CI 组件支持多种输入参数来自定义其行为。
 
 ---
 
 ### 设置
 
-1. 将你的 Miao 身份验证 JSON 作为文件类型的 CI 环境变量存储在 **Settings** > **CI/CD** > **Variables** 下。请确保将其标记为 "Masked and hidden"。
+1. 将你的 MIAO 身份验证 JSON 作为文件类型的 CI 环境变量存储在 **Settings** > **CI/CD** > **Variables** 下。请确保将其标记为 "Masked and hidden"。
 2. 将以下内容添加到你的 `.gitlab-ci.yml` 文件中。
 
    ```yaml title=".gitlab-ci.yml"
@@ -47,15 +47,15 @@ Miao 可以在常规的 GitLab 流水线中运行。你可以将其作为 [CI �
 ## GitLab Duo
 
 Miao 与你的 GitLab 工作流集成。
-在评论中提及 `@opencode`，Miao 将在你的 GitLab CI 流水线中执行任务。
+在评论中提及 `@opencode`，MIAO 将在你的 GitLab CI 流水线中执行任务。
 
 ---
 
 ### 功能特性
 
-- **问题分类**：让 Miao 调查某个 issue 并为你解释。
-- **修复与实现**：让 Miao 修复 issue 或实现某个功能。它会创建一个新分支，并提交包含更改的合并请求。
-- **安全可靠**：Miao 在你的 GitLab Runner 上运行。
+- **问题分类**：让 MIAO 调查某个 issue 并为你解释。
+- **修复与实现**：让 MIAO 修复 issue 或实现某个功能。它会创建一个新分支，并提交包含更改的合并请求。
+- **安全可靠**：MIAO 在你的 GitLab Runner 上运行。
 
 ---
 
@@ -157,7 +157,7 @@ Miao 在你的 GitLab CI/CD 流水线中运行，以下是设置所需的步骤�
 
 ### 示例
 
-以下是在 GitLab 中使用 Miao 的一些示例。
+以下是在 GitLab 中使用 MIAO 的一些示例。
 
 :::tip
 你可以配置使用不同于 `@opencode` 的触发词。

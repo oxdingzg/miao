@@ -1,6 +1,6 @@
 ---
 title: Enterprise
-description: Using Miao securely in your organization.
+description: Using MIAO securely in your organization.
 ---
 
 export const enterprise = "https://opencode.ai/enterprise"
@@ -11,7 +11,7 @@ Miao Enterprise is for organizations that want to ensure that their code and dat
 Miao does not store any of your code or context data.
 :::
 
-To get started with Miao Enterprise:
+To get started with MIAO Enterprise:
 
 1. Do a trial internally with your team.
 2. **<a href={enterprise}>Contact us</a>** to discuss pricing and implementation options.
@@ -26,10 +26,10 @@ Miao is open source and does not store any of your code or context data, so your
 
 ### Data handling
 
-**Miao does not store your code or context data.** All processing happens locally or through direct API calls to your AI provider.
+**MIAO does not store your code or context data.** All processing happens locally or through direct API calls to your AI provider.
 
 This means that as long as you are using a provider you trust, or an internal
-AI gateway, you can use Miao securely.
+AI gateway, you can use MIAO securely.
 
 The only caveat here is the optional `/share` feature.
 
@@ -62,13 +62,13 @@ We recommend you disable this for your trial.
 
 ## Pricing
 
-We use a per-seat model for Miao Enterprise. If you have your own LLM gateway, we do not charge for tokens used. For further details about pricing and implementation options, **<a href={enterprise}>contact us</a>**.
+We use a per-seat model for MIAO Enterprise. If you have your own LLM gateway, we do not charge for tokens used. For further details about pricing and implementation options, **<a href={enterprise}>contact us</a>**.
 
 ---
 
 ## Deployment
 
-Once you have completed your trial and you are ready to use Miao at
+Once you have completed your trial and you are ready to use MIAO at
 your organization, you can **<a href={enterprise}>contact us</a>** to discuss
 pricing and implementation options.
 
@@ -76,7 +76,7 @@ pricing and implementation options.
 
 ### Central Config
 
-We can set up Miao to use a single central config for your entire organization.
+We can set up MIAO to use a single central config for your entire organization.
 
 This centralized config can integrate with your SSO provider and ensures all users access only your internal AI gateway.
 
@@ -84,15 +84,15 @@ This centralized config can integrate with your SSO provider and ensures all use
 
 ### SSO integration
 
-Through the central config, Miao can integrate with your organization's SSO provider for authentication.
+Through the central config, MIAO can integrate with your organization's SSO provider for authentication.
 
-This allows Miao to obtain credentials for your internal AI gateway through your existing identity management system.
+This allows MIAO to obtain credentials for your internal AI gateway through your existing identity management system.
 
 ---
 
 ### Internal AI gateway
 
-With the central config, Miao can also be configured to use only your internal AI gateway.
+With the central config, MIAO can also be configured to use only your internal AI gateway.
 
 You can also disable all other AI providers, ensuring all requests go through your organization's approved infrastructure.
 
@@ -110,16 +110,16 @@ This is currently on our roadmap. If you're interested, **<a href={enterprise}>l
 ## FAQ
 
 <details>
-<summary>What is Miao Enterprise?</summary>
+<summary>What is MIAO Enterprise?</summary>
 
 Miao Enterprise is for organizations that want to ensure that their code and data never leaves their infrastructure. It can do this by using a centralized config that integrates with your SSO and internal AI gateway.
 
 </details>
 
 <details>
-<summary>How do I get started with Miao Enterprise?</summary>
+<summary>How do I get started with MIAO Enterprise?</summary>
 
-Simply start with an internal trial with your team. Miao by default does not store your code or context data, making it easy to get started.
+Simply start with an internal trial with your team. MIAO by default does not store your code or context data, making it easy to get started.
 
 Then **<a href={enterprise}>contact us</a>** to discuss pricing and implementation options.
 
@@ -133,9 +133,9 @@ We offer per-seat enterprise pricing. If you have your own LLM gateway, we do no
 </details>
 
 <details>
-<summary>Is my data secure with Miao Enterprise?</summary>
+<summary>Is my data secure with MIAO Enterprise?</summary>
 
-Yes. Miao does not store your code or context data. All processing happens locally or through direct API calls to your AI provider. With central config and SSO integration, your data remains secure within your organization's infrastructure.
+Yes. MIAO does not store your code or context data. All processing happens locally or through direct API calls to your AI provider. With central config and SSO integration, your data remains secure within your organization's infrastructure.
 
 </details>
 
@@ -150,7 +150,7 @@ To set up authentication with your private registry:
 npm login --registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 ```
 
-This creates `~/.npmrc` with authentication details. Miao will automatically
+This creates `~/.npmrc` with authentication details. MIAO will automatically
 pick this up.
 
 :::caution
@@ -164,6 +164,6 @@ registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 //your-company.jfrog.io/api/npm/npm-virtual/:_authToken=${NPM_AUTH_TOKEN}
 ```
 
-Developers must be logged into the private registry before running Miao to ensure packages can be installed from your enterprise registry.
+Developers must be logged into the private registry before running MIAO to ensure packages can be installed from your enterprise registry.
 
 </details>

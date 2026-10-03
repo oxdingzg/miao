@@ -1,11 +1,11 @@
 ---
 title: GitLab
-description: GitLab の問題とマージリクエストで Miao を使用します。
+description: GitLab の問題とマージリクエストで MIAO を使用します。
 ---
 
 Miao は、GitLab CI/CD パイプラインまたは GitLab Duo を通じて GitLab ワークフローと統合します。
 
-どちらの場合も、Miao は GitLab ランナー上で実行されます。
+どちらの場合も、MIAO は GitLab ランナー上で実行されます。
 
 ---
 
@@ -13,21 +13,21 @@ Miao は、GitLab CI/CD パイプラインまたは GitLab Duo を通じて GitL
 
 Miao は通常の GitLab パイプラインで動作します。 [CI コンポーネント](https://docs.gitlab.com/ee/ci/components/) としてパイプラインに組み込むことができます。
 
-ここでは、コミュニティが作成した Miao 用の CI/CD コンポーネント — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+ここでは、コミュニティが作成した MIAO 用の CI/CD コンポーネント — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### 機能
 
-- **ジョブごとにカスタム設定を使用する**: カスタム設定ディレクトリ (`./config/#custom-directory` など) を使用して Miao を構成し、Miao の呼び出しごとに機能を有効または無効にします。
-- **最小限のセットアップ**: CI コンポーネントはバックグラウンドで Miao をセットアップします。必要なのは、Miao 設定と初期プロンプトを作成することだけです。
+- **ジョブごとにカスタム設定を使用する**: カスタム設定ディレクトリ (`./config/#custom-directory` など) を使用して MIAO を構成し、MIAO の呼び出しごとに機能を有効または無効にします。
+- **最小限のセットアップ**: CI コンポーネントはバックグラウンドで MIAO をセットアップします。必要なのは、MIAO 設定と初期プロンプトを作成することだけです。
 - **柔軟性**: CI コンポーネントは、動作をカスタマイズするための複数の入力をサポートしています。
 
 ---
 
 ### 設定
 
-1. Miao 認証 JSON をファイルタイプ CI 環境変数として [**設定**] > [**CI/CD**] > [**変数**] に保存します。必ず「マスクして非表示」としてマークしてください。
+1. MIAO 認証 JSON をファイルタイプ CI 環境変数として [**設定**] > [**CI/CD**] > [**変数**] に保存します。必ず「マスクして非表示」としてマークしてください。
 2. 以下を `.gitlab-ci.yml` ファイルに追加します。
 
    ```yaml title=".gitlab-ci.yml"
@@ -47,16 +47,16 @@ Miao は通常の GitLab パイプラインで動作します。 [CI コンポ�
 ## GitLab Duo
 
 Miao は GitLab ワークフローと統合します。
-コメントで `@opencode` に言及すると、Miao が GitLab CI パイプライン内でタスクを実行します。
+コメントで `@opencode` に言及すると、MIAO が GitLab CI パイプライン内でタスクを実行します。
 
 ---
 
 ### 機能
 
-- **問題のトリアージ**: Miao に問題を調べて説明してもらいます。
-- **修正と実装**: Miao に問題の修正または機能の実装を依頼します。
+- **問題のトリアージ**: MIAO に問題を調べて説明してもらいます。
+- **修正と実装**: MIAO に問題の修正または機能の実装を依頼します。
   新しいブランチを作成し、変更を加えたマージリクエストを発行します。
-- **安全**: Miao は GitLab ランナー上で実行されます。
+- **安全**: MIAO は GitLab ランナー上で実行されます。
 
 ---
 
@@ -158,7 +158,7 @@ Miao は GitLab CI/CD パイプラインで実行されます。セットアッ�
 
 ### 例
 
-GitLab で Miao を使用する方法の例をいくつか示します。
+GitLab で MIAO を使用する方法の例をいくつか示します。
 
 :::tip
 `@opencode` とは異なるトリガーフレーズを使用するように設定できます。

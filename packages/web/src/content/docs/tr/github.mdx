@@ -1,6 +1,6 @@
 ---
 title: GitHub
-description: GitHub sorunlarında ve çekme isteklerinde miao'u kullanın.
+description: GitHub sorunlarında ve çekme isteklerinde MIAO'u kullanın.
 ---
 
 miao, GitHub iş akışınızla bütünleşir. Yorumunuzda `/opencode` veya `/oc`'den bahsedin; miao, GitHub Actions çalıştırıcınızdaki görevleri yürütecektir.
@@ -9,9 +9,9 @@ miao, GitHub iş akışınızla bütünleşir. Yorumunuzda `/opencode` veya `/oc
 
 ## Özellikler
 
-- **Sorunları önceliklendirin**: miao'dan bir sorunu araştırıp size açıklamasını isteyin.
-- **Düzelt ve uygula**: miao'dan bir sorunu düzeltmesini veya bir özelliği uygulamasını isteyin. Ve yeni bir şubede çalışacak ve tüm değişiklikleri içeren bir PR gönderecek.
-- **Güvenli**: miao, GitHub'ınızın çalıştırıcılarının içinde çalışır.
+- **Sorunları önceliklendirin**: MIAO'dan bir sorunu araştırıp size açıklamasını isteyin.
+- **Düzelt ve uygula**: MIAO'dan bir sorunu düzeltmesini veya bir özelliği uygulamasını isteyin. Ve yeni bir şubede çalışacak ve tüm değişiklikleri içeren bir PR gönderecek.
+- **Güvenli**: MIAO, GitHub'ınızın çalıştırıcılarının içinde çalışır.
 
 ---
 
@@ -81,13 +81,13 @@ Veya manuel olarak ayarlayabilirsiniz.
 
 ## Yapılandırma
 
-- `model`: miao ile kullanılacak model. `provider/model` biçimini alır. Bu **gerekli**.
+- `model`: MIAO ile kullanılacak model. `provider/model` biçimini alır. Bu **gerekli**.
 - `agent`: Kullanılacak aracı. Birincil ajan olmalı. Yapılandırmadan `default_agent`'ye veya bulunamazsa `"build"`'ye geri döner.
-- `share`: miao hesabının paylaşılıp paylaşılmayacağı. Genel depolar için varsayılan olarak **true** olur.
-- `prompt`: Varsayılan çalışma geçersiz olduğundan dolayı özel istem. miao'un işleme biçimini kişiselleştirmek için bunu kullanın.
-- `token`: Yorum oluşturma, değişiklik yapma ve çekme isteklerini açma gibi işlemleri gerçekleştirmek için isteğe bağlı GitHub erişim belirteci. Varsayılan olarak miao, miao GitHub Uygulamasındaki kurulum erişim belirtecini kullanır, bu nedenle taahhütler, yorumlar ve çekme istekleri uygulamadan geliyormuş gibi görünür.
+- `share`: MIAO hesabının paylaşılıp paylaşılmayacağı. Genel depolar için varsayılan olarak **true** olur.
+- `prompt`: Varsayılan çalışma geçersiz olduğundan dolayı özel istem. MIAO'un işleme biçimini kişiselleştirmek için bunu kullanın.
+- `token`: Yorum oluşturma, değişiklik yapma ve çekme isteklerini açma gibi işlemleri gerçekleştirmek için isteğe bağlı GitHub erişim belirteci. Varsayılan olarak MIAO, MIAO GitHub Uygulamasındaki kurulum erişim belirtecini kullanır, bu nedenle taahhütler, yorumlar ve çekme istekleri uygulamadan geliyormuş gibi görünür.
 
-  Alternatif olarak, miao GitHub'u yüklemeden GitHub Eylem çalıştırıcısının [built-in `GITHUB_TOKEN`](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) akışını kullanabilirsiniz. İşinizde gerekli izinlere sahip olduğunuzdan emin olun:
+  Alternatif olarak, MIAO GitHub'u yüklemeden GitHub Eylem çalıştırıcısının [built-in `GITHUB_TOKEN`](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) akışını kullanabilirsiniz. İşinizde gerekli izinlere sahip olduğunuzdan emin olun:
 
   ```yaml
   permissions:
@@ -107,16 +107,16 @@ miao aşağıdaki GitHub olayları tarafından tetiklenebilir:
 
 | Olay Tipi                     | Tetikleyen                                    | Detaylar                                                                                                                                            |
 | ----------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `issue_comment`               | Bir soruna veya halkla ilişkilere yorum yapın | Yorumunuzda `/opencode` veya `/oc`'den bahsedin. miao bağlamı okur ve şubeler oluşturabilir, PR'leri açabilir veya yanıt verebilir.             |
-| `pull_request_review_comment` | PR'deki belirli kod satırlarına yorum yapın   | Kodu incelerken `/opencode` veya `/oc`'den bahsedin. miao dosya yolunu, satır numaralarını ve fark içeriğini alır.                              |
-| `issues`                      | Sayı açıldı veya düzenlendi                   | Sorunlar oluşturulduğunda veya değiştirildiğinde miao'u otomatik olarak tetikleyin. `prompt` girişi gerektirir.                                 |
-| `pull_request`                | PR açıldı veya güncellendi                    | PR'ler açıldığında, senkronize edildiğinde veya yeniden açıldığında miao'u otomatik olarak tetikleyin. Otomatik incelemeler için kullanışlıdır. |
-| `schedule`                    | Cron tabanlı program                          | miao'u bir programa göre çalıştırın. `prompt` girişi gerektirir. Çıktı, günlüklere ve PR'lere gider (yorum yapılacak bir sorun yoktur).         |
-| `workflow_dispatch`           | GitHub kullanıcı arayüzünden manuel tetikleme | Eylemler sekmesi aracılığıyla miao'u isteğe bağlı olarak tetikleyin. `prompt` girişi gerektirir. Çıktı günlüklere ve PR'lere gider.             |
+| `issue_comment`               | Bir soruna veya halkla ilişkilere yorum yapın | Yorumunuzda `/opencode` veya `/oc`'den bahsedin. MIAO bağlamı okur ve şubeler oluşturabilir, PR'leri açabilir veya yanıt verebilir.             |
+| `pull_request_review_comment` | PR'deki belirli kod satırlarına yorum yapın   | Kodu incelerken `/opencode` veya `/oc`'den bahsedin. MIAO dosya yolunu, satır numaralarını ve fark içeriğini alır.                              |
+| `issues`                      | Sayı açıldı veya düzenlendi                   | Sorunlar oluşturulduğunda veya değiştirildiğinde MIAO'u otomatik olarak tetikleyin. `prompt` girişi gerektirir.                                 |
+| `pull_request`                | PR açıldı veya güncellendi                    | PR'ler açıldığında, senkronize edildiğinde veya yeniden açıldığında MIAO'u otomatik olarak tetikleyin. Otomatik incelemeler için kullanışlıdır. |
+| `schedule`                    | Cron tabanlı program                          | MIAO'u bir programa göre çalıştırın. `prompt` girişi gerektirir. Çıktı, günlüklere ve PR'lere gider (yorum yapılacak bir sorun yoktur).         |
+| `workflow_dispatch`           | GitHub kullanıcı arayüzünden manuel tetikleme | Eylemler sekmesi aracılığıyla MIAO'u isteğe bağlı olarak tetikleyin. `prompt` girişi gerektirir. Çıktı günlüklere ve PR'lere gider.             |
 
 ### Zamanlama Örneği
 
-Otomatik görevleri gerçekleştirmek için miao'u bir zamanlamaya göre çalıştırın:
+Otomatik görevleri gerçekleştirmek için MIAO'u bir zamanlamaya göre çalıştırın:
 
 ```yaml title=".github/workflows/opencode-scheduled.yml"
 name: Scheduled Miao Task
@@ -150,7 +150,7 @@ jobs:
             If you find issues worth addressing, open an issue to track them.
 ```
 
-Zamanlanmış etkinlikler için, talimatların alınabileceği bir yorum bulunmadığından `prompt` girişi **gereklidir**. Zamanlanmış iş akışları, izin kontrolü yapılacak bir kullanıcı bağlamı olmadan çalışır; bu nedenle, miao'un şubeler veya PR'ler oluşturmasını bekliyorsanız iş akışının `contents: write` ve `pull-requests: write` vermesi gerekir.
+Zamanlanmış etkinlikler için, talimatların alınabileceği bir yorum bulunmadığından `prompt` girişi **gereklidir**. Zamanlanmış iş akışları, izin kontrolü yapılacak bir kullanıcı bağlamı olmadan çalışır; bu nedenle, MIAO'un şubeler veya PR'ler oluşturmasını bekliyorsanız iş akışının `contents: write` ve `pull-requests: write` vermesi gerekir.
 
 ---
 
@@ -191,7 +191,7 @@ jobs:
             - Suggest improvements
 ```
 
-`pull_request` olaylar için, `prompt` sağlanmazsa, miao varsayılan olarak çekme isteklerini inceler.
+`pull_request` olaylar için, `prompt` sağlanmazsa, MIAO varsayılan olarak çekme isteklerini inceler.
 
 ---
 
@@ -271,7 +271,7 @@ Bu, projenizle ilgili spesifik inceleme kriterlerini, kodlama standartlarını v
 
 ## Örnekler
 
-GitHub'da miao'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabilirsiniz.
+GitHub'da MIAO'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabilirsiniz.
 
 - **Bir sorunu açıklama**
 
@@ -291,7 +291,7 @@ GitHub'da miao'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabi
   /opencode fix this
   ```
 
-  Ve miao yeni bir şube oluşturacak, değişiklikleri uygulayacak ve değişiklikleri içeren bir PR açacak.
+  Ve MIAO yeni bir şube oluşturacak, değişiklikleri uygulayacak ve değişiklikleri içeren bir PR açacak.
 
 - **PR'leri inceleyin ve değişiklik yapın**
 
@@ -305,14 +305,14 @@ GitHub'da miao'u nasıl kullanabileceğinize dair bazı örnekleri burada bulabi
 
 - **Belirli kod satırlarını inceleme**
 
-  PR'nin "Dosyalar" sekmesindeki kod satırlarına doğrudan yorum bırakın. miao, kesin yanıtlar sağlamak için dosyayı, satır numaralarını ve fark içeriğini otomatik olarak algılar.
+  PR'nin "Dosyalar" sekmesindeki kod satırlarına doğrudan yorum bırakın. MIAO, kesin yanıtlar sağlamak için dosyayı, satır numaralarını ve fark içeriğini otomatik olarak algılar.
 
   ```
   [Comment on specific lines in Files tab]
   /oc add error handling here
   ```
 
-  Belirli satırlara yorum yaparken miao şunları alır:
+  Belirli satırlara yorum yaparken MIAO şunları alır:
   - İncelenmekte olan dosyanın tamamı
   - Belirli kod satırları
   - Çevreleyen fark bağlamı

@@ -3,7 +3,7 @@ title: Dépannage
 description: Problèmes courants et comment les résoudre.
 ---
 
-Pour déboguer les problèmes avec Miao, commencez par vérifier les journaux et les données locales qu'il stocke sur le disque.
+Pour déboguer les problèmes avec MIAO, commencez par vérifier les journaux et les données locales qu'il stocke sur le disque.
 
 ---
 
@@ -12,7 +12,7 @@ Pour déboguer les problèmes avec Miao, commencez par vérifier les journaux et
 Les fichiers journaux sont écrits dans :
 
 - **macOS/Linux** : `~/.local/share/miao/log/`
-- **Windows** : appuyez sur `WIN+R` et collez `%USERPROFILE%\.local\share\miao\log`
+- **Windows** : appuyez sur `WIN+R` et collez `%USERPROFILE%\.local\share\MIAO\log`
 
 Les fichiers journaux sont nommés avec des horodatages (par exemple, `2025-01-09T123456.log`) et les 10 fichiers journaux les plus récents sont conservés.
 
@@ -59,7 +59,7 @@ Ouvrez votre fichier de configuration global et recherchez une clé `plugin`.
 
 - **macOS/Linux** : `~/.config/miao/miao.json` (ou `~/.config/miao/miao.json`)
 - **macOS/Linux** (anciennes installations) : `~/.local/share/miao/miao.jsonc`
-- **Windows** : appuyez sur `WIN+R` et collez `%USERPROFILE%\.config\miao\miao.jsonc`
+- **Windows** : appuyez sur `WIN+R` et collez `%USERPROFILE%\.config\MIAO\miao.jsonc`
 
 Si vous avez configuré des plugins, désactivez-les temporairement en supprimant la clé ou en la définissant sur un tableau vide :
 
@@ -76,7 +76,7 @@ Miao peut également charger des plugins locaux à partir du disque. Écartez-le
 
 - **Plugins mondiaux**
   - **macOS/Linux** : `~/.config/miao/plugins/`
-  - **Windows** : appuyez sur `WIN+R` et collez `%USERPROFILE%\.config\miao\plugins`
+  - **Windows** : appuyez sur `WIN+R` et collez `%USERPROFILE%\.config\MIAO\plugins`
 - **Plugins de projet** (uniquement si vous utilisez une configuration par projet)
   - `<your-project>/.miao/plugins/`
 
@@ -86,9 +86,9 @@ Si l'application recommence à fonctionner, réactivez les plugins un par un pou
 
 ### Vider le cache
 
-Si la désactivation des plugins ne résout pas le problème (ou si l'installation d'un plugin est bloquée), videz le cache afin que Miao puisse le reconstruire.
+Si la désactivation des plugins ne résout pas le problème (ou si l'installation d'un plugin est bloquée), videz le cache afin que MIAO puisse le reconstruire.
 
-1. Quittez complètement Miao Desktop.
+1. Quittez complètement MIAO Desktop.
 2. Supprimez le répertoire cache :
 
 - **macOS** : Finder -> `Cmd+Shift+G` -> coller `~/.cache/opencode`
@@ -132,7 +132,7 @@ Sur Linux, certaines configurations Wayland peuvent provoquer des fenêtres vide
 
 ### Windows : exécution WebView2
 
-Sur Windows, Miao Desktop nécessite Microsoft Edge **WebView2 Runtime**. Si l'application s'ouvre sur une fenêtre vide ou ne démarre pas, installez/mettez à jour WebView2 et réessayez.
+Sur Windows, MIAO Desktop nécessite Microsoft Edge **WebView2 Runtime**. Si l'application s'ouvre sur une fenêtre vide ou ne démarre pas, installez/mettez à jour WebView2 et réessayez.
 
 ---
 
@@ -146,7 +146,7 @@ Si vous rencontrez des performances lentes, des problèmes d'accès aux fichiers
 
 Miao Desktop affiche uniquement les notifications système lorsque :
 
-- les notifications sont activées pour Miao dans les paramètres de votre système d'exploitation, et
+- les notifications sont activées pour MIAO dans les paramètres de votre système d'exploitation, et
 - la fenêtre de l'application n'est pas ciblée.
 
 ---
@@ -156,7 +156,7 @@ Miao Desktop affiche uniquement les notifications système lorsque :
 Si l'application ne démarre pas et que vous ne pouvez pas effacer les paramètres depuis l'interface utilisateur, réinitialisez l'état enregistré de l'application de bureau.
 
 1. Quittez le bureau Miao.
-2. Recherchez et supprimez ces fichiers (ils se trouvent dans le répertoire de données de l'application Miao Desktop) :
+2. Recherchez et supprimez ces fichiers (ils se trouvent dans le répertoire de données de l'application MIAO Desktop) :
 
 - `miao.settings.dat` (serveur de bureau par défaut URL)
 - `miao.global.dat` et `miao.workspace.*.dat` (état de l'interface utilisateur comme les serveurs/projets récents)
@@ -171,7 +171,7 @@ Pour trouver rapidement le répertoire :
 
 ## Obtenir de l'aide
 
-Si vous rencontrez des problèmes avec Miao :
+Si vous rencontrez des problèmes avec MIAO :
 
 1. **Signaler les problèmes le GitHub**
 
@@ -195,7 +195,7 @@ Voici quelques problèmes courants et comment les résoudre.
 
 ---
 
-### Miao ne démarre pas
+### MIAO ne démarre pas
 
 1. Vérifiez les journaux pour les messages d'erreur
 2. Essayez d'exécuter avec `--print-logs` pour voir la sortie dans le terminal
@@ -252,7 +252,7 @@ Sur Windows, appuyez sur `WIN+R` et supprimez : `%USERPROFILE%\.local\share\mia
 
 ### Problèmes liés à AI_APICallError et au package du fournisseur
 
-Si vous rencontrez des erreurs d’appel API, cela peut être dû à des packages de fournisseurs obsolètes. miao installe dynamiquement les packages du fournisseur (OpenAI, Anthropic, Google, etc.) selon les besoins et les met en cache localement.
+Si vous rencontrez des erreurs d’appel API, cela peut être dû à des packages de fournisseurs obsolètes. MIAO installe dynamiquement les packages du fournisseur (OpenAI, Anthropic, Google, etc.) selon les besoins et les met en cache localement.
 
 Pour résoudre les problèmes liés au package du fournisseur :
 
@@ -264,9 +264,9 @@ Pour résoudre les problèmes liés au package du fournisseur :
 
 Sur Windows, appuyez sur `WIN+R` et supprimez : `%USERPROFILE%\.cache\miao`
 
-2. Redémarrez miao pour réinstaller les derniers packages du fournisseur
+2. Redémarrez MIAO pour réinstaller les derniers packages du fournisseur
 
-Cela forcera miao à télécharger les versions les plus récentes des packages du fournisseur, ce qui résout souvent les problèmes de compatibilité avec les paramètres du modèle et les modifications de API.
+Cela forcera MIAO à télécharger les versions les plus récentes des packages du fournisseur, ce qui résout souvent les problèmes de compatibilité avec les paramètres du modèle et les modifications de API.
 
 ---
 

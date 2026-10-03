@@ -1,6 +1,6 @@
 ---
 title: ACP-Unterstützung
-description: Verwenden Sie Miao in jedem ACP-kompatiblen Editor.
+description: Verwenden Sie MIAO in jedem ACP-kompatiblen Editor.
 ---
 
 Miao unterstützt [Agent Client Protocol](https://agentclientprotocol.com) oder (ACP), sodass Sie es direkt in kompatiblen Editoren und IDEs verwenden können.
@@ -15,9 +15,9 @@ ACP ist ein offenes Protokoll, das die Kommunikation zwischen Code-Editoren und 
 
 ## Konfiguration
 
-Um Miao über ACP zu verwenden, konfigurieren Sie Ihren Editor für die Ausführung des Befehls `miao acp`.
+Um MIAO über ACP zu verwenden, konfigurieren Sie Ihren Editor für die Ausführung des Befehls `miao acp`.
 
-Der Befehl startet Miao als ACP-kompatiblen Unterprozess, der über stdio über JSON-RPC mit Ihrem Editor kommuniziert.
+Der Befehl startet MIAO als ACP-kompatiblen Unterprozess, der über stdio über JSON-RPC mit Ihrem Editor kommuniziert.
 
 Nachfolgend finden Sie Beispiele für beliebte Editoren, die ACP unterstützen.
 
@@ -25,7 +25,7 @@ Nachfolgend finden Sie Beispiele für beliebte Editoren, die ACP unterstützen.
 
 ### Zed
 
-Installieren Sie Miao aus der [Zed-ACP-Registry](https://zed.dev/docs/ai/external-agents#registry), indem Sie `zed: acp registry` in der Befehlspalette ausführen.
+Installieren Sie MIAO aus der [Zed-ACP-Registry](https://zed.dev/docs/ai/external-agents#registry), indem Sie `zed: acp registry` in der Befehlspalette ausführen.
 
 Wenn Sie stattdessen eine benutzerdefinierte Miao-Programmdatei verwenden möchten, fügen Sie sie Ihrer [Zed](https://zed.dev)-Konfiguration (`~/.config/zed/settings.json`) hinzu:
 
@@ -85,7 +85,7 @@ Fügen Sie zu Ihrem [JetBrains IDE](https://www.jetbrains.com/) acp.json gemäß
 }
 ```
 
-Um es zu öffnen, verwenden Sie den neuen Agenten „Miao“ in der AI Chat Agent Selector.
+Um es zu öffnen, verwenden Sie den neuen Agenten „MIAO“ in der AI Chat Agent Selector.
 
 ---
 
@@ -124,7 +124,7 @@ Wenn Sie Umgebungsvariablen übergeben müssen:
 
 ### CodeCompanion.nvim
 
-Um Miao als ACP-Agent in [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) zu verwenden, fügen Sie Folgendes zu Ihrer Neovim-Konfiguration hinzu:
+Um MIAO als ACP-Agent in [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) zu verwenden, fügen Sie Folgendes zu Ihrer Neovim-Konfiguration hinzu:
 
 ```lua
 require("codecompanion").setup({
@@ -139,7 +139,7 @@ require("codecompanion").setup({
 })
 ```
 
-Diese Konfiguration richtet CodeCompanion so ein, dass Miao als ACP-Agent für den Chat verwendet wird.
+Diese Konfiguration richtet CodeCompanion so ein, dass MIAO als ACP-Agent für den Chat verwendet wird.
 
 Wenn Sie Umgebungsvariablen (wie `MIAO_API_KEY`) übergeben müssen, finden Sie ausführliche Informationen zu [Configuring Adapters: Environment Variables](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) in der Dokumentation zu CodeCompanion.nvim.
 

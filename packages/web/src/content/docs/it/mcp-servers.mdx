@@ -3,7 +3,7 @@ title: Server MCP
 description: Aggiungi strumenti MCP locali e remoti.
 ---
 
-Puoi aggiungere strumenti esterni a Miao usando il _Model Context Protocol_, o MCP. Miao supporta sia server locali sia remoti.
+Puoi aggiungere strumenti esterni a MIAO usando il _Model Context Protocol_, o MCP. MIAO supporta sia server locali sia remoti.
 
 Una volta aggiunti, gli strumenti MCP sono automaticamente disponibili all'LLM insieme agli strumenti integrati.
 
@@ -23,7 +23,7 @@ Alcuni server MCP, come il server MCP di GitHub, tendono ad aggiungere molti tok
 
 ## Abilita
 
-Puoi definire server MCP nella tua [Miao Config](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) sotto `mcp`. Aggiungi ogni MCP con un nome univoco. Puoi riferirti a quell'MCP per nome quando fai prompt all'LLM.
+Puoi definire server MCP nella tua [MIAO Config](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) sotto `mcp`. Aggiungi ogni MCP con un nome univoco. Puoi riferirti a quell'MCP per nome quando fai prompt all'LLM.
 
 ```jsonc title="miao.json" {6}
 {
@@ -189,7 +189,7 @@ Per la maggior parte dei server MCP con OAuth, non serve alcuna configurazione s
 }
 ```
 
-Se il server richiede autenticazione, Miao ti chiedera' di autenticarti la prima volta che provi a usarlo. In caso contrario, puoi [attivare manualmente il flusso](#authenticating) con `miao mcp auth <server-name>`.
+Se il server richiede autenticazione, MIAO ti chiedera' di autenticarti la prima volta che provi a usarlo. In caso contrario, puoi [attivare manualmente il flusso](#authenticating) con `miao mcp auth <server-name>`.
 
 ---
 
@@ -238,7 +238,7 @@ Rimuovi credenziali memorizzate:
 miao mcp logout my-oauth-server
 ```
 
-Il comando `mcp auth` aprira' il browser per l'autorizzazione. Dopo l'autorizzazione, Miao memorizzera' i token in modo sicuro in `~/.local/share/miao/mcp-auth.json`.
+Il comando `mcp auth` aprira' il browser per l'autorizzazione. Dopo l'autorizzazione, MIAO memorizzera' i token in modo sicuro in `~/.local/share/miao/mcp-auth.json`.
 
 ---
 
@@ -291,7 +291,7 @@ Il comando `mcp debug` mostra lo stato di autenticazione corrente, testa la conn
 
 ## Gestione
 
-I tuoi MCP sono disponibili come strumenti in Miao insieme agli strumenti integrati. Quindi puoi gestirli tramite la configurazione Miao come qualunque altro strumento.
+I tuoi MCP sono disponibili come strumenti in MIAO insieme agli strumenti integrati. Quindi puoi gestirli tramite la configurazione MIAO come qualunque altro strumento.
 
 ---
 
@@ -423,7 +423,7 @@ Dopo aver aggiunto la configurazione, autentica con Sentry:
 miao mcp auth sentry
 ```
 
-Questo aprira' una finestra del browser per completare il flusso OAuth e collegare Miao al tuo account Sentry.
+Questo aprira' una finestra del browser per completare il flusso OAuth e collegare MIAO al tuo account Sentry.
 
 Una volta autenticato, puoi usare gli strumenti Sentry nei tuoi prompt per interrogare issue, progetti e dati sugli errori.
 

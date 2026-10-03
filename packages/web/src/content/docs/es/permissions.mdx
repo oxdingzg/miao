@@ -127,7 +127,7 @@ Mantenga la lista centrada en rutas confiables y aplique reglas adicionales de p
 
 ## Permisos disponibles
 
-Los permisos Miao están codificados por el nombre de la herramienta, además de un par de medidas de seguridad:
+Los permisos MIAO están codificados por el nombre de la herramienta, además de un par de medidas de seguridad:
 
 - `read` — leer un archivo (coincide con la ruta del archivo)
 - `edit` — todas las modificaciones de archivos (cubre `edit`, `write`, `patch`)
@@ -146,7 +146,7 @@ Los permisos Miao están codificados por el nombre de la herramienta, además de
 
 ## Valores predeterminados
 
-Si no especifica nada, Miao comienza desde valores predeterminados permisivos:
+Si no especifica nada, MIAO comienza desde valores predeterminados permisivos:
 
 - La mayoría de los permisos están predeterminados en `"allow"`.
 - `doom_loop` y `external_directory` por defecto son `"ask"`.
@@ -169,10 +169,10 @@ Si no especifica nada, Miao comienza desde valores predeterminados permisivos:
 
 ## ¿Qué significa "preguntar"?
 
-Cuando Miao solicita aprobación, la interfaz de usuario ofrece tres resultados:
+Cuando MIAO solicita aprobación, la interfaz de usuario ofrece tres resultados:
 
 - `once` — aprobar solo esta solicitud
-- `always`: aprueba solicitudes futuras que coincidan con los patrones sugeridos (para el resto de la sesión actual Miao)
+- `always`: aprueba solicitudes futuras que coincidan con los patrones sugeridos (para el resto de la sesión actual MIAO)
 - `reject` — rechazar la solicitud
 
 La herramienta proporciona el conjunto de patrones que `always` aprobaría (por ejemplo, las aprobaciones de bash generalmente incluyen en la lista blanca un prefijo de comando seguro como `git status*`).

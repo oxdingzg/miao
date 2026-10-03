@@ -1,6 +1,6 @@
 ---
 title: Windows (WSL)
-description: Nutze Miao unter Windows am besten mit WSL.
+description: Nutze MIAO unter Windows am besten mit WSL.
 ---
 
 import { Steps } from "@astrojs/starlight/components"
@@ -9,7 +9,7 @@ Miao laeuft zwar direkt unter Windows, die beste Erfahrung bekommst du aber mit 
 WSL bietet eine Linux-Umgebung, die mit den Miao-Features nahtlos funktioniert.
 
 :::tip[Warum WSL?]
-WSL bietet bessere Dateisystem-Performance, vollstaendige Terminal-Unterstuetzung und hohe Kompatibilitaet mit den Entwicklungswerkzeugen, die Miao nutzt.
+WSL bietet bessere Dateisystem-Performance, vollstaendige Terminal-Unterstuetzung und hohe Kompatibilitaet mit den Entwicklungswerkzeugen, die MIAO nutzt.
 :::
 
 ---
@@ -22,15 +22,15 @@ WSL bietet bessere Dateisystem-Performance, vollstaendige Terminal-Unterstuetzun
 
    Falls noch nicht geschehen, installiere [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) mit der offiziellen Microsoft-Anleitung.
 
-2. **Install Miao in WSL**
+2. **Install MIAO in WSL**
 
-   Wenn WSL eingerichtet ist, oeffne dein WSL-Terminal und installiere Miao mit einer der [Installationsmethoden](/docs/).
+   Wenn WSL eingerichtet ist, oeffne dein WSL-Terminal und installiere MIAO mit einer der [Installationsmethoden](/docs/).
 
    ```bash
    curl -fsSL https://opencode.ai/install | bash
    ```
 
-3. **Miao über WSL verwenden**
+3. **MIAO über WSL verwenden**
 
    Wechsle in dein Projektverzeichnis (Windows-Dateien erreichst du ueber `/mnt/c/`, `/mnt/d/` usw.) und starte Miao.
 
@@ -80,7 +80,7 @@ Fuer die beste Web-Erfahrung unter Windows:
    miao web --hostname 0.0.0.0
    ```
 
-2. **Rufe die URL im Windows-Browser auf** unter `http://localhost:<port>` (Miao zeigt die URL an)
+2. **Rufe die URL im Windows-Browser auf** unter `http://localhost:<port>` (MIAO zeigt die URL an)
 
 Wenn du `miao web` aus WSL startest, bleiben Dateizugriff und Terminal-Integration sauber.
 Gleichzeitig ist die Weboberflaeche weiterhin im Windows-Browser erreichbar.
@@ -103,13 +103,13 @@ miao
 ```
 
 :::tip
-Fuer die beste Performance kannst du dein Repo direkt in das WSL-Dateisystem klonen/kopieren (z. B. nach `~/code/`) und Miao dort starten.
+Fuer die beste Performance kannst du dein Repo direkt in das WSL-Dateisystem klonen/kopieren (z. B. nach `~/code/`) und MIAO dort starten.
 :::
 
 ---
 
 ## Tipps
 
-- Lass Miao in WSL laufen, auch wenn das Projekt auf einem Windows-Laufwerk liegt
+- Lass MIAO in WSL laufen, auch wenn das Projekt auf einem Windows-Laufwerk liegt
 - Nutze die [WSL-Extension](https://code.visualstudio.com/docs/remote/wsl) von VS Code fuer einen integrierten Workflow
 - Miao-Konfiguration und Sitzungen liegen in WSL unter `~/.local/share/miao/`

@@ -3,7 +3,7 @@ title: Rules
 description: Set custom instructions for miao.
 ---
 
-You can provide custom instructions to miao by creating an `AGENTS.md` file. This is similar to Cursor's rules. It contains instructions that will be included in the LLM's context to customize its behavior for your specific project.
+You can provide custom instructions to MIAO by creating an `AGENTS.md` file. This is similar to Cursor's rules. It contains instructions that will be included in the LLM's context to customize its behavior for your specific project.
 
 ---
 
@@ -70,13 +70,13 @@ Place an `AGENTS.md` in your project root for project-specific rules. These only
 
 ### Global
 
-You can also have global rules in a `~/.config/miao/AGENTS.md` file. This gets applied across all miao sessions.
+You can also have global rules in a `~/.config/miao/AGENTS.md` file. This gets applied across all MIAO sessions.
 
 Since this isn't committed to Git or shared with your team, we recommend using this to specify any personal rules that the LLM should follow.
 
 ### Claude Code Compatibility
 
-For users migrating from Claude Code, Miao supports Claude Code's file conventions as fallbacks:
+For users migrating from Claude Code, MIAO supports Claude Code's file conventions as fallbacks:
 
 - **Project rules**: `CLAUDE.md` in your project directory (used if no `AGENTS.md` exists)
 - **Global rules**: `~/.claude/CLAUDE.md` (used if no `~/.config/miao/AGENTS.md` exists)
@@ -94,7 +94,7 @@ export MIAO_DISABLE_CLAUDE_CODE_SKILLS=1 # Disable only .claude/skills
 
 ## Precedence
 
-When miao starts, it looks for rule files in this order:
+When MIAO starts, it looks for rule files in this order:
 
 1. **Local files** by traversing up from the current directory (`AGENTS.md`, `CLAUDE.md`)
 2. **Global file** at `~/.config/miao/AGENTS.md`
@@ -134,7 +134,7 @@ All instruction files are combined with your `AGENTS.md` files.
 
 ## Referencing External Files
 
-While miao doesn't automatically parse file references in `AGENTS.md`, you can achieve similar functionality in two ways:
+While MIAO doesn't automatically parse file references in `AGENTS.md`, you can achieve similar functionality in two ways:
 
 ### Using miao.json
 
@@ -149,7 +149,7 @@ The recommended approach is to use the `instructions` field in `miao.json`:
 
 ### Manual Instructions in AGENTS.md
 
-You can teach miao to read external files by providing explicit instructions in your `AGENTS.md`. Here's a practical example:
+You can teach MIAO to read external files by providing explicit instructions in your `AGENTS.md`. Here's a practical example:
 
 ```markdown title="AGENTS.md"
 # TypeScript Project Rules
@@ -181,7 +181,7 @@ This approach allows you to:
 - Create modular, reusable rule files
 - Share rules across projects via symlinks or git submodules
 - Keep AGENTS.md concise while referencing detailed guidelines
-- Ensure miao loads files only when needed for the specific task
+- Ensure MIAO loads files only when needed for the specific task
 
 :::tip
 For monorepos or projects with shared standards, using `miao.json` with glob patterns (like `packages/*/AGENTS.md`) is more maintainable than manual instructions.

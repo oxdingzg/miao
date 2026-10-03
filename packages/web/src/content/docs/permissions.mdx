@@ -21,7 +21,7 @@ Each permission rule resolves to one of:
 
 ## Auto mode
 
-Start Miao with `--auto` to automatically approve permission requests that are not explicitly denied.
+Start MIAO with `--auto` to automatically approve permission requests that are not explicitly denied.
 
 ```bash
 miao --auto
@@ -108,7 +108,7 @@ You can use `~` or `$HOME` at the start of a pattern to reference your home dire
 
 ### External Directories
 
-Use `external_directory` to allow tool calls that touch paths outside the working directory where Miao was started. This applies to any tool that takes a path as input (for example `read`, `edit`, `glob`, `grep`, and many `bash` commands).
+Use `external_directory` to allow tool calls that touch paths outside the working directory where MIAO was started. This applies to any tool that takes a path as input (for example `read`, `edit`, `glob`, `grep`, and many `bash` commands).
 
 Home expansion (like `~/...`) only affects how a pattern is written. It does not make an external path part of the current workspace, so paths outside the working directory must still be allowed via `external_directory`.
 
@@ -167,7 +167,7 @@ Miao permissions are keyed by tool name, plus a couple of safety guards:
 
 ## Defaults
 
-If you don’t specify anything, Miao starts from permissive defaults:
+If you don’t specify anything, MIAO starts from permissive defaults:
 
 - Most permissions default to `"allow"`.
 - `doom_loop` and `external_directory` default to `"ask"`.
@@ -190,10 +190,10 @@ If you don’t specify anything, Miao starts from permissive defaults:
 
 ## What “Ask” Does
 
-When Miao prompts for approval, the UI offers three outcomes:
+When MIAO prompts for approval, the UI offers three outcomes:
 
 - `once` — approve just this request
-- `always` — approve future requests matching the suggested patterns (for the rest of the current Miao session)
+- `always` — approve future requests matching the suggested patterns (for the rest of the current MIAO session)
 - `reject` — deny the request
 
 The set of patterns that `always` would approve is provided by the tool (for example, bash approvals typically whitelist a safe command prefix like `git status*`).

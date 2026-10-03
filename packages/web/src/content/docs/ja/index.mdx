@@ -1,13 +1,13 @@
 ---
 title: はじめに
-description: Miao を始めましょう。
+description: MIAO を始めましょう。
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 import config from "../../../../config.mjs"
 export const console = config.console
 
-[**Miao**](/) は、オープンソースの AI コーディングエージェントです。これは、ターミナルベースのインターフェイス、デスクトップアプリ、または IDE 拡張機能として利用できます。
+[**MIAO**](/) は、オープンソースの AI コーディングエージェントです。これは、ターミナルベースのインターフェイス、デスクトップアプリ、または IDE 拡張機能として利用できます。
 
 ![miaoテーマ](../../../assets/lander/screenshot.png)を使用したMiao TUI
 
@@ -17,7 +17,7 @@ export const console = config.console
 
 #### 前提条件
 
-ターミナルで Miao を使用するには、次のものが必要です。
+ターミナルで MIAO を使用するには、次のものが必要です。
 
 1. 次のような最新のターミナルエミュレータ:
    - [WezTerm](https://wezterm.org)、クロスプラットフォーム
@@ -79,7 +79,7 @@ curl -fsSL https://opencode.ai/install | bash
   brew install anomalyco/tap/opencode
   ```
 
-  > 最新のリリースには Miao タップを使用することをお勧めします。公式の `brew install miao` 式は Homebrew チームによって維持されており、更新頻度は低くなります。
+  > 最新のリリースには MIAO タップを使用することをお勧めします。公式の `brew install miao` 式は Homebrew チームによって維持されており、更新頻度は低くなります。
 
 - **Arch Linux での Paru の使用**
 
@@ -91,7 +91,7 @@ curl -fsSL https://opencode.ai/install | bash
 #### Windows
 
 :::tip[推奨: WSL を使用する]
-Windows で最高のエクスペリエンスを得るには、[Windows Subsystem for Linux (WSL)](/docs/windows-wsl) を使用することをお勧めします。これにより、パフォーマンスが向上し、Miao の機能との完全な互換性が提供されます。
+Windows で最高のエクスペリエンスを得るには、[Windows Subsystem for Linux (WSL)](/docs/windows-wsl) を使用することをお勧めします。これにより、パフォーマンスが向上し、MIAO の機能との完全な互換性が提供されます。
 :::
 
 - **Chocolatey の使用**
@@ -124,7 +124,7 @@ Windows で最高のエクスペリエンスを得るには、[Windows Subsystem
   docker run -it --rm ghcr.io/anomalyco/opencode
   ```
 
-Bun を使用して Windows に Miao をインストールするためのサポートは現在進行中です。
+Bun を使用して Windows に MIAO をインストールするためのサポートは現在進行中です。
 
 [Releases](https://github.com/anomalyco/opencode/releases).
 
@@ -135,9 +135,9 @@ Bun を使用して Windows に Miao をインストールするためのサポ�
 Miao を使用すると、API キーを構成することで任意の LLM プロバイダーを使用できます。
 
 LLM プロバイダーを初めて使用する場合は、[OpenCode Zen](/docs/zen) をお勧めします。
-これは、Miao チームによってテストおよび検証されたモデルの厳選されたリストです。
+これは、MIAO チームによってテストおよび検証されたモデルの厳選されたリストです。
 
-1. TUI で `/connect` コマンドを実行し、miao を選択して、[opencode.ai/auth](https://opencode.ai/auth) で認証します。
+1. TUI で `/connect` コマンドを実行し、MIAO を選択して、[opencode.ai/auth](https://opencode.ai/auth) で認証します。
 
    ```txt
    /connect
@@ -172,25 +172,25 @@ cd /path/to/project
 miao
 ```
 
-次に、次のコマンドを実行して、プロジェクトの Miao を初期化します。
+次に、次のコマンドを実行して、プロジェクトの MIAO を初期化します。
 
 ```bash frame="none"
 /init
 ```
 
-これにより、Miao がプロジェクトを分析し、プロジェクトのルートに `AGENTS.md` ファイルを作成します。
+これにより、MIAO がプロジェクトを分析し、プロジェクトのルートに `AGENTS.md` ファイルを作成します。
 
 :::tip
 プロジェクトの `AGENTS.md` ファイルを Git にコミットする必要があります。
 :::
 
-これは、Miao がプロジェクトの構造と使用されているコーディングパターンを理解するのに役立ちます。
+これは、MIAO がプロジェクトの構造と使用されているコーディングパターンを理解するのに役立ちます。
 
 ---
 
 ## 使用法
 
-これで、Miao を使用してプロジェクトに取り組む準備が整いました。何でもお気軽にお尋ねください！
+これで、MIAO を使用してプロジェクトに取り組む準備が整いました。何でもお気軽にお尋ねください！
 
 AI コーディングエージェントを初めて使用する場合は、次の例を参考にしてください。
 
@@ -235,7 +235,7 @@ Miao には、変更を加える機能を無効にする _Plan mode_ があり�
    From this screen, the user can undelete a note or permanently delete it.
 ```
 
-自分が何を望んでいるのかを理解するために、Miao に十分な詳細を提供したいと考えています。
+自分が何を望んでいるのかを理解するために、MIAO に十分な詳細を提供したいと考えています。
 チームの若手開発者と話しているように話すと良いでしょう。
 
 :::tip
@@ -277,7 +277,7 @@ Miao は、指定された画像をスキャンしてプロンプトに追加で
 
 ### 変更を加える
 
-より単純な変更については、Miao に直接ビルドするよう依頼できます。
+より単純な変更については、MIAO に直接ビルドするよう依頼できます。
 最初に計画を見直す必要はありません。
 
 ```txt frame="none" "@packages/functions/src/settings.ts" "@packages/functions/src/notes.ts"
@@ -311,7 +311,7 @@ Miao は加えた変更を元に戻し、元のメッセージを再度表示し
 Can you refactor the function in @packages/functions/src/api/index.ts?
 ```
 
-ここからプロンプトを調整し、Miao に再試行を依頼できます。
+ここからプロンプトを調整し、MIAO に再試行を依頼できます。
 
 :::tip
 `/undo` を複数回実行すると、複数の変更を元に戻すことができます。
@@ -339,12 +339,12 @@ Miao との会話は [他のチームメンバーと共有できます](/docs/sh
 会話はデフォルトでは共有されません。
 :::
 
-これは [Miao を使用した会話 ](https://opencode.ai/s/4XP1fce5) の例です。
+これは [MIAO を使用した会話 ](https://opencode.ai/s/4XP1fce5) の例です。
 
 ---
 
 ## カスタマイズ
 
-それで終わりです！これであなたは Miao の使い方のプロになりました。
+それで終わりです！これであなたは MIAO の使い方のプロになりました。
 
 独自のものにするには、[テーマ](/docs/themes) を選択する、[キーバインドをカスタマイズする](/docs/keybinds)、[コードフォーマッタ](/docs/formatters) を設定する、[カスタムコマンド](/docs/commands) を作成する、または [Miao設定](/docs/config) を試してみることをお勧めします。

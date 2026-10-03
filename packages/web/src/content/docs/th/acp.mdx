@@ -1,6 +1,6 @@
 ---
 title: การรองรับ ACP
-description: ใช้ Miao ในโปรแกรมแก้ไขที่รองรับ ACP
+description: ใช้ MIAO ในโปรแกรมแก้ไขที่รองรับ ACP
 ---
 
 Miao รองรับ [Agent Client Protocol](https://agentclientprotocol.com) (ACP) ซึ่งช่วยให้สามารถทำงานร่วมกับ editor และ IDE ต่างๆ ได้โดยตรง
@@ -15,9 +15,9 @@ ACP เป็นมาตรฐานเปิดสำหรับการส�
 
 ## การกำหนดค่า
 
-ในการใช้ Miao ผ่าน ACP ให้กำหนดค่าโปรแกรมแก้ไขของคุณให้รันคำสั่ง `miao acp`
+ในการใช้ MIAO ผ่าน ACP ให้กำหนดค่าโปรแกรมแก้ไขของคุณให้รันคำสั่ง `miao acp`
 
-คำสั่งนี้จะเริ่ม Miao เป็น process ย่อยที่รองรับ ACP ซึ่งสื่อสารกับโปรแกรมแก้ไขของคุณผ่าน JSON-RPC ทาง stdio
+คำสั่งนี้จะเริ่ม MIAO เป็น process ย่อยที่รองรับ ACP ซึ่งสื่อสารกับโปรแกรมแก้ไขของคุณผ่าน JSON-RPC ทาง stdio
 
 นี่คือตัวอย่างสำหรับโปรแกรมแก้ไขยอดนิยมที่รองรับ ACP
 
@@ -25,9 +25,9 @@ ACP เป็นมาตรฐานเปิดสำหรับการส�
 
 ### Zed
 
-ติดตั้ง Miao จาก [รีจิสทรี ACP ของ Zed](https://zed.dev/docs/ai/external-agents#registry) โดยเรียกใช้ `zed: acp registry` ใน Command Palette
+ติดตั้ง MIAO จาก [รีจิสทรี ACP ของ Zed](https://zed.dev/docs/ai/external-agents#registry) โดยเรียกใช้ `zed: acp registry` ใน Command Palette
 
-หากต้องการใช้ไฟล์ปฏิบัติการ Miao แบบกำหนดเอง ให้เพิ่มลงในการตั้งค่า [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
+หากต้องการใช้ไฟล์ปฏิบัติการ MIAO แบบกำหนดเอง ให้เพิ่มลงในการตั้งค่า [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
 
 ```json title="~/.config/zed/settings.json"
 {
@@ -85,7 +85,7 @@ ACP เป็นมาตรฐานเปิดสำหรับการส�
 }
 ```
 
-นี่เป็นการเปิดให้ตัวแทน 'Miao' ในเนื้อหาของตัวแทน AI Chat
+นี่เป็นการเปิดให้ตัวแทน 'MIAO' ในเนื้อหาของตัวแทน AI Chat
 
 ---
 
@@ -124,7 +124,7 @@ ACP เป็นมาตรฐานเปิดสำหรับการส�
 
 ### CodeCompanion.nvim
 
-ลองใช้ Miao ACP ใน [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) ให้เพิ่มสิ่งต่อไปนี้ใน Neovim ของคุณ:
+ลองใช้ MIAO ACP ใน [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) ให้เพิ่มสิ่งต่อไปนี้ใน Neovim ของคุณ:
 
 ```lua
 require("codecompanion").setup({
@@ -139,7 +139,7 @@ require("codecompanion").setup({
 })
 ```
 
-คุณสามารถใช้ CodeCompanion เพื่อใช้ miao เป็น ACP agent สำหรับแชท
+คุณสามารถใช้ CodeCompanion เพื่อใช้ MIAO เป็น ACP agent สำหรับแชท
 
 หากคุณต้องส่ง environment variables (เช่น `MIAO_API_KEY`) โปรดดู [Configuring Adapters: Environment Variables](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) ในเอกสารของ CodeCompanion.nvim สำหรับรายละเอียดทั้งหมด
 
@@ -153,7 +153,7 @@ miao ทำงานผ่าน ACP เหมือนกับใน terminal 
 
 - เครื่องมือใน (ไฟล์ไฟล์คำสั่งอื่นๆ)
 - คำอธิบายและคำสั่งสแลช
-- MCP แขกที่นี่คือข้อมูลเพิ่มเติมของ Miao ของคุณ
+- MCP แขกที่นี่คือข้อมูลเพิ่มเติมของ MIAO ของคุณ
 - กฎเฉพาะโครงการจาก `AGENTS.md`
 - คนจัดรูปแบบและ linters เวียนนา
 - ระบบตัวแทนและระบบ

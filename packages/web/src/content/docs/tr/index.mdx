@@ -1,15 +1,15 @@
 ---
 title: Giriş
-description: Miao kullanmaya başlayın.
+description: MIAO kullanmaya başlayın.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 import config from "../../../../config.mjs"
 export const console = config.console
 
-[**Miao**](/) açık kaynaklı bir AI kodlama ajanıdır. Terminal tabanlı bir arayüz, masaüstü uygulaması veya IDE uzantısı olarak mevcuttur.
+[**MIAO**](/) açık kaynaklı bir AI kodlama ajanıdır. Terminal tabanlı bir arayüz, masaüstü uygulaması veya IDE uzantısı olarak mevcuttur.
 
-![miao TUI with the miao theme](../../../assets/lander/screenshot.png)
+![MIAO TUI with the MIAO theme](../../../assets/lander/screenshot.png)
 
 Başlayalım.
 
@@ -79,7 +79,7 @@ Ayrıca aşağıdaki komutlarla da yükleyebilirsiniz:
   brew install anomalyco/tap/opencode
   ```
 
-  > En güncel sürümler için Miao tap'ini kullanmanızı öneririz. Resmi `brew install miao` formülü Homebrew ekibi tarafından korunur ve daha sık güncellenir.
+  > En güncel sürümler için MIAO tap'ini kullanmanızı öneririz. Resmi `brew install miao` formülü Homebrew ekibi tarafından korunur ve daha sık güncellenir.
 
 - **Paru'yu Arch Linux'ta kullanma**
 
@@ -91,7 +91,7 @@ Ayrıca aşağıdaki komutlarla da yükleyebilirsiniz:
 #### Windows
 
 :::tip[Önerilen: WSL kullanın]
-Windows'ta en iyi deneyim için [Windows Subsystem for Linux (WSL)](/docs/windows-wsl) kullanılmasını öneririz. Daha iyi performans ve Miao'un özellikleriyle tam uyumluluğu sağlar.
+Windows'ta en iyi deneyim için [Windows Subsystem for Linux (WSL)](/docs/windows-wsl) kullanılmasını öneririz. Daha iyi performans ve MIAO'un özellikleriyle tam uyumluluğu sağlar.
 :::
 
 - **Chocolatey Kullanımı**
@@ -137,7 +137,7 @@ Miao ile herhangi bir LLM sağlayıcısının API anahtarlarını yapılandırar
 LLM sağlayıcılarını kullanmaya yeni başlıyorsanız, [OpenCode Zen](/docs/zen) kullanmanızı öneririz.
 Miao ekibi tarafından test edilmiş ve doğrulanmış modellerin seçilmiş bir listesidir.
 
-1. TUI'de `/connect` komutunu çalıştırın, Miao'u seçin ve [opencode.ai/auth](https://opencode.ai/auth)'ye gidin.
+1. TUI'de `/connect` komutunu çalıştırın, MIAO'u seçin ve [opencode.ai/auth](https://opencode.ai/auth)'ye gidin.
 
    ```txt
    /connect
@@ -166,31 +166,31 @@ Artık bir sağlayıcı yapılandırdığınıza göre, üzerinde çalışmak is
 cd /path/to/project
 ```
 
-Ve Miao'u çalıştırın.
+Ve MIAO'u çalıştırın.
 
 ```bash
 miao
 ```
 
-Daha sonra aşağıdaki komutu çalıştırarak proje için Miao'u başlatın.
+Daha sonra aşağıdaki komutu çalıştırarak proje için MIAO'u başlatın.
 
 ```bash frame="none"
 /init
 ```
 
-Bu, Miao'un projenizi analiz etmesini ve bir `AGENTS.md` proje kökünde dosyası oluşturmasını sağlayacaktır.
+Bu, MIAO'un projenizi analiz etmesini ve bir `AGENTS.md` proje kökünde dosyası oluşturmasını sağlayacaktır.
 
 :::tip
 Projenizin `AGENTS.md` dosyasını Git'e göndermelisiniz.
 :::
 
-Bu, Miao'un proje yapısını ve kullanılan kodlama kalıplarını anlamasına yardımcı olur.
+Bu, MIAO'un proje yapısını ve kullanılan kodlama kalıplarını anlamasına yardımcı olur.
 
 ---
 
 ## Kullanım
 
-Artık projeniz üzerinde çalışmak için Miao'u kullanmaya hazırsınız. Dilediğiniz soruyu sorabilirsiniz.
+Artık projeniz üzerinde çalışmak için MIAO'u kullanmaya hazırsınız. Dilediğiniz soruyu sorabilirsiniz.
 
 AI kodlama ajanını kullanmaya yeniyseniz aşağıdaki örnekler yardımcı olabilir.
 
@@ -276,7 +276,7 @@ Miao'dan projenize yeni özellikler eklemesini isteyebilirsiniz. Yine de önceli
 
 ### Değişiklik Yapma
 
-Daha basit değişikliklerde, önce planı incelemeden Miao'dan doğrudan değişiklik yapmasını isteyebilirsiniz.
+Daha basit değişikliklerde, önce planı incelemeden MIAO'dan doğrudan değişiklik yapmasını isteyebilirsiniz.
 
 ```txt frame="none" "@packages/functions/src/settings.ts" "@packages/functions/src/notes.ts"
 We need to add authentication to the /settings route. Take a look at how this is
@@ -290,7 +290,7 @@ Miao'un doğru değişiklikleri yapması için yeterli ayrıntı verdiğinizden 
 
 ### Değişiklikleri Geri Alma
 
-Diyelim ki Miao'dan bazı değişiklikler yapmasını istediniz.
+Diyelim ki MIAO'dan bazı değişiklikler yapmasını istediniz.
 
 ```txt frame="none" "@packages/functions/src/api/index.ts"
 Can you refactor the function in @packages/functions/src/api/index.ts?
@@ -308,7 +308,7 @@ Miao değişiklikleri geri alır ve orijinal mesajınızı tekrar gösterir.
 Can you refactor the function in @packages/functions/src/api/index.ts?
 ```
 
-Buradan komut isteminde ince ayar yapabilir ve Miao'dan tekrar denemesini isteyebilirsiniz.
+Buradan komut isteminde ince ayar yapabilir ve MIAO'dan tekrar denemesini isteyebilirsiniz.
 
 :::tip
 Birden çok değişikliği geri almak için `/undo` komutunu birden çok kez çalıştırabilirsiniz.
@@ -336,12 +336,12 @@ Bu, mevcut konuşmaya bir bağlantı oluşturacak ve bunu panonuza kopyalayacakt
 Konuşmalar varsayılan olarak paylaşılmaz.
 :::
 
-İşte Miao ile bir [örnek konuşma](https://opencode.ai/s/4XP1fce5).
+İşte MIAO ile bir [örnek konuşma](https://opencode.ai/s/4XP1fce5).
 
 ---
 
 ## Özelleştirme
 
-İşte bu kadar! Artık Miao'u kullanma konusunda profesyonelsiniz.
+İşte bu kadar! Artık MIAO'u kullanma konusunda profesyonelsiniz.
 
-Kendinize göre uyarlamak için [tema seçebilir](/docs/themes), [tuş atamalarını özelleştirebilir](/docs/keybinds), [kod biçimlendirici ayarlayabilir](/docs/formatters), [özel komutlar oluşturabilir](/docs/commands) veya [Miao config](/docs/config) ile oynayabilirsiniz.
+Kendinize göre uyarlamak için [tema seçebilir](/docs/themes), [tuş atamalarını özelleştirebilir](/docs/keybinds), [kod biçimlendirici ayarlayabilir](/docs/formatters), [özel komutlar oluşturabilir](/docs/commands) veya [MIAO config](/docs/config) ile oynayabilirsiniz.

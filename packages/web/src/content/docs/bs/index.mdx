@@ -7,15 +7,15 @@ import { Tabs, TabItem } from "@astrojs/starlight/components"
 import config from "../../../../config.mjs"
 export const console = config.console
 
-[**Miao**](/) je AI agent za kodiranje otvorenog koda. Dostupan je kao interfejs baziran na terminalu, desktop aplikacija ili IDE ekstenzija.
-![Miao TUI sa miao temom](../../../assets/lander/screenshot.png)
+[**MIAO**](/) je AI agent za kodiranje otvorenog koda. Dostupan je kao interfejs baziran na terminalu, desktop aplikacija ili IDE ekstenzija.
+![MIAO TUI sa MIAO temom](../../../assets/lander/screenshot.png)
 Hajde da počnemo.
 
 ---
 
 #### Preduvjeti
 
-Da biste koristili Miao u svom terminalu, trebat će vam:
+Da biste koristili MIAO u svom terminalu, trebat će vam:
 
 1. Moderan emulator terminala kao što su:
    - [WezTerm](https://wezterm.org), više platformi
@@ -28,7 +28,7 @@ Da biste koristili Miao u svom terminalu, trebat će vam:
 
 ## Instalacija
 
-Najlakši način za instaliranje Miao je putem instalacijske skripte.
+Najlakši način za instaliranje MIAO je putem instalacijske skripte.
 
 ```bash
 curl -fsSL https://opencode.ai/install | bash
@@ -76,7 +76,7 @@ Također ga možete instalirati pomoću sljedećih naredbi:
   brew install anomalyco/tap/opencode
 ```
 
-> Preporučujemo korištenje Miao tap za najnovija izdanja. Službenu formulu `brew install miao` održava Homebrew tim i ažurira se rjeđe.
+> Preporučujemo korištenje MIAO tap za najnovija izdanja. Službenu formulu `brew install miao` održava Homebrew tim i ažurira se rjeđe.
 
 - **Korištenje Parua na Arch Linuxu**
 
@@ -88,7 +88,7 @@ Također ga možete instalirati pomoću sljedećih naredbi:
 #### Windows
 
 :::tip[Preporučeno: Koristite WSL]
-Za najbolje iskustvo na Windows-u preporučujemo korištenje [Windows Subsystem for Linux (WSL)](/docs/windows-wsl). Pruža bolje performanse i potpunu kompatibilnost sa Miao funkcijama.
+Za najbolje iskustvo na Windows-u preporučujemo korištenje [Windows Subsystem for Linux (WSL)](/docs/windows-wsl). Pruža bolje performanse i potpunu kompatibilnost sa MIAO funkcijama.
 :::
 
 - **Korištenje Chocolatey-a**
@@ -121,18 +121,18 @@ Za najbolje iskustvo na Windows-u preporučujemo korištenje [Windows Subsystem 
   docker run -it --rm ghcr.io/anomalyco/opencode
 ```
 
-Podrška za instaliranje Miao na Windows koristeći Bun je trenutno u toku.
+Podrška za instaliranje MIAO na Windows koristeći Bun je trenutno u toku.
 Također možete preuzeti binarnu datoteku iz [Releases](https://github.com/anomalyco/opencode/releases).
 
 ---
 
 ## Konfiguracija
 
-Uz Miao možete koristiti bilo kojeg LLM provajdera tako što ćete konfigurirati njihove API ključeve.
+Uz MIAO možete koristiti bilo kojeg LLM provajdera tako što ćete konfigurirati njihove API ključeve.
 Ako ste tek počeli koristiti LLM provajdere, preporučujemo korištenje [OpenCode Zen](/docs/zen).
-To je kurirana lista modela koji su testirani i verifikovani od strane Miao tima.
+To je kurirana lista modela koji su testirani i verifikovani od strane MIAO tima.
 
-1. Pokrenite naredbu `/connect` u TUI-u, odaberite miao i idite na [opencode.ai/auth](https://opencode.ai/auth).
+1. Pokrenite naredbu `/connect` u TUI-u, odaberite MIAO i idite na [opencode.ai/auth](https://opencode.ai/auth).
 
 ```txt
    /connect
@@ -166,30 +166,30 @@ I pokrenite Miao.
 miao
 ```
 
-Zatim inicijalizirajte Miao za projekat pokretanjem sljedeće naredbe.
+Zatim inicijalizirajte MIAO za projekat pokretanjem sljedeće naredbe.
 
 ```bash frame="none"
 /init
 ```
 
-Ovo će omogućiti Miao da analizira vaš projekat i kreira `AGENTS.md` fajl u korijenu projekta.
+Ovo će omogućiti MIAO da analizira vaš projekat i kreira `AGENTS.md` fajl u korijenu projekta.
 :::tip
 Trebali biste komitovati datoteku `AGENTS.md` vašeg projekta u Git.
 :::
-Ovo pomaže Miao da razumije strukturu projekta i obrasce kodiranja koji se koriste.
+Ovo pomaže MIAO da razumije strukturu projekta i obrasce kodiranja koji se koriste.
 
 ---
 
 ## Korištenje
 
-Sada ste spremni da koristite Miao za rad na svom projektu. Slobodno pitajte bilo šta!
+Sada ste spremni da koristite MIAO za rad na svom projektu. Slobodno pitajte bilo šta!
 Ako ste novi u korištenju agenta za AI kodiranje, evo nekoliko primjera koji bi mogli pomoći.
 
 ---
 
 ### Postavljanje pitanja
 
-Možete zamoliti Miao da vam objasni kodnu bazu.
+Možete zamoliti MIAO da vam objasni kodnu bazu.
 :::tip
 Koristite tipku `@` za nejasnu pretragu datoteka u projektu.
 :::
@@ -204,7 +204,7 @@ Ovo je korisno ako postoji dio kodne baze na kojem niste radili.
 
 ### Dodavanje funkcija
 
-Možete zamoliti Miao da vašem projektu doda nove funkcije. Iako preporučujemo da ga prvo zamolite da napravi plan.
+Možete zamoliti MIAO da vašem projektu doda nove funkcije. Iako preporučujemo da ga prvo zamolite da napravi plan.
 
 1. **Kreirajte plan**
    Miao ima _Plan mod_ koji onemogućuje njegovu sposobnost da pravi promjene i umjesto toga predlaže _kako_ će implementirati ovu funkciju.
@@ -222,9 +222,9 @@ Hajde sada da opišemo šta želimo da uradi.
     From this screen, the user can undelete a note or permanently delete it.
 ```
 
-Želite da date Miao dovoljno detalja da razumije šta želite. Pomaže da razgovarate s njim kao da razgovarate sa mlađim programerom u svom timu.
+Želite da date MIAO dovoljno detalja da razumije šta želite. Pomaže da razgovarate s njim kao da razgovarate sa mlađim programerom u svom timu.
 :::tip
-Dajte Miao dosta konteksta i primjera koji će mu pomoći da razumije šta vi želite.
+Dajte MIAO dosta konteksta i primjera koji će mu pomoći da razumije šta vi želite.
 :::
 
 2. **Ponovite plan**
@@ -257,7 +257,7 @@ I tražeći od njega da napravi promjene.
 
 ### Pravljenje izmjena
 
-Za jednostavnije promjene, možete zamoliti Miao da ga direktno izgradi bez potrebe da prvo pregledate plan.
+Za jednostavnije promjene, možete zamoliti MIAO da ga direktno izgradi bez potrebe da prvo pregledate plan.
 
 ```txt frame="none" "@packages/functions/src/settings.ts" "@packages/functions/src/notes.ts"
 We need to add authentication to the /settings route. Take a look at how this is
@@ -265,13 +265,13 @@ handled in the /notes route in @packages/functions/src/notes.ts and implement
 the same logic in @packages/functions/src/settings.ts
 ```
 
-Želite da budete sigurni da ste pružili dobru količinu detalja kako bi Miao napravio ispravne promjene.
+Želite da budete sigurni da ste pružili dobru količinu detalja kako bi MIAO napravio ispravne promjene.
 
 ---
 
 ### Poništavanje izmjena
 
-Recimo da tražite od Miao da izvrši neke promjene.
+Recimo da tražite od MIAO da izvrši neke promjene.
 
 ```txt frame="none" "@packages/functions/src/api/index.ts"
 Can you refactor the function in @packages/functions/src/api/index.ts?
@@ -289,7 +289,7 @@ Miao će sada poništiti promjene koje ste napravili i ponovo prikazati vašu or
 Can you refactor the function in @packages/functions/src/api/index.ts?
 ```
 
-Odavde možete podesiti prompt i zamoliti Miao da pokuša ponovo.
+Odavde možete podesiti prompt i zamoliti MIAO da pokuša ponovo.
 :::tip
 Možete pokrenuti `/undo` više puta da poništite više promjena.
 :::
@@ -303,7 +303,7 @@ Ili **možete ponoviti** promjene koristeći naredbu `/redo`.
 
 ## Dijeljenje
 
-Razgovore koje imate sa Miao možete [dijeliti sa vašim timom](/docs/share).
+Razgovore koje imate sa MIAO možete [dijeliti sa vašim timom](/docs/share).
 
 ```bash frame="none"
 /share
@@ -320,4 +320,4 @@ Evo [primjer razgovora](https://opencode.ai/s/4XP1fce5) sa Miao.
 ## Prilagođavanje
 
 I to je to! Sada ste profesionalac u korištenju Miao.
-Da biste to učinili svojim, preporučujemo [odabir teme](/docs/themes), [prilagođavanje povezivanja tipki](/docs/keybinds), [konfiguriranje formatera koda](/docs/formatters), [kreiranje prilagođenih komandi](/docs/commands), ili igranje sa [Miao config](/docs/config).
+Da biste to učinili svojim, preporučujemo [odabir teme](/docs/themes), [prilagođavanje povezivanja tipki](/docs/keybinds), [konfiguriranje formatera koda](/docs/formatters), [kreiranje prilagođenih komandi](/docs/commands), ili igranje sa [MIAO config](/docs/config).

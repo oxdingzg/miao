@@ -107,14 +107,14 @@ trial을 마치고 조직에서 Miao를 본격적으로 사용하려면, 가격 
 ## FAQ
 
 <details>
-<summary>Miao Enterprise란 무엇인가요?</summary>
+<summary>MIAO Enterprise란 무엇인가요?</summary>
 
 Miao Enterprise는 코드와 데이터가 조직 인프라 밖으로 나가지 않도록 보장하려는 조직을 위한 기능입니다. SSO 및 내부 AI gateway와 연동되는 중앙 config를 사용해 이를 구현할 수 있습니다.
 
 </details>
 
 <details>
-<summary>Miao Enterprise는 어떻게 시작하나요?</summary>
+<summary>MIAO Enterprise는 어떻게 시작하나요?</summary>
 
 먼저 팀 내부 trial부터 시작하세요. Miao는 기본적으로 코드나 context 데이터를 저장하지 않으므로 도입을 빠르게 시작할 수 있습니다.
 
@@ -130,7 +130,7 @@ seat당 과금 방식의 엔터프라이즈 요금제를 제공합니다. 자체
 </details>
 
 <details>
-<summary>Miao Enterprise에서 데이터는 안전한가요?</summary>
+<summary>MIAO Enterprise에서 데이터는 안전한가요?</summary>
 
 네. Miao는 코드나 context 데이터를 저장하지 않습니다. 모든 처리는 로컬 또는 AI provider로의 직접 API 호출로 이루어집니다. 중앙 config와 SSO integration을 함께 사용하면 데이터는 조직 인프라 내부에서 안전하게 유지됩니다.
 
@@ -139,7 +139,7 @@ seat당 과금 방식의 엔터프라이즈 요금제를 제공합니다. 자체
 <details>
 <summary>사내 private NPM registry를 사용할 수 있나요?</summary>
 
-Miao는 Bun의 기본 `.npmrc` 지원을 통해 private npm registry를 사용할 수 있습니다. 조직에서 JFrog Artifactory, Nexus 등 private registry를 사용한다면 Miao 실행 전에 개발자 인증을 완료하세요.
+Miao는 Bun의 기본 `.npmrc` 지원을 통해 private npm registry를 사용할 수 있습니다. 조직에서 JFrog Artifactory, Nexus 등 private registry를 사용한다면 MIAO 실행 전에 개발자 인증을 완료하세요.
 
 private registry 인증 예시는 다음과 같습니다.
 
@@ -160,6 +160,6 @@ registry=https://your-company.jfrog.io/api/npm/npm-virtual/
 //your-company.jfrog.io/api/npm/npm-virtual/:_authToken=${NPM_AUTH_TOKEN}
 ```
 
-엔터프라이즈 registry에서 패키지를 정상 설치하려면, 개발자는 Miao 실행 전에 private registry 인증을 완료해야 합니다.
+엔터프라이즈 registry에서 패키지를 정상 설치하려면, 개발자는 MIAO 실행 전에 private registry 인증을 완료해야 합니다.
 
 </details>

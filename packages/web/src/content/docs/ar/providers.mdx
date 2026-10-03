@@ -6,7 +6,7 @@ description: استخدام أي موفّر LLM في Miao.
 import config from "../../../../config.mjs"
 export const console = config.console
 
-يستخدم Miao ‏[AI SDK](https://ai-sdk.dev/) و[Models.dev](https://models.dev) لدعم **أكثر من 75 موفّر LLM**، كما يدعم تشغيل النماذج المحلية.
+يستخدم MIAO ‏[AI SDK](https://ai-sdk.dev/) و[Models.dev](https://models.dev) لدعم **أكثر من 75 موفّر LLM**، كما يدعم تشغيل النماذج المحلية.
 
 لإضافة مزوّد تحتاج إلى:
 
@@ -49,14 +49,14 @@ export const console = config.console
 
 ## OpenCode Zen
 
-OpenCode Zen هي قائمة نماذج يوفّرها فريق Miao وقد تم
+OpenCode Zen هي قائمة نماذج يوفّرها فريق MIAO وقد تم
 اختبارها والتحقق من أنها تعمل بشكل جيد مع Miao. [اعرف المزيد](/docs/zen).
 
 :::tip
 إذا كنت جديدا، فننصح بالبدء مع OpenCode Zen.
 :::
 
-1. شغّل الأمر `/connect` في TUI، واختر miao، ثم انتقل إلى [opencode.ai/auth](https://opencode.ai/auth).
+1. شغّل الأمر `/connect` في TUI، واختر MIAO، ثم انتقل إلى [opencode.ai/auth](https://opencode.ai/auth).
 
    ```txt
    /connect
@@ -79,13 +79,13 @@ OpenCode Zen هي قائمة نماذج يوفّرها فريق Miao وقد تم
    /models
    ```
 
-يعمل مثل أي مزوّد آخر في Miao واستخدامه اختياري بالكامل.
+يعمل مثل أي مزوّد آخر في MIAO واستخدامه اختياري بالكامل.
 
 ---
 
 ## OpenCode Go
 
-OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وصولا موثوقا إلى نماذج البرمجة المفتوحة الشهيرة المقدّمة من فريق Miao، والتي تم اختبارها والتحقق من أنها تعمل بشكل جيد مع Miao.
+OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وصولا موثوقا إلى نماذج البرمجة المفتوحة الشهيرة المقدّمة من فريق MIAO، والتي تم اختبارها والتحقق من أنها تعمل بشكل جيد مع Miao.
 
 1. شغّل الأمر `/connect` في TUI، واختر `OpenCode Go`، ثم انتقل إلى [opencode.ai/auth](https://opencode.ai/zen).
 
@@ -110,7 +110,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
    /models
    ```
 
-يعمل مثل أي مزوّد آخر في Miao واستخدامه اختياري بالكامل.
+يعمل مثل أي مزوّد آخر في MIAO واستخدامه اختياري بالكامل.
 
 ---
 
@@ -154,7 +154,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
 
 ### Amazon Bedrock
 
-لاستخدام Amazon Bedrock مع Miao:
+لاستخدام Amazon Bedrock مع MIAO:
 
 1. توجّه إلى **Model catalog** في Amazon Bedrock console واطلب
    الوصول إلى النماذج التي تريدها.
@@ -167,7 +167,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
 
    #### متغيرات البيئة (بدء سريع)
 
-   عيّن أحد متغيرات البيئة التالية أثناء تشغيل miao:
+   عيّن أحد متغيرات البيئة التالية أثناء تشغيل MIAO:
 
    ```bash
    # الخيار 1: استخدام مفاتيح وصول AWS
@@ -308,7 +308,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
    ```
 
 :::info
-استخدام اشتراك Claude Pro/Max داخل Miao غير مدعوم رسميا من [Anthropic](https://anthropic.com).
+استخدام اشتراك Claude Pro/Max داخل MIAO غير مدعوم رسميا من [Anthropic](https://anthropic.com).
 :::
 
 ##### استخدام مفاتيح API
@@ -321,7 +321,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
 
 ### Atomic Chat
 
-يمكنك تكوين miao لاستخدام النماذج المحلية عبر [Atomic Chat](https://atomic.chat)، وهو تطبيق سطح مكتب يقوم بتشغيل LLMs المحلية خلف خادم API متوافق مع OpenAI (نقطة النهاية الافتراضية `http://127.0.0.1:1337/v1`).
+يمكنك تكوين MIAO لاستخدام النماذج المحلية عبر [Atomic Chat](https://atomic.chat)، وهو تطبيق سطح مكتب يقوم بتشغيل LLMs المحلية خلف خادم API متوافق مع OpenAI (نقطة النهاية الافتراضية `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -370,7 +370,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
 2. اذهب إلى [Azure AI Foundry](https://ai.azure.com/) وانشر نموذجا.
 
    :::note
-   يجب أن يطابق اسم النشر اسم النموذج كي يعمل miao بشكل صحيح.
+   يجب أن يطابق اسم النشر اسم النموذج كي يعمل MIAO بشكل صحيح.
    :::
 
 3. شغّل الأمر `/connect` وابحث عن **Azure**.
@@ -417,7 +417,7 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
 2. اذهب إلى [Azure AI Foundry](https://ai.azure.com/) وانشر نموذجا.
 
    :::note
-   يجب أن يطابق اسم النشر اسم النموذج كي يعمل miao بشكل صحيح.
+   يجب أن يطابق اسم النشر اسم النموذج كي يعمل MIAO بشكل صحيح.
    :::
 
 3. شغّل الأمر `/connect` وابحث عن **Azure Cognitive Services**.
@@ -751,8 +751,8 @@ OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وص
 ##### GitLab مستضاف ذاتيا
 
 :::note[ملاحظة امتثال]
-يستخدم Miao نموذجا صغيرا لبعض مهام الذكاء الاصطناعي مثل إنشاء عنوان الجلسة.
-تم ضبطه لاستخدام gpt-5-nano افتراضيا، مستضافا عبر Zen. لحصر Miao
+يستخدم MIAO نموذجا صغيرا لبعض مهام الذكاء الاصطناعي مثل إنشاء عنوان الجلسة.
+تم ضبطه لاستخدام gpt-5-nano افتراضيا، مستضافا عبر Zen. لحصر MIAO
 على استخدام مثيل GitLab المستضاف لديك فقط، أضف ما يلي إلى ملف
 `miao.json` لديك. يوصى أيضا بتعطيل مشاركة الجلسات.
 
@@ -848,7 +848,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 ### GitHub Copilot
 
-لاستخدام اشتراك GitHub Copilot مع miao:
+لاستخدام اشتراك GitHub Copilot مع MIAO:
 
 :::note
 قد تتطلب بعض النماذج اشتراك [Pro+](https://github.com/features/copilot/plans) للاستخدام.
@@ -884,7 +884,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 ### Google Vertex AI
 
-لاستخدام Google Vertex AI مع Miao:
+لاستخدام Google Vertex AI مع MIAO:
 
 1. توجّه إلى **Model Garden** في Google Cloud Console وتحقق من
    النماذج المتاحة في منطقتك.
@@ -1013,7 +1013,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 #### إعدادات اختيارية
 
-إذا رأيت ميزة أو نموذجا في Helicone لم يتم ضبطه تلقائيا عبر miao، فيمكنك دائما ضبطه بنفسك.
+إذا رأيت ميزة أو نموذجا في Helicone لم يتم ضبطه تلقائيا عبر MIAO، فيمكنك دائما ضبطه بنفسك.
 
 هذه هي [Helicone's Model Directory](https://helicone.ai/models)، وستحتاجها للحصول على IDs الخاصة بالنماذج التي تريد إضافتها.
 
@@ -1066,7 +1066,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 ##### تتبع الجلسات
 
-تتيح ميزة [Sessions](https://docs.helicone.ai/features/sessions) في Helicone تجميع طلبات LLM المرتبطة معا. استخدم ملحق [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) لتسجيل كل محادثة Miao تلقائيا كجلسة في Helicone.
+تتيح ميزة [Sessions](https://docs.helicone.ai/features/sessions) في Helicone تجميع طلبات LLM المرتبطة معا. استخدم ملحق [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) لتسجيل كل محادثة MIAO تلقائيا كجلسة في Helicone.
 
 ```bash
 npm install -g opencode-helicone-session
@@ -1080,7 +1080,7 @@ npm install -g opencode-helicone-session
 }
 ```
 
-يقوم الملحق بحقن ترويسات `Helicone-Session-Id` و`Helicone-Session-Name` ضمن طلباتك. في صفحة Sessions داخل Helicone، سترى كل محادثة Miao مدرجة كجلسة مستقلة.
+يقوم الملحق بحقن ترويسات `Helicone-Session-Id` و`Helicone-Session-Name` ضمن طلباتك. في صفحة Sessions داخل Helicone، سترى كل محادثة MIAO مدرجة كجلسة مستقلة.
 
 ##### ترويسات Helicone الشائعة
 
@@ -1097,7 +1097,7 @@ npm install -g opencode-helicone-session
 
 ### llama.cpp
 
-يمكنك ضبط miao لاستخدام نماذج محلية عبر أداة llama-server ضمن [llama.cpp](https://github.com/ggml-org/llama.cpp)
+يمكنك ضبط MIAO لاستخدام نماذج محلية عبر أداة llama-server ضمن [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
@@ -1164,7 +1164,7 @@ npm install -g opencode-helicone-session
 
 ### LM Studio
 
-يمكنك ضبط miao لاستخدام نماذج محلية عبر LM Studio.
+يمكنك ضبط MIAO لاستخدام نماذج محلية عبر LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
@@ -1281,7 +1281,7 @@ npm install -g opencode-helicone-session
 
 ### Ollama
 
-يمكنك ضبط miao لاستخدام نماذج محلية عبر Ollama.
+يمكنك ضبط MIAO لاستخدام نماذج محلية عبر Ollama.
 
 :::tip
 يمكن لـ Ollama ضبط نفسه تلقائيا للعمل مع Miao. راجع [توثيق تكامل Ollama](https://docs.ollama.com/integrations/opencode) للتفاصيل.
@@ -1323,7 +1323,7 @@ npm install -g opencode-helicone-session
 
 ### Ollama Cloud
 
-لاستخدام Ollama Cloud مع Miao:
+لاستخدام Ollama Cloud مع MIAO:
 
 1. توجّه إلى [https://ollama.com/](https://ollama.com/) وسجّل الدخول أو أنشئ حسابا.
 
@@ -1346,7 +1346,7 @@ npm install -g opencode-helicone-session
    └ enter
    ```
 
-6. **مهم**: قبل استخدام نماذج السحابة في Miao، يجب سحب معلومات النموذج محليا:
+6. **مهم**: قبل استخدام نماذج السحابة في MIAO، يجب سحب معلومات النموذج محليا:
 
    ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1964,7 +1964,7 @@ OpenCode Zen هي قائمة من النماذج التي تم اختبارها 
 - **limit.context**: الحد الأقصى لرموز الإدخال التي يقبلها النموذج.
 - **limit.output**: الحد الأقصى للرموز التي يمكن للنموذج توليدها.
 
-تسمح حقول `limit` لـ Miao بفهم مقدار السياق المتبقي لديك. تسحب المزوّدات القياسية هذه القيم تلقائيا من models.dev.
+تسمح حقول `limit` لـ MIAO بفهم مقدار السياق المتبقي لديك. تسحب المزوّدات القياسية هذه القيم تلقائيا من models.dev.
 
 ---
 
@@ -1977,7 +1977,7 @@ OpenCode Zen هي قائمة من النماذج التي تم اختبارها 
 
    لا ينطبق هذا على مزوّدات مثل Amazon Bedrock التي تعتمد على متغيرات البيئة لـ auth.
 
-2. للمزوّدات المخصّصة، راجع إعدادات miao وتأكد من:
+2. للمزوّدات المخصّصة، راجع إعدادات MIAO وتأكد من:
    - أن provider ID المستخدم في الأمر `/connect` يطابق الـ ID في إعدادات miao.
    - استخدام حزمة npm الصحيحة للمزوّد. على سبيل المثال استخدم `@ai-sdk/cerebras` لـ Cerebras. ولكل المزوّدات الأخرى المتوافقة مع OpenAI استخدم `@ai-sdk/openai-compatible`.
    - استخدام نقطة نهاية API الصحيحة في الحقل `options.baseURL`.

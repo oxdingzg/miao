@@ -5,13 +5,13 @@ description: Options et commandes de la CLI Miao.
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-La CLI Miao démarre par défaut le [TUI](/docs/tui) lorsqu'il est exécuté sans aucun argument.
+La CLI MIAO démarre par défaut le [TUI](/docs/tui) lorsqu'il est exécuté sans aucun argument.
 
 ```bash
 miao
 ```
 
-Mais elle accepte également les commandes documentées sur cette page. Cela vous permet d'interagir avec Miao par programme.
+Mais elle accepte également les commandes documentées sur cette page. Cela vous permet d'interagir avec MIAO par programme.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -44,7 +44,7 @@ miao [project]
 
 ## Commandes
 
-La CLI Miao dispose également des commandes suivantes.
+La CLI MIAO dispose également des commandes suivantes.
 
 ---
 
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-Attachez un terminal à un serveur backend Miao déjà en cours d'exécution démarré via les commandes `serve` ou `web`.
+Attachez un terminal à un serveur backend MIAO déjà en cours d'exécution démarré via les commandes `serve` ou `web`.
 
 ```bash
 miao attach [url]
 ```
 
-Cela permet d'utiliser le TUI avec un backend Miao distant. Par exemple :
+Cela permet d'utiliser le TUI avec un backend MIAO distant. Par exemple :
 
 ```bash
 # Start the backend server for web/mobile access
@@ -129,7 +129,7 @@ Miao est alimenté par la liste des fournisseurs sur [Models.dev](https://models
 miao auth login
 ```
 
-Lorsque Miao démarre, il charge les fournisseurs à partir du fichier d'informations d'identification, ainsi que les clés définies dans vos environnements ou un fichier `.env` dans votre projet.
+Lorsque MIAO démarre, il charge les fournisseurs à partir du fichier d'informations d'identification, ainsi que les clés définies dans vos environnements ou un fichier `.env` dans votre projet.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Exécutez miao en mode non interactif en transmettant directement un prompt.
+Exécutez MIAO en mode non interactif en transmettant directement un prompt.
 
 ```bash
 miao run [message..]
@@ -351,7 +351,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`  | Fichier(s) à joindre au message                                                                    |
 | <nobr><code>{"--format"}</code></nobr>   |       | Format : par défaut (formaté) ou json (événements JSON bruts)                                      |
 | <nobr><code>{"--title"}</code></nobr>    |       | Titre de la session (utilise un prompt tronqué si aucune valeur n'est fournie)                     |
-| <nobr><code>{"--attach"}</code></nobr>   |       | Connectez-vous à un serveur miao en cours d'exécution (par exemple, http://localhost:4096)     |
+| <nobr><code>{"--attach"}</code></nobr>   |       | Connectez-vous à un serveur MIAO en cours d'exécution (par exemple, http://localhost:4096)     |
 | <nobr><code>{"--password"}</code></nobr> | `-p`  | Mot de passe d'authentification de base (par défaut `MIAO_SERVER_PASSWORD`)                    |
 | <nobr><code>{"--username"}</code></nobr> | `-u`  | Nom d'utilisateur d'authentification de base (par défaut `MIAO_SERVER_USERNAME` ou `miao`) |
 | <nobr><code>{"--dir"}</code></nobr>      |       | Répertoire d'exécution, ou chemin sur le serveur distant lors de l'attachement                     |
@@ -363,13 +363,13 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Démarrez un serveur Miao sans interface graphique pour un accès API. Consultez le [serveur docs](/docs/server) pour l'interface complète HTTP.
+Démarrez un serveur MIAO sans interface graphique pour un accès API. Consultez le [serveur docs](/docs/server) pour l'interface complète HTTP.
 
 ```bash
 miao serve
 ```
 
-Cela démarre un serveur HTTP qui fournit un accès API aux fonctionnalités d'Miao sans l'interface TUI. Définissez `MIAO_SERVER_PASSWORD` pour activer l'authentification de base HTTP (le nom d'utilisateur par défaut est `miao`).
+Cela démarre un serveur HTTP qui fournit un accès API aux fonctionnalités d'MIAO sans l'interface TUI. Définissez `MIAO_SERVER_PASSWORD` pour activer l'authentification de base HTTP (le nom d'utilisateur par défaut est `miao`).
 
 #### Options
 
@@ -459,13 +459,13 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Démarrez un serveur Miao sans interface graphique avec une interface Web.
+Démarrez un serveur MIAO sans interface graphique avec une interface Web.
 
 ```bash
 miao web
 ```
 
-Cela démarre un serveur HTTP et ouvre un navigateur Web pour accéder à Miao via une interface Web. Définissez `MIAO_SERVER_PASSWORD` pour activer l'authentification de base HTTP (le nom d'utilisateur par défaut est `miao`).
+Cela démarre un serveur HTTP et ouvre un navigateur Web pour accéder à MIAO via une interface Web. Définissez `MIAO_SERVER_PASSWORD` pour activer l'authentification de base HTTP (le nom d'utilisateur par défaut est `miao`).
 
 #### Options
 
@@ -500,7 +500,7 @@ Cette commande démarre un serveur ACP qui communique via stdin/stdout en utilis
 
 ### uninstall
 
-Désinstallez Miao et supprimez tous les fichiers associés.
+Désinstallez MIAO et supprimez tous les fichiers associés.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Met à jour miao vers la dernière version ou une version spécifique.
+Met à jour MIAO vers la dernière version ou une version spécifique.
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## Options globales
 
-La CLI miao prend les flags globaux suivants.
+La CLI MIAO prend les flags globaux suivants.
 
 | Option                                     | Court | Description                              |
 | ------------------------------------------ | ----- | ---------------------------------------- |

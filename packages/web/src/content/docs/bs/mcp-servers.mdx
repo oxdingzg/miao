@@ -3,7 +3,7 @@ title: MCP serveri
 description: Dodajte lokalne i udaljene MCP alate.
 ---
 
-Možete dodati vanjske alate u Miao koristeći _Model Context Protocol_, ili MCP. Miao podržava i lokalne i udaljene servere.
+Možete dodati vanjske alate u MIAO koristeći _Model Context Protocol_, ili MCP. MIAO podržava i lokalne i udaljene servere.
 Jednom dodani, MCP alati su automatski dostupni LLM-u zajedno sa ugrađenim alatima.
 
 ---
@@ -19,7 +19,7 @@ Određeni MCP serveri, poput GitHub MCP servera, mogu dodati mnogo tokena i lako
 
 ## Omogućavanje
 
-Možete definirati MCP servere u vašoj [Miao Config](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) pod `mcp`. Dodajte svaki MCP sa jedinstvenim imenom. Možete se pozvati na taj MCP po imenu kada tražite LLM.
+Možete definirati MCP servere u vašoj [MIAO Config](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) pod `mcp`. Dodajte svaki MCP sa jedinstvenim imenom. Možete se pozvati na taj MCP po imenu kada tražite LLM.
 
 ```jsonc title="miao.json" {6}
 {
@@ -176,7 +176,7 @@ Za većinu MCP servera sa omogućenim OAuthom nije potrebna posebna konfiguracij
 }
 ```
 
-Ako server zahtijeva autentifikaciju, Miao će vas tražiti prijavu pri prvom korištenju. Ako se to ne desi, možete [ručno pokrenuti tok](#authenticating) naredbom `miao mcp auth <server-name>`.
+Ako server zahtijeva autentifikaciju, MIAO će vas tražiti prijavu pri prvom korištenju. Ako se to ne desi, možete [ručno pokrenuti tok](#authenticating) naredbom `miao mcp auth <server-name>`.
 
 ### Prethodno registrirano
 
@@ -222,7 +222,7 @@ Uklonite pohranjene vjerodajnice:
 miao mcp logout my-oauth-server
 ```
 
-Komanda `mcp auth` otvara pretraživač za autorizaciju. Nakon odobrenja, Miao sigurno čuva tokene u `~/.local/share/miao/mcp-auth.json`.
+Komanda `mcp auth` otvara pretraživač za autorizaciju. Nakon odobrenja, MIAO sigurno čuva tokene u `~/.local/share/miao/mcp-auth.json`.
 
 #### Onemogućavanje OAuth-a
 
@@ -271,7 +271,7 @@ Komanda `mcp debug` prikazuje trenutni auth status, testira HTTP povezanost i po
 
 ## Upravljanje
 
-Vaši MCP serveri su dostupni kao alati u Miao, zajedno s ugrađenim alatima. Možete njima upravljati kroz Miao konfiguraciju kao i bilo kojim drugim alatom.
+Vaši MCP serveri su dostupni kao alati u MIAO, zajedno s ugrađenim alatima. Možete njima upravljati kroz MIAO konfiguraciju kao i bilo kojim drugim alatom.
 
 ### Globalno
 
@@ -396,7 +396,7 @@ Nakon dodavanja konfiguracije, autentifikujte se sa Sentry:
 miao mcp auth sentry
 ```
 
-Ovo će otvoriti prozor pretraživača da završite OAuth tok i povežete Miao sa vašim Sentry nalogom.
+Ovo će otvoriti prozor pretraživača da završite OAuth tok i povežete MIAO sa vašim Sentry nalogom.
 Nakon provjere autentičnosti, možete koristiti Sentry alate u svojim upitima za upite o problemima, projektima i podacima o greškama.
 
 ```txt "use sentry"

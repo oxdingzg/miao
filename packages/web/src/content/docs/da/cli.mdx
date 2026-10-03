@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Miao CLI muligheder og kommandoer.
+description: MIAO CLI muligheder og kommandoer.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -11,7 +11,7 @@ Miao CLI starter som standard [TUI](/docs/tui), når den kører uden nogen argum
 miao
 ```
 
-Men den accepterer også kommandoer som dokumenteret på denne side. Dette giver dig mulighed for at interagere med Miao programmatisk.
+Men den accepterer også kommandoer som dokumenteret på denne side. Dette giver dig mulighed for at interagere med MIAO programmatisk.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Start Miao terminalbrugergrænsefladen.
+Start MIAO terminalbrugergrænsefladen.
 
 ```bash
 miao [project]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-Tilslut en terminal til en allerede kørende Miao backend-server startet via `serve` eller `web` kommandoer.
+Tilslut en terminal til en allerede kørende MIAO backend-server startet via `serve` eller `web` kommandoer.
 
 ```bash
 miao attach [url]
 ```
 
-Dette gør det muligt at bruge TUI med en ekstern Miao backend. For eksempel:
+Dette gør det muligt at bruge TUI med en ekstern MIAO backend. For eksempel:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -129,7 +129,7 @@ Miao drives af udbyderlisten på [Models.dev](https://models.dev), så du kan br
 miao auth login
 ```
 
-Når Miao starter op, indlæser den udbyderne fra legitimationsfilen. Og hvis der er nogen nøgler defineret i dine miljøer eller en `.env` fil i dit projekt.
+Når MIAO starter op, indlæser den udbyderne fra legitimationsfilen. Og hvis der er nogen nøgler defineret i dine miljøer eller en `.env` fil i dit projekt.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Kør miao i ikke-interaktiv tilstand ved at sende en prompt direkte.
+Kør MIAO i ikke-interaktiv tilstand ved at sende en prompt direkte.
 
 ```bash
 miao run [message..]
@@ -384,7 +384,7 @@ Dette starter en HTTP-server, der giver API-adgang til opencode-funktionalitet u
 
 ### session
 
-Administrator Miao sessionsholder.
+Administrator MIAO sessionsholder.
 
 ```bash
 miao session [command]
@@ -394,7 +394,7 @@ miao session [command]
 
 #### list
 
-Liste over alle Miao sessioner.
+Liste over alle MIAO sessioner.
 
 ```bash
 miao session list
@@ -442,13 +442,13 @@ Hvis du ikke angiver et sessions-id, bliver du bedt om at vælge mellem tilgæng
 
 ### import
 
-Importer sessionsdata fra en JSON fil eller Miao del URL.
+Importer sessionsdata fra en JSON fil eller MIAO del URL.
 
 ```bash
 miao import <file>
 ```
 
-Du kan importere fra en lokal fil eller en Miao share URL.
+Du kan importere fra en lokal fil eller en MIAO share URL.
 
 ```bash
 miao import session.json
@@ -465,7 +465,7 @@ Start en hovedløs Miao-server med en webgrænseflade.
 miao web
 ```
 
-Dette starter en HTTP-server og åbner en webbrowser for at få adgang til Miao via en webgrænseflade. Indstil `MIAO_SERVER_PASSWORD` for at aktivere HTTP grundlæggende godkendelse (brugernavn er standard til `miao`).
+Dette starter en HTTP-server og åbner en webbrowser for at få adgang til MIAO via en webgrænseflade. Indstil `MIAO_SERVER_PASSWORD` for at aktivere HTTP grundlæggende godkendelse (brugernavn er standard til `miao`).
 
 #### Flag
 
@@ -500,7 +500,7 @@ Denne kommando starter en ACP-server, der kommunikerer via stdin/stdout ved hjæ
 
 ### uninstall
 
-Afinstaller Miao og fjern alle relaterede filer.
+Afinstaller MIAO og fjern alle relaterede filer.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Opdaterer Miao til den nyeste version eller en specifik version.
+Opdaterer MIAO til den nyeste version eller en specifik version.
 
 ```bash
 miao upgrade [target]
