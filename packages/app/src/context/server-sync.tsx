@@ -8,14 +8,8 @@ import type {
   SessionsActiveOutput,
 } from "@miao/client"
 import type { McpResource, McpStatus, ProviderAuthResponse } from "@/utils/server"
-import type {
-  Config,
-  LspStatus,
-  MiaoClient,
-  LocationPath,
-  Project,
-  SessionStatus,
-} from "@miao/sdk/v2/client"
+import type { LspStatus, Project, SessionStatus } from "@miao/schema/view-models"
+import type { Config, MiaoClient, LocationPath } from "@miao/sdk/v2"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@miao/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"

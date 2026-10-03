@@ -1,4 +1,4 @@
-import type { Message, Part } from "@miao/sdk/v2/client"
+import type { Message, Part } from "@miao/schema/view-models"
 
 export type SessionContextBreakdownKey = "system" | "user" | "assistant" | "tool" | "other"
 

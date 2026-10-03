@@ -1,15 +1,7 @@
 import type { AgentsListInput, AgentsListOutput, CommandsListInput, CommandsListOutput, ProjectsCurrentInput, ProjectsCurrentOutput, ProjectsListOutput, ReferencesListInput, ReferencesListOutput } from "@miao/client"
 import type { CatalogApi, CommandInfo, ProviderAuthResponse, SessionApi } from "@/utils/server"
-import type {
-  Config,
-  MiaoClient,
-  LocationPath,
-  PermissionRequest,
-  Project,
-  QuestionRequest,
-  ReferenceInfo,
-  Session,
-} from "@miao/sdk/v2/client"
+import type { Project, ReferenceInfo, Session } from "@miao/schema/view-models"
+import type { Config, MiaoClient, LocationPath, PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@miao/core/util/path"
 import { retry } from "@miao/core/util/retry"

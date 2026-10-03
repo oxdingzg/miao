@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createStore } from "solid-js/store"
-import type { Todo } from "@miao/sdk/v2"
+import type { Todo } from "@miao/schema/view-models"
 import { createPromptState } from "@/context/prompt"
 import { SessionComposerRegion, createSessionComposerRegionController } from "@/pages/session/composer"
 import { createPromptInputHistory, PromptInput } from "./prompt-input"

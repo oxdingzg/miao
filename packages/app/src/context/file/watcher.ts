@@ -1,4 +1,4 @@
-import type { FileNode } from "@miao/sdk/v2"
+import type { FileNode } from "@miao/schema/view-models"
 
 type WatcherEvent = {
   type: string

@@ -1,5 +1,5 @@
 import { createStore, produce, reconcile } from "solid-js/store"
-import type { FileNode } from "@miao/sdk/v2"
+import type { FileNode } from "@miao/schema/view-models"
 
 type DirectoryState = {
   expanded: boolean

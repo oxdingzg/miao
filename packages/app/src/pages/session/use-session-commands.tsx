@@ -16,7 +16,7 @@ import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from
 import { findLast } from "@miao/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
-import { Message, Part, UserMessage } from "@miao/sdk/v2"
+import { Message, Part, UserMessage } from "@miao/schema/view-models"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { createSessionOwnership } from "./session-ownership"

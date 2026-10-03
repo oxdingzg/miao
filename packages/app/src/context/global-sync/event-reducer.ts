@@ -1,16 +1,8 @@
 import { Binary } from "@miao/core/util/binary"
 import type { FileDiffInfo } from "@/utils/server"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
-import type {
-  Message,
-  Part,
-  PermissionRequest,
-  Project,
-  QuestionRequest,
-  Session,
-  SessionStatus,
-  Todo,
-} from "@miao/sdk/v2/client"
+import type { Message, Part, Project, Session, SessionStatus, Todo } from "@miao/schema/view-models"
+import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"

@@ -1,4 +1,4 @@
-import type { Message, Part } from "@miao/sdk/v2/client"
+import type { Message, Part } from "@miao/schema/view-models"
 import type { SessionInfo, SessionMessageInfo } from "@/utils/server"
 import type { ServerApi } from "./server"
 

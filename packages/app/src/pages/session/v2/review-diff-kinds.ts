@@ -1,4 +1,4 @@
-import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/schema/view-models"
 import type { FileDiffInfo } from "@/utils/server"
 import type { Kind } from "@/components/file-tree-v2"
 import { normalizeFileTreeV2Path } from "@/components/file-tree-v2-model"

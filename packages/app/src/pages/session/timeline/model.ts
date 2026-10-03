@@ -1,4 +1,4 @@
-import type { Message, UserMessage } from "@miao/sdk/v2"
+import type { Message, UserMessage } from "@miao/schema/view-models"
 import { createMemo, createResource, onCleanup, untrack, type Accessor } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"

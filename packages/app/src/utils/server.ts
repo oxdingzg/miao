@@ -11,7 +11,7 @@ import {
   type SessionsGetOutput,
 } from "@miao/client"
 import type { Vcs } from "@miao/schema/vcs"
-import type { FileContent, Provider, ProviderAuthMethod } from "@miao/sdk/v2"
+import type { FileContent, Provider, ProviderAuthMethod } from "@miao/schema/view-models"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 

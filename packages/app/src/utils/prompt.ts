@@ -1,4 +1,4 @@
-import type { AgentPart as MessageAgentPart, FilePart, Part, TextPart } from "@miao/sdk/v2"
+import type { AgentPart as MessageAgentPart, FilePart, Part, TextPart } from "@miao/schema/view-models"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { createLegacyBlobReference } from "@/utils/draft-store"
 

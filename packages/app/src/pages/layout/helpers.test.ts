@@ -6,7 +6,7 @@ import {
   parseDeepLink,
   parseNewSessionDeepLink,
 } from "./deep-links"
-import { type Session } from "@miao/sdk/v2/client"
+import { type Session } from "@miao/schema/view-models"
 import {
   childSessionOnPath,
   closeHomeProject,

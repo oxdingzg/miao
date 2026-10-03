@@ -1,4 +1,4 @@
-import type { LspStatus } from "@miao/sdk/v2/client"
+import type { LspStatus } from "@miao/schema/view-models"
 import type { McpStatus } from "@/utils/server"
 
 export function hasServiceNeedingAttention(input: { mcp: Array<McpStatus["status"]> }) {

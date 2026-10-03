@@ -1,6 +1,7 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { PermissionRequest, QuestionRequest, Todo } from "@miao/sdk/v2"
+import type { Todo } from "@miao/schema/view-models"
+import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"

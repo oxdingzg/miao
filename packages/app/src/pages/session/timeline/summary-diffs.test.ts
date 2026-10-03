@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SnapshotFileDiff } from "@miao/sdk/v2"
+import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import { uniqueSummaryDiffs } from "./summary-diffs"
 
 const diff = (file: string, additions: number) =>

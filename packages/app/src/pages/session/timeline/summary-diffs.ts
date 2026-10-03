@@ -1,4 +1,4 @@
-import type { SnapshotFileDiff } from "@miao/sdk/v2"
+import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import type { SummaryDiff } from "./timeline-row"
 
 export function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {

@@ -1,6 +1,6 @@
-import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/schema/view-models"
 import type { FileDiffInfo } from "@/utils/server"
-import type { Message } from "@miao/sdk/v2/client"
+import type { Message } from "@miao/schema/view-models"
 
 type Diff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from "@miao/sdk/v2/client"
+import type { Message, Part } from "@miao/schema/view-models"
 import { applyOptimisticAdd, applyOptimisticRemove, mergeOptimisticPage } from "./sync"
 
 type Text = Extract<Part, { type: "text" }>

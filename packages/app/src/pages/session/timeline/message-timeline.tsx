@@ -44,13 +44,7 @@ import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@miao/
 import { StickyAccordionHeader } from "@miao/ui/sticky-accordion-header"
 import { TextReveal } from "@miao/ui/text-reveal"
 import { TextShimmer } from "@miao/ui/text-shimmer"
-import type {
-  AssistantMessage,
-  Message as MessageType,
-  Part as PartType,
-  ToolPart,
-  UserMessage,
-} from "@miao/sdk/v2"
+import type { AssistantMessage, Message as MessageType, Part as PartType, ToolPart, UserMessage } from "@miao/schema/view-models"
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
 import { getDirectory, getFilename } from "@miao/core/util/path"

@@ -1,5 +1,5 @@
 import { getFilename } from "@miao/core/util/path"
-import type { Part } from "@miao/sdk/v2/client"
+import type { Part } from "@miao/schema/view-models"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"

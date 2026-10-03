@@ -1,19 +1,6 @@
 import type { CommandInfo, FileDiffInfo, McpResource, McpStatus, SessionMessageInfo } from "@/utils/server"
-import type {
-  Agent,
-  Config,
-  LspStatus,
-  Message,
-  Part,
-  LocationPath,
-  PermissionRequest,
-  QuestionRequest,
-  ReferenceInfo,
-  Session,
-  SessionStatus,
-  Todo,
-  VcsInfo,
-} from "@miao/sdk/v2/client"
+import type { Agent, LspStatus, Message, Part, ReferenceInfo, Session, SessionStatus, Todo, VcsInfo } from "@miao/schema/view-models"
+import type { Config, LocationPath, PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"

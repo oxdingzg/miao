@@ -1,4 +1,4 @@
-import type { FileNode } from "@miao/sdk/v2"
+import type { FileNode } from "@miao/schema/view-models"
 
 export type FileTreeV2Model = {
   children: ReadonlyMap<string, readonly FileTreeV2Node[]>
