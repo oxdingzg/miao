@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Miao
-Exec=/opt/Miao/ai.miao.desktop %U
+Name=MIAO
+Exec=/opt/MIAO/ai.miao.desktop %U
 Terminal=false
 Type=Application
 Icon=ai.miao.desktop
