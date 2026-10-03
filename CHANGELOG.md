@@ -267,6 +267,8 @@ Published release: [v0.0.35](https://github.com/oxdingzg/miao/releases/tag/v0.0.
 
 ### Fixed
 
+- **miao**: wait for plugin boot to commit reference paths before resolving agent directory permissions.
+
 - **tui**: render deleted diff lines in a uniform foreground (`d1967a900`)
 - **tui**: report waiting time from the last output, not the turn (`91b6afd07`)
 - **core**: interrupt a subagent that stops producing events (`90d5c6544`)
