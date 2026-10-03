@@ -106,7 +106,7 @@ These calls are retained as fallback adapters. The current production path suppl
 
 ## Projects And Worktrees
 
-- [ ] Migrate project listing from `GET /project` to `GET /api/project` (miao serves no `/api/project` list yet).
+- [x] Migrate project listing from `GET /project` to `GET /api/project` (`50daab309`).
   - `src/context/global-sync/bootstrap.ts`
 - [x] Migrate the current project lookup from `GET /project/current` to `GET /api/project/current`.
   - `src/context/global-sync/bootstrap.ts`
@@ -128,7 +128,7 @@ These calls are retained as fallback adapters. The current production path suppl
 
 - [x] Migrate repository information from `GET /vcs` to `GET /api/vcs`.
   - `src/context/global-sync/bootstrap.ts`
-- [ ] Migrate diffs from `GET /vcs/diff` to `GET /api/vcs/diff` (called through the vendored client; miao serves no `/api/vcs/diff`).
+- [x] Migrate diffs from `GET /vcs/diff` to `GET /api/vcs/diff` (`290c4f394`, `c89ec3ce4`).
   - `src/pages/session.tsx`
 - [x] Migrate status from `GET /vcs/status` to `GET /api/vcs/status`.
   - `src/pages/layout.tsx`
@@ -144,8 +144,7 @@ These calls are retained as fallback adapters. The current production path suppl
   - `src/context/server-sync.tsx`
 - [x] Migrate provider authentication method discovery from `GET /provider/auth` to `GET /api/integration/:integrationID`.
   - `src/components/dialog-connect-provider.tsx`
-- [ ] Migrate built-in provider OAuth authorization and callbacks to the integration attempt API.
-  - The vendored client uses `/api/integration/:integrationID/connect/oauth/:attemptID*`; miao serves `/api/integration/attempt/:attemptID*`. Verify in a browser.
+- [x] Migrate built-in provider OAuth authorization and callbacks to the integration attempt API (`/api/integration/attempt/:attemptID*`).
   - `src/components/dialog-connect-provider.tsx`
 - [ ] Migrate remaining credentials from `PUT /auth/:providerID` and `DELETE /auth/:providerID`.
   - Built-in provider key connections now use `POST /api/integration/:integrationID/connect/key`.
@@ -180,7 +179,7 @@ These calls are retained as fallback adapters. The current production path suppl
   - `src/context/server-sync.tsx`
 - [ ] Replace legacy MCP authentication with the Integration OAuth workflow.
   - `src/context/server-sync.tsx`
-- [ ] Migrate experimental resource listing from `GET /experimental/resource` to `GET /api/mcp/resources` (the vendored client calls `/api/mcp/resource`).
+- [x] Migrate experimental resource listing from `GET /experimental/resource` to `GET /api/mcp/resources`.
   - `src/context/server-sync.tsx`
 - [ ] Migrate LSP status from `GET /lsp` to `GET /api/lsp` (endpoint exists).
   - `src/context/server-sync.tsx`
@@ -219,8 +218,7 @@ These are not V1 network requests, but they keep the UI coupled to V1 data contr
 - [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`, `Project`, `FileNode`, `FileDiffInfo`, and `Event` types throughout app state and rendering.
 - [ ] Remove the `@opencode-ai/sdk` runtime dependency after all legacy calls and types are gone.
   - `package.json`
-- [ ] Replace the vendored `@opencode-ai/client` (`vendor/opencode-ai-client-1.17.13-v2.tgz`) with `@miao/client`.
-  - `src/utils/server.ts`
+- [x] Replace the vendored `@opencode-ai/client` (`vendor/opencode-ai-client-1.17.13-v2.tgz`) with `@miao/client` (`430ebc357`).
 - [ ] Remove `detectServerProtocol` and every `protocol === "v1"` / `!== "v1"` branch.
   - `src/utils/server-protocol.ts`, `src/utils/terminal-websocket-url.ts`, `src/components/terminal.tsx`, settings and layout call sites
 
