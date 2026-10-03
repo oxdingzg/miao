@@ -1,6 +1,8 @@
 import { describe, expect } from "bun:test"
+import { mkdtempSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
+import { join } from "node:path"
 import {
   LLMClient,
   LLMError,
@@ -43,6 +45,7 @@ import { SessionRunCoordinator } from "@miao/core/session/run-coordinator"
 import { SessionRunner } from "@miao/core/session/runner"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { BashTool } from "@miao/core/tool/bash"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { SendMessageTool } from "@miao/core/tool/send-message"
@@ -139,7 +142,12 @@ const permission = Layer.succeed(
   PermissionV2.Service.of({
     assert: (input) => {
       permissionAsserts.push({ action: input.action, resources: [...input.resources] })
-      return input.action === "message" ? Effect.void : Effect.die("unused")
+      // The built-in bash tool asserts "bash" for the command and
+      // "external_directory" for a workdir outside the bound Location; the test
+      // only cares that the OS process it spawns is cleaned up.
+      return input.action === "message" || input.action === "bash" || input.action === "external_directory"
+        ? Effect.void
+        : Effect.die("unused")
     },
     ask: () => Effect.die("unused"),
     reply: () => Effect.die("unused"),
@@ -247,6 +255,27 @@ const waitForProcessExit = (pid: number) =>
     return !processAlive(pid)
   })
 
+const childPids = (pid: number) =>
+  Bun.spawnSync(["pgrep", "-P", String(pid)])
+    .stdout.toString()
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map(Number)
+
+// The shell a real command spawns keeps a foreground child; a group kill has to
+// take that child too, or the work outlives the turn as an orphan.
+const waitForChild = (pid: number) =>
+  Effect.gen(function* () {
+    const end = Date.now() + 10_000
+    while (Date.now() < end) {
+      const child = childPids(pid)[0]
+      if (child !== undefined) return child
+      yield* Effect.promise(() => sleep(20))
+    }
+    return yield* Effect.die(new Error(`Process ${pid} never spawned a child`))
+  })
+
 let modelResolveHook = Effect.void
 let modelResolveFailure: SessionRunnerModel.Error | undefined
 let currentModel = model
@@ -351,44 +380,53 @@ const execution = Layer.effect(
     })
   }),
 ).pipe(Layer.provide(runnerLayer))
-const it = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([
-      Database.node,
-      EventV2.node,
-      QuestionV2.node,
-      SessionProjector.node,
-      SessionStore.node,
-      SessionTodo.node,
-      ApplicationTools.node,
-      AgentV2.node,
-      ToolRegistry.node,
-      ToolRegistry.toolsNode,
-      echoNode,
-      AppProcess.node,
-      SessionRunnerModel.node,
-      SystemContextRegistry.node,
-      SkillGuidance.node,
-      ReferenceGuidance.node,
-      Config.node,
-      Snapshot.node,
-      SessionRunnerLLM.node,
-      SessionExecution.node,
-      SessionV2.node,
-    ]),
-    [
-      [LayerNodePlatform.llmClient, client],
-      [PermissionV2.node, permission],
-      [SessionRunnerModel.node, models],
-      [SystemContextRegistry.node, systemContext],
-      [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
-      [SkillGuidance.node, skillGuidance],
-      [ReferenceGuidance.node, referenceGuidance],
-      [Snapshot.node, Snapshot.noopLayer],
-      [SessionExecution.node, execution],
-      [Config.node, config],
-    ],
-  ),
+const appNodes = [
+  Database.node,
+  EventV2.node,
+  QuestionV2.node,
+  SessionProjector.node,
+  SessionStore.node,
+  SessionTodo.node,
+  ApplicationTools.node,
+  AgentV2.node,
+  ToolRegistry.node,
+  ToolRegistry.toolsNode,
+  echoNode,
+  AppProcess.node,
+  SessionRunnerModel.node,
+  SystemContextRegistry.node,
+  SkillGuidance.node,
+  ReferenceGuidance.node,
+  Config.node,
+  Snapshot.node,
+  SessionRunnerLLM.node,
+  SessionExecution.node,
+  SessionV2.node,
+]
+const location = (directory: string): LayerNode.Replacement => [
+  Location.node,
+  Location.boundNode({ directory: AbsolutePath.make(directory) }),
+]
+const appOverrides = (bound: LayerNode.Replacement): LayerNode.Replacements => [
+  [LayerNodePlatform.llmClient, client],
+  [PermissionV2.node, permission],
+  [SessionRunnerModel.node, models],
+  [SystemContextRegistry.node, systemContext],
+  bound,
+  [SkillGuidance.node, skillGuidance],
+  [ReferenceGuidance.node, referenceGuidance],
+  [Snapshot.node, Snapshot.noopLayer],
+  [SessionExecution.node, execution],
+  [Config.node, config],
+]
+const it = testEffect(AppNodeBuilder.build(LayerNode.group(appNodes), appOverrides(location("/project"))))
+// A turn that goes through the shipped bash tool needs the built-in registered on
+// top of the harness layer; the base layer only provides the registry itself. The
+// tool also resolves its workdir through the real filesystem, so this harness has
+// to bind a Location that exists on disk.
+const bashLocation = mkdtempSync(join(os.tmpdir(), "miao-bash-harness-"))
+const itWithBash = testEffect(
+  AppNodeBuilder.build(LayerNode.group([...appNodes, BashTool.node]), appOverrides(location(bashLocation))),
 )
 const sessionID = SessionV2.ID.make("ses_runner_test")
 const otherSessionID = SessionV2.ID.make("ses_runner_other")
@@ -3752,6 +3790,139 @@ describe("SessionRunnerLLM", () => {
       response = []
       requests.length = 0
     }).pipe(Effect.provide(spawnTool)),
+  )
+
+  // The command shape a real turn uses: a compound shell line whose shell stays
+  // alive waiting on a foreground child, with output redirected to a file. The
+  // test above covers `exec`, which replaces the shell and leaves one process.
+  it.live("stops a subagent's compound command process group when the parent run is interrupted", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+
+      yield* setup
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      const pidFile = `${os.tmpdir()}/miao-runner-compound-${process.pid}.pid`
+      const doneFile = `${os.tmpdir()}/miao-runner-compound-${process.pid}.done`
+      yield* Effect.promise(() => fs.rm(pidFile, { force: true }))
+      yield* Effect.promise(() => fs.rm(doneFile, { force: true }))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate a long command" }), resume: false })
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "run long", prompt: "run a long command", subagent_type: "build" },
+          }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-spawn",
+            name: "spawn",
+            input: { command: `echo $$ > ${pidFile}; sleep 297.123; echo done > ${doneFile}` },
+          }),
+        ],
+      ]
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      const pid = yield* waitForPid(pidFile)
+      expect(processAlive(pid)).toBe(true)
+      const child = yield* waitForChild(pid)
+      expect(processAlive(child)).toBe(true)
+
+      yield* session.interrupt(sessionID)
+      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+
+      expect(yield* waitForProcessExit(pid)).toBe(true)
+      expect(yield* waitForProcessExit(child)).toBe(true)
+      // A command that reached its last statement ran to completion; the turn
+      // was interrupted long before it could.
+      expect(yield* Effect.promise(() => fs.readFile(doneFile, "utf8").catch(() => ""))).toBe("")
+
+      responses = undefined
+      response = []
+      requests.length = 0
+    }).pipe(Effect.provide(spawnTool)),
+  )
+
+  // Same guarantee, but through the shipped bash tool instead of the test's spawn
+  // tool: that is the path a real turn takes, and the only one whose permission
+  // assertions, workdir handling, and timeout are the production ones.
+  itWithBash.live("stops a subagent's shipped bash process group when the parent run is interrupted", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+
+      yield* setup
+      // The runner interrupts any turn whose Session Location differs from the bound
+      // Location, so this session has to live in the real directory the harness binds.
+      yield* (yield* Database.Service).db
+        .update(SessionTable)
+        .set({ directory: bashLocation })
+        .where(eq(SessionTable.id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      const pidFile = `${os.tmpdir()}/miao-runner-bash-${process.pid}.pid`
+      const doneFile = `${os.tmpdir()}/miao-runner-bash-${process.pid}.done`
+      yield* Effect.promise(() => fs.rm(pidFile, { force: true }))
+      yield* Effect.promise(() => fs.rm(doneFile, { force: true }))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate a long command" }), resume: false })
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "run long", prompt: "run a long command", subagent_type: "build" },
+          }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-bash",
+            name: "bash",
+            input: {
+              command: `echo $$ > ${pidFile}; sleep 297.123; echo done > ${doneFile}`,
+              // Mirrors the incident: a ten minute budget on the tool, far longer
+              // than the turn lives.
+              timeout: 600_000,
+            },
+          }),
+        ],
+      ]
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      const pid = yield* waitForPid(pidFile)
+      expect(processAlive(pid)).toBe(true)
+      const child = yield* waitForChild(pid)
+      expect(processAlive(child)).toBe(true)
+
+      yield* session.interrupt(sessionID)
+      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+
+      expect(yield* waitForProcessExit(pid)).toBe(true)
+      expect(yield* waitForProcessExit(child)).toBe(true)
+      expect(yield* waitForProcessExit(child)).toBe(true)
+      // Reaching the last statement means the command outlived the turn; the
+      // interrupt has to land before it does.
+      expect(yield* Effect.promise(() => fs.readFile(doneFile, "utf8").catch(() => ""))).toBe("")
+
+      responses = undefined
+      response = []
+      requests.length = 0
+    }),
+    60_000,
   )
 
   it.effect("durably fails blocked local tools when a provider turn is interrupted", () =>
