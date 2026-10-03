@@ -33,7 +33,9 @@ export interface MockServerConfig {
   questions?: unknown[] | (() => unknown[])
   fileList?: (path: string) => unknown | Promise<unknown>
   fileContent?: (path: string) => unknown | Promise<unknown>
-  findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown | Promise<unknown>
+  // Returns search hits as paths (or full `{ path, type }` entries). The app searches the V2
+  // `/api/fs/find` route, so the mock answers in the V2 entry shape.
+  findFiles?: (input: { query: string; type?: "file" | "directory"; limit?: number }) => unknown | Promise<unknown>
   sessionStatus?: Record<string, unknown> | (() => Record<string, unknown>)
 }
 
@@ -119,15 +121,32 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, await config.fileList(url.searchParams.get("path") ?? ""))
     if (path === "/file/content" && config.fileContent)
       return json(route, await config.fileContent(url.searchParams.get("path") ?? ""))
-    if (path === "/find/file" && config.findFiles)
-      return json(
-        route,
-        await config.findFiles({
-          query: url.searchParams.get("query") ?? "",
-          dirs: url.searchParams.get("dirs") ?? undefined,
-          limit: url.searchParams.has("limit") ? Number(url.searchParams.get("limit")) : undefined,
-        }),
-      )
+    // The V2 filesystem routes answer `{ location, data }` with `{ path, type }` entries.
+    // `fileList` fixtures still describe legacy `/file` nodes, which carry both fields.
+    if (path === "/api/fs/list") {
+      const nodes = await config.fileList?.(url.searchParams.get("path") ?? "")
+      return json(route, {
+        location: location(config),
+        data: (Array.isArray(nodes) ? nodes : []).map((node) => ({
+          path: (node as { path: string }).path,
+          type: (node as { type?: string }).type === "directory" ? "directory" : "file",
+        })),
+      })
+    }
+    if (path === "/api/fs/find") {
+      const type = url.searchParams.get("type")
+      const hits = await config.findFiles?.({
+        query: url.searchParams.get("query") ?? "",
+        type: type === "file" || type === "directory" ? type : undefined,
+        limit: url.searchParams.has("limit") ? Number(url.searchParams.get("limit")) : undefined,
+      })
+      return json(route, {
+        location: location(config),
+        data: (Array.isArray(hits) ? hits : []).map((hit) =>
+          typeof hit === "string" ? { path: hit, type: type ?? "file" } : hit,
+        ),
+      })
+    }
     if (path === "/api/reference")
       return json(route, {
         location: {
@@ -248,8 +267,16 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (/^\/session\/[^/]+\/permissions\/[^/]+$/.test(path) && route.request().method() === "POST") {
       return json(route, true)
     }
+    const rename = path.match(/^\/api\/session\/([^/]+)\/rename$/)
+    if (rename && route.request().method() === "POST") {
+      const session = config.sessions.find((item) => item.id === rename[1])
+      const payload: unknown = route.request().postDataJSON()
+      if (session && payload && typeof payload === "object" && "title" in payload && typeof payload.title === "string")
+        session.title = payload.title
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    }
     if (
-      /^\/api\/session\/[^/]+\/(archive|rename|interrupt|revert\/clear|revert\/commit)$/.test(path) &&
+      /^\/api\/session\/[^/]+\/(archive|interrupt|revert\/clear|revert\/commit)$/.test(path) &&
       route.request().method() === "POST"
     ) {
       return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })

@@ -72,23 +72,29 @@ test("keeps the review tree and terminal sized when both panels are open", async
       }),
     }),
   )
+  // The app reads diffs through the V2 `/api/vcs/diff` route, whose payload is
+  // `{ location, data }` rather than the bare array the legacy `/vcs/diff` served.
   await page.route("**/vcs/diff**", (route) => {
     const url = new URL(route.request().url())
-    const scope = url.searchParams.get("directory")?.replaceAll("\\", "/")
+    // The V2 client serializes `location` as `location[directory]`.
+    const scope = url.searchParams.get("location[directory]")?.replaceAll("\\", "/")
     const detail = scope?.endsWith("/src/branch/d00027")
     if (detail && detailFailures-- > 0) return route.fulfill({ status: 500, body: "retry detail" })
+    const data =
+      url.searchParams.get("mode") === "branch"
+        ? detail
+          ? branchDiffs
+              .filter((diff) => diff.file.startsWith("src/branch/d00027/"))
+              .map((diff) => fileDiff(diff.file, diff.additions, true, detailVersion))
+          : branchDiffs
+        : Array.from({ length: 7 }, (_, index) => fileDiff(`src/git-${index}.ts`, 1))
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(
-        url.searchParams.get("mode") === "branch"
-          ? detail
-            ? branchDiffs
-                .filter((diff) => diff.file.startsWith("src/branch/d00027/"))
-                .map((diff) => fileDiff(diff.file, diff.additions, true, detailVersion))
-            : branchDiffs
-          : Array.from({ length: 7 }, (_, index) => fileDiff(`src/git-${index}.ts`, 1)),
-      ),
+      body: JSON.stringify({
+        location: { directory, project: { id: projectID, directory } },
+        data,
+      }),
     })
   })
   await page.route("**/pty*", (route) =>
@@ -172,13 +178,14 @@ test("keeps the review tree and terminal sized when both panels are open", async
   })
   expect(bottomGap).toBeGreaterThanOrEqual(0)
   expect(bottomGap).toBeLessThanOrEqual(16)
-  const lazyDiff = page.waitForRequest((request) => {
+  const scopedDiff = (request: { url(): string }) => {
     const url = new URL(request.url())
     return (
-      url.pathname === "/vcs/diff" &&
-      url.searchParams.get("directory")?.replaceAll("\\", "/").endsWith("/src/branch/d00027") === true
+      url.pathname === "/api/vcs/diff" &&
+      url.searchParams.get("location[directory]")?.replaceAll("\\", "/").endsWith("/src/branch/d00027") === true
     )
-  })
+  }
+  const lazyDiff = page.waitForRequest(scopedDiff)
   await lastFile.click()
   await lazyDiff
   const preview = page.locator('[data-slot="session-review-v2-diff-scroll"]')
@@ -187,13 +194,7 @@ test("keeps the review tree and terminal sized when both panels are open", async
   sessionStatus[sessionID] = { type: "busy" }
   events.push(statusEvent("busy"))
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
-  const refreshedDiff = page.waitForRequest((request) => {
-    const url = new URL(request.url())
-    return (
-      url.pathname === "/vcs/diff" &&
-      url.searchParams.get("directory")?.replaceAll("\\", "/").endsWith("/src/branch/d00027") === true
-    )
-  })
+  const refreshedDiff = page.waitForRequest(scopedDiff)
   sessionStatus[sessionID] = { type: "idle" }
   events.push(statusEvent("idle"))
   await refreshedDiff

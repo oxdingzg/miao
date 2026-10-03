@@ -12,22 +12,6 @@ test.beforeEach(async ({ page }) => {
     project: fixture.project,
     pageMessages,
   })
-  await page.route(/\/session\/[^/]+(?:\?.*)?$/, async (route) => {
-    if (route.request().method() !== "PATCH") return route.fallback()
-    const id = new URL(route.request().url()).pathname.split("/").at(-1)
-    const session = sessions.find((item) => item.id === id)
-    const payload: unknown = route.request().postDataJSON()
-    if (
-      !session ||
-      !payload ||
-      typeof payload !== "object" ||
-      !("title" in payload) ||
-      typeof payload.title !== "string"
-    )
-      throw new Error("Invalid rename request")
-    session.title = payload.title
-    await route.fulfill({ json: session, headers: { "access-control-allow-origin": "*" } })
-  })
   await page.addInitScript((directory) => {
     localStorage.setItem(
       "opencode.global.dat:server",
@@ -69,10 +53,9 @@ test("cancels the session heading with Escape", async ({ page }) => {
 })
 
 test("keeps the draft when saving the session heading fails", async ({ page }) => {
-  await page.route(/\/session\/[^/]+(?:\?.*)?$/, (route) => {
-    if (route.request().method() !== "PATCH") return route.fallback()
-    return route.fulfill({ status: 500, headers: { "access-control-allow-origin": "*" } })
-  })
+  await page.route("**/api/session/*/rename", (route) =>
+    route.fulfill({ status: 500, headers: { "access-control-allow-origin": "*" } }),
+  )
   await page.getByRole("heading", { name: fixture.expected.targetTitle, exact: true }).click()
   const input = page.locator('input[data-slot="session-title-child"]')
   await input.fill("Retry this title")

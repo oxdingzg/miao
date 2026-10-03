@@ -96,15 +96,19 @@ async function setup(page: Page) {
       body: JSON.stringify({ branch: "feature", default_branch: "dev" }),
     }),
   )
+  // The app reads diffs through the V2 `/api/vcs/diff` route, whose payload is
+  // `{ location, data }` rather than the bare array the legacy `/vcs/diff` served.
   await page.route("**/vcs/diff**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(
-        new URL(route.request().url()).searchParams.get("mode") === "branch"
-          ? [diff("src/alpha.ts"), diff("src/beta.ts")]
-          : [diff("src/alpha.ts"), diff("src/gamma.ts")],
-      ),
+      body: JSON.stringify({
+        location: { directory, project: { id: projectID, directory } },
+        data:
+          new URL(route.request().url()).searchParams.get("mode") === "branch"
+            ? [diff("src/alpha.ts"), diff("src/beta.ts")]
+            : [diff("src/alpha.ts"), diff("src/gamma.ts")],
+      }),
     }),
   )
   await page.addInitScript(
