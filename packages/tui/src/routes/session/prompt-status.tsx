@@ -1,9 +1,23 @@
-import { Show } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
 import type { PendingPrompt } from "../../context/pending-prompts"
 import { useTheme } from "../../context/theme"
+import { Locale } from "../../util/locale"
 
 export function PromptStatus(props: { prompt: PendingPrompt }) {
   const theme = useTheme()
+  const [elapsed, setElapsed] = createSignal(0)
+  // A steer is promoted at a turn boundary, so a turn running a long tool
+  // bounds the wait rather than the prompt itself. A static "waiting" line
+  // reads as progress; the clock is what lets the user tell waiting from stuck.
+  const admitted = createMemo(() => props.prompt.state === "admitted")
+  createEffect(() => {
+    if (!admitted()) return
+    const read = () => Math.max(0, Date.now() - props.prompt.info.time.created)
+    setElapsed(read())
+    const timer = setInterval(() => setElapsed(read()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const waited = createMemo(() => (elapsed() >= 1000 ? ` · ${Locale.duration(elapsed())}` : ""))
   return (
     <box paddingTop={1}>
       <text fg={props.prompt.state === "failed" ? theme.theme.error : theme.theme.textMuted}>
@@ -12,8 +26,8 @@ export function PromptStatus(props: { prompt: PendingPrompt }) {
           : props.prompt.state === "failed"
             ? "SEND FAILED · use prompt history to retry"
             : props.prompt.delivery === "queue"
-              ? "QUEUED · waiting until the session is idle"
-              : "RECEIVED · waiting for the next safe turn"}
+              ? `QUEUED · waiting until the session is idle${waited()}`
+              : `RECEIVED · waiting for the next safe turn${waited()}`}
       </text>
       <Show when={props.prompt.error}>
         <text fg={theme.theme.error}>{props.prompt.error}</text>
