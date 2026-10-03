@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import type { GlobalEvent, SessionMessage } from "@opencode-ai/sdk/v2"
+import type { SessionMessage } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent } from "../../../../src/context/sdk"
 import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
 

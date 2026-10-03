@@ -7,14 +7,13 @@ import type {
   McpStatusOutput,
   SessionsActiveOutput,
 } from "@miao/client"
-import type { McpResource, McpStatus } from "@/utils/server"
+import type { McpResource, McpStatus, ProviderAuthResponse } from "@/utils/server"
 import type {
   Config,
   LspStatus,
   OpencodeClient,
-  Path,
+  LocationPath,
   Project,
-  ProviderAuthResponse,
   SessionStatus,
 } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@/utils/toast"
@@ -65,7 +64,7 @@ import { createServerSession, type ServerSession } from "./server-session"
 type GlobalStore = {
   ready: boolean
   error?: InitError
-  path: Path
+  path: LocationPath
   project: Project[]
   provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse

@@ -11,7 +11,7 @@ import {
   type SessionsGetOutput,
 } from "@miao/client"
 import type { Vcs } from "@miao/schema/vcs"
-import type { FileContent } from "@opencode-ai/sdk/v2"
+import type { FileContent, Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 
@@ -113,3 +113,7 @@ export async function readFileContent(api: ServerApi, directory: string, path: s
     mimeType: result.data.mime,
   }
 }
+
+// V1 response shapes the app's stores still keep; no route returns them any more.
+export type ProviderAuthResponse = Record<string, ProviderAuthMethod[]>
+export type ProviderListResponse = { all: Provider[]; default: Record<string, string>; connected: string[] }

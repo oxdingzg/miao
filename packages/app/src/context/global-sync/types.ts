@@ -5,7 +5,7 @@ import type {
   LspStatus,
   Message,
   Part,
-  Path,
+  LocationPath,
   PermissionRequest,
   QuestionRequest,
   ReferenceInfo,
@@ -40,7 +40,7 @@ export type State = {
   provider_ready: boolean
   provider: NormalizedProviderListResponse
   config: Config
-  path: Path
+  path: LocationPath
   session: Session[]
   sessionTotal: number
   session_status: {
