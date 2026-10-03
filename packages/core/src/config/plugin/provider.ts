@@ -29,7 +29,9 @@ export const Plugin = define({
             integrations.update(integrationID, (integration) => {
               integration.name = item.name ?? integration.name
             })
-            if (item.api !== undefined) integrations.method.update({ integrationID, method: { type: "key" } })
+            // A provider the config defines may be a keyless local server, so its key is optional.
+            if (item.api !== undefined)
+              integrations.method.update({ integrationID, method: { type: "key", optional: true } })
             if (item.env !== undefined) {
               integrations.method.update({
                 integrationID,

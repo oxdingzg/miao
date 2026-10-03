@@ -5171,6 +5171,7 @@ export type IntegrationOAuthMethod = {
 export type IntegrationKeyMethod = {
   type: "key"
   label?: string
+  optional?: boolean
 }
 
 export type IntegrationEnvMethod = {

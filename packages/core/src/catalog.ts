@@ -83,6 +83,11 @@ const layer = Layer.effect(
       if (provider.disabled) return false
       if (configuredCredential(provider)) return true
       if (integration?.connections.length) return true
+      if (
+        integration?.methods.length &&
+        integration.methods.every((method) => method.type === "key" && method.optional)
+      )
+        return true
       return provider.integrationID === undefined && !integration
     }
 

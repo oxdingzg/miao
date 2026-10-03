@@ -55,6 +55,34 @@ function request(headers: Record<string, string>, variant?: string) {
 const decode = Schema.decodeUnknownSync(Config.Info)
 
 describe("ConfigProviderPlugin.Plugin", () => {
+  it.effect("keeps a keyless provider the config defines available", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const config = Config.Service.of({
+        entries: () =>
+          Effect.succeed([
+            new Config.Document({
+              type: "document",
+              info: decode({
+                providers: {
+                  local: {
+                    name: "Local",
+                    api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://127.0.0.1:11434/v1" },
+                  },
+                },
+              }),
+            }),
+          ]),
+      })
+
+      yield* addPlugin(config)
+
+      expect((yield* catalog.provider.available()).map((provider) => provider.id)).toContain(
+        ProviderV2.ID.make("local"),
+      )
+    }),
+  )
+
   it.effect("hides a provider the config disables", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
@@ -74,9 +102,11 @@ describe("ConfigProviderPlugin.Plugin", () => {
       yield* addPlugin(config)
 
       expect(required(yield* catalog.provider.get(providerID)).disabled).toBe(true)
-      // A provider the config defines gets an integration that can store an API key.
+      // A provider the config defines gets an integration that can store an optional API key.
       const integrations = yield* Integration.Service
-      expect((yield* integrations.get(Integration.ID.make("custom")))?.methods).toContainEqual({ type: "key" })
+      expect((yield* integrations.get(Integration.ID.make("custom")))?.methods).toContainEqual(
+        expect.objectContaining({ type: "key", optional: true }),
+      )
       expect((yield* catalog.provider.available()).map((provider) => provider.id)).not.toContain(providerID)
     }),
   )
