@@ -65,7 +65,7 @@ irm https://mtty.dev/miao/install.ps1 | iex   # Windows：PowerShell 5.1 或 7
 
 Windows 终端里的显示仍在验证中，见 [Windows 验证说明](docs/windows-vt-verification.zh.md)。
 
-Windows 二进制通过 [SignPath Foundation](https://signpath.org) 项目进行代码签名:free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)。
+已于 2026-10-03 向 [SignPath Foundation](https://signpath.org) 提交 Windows 代码签名申请。目前等待审核及 CI 签名接入，现有 Windows 二进制尚未签名。
 
 ```bash
 curl -fsSL https://mtty.dev/miao/install | bash   # 跳转到本仓库的 install 脚本

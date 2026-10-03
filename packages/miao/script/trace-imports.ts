@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import * as path from "path"
-import * as ts from "typescript"
+import path from "node:path"
+import ts from "typescript"
 
-const BASE_DIR = "/home/thdxr/dev/projects/anomalyco/opencode/packages/miao"
+const BASE_DIR = path.resolve(import.meta.dir, "..")
 
 // Get entry file from command line arg or use default
 const ENTRY_FILE = process.argv[2] || "src/plugin/tui/runtime.ts"
@@ -137,7 +137,7 @@ async function traceFile(filePath: string, depth = 0): Promise<void> {
 }
 
 async function main() {
-  const entryPath = path.join(BASE_DIR, ENTRY_FILE)
+  const entryPath = path.resolve(BASE_DIR, ENTRY_FILE)
 
   // Check if file exists
   const file = Bun.file(entryPath)
