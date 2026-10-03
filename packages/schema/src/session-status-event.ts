@@ -49,3 +49,6 @@ export const Idle = Event.define({
 })
 
 export const Definitions = Event.inventory(Status, Idle)
+
+// Compatibility name for the session status view model.
+export type SessionStatus = Info

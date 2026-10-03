@@ -35,3 +35,17 @@ export const FileStatus = Schema.Struct({
   status: Schema.Literals(["added", "deleted", "modified"]),
 }).annotate({ identifier: "VcsFileStatus" })
 export interface FileStatus extends Schema.Schema.Type<typeof FileStatus> {}
+
+export const SnapshotFileDiff = Schema.Struct({
+  file: optional(Schema.String),
+  patch: optional(Schema.String),
+  additions: Schema.Finite,
+  deletions: Schema.Finite,
+  status: optional(Schema.Literals(["added", "deleted", "modified"])),
+}).annotate({ identifier: "SnapshotFileDiff" })
+export interface SnapshotFileDiff extends Schema.Schema.Type<typeof SnapshotFileDiff> {}
+
+// Compatibility names for the V1 view models.
+export type VcsFileDiff = FileDiff
+export type VcsFileStatus = FileStatus
+export type VcsInfo = Info
