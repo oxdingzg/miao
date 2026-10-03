@@ -11,7 +11,6 @@ import { matchKeybind, parseKeybind } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
-import { useServerSDK } from "@/context/server-sdk"
 import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
@@ -175,15 +174,9 @@ export const Terminal = (props: TerminalProps) => {
   const settings = useSettings()
   const theme = useTheme()
   const language = useLanguage()
-  // Terminal captures its connection for the PTY lifetime, so callers must key it per server/session.
-  const connection = useServerSDK()().server
+  // Terminal captures its server for the PTY lifetime, so callers must key it per server/session.
   const directory = sdk().directory
   const url = sdk().url
-  const auth = connection.http
-  const username = auth?.username ?? "opencode"
-  const password = auth?.password ?? ""
-  const authToken = connection.type === "http" ? connection.authToken : false
-  const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
   const [local, others] = splitProps(props, [
     "pty",
@@ -241,16 +234,6 @@ export const Terminal = (props: TerminalProps) => {
   }
 
   const pushSize = async (cols: number, rows: number) => {
-    if ((await sdk().protocol) === "v1") {
-      return sdk()
-        .client.pty.update({
-          ptyID: id,
-          size: { cols, rows },
-        })
-        .catch((err) => {
-          debugTerminal("failed to sync terminal size", err)
-        })
-    }
     return sdk()
       .api.ptys.update({
         ptyID: id,
@@ -537,15 +520,6 @@ export const Terminal = (props: TerminalProps) => {
       }
 
       const gone = async () => {
-        if ((await sdk().protocol) === "v1") {
-          return sdk()
-            .client.pty.get({ ptyID: id }, { throwOnError: false })
-            .then((result) => result.response.status === 404)
-            .catch((err) => {
-              debugTerminal("failed to inspect terminal session", err)
-              return false
-            })
-        }
         return sdk()
           .api.ptys.get({ ptyID: id, location: { directory } })
           .then((result) => result.data.status === "exited")
@@ -556,34 +530,18 @@ export const Terminal = (props: TerminalProps) => {
           })
       }
 
-      const connectToken = async () => {
-        if ((await sdk().protocol) === "v1") {
-          const result = await sdk()
-            .client.pty.connectToken(
-              { ptyID: id, directory },
-              {
-                throwOnError: false,
-                headers: { "x-opencode-ticket": "1" },
-              },
-            )
-            .catch((err: unknown) => {
-              if (err instanceof Error && err.message.includes("Request is not supported")) return
-              throw err
-            })
-          if (!result) return
-          if (result.response.status === 200 && result.data?.ticket) return result.data.ticket
-          if (result.response.status === 404 || result.response.status === 405) return
-          if (result.response.status === 403) throw new Error(language.t("terminal.connectTicket.csrfError"))
-          throw new Error(language.t("terminal.connectTicket.statusError", { status: result.response.status }))
-        }
-        // return sdk()
-        //   .api.pty.connectToken({
-        //     ptyID: id,
-        //     location: { directory },
-        //     "x-opencode-ticket": "1",
-        //   })
-        //   .then((result) => result.data.ticket)
-      }
+      // Browsers cannot send an Authorization header on a WebSocket, so the socket opens with a
+      // single-use ticket. The custom header proves the request did not come from another origin.
+      const connectToken = () =>
+        sdk()
+          .api.ptys.connectToken({ ptyID: id, location: { directory } }, { headers: { "x-opencode-ticket": "1" } })
+          .then((result) => result.data.ticket)
+          .catch((err: unknown) => {
+            const tag = err && typeof err === "object" && "_tag" in err ? err._tag : undefined
+            if (tag === "PtyNotFoundError") return undefined
+            if (tag === "ForbiddenError") throw new Error(language.t("terminal.connectTicket.csrfError"))
+            throw err
+          })
 
       const retry = (err: unknown) => {
         if (disposed) return
@@ -612,23 +570,16 @@ export const Terminal = (props: TerminalProps) => {
           fail(err)
           return undefined
         })
-        const protocol = await sdk().protocol
-        // if (protocol === "v2" && !ticket) return
         if (once.value) return
         if (disposed) return
 
         const socket = new WebSocket(
           terminalWebSocketURL({
-            protocol,
             url,
             id,
             directory,
             cursor: seek,
             ticket,
-            sameOrigin,
-            username,
-            password,
-            authToken,
           }),
         )
         socket.binaryType = "arraybuffer"

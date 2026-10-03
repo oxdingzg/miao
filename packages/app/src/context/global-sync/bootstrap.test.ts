@@ -36,6 +36,9 @@ const api = {
   questions: { listRequests: async () => ({ location: {}, data: [] }) },
   references: { list: async () => ({ location: {}, data: [] }) },
   vcs: { get: async () => ({ location: {}, data: {} }) },
+  location: {
+    path: async () => ({ home: "/home", state: "", config: "", worktree: "/project", directory: "/project" }),
+  },
 } as unknown as ServerApi
 
 function directoryState() {
@@ -95,9 +98,11 @@ describe("bootstrapDirectory", () => {
             throw new Error("legacy directory config should not be called")
           },
         },
-        vcs: { get: async () => ({ data: { branch: "feature", default_branch: "dev" } }) },
       } as unknown as OpencodeClient,
-      api,
+      api: {
+        ...api,
+        vcs: { get: async () => ({ location: {}, data: { branch: "feature", default_branch: "dev" } }) },
+      } as unknown as ServerApi,
       store,
       setStore,
       vcsCache: { setStore() {} } as unknown as VcsCache,
@@ -148,8 +153,9 @@ describe("query keys", () => {
     const api = {} as CatalogApi
     const remote = "https://debian.example" as typeof ServerScope.local
 
-    expect([...loadPathQuery(ServerScope.local, "/repo", client).queryKey]).toEqual(["local", "/repo", "path"])
-    expect([...loadPathQuery(remote, "/repo", client).queryKey]).toEqual(["https://debian.example", "/repo", "path"])
+    const location = {} as Parameters<typeof loadPathQuery>[2]
+    expect([...loadPathQuery(ServerScope.local, "/repo", location).queryKey]).toEqual(["local", "/repo", "path"])
+    expect([...loadPathQuery(remote, "/repo", location).queryKey]).toEqual(["https://debian.example", "/repo", "path"])
     expect([...loadProvidersQuery(remote, null, api).queryKey]).toEqual(["https://debian.example", null, "providers"])
   })
 

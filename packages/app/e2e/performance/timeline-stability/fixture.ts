@@ -97,7 +97,6 @@ export async function setupTimeline(
     locale?: string
     deviceScaleFactor?: number
     seedHistory?: boolean
-    protocol?: "v1" | "v2"
   } = {},
 ) {
   const sessions = input.sessions ?? [session()]
@@ -115,7 +114,6 @@ export async function setupTimeline(
     retry: input.eventRetry ?? 20,
   })
   await mockOpenCodeServer(page, {
-    protocol: input.protocol,
     directory,
     project: project(),
     provider: provider(),

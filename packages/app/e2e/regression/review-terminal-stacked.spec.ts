@@ -25,7 +25,6 @@ test("keeps the review tree and terminal sized when both panels are open", async
   let detailFailures = 1
   await page.setViewportSize({ width: 1400, height: 900 })
   await mockOpenCodeServer(page, {
-    protocol: "v1",
     directory,
     project: {
       id: projectID,
