@@ -1,5 +1,5 @@
 import type { Session } from "@miao/schema/view-models"
-import type { SessionV2Info } from "@miao/sdk/v2"
+import type { SessionV2Info } from "@miao/schema/view-models"
 
 /**
  * Maps a V2 `SessionV2Info` into the V1 `Session` shape the TUI store and
