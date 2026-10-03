@@ -1,6 +1,6 @@
 export * as ModelVariants from "./model-variants"
 
-import type { ModelV2Info } from "@opencode-ai/sdk/v2/types"
+import type { ModelV2Info } from "@miao/sdk/v2/types"
 
 /** A model's declared reasoning controls, as published by the catalog. */
 export type ReasoningOption =

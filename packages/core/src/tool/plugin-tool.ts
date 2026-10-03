@@ -1,7 +1,7 @@
 export * as PluginTool from "./plugin-tool"
 
 import { ToolFailure } from "@miao/llm"
-import type { ToolContext, ToolDefinition, ToolResult } from "@opencode-ai/plugin/tool"
+import type { ToolContext, ToolDefinition, ToolResult } from "@miao/plugin/tool"
 import { Effect, type JsonSchema } from "effect"
 import z from "zod"
 import type { PermissionV2 } from "../permission"
@@ -21,7 +21,7 @@ export function is(value: unknown): value is ToolDefinition {
 }
 
 /**
- * Adapts a `@opencode-ai/plugin` tool definition (custom `{tool,tools}/*.ts`
+ * Adapts a `@miao/plugin` tool definition (custom `{tool,tools}/*.ts`
  * files and plugin-provided tools) into a canonical Core tool.
  *
  * Like built-ins, every call first asserts a PermissionV2 decision under the

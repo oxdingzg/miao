@@ -30,7 +30,7 @@ import {
   Todo,
   QuestionAnswer,
   QuestionInfo,
-} from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
 import { useData } from "../context"
 import { useFileComponent } from "@miao/ui/context/file"
 import { useDialog } from "@miao/ui/context/dialog"

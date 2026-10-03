@@ -6,7 +6,7 @@ export type { ToolAfterEvent, ToolBeforeEvent, ToolDefinitionEvent }
 
 type ToolHook<Event> = (callback: (event: Event) => Promise<void> | void) => Promise<Registration>
 
-/** Promise flavor of the V2 tool hooks; see `@opencode-ai/plugin/v2/effect` for semantics. */
+/** Promise flavor of the V2 tool hooks; see `@miao/plugin/v2/effect` for semantics. */
 export interface ToolHooks {
   /** Runs before every tool call. Throwing rejects the call with a model-visible error. */
   readonly before: ToolHook<ToolBeforeEvent>

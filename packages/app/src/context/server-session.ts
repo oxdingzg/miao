@@ -4,14 +4,14 @@ import { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type {
   Message,
-  OpencodeClient,
+  MiaoClient,
   Part,
   PermissionRequest,
   QuestionRequest,
   Session,
   SessionStatus,
   Todo,
-} from "@opencode-ai/sdk/v2/client"
+} from "@miao/sdk/v2/client"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
@@ -201,7 +201,7 @@ type SessionReadClient = {
 }
 
 export function createServerSession(
-  client: OpencodeClient | SessionReadClient,
+  client: MiaoClient | SessionReadClient,
   sessionApiOrOptions?: SessionApi | ServerSessionOptions,
   messageApi?: MessageApi,
   currentOptions?: ServerSessionOptions,

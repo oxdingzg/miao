@@ -138,7 +138,7 @@ function getConfig() {
         appId,
         productName: "miao Beta",
         protocols: { name: "miao Beta", schemes: ["miao"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "miao-beta", channel: "latest" },
+        publish: { provider: "github", owner: "oxdingzg", repo: "miao", channel: "beta" },
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "miao-beta", fpm: [metainfoFpm(appId)] },
       }
@@ -149,7 +149,7 @@ function getConfig() {
         appId,
         productName: "miao",
         protocols: { name: "miao", schemes: ["miao"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        publish: { provider: "github", owner: "oxdingzg", repo: "miao", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "miao", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
       }

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SessionApi } from "@/utils/server"
 import type { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
-import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
+import type { Message, MiaoClient, Part, Session } from "@miao/sdk/v2/client"
 import { createServerSession } from "./server-session"
 import type { ServerApi } from "@/utils/server"
 
@@ -86,7 +86,7 @@ function messageClient(...responses: Array<MessageResponse | Promise<MessageResp
         return responses[index++]
       },
     },
-  } as unknown as OpencodeClient
+  } as unknown as MiaoClient
   return Object.assign(client, {
     requests,
     requested(count: number) {
@@ -119,7 +119,7 @@ function rootMessageClient(
         return roots[rootIndex++]
       },
     },
-  } as unknown as OpencodeClient
+  } as unknown as MiaoClient
   return Object.assign(client, {
     requests,
     rootRequests,
@@ -158,7 +158,7 @@ function setup(sessions: Record<string, Session>) {
       diff: async () => ({ data: [] }),
       todo: async () => ({ data: [] }),
     },
-  } as unknown as OpencodeClient
+  } as unknown as MiaoClient
   return { get, messages, store: createServerSession(client) }
 }
 
@@ -178,7 +178,7 @@ describe("server session", () => {
           },
         },
       },
-    } as unknown as OpencodeClient
+    } as unknown as MiaoClient
     // A fresh store models the page after a refresh: nothing is cached and no todo.updated event replays.
     const store = createServerSession(client)
 
@@ -288,7 +288,7 @@ describe("server session", () => {
           throw new Error("legacy message endpoint called")
         },
       },
-    } as unknown as OpencodeClient
+    } as unknown as MiaoClient
     const messageApi = {
       list: async (input: unknown) => {
         requests.push(input)
@@ -331,7 +331,7 @@ describe("server session", () => {
         return pages.shift()!
       },
     } as unknown as MessageApi
-    const store = createServerSession({} as OpencodeClient, {} as SessionApi, messageApi)
+    const store = createServerSession({} as MiaoClient, {} as SessionApi, messageApi)
     store.remember(session("root"))
 
     await store.sync("root")

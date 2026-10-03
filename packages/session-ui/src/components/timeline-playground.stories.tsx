@@ -11,7 +11,7 @@ import type {
   ToolPart,
   FilePart,
   AgentPart,
-} from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@miao/ui/context/file"
 import { SessionTurn } from "./session-turn"

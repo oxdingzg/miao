@@ -1,6 +1,6 @@
 import { getFilename } from "@miao/core/util/path"
 import type { SessionInfo } from "@/utils/server"
-import type { Project } from "@opencode-ai/sdk/v2/client"
+import type { Project } from "@miao/sdk/v2/client"
 import { useDialog } from "@miao/ui/context/dialog"
 import { createMemo, onCleanup } from "solid-js"
 import { commandPaletteOptions, useCommand, type CommandOption } from "@/context/command"

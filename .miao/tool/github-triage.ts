@@ -1,12 +1,12 @@
 /// <reference path="../env.d.ts" />
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "@miao/plugin"
 
 const TEAM = {
-  tui: ["kommander", "simonklee"],
-  desktop_web: ["Hona", "Brendonovich"],
-  core: ["jlongster", "rekram1-node", "neriousy", "nexxeln", "kitlangton"],
-  inference: ["fwang", "MrMushrooooom", "starptech"],
-  windows: ["Hona"],
+  tui: ["oxdingzg"],
+  desktop_web: ["oxdingzg"],
+  core: ["oxdingzg"],
+  inference: ["oxdingzg"],
+  windows: ["oxdingzg"],
 } as const
 
 function pick<T>(items: readonly T[]) {
@@ -46,8 +46,8 @@ Provide the team that should own the issue. This tool picks a random assignee fr
   },
   async execute(args) {
     const issue = getIssueNumber()
-    const owner = "anomalyco"
-    const repo = "opencode"
+    const owner = "oxdingzg"
+    const repo = "miao"
     const assignee = pick(TEAM[args.team])
 
     await githubFetch(`/repos/${owner}/${repo}/issues/${issue}/assignees`, {

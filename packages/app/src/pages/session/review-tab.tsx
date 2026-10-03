@@ -2,7 +2,7 @@ import { createEffect, onCleanup, type JSX } from "solid-js"
 import { readFileContent } from "@/utils/server"
 import type { FileDiffInfo } from "@/utils/server"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
 import { SessionReview } from "@miao/session-ui/session-review"
 import type {
   SessionReviewCommentActions,

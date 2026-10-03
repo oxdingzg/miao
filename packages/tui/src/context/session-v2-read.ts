@@ -1,4 +1,4 @@
-import type { Session, SessionV2Info } from "@opencode-ai/sdk/v2"
+import type { Session, SessionV2Info } from "@miao/sdk/v2"
 
 /**
  * Maps a V2 `SessionV2Info` into the V1 `Session` shape the TUI store and

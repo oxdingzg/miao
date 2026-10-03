@@ -1,4 +1,4 @@
-import type { PluginInput } from "@opencode-ai/plugin"
+import type { PluginInput } from "@miao/plugin"
 import type { Auth } from "@/auth"
 
 // Built-in plugins persist rotated credentials straight to the auth store; the server

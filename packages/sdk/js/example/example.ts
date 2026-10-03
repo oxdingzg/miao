@@ -1,10 +1,10 @@
-import { createOpencodeClient, createOpencodeServer } from "@opencode-ai/sdk/v2"
+import { createMiaoClient, createMiaoServer } from "@miao/sdk/v2"
 import path from "path"
 import { pathToFileURL } from "node:url"
 import { readdir } from "node:fs/promises"
 
-const server = await createOpencodeServer()
-const client = createOpencodeClient({ baseUrl: server.url, throwOnError: true })
+const server = await createMiaoServer()
+const client = createMiaoClient({ baseUrl: server.url, throwOnError: true })
 
 try {
   await Promise.all(

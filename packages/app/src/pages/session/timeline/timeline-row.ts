@@ -1,4 +1,4 @@
-import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff } from "@miao/sdk/v2"
 import type { PartGroup } from "@miao/session-ui/message-part"
 import { Data, Equal } from "effect"
 

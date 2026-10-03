@@ -13,7 +13,7 @@
 
 **miao is an open-source AI coding agent for developers who want to get real work done—and understand what it costs.** Work in your terminal, use the models you choose, and let the agent explore a repository, edit code, run commands, and check its work.
 
-Built on [opencode](https://github.com/anomalyco/opencode), miao focuses on the engineering around the model: **context efficiency, durable sessions, collaboration, and control over long-running work.** Its aim is the same useful result with less waiting and fewer wasted tokens.
+miao focuses on the engineering around the model: **context efficiency, durable sessions, collaboration, and control over long-running work.** Its aim is the same useful result with less waiting and fewer wasted tokens.
 
 ## Why miao
 
@@ -227,4 +227,4 @@ cd packages/miao
 bun typecheck
 ```
 
-miao is an MIT-licensed derivative of opencode, independently developed and released. It is not affiliated with or endorsed by the OpenCode team. See [LICENSE](LICENSE).
+miao is released under the MIT License. See [LICENSE](LICENSE).

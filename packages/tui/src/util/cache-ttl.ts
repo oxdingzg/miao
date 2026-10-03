@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage } from "@miao/sdk/v2"
 
 /**
  * How long the prompt cache behind a session has been alive. Providers do not

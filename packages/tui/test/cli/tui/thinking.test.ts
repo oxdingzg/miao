@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage } from "@miao/sdk/v2"
 import { reasoningDone, reasoningHeadline, reasoningSummary } from "../../../src/context/thinking"
 
 describe("reasoningSummary", () => {

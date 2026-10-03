@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionMessage } from "@opencode-ai/sdk/v2"
+import type { SessionMessage } from "@miao/sdk/v2"
 import { permissionRequest, transcriptEntries } from "@/cli/cmd/run/session-v2"
 
 type Assistant = Extract<SessionMessage, { type: "assistant" }>

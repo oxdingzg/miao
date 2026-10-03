@@ -113,9 +113,9 @@
 | `miao session list/delete` | V1 Service | `session.ts:61,87`。只读写 `session` 表，压缩后 list 可用（实测） |
 | `miao github` / `miao pr` | **全 V1、进程内** | `github.handler.ts:382-384,504,854,902,951`：`Session.create`、`SessionPrompt.prompt`、`SessionShare`，并订阅 `MessageV2.Event.PartUpdated`。`pr.ts:82` 会再调起 `miao import` |
 | `serve` / `web` / `remote` / `generate` | V1+V2 合并 assembly | `serve.ts:14`、`web.ts:39`、`remote.ts`、`generate.ts:9` |
-| 插件运行时 client | V1 根 SDK | `miao/src/plugin/index.ts:10,150-155` 用 `@opencode-ai/sdk` 根导出的 `createOpencodeClient` 访问 `Server.Default()` |
+| 插件运行时 client | V1 根 SDK | `miao/src/plugin/index.ts:10,150-155` 用 `@miao/sdk` 根导出的 `createMiaoClient` 访问 `Server.Default()` |
 | 插件钩子（V1 `Hooks`） | **只有 V1 代码触发** | `core/src` 里没有任何 `.trigger(`。见 §2.1 |
-| `@opencode-ai/plugin` 类型 | 依赖 V1 SDK 类型 | `plugin/src/index.ts:1-12` 从 V1 根导出引入 `Event`、`Message`、`Part`、`Permission`、`Config`、`createOpencodeClient`。去掉 V1 根导出 = 第三方插件 API 的破坏性变更 |
+| `@miao/plugin` 类型 | 依赖 V1 SDK 类型 | `plugin/src/index.ts:1-12` 从 V1 根导出引入 `Event`、`Message`、`Part`、`Permission`、`Config`、`createMiaoClient`。去掉 V1 根导出 = 第三方插件 API 的破坏性变更 |
 | 旧版 JS SDK `packages/sdk/js` | V1 根导出 + `/v2` 导出 | V1 `src/gen` 已冻结。根导出的消费者：plugin、`miao/src/plugin/index.ts`、`test/server/sdk-v1-smoke.test.ts`、`slack`、`github/`、`script/duplicate-pr.ts`。注意：**`/v2` 导出也大量调用无前缀的旧路由**；按文件计，app 99、tui 56、miao 51、session-ui 16 个文件 import 它。真正的替代者是 `packages/client`（`@miao/client`，只覆盖 `/api/*`）和 `packages/sdk-next`（尚无消费者）。这个 fork 的 release 不发布 SDK 到 npm（`publish.yml` 有上游仓库守卫） |
 | core 内的 V1 层 | 数据迁移依赖 | `core/src/v1/`（19 文件、1,349 行：`session.ts`、`permission.ts`、`config/*`）和 `schema/src/v1/`（`session.ts` 676 行等）。`core/src/session/{projector,backfill,compact,v1-read,legacy-tables,store}.ts` 依赖它做 V1→V2 投影和回退读取。`v1/config/migrate.ts` 是 V1 配置兼容层，V2 配置加载会直接调用（`core/src/config.ts:182-185`） |
 
@@ -174,7 +174,7 @@
 | `packages/desktop` | 306 / 9.6k | Electron 外壳，被 nix、`publish.ts`、CODEOWNERS 引用 | **保留** |
 
 另：`typecheck.yml` 只在 `dev` 分支触发，**main 上没有 typecheck CI**（对删除大量代码的工程是风险，建议 P0 一并修）。
-`packages/core` 引用了 `@opencode-ai/sdk/v2/types`，却没在 `package.json` 里声明依赖（靠依赖提升碰巧能解析）。
+`packages/core` 引用了 `@miao/sdk/v2/types`，却没在 `package.json` 里声明依赖（靠依赖提升碰巧能解析）。
 
 ---
 
@@ -198,7 +198,7 @@ V2 插件上下文（`core/src/plugin/host.ts:28-218`）只有 `agent`、`aisdk`
 | 插件 `tool` 与 `{tool,tools}/*.ts` 自定义工具 | `tool/registry.ts:181-202` | **已补（P1-C）**：`core/src/tool/custom.ts` 按 V1 规则加载，插件用 `ctx.tool.register` 提供；每次调用先走 PermissionV2（动作名 = 工具名），首次 materialize 时才导入 | 本仓库 `.miao/tool/github-pr-search.ts`、`github-triage.ts` 已在 V2 下加载（`core/test/tool-custom.test.ts`） |
 | `event` | `plugin/index.ts:260` | 能收到 V2 事件，但类型是 `session.next.*`，没有 `message.part.updated` | 语义变化，写进变更说明即可 |
 | `permission.ask` | 声明了但从未触发（V1 也没有） | — | 直接删 |
-| 旧式插件加载（函数返回 `Hooks`） | `project/bootstrap.ts:38` | V2 loader 只接受 `{id, effect\|setup}` 形状 | 按决策 2 废弃：V2 不加载，配置时记一次 warning（`config/plugin/external.ts`），`@opencode-ai/plugin` 的 `Plugin`/`Hooks` 标 `@deprecated` |
+| 旧式插件加载（函数返回 `Hooks`） | `project/bootstrap.ts:38` | V2 loader 只接受 `{id, effect\|setup}` 形状 | 按决策 2 废弃：V2 不加载，配置时记一次 warning（`config/plugin/external.ts`），`@miao/plugin` 的 `Plugin`/`Hooks` 标 `@deprecated` |
 
 **V2 支持的插件钩子**（决策 2 落地后）：`agent`、`catalog`、`command`、`integration`、`reference`、`skill` 的
 transform / reload，`aisdk.sdk` / `aisdk.language`，以及 `tool.before` / `tool.after` / `tool.definition` / `tool.register`。
@@ -218,7 +218,7 @@ transform / reload，`aisdk.sdk` / `aisdk.language`，以及 `tool.before` / `to
 没有内置插件用到 `tool.*`、`shell.env`、`chat.message`、`command.execute.before`、`permission.ask` 或 `experimental.*`（除 copilot 的 `small_model`），
 所以这些钩子废弃后内置功能不受影响。
 
-用户本机全局 `~/.config/miao` 只装了 `@opencode-ai/plugin`，没有第三方服务端插件（实测）。
+用户本机全局 `~/.config/miao` 只装了 `@miao/plugin`，没有第三方服务端插件（实测）。
 所以短期影响主要来自内置插件，以及本仓库 `.miao/tool` 下的两个自定义工具。
 
 ### 2.2 权限与工具
@@ -396,7 +396,7 @@ miao db compact --yes        → before 2609.7 MB → after 438.8 MB; deleted 16
 ### P0 — 清理上游未用包，补 main 的 CI（1.5–2 人日，可立即做，与其他阶段并行）
 
 - 删除 §1.3 标"现在删"的包、相关 workflow 和根脚本；workspaces 和 `turbo.json` 去掉对应项；`bun install` 刷新 lock。
-- 让 `typecheck.yml` 在 `main` 上触发；在 `packages/core` 的 `package.json` 里声明 `@opencode-ai/sdk` 依赖，
+- 让 `typecheck.yml` 在 `main` 上触发；在 `packages/core` 的 `package.json` 里声明 `@miao/sdk` 依赖，
   或把这几个类型挪进 `@miao/schema`。
 - 门槛：`bun turbo typecheck` 绿；`test.yml` 绿；`./script/install-local.sh` 能构建，`miao-preview --version`
   正常；nix eval 不报错。
@@ -477,7 +477,7 @@ miao db compact --yes        → before 2609.7 MB → after 438.8 MB; deleted 16
 
 ### P5 — 插件 API 与旧 SDK（5–8 人日，破坏性变更）
 
-- `@opencode-ai/plugin` 的 `Hooks` 类型改用 `/v2` 或 schema 类型；`PluginInput.client` 改为 V2 client。
+- `@miao/plugin` 的 `Hooks` 类型改用 `/v2` 或 schema 类型；`PluginInput.client` 改为 V2 client。
   对仍要支持的旧钩子，在 V2 runner 里做适配层，或者明确废弃（§5-2）。
 - 删除 `packages/sdk/js` 的 V1 根导出（`src/gen`、`client.ts`、`index.ts`）、`sdk-v1-smoke.test.ts`、
   `script/duplicate-pr.ts` 对它的引用。
@@ -512,7 +512,7 @@ miao db compact --yes        → before 2609.7 MB → after 438.8 MB; deleted 16
 
 - config、provider、auth、file、find、pty、mcp、lsp、tui、experimental/worktree、instance、global 这些无前缀旧路由
   迁到 `/api/*`。TUI 的 `packages/cli/src/tui.ts:21-37` 现在对 V2-only daemon 打桩 404，说明还缺这些接口；
-  app 的 `V1_API_MIGRATION.md` 也还有 27 项未完成。迁完后 TUI 和 app 去掉 `@opencode-ai/sdk`，统一用 `@miao/client`。
+  app 的 `V1_API_MIGRATION.md` 也还有 27 项未完成。迁完后 TUI 和 app 去掉 `@miao/sdk`，统一用 `@miao/client`。
   发布二进制的 server 切换到 `packages/server` 的 V2-only assembly，`packages/miao` 只剩 CLI 外壳。
   这也是 architecture Phase 2（daemon）的前提。
 - 删除 core 里的数据迁移层：`v1-read`、`backfill`、`legacy-tables`、`compact`，projector 的 V1 分支，
@@ -540,7 +540,7 @@ miao db compact --yes        → before 2609.7 MB → after 438.8 MB; deleted 16
 
 ## 5. 需要用户决定的事项
 
-1. **范围。** "彻底去除 V1"是否包含 P7（非会话类旧路由、`@opencode-ai/sdk` 的 `/v2` 导出、切到 V2-only assembly）？
+1. **范围。** "彻底去除 V1"是否包含 P7（非会话类旧路由、`@miao/sdk` 的 `/v2` 导出、切到 V2-only assembly）？
    - 建议：Phase 1 做到 P0–P6，P7 并入 architecture Phase 2（daemon 化本来就需要它）。
 2. **旧式插件钩子。** 三个选项：
    - (a) 在 V2 里做兼容层，支持 `chat.params`、`chat.headers`、`tool.execute.before/after`、`shell.env`；

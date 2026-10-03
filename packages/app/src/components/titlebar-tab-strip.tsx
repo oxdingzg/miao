@@ -19,7 +19,7 @@ import { base64Encode } from "@miao/core/util/encode"
 import { showToast } from "@/utils/toast"
 import { canStartTabDrag, isTabCloseTarget } from "./titlebar-tab-gesture"
 import { adjacentTabKey, mergeVisibleTabOrder } from "./titlebar-tab-order"
-import type { Session } from "@opencode-ai/sdk/v2"
+import type { Session } from "@miao/sdk/v2"
 
 function SessionTabSlot(props: {
   tab: SessionTab

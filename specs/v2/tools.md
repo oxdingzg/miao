@@ -188,7 +188,7 @@ Decision 2 of `v1-removal-plan.md` keeps three V1 tool hooks for plugins. `ToolP
 - `ctx.tool.definition` rewrites `description` and `parameters` (input JSON Schema) during materialization. A failing hook is logged and skipped. Without definition hooks the cached definitions are reused unchanged, preserving byte-stable prefixes.
 - Interruption is never translated into a hook rejection.
 
-Custom tools are `@opencode-ai/plugin` `tool({ description, args, execute })` definitions. `CustomTools` (`core/src/tool/custom.ts`) registers them through `Tools.Service`:
+Custom tools are `@miao/plugin` `tool({ description, args, execute })` definitions. `CustomTools` (`core/src/tool/custom.ts`) registers them through `Tools.Service`:
 
 - Files match `{tool,tools}/*.{js,ts}` in every config directory, in config order (global, project `.miao`/`.opencode`, `MIAO_CONFIG_DIR`), as V1 did. A default export is named after the file; other exports become `<file>_<export>`. A file that fails to import is logged and skipped.
 - Plugins provide definitions with `ctx.tool.register(...)`; they are registered in a Scope that closes when the plugin unloads.

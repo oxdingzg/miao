@@ -1,5 +1,5 @@
 import { createMemo, type Setter } from "solid-js"
-import type { AssistantMessage, ReasoningPart, SessionStatus } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, ReasoningPart, SessionStatus } from "@miao/sdk/v2"
 import { useKV } from "./kv"
 
 export type ThinkingMode = "show" | "hide"

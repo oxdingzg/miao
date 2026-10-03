@@ -18,9 +18,9 @@ export const GenerateCommand = {
           {
             lang: "js",
             source: [
-              `import { createOpencodeClient } from "@opencode-ai/sdk`,
+              `import { createMiaoClient } from "@miao/sdk/v2"`,
               ``,
-              `const client = createOpencodeClient()`,
+              `const client = createMiaoClient()`,
               `await client.${operation.operationId}({`,
               `  ...`,
               `})`,

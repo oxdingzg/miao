@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createOpencodeClient, type SessionMessage, type ToolPart } from "@opencode-ai/sdk/v2"
+import { createMiaoClient, type SessionMessage, type ToolPart } from "@miao/sdk/v2"
 import { runHeadless } from "../../../src/cli/cmd/run/headless"
 
 const sessionID = "ses_headless"
@@ -95,7 +95,7 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
   return {
     calls,
     replies,
-    client: createOpencodeClient({
+    client: createMiaoClient({
       baseUrl: "http://headless.test",
       fetch: Object.assign(fetch, { preconnect: globalThis.fetch.preconnect }),
     }),

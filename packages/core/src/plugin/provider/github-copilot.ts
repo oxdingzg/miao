@@ -1,6 +1,6 @@
 import { Effect, Stream } from "effect"
 import { HttpClient } from "effect/unstable/http"
-import type { IntegrationOAuthMethodRegistration } from "@opencode-ai/plugin/v2/effect/integration"
+import type { IntegrationOAuthMethodRegistration } from "@miao/plugin/v2/effect/integration"
 import { Credential } from "../../credential"
 import { EventV2 } from "../../event"
 import { CopilotModels } from "../../github-copilot/models"

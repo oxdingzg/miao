@@ -6,12 +6,12 @@
 // `--format json` output has always used), answers permission and question asks
 // that a headless run cannot put to a person, and returns once the session's
 // agent loop goes idle.
-import type { OpencodeClient, Part, SessionMessage, ToolPart } from "@opencode-ai/sdk/v2"
+import type { MiaoClient, Part, SessionMessage, ToolPart } from "@miao/sdk/v2"
 import { isV2StreamFragmentEvent, sessionContextToMessages } from "@miao/tui/context/session-v2"
 import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
 
 export type HeadlessInput = {
-  client: OpencodeClient
+  client: MiaoClient
   sessionID: string
   directory: string
   agent: string | undefined
@@ -269,7 +269,7 @@ async function missingModel(input: HeadlessInput) {
   return `Model not found: ${model.providerID}/${model.modelID}`
 }
 
-async function context(client: OpencodeClient, sessionID: string): Promise<SessionMessage[]> {
+async function context(client: MiaoClient, sessionID: string): Promise<SessionMessage[]> {
   const result = await client.v2.session.context({ sessionID }, { throwOnError: true })
   return result.data.data
 }

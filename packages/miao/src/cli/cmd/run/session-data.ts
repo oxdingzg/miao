@@ -32,7 +32,7 @@ import type {
   QuestionRequest,
   SessionMessageAssistantTool,
   ToolPart,
-} from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
 import * as Locale from "@/util/locale"
 import { INTERRUPTED_STEP, liveToolPart, partKey, permissionRequest, questionRequest } from "./session-v2"
 import { toolView } from "./tool"

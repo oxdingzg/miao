@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
-import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@opencode-ai/plugin/tui"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@miao/plugin/tui"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
 import {
   TextAttributes,
   type BorderSides,

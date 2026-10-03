@@ -3,7 +3,7 @@
 // `./provider`, whose top-level `ProviderPlugins` array reads every provider
 // binding. Entering a provider module first (e.g. importing it directly) would
 // otherwise evaluate that array while the entry module is still uninitialized.
-import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
+import type { PluginContext } from "@miao/plugin/v2/effect"
 import type { Effect, Scope } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import type { AgentV2 } from "../agent"

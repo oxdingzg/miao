@@ -52,8 +52,9 @@
   },
   "dependencies": {
     "@miao/core": "workspace:*",
-    "@opencode-ai/plugin": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
+    "@miao/client": "workspace:*",
+    "@miao/plugin": "workspace:*",
+    "@miao/sdk": "workspace:*",
     "@miao/ui": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",

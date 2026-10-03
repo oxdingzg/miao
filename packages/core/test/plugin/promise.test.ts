@@ -4,7 +4,7 @@ import { AgentV2 } from "@miao/core/agent"
 import { PluginV2 } from "@miao/core/plugin"
 import { PluginHost } from "@miao/core/plugin/host"
 import { PluginPromise } from "@miao/core/plugin/promise"
-import { define } from "@opencode-ai/plugin/v2/promise"
+import { define } from "@miao/plugin/v2/promise"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 

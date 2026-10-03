@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { Event } from "@opencode-ai/sdk/v2"
+import type { Event } from "@miao/sdk/v2"
 import { createMiaottyStateTracker, terminalTarget } from "@/plugin/miaotty"
 
 const event = (value: object) => value as unknown as Event

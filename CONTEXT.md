@@ -158,7 +158,7 @@ _Avoid_: Response envelope
 - Effect client construction accepts an explicit `baseUrl` and obtains `HttpClient.HttpClient` from the Effect environment. It does not install fetch or duplicate per-call transport policy; callers transform/provide the client for headers, tracing, retries, recording, and tests, while fiber interruption owns cancellation.
 - Promise and Effect emitters each own their generated public type modules. The **SDK Contract IR**, not a physically shared generated type package, is the common source; this permits zero-Effect wire types and rich decoded Effect types to evolve independently.
 - Promise and Effect network clients ship from `@miao/client` behind isolated root and `/effect` exports. The root has no runtime path to Effect; `/effect` imports only Effect, Schema, and Protocol.
-- The Effect-native scoped host belongs to `@miao/sdk-next`, which will assume the existing `@opencode-ai/sdk` name after legacy consumers migrate. Client remains network-only and SDK depends one-way on Client.
+- The Effect-native scoped host belongs to `@miao/sdk-next`, which will assume the existing `@miao/sdk` name after legacy consumers migrate. Client remains network-only and SDK depends one-way on Client.
 - SDK executes Server's assembled `HttpRouter` in memory. It opens no listener and performs no network I/O, while preserving Server routing, middleware, codecs, handlers, and errors.
 - The Effect Client and SDK re-export their decoded datatype facade from Schema so callers do not depend on internal package locations or Core's versioned names.
 - A capability intended for both networked and **Embedded miao** belongs in the authoritative public `HttpApi`; embedded-only same-process capabilities extend **Embedded miao** separately.

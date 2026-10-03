@@ -23,10 +23,10 @@ to add a section here.
 ### Changed
 
 - **sdk / plugin**: remove the V1 SDK root, client, and server exports. Import
-  `createOpencodeClient` and `createOpencodeServer` from `@opencode-ai/sdk/v2` and use
+  `createMiaoClient` and `createMiaoServer` from `@miao/sdk/v2` and use
   `client.v2.session` for sessions. Plugin clients use that same SDK; function-returning
   V1 `Hooks` remain deprecated and do not run in V2 sessions. New plugins should use
-  `define` from `@opencode-ai/plugin/v2/promise` or `/v2/effect`, with
+  `define` from `@miao/plugin/v2/promise` or `/v2/effect`, with
   `ctx.tool.before`, `after`, `definition`, and `register` for tool customization.
 
 ### Added

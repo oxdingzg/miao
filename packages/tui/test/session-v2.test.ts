@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import type { SessionMessage } from "@opencode-ai/sdk/v2"
+import type { SessionMessage } from "@miao/sdk/v2"
 import {
   isLiveSessionV2Event,
   isV2StreamFragmentEvent,

@@ -15,7 +15,7 @@
 import os from "os"
 import path from "path"
 import stripAnsi from "strip-ansi"
-import type { ToolPart } from "@opencode-ai/sdk/v2"
+import type { ToolPart } from "@miao/sdk/v2"
 import type { Schema } from "effect"
 import type { ApplyPatchTool } from "@miao/core/tool/apply-patch"
 import type { BashTool } from "@miao/core/tool/bash"

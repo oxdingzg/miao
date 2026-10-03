@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage } from "@miao/sdk/v2"
 
 /**
  * How fast a turn produced its output. The span runs from the request being

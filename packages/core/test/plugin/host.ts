@@ -1,11 +1,11 @@
-import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
+import type { PluginContext } from "@miao/plugin/v2/effect"
 import { AgentV2 } from "@miao/core/agent"
 import { Catalog } from "@miao/core/catalog"
 import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import type { IntegrationEnvMethod, IntegrationKeyMethod, IntegrationOAuthMethod } from "@opencode-ai/sdk/v2/types"
+import type { IntegrationEnvMethod, IntegrationKeyMethod, IntegrationOAuthMethod } from "@miao/sdk/v2/types"
 import { Effect } from "effect"
 
 type Overrides = Partial<Omit<PluginContext, "options">>

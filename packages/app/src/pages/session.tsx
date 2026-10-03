@@ -1,4 +1,4 @@
-import type { FilePart, Project, UserMessage, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { FilePart, Project, UserMessage, VcsFileDiff } from "@miao/sdk/v2"
 import { normalizeProjectInfo } from "@/context/global-sync/utils"
 import { getFilename } from "@miao/core/util/path"
 import { useDialog } from "@miao/ui/context/dialog"

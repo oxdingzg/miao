@@ -5,9 +5,9 @@ import type {
   Plugin as PluginInstance,
   PluginModule,
   WorkspaceAdapter as PluginWorkspaceAdapter,
-} from "@opencode-ai/plugin"
+} from "@miao/plugin"
 import { Config } from "@/config/config"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { createMiaoClient } from "@miao/sdk/v2"
 import { ServerAuth } from "@/server/auth"
 import { Auth } from "@/auth"
 import type { InternalPluginInput } from "./auth-store"
@@ -76,8 +76,8 @@ function internalPlugins(flags: RuntimeFlags.Info): Array<(input: InternalPlugin
       }),
     CopilotAuthPlugin,
     ModalPlugin,
-    // These npm plugins ship their own @opencode-ai/plugin + @opencode-ai/sdk type
-    // copies, so their Plugin type is structurally identical but nominally distinct.
+    // These external plugins ship their own upstream plugin/SDK type copies,
+    // so their Plugin type is structurally identical but nominally distinct.
     GitlabAuthPlugin as unknown as PluginInstance,
     PoeAuthPlugin as unknown as PluginInstance,
     CloudflareWorkersAuthPlugin,
@@ -151,7 +151,7 @@ const layer = Layer.effect(
         const { Server } = yield* Effect.promise(() => import("../server/server"))
 
         const serverUrl = Server.url
-        const client = createOpencodeClient({
+        const client = createMiaoClient({
           baseUrl: serverUrl?.toString() ?? "http://localhost:4096",
           directory: ctx.directory,
           headers: ServerAuth.headers() ?? {},

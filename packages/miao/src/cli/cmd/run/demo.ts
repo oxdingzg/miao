@@ -15,7 +15,7 @@
 // Demo mode also handles permission and question replies locally, completing
 // or failing the synthetic tool parts as appropriate.
 import path from "path"
-import type { ToolPart } from "@opencode-ai/sdk/v2"
+import type { ToolPart } from "@miao/sdk/v2"
 import { createSessionData, reduceSessionData, type SessionData, type SessionDataEvent } from "./session-data"
 import { writeSessionOutput } from "./stream"
 import type { FooterApi, PermissionReply, QuestionReject, QuestionReply, RunPrompt, StreamCommit } from "./types"

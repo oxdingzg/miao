@@ -1,5 +1,5 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import type { Event, V2Event } from "@opencode-ai/sdk/v2"
+import { createMiaoClient } from "@miao/sdk/v2"
+import type { Event, V2Event } from "@miao/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
 
@@ -29,7 +29,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     let sse: AbortController | undefined
 
     function createSDK() {
-      return createOpencodeClient({
+      return createMiaoClient({
         baseUrl: props.url,
         signal: abort.signal,
         directory: props.directory,

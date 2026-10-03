@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@miao/sdk/v2/client"
 import { preloadMarkdown } from "@miao/session-ui/markdown-cache"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"

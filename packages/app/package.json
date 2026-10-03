@@ -58,7 +58,7 @@
     "@miao/core": "workspace:*",
     "@miao/protocol": "workspace:*",
     "@miao/schema": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
+    "@miao/sdk": "workspace:*",
     "@miao/session-ui": "workspace:*",
     "@miao/ui": "workspace:*",
     "@pierre/trees": "1.0.0-beta.4",

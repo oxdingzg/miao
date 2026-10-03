@@ -1,4 +1,4 @@
-import type { Agent, AgentV2Info, Command, CommandV2Info, Provider } from "@opencode-ai/sdk/v2"
+import type { Agent, AgentV2Info, Command, CommandV2Info, Provider } from "@miao/sdk/v2"
 
 // The full provider catalog in the V1 provider-list shape the TUI keeps.
 export type ProviderCatalog = { all: Provider[]; default: Record<string, string>; connected: string[] }

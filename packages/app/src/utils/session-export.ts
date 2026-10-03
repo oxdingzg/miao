@@ -1,4 +1,4 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from "@miao/sdk/v2/client"
 import type { SessionInfo, SessionMessageInfo } from "@/utils/server"
 import type { ServerApi } from "./server"
 

@@ -37,9 +37,9 @@ jobs:
         if: steps.team-check.outputs.is_team == 'true'
         run: bun install
 
-      - name: Install opencode
+      - name: Install miao
         if: steps.team-check.outputs.is_team == 'true'
-        run: curl -fsSL https://opencode.ai/install | bash
+        run: curl -fsSL https://mtty.dev/miao/install | bash
 
       - name: Build prompt
         if: steps.team-check.outputs.is_team == 'true'
@@ -65,7 +65,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          COMMENT=$(bun script/duplicate-pr.ts -f pr_info.txt "Check the attached file for PR details and search for duplicates")
+          miao run --format json -m opencode/gpt-6-luna --variant high -f pr_info.txt \
+            "Check the attached PR details and use github-pr-search to find duplicates in oxdingzg/miao. Exclude PR #$PR_NUMBER itself. Reply only with a concise Markdown comment linking duplicate PRs, or exactly 'No duplicate PRs found'. Do not post a comment yourself." > duplicate-pr.jsonl
+          jq -e -s 'all(.[]; .type != "error")' duplicate-pr.jsonl > /dev/null
+          COMMENT=$(jq -r -s '[.[] | select(.type == "text") | .part.text] | join("\n\n")' duplicate-pr.jsonl)
+          if [ -z "$COMMENT" ]; then
+            echo "miao returned no duplicate-PR result" >&2
+            exit 1
+          fi
 
           if [ "$COMMENT" != "No duplicate PRs found" ]; then
             gh pr comment "$PR_NUMBER" --body "_The following comment was made by an LLM, it may be inaccurate:_

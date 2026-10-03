@@ -4,7 +4,7 @@ import { shouldUseResponsesApi } from "@miao/llm/providers/github-copilot"
 import { Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { InstallationVersion } from "../installation/version"
-import type { ModelV2Info } from "@opencode-ai/sdk/v2/types"
+import type { ModelV2Info } from "@miao/sdk/v2/types"
 
 /** Copilot API version the V1 plugin pinned; Copilot rejects unknown versions. */
 export const API_VERSION = "2026-06-01"

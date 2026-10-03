@@ -12,7 +12,7 @@
 //   3. starts the stream transport (SDK event subscription), lazily for fresh
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { createMiaoClient } from "@miao/sdk/v2"
 import { toAgent, toCommand } from "@miao/tui/context/v2-adapters"
 import { Flag } from "@miao/core/flag/flag"
 import { SessionMessage } from "@miao/core/session/message"
@@ -736,7 +736,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
 // Local in-process mode. Creates an SDK client backed by a direct fetch to
 // the in-process server, so no external HTTP server is needed.
 export async function runInteractiveLocalMode(input: RunLocalInput): Promise<void> {
-  const sdk = createOpencodeClient({
+  const sdk = createMiaoClient({
     baseUrl: "http://opencode.internal",
     fetch: input.fetch,
     directory: input.directory,

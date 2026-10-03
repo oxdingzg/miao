@@ -1,5 +1,5 @@
 import { LayerNode } from "@miao/core/effect/layer-node"
-import type { AuthOAuthResult, Hooks } from "@opencode-ai/plugin"
+import type { AuthOAuthResult, Hooks } from "@miao/plugin"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { Auth } from "@/auth"
 import { InstanceState } from "@/effect/instance-state"

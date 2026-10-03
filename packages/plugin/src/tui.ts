@@ -1,7 +1,7 @@
 import type {
   AgentPart,
   AssistantMessage,
-  OpencodeClient,
+  MiaoClient,
   Event,
   FilePart,
   LspStatus,
@@ -16,7 +16,7 @@ import type {
   TextPart,
   UserMessage,
   Config as SdkConfig,
-} from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
 import type { CliRenderer, KeyEvent, RGBA, Renderable, SlotMode } from "@opentui/core"
 import type { Binding, Keymap } from "@opentui/keymap"
 import {
@@ -625,7 +625,7 @@ export type TuiPluginApi = {
   kv: TuiKV
   state: TuiState
   theme: TuiTheme
-  client: OpencodeClient
+  client: MiaoClient
   event: TuiEventBus
   renderer: CliRenderer
   slots: TuiSlots

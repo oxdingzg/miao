@@ -12,7 +12,7 @@
 // and for live events.
 import type {
   LlmToolContent,
-  OpencodeClient,
+  MiaoClient,
   Part,
   PermissionRequest,
   PermissionV2Request,
@@ -21,7 +21,7 @@ import type {
   SessionMessage,
   SessionMessageAssistantTool,
   ToolPart,
-} from "@opencode-ai/sdk/v2"
+} from "@miao/sdk/v2"
 import { mergeTranscript, sessionContextToMessages, toolPart } from "@miao/tui/context/session-v2"
 import type { SessionMessages } from "./session.shared"
 
@@ -48,7 +48,7 @@ export function partKey(messageID: string, id: string) {
  * a limit the whole timeline is read; with one, only enough newest pages to
  * cover it.
  */
-export async function loadTranscript(sdk: OpencodeClient, sessionID: string, limit?: number) {
+export async function loadTranscript(sdk: MiaoClient, sessionID: string, limit?: number) {
   const [context, history] = await Promise.all([
     sdk.v2.session.context({ sessionID }, { throwOnError: true }).then((result) => result.data.data),
     timeline(sdk, sessionID, limit),
@@ -56,7 +56,7 @@ export async function loadTranscript(sdk: OpencodeClient, sessionID: string, lim
   return mergeTranscript(context, history)
 }
 
-async function timeline(sdk: OpencodeClient, sessionID: string, limit: number | undefined) {
+async function timeline(sdk: MiaoClient, sessionID: string, limit: number | undefined) {
   const pages: SessionMessage[] = []
   const read = async (cursor: string | undefined): Promise<SessionMessage[]> => {
     // A cursor carries its page order; the route refuses it alongside `order`.

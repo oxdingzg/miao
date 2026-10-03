@@ -1,4 +1,4 @@
-import type { Message, Part, PermissionRequest, QuestionRequest, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, PermissionRequest, QuestionRequest, SessionStatus, Todo } from "@miao/sdk/v2/client"
 import type { FileDiffInfo, SessionMessageInfo } from "@/utils/server"
 
 export const SESSION_CACHE_LIMIT = 40

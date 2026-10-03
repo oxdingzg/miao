@@ -1,5 +1,5 @@
 import { batch } from "solid-js"
-import type { LocationPath, Workspace } from "@opencode-ai/sdk/v2"
+import type { LocationPath, Workspace } from "@miao/sdk/v2"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"

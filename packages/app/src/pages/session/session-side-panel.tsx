@@ -24,7 +24,7 @@ import { Mark } from "@miao/ui/logo"
 import { IconButtonV2 } from "@miao/ui/v2/icon-button-v2"
 import { KeybindV2 } from "@miao/ui/v2/keybind-v2"
 import { TooltipV2 } from "@miao/ui/v2/tooltip-v2"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@miao/ui/context/dialog"
 
