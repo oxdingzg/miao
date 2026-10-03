@@ -667,7 +667,6 @@
         "@kobalte/core": "catalog:",
         "@miao/core": "workspace:*",
         "@miao/schema": "workspace:*",
-        "@miao/sdk": "workspace:*",
         "@miao/ui": "workspace:*",
         "@pierre/diffs": "catalog:",
         "@shikijs/stream": "catalog:",

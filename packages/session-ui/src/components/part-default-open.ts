@@ -1,4 +1,4 @@
-import type { Part as PartType, ToolPart } from "@miao/sdk/v2"
+import type { Part as PartType, ToolPart } from "@miao/schema/session-v1"
 
 function deletionOnly(part: ToolPart) {
   if (!("metadata" in part.state)) return false

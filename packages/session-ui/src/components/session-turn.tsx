@@ -1,11 +1,7 @@
-import {
-  AssistantMessage,
-  type SnapshotFileDiff,
-  Message as MessageType,
-  Part as PartType,
-} from "@miao/sdk/v2/client"
+import { AssistantMessage, Message as MessageType, Part as PartType } from "@miao/schema/session-v1"
+import type { SnapshotFileDiff } from "@miao/schema/vcs"
 import type { Vcs } from "@miao/schema/vcs"
-import type { SessionStatus } from "@miao/sdk/v2"
+import type { SessionStatus } from "@miao/schema/session-status-event"
 import { useData } from "../context"
 import { useFileComponent } from "@miao/ui/context/file"
 
@@ -316,7 +312,8 @@ export function SessionTurn(
     return undefined
   })
   const errorText = createMemo(() => {
-    const msg = error()?.data?.message
+    const data = error()?.data
+    const msg = data && "message" in data ? data.message : undefined
     if (typeof msg === "string") return unwrap(msg)
     if (msg === undefined || msg === null) return ""
     // oxlint-disable-next-line no-base-to-string -- msg is unknown from error data, coercion is intentional

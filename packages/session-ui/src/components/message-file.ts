@@ -1,6 +1,6 @@
 import { bundledLanguagesInfo } from "shiki"
 import { getFilename } from "@miao/core/util/path"
-import type { FilePart } from "@miao/sdk/v2"
+import type { FilePart } from "@miao/schema/session-v1"
 
 export function attached(part: FilePart) {
   return part.url.startsWith("data:") && !inline(part)

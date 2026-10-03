@@ -1,4 +1,4 @@
-import type { FileContent } from "@miao/sdk/v2"
+import type { FileContent } from "@miao/schema/filesystem-v1"
 import { createEffect, createMemo, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useI18n } from "@miao/ui/context/i18n"
