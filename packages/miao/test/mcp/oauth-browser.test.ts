@@ -6,10 +6,10 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { Deferred, Effect, Layer, Option } from "effect"
 import { Config } from "../../src/config/config"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
-import { McpAuth } from "../../src/mcp/auth"
-import { McpBrowser } from "../../src/mcp/browser"
+import { McpAuth } from "@miao/core/mcp/auth"
+import { McpBrowser } from "@miao/core/mcp/browser"
 import { MCP } from "../../src/mcp/index"
-import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
+import { McpOAuthCallback } from "@miao/core/mcp/oauth-callback"
 import { awaitWithTimeout, testEffect } from "../lib/effect"
 
 const browsers = new Map<string, { opened: Deferred.Deferred<string>; fail: boolean }>()

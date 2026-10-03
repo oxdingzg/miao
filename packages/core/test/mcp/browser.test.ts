@@ -13,7 +13,7 @@ await mock.module("@miao/core/open", () => ({
   },
 }))
 
-const { McpBrowser } = await import("../../src/mcp/browser")
+const { McpBrowser } = await import("@miao/core/mcp/browser")
 
 test("reports a browser launcher that exited before openUrl returned", async () => {
   const error = await Effect.runPromise(

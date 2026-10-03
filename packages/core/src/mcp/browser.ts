@@ -1,5 +1,5 @@
-import { LayerNode } from "@miao/core/effect/layer-node"
-import { openUrl } from "@miao/core/open"
+import { LayerNode } from "../effect/layer-node"
+import { openUrl } from "../open"
 import { Context, Effect, Layer } from "effect"
 
 export interface Interface {
