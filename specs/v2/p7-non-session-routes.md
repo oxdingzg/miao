@@ -129,8 +129,10 @@ protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/
      （项目 ID 迁移、sandboxes、`time_initialized`），V2 只在建会话（`session-create.ts`）和改名时 insert-or-ignore。
      `project.initGit` 依赖 git init 后的项目重新解析与 ID 迁移，需要先把这部分搬进 core（`ProjectV2.commit`
      注释里的过渡桥）再做；V1 `project.ts` 的 `fromRow` 与 core `ProjectMetadata.fromRow` 重复，随 V1 删除。
-3. **app 删 V1 分支**：去掉 `detectServerProtocol` 与全部 `protocol === "v1"` / `!== "v1"` 分支，恢复上表中
-   V2 下静默失效的功能（项目重命名、目录选择、配置读写、自定义 provider）。
+3. ~~**app 删 V1 分支**~~（`4d01ae5e2`）：删除 `detectServerProtocol`、`useServerProtocol` 与全部 `protocol` 分支。顺带补上它们在
+   V2 下掩盖的问题：终端 WebSocket 改为先取一次性连接票据（`pty.connectToken` 放进生成客户端），shell 列表走
+   `/api/pty/shells`，路径走新增的 `GET /api/path`（此前是返回空 `home` 的占位实现），分支名走 `/api/vcs`，
+   插件页签与旧版布局的服务器列表不再只在 V1 下显示。
 4. **TUI console**：决定 console/org 切换是迁 V2 还是删除（上游 console 服务 fork 不用，倾向删除）。
 5. **服务端拆除**：见下节。
 6. app 类型层：`@opencode-ai/sdk` 的 `Session`/`Message`/`Part` 等类型与 V1 事件兼容层替换为 `@miao/client` 类型
