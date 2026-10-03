@@ -2,11 +2,21 @@
 
 **Language:** [English](SECURITY.md) | [中文](SECURITY.zh.md)
 
-## IMPORTANT
+## Before you report
 
-We do not accept AI generated security reports. We receive a large number of
-these and we absolutely do not have the resources to review them all. If you
-submit one that will be an automatic ban from the project.
+This is a small project. It has had no security report yet, so there is no queue
+to join and no backlog to fight through. Two things are asked of a report, and
+neither is about volume:
+
+- **Reproduce it.** Say what you did, what you expected, what happened instead,
+  and on which version. A report someone can follow is a report someone can fix.
+- **Send it because you checked, not because a tool said so.** Scanner output
+  pasted in unreviewed, or a report written by a model that nobody ran, is not
+  yet a report. If a model drafted it, verify the claim against the code
+  yourself and send what you verified.
+
+A report that does this gets read properly. One that does not may be closed with
+a pointer back to this section.
 
 ## Threat Model
 
@@ -34,7 +44,15 @@ If you need true isolation, run Miao inside a Docker container or VM.
 
 ### Server Mode
 
-Server mode is opt-in only. When enabled, set `MIAO_SERVER_PASSWORD` to require HTTP Basic Auth. Without this, the server runs unauthenticated (with a warning). It is the end user's responsibility to secure the server - any functionality it provides is not a vulnerability.
+Server mode is opt-in: it starts with `miao serve`, or `miao remote` for the chat bridges, and is not running otherwise.
+
+The service listens on **127.0.0.1 only** and does not advertise itself over mDNS, so it is reachable from this machine rather than from the network.
+
+Authentication is HTTP Basic Auth, turned on by setting `MIAO_SERVER_PASSWORD`. Without it the service still starts, and says so itself:
+
+> MIAO_SERVER_PASSWORD 没有设置，本机其它进程可以不经鉴权访问 127.0.0.1 上的服务
+
+That is the exposure to weigh: not a remote attacker, but any other process on your machine. An unauthenticated instance is local-only by construction; set the password when local-only is not good enough. Because the service is opt-in and loopback-bound by design, its behaviour in that configuration is not a vulnerability.
 
 ### Out of Scope
 
@@ -55,8 +73,6 @@ We appreciate your efforts to responsibly disclose your findings, and will make 
 
 To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/oxdingzg/miao/security/advisories/new) tab.
 
-The team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
-
-## Escalation
-
-If you do not receive an acknowledgement of your report within 6 business days, please follow up on the advisory thread.
+You will get a reply saying what happens next, and after that, how the fix is
+going. There is no security team here and no guaranteed response time: if you
+have heard nothing after a week, follow up on the same thread.
