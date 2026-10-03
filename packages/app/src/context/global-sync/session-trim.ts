@@ -1,5 +1,5 @@
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest } from "@miao/schema/view-models"
 import { cmp } from "./utils"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 

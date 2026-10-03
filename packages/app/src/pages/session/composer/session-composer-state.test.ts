@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import { todoDockAtBoundary, todoState } from "./session-composer-state"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { FileDiffInfo } from "@/utils/server"
 import type { Message, Part, SessionStatus, Todo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
 
 const msg = (id: string, sessionID: string) =>
