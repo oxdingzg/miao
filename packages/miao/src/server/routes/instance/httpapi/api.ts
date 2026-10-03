@@ -7,25 +7,10 @@ import { Integration } from "@miao/core/integration"
 import { SkillV2 } from "@miao/core/skill"
 import { InstanceDisposed } from "@/server/event"
 import { Question } from "@/question"
-import { ConfigApi } from "./groups/config"
-import { ControlApi } from "./groups/control"
-import { ControlPlaneApi } from "./groups/control-plane"
-import { EventApi } from "./groups/event"
-import { ExperimentalApi } from "./groups/experimental"
-import { FileApi } from "./groups/file"
-import { InstanceApi } from "./groups/instance"
-import { McpApi } from "./groups/mcp"
-import { ProjectApi } from "./groups/project"
-import { ProviderApi } from "./groups/provider"
-import { PtyApi, PtyConnectApi } from "./groups/pty"
-import { TuiApi } from "./groups/tui"
-import { WorkspaceApi } from "./groups/workspace"
 import { makeApi } from "@miao/protocol/api"
 import { LocationMiddleware } from "@miao/server/location"
 import { SessionLocationMiddleware } from "@miao/server/middleware/session-location"
-import { GlobalApi } from "./groups/global"
-import { Authorization } from "./middleware/authorization"
-import { SchemaErrorMiddleware } from "./middleware/schema-error"
+import { ClientSchemas } from "./public-schemas"
 
 const EventSchema = Schema.Union([
   ...EventManifest.Latest.values()
@@ -46,32 +31,8 @@ export const ServerApi = makeApi({
   sessionLocationMiddleware: SessionLocationMiddleware,
 })
 
-export const RootHttpApi = HttpApi.make("opencode-root")
-  .addHttpApi(ControlApi)
-  .addHttpApi(ControlPlaneApi)
-  .addHttpApi(GlobalApi)
-  .middleware(SchemaErrorMiddleware)
-  .middleware(Authorization)
-
-export const InstanceHttpApi = HttpApi.make("opencode-instance")
-  .addHttpApi(ConfigApi)
-  .addHttpApi(ExperimentalApi)
-  .addHttpApi(FileApi)
-  .addHttpApi(InstanceApi)
-  .addHttpApi(McpApi)
-  .addHttpApi(ProjectApi)
-  .addHttpApi(PtyApi)
-  .addHttpApi(ProviderApi)
-  .addHttpApi(TuiApi)
-  .addHttpApi(WorkspaceApi)
-  .middleware(SchemaErrorMiddleware)
-
 export const OpenCodeHttpApi = HttpApi.make("miao")
-  .addHttpApi(RootHttpApi)
-  .addHttpApi(EventApi)
-  .addHttpApi(InstanceHttpApi)
   .addHttpApi(ServerApi)
-  .addHttpApi(PtyConnectApi)
   .annotate(HttpApi.AdditionalSchemas, [
     EventSchema,
     Question.Replied,
@@ -81,7 +42,5 @@ export const OpenCodeHttpApi = HttpApi.make("miao")
     Integration.Method,
     Integration.Ref,
     SkillV2.Source,
+    ...ClientSchemas,
   ])
-
-export type RootHttpApiType = typeof RootHttpApi
-export type InstanceHttpApiType = typeof InstanceHttpApi

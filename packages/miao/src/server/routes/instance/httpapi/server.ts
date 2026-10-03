@@ -1,7 +1,6 @@
 import { Config as EffectConfig, Context, Effect, Layer } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpClient, HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
-import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@miao/core/fs-util"
 import * as Observability from "@miao/core/observability"
 import { Agent } from "@/agent/agent"
@@ -62,30 +61,9 @@ import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@miao/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
-import { InstanceHttpApi, RootHttpApi } from "./api"
 import { Api } from "@miao/server/api"
 import { PublicApi } from "./public"
-import {
-  authorizationLayer,
-  authorizationRouterMiddleware,
-  ptyConnectAuthorizationLayer,
-  serverAuthorizationLayer,
-} from "./middleware/authorization"
-import { EventApi } from "./groups/event"
-import { PtyConnectApi } from "./groups/pty"
-import { eventHandlers } from "./handlers/event"
-import { configHandlers } from "./handlers/config"
-import { controlHandlers } from "./handlers/control"
-import { controlPlaneHandlers } from "./handlers/control-plane"
-import { experimentalHandlers } from "./handlers/experimental"
-import { fileHandlers } from "./handlers/file"
-import { globalHandlers } from "./handlers/global"
-import { instanceHandlers } from "./handlers/instance"
-import { mcpHandlers } from "./handlers/mcp"
-import { projectHandlers } from "./handlers/project"
-import { providerHandlers } from "./handlers/provider"
-import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
-import { tuiHandlers } from "./handlers/tui"
+import { authorizationRouterMiddleware, serverAuthorizationLayer } from "./middleware/authorization"
 import { handlers } from "@miao/server/handlers"
 import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location-services"
 import { layer as locationLayer } from "@miao/server/location"
@@ -93,17 +71,10 @@ import { sessionLocationLayer } from "@miao/server/middleware/session-location"
 import { PtyEnvironment } from "@miao/server/pty-environment"
 import { RemoteControl } from "@miao/server/remote-control"
 import { schemaErrorLayer as v2SchemaErrorLayer } from "@miao/server/middleware/schema-error"
-import { workspaceHandlers } from "./handlers/workspace"
-import { instanceContextLayer } from "./middleware/instance-context"
-import { workspaceRoutingLayer } from "./middleware/workspace-routing"
-import { disposeMiddleware } from "./lifecycle"
 import { memoMap } from "@miao/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
 import { errorLayer } from "./middleware/error"
-import { fenceLayer } from "./middleware/fence"
-import { legacyRouteLayer } from "./middleware/legacy-route"
-import { schemaErrorLayer } from "./middleware/schema-error"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
@@ -117,47 +88,11 @@ const cors = (corsOptions?: CorsOptions) =>
   )
 
 // Route tree:
-// - rootApiRoutes: typed /global/* and control routes; auth is declared by RootHttpApi.
-// - eventApiRoutes: typed SSE route with instance routing context and its existing API contract.
-// - ptyConnectApiRoutes: typed WebSocket upgrade route with ticket-aware auth.
-// - instanceApiRoutes: remaining typed instance routes.
+// - serverRoutes: the typed /api/* routes.
+// - docRoute: the OpenAPI document of the public API.
 // - uiRoute: raw catch-all fallback; auth is router middleware so public static assets can bypass it.
 const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.layer))
-const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.layer))
-const ptyConnectHttpApiAuthLayer = ptyConnectAuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.layer))
 const serverHttpApiAuthLayer = serverAuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.layer))
-const workspaceRoutingLive = workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))
-const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
-  Layer.provide([controlHandlers, controlPlaneHandlers, globalHandlers]),
-  Layer.provide(schemaErrorLayer),
-  Layer.provide(httpApiAuthLayer),
-)
-const eventApiRoutes = HttpApiBuilder.layer(EventApi).pipe(
-  Layer.provide(eventHandlers),
-  Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer]),
-)
-const ptyConnectApiRoutes = HttpApiBuilder.layer(PtyConnectApi).pipe(
-  Layer.provide(ptyConnectHandlers),
-  Layer.provide([ptyConnectHttpApiAuthLayer, workspaceRoutingLive, instanceContextLayer]),
-)
-const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
-  Layer.provide([
-    configHandlers,
-    experimentalHandlers,
-    fileHandlers,
-    instanceHandlers,
-    mcpHandlers,
-    projectHandlers,
-    ptyHandlers,
-    providerHandlers,
-    tuiHandlers,
-    workspaceHandlers,
-  ]),
-)
-
-const instanceRoutes = instanceApiRoutes.pipe(
-  Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
-)
 // The /api/remote routes answer only when `miao remote` hands in its control; elsewhere they are 404.
 const serverRoutes = (remote: RemoteControl.Interface | undefined) =>
   HttpApiBuilder.layer(Api).pipe(
@@ -254,21 +189,11 @@ export function createRoutes(
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = buildLocationServiceMap()
 
-  return Layer.mergeAll(
-    rootApiRoutes,
-    eventApiRoutes,
-    ptyConnectApiRoutes,
-    instanceRoutes,
-    serverRoutes(remote),
-    docRoute,
-    uiRoute,
-  ).pipe(
+  return Layer.mergeAll(serverRoutes(remote), docRoute, uiRoute).pipe(
     Layer.provide([
       errorLayer,
       compressionLayer,
       corsVaryFix,
-      fenceLayer,
-      legacyRouteLayer,
       cors(corsOptions),
       AppNodeBuilderV1.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]]),
       HttpServer.layerServices,
@@ -307,7 +232,6 @@ export const webHandler = lazy(() =>
   HttpRouter.toWebHandler(routes, {
     disableLogger: true,
     memoMap,
-    middleware: disposeMiddleware,
   }),
 )
 
