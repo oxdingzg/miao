@@ -55,6 +55,7 @@ import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { SessionScrollbox } from "./scrollbox"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
@@ -1138,19 +1139,12 @@ export function Session() {
         <box flexDirection="row" flexGrow={1} minHeight={0}>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
             <Show when={session()}>
-              <scrollbox
+              <SessionScrollbox
                 ref={(r) => (scroll = r)}
-                viewportOptions={{
-                  paddingRight: showScrollbar() ? 1 : 0,
-                }}
-                verticalScrollbarOptions={{
-                  paddingLeft: 1,
-                  visible: showScrollbar(),
-                  trackOptions: {
-                    backgroundColor: theme.backgroundElement,
-                    foregroundColor: theme.border,
-                  },
-                }}
+                alwaysShow={showScrollbar()}
+                thumbColor={theme.border}
+                trackColor={theme.backgroundElement}
+                hiddenColor={theme.background}
                 stickyScroll={true}
                 stickyStart="bottom"
                 flexGrow={1}
@@ -1267,7 +1261,7 @@ export function Session() {
                   )}
                 </For>
                 <SessionActivity sessionID={route.sessionID} />
-              </scrollbox>
+              </SessionScrollbox>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt
@@ -1833,10 +1827,7 @@ function GenericTool(props: ToolProps) {
         <FileToolResult summary={args()} color={theme.textMuted} />
       </Show>
       <Show when={output() && ctx.showGenericToolOutput()}>
-        <FileToolResult
-          summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")}
-          color={theme.text}
-        />
+        <FileToolResult summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")} color={theme.text} />
       </Show>
       <Show when={details()}>
         <box paddingLeft={2} onMouseUp={() => setExpanded((value) => !value)}>
@@ -2136,10 +2127,7 @@ function Shell(props: ToolProps) {
         )}
       </Show>
       <Show when={expanded() ? output() : preview()}>
-        <FileToolResult
-          summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")}
-          color={theme.text}
-        />
+        <FileToolResult summary={expanded() ? output() : collapsed().output.replace(/\n…$/, "")} color={theme.text} />
       </Show>
       <Show when={details()}>
         <box paddingLeft={2} onMouseUp={() => setExpanded((value) => !value)}>
