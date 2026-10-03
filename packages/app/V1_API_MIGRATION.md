@@ -135,24 +135,24 @@ These calls are retained as fallback adapters. The current production path suppl
 
 ## Configuration And Authentication
 
-- [ ] Migrate global configuration reads from `GET /global/config`.
+- [x] Migrate global configuration reads from `GET /global/config` to `GET /api/config` (`08c52178e`).
   - `src/context/global-sync/bootstrap.ts`
   - `loadGlobalConfigQuery` currently returns `{}`; `GET /api/config` exists and returns the merged config.
 - [ ] Migrate directory configuration reads from `GET /config`.
   - `src/context/global-sync/bootstrap.ts`
-- [ ] Migrate global configuration updates from `PATCH /global/config`.
+- [x] Migrate global configuration updates from `PATCH /global/config` to `PATCH /api/config` (`08c52178e`).
   - `src/context/server-sync.tsx`
 - [x] Migrate provider authentication method discovery from `GET /provider/auth` to `GET /api/integration/:integrationID`.
   - `src/components/dialog-connect-provider.tsx`
 - [x] Migrate built-in provider OAuth authorization and callbacks to the integration attempt API (`/api/integration/attempt/:attemptID*`).
   - `src/components/dialog-connect-provider.tsx`
-- [ ] Migrate remaining credentials from `PUT /auth/:providerID` and `DELETE /auth/:providerID`.
+- [x] Migrate remaining credentials from `PUT /auth/:providerID` and `DELETE /auth/:providerID` to the integration key connect and `DELETE /api/credential/:credentialID`.
   - Built-in provider key connections now use `POST /api/integration/:integrationID/connect/key`.
   - `src/components/dialog-connect-provider.tsx`
   - `src/components/dialog-custom-provider.tsx`
   - `src/components/settings-providers.tsx`
   - `src/components/settings-v2/providers.tsx`
-- [ ] Migrate global disposal from `POST /global/dispose`.
+- [x] Remove global disposal (`POST /global/dispose`); config writes reload open locations and credentials are read live.
   - `src/components/dialog-connect-provider.tsx`
   - `src/components/settings-providers.tsx`
   - `src/components/settings-v2/providers.tsx`
