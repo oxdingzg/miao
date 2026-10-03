@@ -14,10 +14,30 @@
 - 一并删除的中间件：`legacy-route`、`instance-context`、`workspace-routing`、`proxy`、`fence`、V1
   `schema-error`，以及 `lifecycle.ts` 的 `disposeMiddleware`（只有 V1 handler 会标记实例销毁）。
 - V1 插件在 V2 下按需加载：只有插件的 shell/pty 环境桥接（如创建 PTY、bash 工具）会触发加载。
+  （第 2 层已删除该桥接，见下。）
 - 已知测试缺口：`/api/event` 跳过未声明事件的行为原由 `/tui/open-help` 触发测试，`/tui` 删除后 HTTP 上已无
   可触发未声明事件的路由，该测试随之删除（逻辑仍在 `server/src/handlers/event.ts`）。
 
-剩余：第 2 层（迁走桥接服务、发布二进制改用 `packages/server` 装配）。
+进展（2026-10-03，第 2 层桥接迁移）：
+
+- 三处桥接已迁走。`PluginShellEnvironment` / `PluginPtyEnvironment` 删除：按决策 2，旧式 `Hooks` 插件的
+  `shell.env` 不再加载（`core/src/config/plugin/external.ts` 对 V1 插件只记一次 warning），V2 bash 读 core
+  `ShellEnvironment`（无 source），PTY 用 `@miao/server/pty-environment` 的 no-op。
+- `WorkspaceV2Bridge` 删除，`WorkspaceV2` 由 core `WorkspaceLive` 实现：`ProjectWorktree` 新增
+  `prepare` / `createFromInfo` / `list`，本地 worktree 的 create/list/remove/warp（含 `copyChanges` 的
+  raw patch 复制与 session claim）保留；远端 workspace 仍不支持。`core/test/project-worktree.test.ts`
+  覆盖新原语，`miao/test/server/httpapi-workspace.test.ts` 改为只断言内置 worktree adapter 与空列表。
+- `EventV2Bridge` 不再挂在 V2 路由上；新增 miao 侧 `server/event-forwarder.ts`，在 UI 路由构建时把 core
+  `EventV2` 事件转发到进程内 `GlobalBus`，供 in-process TUI worker 经 RPC 转发（`/api/event` 仍走 core）。
+- V2 路由装配改为 core-only：`server.ts` 删除全部死 V1 节点（Auth/Config/Env/Provider/Agent/Skill/LSP/
+  MCP/Command/Format/Project/Vcs/Workspace/Worktree/Snapshot/Storage/Plugin/InstanceStore/…），改用 core
+  `AppNodeBuilder`；UI 路由改用 core `Flag.MIAO_DISABLE_EMBEDDED_WEB_UI`（新增于 `core/src/flag/flag.ts`），
+  不再依赖 V1 `RuntimeFlags`。V1 插件服务端测试（`httpapi-listen` 的 plugin client、`httpapi-v2-pty` 的
+  plugin shell env）随废弃路径删除。
+- 剩余（第 2 层收尾）：把 `/doc`（`public.ts`/`api.ts`/`public-schemas.ts`）、内嵌 UI（`serveUIEffect` 的
+  虚拟模块 `miao-web-ui.gen.ts`）、`ServerAuth`、error/compression/cors-vary 中间件与 `EventForwarder` 的
+  宿主搬进 `packages/server` 或参数化注入，让发布二进制直接构建 `packages/server` 的 route assembly，
+  `packages/miao` 只剩 CLI 外壳（listener/mDNS/websocket 与 UI 资源仍属外壳）。
 
 ## 目标与分层
 
