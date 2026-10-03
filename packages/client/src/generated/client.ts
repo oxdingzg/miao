@@ -20,6 +20,10 @@ import type {
   McpConnectOutput,
   McpDisconnectInput,
   McpDisconnectOutput,
+  McpAuthenticateInput,
+  McpAuthenticateOutput,
+  McpLogoutInput,
+  McpLogoutOutput,
   McpResourcesInput,
   McpResourcesOutput,
   LocationGetInput,
@@ -484,6 +488,30 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/mcp/${encodeURIComponent(input.name)}/disconnect`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [404, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      authenticate: (input: McpAuthenticateInput, requestOptions?: RequestOptions) =>
+        request<McpAuthenticateOutput>(
+          {
+            method: "POST",
+            path: `/api/mcp/${encodeURIComponent(input.name)}/auth`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      logout: (input: McpLogoutInput, requestOptions?: RequestOptions) =>
+        request<McpLogoutOutput>(
+          {
+            method: "DELETE",
+            path: `/api/mcp/${encodeURIComponent(input.name)}/auth`,
             query: { location: input["location"] },
             successStatus: 200,
             declaredStatuses: [404, 401, 400],

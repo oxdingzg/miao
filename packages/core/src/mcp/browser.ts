@@ -1,4 +1,4 @@
-import { LayerNode } from "../effect/layer-node"
+import { makeGlobalNode } from "../effect/app-node"
 import { openUrl } from "../open"
 import { Context, Effect, Layer } from "effect"
 
@@ -35,6 +35,6 @@ const layer = Layer.succeed(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer, deps: [] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [] })
 
 export * as McpBrowser from "./browser"

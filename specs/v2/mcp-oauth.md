@@ -1,6 +1,6 @@
 # V2 MCP OAuth（移植进 core）
 
-状态：设计稿，2026-10-03。前置于 `v2-only-routes.md` 第 3 步（C.2）。
+状态：已实现，2026-10-03。前置于 `v2-only-routes.md` 第 3 步（C.2）。路由名为 `mcp.authenticate` / `mcp.logout`（客户端 `api.mcp.authenticate` / `api.mcp.logout`）。
 
 ## 现状（按代码核实）
 
@@ -41,6 +41,11 @@
 
 - 浏览器在**服务端主机**上打开（与 V1 相同）；远程或无头服务器上的授权另行设计。
 - `miao mcp auth/logout/list` 继续走 V1 `MCP`（共用同一份 core 实现与存储），随第 2 层迁移。
+
+## 已知限制
+
+- 授权进行中（等待浏览器回调的几分钟内）若同名服务器恰好重连，后台连接会覆盖存储里的 `codeVerifier`，
+  导致这次授权在换 token 时失败；重试即可。V1 同样如此。
 
 ## 测试
 

@@ -72,6 +72,8 @@ export const ServerDefinitions = Event.inventory(
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
   ...tuiBridgeDefinitions,
+  // Tells a client the authorization URL when the server host could not open a browser.
+  McpEvent.BrowserOpenFailed,
 )
 
 export const Definitions = Event.inventory(

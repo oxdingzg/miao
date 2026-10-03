@@ -2,6 +2,7 @@ import { Location } from "@miao/schema/location"
 import { MCP } from "@miao/schema/mcp"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { InvalidRequestError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export class McpServerNotFoundError extends Schema.TaggedErrorClass<McpServerNotFoundError>()(
@@ -54,6 +55,40 @@ export const McpGroup = HttpApiGroup.make("server.mcp")
           identifier: "v2.mcp.disconnect",
           summary: "Disconnect MCP server",
           description: "Disconnect a Model Context Protocol (MCP) server.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("mcp.authenticate", "/api/mcp/:name/auth", {
+      params: { name: Schema.String },
+      query: LocationQuery,
+      success: Location.response(MCP.Status),
+      error: [McpServerNotFoundError, InvalidRequestError],
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.mcp.authenticate",
+          summary: "Authenticate MCP server",
+          description:
+            "Run the OAuth flow for a remote Model Context Protocol (MCP) server: opens a browser on the server host, waits for the authorization callback, stores the tokens, and reconnects. Responds with the resulting status.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.delete("mcp.logout", "/api/mcp/:name/auth", {
+      params: { name: Schema.String },
+      query: LocationQuery,
+      success: Location.response(MCP.Status),
+      error: McpServerNotFoundError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.mcp.logout",
+          summary: "Remove MCP credentials",
+          description:
+            "Forget the stored OAuth credentials of a Model Context Protocol (MCP) server and reconnect it without them.",
         }),
       ),
   )
