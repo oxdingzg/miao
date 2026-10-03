@@ -13549,6 +13549,45 @@ export type V2VcsStatusResponses = {
 
 export type V2VcsStatusResponse = V2VcsStatusResponses[keyof V2VcsStatusResponses]
 
+export type V2VcsDiffData = {
+  body?: never
+  path?: never
+  query: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+    mode: "working" | "branch"
+    context?: string
+  }
+  url: "/api/vcs/diff"
+}
+
+export type V2VcsDiffErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsDiffError = V2VcsDiffErrors[keyof V2VcsDiffErrors]
+
+export type V2VcsDiffResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<VcsFileDiff>
+  }
+}
+
+export type V2VcsDiffResponse = V2VcsDiffResponses[keyof V2VcsDiffResponses]
+
 export type V2WorkspaceListData = {
   body?: never
   path?: never

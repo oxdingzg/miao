@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { $ } from "bun"
+import path from "path"
 import { EventV2 } from "@miao/core/event"
 import { Location } from "@miao/core/location"
 import { Context, Schema } from "effect"
@@ -103,6 +105,30 @@ describe("v2 location HttpApi", () => {
       expect(body.location.directory).toBe(tmp.path)
       expect(body.location.project.id).toBeTruthy()
     }
+  })
+
+  test("returns working-tree and branch diffs", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Bun.write(path.join(tmp.path, "tracked.txt"), "one\n")
+    await $`git add tracked.txt && git commit -m tracked`.cwd(tmp.path).quiet()
+    await Bun.write(path.join(tmp.path, "tracked.txt"), "one\ntwo\n")
+    await Bun.write(path.join(tmp.path, "untracked.txt"), "new\n")
+
+    const working = await request("/api/vcs/diff?mode=working", tmp.path)
+    expect(working.status).toBe(200)
+    const body = (await working.json()) as {
+      data: { file: string; patch: string; additions: number; deletions: number; status: string }[]
+    }
+    expect(body.data.map((item) => [item.file, item.status, item.additions, item.deletions])).toEqual([
+      ["tracked.txt", "modified", 1, 0],
+      ["untracked.txt", "added", 1, 0],
+    ])
+    expect(body.data[0]?.patch).toContain("+two")
+
+    // The default branch has no divergence from itself.
+    const branch = await request("/api/vcs/diff?mode=branch", tmp.path)
+    expect(branch.status).toBe(200)
+    expect(((await branch.json()) as { data: unknown[] }).data).toEqual([])
   })
 
   test("streams native EventV2 payloads across locations", async () => {
