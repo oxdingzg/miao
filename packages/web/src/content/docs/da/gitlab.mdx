@@ -1,26 +1,26 @@
 ---
 title: GitLab
-description: Brug MIAO i GitLab-problemer og Merge Requests.
+description: Brug miao i GitLab-problemer og Merge Requests.
 ---
 
-Miao integreres med din GitLab-arbejdsgang gennem din GitLab CI/CD-pipeline eller med GitLab Duo.
+miao integreres med din GitLab-arbejdsgang gennem din GitLab CI/CD-pipeline eller med GitLab Duo.
 
-I begge tilfælde vil MIAO køre på dine GitLab-løbere.
+I begge tilfælde vil miao køre på dine GitLab-løbere.
 
 ---
 
 ## GitLab CI
 
-Miao fungerer i en almindelig GitLab-pipeline. Du kan bygge det ind i en pipeline som en [CI component](https://docs.gitlab.com/ee/ci/components/)
+miao fungerer i en almindelig GitLab-pipeline. Du kan bygge det ind i en pipeline som en [CI component](https://docs.gitlab.com/ee/ci/components/)
 
-Her bruger vi en community-skabt CI/CD-komponent til MIAO — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+Her bruger vi en community-skabt CI/CD-komponent til miao — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Funktioner
 
-- **Brug brugerdefineret konfiguration pr. job**: Konfigurer MIAO med en brugerdefineret konfigurationsmappe, for eksempel `./config/#custom-directory` for at aktivere eller deaktivere funktionalitet pr. MIAO påkald.
-- **Minimal opsætning**: CI-komponenten sætter MIAO op i baggrunden, du behøver kun at oprette Miao-konfigurationen og den indledende prompt.
+- **Brug brugerdefineret konfiguration pr. job**: Konfigurer miao med en brugerdefineret konfigurationsmappe, for eksempel `./config/#custom-directory` for at aktivere eller deaktivere funktionalitet pr. miao påkald.
+- **Minimal opsætning**: CI-komponenten sætter miao op i baggrunden, du behøver kun at oprette Miao-konfigurationen og den indledende prompt.
 - **Fleksibel**: CI-komponenten understøtter flere input til at tilpasse dens adfærd
 
 ---
@@ -46,23 +46,23 @@ For flere input og use cases [check out the docs](https://gitlab.com/explore/cat
 
 ## GitLab Duo
 
-Miao integreres med din GitLab-arbejdsgang.
-Nævn `@opencode` i en kommentar, og MIAO vil udføre opgaver i din GitLab CI-pipeline.
+miao integreres med din GitLab-arbejdsgang.
+Nævn `@opencode` i en kommentar, og miao vil udføre opgaver i din GitLab CI-pipeline.
 
 ---
 
 ### Funktioner
 
-- **Triageproblemer**: Bed MIAO om at undersøge et problem og forklare dig det.
-- **Ret og implementer**: Bed MIAO om at løse et problem eller implementere en funktion.
+- **Triageproblemer**: Bed miao om at undersøge et problem og forklare dig det.
+- **Ret og implementer**: Bed miao om at løse et problem eller implementere en funktion.
   Det vil oprette en ny branch og rejse en Merge Request med ændringer.
-- **Sikker**: MIAO kører på dine GitLab-løbere.
+- **Sikker**: miao kører på dine GitLab-løbere.
 
 ---
 
 ### Opsætning
 
-Miao kører i din GitLab CI/CD pipeline, her er hvad du skal bruge for at konfigurere det:
+miao kører i din GitLab CI/CD pipeline, her er hvad du skal bruge for at konfigurere det:
 
 :::tip
 Tjek [**GitLab docs**](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/) for opdaterede instruktioner.
@@ -158,7 +158,7 @@ Du kan henvise til [GitLab CLI agents docs](https://docs.gitlab.com/user/duo_age
 
 ### Eksempler
 
-Her er nogle eksempler på, hvordan du kan bruge MIAO i GitLab.
+Her er nogle eksempler på, hvordan du kan bruge miao i GitLab.
 
 :::tip
 Du kan konfigurere til at bruge en anden udløsersætning end `@opencode`.
@@ -172,7 +172,7 @@ Du kan konfigurere til at bruge en anden udløsersætning end `@opencode`.
   @opencode explain this issue
   ```
 
-  Miao vil læse spørgsmålet og svare med en klar forklaring.
+  miao vil læse spørgsmålet og svare med en klar forklaring.
 
 - **Løs et problem**
 
@@ -182,7 +182,7 @@ Du kan konfigurere til at bruge en anden udløsersætning end `@opencode`.
   @opencode fix this
   ```
 
-  Miao vil oprette en ny branch, implementere ændringer og åbne en Merge Request med ændringer.
+  miao vil oprette en ny branch, implementere ændringer og åbne en Merge Request med ændringer.
 
 - **Gennemgå Merge Requests**
 
@@ -192,4 +192,4 @@ Du kan konfigurere til at bruge en anden udløsersætning end `@opencode`.
   @opencode review this merge request
   ```
 
-  Miao vil gennemgå din Merge Request og give feedback.
+  miao vil gennemgå din Merge Request og give feedback.

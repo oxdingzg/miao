@@ -1,13 +1,13 @@
 ---
 title: TUI
-description: Arbeite mit MIAO in der Terminal-Oberflaeche.
+description: Arbeite mit miao in der Terminal-Oberflaeche.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao bietet eine interaktive Terminaloberflaeche (TUI), um mit einem LLM an deinen Projekten zu arbeiten.
+miao bietet eine interaktive Terminaloberflaeche (TUI), um mit einem LLM an deinen Projekten zu arbeiten.
 
-Ohne weitere Argumente startet MIAO die TUI im aktuellen Verzeichnis.
+Ohne weitere Argumente startet miao die TUI im aktuellen Verzeichnis.
 
 ```bash
 miao
@@ -74,7 +74,7 @@ Hier sind alle verfuegbaren Slash-Commands:
 
 ### connect
 
-Fuegt einen Provider zu MIAO hinzu. Erlaubt die Auswahl aus verfuegbaren Providern und das Hinzufuegen ihrer API-Keys.
+Fuegt einen Provider zu miao hinzu. Erlaubt die Auswahl aus verfuegbaren Providern und das Hinzufuegen ihrer API-Keys.
 
 ```bash frame="none"
 /connect
@@ -393,7 +393,7 @@ Dies ist getrennt von `miao.json`, welche das Server-/Runtime-Verhalten konfigur
 
 - `theme` - Setzt dein UI-Theme. [Mehr dazu](/docs/themes).
 - `keybinds` - Passt Tastenkombinationen an. [Mehr dazu](/docs/keybinds).
-- `leader_timeout` - Steuert, wie lange MIAO nach der leader key wartet. Standard ist `2000`.
+- `leader_timeout` - Steuert, wie lange miao nach der leader key wartet. Standard ist `2000`.
 - `scroll_acceleration.enabled` - Aktiviert Scroll-Beschleunigung im macOS-Stil fuer weiches, natuerliches Scrollen. Wenn aktiviert, erhoeht sich die Scroll-Geschwindigkeit bei schnellen Gesten und bleibt praezise bei langsamen Bewegungen. **Diese Einstellung hat Vorrang vor `scroll_speed` und ueberschreibt es, wenn aktiviert.**
 - `scroll_speed` - Steuert, wie schnell die TUI scrollt (Minimum: `0.001`, unterstuetzt Dezimalwerte). Standard ist `3`. **Hinweis: Wird ignoriert, wenn `scroll_acceleration.enabled` auf `true` gesetzt ist.**
 - `diff_style` - Steuert die Diff-Darstellung. `"auto"` passt sich der Terminalbreite an, `"stacked"` zeigt immer ein einspaltiges Layout.
@@ -404,7 +404,7 @@ Verwende `MIAO_TUI_CONFIG`, um einen benutzerdefinierten TUI-Konfigurationspfad 
 
 ### Attention
 
-Attention lässt das TUI dich benachrichtigen, wenn MIAO auf eine Antwort wartet, eine Berechtigung bestätigt werden muss, ein Sitzungsfehler aufgetreten ist oder eine Sitzung abgeschlossen wurde. Aktiviere es mit `attention.enabled`; integrierte Ereignisse spielen beim Auftreten einen Sound ab. Desktop-Benachrichtigungen werden nur gesendet, wenn das Terminalfenster nicht fokussiert ist, und nicht für subagent-Ereignisse verwendet.
+Attention lässt das TUI dich benachrichtigen, wenn miao auf eine Antwort wartet, eine Berechtigung bestätigt werden muss, ein Sitzungsfehler aufgetreten ist oder eine Sitzung abgeschlossen wurde. Aktiviere es mit `attention.enabled`; integrierte Ereignisse spielen beim Auftreten einen Sound ab. Desktop-Benachrichtigungen werden nur gesendet, wenn das Terminalfenster nicht fokussiert ist, und nicht für subagent-Ereignisse verwendet.
 
 - `enabled` - Aktiviert alle Benachrichtigungen und Sounds von Attention. Standard ist `false`.
 - `notifications` - Erlaubt dem TUI bei aktiviertem Attention, Desktop-Benachrichtigungen über das Terminal zu senden. Standard ist `true`.

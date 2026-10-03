@@ -86,7 +86,7 @@ const getBase = (appId: string): Configuration => ({
     sign: true,
   },
   protocols: {
-    name: "MIAO",
+    name: "miao",
     schemes: ["miao"],
   },
   win: {
@@ -127,7 +127,7 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "MIAO Dev",
+        productName: "miao Dev",
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "miao-dev", fpm: [metainfoFpm(appId)] },
       }
@@ -136,8 +136,8 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "MIAO Beta",
-        protocols: { name: "MIAO Beta", schemes: ["miao"] },
+        productName: "miao Beta",
+        protocols: { name: "miao Beta", schemes: ["miao"] },
         publish: { provider: "github", owner: "anomalyco", repo: "miao-beta", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "miao-beta", fpm: [metainfoFpm(appId)] },
@@ -147,8 +147,8 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "MIAO",
-        protocols: { name: "MIAO", schemes: ["miao"] },
+        productName: "miao",
+        protocols: { name: "miao", schemes: ["miao"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "miao", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },

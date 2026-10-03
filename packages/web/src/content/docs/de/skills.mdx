@@ -3,7 +3,7 @@ title: Agenten-Skills
 description: "Definiere wiederverwendbares Verhalten ueber SKILL.md"
 ---
 
-Agent Skills erlauben MIAO, wiederverwendbare Anweisungen aus deinem Repo oder Home-Verzeichnis zu finden.
+Agent Skills erlauben miao, wiederverwendbare Anweisungen aus deinem Repo oder Home-Verzeichnis zu finden.
 Sie werden bei Bedarf ueber das native `skill`-Tool geladen, wenn ein Agent sie wirklich braucht.
 
 ---
@@ -11,7 +11,7 @@ Sie werden bei Bedarf ueber das native `skill`-Tool geladen, wenn ein Agent sie 
 ## Dateien platzieren
 
 Erstelle pro Skill-Namen einen Ordner und lege dort eine `SKILL.md` ab.
-Miao sucht in folgenden Pfaden:
+miao sucht in folgenden Pfaden:
 
 - Project config: `.miao/skills/<name>/SKILL.md`
 - Global config: `~/.config/miao/skills/<name>/SKILL.md`
@@ -24,7 +24,7 @@ Miao sucht in folgenden Pfaden:
 
 ## Discovery verstehen
 
-Bei projektlokalen Pfaden laeuft MIAO vom aktuellen Verzeichnis nach oben bis zum Git-Worktree.
+Bei projektlokalen Pfaden laeuft miao vom aktuellen Verzeichnis nach oben bis zum Git-Worktree.
 Dabei werden passende `skills/*/SKILL.md` in `.miao/` sowie passende Dateien unter `.claude/skills/*/SKILL.md` und `.agents/skills/*/SKILL.md` geladen.
 
 Globale Definitionen kommen zusaetzlich aus `~/.config/miao/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md` und `~/.agents/skills/*/SKILL.md`.
@@ -102,7 +102,7 @@ Ask clarifying questions if the target versioning scheme is unclear.
 
 ## Tool-Beschreibung erkennen
 
-Miao listet verfuegbare Skills in der Beschreibung des `skill`-Tools.
+miao listet verfuegbare Skills in der Beschreibung des `skill`-Tools.
 Jeder Eintrag enthaelt Namen und Beschreibung:
 
 ```xml

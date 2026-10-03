@@ -1,11 +1,11 @@
 ---
 title: GitLab
-description: użyj MIAO w problemach z GitLabem i zastosujch scalania.
+description: użyj miao w problemach z GitLabem i zastosujch scalania.
 ---
 
 miao integruje się z przepływem pracy GitLab poprzez potok GitLab CI/CD lub z GitLab Duo.
 
-W obu przypadkach MIAO będzie modułem GitLab.
+W obu przypadkach miao będzie modułem GitLab.
 
 ---
 
@@ -13,21 +13,21 @@ W obu przypadkach MIAO będzie modułem GitLab.
 
 miao działa w zwykłym potoku GitLab. Możesz wbudować go w potok jako [komponent CI](https://docs.gitlab.com/ee/ci/components/)
 
-Tutaj obowiązkowego przez społeczność komponentu CI/CD dla MIAO — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+Tutaj obowiązkowego przez społeczność komponentu CI/CD dla miao — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Cechy
 
-- **Użyj konfiguracji dla każdego zadania**: Skonfiguruj MIAO z niestandardowym katalogiem konfiguracyjnym, na przykładzie `./config/#custom-directory`, aby włączyć lub funkcjonalności na każde wywołanie miao.
-- **Konfiguracja minimalna**: Komponent CI konfiguruje MIAO w tle, wystarczy skonfigurować MIAO i początkowy monit.
+- **Użyj konfiguracji dla każdego zadania**: Skonfiguruj miao z niestandardowym katalogiem konfiguracyjnym, na przykładzie `./config/#custom-directory`, aby włączyć lub funkcjonalności na każde wywołanie miao.
+- **Konfiguracja minimalna**: Komponent CI konfiguruje miao w tle, wystarczy skonfigurować miao i początkowy monit.
 - **Elastyczny**: Komponent CI obsługuje kilka danych, które są stosowane w celu dostosowania jego zachowania
 
 ---
 
 ### Organizować coś
 
-1. Przechowuj dane uwierzytelniające MIAO w formacie JSON jako zmienne parametry CI typu pliku w specyfikacji **Ustawienia** > **CI/CD** > **Zmienne**. Zachowaj, aby być oznaczony jako „Zamaskowane i ukryte”.
+1. Przechowuj dane uwierzytelniające miao w formacie JSON jako zmienne parametry CI typu pliku w specyfikacji **Ustawienia** > **CI/CD** > **Zmienne**. Zachowaj, aby być oznaczony jako „Zamaskowane i ukryte”.
 2. Dodaj elementy do swojego pliku `.gitlab-ci.yml`.
 
    ```yaml title=".gitlab-ci.yml"
@@ -47,16 +47,16 @@ Więcej danych dotyczących użycia [sprawdź opis](https://gitlab.com/explore/c
 ## Duet GitLab
 
 miao integruje się z przepływem pracy GitLab.
-Wspomnij o `@opencode` w komentarzu, a MIAO wykonaj zadania w ramach swojego potoku GitLab CI.
+Wspomnij o `@opencode` w komentarzu, a miao wykonaj zadania w ramach swojego potoku GitLab CI.
 
 ---
 
 ### Cechy
 
-- **Problem związany z segregacją**: Poproś MIAO o szczegółowe wyjaśnienie problemu i wyjaśnienie go.
-- **Napraw i zaimplementuj**: Poproś MIAO o naprawienie problemu lub zaimplementowanie funkcji.
+- **Problem związany z segregacją**: Poproś miao o szczegółowe wyjaśnienie problemu i wyjaśnienie go.
+- **Napraw i zaimplementuj**: Poproś miao o naprawienie problemu lub zaimplementowanie funkcji.
   Utworzył nowy oddział i zgłosi ataku ze sobą.
-- **Bezpieczny**: MIAO działa na modułach GitLab.
+- **Bezpieczny**: miao działa na modułach GitLab.
 
 ---
 
@@ -158,7 +158,7 @@ Szczegółowe instrukcje w [dokumentacji agentów GitLab CLI](https://docs.gitla
 
 ### Przykłady
 
-Oto kilka możliwości wykorzystania MIAO w GitLabie.
+Oto kilka możliwości wykorzystania miao w GitLabie.
 
 :::tip
 Można zastosować inną metodę ograniczającą niż `@opencode`.

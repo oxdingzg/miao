@@ -3,7 +3,7 @@ title: الإضافات
 description: اكتب إضافاتك الخاصة لتوسيع Miao.
 ---
 
-تتيح لك الإضافات توسيع MIAO عبر ربطها بأحداث مختلفة وتخصيص السلوك. يمكنك إنشاء إضافات لإضافة ميزات جديدة، أو التكامل مع خدمات خارجية، أو تعديل السلوك الافتراضي لـ Miao.
+تتيح لك الإضافات توسيع miao عبر ربطها بأحداث مختلفة وتخصيص السلوك. يمكنك إنشاء إضافات لإضافة ميزات جديدة، أو التكامل مع خدمات خارجية، أو تعديل السلوك الافتراضي لـ Miao.
 
 للاطلاع على أمثلة، راجع [الإضافات](/docs/ecosystem#plugins) التي أنشأها المجتمع.
 
@@ -83,7 +83,7 @@ description: اكتب إضافاتك الخاصة لتوسيع Miao.
 }
 ```
 
-يشغّل MIAO الأمر `bun install` عند بدء التشغيل لتثبيتها. بعد ذلك يمكن لإضافاتك وأدواتك استيرادها.
+يشغّل miao الأمر `bun install` عند بدء التشغيل لتثبيتها. بعد ذلك يمكن لإضافاتك وأدواتك استيرادها.
 
 ```ts title=".miao/plugins/my-plugin.ts"
 import { escape } from "shescape"
@@ -118,7 +118,7 @@ export const MyPlugin = async ({ project, client, $, directory, worktree }) => {
 - `project`: معلومات المشروع الحالي.
 - `directory`: دليل العمل الحالي.
 - `worktree`: مسار git worktree.
-- `client`: عميل SDK لـ MIAO للتفاعل مع الذكاء الاصطناعي.
+- `client`: عميل SDK لـ miao للتفاعل مع الذكاء الاصطناعي.
 - `$`: واجهة [shell API](https://bun.com/docs/runtime/shell) الخاصة بـ Bun لتنفيذ الأوامر.
 
 ---
@@ -235,14 +235,14 @@ export const NotificationPlugin = async ({ project, client, $, directory, worktr
 نستخدم `osascript` لتشغيل AppleScript على macOS. هنا نستخدمه لإرسال إشعارات.
 
 :::note
-إذا كنت تستخدم تطبيق MIAO لسطح المكتب، فيمكنه إرسال إشعارات النظام تلقائيا عند جاهزية الرد أو عند حدوث خطأ في جلسة.
+إذا كنت تستخدم تطبيق miao لسطح المكتب، فيمكنه إرسال إشعارات النظام تلقائيا عند جاهزية الرد أو عند حدوث خطأ في جلسة.
 :::
 
 ---
 
 ### حماية .env
 
-امنع MIAO من قراءة ملفات `.env`:
+امنع miao من قراءة ملفات `.env`:
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -277,7 +277,7 @@ export const InjectEnvPlugin = async () => {
 
 ### أدوات مخصصة
 
-يمكن للإضافات أيضا إضافة أدوات مخصصة إلى MIAO:
+يمكن للإضافات أيضا إضافة أدوات مخصصة إلى miao:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -300,13 +300,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-تقوم الدالة المساعدة `tool` بإنشاء أداة مخصصة يمكن لـ MIAO استدعاؤها. تأخذ دالة مخطط Zod وتعيد تعريف أداة يتضمن:
+تقوم الدالة المساعدة `tool` بإنشاء أداة مخصصة يمكن لـ miao استدعاؤها. تأخذ دالة مخطط Zod وتعيد تعريف أداة يتضمن:
 
 - `description`: ما الذي تفعله الأداة
 - `args`: مخطط Zod لوسائط الأداة
 - `execute`: الدالة التي تُشغَّل عند استدعاء الأداة
 
-ستكون أدواتك المخصصة متاحة لـ MIAO إلى جانب الأدوات المضمنة.
+ستكون أدواتك المخصصة متاحة لـ miao إلى جانب الأدوات المضمنة.
 
 ---
 

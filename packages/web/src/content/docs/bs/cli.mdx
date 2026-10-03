@@ -1,11 +1,11 @@
 ---
 title: CLI
-description: MIAO CLI opcije i naredbe.
+description: miao CLI opcije i naredbe.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao CLI po defaultu pokreće [TUI](/docs/tui) kada se pokrene bez ikakvih argumenata.
+miao CLI po defaultu pokreće [TUI](/docs/tui) kada se pokrene bez ikakvih argumenata.
 
 ```bash
 miao
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Pokrenite MIAO terminalski korisnički interfejs.
+Pokrenite miao terminalski korisnički interfejs.
 
 ```bash
 miao [project]
@@ -44,13 +44,13 @@ miao [project]
 
 ## Naredbe
 
-Miao CLI takođe ima sljedeće naredbe.
+miao CLI takođe ima sljedeće naredbe.
 
 ---
 
 ### agent
 
-Upravljajte MIAO agentima.
+Upravljajte miao agentima.
 
 ```bash
 miao agent [command]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-Priključite terminal na već pokrenut MIAO backend server pokrenut putem `serve` ili `web` naredbi.
+Priključite terminal na već pokrenut miao backend server pokrenut putem `serve` ili `web` naredbi.
 
 ```bash
 miao attach [url]
 ```
 
-Ovo omogućava korištenje TUI-ja sa udaljenim MIAO backend-om. Na primjer:
+Ovo omogućava korištenje TUI-ja sa udaljenim miao backend-om. Na primjer:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao pokreće lista provajdera na [Models.dev](https://models.dev), tako da možete koristiti `miao auth login` da konfigurirate API ključeve za bilo kojeg provajdera kojeg želite koristiti. Ovo je pohranjeno u `~/.local/share/miao/auth.json`.
+miao pokreće lista provajdera na [Models.dev](https://models.dev), tako da možete koristiti `miao auth login` da konfigurirate API ključeve za bilo kojeg provajdera kojeg želite koristiti. Ovo je pohranjeno u `~/.local/share/miao/auth.json`.
 
 ```bash
 miao auth login
 ```
 
-Kada se MIAO pokrene, učitava dobavljače iz datoteke vjerodajnica. I ako postoje neki ključevi definirani u vašim okruženjima ili `.env` fajl u vašem projektu.
+Kada se miao pokrene, učitava dobavljače iz datoteke vjerodajnica. I ako postoje neki ključevi definirani u vašim okruženjima ili `.env` fajl u vašem projektu.
 
 ---
 
@@ -312,7 +312,7 @@ miao models --refresh
 
 ### run
 
-Pokrenite MIAO u neinteraktivnom modu tako što ćete direktno proslijediti prompt.
+Pokrenite miao u neinteraktivnom modu tako što ćete direktno proslijediti prompt.
 
 ```bash
 miao run [message..]
@@ -360,7 +360,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Pokrenite MIAO headless server za API pristup. Pogledajte [server docs](/docs/server) za kompletan HTTP interfejs.
+Pokrenite miao headless server za API pristup. Pogledajte [server docs](/docs/server) za kompletan HTTP interfejs.
 
 ```bash
 miao serve
@@ -381,7 +381,7 @@ Ovo pokreće HTTP server koji pruža API pristup funkcionalnosti Miao-a bez TUI 
 
 ### session
 
-Upravljajte MIAO sesijama.
+Upravljajte miao sesijama.
 
 ```bash
 miao session [command]
@@ -391,7 +391,7 @@ miao session [command]
 
 #### list
 
-Navedite sve MIAO sesije.
+Navedite sve miao sesije.
 
 ```bash
 miao session list
@@ -408,7 +408,7 @@ miao session list
 
 ### stats
 
-Prikaži statistiku upotrebe tokena i troškova za vaše MIAO sesije.
+Prikaži statistiku upotrebe tokena i troškova za vaše miao sesije.
 
 ```bash
 miao stats
@@ -439,13 +439,13 @@ Ako ne unesete ID sesije, od vas će biti zatraženo da odaberete neku od dostup
 
 ### import
 
-Uvezite podatke sesije iz JSON datoteke ili MIAO dijeljenog URL-a.
+Uvezite podatke sesije iz JSON datoteke ili miao dijeljenog URL-a.
 
 ```bash
 miao import <file>
 ```
 
-Možete uvesti iz lokalne datoteke ili MIAO dijeljenog URL-a.
+Možete uvesti iz lokalne datoteke ili miao dijeljenog URL-a.
 
 ```bash
 miao import session.json
@@ -456,7 +456,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Pokrenite MIAO headless server sa web interfejsom.
+Pokrenite miao headless server sa web interfejsom.
 
 ```bash
 miao web
@@ -497,7 +497,7 @@ Ova naredba pokreće ACP server koji komunicira preko stdin/stdout koristeći nd
 
 ### uninstall
 
-Deinstalirajte MIAO i uklonite sve povezane datoteke.
+Deinstalirajte miao i uklonite sve povezane datoteke.
 
 ```bash
 miao uninstall
@@ -516,7 +516,7 @@ miao uninstall
 
 ### upgrade
 
-Ažurira MIAO na najnoviju verziju ili određenu verziju.
+Ažurira miao na najnoviju verziju ili određenu verziju.
 
 ```bash
 miao upgrade [target]
@@ -544,7 +544,7 @@ miao upgrade v0.1.48
 
 ## Globalne opcije
 
-Miao CLI prihvata sljedeće globalne zastavice.
+miao CLI prihvata sljedeće globalne zastavice.
 
 | Opcija                                     | Kratko | Opis                                      |
 | ------------------------------------------ | ------ | ----------------------------------------- |
@@ -557,7 +557,7 @@ Miao CLI prihvata sljedeće globalne zastavice.
 
 ## Varijable okruženja
 
-Miao se može konfigurirati pomoću varijabli okruženja.
+miao se može konfigurirati pomoću varijabli okruženja.
 
 | Varijabla                             | Tip     | Opis                                                               |
 | ------------------------------------- | ------- | ------------------------------------------------------------------ |

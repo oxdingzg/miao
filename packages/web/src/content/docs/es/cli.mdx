@@ -5,13 +5,13 @@ description: Opciones y comandos de la CLI de Miao.
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-La CLI de MIAO de forma predeterminada inicia el [TUI](/docs/tui) cuando se ejecuta sin ningún argumento.
+La CLI de miao de forma predeterminada inicia el [TUI](/docs/tui) cuando se ejecuta sin ningún argumento.
 
 ```bash
 miao
 ```
 
-Pero también acepta comandos como se documenta en esta página. Esto le permite interactuar con MIAO mediante programación.
+Pero también acepta comandos como se documenta en esta página. Esto le permite interactuar con miao mediante programación.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -44,7 +44,7 @@ miao [project]
 
 ## Comandos
 
-La CLI de MIAO también tiene los siguientes comandos.
+La CLI de miao también tiene los siguientes comandos.
 
 ---
 
@@ -60,7 +60,7 @@ miao agent [command]
 
 ### attach
 
-Conecte una terminal a un servidor backend MIAO que ya se esté ejecutando y iniciado mediante los comandos `serve` o `web`.
+Conecte una terminal a un servidor backend miao que ya se esté ejecutando y iniciado mediante los comandos `serve` o `web`.
 
 ```bash
 miao attach [url]
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao funciona con la lista de proveedores en [Models.dev](https://models.dev), por lo que puede usar `miao auth login` para configurar las claves API para cualquier proveedor que desee utilizar. Esto se almacena en `~/.local/share/miao/auth.json`.
+miao funciona con la lista de proveedores en [Models.dev](https://models.dev), por lo que puede usar `miao auth login` para configurar las claves API para cualquier proveedor que desee utilizar. Esto se almacena en `~/.local/share/miao/auth.json`.
 
 ```bash
 miao auth login
 ```
 
-Cuando se inicia MIAO, carga los proveedores desde el archivo de credenciales. Y si hay claves definidas en sus entornos o un archivo `.env` en su proyecto.
+Cuando se inicia miao, carga los proveedores desde el archivo de credenciales. Y si hay claves definidas en sus entornos o un archivo `.env` en su proyecto.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Ejecute MIAO en modo no interactivo pasando un mensaje directamente.
+Ejecute miao en modo no interactivo pasando un mensaje directamente.
 
 ```bash
 miao run [message..]
@@ -363,7 +363,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Inicie un servidor MIAO sin cabeza para acceso API. Consulte los [documentos del servidor](/docs/server) para conocer la interfaz HTTP completa.
+Inicie un servidor miao sin cabeza para acceso API. Consulte los [documentos del servidor](/docs/server) para conocer la interfaz HTTP completa.
 
 ```bash
 miao serve
@@ -384,7 +384,7 @@ Esto inicia un servidor HTTP que proporciona acceso API a la funcionalidad MIAO 
 
 ### session
 
-Administrar MIAO sesiones.
+Administrar miao sesiones.
 
 ```bash
 miao session [command]
@@ -459,7 +459,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Inicie un servidor MIAO sin cabeza con una interfaz web.
+Inicie un servidor miao sin cabeza con una interfaz web.
 
 ```bash
 miao web
@@ -500,7 +500,7 @@ Este comando inicia un servidor ACP que se comunica a través de stdin/stdout us
 
 ### uninstall
 
-Desinstale MIAO y elimine todos los archivos relacionados.
+Desinstale miao y elimine todos los archivos relacionados.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Actualiza MIAO a la última versión o a una versión específica.
+Actualiza miao a la última versión o a una versión específica.
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## Opciones globales
 
-La CLI de MIAO toma las siguientes banderas globales.
+La CLI de miao toma las siguientes banderas globales.
 
 | Opción                                     | Corta | Descripción                                  |
 | ------------------------------------------ | ----- | -------------------------------------------- |
@@ -560,7 +560,7 @@ La CLI de MIAO toma las siguientes banderas globales.
 
 ## Variables de entorno
 
-Miao se puede configurar mediante variables de entorno.
+miao se puede configurar mediante variables de entorno.
 
 | Variable                              | Type     | Description                                                                     |
 | ------------------------------------- | -------- | ------------------------------------------------------------------------------- |

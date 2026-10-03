@@ -29,11 +29,11 @@ test("starts every configured WSL server on initialization", () => {
 test("rejects an update that did not install the desktop version", () => {
   expect(() => expectOpencodeVersion("1.16.2", "1.16.2")).not.toThrow()
   expect(() => expectOpencodeVersion("1.14.35", "1.16.2")).toThrow(
-    "MIAO update finished but Debian still reports 1.14.35; expected 1.16.2",
+    "miao update finished but Debian still reports 1.14.35; expected 1.16.2",
   )
 })
 
-test("restarts an existing distro server after updating MIAO", () => {
+test("restarts an existing distro server after updating miao", () => {
   expect(
     wslServerIdToRestart(
       [
@@ -104,7 +104,7 @@ test("derives a required Windows restart from the post-install runtime probe", (
   expect(pendingRestartAfterWslInstall({ available: true, version: "WSL version: 2.6.1", error: null })).toBe(false)
 })
 
-test("ignores stale background MIAO checks after removing a WSL server", async () => {
+test("ignores stale background miao checks after removing a WSL server", async () => {
   persistedServers = []
   releaseOpencodeResolve = undefined
   const controller = createWslServersController(
@@ -131,7 +131,7 @@ test("ignores stale background MIAO checks after removing a WSL server", async (
   expect(controller.getState().opencodeChecks).toEqual({})
 })
 
-test("ignores stale startup MIAO checks after removing a WSL server", async () => {
+test("ignores stale startup miao checks after removing a WSL server", async () => {
   persistedServers = [{ id: "wsl:Debian", distro: "Debian" }]
   releaseOpencodeResolve = undefined
   const controller = createWslServersController(
@@ -150,7 +150,7 @@ test("ignores stale startup MIAO checks after removing a WSL server", async () =
   expect(controller.getState().opencodeChecks).toEqual({})
 })
 
-test("probes addable distros in parallel before checking MIAO", async () => {
+test("probes addable distros in parallel before checking miao", async () => {
   persistedServers = []
   const started: string[] = []
   const release = new Map<string, () => void>()
@@ -181,7 +181,7 @@ test("probes addable distros in parallel before checking MIAO", async () => {
   expect(Object.keys(controller.getState().opencodeChecks)).toEqual(["Debian", "Ubuntu"])
 })
 
-test("does not check Miao in addable distros that cannot execute commands", async () => {
+test("does not check miao in addable distros that cannot execute commands", async () => {
   persistedServers = []
   const opencode: string[] = []
   const controller = createWslServersController("1.16.2", async () => new Promise<never>(() => undefined), {

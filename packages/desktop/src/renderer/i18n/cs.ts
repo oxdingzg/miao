@@ -9,7 +9,7 @@ export const dict = {
   "desktop.updater.checkFailed.title": "Kontrola aktualizace se nezdařila",
   "desktop.updater.checkFailed.message": "Kontrola aktualizací se nezdařila",
   "desktop.updater.none.title": "Není k dispozici žádná aktualizace",
-  "desktop.updater.none.message": "Již používáte nejnovější verzi Miao",
+  "desktop.updater.none.message": "Již používáte nejnovější verzi miao",
   "desktop.updater.downloadFailed.title": "Aktualizace se nezdařila",
   "desktop.updater.downloadFailed.message": "Stažení aktualizace se nezdařilo",
   "desktop.updater.downloaded.title": "Aktualizace stažena",

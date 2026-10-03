@@ -14,7 +14,7 @@ export const dict = {
   "desktop.updater.downloadFailed.message": "Боргирии навсозӣ муваффақ нашуд",
   "desktop.updater.downloaded.title": "Навсозии зеркашӣ",
   "desktop.updater.downloaded.prompt":
-    "Версияи {{version}} аз Miao зеркашӣ карда шуд, оё шумо мехоҳед онро насб кунед ва аз нав оғоз кунед?",
+    "Версияи {{version}} аз miao зеркашӣ карда шуд, оё шумо мехоҳед онро насб кунед ва аз нав оғоз кунед?",
   "desktop.updater.installFailed.title": "Навсозӣ ноком шуд",
   "desktop.updater.installFailed.message": "Навсозӣ насб карда нашуд",
   "desktop.cli.installed.title": "CLI насб карда шуд",

@@ -1,14 +1,14 @@
 ---
 title: Windows (WSL)
-description: Pokrenite MIAO na Windowsu preko WSL-a.
+description: Pokrenite miao na Windowsu preko WSL-a.
 ---
 
 import { Steps } from "@astrojs/starlight/components"
 
-Iako MIAO moze raditi direktno na Windowsu, preporucujemo [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) za najbolje iskustvo. WSL daje Linux okruzenje koje glatko radi sa MIAO funkcijama.
+Iako miao moze raditi direktno na Windowsu, preporucujemo [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) za najbolje iskustvo. WSL daje Linux okruzenje koje glatko radi sa miao funkcijama.
 
 :::tip[Zašto WSL?]
-WSL nudi bolje performanse fajl sistema, punu terminalsku podrsku i kompatibilnost s razvojnim alatima na koje se MIAO oslanja.
+WSL nudi bolje performanse fajl sistema, punu terminalsku podrsku i kompatibilnost s razvojnim alatima na koje se miao oslanja.
 :::
 
 ---
@@ -21,15 +21,15 @@ WSL nudi bolje performanse fajl sistema, punu terminalsku podrsku i kompatibilno
 
    Ako vec niste, [instalirajte WSL](https://learn.microsoft.com/en-us/windows/wsl/install) prema zvanicnom Microsoft vodicu.
 
-2. **Instalirajte MIAO u WSL-u**
+2. **Instalirajte miao u WSL-u**
 
-   Kad je WSL spreman, otvorite WSL terminal i instalirajte MIAO jednom od [metoda instalacije](/docs/).
+   Kad je WSL spreman, otvorite WSL terminal i instalirajte miao jednom od [metoda instalacije](/docs/).
 
    ```bash
    curl -fsSL https://opencode.ai/install | bash
    ```
 
-3. **Koristite MIAO iz WSL-a**
+3. **Koristite miao iz WSL-a**
 
    Idite u direktorij projekta (Windows fajlovima pristupate preko `/mnt/c/`, `/mnt/d/` itd.) i pokrenite Miao.
 
@@ -44,7 +44,7 @@ WSL nudi bolje performanse fajl sistema, punu terminalsku podrsku i kompatibilno
 
 ## Desktop aplikacija + WSL Server
 
-Ako preferirate MIAO Desktop aplikaciju, ali zelite da server radi u WSL-u:
+Ako preferirate miao Desktop aplikaciju, ali zelite da server radi u WSL-u:
 
 1. **Pokrenite server u WSL-u** sa `--hostname 0.0.0.0` da dozvolite vanjske konekcije:
 
@@ -79,7 +79,7 @@ Za najbolje web iskustvo na Windowsu:
    miao web --hostname 0.0.0.0
    ```
 
-2. **Otvorite iz Windows browsera** na `http://localhost:<port>` (MIAO ispisuje URL)
+2. **Otvorite iz Windows browsera** na `http://localhost:<port>` (miao ispisuje URL)
 
 Pokretanje `miao web` iz WSL-a osigurava ispravan pristup fajl sistemu i terminalsku integraciju, a i dalje je dostupno iz Windows browsera.
 
@@ -108,6 +108,6 @@ Za najgladje iskustvo, razmislite da klonirate/kopirate repo u WSL fajl sistem (
 
 ## Savjeti
 
-- Drzite MIAO u WSL-u za projekte na Windows diskovima - pristup fajlovima je jednostavan
-- Koristite VS Code [WSL ekstenziju](https://code.visualstudio.com/docs/remote/wsl) uz MIAO za integrisan tok rada
-- Vase MIAO konfiguracije i sesije cuvaju se u WSL okruzenju na `~/.local/share/miao/`
+- Drzite miao u WSL-u za projekte na Windows diskovima - pristup fajlovima je jednostavan
+- Koristite VS Code [WSL ekstenziju](https://code.visualstudio.com/docs/remote/wsl) uz miao za integrisan tok rada
+- Vase miao konfiguracije i sesije cuvaju se u WSL okruzenju na `~/.local/share/miao/`

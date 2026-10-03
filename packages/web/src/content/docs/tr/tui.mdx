@@ -1,13 +1,13 @@
 ---
 title: TUI
-description: MIAO terminal kullanıcı arayüzünü kullanma.
+description: miao terminal kullanıcı arayüzünü kullanma.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao, projelerinizde LLM ile çalışmak için etkileşimli bir terminal arayüzü (TUI) sunar.
+miao, projelerinizde LLM ile çalışmak için etkileşimli bir terminal arayüzü (TUI) sunar.
 
-Miao'u çalıştırdığınızda mevcut dizin için TUI başlar.
+miao'u çalıştırdığınızda mevcut dizin için TUI başlar.
 
 ```bash
 miao
@@ -57,7 +57,7 @@ Komut çıktısı bir araç sonucu olarak konuşmaya eklenir.
 
 ## Komutlar
 
-Miao TUI kullanırken `/` ve ardından komut adını yazarak hızlı eylemler çalıştırabilirsiniz. Örneğin:
+miao TUI kullanırken `/` ve ardından komut adını yazarak hızlı eylemler çalıştırabilirsiniz. Örneğin:
 
 ```bash frame="none"
 /help
@@ -71,7 +71,7 @@ Komutların çoğu, lider tuşu `ctrl+x` olan bir kısayola da sahiptir. [Daha f
 
 ### connect
 
-Miao'a bir sağlayıcı ekler. Mevcut sağlayıcıları seçip API anahtarları eklemenizi sağlar.
+miao'a bir sağlayıcı ekler. Mevcut sağlayıcıları seçip API anahtarları eklemenizi sağlar.
 
 ```bash frame="none"
 /connect
@@ -117,7 +117,7 @@ Mesaj yazmak için harici editör açar. `EDITOR` ortam değişkeninde ayarlı e
 
 ### exit
 
-Miao'dan çıkar. _Takma adlar_: `/quit`, `/q`
+miao'dan çıkar. _Takma adlar_: `/quit`, `/q`
 
 ```bash frame="none"
 /exit
@@ -391,7 +391,7 @@ Bu, sunucu/çalışma zamanı davranışını yapılandıran `miao.json` dosyas�
 
 - `theme` - UI temanızı ayarlar. [Daha fazla bilgi](/docs/themes).
 - `keybinds` - Klavye kısayollarını özelleştirir. [Daha fazla bilgi](/docs/keybinds).
-- `leader_timeout` - MIAO'un leader key sonrasında ne kadar bekleyeceğini kontrol eder. Varsayılan değer `2000`.
+- `leader_timeout` - miao'un leader key sonrasında ne kadar bekleyeceğini kontrol eder. Varsayılan değer `2000`.
 - `scroll_acceleration.enabled` - Pürüzsüz, doğal kaydırma için macOS tarzı kaydırma ivmesini etkinleştirin. Etkinleştirildiğinde, kaydırma hızı hızlı kaydırma hareketleriyle artar ve daha yavaş hareketler için hassas kalır. **Bu ayar `scroll_speed` ayarından önceliklidir ve etkinleştirildiğinde onu geçersiz kılar.**
 - `scroll_speed` - Kaydırma komutlarını kullanırken TUI'nin ne kadar hızlı kaydırılacağını kontrol eder (minimum: `0.001`, ondalık değerleri destekler). Varsayılan değer `3`'tür. **Not: `scroll_acceleration.enabled` `true` olarak ayarlanmışsa bu yok sayılır.**
 - `diff_style` - Fark (diff) oluşturmayı kontrol eder. `"auto"` terminal genişliğine uyum sağlar, `"stacked"` her zaman tek sütunlu bir düzen gösterir.
@@ -402,7 +402,7 @@ Bu, sunucu/çalışma zamanı davranışını yapılandıran `miao.json` dosyas�
 
 ### Attention
 
-Attention, MIAO bir yanıt beklediğinde, izin onayı gerektiğinde, oturum hatası oluştuğunda veya oturum tamamlandığında TUI'nin sizi ses ve masaüstü bildirimiyle uyarmasını sağlar. `attention.enabled` ile etkinleştirin; yerleşik olaylar gerçekleştiğinde ses çalar. Masaüstü bildirimleri yalnızca terminal penceresi odakta değilken gönderilir ve subagent olayları için kullanılmaz.
+Attention, miao bir yanıt beklediğinde, izin onayı gerektiğinde, oturum hatası oluştuğunda veya oturum tamamlandığında TUI'nin sizi ses ve masaüstü bildirimiyle uyarmasını sağlar. `attention.enabled` ile etkinleştirin; yerleşik olaylar gerçekleştiğinde ses çalar. Masaüstü bildirimleri yalnızca terminal penceresi odakta değilken gönderilir ve subagent olayları için kullanılmaz.
 
 - `enabled` - Attention için tüm bildirimleri ve sesleri etkinleştirir. Varsayılan değer `false`.
 - `notifications` - Attention etkin olduğunda TUI'nin terminal üzerinden masaüstü bildirimi göndermesine izin verir. Varsayılan değer `true`.

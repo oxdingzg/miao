@@ -1,9 +1,9 @@
 ---
 title: ACP-støtte
-description: Bruk MIAO i en hvilken som helst ACP-kompatibel editor.
+description: Bruk miao i en hvilken som helst ACP-kompatibel editor.
 ---
 
-Miao støtter [Agent Client Protocol](https://agentclientprotocol.com) eller (ACP), slik at du kan bruke den direkte i kompatible editorer og IDE-er.
+miao støtter [Agent Client Protocol](https://agentclientprotocol.com) eller (ACP), slik at du kan bruke den direkte i kompatible editorer og IDE-er.
 
 :::tip
 For en liste over editorer og verktøy som støtter ACP, sjekk ut [ACP fremdriftsrapport](https://zed.dev/blog/acp-progress-report#available-now).
@@ -15,9 +15,9 @@ ACP er en åpen protokoll som standardiserer kommunikasjon mellom kodeditorer og
 
 ## Konfigurasjon
 
-For å bruke MIAO via ACP, konfigurer redigeringsprogrammet til å kjøre kommandoen `miao acp`.
+For å bruke miao via ACP, konfigurer redigeringsprogrammet til å kjøre kommandoen `miao acp`.
 
-Kommandoen starter MIAO som en ACP-kompatibel underprosess som kommuniserer med editoren din over JSON-RPC via stdio.
+Kommandoen starter miao som en ACP-kompatibel underprosess som kommuniserer med editoren din over JSON-RPC via stdio.
 
 Nedenfor er eksempler på populære editorer som støtter ACP.
 
@@ -25,7 +25,7 @@ Nedenfor er eksempler på populære editorer som støtter ACP.
 
 ### Zed
 
-Installer MIAO fra [Zeds ACP-register](https://zed.dev/docs/ai/external-agents#registry) ved å kjøre `zed: acp registry` i kommandopaletten.
+Installer miao fra [Zeds ACP-register](https://zed.dev/docs/ai/external-agents#registry) ved å kjøre `zed: acp registry` i kommandopaletten.
 
 Hvis du i stedet vil bruke en egendefinert Miao-kjørbar fil, legger du den til i [Zed](https://zed.dev)-konfigurasjonen (`~/.config/zed/settings.json`):
 
@@ -85,7 +85,7 @@ Legg til [JetBrains IDE](https://www.jetbrains.com/) acp.json i henhold til [dok
 }
 ```
 
-For å åpne den, bruk den nye 'MIAO'-agenten i AI Chat-agentvelgeren.
+For å åpne den, bruk den nye 'miao'-agenten i AI Chat-agentvelgeren.
 
 ---
 
@@ -124,7 +124,7 @@ Hvis du trenger å sende miljøvariabler:
 
 ### CodeCompanion.nvim
 
-For å bruke MIAO som en ACP-agent i [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), legg til følgende i Neovim-konfigurasjonen:
+For å bruke miao som en ACP-agent i [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), legg til følgende i Neovim-konfigurasjonen:
 
 ```lua
 require("codecompanion").setup({
@@ -139,13 +139,13 @@ require("codecompanion").setup({
 })
 ```
 
-Denne konfigurasjonen setter opp CodeCompanion.nvim til å bruke MIAO som ACP-agent for chat.
+Denne konfigurasjonen setter opp CodeCompanion.nvim til å bruke miao som ACP-agent for chat.
 
 Hvis du trenger å sende miljøvariabler (som `MIAO_API_KEY`), se [Konfigurere adaptere: miljøvariabler](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) i CodeCompanion.nvim-dokumentasjonen for fullstendige detaljer.
 
 ## Støtte
 
-Miao fungerer på samme måte via ACP som i terminalen. Alle funksjoner støttes:
+miao fungerer på samme måte via ACP som i terminalen. Alle funksjoner støttes:
 
 :::note
 Noen innebygde slash-kommandoer som `/undo` og `/redo` støttes for øyeblikket ikke.

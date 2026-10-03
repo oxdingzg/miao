@@ -3,7 +3,7 @@ title: Reglas
 description: Establezca instrucciones personalizadas para miao.
 ---
 
-Puede proporcionar instrucciones personalizadas a MIAO creando un archivo `AGENTS.md`. Esto es similar a las reglas del Cursor. Contiene instrucciones que se incluirán en el contexto de LLM para personalizar su comportamiento para su proyecto específico.
+Puede proporcionar instrucciones personalizadas a miao creando un archivo `AGENTS.md`. Esto es similar a las reglas del Cursor. Contiene instrucciones que se incluirán en el contexto de LLM para personalizar su comportamiento para su proyecto específico.
 
 ---
 
@@ -15,7 +15,7 @@ Para crear un nuevo archivo `AGENTS.md`, puede ejecutar el comando `/init` en mi
 Debes enviar el archivo `AGENTS.md` de tu proyecto a Git.
 :::
 
-Esto escaneará su proyecto y todo su contenido para comprender de qué se trata y generar un archivo `AGENTS.md` con él. Esto ayuda a MIAO a navegar mejor por el proyecto.
+Esto escaneará su proyecto y todo su contenido para comprender de qué se trata y generar un archivo `AGENTS.md` con él. Esto ayuda a miao a navegar mejor por el proyecto.
 
 Si tiene un archivo `AGENTS.md` existente, intentará agregarlo.
 
@@ -68,7 +68,7 @@ Dado que esto no está comprometido con Git ni se comparte con su equipo, recome
 
 ### Compatibilidad con Claude Code
 
-Para los usuarios que migran desde Claude Code, MIAO admite las convenciones de archivos de Claude Code como alternativas:
+Para los usuarios que migran desde Claude Code, miao admite las convenciones de archivos de Claude Code como alternativas:
 
 - **Reglas del proyecto**: `CLAUDE.md` en el directorio de tu proyecto (se usa si no existe `AGENTS.md`)
 - **Reglas globales**: `~/.claude/CLAUDE.md` (se usa si no existe `~/.config/miao/AGENTS.md`)
@@ -86,7 +86,7 @@ export MIAO_DISABLE_CLAUDE_CODE_SKILLS=1 # Disable only .claude/skills
 
 ## Prioridad
 
-Cuando se inicia MIAO, busca archivos de reglas en este orden:
+Cuando se inicia miao, busca archivos de reglas en este orden:
 
 1. **Archivos locales** atravesando desde el directorio actual (`AGENTS.md`, `CLAUDE.md`)
 2. **Archivo global** en `~/.config/miao/AGENTS.md`
@@ -126,7 +126,7 @@ Todos los archivos de instrucciones se combinan con sus archivos `AGENTS.md`.
 
 ## Hacer referencia a archivos externos
 
-Si bien MIAO no analiza automáticamente las referencias de archivos en `AGENTS.md`, puedes lograr una funcionalidad similar de dos maneras:
+Si bien miao no analiza automáticamente las referencias de archivos en `AGENTS.md`, puedes lograr una funcionalidad similar de dos maneras:
 
 ### Usar miao.json
 
@@ -141,7 +141,7 @@ El enfoque recomendado es utilizar el campo `instructions` en `miao.json`:
 
 ### Instrucciones manuales en AGENTS.md
 
-Puede enseñarle a MIAO a leer archivos externos proporcionando instrucciones explícitas en su `AGENTS.md`. He aquí un ejemplo práctico:
+Puede enseñarle a miao a leer archivos externos proporcionando instrucciones explícitas en su `AGENTS.md`. He aquí un ejemplo práctico:
 
 ```markdown title="AGENTS.md"
 # TypeScript Project Rules
@@ -173,7 +173,7 @@ Este enfoque le permite:
 - Crear archivos de reglas modulares y reutilizables
 - Compartir reglas entre proyectos a través de enlaces simbólicos o submódulos de git
 - Mantenga AGENTS.md conciso mientras hace referencia a pautas detalladas
-- Asegúrese de que MIAO cargue archivos solo cuando sea necesario para la tarea específica
+- Asegúrese de que miao cargue archivos solo cuando sea necesario para la tarea específica
 
 :::tip
 Para monorepos o proyectos con estándares compartidos, usar `miao.json` con patrones globales (como `packages/*/AGENTS.md`) es más fácil de mantener que las instrucciones manuales.

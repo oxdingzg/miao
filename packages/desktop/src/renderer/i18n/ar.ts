@@ -11,7 +11,7 @@ export const dict = {
   "desktop.updater.checkFailed.title": "فشل التحقق من التحديثات",
   "desktop.updater.checkFailed.message": "فشل التحقق من وجود تحديثات",
   "desktop.updater.none.title": "لا توجد تحديثات متاحة",
-  "desktop.updater.none.message": "أنت تستخدم بالفعل أحدث إصدار من Miao",
+  "desktop.updater.none.message": "أنت تستخدم بالفعل أحدث إصدار من miao",
   "desktop.updater.downloadFailed.title": "فشل التحديث",
   "desktop.updater.downloadFailed.message": "فشل تنزيل التحديث",
   "desktop.updater.downloaded.title": "تم تنزيل التحديث",

@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: MIAO CLI 옵션과 명령어.
+description: miao CLI 옵션과 명령어.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Miao 터미널 사용자 인터페이스를 시작합니다.
+miao 터미널 사용자 인터페이스를 시작합니다.
 
 ```bash
 miao [project]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-`serve` 또는 `web` 명령으로 이미 실행 중인 MIAO 백엔드 서버에 터미널을 연결합니다.
+`serve` 또는 `web` 명령으로 이미 실행 중인 miao 백엔드 서버에 터미널을 연결합니다.
 
 ```bash
 miao attach [url]
 ```
 
-원격 MIAO 백엔드와 TUI를 연결해 사용할 수 있습니다. 예:
+원격 miao 백엔드와 TUI를 연결해 사용할 수 있습니다. 예:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -129,7 +129,7 @@ Miao는 [Models.dev](https://models.dev)의 provider 목록을 기반으로 동�
 miao auth login
 ```
 
-Miao 시작 시 인증 파일에서 provider 정보를 불러오며, 시스템 환경 변수나 프로젝트의 `.env`에 정의된 키도 함께 로드합니다.
+miao 시작 시 인증 파일에서 provider 정보를 불러오며, 시스템 환경 변수나 프로젝트의 `.env`에 정의된 키도 함께 로드합니다.
 
 ---
 
@@ -363,7 +363,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-API 접근용 headless MIAO 서버를 시작합니다. 전체 HTTP 인터페이스는 [server docs](/docs/server)를 참고하세요.
+API 접근용 headless miao 서버를 시작합니다. 전체 HTTP 인터페이스는 [server docs](/docs/server)를 참고하세요.
 
 ```bash
 miao serve
@@ -384,7 +384,7 @@ miao serve
 
 ### session
 
-Miao 세션을 관리합니다.
+miao 세션을 관리합니다.
 
 ```bash
 miao session [command]
@@ -394,7 +394,7 @@ miao session [command]
 
 #### list
 
-Miao 세션 목록을 표시합니다.
+miao 세션 목록을 표시합니다.
 
 ```bash
 miao session list
@@ -411,7 +411,7 @@ miao session list
 
 ### stats
 
-Miao 세션의 토큰 사용량과 비용 통계를 표시합니다.
+miao 세션의 토큰 사용량과 비용 통계를 표시합니다.
 
 ```bash
 miao stats
@@ -442,13 +442,13 @@ miao export [sessionID]
 
 ### import
 
-JSON 파일 또는 MIAO 공유 URL에서 세션 데이터를 가져옵니다.
+JSON 파일 또는 miao 공유 URL에서 세션 데이터를 가져옵니다.
 
 ```bash
 miao import <file>
 ```
 
-로컬 파일이나 MIAO 공유 URL에서 가져올 수 있습니다.
+로컬 파일이나 miao 공유 URL에서 가져올 수 있습니다.
 
 ```bash
 miao import session.json
@@ -459,7 +459,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-웹 인터페이스를 포함한 headless MIAO 서버를 시작합니다.
+웹 인터페이스를 포함한 headless miao 서버를 시작합니다.
 
 ```bash
 miao web

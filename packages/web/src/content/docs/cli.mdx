@@ -1,17 +1,17 @@
 ---
 title: CLI
-description: MIAO CLI options and commands.
+description: miao CLI options and commands.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-The MIAO CLI by default starts the [TUI](/docs/tui) when run without any arguments.
+The miao CLI by default starts the [TUI](/docs/tui) when run without any arguments.
 
 ```bash
 miao
 ```
 
-But it also accepts commands as documented on this page. This allows you to interact with MIAO programmatically.
+But it also accepts commands as documented on this page. This allows you to interact with miao programmatically.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Start the MIAO terminal user interface.
+Start the miao terminal user interface.
 
 ```bash
 miao [project]
@@ -48,7 +48,7 @@ miao [project]
 
 ## Commands
 
-The MIAO CLI also has the following commands.
+The miao CLI also has the following commands.
 
 ---
 
@@ -98,13 +98,13 @@ miao agent list
 
 ### attach
 
-Attach a terminal to an already running MIAO backend server started via `serve` or `web` commands.
+Attach a terminal to an already running miao backend server started via `serve` or `web` commands.
 
 ```bash
 miao attach [url]
 ```
 
-This allows using the TUI with a remote MIAO backend. For example:
+This allows using the TUI with a remote miao backend. For example:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -139,13 +139,13 @@ miao auth [command]
 
 #### login
 
-Miao is powered by the provider list at [Models.dev](https://models.dev), so you can use `miao auth login` to configure API keys for any provider you'd like to use. This is stored in `~/.local/share/miao/auth.json`.
+miao is powered by the provider list at [Models.dev](https://models.dev), so you can use `miao auth login` to configure API keys for any provider you'd like to use. This is stored in `~/.local/share/miao/auth.json`.
 
 ```bash
 miao auth login
 ```
 
-When MIAO starts up it loads the providers from the credentials file. And if there are any keys defined in your environments or a `.env` file in your project.
+When miao starts up it loads the providers from the credentials file. And if there are any keys defined in your environments or a `.env` file in your project.
 
 ##### Flags
 
@@ -338,7 +338,7 @@ miao models --refresh
 
 ### run
 
-Run MIAO in non-interactive mode by passing a prompt directly.
+Run miao in non-interactive mode by passing a prompt directly.
 
 ```bash
 miao run [message..]
@@ -387,7 +387,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Start a headless MIAO server for API access. Check out the [server docs](/docs/server) for the full HTTP interface.
+Start a headless miao server for API access. Check out the [server docs](/docs/server) for the full HTTP interface.
 
 ```bash
 miao serve
@@ -409,7 +409,7 @@ This starts an HTTP server that provides API access to MIAO functionality withou
 
 ### session
 
-Manage MIAO sessions.
+Manage miao sessions.
 
 ```bash
 miao session [command]
@@ -419,7 +419,7 @@ miao session [command]
 
 #### list
 
-List all MIAO sessions.
+List all miao sessions.
 
 ```bash
 miao session list
@@ -436,7 +436,7 @@ miao session list
 
 #### delete
 
-Delete an MIAO session.
+Delete an miao session.
 
 ```bash
 miao session delete <sessionID>
@@ -446,7 +446,7 @@ miao session delete <sessionID>
 
 ### stats
 
-Show token usage and cost statistics for your MIAO sessions.
+Show token usage and cost statistics for your miao sessions.
 
 ```bash
 miao stats
@@ -483,7 +483,7 @@ If you don't provide a session ID, you'll be prompted to select from available s
 
 ### import
 
-Import session data from a JSON file or MIAO share URL.
+Import session data from a JSON file or miao share URL.
 
 ```bash
 miao import <file>
@@ -500,7 +500,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Start a headless MIAO server with a web interface.
+Start a headless miao server with a web interface.
 
 ```bash
 miao web
@@ -614,7 +614,7 @@ miao debug [command]
 
 ### uninstall
 
-Uninstall MIAO and remove all related files.
+Uninstall miao and remove all related files.
 
 ```bash
 miao uninstall
@@ -633,7 +633,7 @@ miao uninstall
 
 ### upgrade
 
-Updates MIAO to the latest version or a specific version.
+Updates miao to the latest version or a specific version.
 
 ```bash
 miao upgrade [target]
@@ -661,7 +661,7 @@ miao upgrade v0.1.48
 
 ## Global Flags
 
-The MIAO CLI takes the following global flags.
+The miao CLI takes the following global flags.
 
 | Flag                                       | Short | Description                          |
 | ------------------------------------------ | ----- | ------------------------------------ |
@@ -675,7 +675,7 @@ The MIAO CLI takes the following global flags.
 
 ## Environment variables
 
-Miao can be configured using environment variables.
+miao can be configured using environment variables.
 
 | Variable                              | Type    | Description                                       |
 | ------------------------------------- | ------- | ------------------------------------------------- |

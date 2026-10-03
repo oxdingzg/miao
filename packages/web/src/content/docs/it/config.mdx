@@ -3,13 +3,13 @@ title: Configurazione
 description: Usa la configurazione JSON di Miao.
 ---
 
-Puoi configurare MIAO usando un file di configurazione JSON.
+Puoi configurare miao usando un file di configurazione JSON.
 
 ---
 
 ## Formato
 
-Miao supporta sia **JSON** sia **JSONC** (JSON con commenti).
+miao supporta sia **JSON** sia **JSONC** (JSON con commenti).
 
 ```jsonc title="miao.json"
 {
@@ -95,7 +95,7 @@ Puoi abilitare server specifici nella tua configurazione locale:
 
 ### Configurazione globale
 
-Metti la configurazione globale di MIAO in `~/.config/miao/miao.json`. Usa la configurazione globale per preferenze server/runtime valide per l'utente come provider, modelli e permessi.
+Metti la configurazione globale di miao in `~/.config/miao/miao.json`. Usa la configurazione globale per preferenze server/runtime valide per l'utente come provider, modelli e permessi.
 
 Per le impostazioni specifiche della TUI, usa `~/.config/miao/tui.json`.
 
@@ -113,7 +113,7 @@ Per le impostazioni TUI specifiche del progetto, aggiungi `tui.json` nella stess
 Metti la configurazione specifica del progetto nella root del progetto.
 :::
 
-Quando MIAO si avvia, cerca un file di configurazione nella directory corrente oppure risale fino alla directory Git piu vicina.
+Quando miao si avvia, cerca un file di configurazione nella directory corrente oppure risale fino alla directory Git piu vicina.
 
 Questo file puo essere tranquillamente versionato in Git e usa lo stesso schema di quello globale.
 
@@ -227,7 +227,7 @@ Puoi gestire gli strumenti che un LLM puo usare tramite l'opzione `tools`.
 
 ### Modelli
 
-Puoi configurare provider e modelli da usare in MIAO tramite le opzioni `provider`, `model` e `small_model`.
+Puoi configurare provider e modelli da usare in miao tramite le opzioni `provider`, `model` e `small_model`.
 
 ```json title="miao.json"
 {
@@ -238,7 +238,7 @@ Puoi configurare provider e modelli da usare in MIAO tramite le opzioni `provide
 }
 ```
 
-L'opzione `small_model` configura un modello separato per task leggeri come la generazione dei titoli. Per impostazione predefinita, MIAO prova a usare un modello più economico se disponibile dal tuo provider, altrimenti fa fallback sul tuo modello principale.
+L'opzione `small_model` configura un modello separato per task leggeri come la generazione dei titoli. Per impostazione predefinita, miao prova a usare un modello più economico se disponibile dal tuo provider, altrimenti fa fallback sul tuo modello principale.
 
 Le opzioni del provider possono includere `timeout` e `setCacheKey`:
 
@@ -350,7 +350,7 @@ Puoi impostare l'agente predefinito usando l'opzione `default_agent`. Questo det
 }
 ```
 
-L'agente predefinito deve essere un agente primary (non un subagent). Puo essere un agente integrato come `"build"` o `"plan"`, oppure un [agente personalizzato](/docs/agents) che hai definito. Se l'agente specificato non esiste o e un subagent, MIAO fara fallback su `"build"` mostrando un avviso.
+L'agente predefinito deve essere un agente primary (non un subagent). Puo essere un agente integrato come `"build"` o `"plan"`, oppure un [agente personalizzato](/docs/agents) che hai definito. Se l'agente specificato non esiste o e un subagent, miao fara fallback su `"build"` mostrando un avviso.
 
 Questa impostazione si applica a tutte le interfacce: TUI, CLI (`miao run`), app desktop e GitHub Action.
 
@@ -420,7 +420,7 @@ Personalizza i keybind in `tui.json`.
 
 ### Aggiornamenti automatici
 
-Miao scarichera automaticamente eventuali aggiornamenti quando si avvia. Puoi disabilitare questa funzione con l'opzione `autoupdate`.
+miao scarichera automaticamente eventuali aggiornamenti quando si avvia. Puoi disabilitare questa funzione con l'opzione `autoupdate`.
 
 ```json title="miao.json"
 {
@@ -462,7 +462,7 @@ Puoi configurare i formatter di codice tramite l'opzione `formatter`.
 
 ### Permessi
 
-Per impostazione predefinita, MIAO **consente tutte le operazioni** senza richiedere un'approvazione esplicita. Puoi cambiarlo usando l'opzione `permission`.
+Per impostazione predefinita, miao **consente tutte le operazioni** senza richiedere un'approvazione esplicita. Puoi cambiarlo usando l'opzione `permission`.
 
 Per esempio, per fare in modo che gli strumenti `edit` e `bash` richiedano l'approvazione dell'utente:
 
@@ -535,7 +535,7 @@ Puoi configurare i server MCP che vuoi usare tramite l'opzione `mcp`.
 
 ### Plugin
 
-[I plugin](/docs/plugins) estendono MIAO con strumenti personalizzati, hook e integrazioni.
+[I plugin](/docs/plugins) estendono miao con strumenti personalizzati, hook e integrazioni.
 
 Metti i file dei plugin in `.miao/plugins/` o `~/.config/miao/plugins/`. Puoi anche caricare plugin da npm tramite l'opzione `plugin`.
 
@@ -599,7 +599,7 @@ Puoi specificare un'allowlist di provider tramite l'opzione `enabled_providers`.
 }
 ```
 
-E utile quando vuoi limitare MIAO a usare solo alcuni provider invece di disabilitarli uno per uno.
+E utile quando vuoi limitare miao a usare solo alcuni provider invece di disabilitarli uno per uno.
 
 :::note
 `disabled_providers` ha priorita su `enabled_providers`.

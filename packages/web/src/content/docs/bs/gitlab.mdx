@@ -1,31 +1,31 @@
 ---
 title: GitLab
-description: Koristite MIAO u GitLab problemima i zahtjevima za spajanje.
+description: Koristite miao u GitLab problemima i zahtjevima za spajanje.
 ---
 
-Miao se integriše sa vašim GitLab radnim tokom kroz vaš GitLab CI/CD cevovod ili sa GitLab Duo.
-U oba slučaja, MIAO će se pokrenuti na vašim GitLab pokretačima.
+miao se integriše sa vašim GitLab radnim tokom kroz vaš GitLab CI/CD cevovod ili sa GitLab Duo.
+U oba slučaja, miao će se pokrenuti na vašim GitLab pokretačima.
 
 ---
 
 ## GitLab CI
 
-Miao radi u redovnom GitLab cevovodu. Možete ga ugraditi u cjevovod kao [CI komponenta](https://docs.gitlab.com/ee/ci/components/)
-Ovdje koristimo CI/CD komponentu kreiranu u zajednici za MIAO — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+miao radi u redovnom GitLab cevovodu. Možete ga ugraditi u cjevovod kao [CI komponenta](https://docs.gitlab.com/ee/ci/components/)
+Ovdje koristimo CI/CD komponentu kreiranu u zajednici za miao — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Funkcije
 
-- **Koristite prilagođenu konfiguraciju po poslu**: Konfigurirajte MIAO s prilagođenim konfiguracijskim direktorijem, na primjer `./config/#custom-directory` da omogućite ili onemogućite funkcionalnost po MIAO pozivanju.
-- **Minimalno podešavanje**: CI komponenta postavlja MIAO u pozadini, samo trebate kreirati MIAO konfiguraciju i početnu prompt.
+- **Koristite prilagođenu konfiguraciju po poslu**: Konfigurirajte miao s prilagođenim konfiguracijskim direktorijem, na primjer `./config/#custom-directory` da omogućite ili onemogućite funkcionalnost po miao pozivanju.
+- **Minimalno podešavanje**: CI komponenta postavlja miao u pozadini, samo trebate kreirati miao konfiguraciju i početnu prompt.
 - **Fleksibilno**: CI komponenta podržava nekoliko ulaza za prilagođavanje njenog ponašanja
 
 ---
 
 ### Podešavanje
 
-1. Sačuvajte JSON za autentifikaciju MIAO kao CI varijable okruženja tipa datoteke pod **Postavke** > **CI/CD** > **Varijable**. Obavezno ih označite kao "Maskirane i skrivene".
+1. Sačuvajte JSON za autentifikaciju miao kao CI varijable okruženja tipa datoteke pod **Postavke** > **CI/CD** > **Varijable**. Obavezno ih označite kao "Maskirane i skrivene".
 2. Dodajte sljedeće u svoju `.gitlab-ci.yml` datoteku.
 
 ```yaml title=".gitlab-ci.yml"
@@ -44,23 +44,23 @@ Za više unosa i slučajeva upotrebe [pogledajte dokumente docs](https://gitlab.
 
 ## GitLab Duo
 
-Miao se integriše sa vašim GitLab tokovom rada.
-Spomenite `@opencode` u komentaru i MIAO će izvršiti zadatke unutar vašeg GitLab CI cevovoda.
+miao se integriše sa vašim GitLab tokovom rada.
+Spomenite `@opencode` u komentaru i miao će izvršiti zadatke unutar vašeg GitLab CI cevovoda.
 
 ---
 
 ### Funkcije
 
-- **Problemi trijaže**: Zamolite MIAO da ispita problem i objasni vam ga.
-- **Popravi i implementiraj**: Zamolite MIAO da popravi problem ili implementira funkciju.
+- **Problemi trijaže**: Zamolite miao da ispita problem i objasni vam ga.
+- **Popravi i implementiraj**: Zamolite miao da popravi problem ili implementira funkciju.
   To će kreirati novu granu i pokrenuti zahtjev za spajanje s promjenama.
-- **Secure**: MIAO radi na vašim GitLab pokretačima.
+- **Secure**: miao radi na vašim GitLab pokretačima.
 
 ---
 
 ### Podešavanje
 
-Miao radi u vašem GitLab CI/CD cevovodu, evo šta će vam trebati da ga postavite:
+miao radi u vašem GitLab CI/CD cevovodu, evo šta će vam trebati da ga postavite:
 :::tip
 Pogledajte [**GitLab dokumente**](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/) za ažurirane upute.
 :::
@@ -155,7 +155,7 @@ Možete vidjeti [GitLab CLI agenti docs](https://docs.gitlab.com/user/duo_agent_
 
 ### Primjeri
 
-Evo nekoliko primjera kako možete koristiti MIAO u GitLab.
+Evo nekoliko primjera kako možete koristiti miao u GitLab.
 :::tip
 Možete konfigurirati da koristite drugu frazu okidača od `@opencode`.
 :::
@@ -167,7 +167,7 @@ Možete konfigurirati da koristite drugu frazu okidača od `@opencode`.
   @opencode explain this issue
 ```
 
-Miao će pročitati problem i odgovoriti jasnim objašnjenjem.
+miao će pročitati problem i odgovoriti jasnim objašnjenjem.
 
 - **Reši problem**
   U izdanju GitLaba recite:
@@ -176,7 +176,7 @@ Miao će pročitati problem i odgovoriti jasnim objašnjenjem.
   @opencode fix this
 ```
 
-Miao će kreirati novu granu, implementirati promjene i otvoriti zahtjev za spajanje s promjenama.
+miao će kreirati novu granu, implementirati promjene i otvoriti zahtjev za spajanje s promjenama.
 
 - **Pregledajte zahtjeve za pridruživanje**
   Ostavite sljedeći komentar na zahtjev za spajanje GitLab-a.
@@ -185,4 +185,4 @@ Miao će kreirati novu granu, implementirati promjene i otvoriti zahtjev za spaj
   @opencode review this merge request
 ```
 
-Miao će pregledati zahtjev za spajanje i dati povratne informacije.
+miao će pregledati zahtjev za spajanje i dati povratne informacije.

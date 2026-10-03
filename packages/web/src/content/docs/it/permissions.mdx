@@ -3,7 +3,7 @@ title: Permessi
 description: Controlla quali azioni richiedono approvazione prima di essere eseguite.
 ---
 
-Miao usa la configurazione `permission` per decidere se una determinata azione deve essere eseguita automaticamente, se deve chiederti conferma o se deve essere bloccata.
+miao usa la configurazione `permission` per decidere se una determinata azione deve essere eseguita automaticamente, se deve chiederti conferma o se deve essere bloccata.
 
 A partire da `v1.1.1`, la vecchia configurazione booleana `tools` e' deprecata ed e' stata incorporata in `permission`. La vecchia configurazione `tools` e' ancora supportata per retrocompatibilita'.
 
@@ -127,7 +127,7 @@ Mantieni l'elenco limitato a percorsi fidati e aggiungi regole extra di allow/de
 
 ## Permessi disponibili
 
-I permessi di MIAO sono indicizzati per nome dello strumento, piu' un paio di guardrail di sicurezza:
+I permessi di miao sono indicizzati per nome dello strumento, piu' un paio di guardrail di sicurezza:
 
 - `read` — lettura di un file (corrisponde al percorso del file)
 - `edit` — tutte le modifiche ai file (include `edit`, `write`, `patch`)
@@ -146,7 +146,7 @@ I permessi di MIAO sono indicizzati per nome dello strumento, piu' un paio di gu
 
 ## Default
 
-Se non specifichi nulla, MIAO parte da default permissivi:
+Se non specifichi nulla, miao parte da default permissivi:
 
 - La maggior parte dei permessi di default e' `"allow"`.
 - `doom_loop` ed `external_directory` di default sono `"ask"`.
@@ -169,10 +169,10 @@ Se non specifichi nulla, MIAO parte da default permissivi:
 
 ## Cosa fa "Ask"
 
-Quando MIAO chiede approvazione, la UI offre tre esiti:
+Quando miao chiede approvazione, la UI offre tre esiti:
 
 - `once` — approva solo questa richiesta
-- `always` — approva richieste future che corrispondono ai pattern suggeriti (per il resto della sessione corrente di MIAO)
+- `always` — approva richieste future che corrispondono ai pattern suggeriti (per il resto della sessione corrente di miao)
 - `reject` — nega la richiesta
 
 L'insieme di pattern che `always` approverebbe e' fornito dallo strumento (ad esempio, le approvazioni per bash in genere mettono in whitelist un prefisso di comando sicuro come `git status*`).

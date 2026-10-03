@@ -5,13 +5,13 @@ description: Opcje i polecenia wiersza poleceń Miao.
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-CLI MIAO domyślnie uruchamia [TUI](/docs/tui), gdy wywołasz je bez argumentów.
+CLI miao domyślnie uruchamia [TUI](/docs/tui), gdy wywołasz je bez argumentów.
 
 ```bash
 miao
 ```
 
-CLI obsługuje też polecenia opisane na tej stronie, więc możesz używać MIAO programowo.
+CLI obsługuje też polecenia opisane na tej stronie, więc możesz używać miao programowo.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -44,7 +44,7 @@ miao [project]
 
 ## Polecenia
 
-Interfejs CLI MIAO zawiera także dodatkowe polecenia.
+Interfejs CLI miao zawiera także dodatkowe polecenia.
 
 ---
 
@@ -60,7 +60,7 @@ miao agent [command]
 
 ### attach
 
-Dołącz terminal do już działającego serwera backendu MIAO uruchomionego za pomocą `serve` lub `web`.
+Dołącz terminal do już działającego serwera backendu miao uruchomionego za pomocą `serve` lub `web`.
 
 ```bash
 miao attach [url]
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao integruje się z wieloma dostawcami. Możesz użyć `miao auth login`, aby skonfigurować klucz API dla dowolnego obsługiwanego dostawcy. Klucze są bezpiecznie przechowywane w `~/.local/share/miao/auth.json`.
+miao integruje się z wieloma dostawcami. Możesz użyć `miao auth login`, aby skonfigurować klucz API dla dowolnego obsługiwanego dostawcy. Klucze są bezpiecznie przechowywane w `~/.local/share/miao/auth.json`.
 
 ```bash
 miao auth login
 ```
 
-Podczas uruchamiania MIAO ładuje dostawców z pliku poświadczeń, a także ze zmiennych środowiskowych lub pliku `.env` w Twoim projekcie.
+Podczas uruchamiania miao ładuje dostawców z pliku poświadczeń, a także ze zmiennych środowiskowych lub pliku `.env` w Twoim projekcie.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Uruchom MIAO w trybie nieinteraktywnym, przekazując bezpośrednio prompt.
+Uruchom miao w trybie nieinteraktywnym, przekazując bezpośrednio prompt.
 
 ```bash
 miao run [message..]
@@ -363,7 +363,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Uruchom serwer MIAO (bez interfejsu) w celu uzyskania dostępu do API. Pełny opis API HTTP znajduje się w [dokumentacji serwera](/docs/server).
+Uruchom serwer miao (bez interfejsu) w celu uzyskania dostępu do API. Pełny opis API HTTP znajduje się w [dokumentacji serwera](/docs/server).
 
 ```bash
 miao serve
@@ -459,7 +459,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Uruchom serwer MIAO z interfejsem internetowym.
+Uruchom serwer miao z interfejsem internetowym.
 
 ```bash
 miao web
@@ -500,7 +500,7 @@ Uruchamia serwer ACP, który komunikuje się przez stdin/stdout przy użyciu JSO
 
 ### uninstall
 
-Odinstaluj MIAO i usuń wszystkie powiązane pliki.
+Odinstaluj miao i usuń wszystkie powiązane pliki.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Aktualizuj MIAO do najnowszej lub określonej wersji.
+Aktualizuj miao do najnowszej lub określonej wersji.
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## Flagi globalne
 
-Interfejs CLI MIAO przyjmuje następujące flagi globalne dla każdego polecenia.
+Interfejs CLI miao przyjmuje następujące flagi globalne dla każdego polecenia.
 
 | Flaga                                      | Skrót | Opis                                        |
 | ------------------------------------------ | ----- | ------------------------------------------- |
@@ -560,7 +560,7 @@ Interfejs CLI MIAO przyjmuje następujące flagi globalne dla każdego polecenia
 
 ## Zmienne środowiskowe
 
-Miao można skonfigurować za pomocą zmiennych środowiskowych.
+miao można skonfigurować za pomocą zmiennych środowiskowych.
 
 | Zmienna                               | Typ     | Opis                                                       |
 | ------------------------------------- | ------- | ---------------------------------------------------------- |

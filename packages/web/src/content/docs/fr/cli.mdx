@@ -5,13 +5,13 @@ description: Options et commandes de la CLI Miao.
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-La CLI MIAO démarre par défaut le [TUI](/docs/tui) lorsqu'il est exécuté sans aucun argument.
+La CLI miao démarre par défaut le [TUI](/docs/tui) lorsqu'il est exécuté sans aucun argument.
 
 ```bash
 miao
 ```
 
-Mais elle accepte également les commandes documentées sur cette page. Cela vous permet d'interagir avec MIAO par programme.
+Mais elle accepte également les commandes documentées sur cette page. Cela vous permet d'interagir avec miao par programme.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -44,7 +44,7 @@ miao [project]
 
 ## Commandes
 
-La CLI MIAO dispose également des commandes suivantes.
+La CLI miao dispose également des commandes suivantes.
 
 ---
 
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-Attachez un terminal à un serveur backend MIAO déjà en cours d'exécution démarré via les commandes `serve` ou `web`.
+Attachez un terminal à un serveur backend miao déjà en cours d'exécution démarré via les commandes `serve` ou `web`.
 
 ```bash
 miao attach [url]
 ```
 
-Cela permet d'utiliser le TUI avec un backend MIAO distant. Par exemple :
+Cela permet d'utiliser le TUI avec un backend miao distant. Par exemple :
 
 ```bash
 # Start the backend server for web/mobile access
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao est alimenté par la liste des fournisseurs sur [Models.dev](https://models.dev), vous pouvez donc utiliser `miao auth login` pour configurer les clés API pour tout fournisseur que vous souhaitez utiliser. Ceci est stocké dans `~/.local/share/miao/auth.json`.
+miao est alimenté par la liste des fournisseurs sur [Models.dev](https://models.dev), vous pouvez donc utiliser `miao auth login` pour configurer les clés API pour tout fournisseur que vous souhaitez utiliser. Ceci est stocké dans `~/.local/share/miao/auth.json`.
 
 ```bash
 miao auth login
 ```
 
-Lorsque MIAO démarre, il charge les fournisseurs à partir du fichier d'informations d'identification, ainsi que les clés définies dans vos environnements ou un fichier `.env` dans votre projet.
+Lorsque miao démarre, il charge les fournisseurs à partir du fichier d'informations d'identification, ainsi que les clés définies dans vos environnements ou un fichier `.env` dans votre projet.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Exécutez MIAO en mode non interactif en transmettant directement un prompt.
+Exécutez miao en mode non interactif en transmettant directement un prompt.
 
 ```bash
 miao run [message..]
@@ -500,7 +500,7 @@ Cette commande démarre un serveur ACP qui communique via stdin/stdout en utilis
 
 ### uninstall
 
-Désinstallez MIAO et supprimez tous les fichiers associés.
+Désinstallez miao et supprimez tous les fichiers associés.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Met à jour MIAO vers la dernière version ou une version spécifique.
+Met à jour miao vers la dernière version ou une version spécifique.
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## Options globales
 
-La CLI MIAO prend les flags globaux suivants.
+La CLI miao prend les flags globaux suivants.
 
 | Option                                     | Court | Description                              |
 | ------------------------------------------ | ----- | ---------------------------------------- |
@@ -560,7 +560,7 @@ La CLI MIAO prend les flags globaux suivants.
 
 ## Variables d'environnement
 
-Miao peut être configuré à l'aide de variables d'environnement.
+miao peut être configuré à l'aide de variables d'environnement.
 
 | Variables                             | Type    | Description                                                                       |
 | ------------------------------------- | ------- | --------------------------------------------------------------------------------- |

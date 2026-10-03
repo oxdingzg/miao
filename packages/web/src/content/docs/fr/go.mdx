@@ -88,7 +88,7 @@ La liste des modèles peut changer au fur et à mesure que nous en testons et en
 
 ## Où puis-je l'utiliser ?
 
-OpenCode Go est conçu pour [MIAO](https://opencode.ai) et d'autres agents de codage
+OpenCode Go est conçu pour [miao](https://opencode.ai) et d'autres agents de codage
 qui produisent des types de requêtes similaires. Le trafic est surveillé afin de détecter les abus qui
 dégradent l'expérience des autres utilisateurs.
 
@@ -102,12 +102,12 @@ Votre client doit :
 
 ### Clients validés
 
-Outre MIAO, le bon fonctionnement des clients suivants avec OpenCode Go a été
+Outre miao, le bon fonctionnement des clients suivants avec OpenCode Go a été
 validé. Nous ne garantissons toutefois pas qu'ils continueront à fonctionner à l'avenir.
 
 | Client            | Prise en charge des sessions                                                                                                                                                                                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | Les builds contenant la [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) envoient l'en-tête sur les requêtes MIAO principales et auxiliaires. Le correctif a été fusionné après la v0.21.0 ; cette version seule ne l'inclut pas.               |
+| **Hermes**        | Les builds contenant la [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) envoient l'en-tête sur les requêtes miao principales et auxiliaires. Le correctif a été fusionné après la v0.21.0 ; cette version seule ne l'inclut pas.               |
 | **Claude Code**   | Go reconnaît son en-tête de session natif. Aucun wrapper d'en-tête personnalisé n'est nécessaire.                                                                                                                                                                         |
 | **Codex**         | Go reconnaît son en-tête de session natif. Certaines versions et configurations de proxy l'omettent encore ; conservez l'en-tête de session lors du transfert des requêtes.                                                                                               |
 | **ZCode**         | Go reconnaît son en-tête de session natif. Notre [demande concernant `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) reste ouverte, mais il n'est plus nécessaire d'envoyer spécifiquement cet en-tête.                                             |
@@ -330,7 +330,7 @@ Vous pouvez également accéder aux modèles Go via les points de terminaison d'
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-L'[ID de modèle](/docs/config/#models) dans votre configuration MIAO utilise le format `opencode-go/<model-id>`. Par exemple, pour Kimi K3, vous utiliseriez `opencode-go/kimi-k3` dans votre configuration.
+L'[ID de modèle](/docs/config/#models) dans votre configuration miao utilise le format `opencode-go/<model-id>`. Par exemple, pour Kimi K3, vous utiliseriez `opencode-go/kimi-k3` dans votre configuration.
 
 ---
 
@@ -396,4 +396,4 @@ Nous avons créé OpenCode Go pour :
 1. Rendre le codage par IA **accessible** à un plus grand nombre de personnes avec un abonnement à bas coût.
 2. Fournir un accès **fiable** aux meilleurs modèles de codage ouverts.
 3. Sélectionner des modèles qui sont **testés et évalués** pour une utilisation en tant qu'agent de codage.
-4. N'avoir **aucun verrouillage exclusif** en vous permettant d'utiliser n'importe quel autre fournisseur avec MIAO également.
+4. N'avoir **aucun verrouillage exclusif** en vous permettant d'utiliser n'importe quel autre fournisseur avec miao également.

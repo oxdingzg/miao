@@ -1,17 +1,17 @@
 ---
 title: CLI
-description: MIAO CLI のオプションとコマンド。
+description: miao CLI のオプションとコマンド。
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao CLI は、引数なしで実行すると、デフォルトで [TUI](/docs/tui) を開始します。
+miao CLI は、引数なしで実行すると、デフォルトで [TUI](/docs/tui) を開始します。
 
 ```bash
 miao
 ```
 
-ただし、このページに記載されているようにコマンドも受け入れます。これにより、MIAO をプログラム的に操作できるようになります。
+ただし、このページに記載されているようにコマンドも受け入れます。これにより、miao をプログラム的に操作できるようになります。
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Miao ターミナルユーザーインターフェイスを開始します。
+miao ターミナルユーザーインターフェイスを開始します。
 
 ```bash
 miao [project]
@@ -44,13 +44,13 @@ miao [project]
 
 ## コマンド
 
-Miao CLI には次のコマンドもあります。
+miao CLI には次のコマンドもあります。
 
 ---
 
 ### agent
 
-Miao のエージェントを管理します。
+miao のエージェントを管理します。
 
 ```bash
 miao agent [command]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-`serve` または `web` コマンドを使用して起動された、すでに実行中の MIAO バックエンドサーバーにターミナルを接続します。
+`serve` または `web` コマンドを使用して起動された、すでに実行中の miao バックエンドサーバーにターミナルを接続します。
 
 ```bash
 miao attach [url]
 ```
 
-これにより、リモート MIAO バックエンドで TUI を使用できるようになります。例えば：
+これにより、リモート miao バックエンドで TUI を使用できるようになります。例えば：
 
 ```bash
 # Start the backend server for web/mobile access
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao は [Models.dev](https://models.dev) のプロバイダーリストを利用しているため、`miao auth login` を使用して、使用したいプロバイダーの API キーを構成できます。これは `~/.local/share/miao/auth.json` に保存されます。
+miao は [Models.dev](https://models.dev) のプロバイダーリストを利用しているため、`miao auth login` を使用して、使用したいプロバイダーの API キーを構成できます。これは `~/.local/share/miao/auth.json` に保存されます。
 
 ```bash
 miao auth login
 ```
 
-Miao が起動すると、認証情報ファイルからプロバイダーがロードされます。また、環境またはプロジェクト内の `.env` ファイルで定義されたキーがあるかどうかも確認します。
+miao が起動すると、認証情報ファイルからプロバイダーがロードされます。また、環境またはプロジェクト内の `.env` ファイルで定義されたキーがあるかどうかも確認します。
 
 ---
 
@@ -305,7 +305,7 @@ miao models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | models.dev からモデルキャッシュを更新します。                   |
 | <nobr><code>{"--verbose"}</code></nobr> | より詳細なモデル出力を使用します (コストなどのメタデータを含む) |
 
-`--refresh` フラグを使用して、キャッシュされたモデルリストを更新します。これは、新しいモデルがプロバイダーに追加され、それを MIAO で確認したい場合に便利です。
+`--refresh` フラグを使用して、キャッシュされたモデルリストを更新します。これは、新しいモデルがプロバイダーに追加され、それを miao で確認したい場合に便利です。
 
 ```bash
 miao models --refresh
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-プロンプトを直接渡して、非対話モードで MIAO を実行します。
+プロンプトを直接渡して、非対話モードで miao を実行します。
 
 ```bash
 miao run [message..]
@@ -363,7 +363,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-API アクセスのためにヘッドレス MIAO サーバーを起動します。完全な HTTP インターフェイスについては、[サーバーのドキュメント](/docs/server) を確認してください。
+API アクセスのためにヘッドレス miao サーバーを起動します。完全な HTTP インターフェイスについては、[サーバーのドキュメント](/docs/server) を確認してください。
 
 ```bash
 miao serve
@@ -384,7 +384,7 @@ miao serve
 
 ### session
 
-Miao セッションを管理します。
+miao セッションを管理します。
 
 ```bash
 miao session [command]
@@ -394,7 +394,7 @@ miao session [command]
 
 #### list
 
-すべての MIAO セッションをリストします。
+すべての miao セッションをリストします。
 
 ```bash
 miao session list
@@ -411,7 +411,7 @@ miao session list
 
 ### stats
 
-Miao セッションのトークンの使用状況とコストの統計を表示します。
+miao セッションのトークンの使用状況とコストの統計を表示します。
 
 ```bash
 miao stats
@@ -442,13 +442,13 @@ miao export [sessionID]
 
 ### import
 
-JSON ファイルまたは MIAO 共有 URL からセッションデータをインポートします。
+JSON ファイルまたは miao 共有 URL からセッションデータをインポートします。
 
 ```bash
 miao import <file>
 ```
 
-ローカルファイルまたは MIAO 共有 URL からインポートできます。
+ローカルファイルまたは miao 共有 URL からインポートできます。
 
 ```bash
 miao import session.json
@@ -459,7 +459,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-Web インターフェイスを使用してヘッドレス MIAO サーバーを起動します。
+Web インターフェイスを使用してヘッドレス miao サーバーを起動します。
 
 ```bash
 miao web
@@ -500,7 +500,7 @@ miao acp
 
 ### uninstall
 
-Miao をアンインストールし、関連ファイルをすべて削除します。
+miao をアンインストールし、関連ファイルをすべて削除します。
 
 ```bash
 miao uninstall
@@ -560,7 +560,7 @@ miao CLI は次のグローバルフラグを受け取ります。
 
 ## 環境変数
 
-Miao は環境変数を使用して構成できます。
+miao は環境変数を使用して構成できます。
 
 | 変数                                  | タイプ   | 説明                                                                |
 | ------------------------------------- | -------- | ------------------------------------------------------------------- |

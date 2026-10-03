@@ -3,7 +3,7 @@ title: Pravila
 description: Postavite prilagodena uputstva za miao.
 ---
 
-Mozete dodati prilagodena uputstva za MIAO tako sto kreirate `AGENTS.md` datoteku. Ovo je slicno pravilima u Cursor-u. Sadrzi uputstva koja se ubacuju u LLM kontekst da prilagode ponasanje za vas projekat.
+Mozete dodati prilagodena uputstva za miao tako sto kreirate `AGENTS.md` datoteku. Ovo je slicno pravilima u Cursor-u. Sadrzi uputstva koja se ubacuju u LLM kontekst da prilagode ponasanje za vas projekat.
 
 ---
 
@@ -15,7 +15,7 @@ Da kreirate novu `AGENTS.md` datoteku, pokrenite `/init` komandu u miao.
 Preporuceno je da `AGENTS.md` iz projekta commitujete u Git.
 :::
 
-Ovo skenira projekat i njegov sadrzaj, razumije cemu projekat sluzi i generise `AGENTS.md`. Tako MIAO bolje navigira kroz kod.
+Ovo skenira projekat i njegov sadrzaj, razumije cemu projekat sluzi i generise `AGENTS.md`. Tako miao bolje navigira kroz kod.
 
 Ako vec imate `AGENTS.md`, komanda ce pokusati da ga dopuni.
 
@@ -62,13 +62,13 @@ Stavite `AGENTS.md` u korijen projekta za pravila specificna za taj projekat. Pr
 
 ### Globalno
 
-Mozete imati i globalna pravila u `~/.config/miao/AGENTS.md`. Ona se primjenjuju u svim MIAO sesijama.
+Mozete imati i globalna pravila u `~/.config/miao/AGENTS.md`. Ona se primjenjuju u svim miao sesijama.
 
 Posto se ovo ne commituje u Git niti dijeli s timom, najbolje je da ovdje cuvate licna pravila koja LLM treba pratiti.
 
 ### Kompatibilnost s Claude Code
 
-Za korisnike koji prelaze sa Claude Code, MIAO podrzava i Claude konvencije datoteka kao rezervu:
+Za korisnike koji prelaze sa Claude Code, miao podrzava i Claude konvencije datoteka kao rezervu:
 
 - **Pravila projekta**: `CLAUDE.md` u direktoriju projekta (koristi se ako ne postoji `AGENTS.md`)
 - **Globalna pravila**: `~/.claude/CLAUDE.md` (koristi se ako ne postoji `~/.config/miao/AGENTS.md`)
@@ -86,7 +86,7 @@ export MIAO_DISABLE_CLAUDE_CODE_SKILLS=1 # Disable only .claude/skills
 
 ## Prioritet
 
-Kada se MIAO pokrene, trazi datoteke pravila ovim redoslijedom:
+Kada se miao pokrene, trazi datoteke pravila ovim redoslijedom:
 
 1. **Lokalne datoteke** pretrazivanjem prema gore od trenutnog direktorija (`AGENTS.md`, `CLAUDE.md`)
 2. **Globalna datoteka** na `~/.config/miao/AGENTS.md`
@@ -126,7 +126,7 @@ Sve datoteke uputstava se kombinuju sa vasim `AGENTS.md` datotekama.
 
 ## Referenciranje eksternih datoteka
 
-Iako MIAO ne parsira automatski reference datoteka u `AGENTS.md`, slicno ponasanje mozete dobiti na dva nacina:
+Iako miao ne parsira automatski reference datoteka u `AGENTS.md`, slicno ponasanje mozete dobiti na dva nacina:
 
 ### Korištenje miao.json
 
@@ -141,7 +141,7 @@ Preporuceni pristup je da koristite `instructions` polje u `miao.json`:
 
 ### Ručna uputstva u AGENTS.md
 
-Mozete nauciti MIAO da cita eksterne datoteke tako sto cete dati eksplicitna uputstva u `AGENTS.md`. Evo prakticnog primjera:
+Mozete nauciti miao da cita eksterne datoteke tako sto cete dati eksplicitna uputstva u `AGENTS.md`. Evo prakticnog primjera:
 
 ```markdown title="AGENTS.md"
 # TypeScript Project Rules
@@ -173,7 +173,7 @@ Ovaj pristup vam omogucava da:
 - Kreirate modularne datoteke pravila koje se mogu ponovo koristiti
 - Dijelite pravila izmedu projekata kroz symlinkove ili git submodule
 - Drzite AGENTS.md kratkim dok upucujete na detaljne smjernice
-- Osigurate da MIAO ucitava datoteke samo kad su potrebne za konkretan zadatak
+- Osigurate da miao ucitava datoteke samo kad su potrebne za konkretan zadatak
 
 :::tip
 Za monorepo projekte ili projekte sa zajednickim standardima, odrzivije je koristiti `miao.json` sa glob obrascima (npr. `packages/*/AGENTS.md`) nego rucna uputstva.

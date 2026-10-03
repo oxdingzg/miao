@@ -1,33 +1,33 @@
 ---
 title: GitLab
-description: Utilice MIAO en problemas GitLab y solicitudes de fusión.
+description: Utilice miao en problemas GitLab y solicitudes de fusión.
 ---
 
-Miao se integra con su flujo de trabajo GitLab a través de su canal de CI/CD GitLab o con GitLab Duo.
+miao se integra con su flujo de trabajo GitLab a través de su canal de CI/CD GitLab o con GitLab Duo.
 
-En ambos casos, MIAO se ejecutará en tus corredores GitLab.
+En ambos casos, miao se ejecutará en tus corredores GitLab.
 
 ---
 
 ## GitLab CI
 
-Miao funciona en una tubería GitLab normal. Puede integrarlo en una canalización como un [componente de CI](https://docs.gitlab.com/ee/ci/components/)
+miao funciona en una tubería GitLab normal. Puede integrarlo en una canalización como un [componente de CI](https://docs.gitlab.com/ee/ci/components/)
 
-Aquí estamos utilizando un componente CI/CD creado por la comunidad para MIAO — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+Aquí estamos utilizando un componente CI/CD creado por la comunidad para miao — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### Características
 
-- **Usar configuración personalizada por trabajo**: configure MIAO con un directorio de configuración personalizado, por ejemplo `./config/#custom-directory` para habilitar o deshabilitar la funcionalidad por invocación de Miao.
-- **Configuración mínima**: el componente CI configura MIAO en segundo plano, solo necesita crear la configuración MIAO y el mensaje inicial.
+- **Usar configuración personalizada por trabajo**: configure miao con un directorio de configuración personalizado, por ejemplo `./config/#custom-directory` para habilitar o deshabilitar la funcionalidad por invocación de Miao.
+- **Configuración mínima**: el componente CI configura miao en segundo plano, solo necesita crear la configuración miao y el mensaje inicial.
 - **Flexible**: el componente CI admite varias entradas para personalizar su comportamiento
 
 ---
 
 ### Configuración
 
-1. Guarde su MIAO autenticación JSON como variables de entorno de CI de tipo de archivo en **Configuración** > **CI/CD** > **Variables**. Asegúrate de marcarlos como "Enmascarados y ocultos".
+1. Guarde su miao autenticación JSON como variables de entorno de CI de tipo de archivo en **Configuración** > **CI/CD** > **Variables**. Asegúrate de marcarlos como "Enmascarados y ocultos".
 2. Agregue lo siguiente a su archivo `.gitlab-ci.yml`.
 
    ```yaml title=".gitlab-ci.yml"
@@ -46,23 +46,23 @@ Para obtener más entradas y casos de uso, [consulte los documentos](https://git
 
 ## GitLab Duo
 
-Miao se integra con su flujo de trabajo GitLab.
-Mencione `@opencode` en un comentario y MIAO ejecutará tareas dentro de su canal de CI GitLab.
+miao se integra con su flujo de trabajo GitLab.
+Mencione `@opencode` en un comentario y miao ejecutará tareas dentro de su canal de CI GitLab.
 
 ---
 
 ### Características
 
-- **Clasificación de problemas**: Pídele a MIAO que investigue un problema y te lo explique.
-- **Reparar e implementar**: pídale a MIAO que solucione un problema o implemente una función.
+- **Clasificación de problemas**: Pídele a miao que investigue un problema y te lo explique.
+- **Reparar e implementar**: pídale a miao que solucione un problema o implemente una función.
   Creará una nueva rama y generará una solicitud de fusión con los cambios.
-- **Seguro**: MIAO se ejecuta en tus corredores GitLab.
+- **Seguro**: miao se ejecuta en tus corredores GitLab.
 
 ---
 
 ### Configuración
 
-Miao se ejecuta en su canalización de CI/CD GitLab. Esto es lo que necesitará para configurarlo:
+miao se ejecuta en su canalización de CI/CD GitLab. Esto es lo que necesitará para configurarlo:
 
 :::tip
 Consulte los [**GitLab documentos**](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/) para obtener instrucciones actualizadas.
@@ -158,7 +158,7 @@ Puede consultar los [GitLab CLI documentos de los agentes](https://docs.gitlab.c
 
 ### Ejemplos
 
-A continuación se muestran algunos ejemplos de cómo puede utilizar MIAO en GitLab.
+A continuación se muestran algunos ejemplos de cómo puede utilizar miao en GitLab.
 
 :::tip
 Puede configurarlo para utilizar una frase de activación diferente a `@opencode`.
@@ -172,7 +172,7 @@ Puede configurarlo para utilizar una frase de activación diferente a `@opencode
   @opencode explain this issue
   ```
 
-  Miao leerá el problema y responderá con una explicación clara.
+  miao leerá el problema y responderá con una explicación clara.
 
 - **Solucionar un problema**
 
@@ -182,7 +182,7 @@ Puede configurarlo para utilizar una frase de activación diferente a `@opencode
   @opencode fix this
   ```
 
-  Miao creará una nueva rama, implementará los cambios y abrirá una solicitud de fusión con los cambios.
+  miao creará una nueva rama, implementará los cambios y abrirá una solicitud de fusión con los cambios.
 
 - **Revisar solicitudes de fusión**
 
@@ -192,4 +192,4 @@ Puede configurarlo para utilizar una frase de activación diferente a `@opencode
   @opencode review this merge request
   ```
 
-  Miao revisará la solicitud de fusión y brindará comentarios.
+  miao revisará la solicitud de fusión y brindará comentarios.

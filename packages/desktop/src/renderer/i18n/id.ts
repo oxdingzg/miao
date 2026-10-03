@@ -11,12 +11,12 @@ export const dict = {
   "desktop.updater.checkFailed.title": "Pemeriksaan pembaruan gagal",
   "desktop.updater.checkFailed.message": "Gagal memeriksa pembaruan",
   "desktop.updater.none.title": "Tidak ada pembaruan",
-  "desktop.updater.none.message": "Anda sudah menggunakan versi terbaru Miao",
+  "desktop.updater.none.message": "Anda sudah menggunakan versi terbaru miao",
   "desktop.updater.downloadFailed.title": "Pembaruan gagal",
   "desktop.updater.downloadFailed.message": "Gagal mengunduh pembaruan",
   "desktop.updater.downloaded.title": "Pembaruan diunduh",
   "desktop.updater.downloaded.prompt":
-    "Miao versi {{version}} telah diunduh. Apakah Anda ingin menginstalnya dan menjalankan ulang aplikasi?",
+    "miao versi {{version}} telah diunduh. Apakah Anda ingin menginstalnya dan menjalankan ulang aplikasi?",
   "desktop.updater.installFailed.title": "Pembaruan gagal",
   "desktop.updater.installFailed.message": "Gagal menginstal pembaruan",
 

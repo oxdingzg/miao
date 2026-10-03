@@ -3,7 +3,7 @@ title: 故障排除
 description: 常见问题及其解决方法。
 ---
 
-要调试 MIAO 的问题，请先检查其存储在磁盘上的日志和本地数据。
+要调试 miao 的问题，请先检查其存储在磁盘上的日志和本地数据。
 
 ---
 
@@ -12,7 +12,7 @@ description: 常见问题及其解决方法。
 日志文件写入位置：
 
 - **macOS/Linux**: `~/.local/share/miao/log/`
-- **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.local\share\MIAO\log`
+- **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.local\share\miao\log`
 
 日志文件以时间戳命名（例如 `2025-01-09T123456.log`），并保留最近的 10 个日志文件。
 
@@ -22,7 +22,7 @@ description: 常见问题及其解决方法。
 
 ## 存储
 
-Miao 将会话数据和其他应用数据存储在磁盘上：
+miao 将会话数据和其他应用数据存储在磁盘上：
 
 - **macOS/Linux**: `~/.local/share/miao/`
 - **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.local\share\miao`
@@ -39,7 +39,7 @@ Miao 将会话数据和其他应用数据存储在磁盘上：
 
 ## 桌面应用
 
-Miao Desktop 会在后台运行一个本地 Miao 服务器（即 `opencode-cli` 附属进程）。大多数问题是由插件异常、缓存损坏或错误的服务器设置引起的。
+miao Desktop 会在后台运行一个本地 miao 服务器（即 `opencode-cli` 附属进程）。大多数问题是由插件异常、缓存损坏或错误的服务器设置引起的。
 
 ### 快速检查
 
@@ -59,7 +59,7 @@ Miao Desktop 会在后台运行一个本地 Miao 服务器（即 `opencode-cli` 
 
 - **macOS/Linux**: `~/.config/miao/miao.json`（或 `~/.config/miao/miao.json`）
 - **macOS/Linux**（旧版安装）: `~/.local/share/miao/miao.jsonc`
-- **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.config\MIAO\miao.jsonc`
+- **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.config\miao\miao.jsonc`
 
 如果你配置了插件，请通过移除该键或将其设置为空数组来临时禁用它们：
 
@@ -72,11 +72,11 @@ Miao Desktop 会在后台运行一个本地 Miao 服务器（即 `opencode-cli` 
 
 #### 检查插件目录
 
-Miao 还可以从磁盘加载本地插件。临时将这些插件移走（或重命名文件夹），然后重新启动桌面应用：
+miao 还可以从磁盘加载本地插件。临时将这些插件移走（或重命名文件夹），然后重新启动桌面应用：
 
 - **全局插件**
   - **macOS/Linux**: `~/.config/miao/plugins/`
-  - **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.config\MIAO\plugins`
+  - **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.config\miao\plugins`
 - **项目插件**（仅当你使用了项目级配置时）
   - `<your-project>/.miao/plugins/`
 
@@ -86,22 +86,22 @@ Miao 还可以从磁盘加载本地插件。临时将这些插件移走（或重
 
 ### 清除缓存
 
-如果禁用插件没有帮助（或插件安装卡住了），请清除缓存以便 MIAO 重新构建。
+如果禁用插件没有帮助（或插件安装卡住了），请清除缓存以便 miao 重新构建。
 
-1. 完全退出 MIAO Desktop。
+1. 完全退出 miao Desktop。
 2. 删除缓存目录：
 
 - **macOS**: Finder -> `Cmd+Shift+G` -> 粘贴 `~/.cache/opencode`
 - **Linux**: 删除 `~/.cache/opencode`（或运行 `rm -rf ~/.cache/opencode`）
 - **Windows**: 按 `WIN+R` 并粘贴 `%USERPROFILE%\.cache\miao`
 
-3. 重新启动 MIAO Desktop。
+3. 重新启动 miao Desktop。
 
 ---
 
 ### 修复服务器连接问题
 
-Miao Desktop 可以启动自己的本地服务器（默认行为），也可以连接到你配置的服务器 URL。
+miao Desktop 可以启动自己的本地服务器（默认行为），也可以连接到你配置的服务器 URL。
 
 如果你看到**"Connection Failed"**对话框（或应用始终停留在启动画面），请检查自定义服务器 URL。
 
@@ -132,21 +132,21 @@ Miao Desktop 可以启动自己的本地服务器（默认行为），也可以�
 
 ### Windows: WebView2 运行时
 
-在 Windows 上，MIAO Desktop 需要 Microsoft Edge **WebView2 Runtime**。如果应用打开后是空白窗口或无法启动，请安装或更新 WebView2 后重试。
+在 Windows 上，miao Desktop 需要 Microsoft Edge **WebView2 Runtime**。如果应用打开后是空白窗口或无法启动，请安装或更新 WebView2 后重试。
 
 ---
 
 ### Windows: 常见性能问题
 
-如果你在 Windows 上遇到性能缓慢、文件访问问题或终端问题，请尝试使用 [WSL (Windows Subsystem for Linux)](/docs/windows-wsl)。WSL 提供了一个 Linux 环境，能更好地与 MIAO 的功能兼容。
+如果你在 Windows 上遇到性能缓慢、文件访问问题或终端问题，请尝试使用 [WSL (Windows Subsystem for Linux)](/docs/windows-wsl)。WSL 提供了一个 Linux 环境，能更好地与 miao 的功能兼容。
 
 ---
 
 ### 通知不显示
 
-Miao Desktop 仅在以下情况下显示系统通知：
+miao Desktop 仅在以下情况下显示系统通知：
 
-- 在操作系统设置中已为 MIAO 启用通知，且
+- 在操作系统设置中已为 miao 启用通知，且
 - 应用窗口未处于焦点状态。
 
 ---
@@ -155,8 +155,8 @@ Miao Desktop 仅在以下情况下显示系统通知：
 
 如果应用无法启动且你无法从 UI 内部清除设置，请重置桌面应用的保存状态。
 
-1. 退出 MIAO Desktop。
-2. 找到并删除以下文件（它们位于 MIAO Desktop 应用数据目录中）：
+1. 退出 miao Desktop。
+2. 找到并删除以下文件（它们位于 miao Desktop 应用数据目录中）：
 
 - `miao.settings.dat`（桌面默认服务器 URL）
 - `miao.global.dat` 和 `miao.workspace.*.dat`（UI 状态，如最近的服务器/项目）
@@ -171,7 +171,7 @@ Miao Desktop 仅在以下情况下显示系统通知：
 
 ## 获取帮助
 
-如果你遇到 MIAO 的问题：
+如果你遇到 miao 的问题：
 
 1. **在 GitHub 上报告问题**
 
@@ -195,7 +195,7 @@ Miao Desktop 仅在以下情况下显示系统通知：
 
 ---
 
-### MIAO 无法启动
+### miao 无法启动
 
 1. 检查日志中的错误消息
 2. 尝试使用 `--print-logs` 运行以在终端中查看输出
@@ -251,7 +251,7 @@ Miao Desktop 仅在以下情况下显示系统通知：
 
 ### AI_APICallError 和提供商包问题
 
-如果你遇到 API 调用错误，可能是由于提供商包过期导致的。MIAO 会根据需要动态安装提供商包（OpenAI、Anthropic、Google 等）并将它们缓存到本地。
+如果你遇到 API 调用错误，可能是由于提供商包过期导致的。miao 会根据需要动态安装提供商包（OpenAI、Anthropic、Google 等）并将它们缓存到本地。
 
 要解决提供商包问题：
 
@@ -263,9 +263,9 @@ Miao Desktop 仅在以下情况下显示系统通知：
 
    在 Windows 上，按 `WIN+R` 并删除：`%USERPROFILE%\.cache\miao`
 
-2. 重新启动 MIAO 以重新安装最新的提供商包
+2. 重新启动 miao 以重新安装最新的提供商包
 
-这将强制 MIAO 下载最新版本的提供商包，通常可以解决模型参数和 API 变更带来的兼容性问题。
+这将强制 miao 下载最新版本的提供商包，通常可以解决模型参数和 API 变更带来的兼容性问题。
 
 ---
 
@@ -296,4 +296,4 @@ Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 export DISPLAY=:99.0
 ```
 
-Miao 会检测你是否正在使用 Wayland 并优先使用 `wl-clipboard`，否则将按以下顺序尝试查找剪贴板工具：`xclip` 和 `xsel`。
+miao 会检测你是否正在使用 Wayland 并优先使用 `wl-clipboard`，否则将按以下顺序尝试查找剪贴板工具：`xclip` 和 `xsel`。

@@ -1,17 +1,17 @@
 ---
 title: CLI
-description: MIAO CLI muligheder og kommandoer.
+description: miao CLI muligheder og kommandoer.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao CLI starter som standard [TUI](/docs/tui), når den kører uden nogen argumenter.
+miao CLI starter som standard [TUI](/docs/tui), når den kører uden nogen argumenter.
 
 ```bash
 miao
 ```
 
-Men den accepterer også kommandoer som dokumenteret på denne side. Dette giver dig mulighed for at interagere med MIAO programmatisk.
+Men den accepterer også kommandoer som dokumenteret på denne side. Dette giver dig mulighed for at interagere med miao programmatisk.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-Start MIAO terminalbrugergrænsefladen.
+Start miao terminalbrugergrænsefladen.
 
 ```bash
 miao [project]
@@ -44,7 +44,7 @@ miao [project]
 
 ## Kommandoer
 
-Miao CLI har også følgende kommandoer.
+miao CLI har også følgende kommandoer.
 
 ---
 
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-Tilslut en terminal til en allerede kørende MIAO backend-server startet via `serve` eller `web` kommandoer.
+Tilslut en terminal til en allerede kørende miao backend-server startet via `serve` eller `web` kommandoer.
 
 ```bash
 miao attach [url]
 ```
 
-Dette gør det muligt at bruge TUI med en ekstern MIAO backend. For eksempel:
+Dette gør det muligt at bruge TUI med en ekstern miao backend. For eksempel:
 
 ```bash
 # Start the backend server for web/mobile access
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao drives af udbyderlisten på [Models.dev](https://models.dev), så du kan bruge `miao auth login` til at konfigurere API-nøgler for enhver udbyder, du vil bruge. Dette er gemt i `~/.local/share/miao/auth.json`.
+miao drives af udbyderlisten på [Models.dev](https://models.dev), så du kan bruge `miao auth login` til at konfigurere API-nøgler for enhver udbyder, du vil bruge. Dette er gemt i `~/.local/share/miao/auth.json`.
 
 ```bash
 miao auth login
 ```
 
-Når MIAO starter op, indlæser den udbyderne fra legitimationsfilen. Og hvis der er nogen nøgler defineret i dine miljøer eller en `.env` fil i dit projekt.
+Når miao starter op, indlæser den udbyderne fra legitimationsfilen. Og hvis der er nogen nøgler defineret i dine miljøer eller en `.env` fil i dit projekt.
 
 ---
 
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Kør MIAO i ikke-interaktiv tilstand ved at sende en prompt direkte.
+Kør miao i ikke-interaktiv tilstand ved at sende en prompt direkte.
 
 ```bash
 miao run [message..]
@@ -384,7 +384,7 @@ Dette starter en HTTP-server, der giver API-adgang til opencode-funktionalitet u
 
 ### session
 
-Administrator MIAO sessionsholder.
+Administrator miao sessionsholder.
 
 ```bash
 miao session [command]
@@ -394,7 +394,7 @@ miao session [command]
 
 #### list
 
-Liste over alle MIAO sessioner.
+Liste over alle miao sessioner.
 
 ```bash
 miao session list
@@ -442,13 +442,13 @@ Hvis du ikke angiver et sessions-id, bliver du bedt om at vælge mellem tilgæng
 
 ### import
 
-Importer sessionsdata fra en JSON fil eller MIAO del URL.
+Importer sessionsdata fra en JSON fil eller miao del URL.
 
 ```bash
 miao import <file>
 ```
 
-Du kan importere fra en lokal fil eller en MIAO share URL.
+Du kan importere fra en lokal fil eller en miao share URL.
 
 ```bash
 miao import session.json
@@ -500,7 +500,7 @@ Denne kommando starter en ACP-server, der kommunikerer via stdin/stdout ved hjæ
 
 ### uninstall
 
-Afinstaller MIAO og fjern alle relaterede filer.
+Afinstaller miao og fjern alle relaterede filer.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Opdaterer MIAO til den nyeste version eller en specifik version.
+Opdaterer miao til den nyeste version eller en specifik version.
 
 ```bash
 miao upgrade [target]
@@ -560,7 +560,7 @@ miao CLI tager følgende globale flag.
 
 ## Miljøvariabler
 
-Miao kan konfigureres ved hjælp af miljøvariabler.
+miao kan konfigureres ved hjælp af miljøvariabler.
 
 | Variabel                              | Skriv   | Beskrivelse                                                           |
 | ------------------------------------- | ------- | --------------------------------------------------------------------- |

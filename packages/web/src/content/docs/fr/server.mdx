@@ -1,12 +1,12 @@
 ---
 title: Serveur
-description: Interagissez avec le serveur MIAO via HTTP.
+description: Interagissez avec le serveur miao via HTTP.
 ---
 
 import config from "../../../../config.mjs"
 export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
 
-La commande `miao serve` exécute un serveur HTTP sans tête qui expose un point de terminaison OpenAPI qu'un client MIAO peut utiliser.
+La commande `miao serve` exécute un serveur HTTP sans tête qui expose un point de terminaison OpenAPI qu'un client miao peut utiliser.
 
 ---
 
@@ -51,10 +51,10 @@ client qui parle au serveur. Le serveur expose une spécification OpenAPI 3.1
 point final. Ce point de terminaison est également utilisé pour générer un [SDK](/docs/sdk).
 
 :::tip
-Utilisez le serveur MIAO pour interagir avec MIAO par programmation.
+Utilisez le serveur miao pour interagir avec miao par programmation.
 :::
 
-Cette architecture permet à MIAO de prendre en charge plusieurs clients et vous permet d'interagir avec MIAO par programme.
+Cette architecture permet à miao de prendre en charge plusieurs clients et vous permet d'interagir avec miao par programme.
 
 Vous pouvez exécuter `miao serve` pour démarrer un serveur autonome. Si vous avez le
 miao TUI en cours d'exécution, `miao serve` démarrera un nouveau serveur.
@@ -65,7 +65,7 @@ miao TUI en cours d'exécution, `miao serve` démarrera un nouveau serveur.
 
 Lorsque vous démarrez le TUI, il attribue de manière aléatoire un port et un nom d'hôte. Vous pouvez à la place transmettre les `--hostname` et `--port` [flags](/docs/cli). Utilisez-le ensuite pour vous connecter à son serveur.
 
-Le point de terminaison [`/tui`](#tui) peut être utilisé pour piloter le TUI via le serveur. Par exemple, vous pouvez pré-remplir ou exécuter une invite. Cette configuration est utilisée par les plugins MIAO [IDE](/docs/ide).
+Le point de terminaison [`/tui`](#tui) peut être utilisé pour piloter le TUI via le serveur. Par exemple, vous pouvez pré-remplir ou exécuter une invite. Cette configuration est utilisée par les plugins miao [IDE](/docs/ide).
 
 ---
 
@@ -83,7 +83,7 @@ Par exemple, `http://localhost:4096/doc`. Utilisez la spécification pour géné
 
 ## APIs
 
-Le serveur MIAO expose les API suivantes.
+Le serveur miao expose les API suivantes.
 
 ---
 
