@@ -1,9 +1,9 @@
 ---
 title: Plugins
-description: Schreiben Sie Ihre eigenen Plugins, um MIAO zu erweitern.
+description: Schreiben Sie Ihre eigenen Plugins, um miao zu erweitern.
 ---
 
-Mit Plugins können Sie MIAO erweitern, indem Sie verschiedene Ereignisse einbinden und das Verhalten anpassen. Sie können Plugins erstellen, um neue Funktionen hinzuzufügen, externe Dienste zu integrieren oder das Standardverhalten von MIAO zu ändern.
+Mit Plugins können Sie miao erweitern, indem Sie verschiedene Ereignisse einbinden und das Verhalten anpassen. Sie können Plugins erstellen, um neue Funktionen hinzuzufügen, externe Dienste zu integrieren oder das Standardverhalten von miao zu ändern.
 
 Beispiele finden Sie im von der Community erstellten [plugins](/docs/ecosystem#plugins).
 
@@ -82,7 +82,7 @@ Lokale Plugins und benutzerdefinierte Tools können externe npm-Pakete verwenden
 }
 ```
 
-Miao führt beim Start `bun install` aus, um diese zu installieren. Ihre Plugins und Tools können sie dann importieren.
+miao führt beim Start `bun install` aus, um diese zu installieren. Ihre Plugins und Tools können sie dann importieren.
 
 ```ts title=".miao/plugins/my-plugin.ts"
 import { escape } from "shescape"
@@ -210,7 +210,7 @@ Plugins können Ereignisse abonnieren, wie unten im Abschnitt „Beispiele“ ge
 
 ## Beispiele
 
-Hier sind einige Beispiele für Plugins, mit denen Sie MIAO erweitern können.
+Hier sind einige Beispiele für Plugins, mit denen Sie miao erweitern können.
 
 ---
 
@@ -241,7 +241,7 @@ Wenn Sie die Miao-Desktop-App verwenden, kann diese automatisch Systembenachrich
 
 ### .env-Schutz
 
-Verhindern Sie, dass MIAO `.env`-Dateien liest:
+Verhindern Sie, dass miao `.env`-Dateien liest:
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -276,7 +276,7 @@ export const InjectEnvPlugin = async () => {
 
 ### Benutzerdefinierte Tools
 
-Plugins können MIAO auch benutzerdefinierte Tools hinzufügen:
+Plugins können miao auch benutzerdefinierte Tools hinzufügen:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -299,13 +299,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-Der `tool`-Helfer erstellt ein benutzerdefiniertes Tool, das MIAO aufrufen kann. Es verwendet eine Zod-Schemafunktion und gibt eine Tooldefinition zurück mit:
+Der `tool`-Helfer erstellt ein benutzerdefiniertes Tool, das miao aufrufen kann. Es verwendet eine Zod-Schemafunktion und gibt eine Tooldefinition zurück mit:
 
 - `description`: Was das Tool macht
 - `args`: Zod-Schema für die Argumente des Tools
 - `execute`: Funktion, die ausgeführt wird, wenn das Tool aufgerufen wird
 
-Ihre benutzerdefinierten Tools stehen neben den integrierten Tools für MIAO zur Verfügung.
+Ihre benutzerdefinierten Tools stehen neben den integrierten Tools für miao zur Verfügung.
 
 ---
 

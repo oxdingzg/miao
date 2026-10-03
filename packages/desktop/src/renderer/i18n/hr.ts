@@ -9,7 +9,7 @@ export const dict = {
   "desktop.updater.checkFailed.title": "Provjera ažuriranja nije uspjela",
   "desktop.updater.checkFailed.message": "Provjera ažuriranja nije uspjela",
   "desktop.updater.none.title": "Nema dostupnih ažuriranja",
-  "desktop.updater.none.message": "Već koristite najnoviju verziju Miao",
+  "desktop.updater.none.message": "Već koristite najnoviju verziju miao",
   "desktop.updater.downloadFailed.title": "Ažuriranje nije uspjelo",
   "desktop.updater.downloadFailed.message": "Preuzimanje ažuriranja nije uspjelo",
   "desktop.updater.downloaded.title": "Ažuriranje preuzeto",

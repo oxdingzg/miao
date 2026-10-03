@@ -9,7 +9,7 @@ export const dict: Record<string, string> = {
   "desktop.updater.checkFailed.title": "আপডেট চেক ব্যর্থ হয়েছে",
   "desktop.updater.checkFailed.message": "আপডেটের জন্য চেক করতে ব্যর্থ",
   "desktop.updater.none.title": "কোন আপডেট উপলব্ধ নেই",
-  "desktop.updater.none.message": "আপনি ইতিমধ্যেই Miao এর সর্বশেষ সংস্করণ ব্যবহার করছেন৷",
+  "desktop.updater.none.message": "আপনি ইতিমধ্যেই miao এর সর্বশেষ সংস্করণ ব্যবহার করছেন৷",
   "desktop.updater.downloadFailed.title": "আপডেট ব্যর্থ হয়েছে৷",
   "desktop.updater.downloadFailed.message": "আপডেট ডাউনলোড করতে ব্যর্থ হয়েছে",
   "desktop.updater.downloaded.title": "আপডেট ডাউনলোড হয়েছে",

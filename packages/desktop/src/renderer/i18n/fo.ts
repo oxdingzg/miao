@@ -14,7 +14,7 @@ export const dict = {
   "desktop.updater.downloadFailed.message": "Tað eydnaðist ikki at heinta dagføring",
   "desktop.updater.downloaded.title": "Dagføring heintað",
   "desktop.updater.downloaded.prompt":
-    "Útgáva {{version}} av Miao er heintað, vilt tú seta hana upp og seta hana í gongd aftur?",
+    "Útgáva {{version}} av miao er heintað, vilt tú seta hana upp og seta hana í gongd aftur?",
   "desktop.updater.installFailed.title": "Dagføring miseydnaðist",
   "desktop.updater.installFailed.message": "Tað eydnaðist ikki at seta upp dagføring",
   "desktop.cli.installed.title": "CLI Sett upp",

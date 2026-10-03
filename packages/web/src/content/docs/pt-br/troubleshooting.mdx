@@ -3,7 +3,7 @@ title: Solução de Problemas
 description: Problemas comuns e como resolvê-los.
 ---
 
-Para depurar problemas com o MIAO, comece verificando os logs e os dados locais que ele armazena no disco.
+Para depurar problemas com o miao, comece verificando os logs e os dados locais que ele armazena no disco.
 
 ---
 
@@ -12,7 +12,7 @@ Para depurar problemas com o MIAO, comece verificando os logs e os dados locais 
 Os arquivos de log são gravados em:
 
 - **macOS/Linux**: `~/.local/share/miao/log/`
-- **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.local\share\MIAO\log`
+- **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.local\share\miao\log`
 
 Os arquivos de log são nomeados com timestamps (por exemplo, `2025-01-09T123456.log`) e os 10 arquivos de log mais recentes são mantidos.
 
@@ -22,7 +22,7 @@ Você pode definir o nível de log com a opção de linha de comando `--log-leve
 
 ## Armazenamento
 
-O MIAO armazena dados de sessão e outros dados do aplicativo no disco em:
+O miao armazena dados de sessão e outros dados do aplicativo no disco em:
 
 - **macOS/Linux**: `~/.local/share/miao/`
 - **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.local\share\miao`
@@ -39,7 +39,7 @@ Este diretório contém:
 
 ## Aplicativo de Desktop
 
-O MIAO Desktop executa um servidor MIAO local (o sidecar `opencode-cli`) em segundo plano. A maioria dos problemas é causada por um plugin com mau funcionamento, um cache corrompido ou uma configuração de servidor incorreta.
+O miao Desktop executa um servidor miao local (o sidecar `opencode-cli`) em segundo plano. A maioria dos problemas é causada por um plugin com mau funcionamento, um cache corrompido ou uma configuração de servidor incorreta.
 
 ### Verificações rápidas
 
@@ -59,7 +59,7 @@ Abra seu arquivo de configuração global e procure uma chave `plugin`.
 
 - **macOS/Linux**: `~/.config/miao/miao.json` (ou `~/.config/miao/miao.json`)
 - **macOS/Linux** (instalações mais antigas): `~/.local/share/miao/miao.jsonc`
-- **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.config\MIAO\miao.jsonc`
+- **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.config\miao\miao.jsonc`
 
 Se você tiver plugins configurados, desative-os temporariamente removendo a chave ou definindo-a como um array vazio:
 
@@ -72,11 +72,11 @@ Se você tiver plugins configurados, desative-os temporariamente removendo a cha
 
 #### Verificando os diretórios de plugins
 
-O MIAO também pode carregar plugins locais do disco. Mova-os temporariamente para fora do caminho (ou renomeie a pasta) e reinicie o aplicativo de desktop:
+O miao também pode carregar plugins locais do disco. Mova-os temporariamente para fora do caminho (ou renomeie a pasta) e reinicie o aplicativo de desktop:
 
 - **Plugins globais**
   - **macOS/Linux**: `~/.config/miao/plugins/`
-  - **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.config\MIAO\plugins`
+  - **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.config\miao\plugins`
 - **Plugins de projeto** (apenas se você usar configuração por projeto)
   - `<your-project>/.miao/plugins/`
 
@@ -86,22 +86,22 @@ Se o aplicativo voltar a funcionar, reative os plugins um por um para descobrir 
 
 ### Limpando o cache
 
-Se desativar plugins não ajudar (ou se a instalação de um plugin estiver travada), limpe o cache para que o MIAO possa reconstruí-lo.
+Se desativar plugins não ajudar (ou se a instalação de um plugin estiver travada), limpe o cache para que o miao possa reconstruí-lo.
 
-1. Saia completamente do MIAO Desktop.
+1. Saia completamente do miao Desktop.
 2. Exclua o diretório de cache:
 
 - **macOS**: Finder -> `Cmd+Shift+G` -> cole `~/.cache/opencode`
 - **Linux**: exclua `~/.cache/opencode` (ou execute `rm -rf ~/.cache/opencode`)
 - **Windows**: Pressione `WIN+R` e cole `%USERPROFILE%\.cache\miao`
 
-3. Reinicie o MIAO Desktop.
+3. Reinicie o miao Desktop.
 
 ---
 
 ### Corrigindo problemas de conexão com o servidor
 
-O MIAO Desktop pode iniciar seu próprio servidor local (padrão) ou conectar-se a uma URL de servidor que você configurou.
+O miao Desktop pode iniciar seu próprio servidor local (padrão) ou conectar-se a uma URL de servidor que você configurou.
 
 Se você ver um diálogo **"Conexão Falhou"** (ou o aplicativo nunca passa da tela de inicialização), verifique se há uma URL de servidor personalizada.
 
@@ -132,7 +132,7 @@ No Linux, algumas configurações do Wayland podem causar janelas em branco ou e
 
 ### Windows: Runtime do WebView2
 
-No Windows, o MIAO Desktop requer o **WebView2 Runtime** do Microsoft Edge. Se o aplicativo abrir em uma janela em branco ou não iniciar, instale/atualize o WebView2 e tente novamente.
+No Windows, o miao Desktop requer o **WebView2 Runtime** do Microsoft Edge. Se o aplicativo abrir em uma janela em branco ou não iniciar, instale/atualize o WebView2 e tente novamente.
 
 ---
 
@@ -144,9 +144,9 @@ Se você estiver enfrentando desempenho lento, problemas de acesso a arquivos ou
 
 ### Notificações não aparecendo
 
-O MIAO Desktop só mostra notificações do sistema quando:
+O miao Desktop só mostra notificações do sistema quando:
 
-- as notificações estão habilitadas para o MIAO nas configurações do seu sistema operacional, e
+- as notificações estão habilitadas para o miao nas configurações do seu sistema operacional, e
 - a janela do aplicativo não está focada.
 
 ---
@@ -155,8 +155,8 @@ O MIAO Desktop só mostra notificações do sistema quando:
 
 Se o aplicativo não iniciar e você não conseguir limpar as configurações pela interface, redefina o estado salvo do aplicativo de desktop.
 
-1. Saia do MIAO Desktop.
-2. Encontre e exclua estes arquivos (eles estão no diretório de dados do aplicativo MIAO Desktop):
+1. Saia do miao Desktop.
+2. Encontre e exclua estes arquivos (eles estão no diretório de dados do aplicativo miao Desktop):
 
 - `miao.settings.dat` (URL do servidor padrão do desktop)
 - `miao.global.dat` e `miao.workspace.*.dat` (estado da interface como servidores/projetos recentes)
@@ -171,7 +171,7 @@ Para encontrar o diretório rapidamente:
 
 ## Obtendo ajuda
 
-Se você estiver enfrentando problemas com o MIAO:
+Se você estiver enfrentando problemas com o miao:
 
 1. **Relatar problemas no GitHub**
 
@@ -195,7 +195,7 @@ Aqui estão alguns problemas comuns e como resolvê-los.
 
 ---
 
-### O MIAO não inicia
+### O miao não inicia
 
 1. Verifique os logs em busca de mensagens de erro
 2. Tente executar com `--print-logs` para ver a saída no terminal
@@ -251,7 +251,7 @@ Para resolver isso:
 
 ### AI_APICallError e problemas com pacotes de provedores
 
-Se você encontrar erros de chamada de API, isso pode ser devido a pacotes de provedores desatualizados. O MIAO instala dinamicamente pacotes de provedores (OpenAI, Anthropic, Google, etc.) conforme necessário e os armazena em cache localmente.
+Se você encontrar erros de chamada de API, isso pode ser devido a pacotes de provedores desatualizados. O miao instala dinamicamente pacotes de provedores (OpenAI, Anthropic, Google, etc.) conforme necessário e os armazena em cache localmente.
 
 Para resolver problemas com pacotes de provedores:
 
@@ -263,9 +263,9 @@ Para resolver problemas com pacotes de provedores:
 
    No Windows, pressione `WIN+R` e exclua: `%USERPROFILE%\.cache\miao`
 
-2. Reinicie o MIAO para reinstalar os pacotes de provedores mais recentes
+2. Reinicie o miao para reinstalar os pacotes de provedores mais recentes
 
-Isso forçará o MIAO a baixar as versões mais recentes dos pacotes de provedores, o que muitas vezes resolve problemas de compatibilidade com parâmetros de modelo e alterações na API.
+Isso forçará o miao a baixar as versões mais recentes dos pacotes de provedores, o que muitas vezes resolve problemas de compatibilidade com parâmetros de modelo e alterações na API.
 
 ---
 
@@ -296,4 +296,4 @@ Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 export DISPLAY=:99.0
 ```
 
-O MIAO detectará se você está usando Wayland e preferirá `wl-clipboard`, caso contrário, tentará encontrar ferramentas de área de transferência na ordem: `xclip` e `xsel`.
+O miao detectará se você está usando Wayland e preferirá `wl-clipboard`, caso contrário, tentará encontrar ferramentas de área de transferência na ordem: `xclip` e `xsel`.

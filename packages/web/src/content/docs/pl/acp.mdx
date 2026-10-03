@@ -1,11 +1,11 @@
 ---
 title: ACP
-description: Używanie MIAO z protokołem Agent Client Protocol (ACP).
+description: Używanie miao z protokołem Agent Client Protocol (ACP).
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao obsługuje [Agent Client Protocol](https://agentclientprotocol.com) (ACP), który umożliwia korzystanie z Miao bezpośrednio w edytorach i środowiskach IDE.
+miao obsługuje [Agent Client Protocol](https://agentclientprotocol.com) (ACP), który umożliwia korzystanie z miao bezpośrednio w edytorach i środowiskach IDE.
 
 :::tip
 Listę edytorów i narzędzi obsługujących ACP znajdziesz w [raporcie postępu ACP](https://zed.dev/blog/acp-progress-report#available-now).
@@ -17,9 +17,9 @@ ACP to otwarty standard, który ujednolica komunikację między edytorami kodu a
 
 ## Konfiguracja
 
-Aby używać MIAO przez ACP, skonfiguruj swój edytor tak, aby uruchamiał polecenie `miao acp`.
+Aby używać miao przez ACP, skonfiguruj swój edytor tak, aby uruchamiał polecenie `miao acp`.
 
-Uruchamia to MIAO jako podproces zgodny z ACP, który komunikuje się z edytorem za pomocą JSON-RPC przez stdio.
+Uruchamia to miao jako podproces zgodny z ACP, który komunikuje się z edytorem za pomocą JSON-RPC przez stdio.
 
 Poniżej znajdują się przykłady dla edytorów obsługujących ACP.
 
@@ -27,9 +27,9 @@ Poniżej znajdują się przykłady dla edytorów obsługujących ACP.
 
 ### Zed
 
-Zainstaluj MIAO z [rejestru ACP Zed](https://zed.dev/docs/ai/external-agents#registry), uruchamiając `zed: acp registry` w palecie poleceń.
+Zainstaluj miao z [rejestru ACP Zed](https://zed.dev/docs/ai/external-agents#registry), uruchamiając `zed: acp registry` w palecie poleceń.
 
-Aby zamiast tego użyć niestandardowego pliku wykonywalnego MIAO, dodaj go do konfiguracji [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
+Aby zamiast tego użyć niestandardowego pliku wykonywalnego miao, dodaj go do konfiguracji [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
 
 ```json title="~/.config/zed/settings.json"
 {
@@ -87,7 +87,7 @@ Dodaj do swojego [JetBrains IDE](https://www.jetbrains.com/) plik `acp.json` zgo
 }
 ```
 
-Następnie wybierz „MIAO” w selektorze agentów AI Chat.
+Następnie wybierz „miao” w selektorze agentów AI Chat.
 
 ---
 
@@ -126,7 +126,7 @@ Jeśli potrzebujesz przekazać klucz API:
 
 ### CodeCompanion.nvim
 
-Aby używać MIAO jako agenta ACP w [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), dodaj następującą konfigurację do Neovim:
+Aby używać miao jako agenta ACP w [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim), dodaj następującą konfigurację do Neovim:
 
 ```lua
 require("codecompanion").setup({
@@ -141,13 +141,13 @@ require("codecompanion").setup({
 })
 ```
 
-Ta konfiguracja sprawia, że CodeCompanion używa MIAO jako agenta ACP do czatu.
+Ta konfiguracja sprawia, że CodeCompanion używa miao jako agenta ACP do czatu.
 
 Jeśli wymagany jest `MIAO_API_KEY`, zapoznaj się z sekcją [Konfigurowanie adapterów: Zmienne środowiskowe](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key) w dokumentacji CodeCompanion.nvim, aby uzyskać szczegółowe informacje.
 
 ## Wsparcie
 
-Miao działa przez ACP tak samo, jak w terminalu. Obsługiwane są wszystkie główne funkcje:
+miao działa przez ACP tak samo, jak w terminalu. Obsługiwane są wszystkie główne funkcje:
 
 :::note
 Niektóre polecenia z ukośnikiem, takie jak `/undo` i `/redo`, nie są obecnie obsługiwane przez ACP.
@@ -155,7 +155,7 @@ Niektóre polecenia z ukośnikiem, takie jak `/undo` i `/redo`, nie są obecnie 
 
 - Narzędzia wbudowane (operacje na plikach, terminal itp.)
 - Niestandardowe narzędzia i polecenia z ukośnikiem
-- Serwery MCP zdefiniowane w konfiguracji MIAO
+- Serwery MCP zdefiniowane w konfiguracji miao
 - Zasady projektu z `AGENTS.md`
 - Niestandardowe formatery i lintery
 - Agenci systemowi i uprawnienia

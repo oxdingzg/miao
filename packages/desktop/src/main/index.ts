@@ -51,9 +51,9 @@ import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 
 const APP_NAMES: Record<string, string> = {
-  dev: "MIAO Dev",
-  beta: "MIAO Beta",
-  prod: "MIAO",
+  dev: "miao Dev",
+  beta: "miao Beta",
+  prod: "miao",
 }
 const APP_IDS: Record<string, string> = {
   dev: "ai.miao.desktop.dev",
@@ -138,7 +138,7 @@ const main = Effect.gen(function* () {
     process.env.XDG_STATE_HOME = join(root, "state")
     return root
   })()
-  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "MIAO Dev")
+  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "miao Dev")
   app.setAppUserModelId(appId)
   app.setPath(
     "userData",

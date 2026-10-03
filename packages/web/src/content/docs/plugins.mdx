@@ -3,7 +3,7 @@ title: Plugins
 description: Write your own plugins to extend Miao.
 ---
 
-Plugins allow you to extend MIAO by hooking into various events and customizing behavior. You can create plugins to add new features, integrate with external services, or modify MIAO's default behavior.
+Plugins allow you to extend miao by hooking into various events and customizing behavior. You can create plugins to add new features, integrate with external services, or modify miao's default behavior.
 
 For examples, check out the [plugins](/docs/ecosystem#plugins) created by the community.
 
@@ -118,7 +118,7 @@ The plugin function receives:
 - `project`: The current project information.
 - `directory`: The current working directory.
 - `worktree`: The git worktree path.
-- `client`: An MIAO SDK client for interacting with the AI.
+- `client`: An miao SDK client for interacting with the AI.
 - `$`: Bun's [shell API](https://bun.com/docs/runtime/shell) for executing commands.
 
 ---
@@ -235,14 +235,14 @@ export const NotificationPlugin = async ({ project, client, $, directory, worktr
 We are using `osascript` to run AppleScript on macOS. Here we are using it to send notifications.
 
 :::note
-If you’re using the MIAO desktop app, it can send system notifications automatically when a response is ready or when a session errors.
+If you’re using the miao desktop app, it can send system notifications automatically when a response is ready or when a session errors.
 :::
 
 ---
 
 ### .env protection
 
-Prevent MIAO from reading `.env` files:
+Prevent miao from reading `.env` files:
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -277,7 +277,7 @@ export const InjectEnvPlugin = async () => {
 
 ### Custom tools
 
-Plugins can also add custom tools to MIAO:
+Plugins can also add custom tools to miao:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -300,13 +300,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-The `tool` helper creates a custom tool that MIAO can call. It takes a Zod schema function and returns a tool definition with:
+The `tool` helper creates a custom tool that miao can call. It takes a Zod schema function and returns a tool definition with:
 
 - `description`: What the tool does
 - `args`: Zod schema for the tool's arguments
 - `execute`: Function that runs when the tool is called
 
-Your custom tools will be available to MIAO alongside built-in tools.
+Your custom tools will be available to miao alongside built-in tools.
 
 :::note
 If a plugin tool uses the same name as a built-in tool, the plugin tool takes precedence.

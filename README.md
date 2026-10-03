@@ -1,21 +1,21 @@
 <p align="center">
-  <strong>MIAO</strong>
+  <strong>miao</strong>
 </p>
 <p align="center">Your models. Your workflow. Less wasted context.</p>
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh.md">简体中文</a>
 </p>
 <p align="center">
-  <a href="https://mtty.dev/miao">Website</a> · <a href="#quick-start">Quick start</a> · <a href="#why-miao">Why MIAO</a> · <a href="docs/guide.en.md">Guide</a> · <a href="https://github.com/oxdingzg/miao/releases">Releases</a> · <a href="#related-projects">Related projects</a>
+  <a href="https://mtty.dev/miao">Website</a> · <a href="#quick-start">Quick start</a> · <a href="#why-miao">Why miao</a> · <a href="docs/guide.en.md">Guide</a> · <a href="https://github.com/oxdingzg/miao/releases">Releases</a> · <a href="#related-projects">Related projects</a>
 </p>
 
 ---
 
-**MIAO is an open-source AI coding agent for developers who want to get real work done—and understand what it costs.** Work in your terminal, use the models you choose, and let the agent explore a repository, edit code, run commands, and check its work.
+**miao is an open-source AI coding agent for developers who want to get real work done—and understand what it costs.** Work in your terminal, use the models you choose, and let the agent explore a repository, edit code, run commands, and check its work.
 
-Built on [opencode](https://github.com/anomalyco/opencode), MIAO focuses on the engineering around the model: **context efficiency, durable sessions, collaboration, and control over long-running work.** Its aim is the same useful result with less waiting and fewer wasted tokens.
+Built on [opencode](https://github.com/anomalyco/opencode), miao focuses on the engineering around the model: **context efficiency, durable sessions, collaboration, and control over long-running work.** Its aim is the same useful result with less waiting and fewer wasted tokens.
 
-## Why MIAO
+## Why miao
 
 ### Choose the model that fits the work
 
@@ -43,7 +43,7 @@ Durable history does **not** imply automatic execution recovery after a crash: u
 
 ## Built for everyday engineering
 
-| What you need                         | What MIAO provides                                                                                          |
+| What you need                         | What miao provides                                                                                          |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Understand an unfamiliar repository   | File reading, search, project instructions, skills, and specialist subagents                                |
 | Implement and verify a change         | File edits and patches, shell commands, optional LSP diagnostics and formatting                             |
@@ -99,7 +99,7 @@ Place this in `.miao/miao.jsonc` for a project or `~/.config/miao/miao.jsonc` gl
 
 ## Drive sessions from WeChat or QQ (experimental)
 
-`miao remote` runs the MIAO server on `127.0.0.1` together with your IM channels (WeChat iLink ClawBot, a QQ bot), so you can list sessions, start one, send prompts, approve tool calls, and interrupt from your phone. Only the person who scanned the login code is heard, and only directories listed in `remote.projects` can be driven.
+`miao remote` runs the miao server on `127.0.0.1` together with your IM channels (WeChat iLink ClawBot, a QQ bot), so you can list sessions, start one, send prompts, approve tool calls, and interrupt from your phone. Only the person who scanned the login code is heard, and only directories listed in `remote.projects` can be driven.
 
 ```sh
 miao remote login wechat   # scan the QR code with WeChat
@@ -173,7 +173,7 @@ miao is pre-1.0. The V1 session runtime and its legacy `/session/*` routes have 
 
 ### From V1 to V2
 
-V1 was the session runtime MIAO inherited from opencode; V2 is MIAO's rewritten core. The V1 session runtime, its legacy tools, and the `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` routes have been removed, so all shipped clients run V2. Two compatibility surfaces remain: the database migration layer that reads history written before V2, and the non-session legacy routes still being migrated to `/api/*`.
+V1 was the session runtime miao inherited from opencode; V2 is miao's rewritten core. The V1 session runtime, its legacy tools, and the `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` routes have been removed, so all shipped clients run V2. Two compatibility surfaces remain: the database migration layer that reads history written before V2, and the non-session legacy routes still being migrated to `/api/*`.
 
 | Concern                                                      | Status                                                   |
 | ------------------------------------------------------------ | -------------------------------------------------------- |
@@ -202,7 +202,7 @@ miao runs locally without a miao or OpenCode account. Connect your chosen model 
 
 | Project | What it is | Links |
 |---|---|---|
-| **MIAO** (this repository) | AI coding agent for the terminal | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **miao** (this repository) | AI coding agent for the terminal | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
 | **mtty** | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term) |
 | **mtty.dev** | The website and documentation for both | [mtty.dev](https://mtty.dev) |
 
@@ -211,7 +211,7 @@ miao and mtty are separate projects, and each works without the other. Run miao 
 ## Documentation and development
 
 - [Usage guide](docs/guide.en.md) · [使用指南](docs/guide.zh.md)
-- [MIAO vs its opencode baseline](docs/miao-vs-opencode.en.md) — measurements, differences, and integration status
+- [miao vs its opencode baseline](docs/miao-vs-opencode.en.md) — measurements, differences, and integration status
 - [Release workflow](docs/release.en.md) — versions, builds, and publishing
 - [Runtime design](CONTEXT.md) · [V2 specifications](specs/v2) — session, context, and client contracts
 

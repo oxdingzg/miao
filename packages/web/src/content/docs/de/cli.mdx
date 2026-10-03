@@ -1,17 +1,17 @@
 ---
 title: CLI
-description: MIAO CLI Optionen und Befehle.
+description: miao CLI Optionen und Befehle.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Der MIAO CLI startet standardmäßig das [TUI](/docs/tui), wenn er ohne Argumente ausgeführt wird.
+Der miao CLI startet standardmäßig das [TUI](/docs/tui), wenn er ohne Argumente ausgeführt wird.
 
 ```bash
 miao
 ```
 
-Es akzeptiert aber auch Befehle, wie auf dieser Seite dokumentiert. Dadurch können Sie programmgesteuert mit MIAO interagieren.
+Es akzeptiert aber auch Befehle, wie auf dieser Seite dokumentiert. Dadurch können Sie programmgesteuert mit miao interagieren.
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -44,13 +44,13 @@ miao [project]
 
 ## Befehle
 
-Der MIAO CLI verfügt außerdem über die folgenden Befehle.
+Der miao CLI verfügt außerdem über die folgenden Befehle.
 
 ---
 
 ### agent
 
-Agenten für MIAO verwalten.
+Agenten für miao verwalten.
 
 ```bash
 miao agent [command]
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao wird von der Anbieterliste bei [Models.dev](https://models.dev) unterstützt, sodass Sie `miao auth login` verwenden können, um API-Schlüssel für jeden Anbieter zu konfigurieren, den Sie verwenden möchten. Dies wird in `~/.local/share/miao/auth.json` gespeichert.
+miao wird von der Anbieterliste bei [Models.dev](https://models.dev) unterstützt, sodass Sie `miao auth login` verwenden können, um API-Schlüssel für jeden Anbieter zu konfigurieren, den Sie verwenden möchten. Dies wird in `~/.local/share/miao/auth.json` gespeichert.
 
 ```bash
 miao auth login
 ```
 
-Wenn MIAO startet, lädt es den Anbieter aus der Anmeldeinformationsdatei. Und ob in Ihren Umgebungen Schlüssel sind oder in Ihrem Projekt eine `.env`-Datei vorhanden ist.
+Wenn miao startet, lädt es den Anbieter aus der Anmeldeinformationsdatei. Und ob in Ihren Umgebungen Schlüssel sind oder in Ihrem Projekt eine `.env`-Datei vorhanden ist.
 
 ---
 
@@ -305,7 +305,7 @@ miao models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | Aktualisieren Sie den Modellcache von models.dev                                      |
 | <nobr><code>{"--verbose"}</code></nobr> | Verwenden Sie eine ausführlichere Modellausgabe (einschließlich Metadaten wie Kosten) |
 
-Verwenden Sie das Flag `--refresh`, um die zwischengespeicherte Modellliste zu aktualisieren. Dies ist nützlich, wenn einem Anbieter neue Modelle hinzugefügt wurden und Sie diese in MIAO sehen möchten.
+Verwenden Sie das Flag `--refresh`, um die zwischengespeicherte Modellliste zu aktualisieren. Dies ist nützlich, wenn einem Anbieter neue Modelle hinzugefügt wurden und Sie diese in miao sehen möchten.
 
 ```bash
 miao models --refresh
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-Führen Sie MIAO im nicht interaktiven Modus aus, indem Sie direkt eine Eingabeaufforderung übergeben.
+Führen Sie miao im nicht interaktiven Modus aus, indem Sie direkt eine Eingabeaufforderung übergeben.
 
 ```bash
 miao run [message..]
@@ -500,7 +500,7 @@ Dieser Befehl startet einen ACP-Server, der über stdin/stdout unter Verwendung 
 
 ### uninstall
 
-Deinstallieren Sie MIAO und entfernen Sie alle zugehörigen Dateien.
+Deinstallieren Sie miao und entfernen Sie alle zugehörigen Dateien.
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-Aktualisiert MIAO auf die neueste Version oder eine bestimmte Version.
+Aktualisiert miao auf die neueste Version oder eine bestimmte Version.
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## Globale Flags
 
-Der MIAO CLI akzeptiert die folgenden globalen Flags.
+Der miao CLI akzeptiert die folgenden globalen Flags.
 
 | Flag                                       | Kurz | Beschreibung                              |
 | ------------------------------------------ | ---- | ----------------------------------------- |
@@ -560,7 +560,7 @@ Der MIAO CLI akzeptiert die folgenden globalen Flags.
 
 ## Umgebungsvariablen
 
-Miao kann mithilfe von Umgebungsvariablen konfiguriert werden.
+miao kann mithilfe von Umgebungsvariablen konfiguriert werden.
 
 | Variable                              | Typ             | Beschreibung                                                                     |
 | ------------------------------------- | --------------- | -------------------------------------------------------------------------------- |

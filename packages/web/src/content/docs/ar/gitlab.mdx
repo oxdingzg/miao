@@ -1,33 +1,33 @@
 ---
 title: GitLab
-description: استخدم MIAO في مشكلات GitLab وطلبات الدمج.
+description: استخدم miao في مشكلات GitLab وطلبات الدمج.
 ---
 
-يتكامل MIAO مع سير عمل GitLab لديك عبر خط أنابيب GitLab CI/CD أو عبر GitLab Duo.
+يتكامل miao مع سير عمل GitLab لديك عبر خط أنابيب GitLab CI/CD أو عبر GitLab Duo.
 
-في كلتا الحالتين، سيعمل MIAO على مشغّلات GitLab لديك.
+في كلتا الحالتين، سيعمل miao على مشغّلات GitLab لديك.
 
 ---
 
 ## GitLab CI
 
-يعمل MIAO ضمن خط أنابيب GitLab عادي. يمكنك دمجه في الخط كمكوّن [CI](https://docs.gitlab.com/ee/ci/components/).
+يعمل miao ضمن خط أنابيب GitLab عادي. يمكنك دمجه في الخط كمكوّن [CI](https://docs.gitlab.com/ee/ci/components/).
 
-هنا نستخدم مكوّن CI/CD أنشأه المجتمع لـ MIAO — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+هنا نستخدم مكوّن CI/CD أنشأه المجتمع لـ miao — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
 
 ---
 
 ### الميزات
 
-- **استخدام إعدادات مخصّصة لكل مهمة**: يمكنك إعداد MIAO باستخدام دليل إعدادات مخصّص، مثل `./config/#custom-directory`، لتفعيل الوظائف أو تعطيلها في كل تشغيل لـ Miao.
-- **إعداد بسيط**: يقوم مكوّن CI بإعداد MIAO في الخلفية؛ كل ما عليك هو إنشاء إعدادات MIAO والمطالبة (prompt) الأولية.
+- **استخدام إعدادات مخصّصة لكل مهمة**: يمكنك إعداد miao باستخدام دليل إعدادات مخصّص، مثل `./config/#custom-directory`، لتفعيل الوظائف أو تعطيلها في كل تشغيل لـ Miao.
+- **إعداد بسيط**: يقوم مكوّن CI بإعداد miao في الخلفية؛ كل ما عليك هو إنشاء إعدادات miao والمطالبة (prompt) الأولية.
 - **مرن**: يدعم مكوّن CI عدة مُدخلات لتخصيص سلوكه.
 
 ---
 
 ### الإعداد
 
-1. احفظ JSON مصادقة MIAO كمتغيرات بيئة CI من نوع File ضمن **Settings** > **CI/CD** > **Variables**. تأكد من تعيينها على "Masked and hidden".
+1. احفظ JSON مصادقة miao كمتغيرات بيئة CI من نوع File ضمن **Settings** > **CI/CD** > **Variables**. تأكد من تعيينها على "Masked and hidden".
 2. أضف ما يلي إلى ملف `.gitlab-ci.yml`.
 
    ```yaml title=".gitlab-ci.yml"
@@ -46,23 +46,23 @@ description: استخدم MIAO في مشكلات GitLab وطلبات الدمج.
 
 ## GitLab Duo
 
-يتكامل MIAO مع سير عمل GitLab لديك.
-اذكر `@opencode` في تعليق، وسينفّذ MIAO المهام ضمن خط أنابيب GitLab CI لديك.
+يتكامل miao مع سير عمل GitLab لديك.
+اذكر `@opencode` في تعليق، وسينفّذ miao المهام ضمن خط أنابيب GitLab CI لديك.
 
 ---
 
 ### الميزات
 
-- **فرز المشكلات**: اطلب من MIAO النظر في مشكلة وشرحها لك.
-- **الإصلاح والتنفيذ**: اطلب من MIAO إصلاح مشكلة أو تنفيذ ميزة.
+- **فرز المشكلات**: اطلب من miao النظر في مشكلة وشرحها لك.
+- **الإصلاح والتنفيذ**: اطلب من miao إصلاح مشكلة أو تنفيذ ميزة.
   سيُنشئ فرعًا جديدًا ويرفع طلب دمج بالتغييرات.
-- **آمن**: يعمل MIAO على مشغّلات GitLab لديك.
+- **آمن**: يعمل miao على مشغّلات GitLab لديك.
 
 ---
 
 ### الإعداد
 
-يعمل MIAO ضمن خط أنابيب GitLab CI/CD لديك، وإليك ما ستحتاجه لإعداده:
+يعمل miao ضمن خط أنابيب GitLab CI/CD لديك، وإليك ما ستحتاجه لإعداده:
 
 :::tip
 اطّلع على [**وثائق GitLab**](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/) للحصول على تعليمات محدّثة.
@@ -158,7 +158,7 @@ description: استخدم MIAO في مشكلات GitLab وطلبات الدمج.
 
 ### أمثلة
 
-فيما يلي بعض الأمثلة على كيفية استخدام MIAO في GitLab.
+فيما يلي بعض الأمثلة على كيفية استخدام miao في GitLab.
 
 :::tip
 يمكنك ضبطه لاستخدام عبارة تشغيل مختلفة عن `@opencode`.
@@ -172,7 +172,7 @@ description: استخدم MIAO في مشكلات GitLab وطلبات الدمج.
   @opencode explain this issue
   ```
 
-  سيقرأ MIAO المشكلة ويرد بشرح واضح.
+  سيقرأ miao المشكلة ويرد بشرح واضح.
 
 - **إصلاح مشكلة**
 
@@ -182,7 +182,7 @@ description: استخدم MIAO في مشكلات GitLab وطلبات الدمج.
   @opencode fix this
   ```
 
-  سيُنشئ MIAO فرعًا جديدًا، وينفّذ التغييرات، ويفتح طلب دمج بالتغييرات.
+  سيُنشئ miao فرعًا جديدًا، وينفّذ التغييرات، ويفتح طلب دمج بالتغييرات.
 
 - **مراجعة طلبات الدمج**
 
@@ -192,4 +192,4 @@ description: استخدم MIAO في مشكلات GitLab وطلبات الدمج.
   @opencode review this merge request
   ```
 
-  سيُراجع MIAO طلب الدمج ويقدّم ملاحظات.
+  سيُراجع miao طلب الدمج ويقدّم ملاحظات.

@@ -3,7 +3,7 @@ title: Programtillegg
 description: Skriv dine egne programtillegg for å utvide Miao.
 ---
 
-Plugins lar deg utvide MIAO ved å koble til ulike hendelser og tilpasse atferd. Du kan lage plugins for å legge til nye funksjoner, integrere med eksterne tjenester eller endre standardoppførselen til Miao.
+Plugins lar deg utvide miao ved å koble til ulike hendelser og tilpasse atferd. Du kan lage plugins for å legge til nye funksjoner, integrere med eksterne tjenester eller endre standardoppførselen til Miao.
 
 For eksempler, sjekk ut [plugins](/docs/ecosystem#plugins) opprettet av fellesskapet.
 
@@ -83,7 +83,7 @@ Lokale plugins og tilpassede verktøy kan bruke eksterne npm-pakker. Legg til en
 }
 ```
 
-Miao kjører `bun install` ved oppstart for å installere disse. Programtilleggene og verktøyene dine kan deretter importere dem.
+miao kjører `bun install` ved oppstart for å installere disse. Programtilleggene og verktøyene dine kan deretter importere dem.
 
 ```ts title=".miao/plugins/my-plugin.ts"
 import { escape } from "shescape"
@@ -118,7 +118,7 @@ Plugin-funksjonen mottar:
 - `project`: Gjeldende prosjektinformasjon.
 - `directory`: Gjeldende arbeidskatalog.
 - `worktree`: Git-arbeidstrebanen.
-- `client`: En MIAO SDK klient for samhandling med AI.
+- `client`: En miao SDK klient for samhandling med AI.
 - `$`: Buns [shell API](https://bun.com/docs/runtime/shell) for å utføre kommandoer.
 
 ---
@@ -242,7 +242,7 @@ Hvis du bruker Miao-skrivebordsappen, kan den sende systemvarsler automatisk nå
 
 ### .env-beskyttelse
 
-Hindre MIAO fra å lese `.env` filer:
+Hindre miao fra å lese `.env` filer:
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -277,7 +277,7 @@ export const InjectEnvPlugin = async () => {
 
 ### Egendefinerte verktøy
 
-Plugins kan også legge til egendefinerte verktøy til MIAO:
+Plugins kan også legge til egendefinerte verktøy til miao:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -300,13 +300,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-`tool`-hjelperen lager et tilpasset verktøy som MIAO kan kalle. Den tar en Zod-skjemafunksjon og returnerer en verktøydefinisjon med:
+`tool`-hjelperen lager et tilpasset verktøy som miao kan kalle. Den tar en Zod-skjemafunksjon og returnerer en verktøydefinisjon med:
 
 - `description`: Hva verktøyet gjør
 - `args`: Zod-skjema for verktøyets argumenter
   - `execute`: Funksjon som kjører når verktøyet kalles
 
-Dine egendefinerte verktøy vil være tilgjengelige for MIAO sammen med innebygde verktøy.
+Dine egendefinerte verktøy vil være tilgjengelige for miao sammen med innebygde verktøy.
 
 :::note
 Hvis et plugin-verktøy bruker samme navn som et innebygd verktøy, vil plugin-verktøyet ha forrang.

@@ -6,7 +6,7 @@ description: Usando cualquier proveedor LLM en Miao.
 import config from "../../../../config.mjs"
 export const console = config.console
 
-Miao usa el [AI SDK](https://ai-sdk.dev/) y [Models.dev](https://models.dev) para admitir **75+ proveedores LLM** y admite la ejecución de modelos locales.
+miao usa el [AI SDK](https://ai-sdk.dev/) y [Models.dev](https://models.dev) para admitir **75+ proveedores LLM** y admite la ejecución de modelos locales.
 
 Para agregar un proveedor necesita:
 
@@ -24,7 +24,7 @@ en `~/.local/share/miao/auth.json`.
 
 ### Configuración
 
-Puedes personalizar los proveedores a través de la sección `provider` en tu MIAO
+Puedes personalizar los proveedores a través de la sección `provider` en tu miao
 configuración.
 
 ---
@@ -50,14 +50,14 @@ Puede personalizar la URL base para cualquier proveedor configurando la opción 
 
 ## OpenCode Zen
 
-OpenCode Zen es una lista de modelos proporcionados por el equipo MIAO que han sido
+OpenCode Zen es una lista de modelos proporcionados por el equipo miao que han sido
 probado y verificado para funcionar bien con Miao. [Más información](/docs/zen).
 
 :::tip
 Si eres nuevo, te recomendamos comenzar con OpenCode Zen.
 :::
 
-1. Ejecute el comando `/connect` en TUI, seleccione MIAO y diríjase a [opencode.ai/auth](https://opencode.ai/auth).
+1. Ejecute el comando `/connect` en TUI, seleccione miao y diríjase a [opencode.ai/auth](https://opencode.ai/auth).
 
    ```txt
    /connect
@@ -80,13 +80,13 @@ Si eres nuevo, te recomendamos comenzar con OpenCode Zen.
    /models
    ```
 
-Funciona como cualquier otro proveedor en MIAO y su uso es completamente opcional.
+Funciona como cualquier otro proveedor en miao y su uso es completamente opcional.
 
 ---
 
 ## OpenCode Go
 
-OpenCode Go es un plan de suscripción de bajo costo que brinda acceso confiable a modelos de codificación abiertos populares proporcionados por el equipo de MIAO que han sido
+OpenCode Go es un plan de suscripción de bajo costo que brinda acceso confiable a modelos de codificación abiertos populares proporcionados por el equipo de miao que han sido
 probado y verificado para funcionar bien con Miao.
 
 1. Ejecute el comando `/connect` en TUI, seleccione `OpenCode Go` y diríjase a [opencode.ai/auth](https://opencode.ai/zen).
@@ -112,7 +112,7 @@ probado y verificado para funcionar bien con Miao.
    /models
    ```
 
-Funciona como cualquier otro proveedor en MIAO y su uso es completamente opcional.
+Funciona como cualquier otro proveedor en miao y su uso es completamente opcional.
 
 ---
 
@@ -156,7 +156,7 @@ lista, no dude en abrir un PR.
 
 ### Amazon Bedrock
 
-Para usar Amazon Bedrock con MIAO:
+Para usar Amazon Bedrock con miao:
 
 1. Dirígete al **Catálogo de modelos** en la consola Amazon Bedrock y solicita
    Accede a los modelos que desees.
@@ -169,7 +169,7 @@ Para usar Amazon Bedrock con MIAO:
 
    #### Variables de entorno (Inicio rápido)
 
-   Establezca una de estas variables de entorno mientras ejecuta MIAO:
+   Establezca una de estas variables de entorno mientras ejecuta miao:
 
    ```bash
    # Option 1: Using AWS access keys
@@ -311,7 +311,7 @@ Para perfiles de inferencia personalizados, utilice el modelo y el nombre del pr
    ```
 
 :::info
-El uso de su suscripción Claude Pro/Max en MIAO no está oficialmente respaldado por [Anthropic](https://anthropic.com).
+El uso de su suscripción Claude Pro/Max en miao no está oficialmente respaldado por [Anthropic](https://anthropic.com).
 :::
 
 ##### Usando las teclas API
@@ -324,7 +324,7 @@ O si ya tienes una clave API, puedes seleccionar **Ingresar manualmente la clave
 
 ### Atomic Chat
 
-Puedes configurar MIAO para usar modelos locales mediante [Atomic Chat](https://atomic.chat), una aplicación de escritorio que ejecuta LLMs locales detrás de un servidor API compatible con OpenAI (endpoint por defecto `http://127.0.0.1:1337/v1`).
+Puedes configurar miao para usar modelos locales mediante [Atomic Chat](https://atomic.chat), una aplicación de escritorio que ejecuta LLMs locales detrás de un servidor API compatible con OpenAI (endpoint por defecto `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -373,7 +373,7 @@ Si encuentra errores del tipo "Lo siento, pero no puedo ayudar con esa solicitud
 2. Vaya a [Azure AI Foundry](https://ai.azure.com/) e implemente un modelo.
 
    :::nota
-   El nombre de la implementación debe coincidir con el nombre del modelo para que MIAO funcione correctamente.
+   El nombre de la implementación debe coincidir con el nombre del modelo para que miao funcione correctamente.
    :::
 
 3. Ejecute el comando `/connect` y busque **Azure**.
@@ -420,7 +420,7 @@ Si encuentra errores del tipo "Lo siento, pero no puedo ayudar con esa solicitud
 2. Vaya a [Azure AI Foundry](https://ai.azure.com/) e implemente un modelo.
 
    :::nota
-   El nombre de la implementación debe coincidir con el nombre del modelo para que MIAO funcione correctamente.
+   El nombre de la implementación debe coincidir con el nombre del modelo para que miao funcione correctamente.
    :::
 
 3. Ejecute el comando `/connect` y busque **Azure Cognitive Services**.
@@ -756,8 +756,8 @@ para almacenar el token en el almacenamiento de autenticación miao.
 ##### Autohospedado GitLab
 
 :::note[nota de cumplimiento]
-Miao utiliza un modelo pequeño para algunas tareas de IA, como generar el título de la sesión.
-Está configurado para usar gpt-5-nano de forma predeterminada, alojado por Zen. Para bloquear MIAO
+miao utiliza un modelo pequeño para algunas tareas de IA, como generar el título de la sesión.
+Está configurado para usar gpt-5-nano de forma predeterminada, alojado por Zen. Para bloquear miao
 Para usar solo su propia instancia alojada en GitLab, agregue lo siguiente a su
 Archivo `miao.json`. También se recomienda desactivar el uso compartido de sesiones.
 
@@ -853,7 +853,7 @@ Este complemento proporciona capacidades integrales de administración del repos
 
 ### GitHub Copilot
 
-Para utilizar su suscripción GitHub Copilot con MIAO:
+Para utilizar su suscripción GitHub Copilot con miao:
 
 :::note
 Algunos modelos pueden necesitar un [Pro+
@@ -889,7 +889,7 @@ suscripción](https://github.com/features/copilot/plans) para usar.
 
 ### Google Vertex AI
 
-Para utilizar Google Vertex AI con MIAO:
+Para utilizar Google Vertex AI con miao:
 
 1. Dirígete a **Model Garden** en Google Cloud Console y verifica el
    Modelos disponibles en su región.
@@ -1018,7 +1018,7 @@ Para obtener más proveedores y funciones avanzadas como almacenamiento en cach�
 
 #### Configuraciones opcionales
 
-En caso de que vea una característica o modelo de Helicone que no esté configurado automáticamente a través de MIAO, siempre podrá configurarlo usted mismo.
+En caso de que vea una característica o modelo de Helicone que no esté configurado automáticamente a través de miao, siempre podrá configurarlo usted mismo.
 
 Aquí está el [Directorio de modelos de Helicone](https://helicone.ai/models), lo necesitará para obtener las ID de los modelos que desea agregar.
 
@@ -1071,7 +1071,7 @@ Helicone admite encabezados personalizados para funciones como almacenamiento en
 
 ##### Seguimiento de sesión
 
-La función [Sesiones](https://docs.helicone.ai/features/sessions) de Helicone le permite agrupar solicitudes LLM relacionadas. Utilice el complemento [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) para registrar automáticamente cada conversación MIAO como una sesión en Helicone.
+La función [Sesiones](https://docs.helicone.ai/features/sessions) de Helicone le permite agrupar solicitudes LLM relacionadas. Utilice el complemento [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) para registrar automáticamente cada conversación miao como una sesión en Helicone.
 
 ```bash
 npm install -g opencode-helicone-session
@@ -1085,7 +1085,7 @@ Agréguelo a su configuración.
 }
 ```
 
-El complemento inyecta encabezados `Helicone-Session-Id` y `Helicone-Session-Name` en sus solicitudes. En la página Sesiones de Helicone, verá cada conversación MIAO enumerada como una sesión separada.
+El complemento inyecta encabezados `Helicone-Session-Id` y `Helicone-Session-Name` en sus solicitudes. En la página Sesiones de Helicone, verá cada conversación miao enumerada como una sesión separada.
 
 ##### Cabeceras comunes de Helicone
 
@@ -1102,7 +1102,7 @@ Consulte el [Directorio de encabezados de Helicone](https://docs.helicone.ai/hel
 
 ### llama.cpp
 
-Puede configurar MIAO para usar modelos locales a través de la utilidad llama-server de [llama.cpp](https://github.com/ggml-org/llama.cpp)
+Puede configurar miao para usar modelos locales a través de la utilidad llama-server de [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
@@ -1169,7 +1169,7 @@ IO.NET ofrece 17 modelos optimizados para varios casos de uso:
 
 ### LM Studio
 
-Puede configurar MIAO para usar modelos locales a través de LM Studio.
+Puede configurar miao para usar modelos locales a través de LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
@@ -1286,7 +1286,7 @@ Para usar Kimi K2 de Moonshot AI:
 
 ### Ollama
 
-Puedes configurar MIAO para usar modelos locales a través de Ollama.
+Puedes configurar miao para usar modelos locales a través de Ollama.
 
 :::tip
 Ollama puede configurarse automáticamente para Miao. Consulte los [documentos de integración de Ollama](https://docs.ollama.com/integrations/opencode) para obtener más detalles.
@@ -1328,7 +1328,7 @@ Si las llamadas a herramientas no funcionan, intente aumentar `num_ctx` en Ollam
 
 ### Ollama Cloud
 
-Para usar Ollama Cloud con MIAO:
+Para usar Ollama Cloud con miao:
 
 1. Dirígete a [https://ollama.com/](https://ollama.com/) e inicia sesión o crea una cuenta.
 
@@ -1351,7 +1351,7 @@ Para usar Ollama Cloud con MIAO:
    └ enter
    ```
 
-6. **Importante**: Antes de usar modelos en la nube en MIAO, debe obtener la información del modelo localmente:
+6. **Importante**: Antes de usar modelos en la nube en miao, debe obtener la información del modelo localmente:
 
    ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1411,7 +1411,7 @@ OpenCode Zen es una lista de modelos probados y verificados proporcionada por el
    /connect
    ```
 
-3. Ingrese su clave MIAO API.
+3. Ingrese su clave miao API.
 
    ```txt
    ┌ API key
@@ -1609,7 +1609,7 @@ STACKIT AI Model Serving proporciona un entorno de alojamiento soberano totalmen
 
 ### Scaleway
 
-Para utilizar [API generativas de Scaleway](https://www.scaleway.com/en/docs/generative-apis/) con MIAO:
+Para utilizar [API generativas de Scaleway](https://www.scaleway.com/en/docs/generative-apis/) con miao:
 
 1. Dirígete a la [Configuración de IAM de la consola Scaleway](https://console.scaleway.com/iam/api-keys) para generar una nueva clave API.
 
@@ -1970,7 +1970,7 @@ Detalles de configuración:
 - **limit.context**: tokens de entrada máximos que acepta el modelo.
 - **limit.output**: tokens máximos que el modelo puede generar.
 
-Los campos `limit` le permiten a MIAO comprender cuánto contexto le queda. Los proveedores estándar los extraen de models.dev automáticamente.
+Los campos `limit` le permiten a miao comprender cuánto contexto le queda. Los proveedores estándar los extraen de models.dev automáticamente.
 
 ---
 
@@ -1983,7 +1983,7 @@ Si tiene problemas para configurar un proveedor, verifique lo siguiente:
 
    Esto no se aplica a proveedores como Amazon Bedrock, que dependen de variables de entorno para su autenticación.
 
-2. Para proveedores personalizados, verifique la configuración MIAO y:
+2. Para proveedores personalizados, verifique la configuración miao y:
    - Asegúrese de que el ID del proveedor utilizado en el comando `/connect` coincida con el ID en su configuración miao.
    - Se utiliza el paquete npm correcto para el proveedor. Por ejemplo, utilice `@ai-sdk/cerebras` para Cerebras. Y para todos los demás proveedores compatibles con OpenAI, utilice `@ai-sdk/openai-compatible`.
    - Verifique que se utilice el punto final API correcto en el campo `options.baseURL`.

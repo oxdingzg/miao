@@ -1,5 +1,5 @@
 export const dict = {
-  "desktop.menu.app": "MIAO",
+  "desktop.menu.app": "miao",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Редагування",
   "desktop.menu.view": "Вигляд",
@@ -39,11 +39,11 @@ export const dict = {
   "desktop.menu.nextProject": "Наступний проєкт",
   "desktop.menu.minimize": "Згорнути",
   "desktop.menu.maximize": "Розгорнути",
-  "desktop.menu.documentation": "Документація MIAO",
+  "desktop.menu.documentation": "Документація miao",
   "desktop.menu.supportForum": "Форум підтримки",
   "desktop.menu.shareFeedback": "Надіслати відгук",
   "desktop.menu.reportBug": "Повідомити про помилку",
-  "desktop.menu.ariaLabel": "Меню MIAO",
+  "desktop.menu.ariaLabel": "Меню miao",
 
   "desktop.updater.dialog.checkFailed.message": "Не вдалося перевірити наявність оновлень.",
   "desktop.updater.dialog.checkFailed.title": "Помилка оновлення",
@@ -58,9 +58,9 @@ export const dict = {
   "desktop.recovery.action.exportLogs": "Експортувати журнали",
   "desktop.recovery.action.keepWaiting": "Продовжити очікування",
   "desktop.recovery.action.quit": "Завершити роботу",
-  "desktop.recovery.loadFailed": "Не вдалося завантажити MIAO",
-  "desktop.recovery.terminated": "Роботу вікна MIAO несподівано завершено",
-  "desktop.recovery.unresponsive": "MIAO не відповідає",
+  "desktop.recovery.loadFailed": "Не вдалося завантажити miao",
+  "desktop.recovery.terminated": "Роботу вікна miao несподівано завершено",
+  "desktop.recovery.unresponsive": "miao не відповідає",
   "desktop.recovery.unresponsive.detail":
     "Ви можете повторно запустити програму, відкрити журнали або продовжити очікування.",
   "desktop.recovery.loadFailed.detail": "Вікно: {{window}}\nURL: {{url}}\nПомилка: {{code}} {{description}}",
@@ -80,13 +80,13 @@ export const dict = {
   "desktop.wsl.error.executeDistro": "Не вдалося виконати команди в дистрибутиві",
   "desktop.wsl.error.installWsl": "Не вдалося встановити WSL",
   "desktop.wsl.error.installDistro": "Не вдалося встановити дистрибутив: {{distro}}",
-  "desktop.wsl.error.installOpencode": "Не вдалося встановити MIAO",
+  "desktop.wsl.error.installOpencode": "Не вдалося встановити miao",
   "desktop.wsl.error.alreadyAdded": "{{distro}} уже додано",
   "desktop.wsl.error.miaoMissing": "miao не встановлено в цьому дистрибутиві",
   "desktop.wsl.error.miaoCannotRun": "miao встановлено, але його не вдалося запустити",
-  "desktop.wsl.error.miaoNotInstalled": "MIAO не встановлено в {{distro}}",
+  "desktop.wsl.error.miaoNotInstalled": "miao не встановлено в {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Оновлення MIAO завершено, але {{distro}} усе ще повідомляє про версію {{installed}}; очікувалася {{expected}}",
+    "Оновлення miao завершено, але {{distro}} усе ще повідомляє про версію {{installed}}; очікувалася {{expected}}",
   "desktop.wsl.error.noVersion": "версію не вказано",
   "desktop.wsl.error.serverExited": "Сервер WSL завершив роботу після запуску (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -225,7 +225,7 @@ export const dict = {
   "dialog.model.manage.description": "Налаштуйте, які моделі відображатимуться у виборі моделей.",
   "dialog.model.manage.provider.toggle": "Перемкнути всі моделі {{provider}}",
 
-  "dialog.model.unpaid.freeModels.title": "Безкоштовні моделі від MIAO",
+  "dialog.model.unpaid.freeModels.title": "Безкоштовні моделі від miao",
   "dialog.model.unpaid.addMore.title": "Додати більше моделей від популярних провайдерів",
   "dialog.model.unpaid.viewMoreProviders": "Переглянути ще понад 70 провайдерів",
 
@@ -447,7 +447,7 @@ export const dict = {
   "app.server.otherServers": "Інші сервери",
 
   "dialog.server.title": "Сервери",
-  "dialog.server.description": "Перемкніть сервер MIAO, до якого підключається ця програма.",
+  "dialog.server.description": "Перемкніть сервер miao, до якого підключається ця програма.",
   "dialog.server.search.placeholder": "Пошук серверів",
   "dialog.server.empty": "Ще немає серверів",
   "dialog.server.add.title": "Додати сервер",
@@ -484,7 +484,7 @@ export const dict = {
   "wsl.server.retryStart": "Повторити запуск",
   "wsl.server.updating": "Оновлення...",
   "wsl.onboarding.step.distro": "Вибрати дистрибутив",
-  "wsl.onboarding.step.miao": "MIAO",
+  "wsl.onboarding.step.miao": "miao",
   "wsl.onboarding.checkingRuntime": "Перевірка WSL...",
   "wsl.onboarding.restartRequired": "Щоб завершити встановлення WSL, потрібно перезапустити Windows.",
   "wsl.onboarding.ready": "WSL готова до роботи.",
@@ -499,15 +499,15 @@ export const dict = {
   "wsl.onboarding.finishingDistro": "Завершення налаштування {{distro}}.",
   "wsl.onboarding.pickDistro": "Виберіть дистрибутив або встановіть один із наведених нижче.",
   "wsl.onboarding.checkingOpencode": "Перевірка Miao...",
-  "wsl.onboarding.checkingOpencodeIn": "Перевірка MIAO у {{distro}}...",
+  "wsl.onboarding.checkingOpencodeIn": "Перевірка miao у {{distro}}...",
   "wsl.onboarding.updatingOpencode": "Оновлення Miao...",
-  "wsl.onboarding.updatingOpencodeIn": "Оновлення MIAO у {{distro}}...",
-  "wsl.onboarding.updateOpencodeIn": "Оновіть MIAO у {{distro}}.",
-  "wsl.onboarding.updateOpencode": "Оновити MIAO",
-  "wsl.onboarding.miaoReadyIn": "MIAO готовий до роботи у {{distro}}.",
-  "wsl.onboarding.miaoReady": "MIAO готовий до роботи.",
-  "wsl.onboarding.installOpencodeIn": "Встановіть MIAO у {{distro}}.",
-  "wsl.onboarding.installOpencode": "Встановити MIAO",
+  "wsl.onboarding.updatingOpencodeIn": "Оновлення miao у {{distro}}...",
+  "wsl.onboarding.updateOpencodeIn": "Оновіть miao у {{distro}}.",
+  "wsl.onboarding.updateOpencode": "Оновити miao",
+  "wsl.onboarding.miaoReadyIn": "miao готовий до роботи у {{distro}}.",
+  "wsl.onboarding.miaoReady": "miao готовий до роботи.",
+  "wsl.onboarding.installOpencodeIn": "Встановіть miao у {{distro}}.",
+  "wsl.onboarding.installOpencode": "Встановити miao",
   "wsl.onboarding.chooseDistroFirst": "Спочатку виберіть дистрибутив.",
   "wsl.onboarding.loadFailed": "Не вдалося завантажити стан WSL.",
   "wsl.onboarding.loading": "Завантаження...",
@@ -515,16 +515,16 @@ export const dict = {
   "wsl.onboarding.checkAgain": "Перевірити ще раз",
   "wsl.onboarding.distroStatus.ready": "Готовий",
   "wsl.onboarding.distroStatus.checking": "Перевірка...",
-  "wsl.onboarding.distroStatus.miaoMissing": "MIAO не встановлено",
+  "wsl.onboarding.distroStatus.miaoMissing": "miao не встановлено",
   "wsl.onboarding.distroStatus.missingTools": "Немає bash і curl",
   "wsl.onboarding.distroStatus.unsupported": "Не підтримується · Використовуйте WSL 2",
   "wsl.onboarding.needAnotherDistro": "Потрібен інший дистрибутив?",
   "wsl.onboarding.needAnotherDistroHint": "Встановіть дистрибутив Linux із каталогу WSL",
   "wsl.onboarding.wslNotInstalled.title": "WSL не встановлено",
   "wsl.onboarding.wslNotInstalled.description":
-    "Для додавання сервера WSL в MIAO потрібна WSL (Підсистема Windows для Linux)",
+    "Для додавання сервера WSL в miao потрібна WSL (Підсистема Windows для Linux)",
   "wsl.onboarding.wslUnavailable.title": "WSL недоступна",
-  "wsl.onboarding.wslUnavailable.description": "MIAO не вдалося перевірити WSL на цьому комп'ютері.",
+  "wsl.onboarding.wslUnavailable.description": "miao не вдалося перевірити WSL на цьому комп'ютері.",
   "wsl.onboarding.installWsl": "Встановити WSL",
   "wsl.onboarding.windowsRestartRequired":
     "Перезапустіть Windows, щоб завершити встановлення WSL, а потім знову відкрийте Miao.",
@@ -552,7 +552,7 @@ export const dict = {
   "help.tabs.title": "Представляємо вкладки",
   "help.tabs.description": "Упорядковуйте роботу й активні сесії за допомогою вкладок",
   "help.tabs.date": "14 липня",
-  "help.tabs.introduction": "MIAO Desktop тепер побудовано навколо вкладок.",
+  "help.tabs.introduction": "miao Desktop тепер побудовано навколо вкладок.",
   "help.tabs.sessions":
     "Почніть нову сесію у вкладці або відкрийте наявну сесію з будь-якого свого проєкту. Відкривайте нову вкладку, коли починаєте щось нове, і закривайте її після завершення.",
   "help.tabs.organize":
@@ -684,7 +684,7 @@ export const dict = {
   "toast.project.reloadFailed.title": "Не вдалося перезавантажити {{project}}",
 
   "toast.update.title": "Доступне оновлення",
-  "toast.update.description": "Нова версія MIAO ({{version}}) тепер доступна для встановлення.",
+  "toast.update.description": "Нова версія miao ({{version}}) тепер доступна для встановлення.",
   "toast.update.action.installRestart": "Встановити та перезапустити",
   "toast.update.action.notYet": "Не зараз",
 
@@ -700,7 +700,7 @@ export const dict = {
   "error.page.action.checkUpdates": "Перевірити оновлення",
   "error.page.action.updateTo": "Оновити до {{version}}",
   "error.page.circular": "[Циклічне]",
-  "error.page.report.prefix": "Будь ласка, повідомте про цю помилку команді MIAO",
+  "error.page.report.prefix": "Будь ласка, повідомте про цю помилку команді miao",
   "error.page.report.discord": "у GitHub",
   "error.page.version": "Версія: {{version}}",
 
@@ -727,7 +727,7 @@ export const dict = {
   "error.chain.modelNotFound": "Модель не знайдено: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Перевірте назви провайдерів/моделей у конфігурації (miao.json)",
   "error.chain.mcpFailed":
-    'Сервер MCP "{{name}}" не працює. Зверніть увагу, MIAO ще не підтримує автентифікацію MCP.',
+    'Сервер MCP "{{name}}" не працює. Зверніть увагу, miao ще не підтримує автентифікацію MCP.',
   "error.chain.providerAuthFailed": "Автентифікація провайдера не вдалася ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Не вдалося ініціалізувати провайдера "{{provider}}". Перевірте облікові дані та конфігурацію.',
@@ -958,7 +958,7 @@ export const dict = {
   "sidebar.workspaces.enable": "Увімкнути робочі області",
   "sidebar.workspaces.disable": "Вимкнути робочі області",
   "sidebar.gettingStarted.title": "Початок роботи",
-  "sidebar.gettingStarted.line1": "MIAO містить безкоштовні моделі, тому ви можете почати негайно.",
+  "sidebar.gettingStarted.line1": "miao містить безкоштовні моделі, тому ви можете почати негайно.",
   "sidebar.gettingStarted.line2":
     "Підключіть будь-якого провайдера, щоб використовувати моделі, включаючи Claude, GPT, Gemini тощо.",
   "sidebar.project.recentSessions": "Нещодавні сесії",
@@ -999,7 +999,7 @@ export const dict = {
   "debugBar.direction.ltr": "LTR",
   "debugBar.direction.rtl": "RTL",
 
-  "app.name.desktop": "MIAO Desktop",
+  "app.name.desktop": "miao Desktop",
 
   "settings.section.desktop": "Десктопний застосунок",
   "settings.section.server": "Сервер",
@@ -1007,7 +1007,7 @@ export const dict = {
   "settings.tab.shortcuts": "Клавіатурні скорочення",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "Інтеграція WSL",
-  "settings.desktop.wsl.description": "Запускати сервер MIAO всередині WSL на Windows.",
+  "settings.desktop.wsl.description": "Запускати сервер miao всередині WSL на Windows.",
 
   "settings.general.section.appearance": "Зовнішній вигляд",
   "settings.general.section.advanced": "Додатково",
@@ -1018,16 +1018,16 @@ export const dict = {
   "settings.general.section.display": "Дисплей",
 
   "settings.general.row.language.title": "Мова",
-  "settings.general.row.language.description": "Змінити мову інтерфейсу MIAO",
+  "settings.general.row.language.description": "Змінити мову інтерфейсу miao",
   "settings.general.row.shell.title": "Командна оболонка термінала",
   "settings.general.row.shell.description":
     "Виберіть оболонку для термінала. Сумісні оболонки також використовуються для викликів інструментів агента.",
   "settings.general.row.shell.autoDefault": "Автоматично (за замовчуванням)",
   "settings.general.row.shell.terminalOnly": "тільки термінал",
   "settings.general.row.appearance.title": "Зовнішній вигляд",
-  "settings.general.row.appearance.description": "Налаштуйте вигляд MIAO на вашому пристрої",
+  "settings.general.row.appearance.description": "Налаштуйте вигляд miao на вашому пристрої",
   "settings.general.row.colorScheme.title": "Кольорова схема",
-  "settings.general.row.colorScheme.description": "Виберіть, чи MIAO використовує системну, світлу або темну тему",
+  "settings.general.row.colorScheme.description": "Виберіть, чи miao використовує системну, світлу або темну тему",
   "settings.general.row.theme.title": "Тема",
   "settings.general.row.theme.description": "Налаштуйте тему Miao.",
   "settings.general.row.font.title": "Шрифт коду",
@@ -1086,7 +1086,7 @@ export const dict = {
   "settings.general.row.releaseNotes.description": 'Показувати спливаючі вікна "Що нового" після оновлень',
 
   "settings.updates.row.startup.title": "Перевіряти оновлення під час запуску",
-  "settings.updates.row.startup.description": "Автоматично перевіряти наявність оновлень під час запуску MIAO",
+  "settings.updates.row.startup.description": "Автоматично перевіряти наявність оновлень під час запуску miao",
   "settings.updates.row.check.title": "Перевірити оновлення",
   "settings.updates.row.check.description": "Вручну перевірити наявність оновлень і встановити, якщо доступні",
   "settings.updates.action.checkNow": "Перевірити зараз",

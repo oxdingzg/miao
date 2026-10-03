@@ -9,7 +9,7 @@ export const dict = {
   "desktop.updater.checkFailed.title": "Ο έλεγχος ενημέρωσης απέτυχε",
   "desktop.updater.checkFailed.message": "Απέτυχε ο έλεγχος για ενημερώσεις",
   "desktop.updater.none.title": "Δεν υπάρχει διαθέσιμη ενημέρωση",
-  "desktop.updater.none.message": "Χρησιμοποιείτε ήδη την πιο πρόσφατη έκδοση του Miao",
+  "desktop.updater.none.message": "Χρησιμοποιείτε ήδη την πιο πρόσφατη έκδοση του miao",
   "desktop.updater.downloadFailed.title": "Η ενημέρωση απέτυχε",
   "desktop.updater.downloadFailed.message": "Απέτυχε η λήψη της ενημέρωσης",
   "desktop.updater.downloaded.title": "Η ενημέρωση λήφθηκε",

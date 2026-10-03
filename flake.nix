@@ -1,5 +1,5 @@
 {
-  description = "Miao development flake";
+  description = "miao development flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

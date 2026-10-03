@@ -9,7 +9,7 @@ export const dict = {
   "desktop.updater.checkFailed.title": "La comprovació d'actualització ha fallat",
   "desktop.updater.checkFailed.message": "No s'ha pogut comprovar si hi ha actualitzacions",
   "desktop.updater.none.title": "No hi ha cap actualització disponible",
-  "desktop.updater.none.message": "Ja utilitzeu la versió més recent d'Miao",
+  "desktop.updater.none.message": "Ja utilitzeu la versió més recent d'miao",
   "desktop.updater.downloadFailed.title": "L'actualització ha fallat",
   "desktop.updater.downloadFailed.message": "No s'ha pogut descarregar l'actualització",
   "desktop.updater.downloaded.title": "Actualització baixada",

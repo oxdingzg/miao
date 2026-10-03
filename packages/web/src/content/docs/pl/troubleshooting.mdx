@@ -3,7 +3,7 @@ title: Rozwiązywanie problemów
 description: Typowe problemy i sposoby ich rozwiązywania.
 ---
 
-Aby debugować problemy z MIAO, zacznij od sprawdzenia dzienników i danych lokalnych przechowywanych na dysku.
+Aby debugować problemy z miao, zacznij od sprawdzenia dzienników i danych lokalnych przechowywanych na dysku.
 
 ---
 
@@ -12,7 +12,7 @@ Aby debugować problemy z MIAO, zacznij od sprawdzenia dzienników i danych loka
 Pliki logów są zapisywane w:
 
 - **macOS/Linux**: `~/.local/share/miao/log/`
-- **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.local\share\MIAO\log`
+- **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.local\share\miao\log`
 
 Nazwy plików dziennika zawierają znaczniki czasu (np. `2025-01-09T123456.log`) i przechowywanych jest 10 ostatnich plików dziennika.
 
@@ -59,7 +59,7 @@ Otwórz globalny plik konfiguracyjny i poszukaj klucza `plugin`.
 
 - **macOS/Linux**: `~/.config/miao/miao.json` (lub `~/.config/miao/miao.json`)
 - **macOS/Linux** (starsze instalacje): `~/.local/share/miao/miao.jsonc`
-- **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.config\MIAO\miao.jsonc`
+- **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.config\miao\miao.jsonc`
 
 Jeśli masz skonfigurowane wtyczki, tymczasowo je wyłącz, usuwając klucz lub ustawiając go na pustą tablicę:
 
@@ -76,7 +76,7 @@ miao może także ładować lokalne wtyczki z dysku. Tymczasowo usuń je (lub zm
 
 - **Wtyczki globalne**
   - **macOS/Linux**: `~/.config/miao/plugins/`
-  - **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.config\MIAO\plugins`
+  - **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.config\miao\plugins`
 - **Wtyczki projektowe** (tylko jeśli używasz konfiguracji dla poszczególnych projektów)
   - `<your-project>/.miao/plugins/`
 
@@ -86,16 +86,16 @@ Jeśli aplikacja ponownie zacznie działać, włączaj ponownie wtyczki pojedync
 
 ### Wyczyść pamięć podręczną
 
-Jeśli wyłączenie wtyczek nie pomoże (lub instalacja wtyczki utknęła), wyczyść pamięć podręczną, aby MIAO mógł ją odbudować.
+Jeśli wyłączenie wtyczek nie pomoże (lub instalacja wtyczki utknęła), wyczyść pamięć podręczną, aby miao mógł ją odbudować.
 
-1. Całkowicie zamknij MIAO Desktop.
+1. Całkowicie zamknij miao Desktop.
 2. Usuń katalog pamięci podręcznej:
 
 - **macOS**: Finder -> `Cmd+Shift+G` -> paste `~/.cache/opencode`
 - **Linux**: usuń `~/.cache/opencode` (lub uruchom `rm -rf ~/.cache/opencode`)
 - **Windows**: Naciśnij `WIN+R` i wklej `%USERPROFILE%\.cache\miao`
 
-3. Uruchom ponownie MIAO Desktop.
+3. Uruchom ponownie miao Desktop.
 
 ---
 
@@ -132,7 +132,7 @@ W systemie Linux, niektóre konfiguracje Wayland mogą powodować puste okna lub
 
 ### Windows: Środowisko uruchomieniowe WebView2
 
-W systemie Windows MIAO Desktop wymaga Microsoft Edge **WebView2 Runtime**. Jeśli aplikacja otwiera się w pustym oknie lub nie uruchamia się, zainstaluj/zaktualizuj WebView2 i spróbuj ponownie.
+W systemie Windows miao Desktop wymaga Microsoft Edge **WebView2 Runtime**. Jeśli aplikacja otwiera się w pustym oknie lub nie uruchamia się, zainstaluj/zaktualizuj WebView2 i spróbuj ponownie.
 
 ---
 
@@ -146,7 +146,7 @@ Jeśli doświadczasz niskiej wydajności, problemów z dostępem do plików lub 
 
 miao Desktop pokazuje powiadomienia systemowe tylko wtedy, gdy:
 
-- powiadomienia są włączone dla MIAO w ustawieniach systemu operacyjnego, oraz
+- powiadomienia są włączone dla miao w ustawieniach systemu operacyjnego, oraz
 - okno aplikacji nie jest aktywne.
 
 ---
@@ -155,8 +155,8 @@ miao Desktop pokazuje powiadomienia systemowe tylko wtedy, gdy:
 
 Jeśli aplikacja nie uruchamia się i nie możesz wyczyścić ustawień w interfejsie użytkownika, zresetuj zapisany stan aplikacji komputerowej.
 
-1. Zamknij całkowicie MIAO Desktop.
-2. Znajdź i usuń te pliki (znajdują się w katalogu danych aplikacji MIAO Desktop):
+1. Zamknij całkowicie miao Desktop.
+2. Znajdź i usuń te pliki (znajdują się w katalogu danych aplikacji miao Desktop):
 
 - `miao.settings.dat` (domyślny adres URL serwera na komputerze stacjonarnym)
 - `miao.global.dat` i `miao.workspace.*.dat` (stan interfejsu użytkownika, taki jak najnowsze serwery/projekty)
@@ -171,7 +171,7 @@ Aby szybko znaleźć katalog:
 
 ## Uzyskiwanie pomocy
 
-Jeśli masz problemy z MIAO:
+Jeśli masz problemy z miao:
 
 1. **Zgłoś problem na GitHub**
 
@@ -195,7 +195,7 @@ Oto kilka typowych problemów i sposobów ich rozwiązania.
 
 ---
 
-### MIAO nie uruchamia się
+### miao nie uruchamia się
 
 1. Sprawdź dzienniki pod kątem komunikatów o błędach
 2. Spróbuj uruchomić z `--print-logs`, aby zobaczyć dane wyjściowe w terminalu
@@ -252,7 +252,7 @@ Aby rozwiązać ten problem:
 
 ### Błędy AI_APICallError i problemy z pakietami dostawców
 
-Jeśli napotkasz błędy wywołań API, może to wynikać z nieaktualnych pakietów dostawców. MIAO dynamicznie instaluje pakiety dostawców (OpenAI, Anthropic, Google itp.) w razie potrzeby i przechowuje je lokalnie w pamięci podręcznej.
+Jeśli napotkasz błędy wywołań API, może to wynikać z nieaktualnych pakietów dostawców. miao dynamicznie instaluje pakiety dostawców (OpenAI, Anthropic, Google itp.) w razie potrzeby i przechowuje je lokalnie w pamięci podręcznej.
 
 Aby rozwiązać problemy z pakietem dostawcy:
 
@@ -264,9 +264,9 @@ Aby rozwiązać problemy z pakietem dostawcy:
 
    W systemie Windows naciśnij `WIN+R` i usuń: `%USERPROFILE%\.cache\miao`
 
-2. Uruchom ponownie kod MIAO, aby ponownie zainstalować najnowsze pakiety dostawców
+2. Uruchom ponownie kod miao, aby ponownie zainstalować najnowsze pakiety dostawców
 
-Zmusi to MIAO do pobrania najnowszych wersji pakietów dostawców, co często rozwiązuje problemy ze zgodnością z parametrami modelu i zmianami API.
+Zmusi to miao do pobrania najnowszych wersji pakietów dostawców, co często rozwiązuje problemy ze zgodnością z parametrami modelu i zmianami API.
 
 ---
 

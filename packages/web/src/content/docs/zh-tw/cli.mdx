@@ -1,17 +1,17 @@
 ---
 title: CLI
-description: MIAO CLI 選項和指令。
+description: miao CLI 選項和指令。
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Miao CLI 在不帶任何參數執行時，預設啟動 [TUI](/docs/tui)。
+miao CLI 在不帶任何參數執行時，預設啟動 [TUI](/docs/tui)。
 
 ```bash
 miao
 ```
 
-但它也接受本頁面中記錄的指令，使您可以透過程式方式與 MIAO 進行互動。
+但它也接受本頁面中記錄的指令，使您可以透過程式方式與 miao 進行互動。
 
 ```bash
 miao run "Explain how closures work in JavaScript"
@@ -21,7 +21,7 @@ miao run "Explain how closures work in JavaScript"
 
 ### tui
 
-啟動 MIAO 終端機使用者介面。
+啟動 miao 終端機使用者介面。
 
 ```bash
 miao [project]
@@ -44,13 +44,13 @@ miao [project]
 
 ## 指令
 
-Miao CLI 還提供以下指令。
+miao CLI 還提供以下指令。
 
 ---
 
 ### agent
 
-管理 MIAO 的代理。
+管理 miao 的代理。
 
 ```bash
 miao agent [command]
@@ -60,13 +60,13 @@ miao agent [command]
 
 ### attach
 
-將終端機連接到已透過 `serve` 或 `web` 指令啟動的 MIAO 後端伺服器。
+將終端機連接到已透過 `serve` 或 `web` 指令啟動的 miao 後端伺服器。
 
 ```bash
 miao attach [url]
 ```
 
-這允許將 TUI 與遠端 MIAO 後端搭配使用。例如：
+這允許將 TUI 與遠端 miao 後端搭配使用。例如：
 
 ```bash
 # Start the backend server for web/mobile access
@@ -123,13 +123,13 @@ miao auth [command]
 
 #### login
 
-Miao 基於 [Models.dev](https://models.dev) 的供應商列表運作，因此您可以使用 `miao auth login` 為任何想要使用的供應商設定 API 金鑰。金鑰儲存在 `~/.local/share/miao/auth.json` 中。
+miao 基於 [Models.dev](https://models.dev) 的供應商列表運作，因此您可以使用 `miao auth login` 為任何想要使用的供應商設定 API 金鑰。金鑰儲存在 `~/.local/share/miao/auth.json` 中。
 
 ```bash
 miao auth login
 ```
 
-Miao 啟動時會從憑證檔案載入供應商資訊，同時也會載入環境變數或專案中 `.env` 檔案中定義的金鑰。
+miao 啟動時會從憑證檔案載入供應商資訊，同時也會載入環境變數或專案中 `.env` 檔案中定義的金鑰。
 
 ---
 
@@ -305,7 +305,7 @@ miao models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | 從 models.dev 重新整理模型快取             |
 | <nobr><code>{"--verbose"}</code></nobr> | 使用更詳細的模型輸出（包含費用等中繼資料） |
 
-使用 `--refresh` 旗標可以更新快取的模型列表。當供應商新增了模型並且您希望在 MIAO 中看到它們時，此功能非常有用。
+使用 `--refresh` 旗標可以更新快取的模型列表。當供應商新增了模型並且您希望在 miao 中看到它們時，此功能非常有用。
 
 ```bash
 miao models --refresh
@@ -315,7 +315,7 @@ miao models --refresh
 
 ### run
 
-以非互動模式執行 MIAO，直接傳入提示詞。
+以非互動模式執行 miao，直接傳入提示詞。
 
 ```bash
 miao run [message..]
@@ -363,7 +363,7 @@ miao run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-啟動無介面的 MIAO 伺服器以提供 API 存取。查看[伺服器文件](/docs/server)了解完整的 HTTP 介面。
+啟動無介面的 miao 伺服器以提供 API 存取。查看[伺服器文件](/docs/server)了解完整的 HTTP 介面。
 
 ```bash
 miao serve
@@ -384,7 +384,7 @@ miao serve
 
 ### session
 
-管理 MIAO 工作階段。
+管理 miao 工作階段。
 
 ```bash
 miao session [command]
@@ -394,7 +394,7 @@ miao session [command]
 
 #### list
 
-列出所有 MIAO 工作階段。
+列出所有 miao 工作階段。
 
 ```bash
 miao session list
@@ -411,7 +411,7 @@ miao session list
 
 ### stats
 
-顯示 MIAO 工作階段的 Token 用量和費用統計資訊。
+顯示 miao 工作階段的 Token 用量和費用統計資訊。
 
 ```bash
 miao stats
@@ -442,13 +442,13 @@ miao export [sessionID]
 
 ### import
 
-從 JSON 檔案或 MIAO 分享連結匯入工作階段資料。
+從 JSON 檔案或 miao 分享連結匯入工作階段資料。
 
 ```bash
 miao import <file>
 ```
 
-您可以從本地檔案或 MIAO 分享連結匯入。
+您可以從本地檔案或 miao 分享連結匯入。
 
 ```bash
 miao import session.json
@@ -459,7 +459,7 @@ miao import https://opncd.ai/s/abc123
 
 ### web
 
-啟動帶有 Web 介面的無介面 MIAO 伺服器。
+啟動帶有 Web 介面的無介面 miao 伺服器。
 
 ```bash
 miao web
@@ -500,7 +500,7 @@ miao acp
 
 ### uninstall
 
-解除安裝 MIAO 並刪除所有相關檔案。
+解除安裝 miao 並刪除所有相關檔案。
 
 ```bash
 miao uninstall
@@ -519,7 +519,7 @@ miao uninstall
 
 ### upgrade
 
-將 MIAO 更新到最新版本或指定版本。
+將 miao 更新到最新版本或指定版本。
 
 ```bash
 miao upgrade [target]
@@ -547,7 +547,7 @@ miao upgrade v0.1.48
 
 ## 全域旗標
 
-Miao CLI 接受以下全域旗標。
+miao CLI 接受以下全域旗標。
 
 | 旗標                                       | 簡寫 | 說明                                 |
 | ------------------------------------------ | ---- | ------------------------------------ |
@@ -560,7 +560,7 @@ Miao CLI 接受以下全域旗標。
 
 ## 環境變數
 
-Miao 可以透過環境變數進行設定。
+miao 可以透過環境變數進行設定。
 
 | 變數                                  | 類型    | 說明                                        |
 | ------------------------------------- | ------- | ------------------------------------------- |

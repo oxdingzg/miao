@@ -1,15 +1,15 @@
 ---
 title: Formatters
-description: MIAO uses language specific formatters.
+description: miao uses language specific formatters.
 ---
 
-Miao can format files after they are written or edited using language-specific formatters. Formatters are disabled by default; enable them in your config before Miao will run them.
+miao can format files after they are written or edited using language-specific formatters. Formatters are disabled by default; enable them in your config before miao will run them.
 
 ---
 
 ## Built-in
 
-Miao comes with several built-in formatters for popular languages and frameworks. Below is a list of the formatters, supported file extensions, and commands or config options it needs.
+miao comes with several built-in formatters for popular languages and frameworks. Below is a list of the formatters, supported file extensions, and commands or config options it needs.
 
 | Formatter            | Extensions                                                                                               | Requirements                                                                                          |
 | -------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -40,13 +40,13 @@ Miao comes with several built-in formatters for popular languages and frameworks
 | uv                   | .py, .pyi                                                                                                | `uv` command available                                                                                |
 | zig                  | .zig, .zon                                                                                               | `zig` command available                                                                               |
 
-When formatters are enabled, MIAO will use `prettier` for matching files if your project has `prettier` in `package.json`.
+When formatters are enabled, miao will use `prettier` for matching files if your project has `prettier` in `package.json`.
 
 ---
 
 ## How it works
 
-When MIAO writes or edits a file and formatters are enabled, it:
+When miao writes or edits a file and formatters are enabled, it:
 
 1. Checks the file extension against all enabled formatters.
 2. Runs the appropriate formatter command on the file.
@@ -58,7 +58,7 @@ This process happens in the background for enabled formatters.
 
 ## Configure
 
-You can enable and customize formatters through the `formatter` section in your MIAO config.
+You can enable and customize formatters through the `formatter` section in your miao config.
 
 To enable all built-in formatters, set `formatter` to `true`.
 

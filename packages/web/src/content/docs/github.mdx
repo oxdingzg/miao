@@ -1,17 +1,17 @@
 ---
 title: GitHub
-description: Use MIAO in GitHub issues and pull-requests.
+description: Use miao in GitHub issues and pull-requests.
 ---
 
-Miao integrates with your GitHub workflow. Mention `/opencode` or `/oc` in your comment, and Miao will execute tasks within your GitHub Actions runner.
+miao integrates with your GitHub workflow. Mention `/opencode` or `/oc` in your comment, and miao will execute tasks within your GitHub Actions runner.
 
 ---
 
 ## Features
 
-- **Triage issues**: Ask MIAO to look into an issue and explain it to you.
-- **Fix and implement**: Ask MIAO to fix an issue or implement a feature. And it will work in a new branch and submits a PR with all the changes.
-- **Secure**: MIAO runs inside your GitHub's runners.
+- **Triage issues**: Ask miao to look into an issue and explain it to you.
+- **Fix and implement**: Ask miao to fix an issue or implement a feature. And it will work in a new branch and submits a PR with all the changes.
+- **Secure**: miao runs inside your GitHub's runners.
 
 ---
 
@@ -82,14 +82,14 @@ Or you can set it up manually.
 
 - `model`: The model to use with Miao. Takes the format of `provider/model`. This is **required**.
 - `agent`: The agent to use. Must be a primary agent. Falls back to `default_agent` from config or `"build"` if not found.
-- `share`: Whether to share the MIAO session. Defaults to **true** for public repositories.
-- `prompt`: Optional custom prompt to override the default behavior. Use this to customize how MIAO processes requests.
+- `share`: Whether to share the miao session. Defaults to **true** for public repositories.
+- `prompt`: Optional custom prompt to override the default behavior. Use this to customize how miao processes requests.
 - `mentions`: Comma-separated list of trigger phrases, case-insensitive. Defaults to `/opencode,/oc`.
 - `variant`: Model variant for provider-specific reasoning effort, for example `high`, `max`, or `minimal`.
 - `oidc_base_url`: Base URL for the OIDC token exchange API. Only needed when running a custom GitHub App install. Defaults to `https://api.miao.dtee.top`.
-- `use_github_token`: Set to `true` to use a caller-provided `GITHUB_TOKEN` instead of exchanging an OIDC token for an MIAO App installation token. Defaults to `false`.
+- `use_github_token`: Set to `true` to use a caller-provided `GITHUB_TOKEN` instead of exchanging an OIDC token for an miao App installation token. Defaults to `false`.
 
-  Use this mode to run without installing the MIAO GitHub App. Pass the token through `env` and grant the permissions required by your workflow:
+  Use this mode to run without installing the miao GitHub App. Pass the token through `env` and grant the permissions required by your workflow:
 
   ```yaml
   permissions:
@@ -113,20 +113,20 @@ Or you can set it up manually.
 
 ## Supported Events
 
-Miao can be triggered by the following GitHub events:
+miao can be triggered by the following GitHub events:
 
 | Event Type                    | Triggered By                           | Details                                                                                                           |
 | ----------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `issue_comment`               | Comment on an issue or PR              | Mention `/opencode` or `/oc` in your comment. MIAO reads context and can create branches, open PRs, or reply. |
-| `pull_request_review_comment` | Comment on specific code lines in a PR | Mention `/opencode` or `/oc` while reviewing code. MIAO receives file path, line numbers, and diff context.   |
-| `issues`                      | Issue opened or edited                 | Automatically trigger MIAO when issues are created or modified. Requires `prompt` input.                      |
-| `pull_request`                | PR opened or updated                   | Automatically trigger MIAO when PRs are opened, synchronized, or reopened. Useful for automated reviews.      |
-| `schedule`                    | Cron-based schedule                    | Run MIAO on a schedule. Requires `prompt` input. Output goes to logs and PRs (no issue to comment on).        |
-| `workflow_dispatch`           | Manual trigger from GitHub UI          | Trigger MIAO on demand via Actions tab. Requires `prompt` input. Output goes to logs and PRs.                 |
+| `issue_comment`               | Comment on an issue or PR              | Mention `/opencode` or `/oc` in your comment. miao reads context and can create branches, open PRs, or reply. |
+| `pull_request_review_comment` | Comment on specific code lines in a PR | Mention `/opencode` or `/oc` while reviewing code. miao receives file path, line numbers, and diff context.   |
+| `issues`                      | Issue opened or edited                 | Automatically trigger miao when issues are created or modified. Requires `prompt` input.                      |
+| `pull_request`                | PR opened or updated                   | Automatically trigger miao when PRs are opened, synchronized, or reopened. Useful for automated reviews.      |
+| `schedule`                    | Cron-based schedule                    | Run miao on a schedule. Requires `prompt` input. Output goes to logs and PRs (no issue to comment on).        |
+| `workflow_dispatch`           | Manual trigger from GitHub UI          | Trigger miao on demand via Actions tab. Requires `prompt` input. Output goes to logs and PRs.                 |
 
 ### Schedule Example
 
-Run MIAO on a schedule to perform automated tasks:
+Run miao on a schedule to perform automated tasks:
 
 ```yaml title=".github/workflows/opencode-scheduled.yml"
 name: Scheduled Miao Task
@@ -160,7 +160,7 @@ jobs:
             If you find issues worth addressing, open an issue to track them.
 ```
 
-For scheduled events, the `prompt` input is **required** since there's no comment to extract instructions from. Scheduled workflows run without a user context to permission-check, so the workflow must grant `contents: write` and `pull-requests: write` if you expect MIAO to create branches or PRs.
+For scheduled events, the `prompt` input is **required** since there's no comment to extract instructions from. Scheduled workflows run without a user context to permission-check, so the workflow must grant `contents: write` and `pull-requests: write` if you expect miao to create branches or PRs.
 
 ---
 
@@ -201,7 +201,7 @@ jobs:
             - Suggest improvements
 ```
 
-For `pull_request` events, if no `prompt` is provided, MIAO defaults to reviewing the pull request.
+For `pull_request` events, if no `prompt` is provided, miao defaults to reviewing the pull request.
 
 ---
 
@@ -262,7 +262,7 @@ For `issues` events, the `prompt` input is **required** since there's no comment
 
 ## Custom prompts
 
-Override the default prompt to customize MIAO's behavior for your workflow.
+Override the default prompt to customize miao's behavior for your workflow.
 
 ```yaml title=".github/workflows/opencode.yml"
 - uses: anomalyco/opencode/github@latest
@@ -281,7 +281,7 @@ This is useful for enforcing specific review criteria, coding standards, or focu
 
 ## Examples
 
-Here are some examples of how you can use MIAO in GitHub.
+Here are some examples of how you can use miao in GitHub.
 
 - **Explain an issue**
 
@@ -291,7 +291,7 @@ Here are some examples of how you can use MIAO in GitHub.
   /opencode explain this issue
   ```
 
-  Miao will read the entire thread, including all comments, and reply with a clear explanation.
+  miao will read the entire thread, including all comments, and reply with a clear explanation.
 
 - **Fix an issue**
 
@@ -301,7 +301,7 @@ Here are some examples of how you can use MIAO in GitHub.
   /opencode fix this
   ```
 
-  And MIAO will create a new branch, implement the changes, and open a PR with the changes.
+  And miao will create a new branch, implement the changes, and open a PR with the changes.
 
 - **Review PRs and make changes**
 
@@ -311,18 +311,18 @@ Here are some examples of how you can use MIAO in GitHub.
   Delete the attachment from S3 when the note is removed /oc
   ```
 
-  Miao will implement the requested change and commit it to the same PR.
+  miao will implement the requested change and commit it to the same PR.
 
 - **Review specific code lines**
 
-  Leave a comment directly on code lines in the PR's "Files" tab. MIAO automatically detects the file, line numbers, and diff context to provide precise responses.
+  Leave a comment directly on code lines in the PR's "Files" tab. miao automatically detects the file, line numbers, and diff context to provide precise responses.
 
   ```
   [Comment on specific lines in Files tab]
   /oc add error handling here
   ```
 
-  When commenting on specific lines, MIAO receives:
+  When commenting on specific lines, miao receives:
   - The exact file being reviewed
   - The specific lines of code
   - The surrounding diff context

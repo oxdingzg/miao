@@ -1,17 +1,17 @@
 ---
 title: GitHub
-description: Koristite MIAO u GitHub problemima i zahtjevima za povlačenjem.
+description: Koristite miao u GitHub problemima i zahtjevima za povlačenjem.
 ---
 
-Miao se integriše sa vašim GitHub tokovom rada. Spomenite `/opencode` ili `/oc` u svom komentaru i Miao će izvršiti zadatke unutar vašeg GitHub Actions runnera.
+miao se integriše sa vašim GitHub tokovom rada. Spomenite `/opencode` ili `/oc` u svom komentaru i miao će izvršiti zadatke unutar vašeg GitHub Actions runnera.
 
 ---
 
 ## Funkcije
 
-- **Problemi trijaže**: Zamolite MIAO da ispita problem i objasni vam ga.
-- **Popravi i implementiraj**: Zamolite MIAO da popravi problem ili implementira funkciju. I radit će u novoj poslovnici i dostavljati PR sa svim promjenama.
-- **Secure**: MIAO se pokreće unutar pokretača vašeg GitHub-a.
+- **Problemi trijaže**: Zamolite miao da ispita problem i objasni vam ga.
+- **Popravi i implementiraj**: Zamolite miao da popravi problem ili implementira funkciju. I radit će u novoj poslovnici i dostavljati PR sa svim promjenama.
+- **Secure**: miao se pokreće unutar pokretača vašeg GitHub-a.
 
 ---
 
@@ -79,10 +79,10 @@ Ili ga možete postaviti ručno.
 
 - `model`: Model za korištenje s Miao. Uzima format `provider/model`. Ovo je **obavezno**.
 - `agent`: Agent za korištenje. Mora biti primarni agent. Vraća se na `default_agent` iz konfiguracije ili `"build"` ako nije pronađen.
-- `share`: Da li dijeliti MIAO sesiju. Podrazumevano je **true** za javna spremišta.
-- `prompt`: Opcioni prilagođeni upit za nadjačavanje zadanog ponašanja. Koristite ovo da prilagodite kako MIAO obrađuje zahtjeve.
-- `token`: Opcionalni GitHub pristupni token za izvođenje operacija kao što su kreiranje komentara, upisivanje promjena i otvaranje zahtjeva za povlačenjem. MIAO prema zadanim postavkama koristi token za pristup instalaciji iz aplikacije MIAO GitHub, tako da se urezivanje, komentari i zahtjevi za povlačenjem pojavljuju kao da dolaze iz aplikacije.
-  Alternativno, možete koristiti GitHub Action runner [ugrađeni `GITHUB_TOKEN`](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) bez instaliranja MIAO GitHub aplikacije. Samo se pobrinite da date potrebna odobrenja u svom toku rada:
+- `share`: Da li dijeliti miao sesiju. Podrazumevano je **true** za javna spremišta.
+- `prompt`: Opcioni prilagođeni upit za nadjačavanje zadanog ponašanja. Koristite ovo da prilagodite kako miao obrađuje zahtjeve.
+- `token`: Opcionalni GitHub pristupni token za izvođenje operacija kao što su kreiranje komentara, upisivanje promjena i otvaranje zahtjeva za povlačenjem. miao prema zadanim postavkama koristi token za pristup instalaciji iz aplikacije miao GitHub, tako da se urezivanje, komentari i zahtjevi za povlačenjem pojavljuju kao da dolaze iz aplikacije.
+  Alternativno, možete koristiti GitHub Action runner [ugrađeni `GITHUB_TOKEN`](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) bez instaliranja miao GitHub aplikacije. Samo se pobrinite da date potrebna odobrenja u svom toku rada:
 
 ```yaml
 permissions:
@@ -98,19 +98,19 @@ Također možete koristiti [Personal Access Tokens](https://docs.github.com/en/a
 
 ## Podržani događaji
 
-Miao se može pokrenuti sljedećim GitHub događajima:
+miao se može pokrenuti sljedećim GitHub događajima:
 | Vrsta događaja | Pokrenuo | Detalji
 |----------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `issue_comment` | Komentirajte problem ili PR | Navedite `/opencode` ili `/oc` u svom komentaru. MIAO čita kontekst i može kreirati grane, otvarati PR-ove ili odgovarati. |
-| `pull_request_review_comment` | Komentirajte određene linije koda u PR-u | Navedite `/opencode` ili `/oc` dok pregledavate kod. MIAO prima putanju datoteke, brojeve redova i kontekst razlike. |
-| `issues` | Broj otvoren ili uređen | Automatski pokrenite MIAO kada se problemi kreiraju ili modificiraju. Zahtijeva `prompt` unos. |
-| `pull_request` | PR otvoren ili ažuriran | Automatski pokrenite MIAO kada se PR-ovi otvore, sinkroniziraju ili ponovo otvore. Korisno za automatske recenzije. |
-| `schedule` | Cron baziran raspored | Pokrenite MIAO prema rasporedu. Zahtijeva `prompt` unos. Izlaz ide u dnevnike i PR-ove (nema problema za komentarisanje). |
-| `workflow_dispatch` | Ručni okidač iz GitHub korisničkog sučelja | Aktivirajte MIAO na zahtjev preko kartice Akcije. Zahtijeva `prompt` unos. Izlaz ide u dnevnike i PR-ove. |
+| `issue_comment` | Komentirajte problem ili PR | Navedite `/opencode` ili `/oc` u svom komentaru. miao čita kontekst i može kreirati grane, otvarati PR-ove ili odgovarati. |
+| `pull_request_review_comment` | Komentirajte određene linije koda u PR-u | Navedite `/opencode` ili `/oc` dok pregledavate kod. miao prima putanju datoteke, brojeve redova i kontekst razlike. |
+| `issues` | Broj otvoren ili uređen | Automatski pokrenite miao kada se problemi kreiraju ili modificiraju. Zahtijeva `prompt` unos. |
+| `pull_request` | PR otvoren ili ažuriran | Automatski pokrenite miao kada se PR-ovi otvore, sinkroniziraju ili ponovo otvore. Korisno za automatske recenzije. |
+| `schedule` | Cron baziran raspored | Pokrenite miao prema rasporedu. Zahtijeva `prompt` unos. Izlaz ide u dnevnike i PR-ove (nema problema za komentarisanje). |
+| `workflow_dispatch` | Ručni okidač iz GitHub korisničkog sučelja | Aktivirajte miao na zahtjev preko kartice Akcije. Zahtijeva `prompt` unos. Izlaz ide u dnevnike i PR-ove. |
 
 ### Primjer rasporeda
 
-Pokrenite MIAO po rasporedu za obavljanje automatiziranih zadataka:
+Pokrenite miao po rasporedu za obavljanje automatiziranih zadataka:
 
 ```yaml title=".github/workflows/opencode-scheduled.yml"
 name: Scheduled Miao Task
@@ -144,7 +144,7 @@ jobs:
             If you find issues worth addressing, open an issue to track them.
 ```
 
-Za zakazane događaje, unos `prompt` je **potreban** jer nema komentara za izvlačenje instrukcija. Planirani tokovi posla se pokreću bez korisničkog konteksta za provjeru dozvola, tako da tok posla mora odobriti `contents: write` i `pull-requests: write` ako očekujete da će MIAO kreirati grane ili PR-ove.
+Za zakazane događaje, unos `prompt` je **potreban** jer nema komentara za izvlačenje instrukcija. Planirani tokovi posla se pokreću bez korisničkog konteksta za provjeru dozvola, tako da tok posla mora odobriti `contents: write` i `pull-requests: write` ako očekujete da će miao kreirati grane ili PR-ove.
 
 ---
 
@@ -185,7 +185,7 @@ jobs:
             - Suggest improvements
 ```
 
-Za `pull_request` događaje, ako nije naveden `prompt`, MIAO podrazumevano pregledava zahtjev za povlačenjem.
+Za `pull_request` događaje, ako nije naveden `prompt`, miao podrazumevano pregledava zahtjev za povlačenjem.
 
 ---
 
@@ -246,7 +246,7 @@ Za `issues` događaje, `prompt` unos je **potreban** jer nema komentara za izvla
 
 ## Prilagođeni upiti
 
-Zaobiđite zadani prompt da biste prilagodili ponašanje MIAO za vaš tok posla.
+Zaobiđite zadani prompt da biste prilagodili ponašanje miao za vaš tok posla.
 
 ```yaml title=".github/workflows/opencode.yml"
 - uses: anomalyco/opencode/github@latest
@@ -265,7 +265,7 @@ Ovo je korisno za provođenje specifičnih kriterija pregleda, standarda kodiran
 
 ## Primjeri
 
-Evo nekoliko primjera kako možete koristiti MIAO u GitHub.
+Evo nekoliko primjera kako možete koristiti miao u GitHub.
 
 - **Objasnite problem**
   Dodajte ovaj komentar u GitHub izdanje.
@@ -274,7 +274,7 @@ Evo nekoliko primjera kako možete koristiti MIAO u GitHub.
   /opencode explain this issue
 ```
 
-Miao će pročitati cijelu temu, uključujući sve komentare, i odgovoriti s jasnim objašnjenjem.
+miao će pročitati cijelu temu, uključujući sve komentare, i odgovoriti s jasnim objašnjenjem.
 
 - **Popravi problem**
   U izdanju na GitHub-u recite:
@@ -283,7 +283,7 @@ Miao će pročitati cijelu temu, uključujući sve komentare, i odgovoriti s jas
   /opencode fix this
 ```
 
-I MIAO će kreirati novu granu, implementirati promjene i otvoriti PR sa promjenama.
+I miao će kreirati novu granu, implementirati promjene i otvoriti PR sa promjenama.
 
 - **Pregledajte PR-ove i izvršite izmjene**
   Ostavite sljedeći komentar na GitHub PR-u.
@@ -292,17 +292,17 @@ I MIAO će kreirati novu granu, implementirati promjene i otvoriti PR sa promjen
   Delete the attachment from S3 when the note is removed /oc
 ```
 
-Miao će implementirati traženu promjenu i posvetiti je istom PR-u.
+miao će implementirati traženu promjenu i posvetiti je istom PR-u.
 
 - **Pregledajte određene linije koda**
-  Ostavite komentar direktno na linije koda u PR kartici "Files". MIAO automatski detektuje datoteku, brojeve redova i kontekst razlike kako bi pružio precizne odgovore.
+  Ostavite komentar direktno na linije koda u PR kartici "Files". miao automatski detektuje datoteku, brojeve redova i kontekst razlike kako bi pružio precizne odgovore.
 
 ```
   [Comment on specific lines in Files tab]
   /oc add error handling here
 ```
 
-Kada komentarišete određene linije, MIAO prima:
+Kada komentarišete određene linije, miao prima:
 
 - Tačan fajl se pregleda
 - Specifične linije koda

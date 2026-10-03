@@ -1,15 +1,15 @@
 ---
 title: Formateri
-description: MIAO koristi formatere specifične za jezik.
+description: miao koristi formatere specifične za jezik.
 ---
 
-Miao automatski formatira datoteke nakon što su napisane ili uređene pomoću formatera specifičnih za jezik. Ovo osigurava da kod koji se generira prati stilove koda vašeg projekta.
+miao automatski formatira datoteke nakon što su napisane ili uređene pomoću formatera specifičnih za jezik. Ovo osigurava da kod koji se generira prati stilove koda vašeg projekta.
 
 ---
 
 ## Ugrađeni
 
-Miao dolazi sa nekoliko ugrađenih formatera za popularne jezike i okvire. Ispod je lista formatera, podržanih ekstenzija datoteka i naredbi ili opcija konfiguracije koje su mu potrebne.
+miao dolazi sa nekoliko ugrađenih formatera za popularne jezike i okvire. Ispod je lista formatera, podržanih ekstenzija datoteka i naredbi ili opcija konfiguracije koje su mu potrebne.
 | Formatter | Ekstenzije | Zahtjevi
 |-------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | gofmt | .go | `gofmt` komanda dostupna |
@@ -35,13 +35,13 @@ Miao dolazi sa nekoliko ugrađenih formatera za popularne jezike i okvire. Ispod
 | shfmt | .sh, .bash | `shfmt` komanda dostupna |
 | pint | .php | `laravel/pint` zavisnost u `composer.json` || oxfmt (Eksperimentalno) | .js, .jsx, .ts, .tsx | `oxfmt` zavisnost u `package.json` i [eksperimentalna env varijabla flag](/docs/cli/#experimental) |
 | ormolu | .hs | `ormolu` komanda dostupna |
-Dakle, ako vaš projekat ima `prettier` u vašem `package.json`, MIAO će ga automatski koristiti.
+Dakle, ako vaš projekat ima `prettier` u vašem `package.json`, miao će ga automatski koristiti.
 
 ---
 
 ## Kako radi
 
-Kada MIAO piše ili uređuje datoteku, on:
+Kada miao piše ili uređuje datoteku, on:
 
 1. Provjerava ekstenziju datoteke prema svim omogućenim formaterima.
 2. Pokreće odgovarajuću naredbu za formatiranje na datoteci.
@@ -52,7 +52,7 @@ Kada MIAO piše ili uređuje datoteku, on:
 
 ## Konfiguracija
 
-Možete prilagoditi formatere kroz `formatter` odjeljak u vašoj MIAO konfiguraciji.
+Možete prilagoditi formatere kroz `formatter` odjeljak u vašoj miao konfiguraciji.
 
 ```json title="miao.json"
 {

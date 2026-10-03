@@ -96,7 +96,7 @@ L'elenco dei modelli potrebbe cambiare man mano che ne testiamo e aggiungiamo di
 
 ## Dove posso usarlo?
 
-OpenCode Go è progettato per [MIAO](https://opencode.ai) e altri agenti di programmazione
+OpenCode Go è progettato per [miao](https://opencode.ai) e altri agenti di programmazione
 che producono tipi di richieste simili. Il traffico viene monitorato per rilevare gli abusi che
 compromettono l'esperienza degli altri utenti.
 
@@ -110,12 +110,12 @@ Il tuo client deve:
 
 ### Client convalidati
 
-Oltre a MIAO, è stato verificato che i seguenti client funzionino correttamente
+Oltre a miao, è stato verificato che i seguenti client funzionino correttamente
 con OpenCode Go. Tuttavia, non garantiamo che continueranno a funzionare in futuro.
 
 | Client            | Supporto delle sessioni                                                                                                                                                                                                                                                      |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | Le build contenenti la [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) inviano l'header nelle richieste MIAO principali e ausiliarie. La correzione è stata unita dopo la v0.21.0; quella versione da sola non la include.                        |
+| **Hermes**        | Le build contenenti la [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) inviano l'header nelle richieste miao principali e ausiliarie. La correzione è stata unita dopo la v0.21.0; quella versione da sola non la include.                        |
 | **Claude Code**   | Go riconosce il suo header di sessione nativo. Non è necessario alcun wrapper per header personalizzati.                                                                                                                                                                     |
 | **Codex**         | Go riconosce il suo header di sessione nativo. Alcune versioni e configurazioni proxy continuano a ometterlo; mantieni l'header di sessione quando inoltri le richieste.                                                                                                     |
 | **ZCode**         | Go riconosce il suo header di sessione nativo. La nostra [richiesta per `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) è ancora aperta, ma non è più necessario inviare proprio quell'header.                                                         |
@@ -340,7 +340,7 @@ Puoi anche accedere ai modelli Go tramite i seguenti endpoint API.
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-Il [model id](/docs/config/#models) nella tua MIAO config
+Il [model id](/docs/config/#models) nella tua miao config
 utilizza il formato `opencode-go/<model-id>`. Ad esempio, per Kimi K3, useresti
 `opencode-go/kimi-k3` nella tua configurazione.
 

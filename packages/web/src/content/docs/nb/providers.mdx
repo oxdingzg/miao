@@ -6,7 +6,7 @@ description: Bruke en hvilken som helst LLM-leverandør i Miao.
 import config from "../../../../config.mjs"
 export const console = config.console
 
-Miao bruker [AI SDK](https://ai-sdk.dev/) og [Models.dev](https://models.dev) for å støtte **75+ LLM leverandører** og den støtter kjøring av lokale modeller.
+miao bruker [AI SDK](https://ai-sdk.dev/) og [Models.dev](https://models.dev) for å støtte **75+ LLM leverandører** og den støtter kjøring av lokale modeller.
 
 For å legge til en leverandør må du:
 
@@ -24,7 +24,7 @@ i `~/.local/share/miao/auth.json`.
 
 ### Konfigurasjon
 
-Du kan tilpasse leverandørene gjennom `provider`-delen i MIAO
+Du kan tilpasse leverandørene gjennom `provider`-delen i miao
 konfig.
 
 ---
@@ -80,7 +80,7 @@ Hvis du er ny, anbefaler vi å starte med OpenCode Zen.
    /models
    ```
 
-Det fungerer som alle andre leverandører i MIAO og er helt valgfritt å bruke.
+Det fungerer som alle andre leverandører i miao og er helt valgfritt å bruke.
 
 ---
 
@@ -113,7 +113,7 @@ testet og verifisert for å fungere godt med Miao.
    /models
    ```
 
-Det fungerer som alle andre leverandører i MIAO og er helt valgfritt å bruke.
+Det fungerer som alle andre leverandører i miao og er helt valgfritt å bruke.
 
 ---
 
@@ -157,7 +157,7 @@ Ser du ikke en leverandør her? Send inn en PR.
 
 ### Amazon Bedrock
 
-Slik bruker du Amazon Bedrock med MIAO:
+Slik bruker du Amazon Bedrock med miao:
 
 1. Gå over til **modellkatalogen** i Amazon Bedrock-konsollen og be om
    tilgang til modellene du ønsker.
@@ -170,7 +170,7 @@ Slik bruker du Amazon Bedrock med MIAO:
 
    #### Miljøvariabler (hurtigstart)
 
-   Angi en av disse miljøvariablene mens du kjører MIAO:
+   Angi en av disse miljøvariablene mens du kjører miao:
 
    ```bash
    # Option 1: Using AWS access keys
@@ -312,7 +312,7 @@ For egendefinerte slutningsprofiler, bruk modellen og leverandørnavnet i nøkke
    ```
 
 :::info
-Å bruke Claude Pro/Max-abonnementet ditt i MIAO støttes ikke offisielt av [Anthropic](https://anthropic.com).
+Å bruke Claude Pro/Max-abonnementet ditt i miao støttes ikke offisielt av [Anthropic](https://anthropic.com).
 :::
 
 ##### Bruke API-nøkler
@@ -325,7 +325,7 @@ Eller hvis du allerede har en API-nøkkel, kan du velge **Angi API-nøkkel manue
 
 ### Atomic Chat
 
-Du kan konfigurere MIAO til å bruke lokale modeller via [Atomic Chat](https://atomic.chat) — et skrivebordsprogram som kjører lokale LLM-er bak en OpenAI-kompatibel API-server (standard endepunkt `http://127.0.0.1:1337/v1`).
+Du kan konfigurere miao til å bruke lokale modeller via [Atomic Chat](https://atomic.chat) — et skrivebordsprogram som kjører lokale LLM-er bak en OpenAI-kompatibel API-server (standard endepunkt `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -374,7 +374,7 @@ Hvis du støter på «Beklager, men jeg kan ikke hjelpe med den forespørselen»
 2. Gå til [Azure AI Foundry](https://ai.azure.com/) og distribuer en modell.
 
    :::note
-   Distribusjonsnavnet må samsvare med modellnavnet for at MIAO skal fungere skikkelig.
+   Distribusjonsnavnet må samsvare med modellnavnet for at miao skal fungere skikkelig.
    :::
 
 3. Kjør kommandoen `/connect` og søk etter **Azure**.
@@ -421,7 +421,7 @@ Hvis du støter på «Beklager, men jeg kan ikke hjelpe med den forespørselen»
 2. Gå til [Azure AI Foundry](https://ai.azure.com/) og distribuer en modell.
 
    :::note
-   Distribusjonsnavnet må samsvare med modellnavnet for at MIAO skal fungere skikkelig.
+   Distribusjonsnavnet må samsvare med modellnavnet for at miao skal fungere skikkelig.
    :::
 
 3. Kjør kommandoen `/connect` og søk etter **Azure Cognitive Services**.
@@ -750,14 +750,14 @@ GitLab Duo gir AI-drevet agentchat med native verktøyoppringingsfunksjoner gjen
 
 :::note
 Du kan også spesifisere 'GITLAB_TOKEN' miljøvariabel hvis du ikke vil
-for å lagre token i MIAO auth-lagring.
+for å lagre token i miao auth-lagring.
 :::
 
 ##### Selvhostet GitLab
 
 :::note[Merknad om samsvar]
-Miao bruker en liten modell for noen AI oppgaver som å generere økttittelen.
-Den er konfigurert til å bruke gpt-5-nano som standard, hostet av Zen. For å låse MIAO
+miao bruker en liten modell for noen AI oppgaver som å generere økttittelen.
+Den er konfigurert til å bruke gpt-5-nano som standard, hostet av Zen. For å låse miao
 for kun å bruke din egen GitLab-hostede forekomst, legg til følgende i din
 `miao.json` fil. Det anbefales også å deaktivere øktdeling.
 
@@ -853,7 +853,7 @@ Denne plugin-en gir omfattende GitLab-repository-administrasjonsfunksjoner, inkl
 
 ### GitHub Copilot
 
-Slik bruker du GitHub Copilot-abonnementet med MIAO:
+Slik bruker du GitHub Copilot-abonnementet med miao:
 
 :::note
 Noen modeller kan trenge en [Pro+
@@ -890,7 +890,7 @@ Noen modeller må aktiveres manuelt i [GitHub Copilot-innstillingene](https://do
 
 ### Google Vertex AI
 
-Slik bruker du Google Vertex AI med MIAO:
+Slik bruker du Google Vertex AI med miao:
 
 1. Gå over til **Model Garden** i Google Cloud Console og sjekk
    modeller tilgjengelig i din region.
@@ -1019,7 +1019,7 @@ For flere leverandører og avanserte funksjoner som bufring og hastighetsbegrens
 
 #### Valgfrie konfigurasjoner
 
-I tilfelle du ser en funksjon eller modell fra Helicone som ikke konfigureres automatisk gjennom MIAO, kan du alltid konfigurere den selv.
+I tilfelle du ser en funksjon eller modell fra Helicone som ikke konfigureres automatisk gjennom miao, kan du alltid konfigurere den selv.
 
 Her er [Helicone's Model Directory](https://helicone.ai/models), du trenger denne for å hente ID-ene til modellene du vil legge til.
 
@@ -1103,7 +1103,7 @@ Se [Helicone Header Directory](https://docs.helicone.ai/helicone-headers/header-
 
 ### llama.cpp
 
-Du kan konfigurere MIAO for å bruke lokale modeller gjennom [llama.cpp](https://github.com/ggml-org/llama.cpp) llama-server-verktøyet.
+Du kan konfigurere miao for å bruke lokale modeller gjennom [llama.cpp](https://github.com/ggml-org/llama.cpp) llama-server-verktøyet.
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
@@ -1170,7 +1170,7 @@ IO.NET tilbyr 17 modeller optimert for ulike brukstilfeller:
 
 ### LM Studio
 
-Du kan konfigurere MIAO for å bruke lokale modeller gjennom LM Studio.
+Du kan konfigurere miao for å bruke lokale modeller gjennom LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
@@ -1287,7 +1287,7 @@ Slik bruker du Kimi K2 fra Moonshot AI:
 
 ### Ollama
 
-Du kan konfigurere MIAO for å bruke lokale modeller gjennom Ollama.
+Du kan konfigurere miao for å bruke lokale modeller gjennom Ollama.
 
 :::tip
 Ollama kan automatisk konfigurere seg selv for Miao. Se [Ollama-integrasjonsdokumentene](https://docs.ollama.com/integrations/opencode) for detaljer.
@@ -1329,7 +1329,7 @@ Hvis verktøykall ikke fungerer, prøv å øke `num_ctx` i Ollama. Start rundt 1
 
 ### Ollama Cloud
 
-Slik bruker du Ollama Cloud med MIAO:
+Slik bruker du Ollama Cloud med miao:
 
 1. Gå over til [https://ollama.com/](https://ollama.com/) og logg på eller opprett en konto.
 
@@ -1352,7 +1352,7 @@ Slik bruker du Ollama Cloud med MIAO:
    └ enter
    ```
 
-6. **Viktig**: Før du bruker skymodeller i MIAO, må du hente modellinformasjonen lokalt:
+6. **Viktig**: Før du bruker skymodeller i miao, må du hente modellinformasjonen lokalt:
 
    ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1411,7 +1411,7 @@ OpenCode Zen er en liste over testede og verifiserte modeller levert av Miao-tea
    /connect
    ```
 
-3. Skriv inn MIAO API-nøkkelen.
+3. Skriv inn miao API-nøkkelen.
 
    ```txt
    ┌ API key
@@ -1576,7 +1576,7 @@ SAP AI Core gir tilgang til 40+ modeller fra OpenAI, Anthropic, Google, Amazon, 
 
 ### Scaleway
 
-Slik bruker du [Scaleway Generative APIs](https://www.scaleway.com/en/docs/generative-apis/) med MIAO:
+Slik bruker du [Scaleway Generative APIs](https://www.scaleway.com/en/docs/generative-apis/) med miao:
 
 1. Gå over til [Scaleway Console IAM innstillinger](https://console.scaleway.com/iam/api-keys) for å generere en ny API nøkkel.
 
@@ -1937,7 +1937,7 @@ Konfigurasjonsdetaljer:
 - **limit.context**: Maksimalt Input Tokens som modellen godtar.
 - **limit.output**: Maksimalt antall tokens modellen kan generere.
 
-`limit`-feltene lar MIAO forstå hvor mye kontekst du har igjen. Standardleverandører henter disse automatisk fra models.dev.
+`limit`-feltene lar miao forstå hvor mye kontekst du har igjen. Standardleverandører henter disse automatisk fra models.dev.
 
 ---
 

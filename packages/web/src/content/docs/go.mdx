@@ -98,7 +98,7 @@ The list of models may change as we test and add new ones.
 
 ## Where can I use it?
 
-OpenCode Go is designed for [MIAO](https://opencode.ai) and other coding agents
+OpenCode Go is designed for [miao](https://opencode.ai) and other coding agents
 that produce similar types of requests. Traffic is monitored for abuse that
 degrades the experience for other users.
 
@@ -112,18 +112,18 @@ Your client should:
 
 ### Validated Clients
 
-Besides MIAO, the following clients have been validated to work properly
+Besides miao, the following clients have been validated to work properly
 with OpenCode Go. Although we do not guarantee that they will continue to work in the future.
 
 | Client            | Session support                                                                                                                                                                                                                             |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | Builds containing [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) send the header on main and auxiliary MIAO requests. The fix was merged after v0.21.0; that release alone does not include it.                 |
+| **Hermes**        | Builds containing [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) send the header on main and auxiliary miao requests. The fix was merged after v0.21.0; that release alone does not include it.                 |
 | **Claude Code**   | Go recognizes its native session header. No custom-header wrapper is needed.                                                                                                                                                                |
 | **Codex**         | Go recognizes its native session header. Some versions and proxy setups still omit it; preserve the session header when forwarding requests.                                                                                                |
 | **ZCode**         | Go recognizes its native session header. Our [request for `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) remains open, but it is no longer necessary to send that specific header.                                   |
 | **Pi**            | Current builds send session information for Miao. Update older installations.                                                                                                                                                           |
 | **jcode**         | Update to **v0.81.6 or later**, which includes the [session-header fix](https://github.com/1jehuang/jcode/issues/1167).                                                                                                                     |
-| **Kilo Code CLI** | Builds containing [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) restore MIAO session headers. This fix covers the CLI, not the VS Code extension. See [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
+| **Kilo Code CLI** | Builds containing [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) restore miao session headers. This fix covers the CLI, not the VS Code extension. See [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
 
 ### Known Problematic Clients
 
@@ -344,7 +344,7 @@ You can also access Go models through the following API endpoints.
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-The [model id](/docs/config/#models) in your MIAO config
+The [model id](/docs/config/#models) in your miao config
 uses the format `opencode-go/<model-id>`. For example, for Kimi K3, you would
 use `opencode-go/kimi-k3` in your config.
 
@@ -412,4 +412,4 @@ We created OpenCode Go to:
 1. Make AI coding **accessible** to more people with a low cost subscription.
 2. Provide **reliable** access to the best open coding models.
 3. Curate models that are **tested and benchmarked** for coding agent use.
-4. Have **no lock-in** by allowing you to use any other provider with MIAO as well.
+4. Have **no lock-in** by allowing you to use any other provider with miao as well.

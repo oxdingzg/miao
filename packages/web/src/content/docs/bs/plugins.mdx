@@ -3,7 +3,7 @@ title: Dodaci
 description: Napišite vlastite dodatke za proširenje Miao.
 ---
 
-Dodaci vam omogućavaju da proširite MIAO spajanjem na različite događaje i prilagođavanjem ponašanja. Možete kreirati dodatke za dodavanje novih funkcija, integraciju sa eksternim uslugama ili izmenu zadanog ponašanja Miao.
+Dodaci vam omogućavaju da proširite miao spajanjem na različite događaje i prilagođavanjem ponašanja. Možete kreirati dodatke za dodavanje novih funkcija, integraciju sa eksternim uslugama ili izmenu zadanog ponašanja Miao.
 Za primjere, pogledajte [plugins](/docs/ecosystem#plugins) kreirane od strane zajednice.
 
 ---
@@ -76,7 +76,7 @@ Lokalni dodaci i prilagođeni alati mogu koristiti vanjske npm pakete. Dodajte `
 }
 ```
 
-Miao pokreće `bun install` pri pokretanju da ih instalira. Vaši dodaci i alati ih zatim mogu uvesti.
+miao pokreće `bun install` pri pokretanju da ih instalira. Vaši dodaci i alati ih zatim mogu uvesti.
 
 ```ts title=".miao/plugins/my-plugin.ts"
 import { escape } from "shescape"
@@ -232,7 +232,7 @@ Ako alat dodatka koristi isto ime kao ugrađeni alat, alat dodatka ima prednost.
 
 ### .env zaštita
 
-Spriječite MIAO da čita `.env` fajlove:
+Spriječite miao da čita `.env` fajlove:
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -267,7 +267,7 @@ export const InjectEnvPlugin = async () => {
 
 ### Prilagođeni alati
 
-Dodaci također mogu dodati prilagođene alate u MIAO:
+Dodaci također mogu dodati prilagođene alate u miao:
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -290,12 +290,12 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-Pomoćnik `tool` kreira prilagođeni alat koji MIAO može pozvati. Uzima funkciju Zod sheme i vraća definiciju alata sa:
+Pomoćnik `tool` kreira prilagođeni alat koji miao može pozvati. Uzima funkciju Zod sheme i vraća definiciju alata sa:
 
 - `description`: Šta alat radi
 - `args`: Zod šema za argumente alata
 - `execute`: Funkcija koja se pokreće kada se pozove alat
-  Vaši prilagođeni alati će biti dostupni za MIAO zajedno sa ugrađenim alatima.
+  Vaši prilagođeni alati će biti dostupni za miao zajedno sa ugrađenim alatima.
 
 ---
 

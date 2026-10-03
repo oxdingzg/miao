@@ -12,7 +12,7 @@ RED='\033[0;31m'
 ORANGE='\033[38;5;214m'
 NC='\033[0m' # No Color
 
-# Banner colors: a warm left-to-right gradient for MIAO, coral for the cat.
+# Banner colors: a warm left-to-right gradient for miao, coral for the cat.
 # Disabled when stdout is not a TTY or NO_COLOR is set.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     CAT='\033[38;5;210m'
@@ -26,7 +26,7 @@ fi
 
 usage() {
     cat <<EOF
-MIAO Installer
+miao Installer
 
 Usage: install.sh [options]
 
@@ -344,7 +344,7 @@ download_with_progress() {
 }
 
 download_and_install() {
-    print_message info "\n${MUTED}Installing ${NC}MIAO ${MUTED}version: ${NC}$specific_version"
+    print_message info "\n${MUTED}Installing ${NC}miao ${MUTED}version: ${NC}$specific_version"
     local tmp_dir="${TMPDIR:-/tmp}/miao_install_$$"
     mkdir -p "$tmp_dir"
 
@@ -365,7 +365,7 @@ download_and_install() {
 }
 
 install_from_binary() {
-    print_message info "\n${MUTED}Installing ${NC}MIAO ${MUTED}from: ${NC}$binary_path"
+    print_message info "\n${MUTED}Installing ${NC}miao ${MUTED}from: ${NC}$binary_path"
     cp "$binary_path" "${INSTALL_DIR}/${APP}${EXE}"
     chmod 755 "${INSTALL_DIR}/${APP}${EXE}"
 }
@@ -385,7 +385,7 @@ add_to_path() {
     if grep -Fxq "$command" "$config_file"; then
         print_message info "Command already exists in $config_file, skipping write."
     elif [[ -w $config_file ]]; then
-        echo -e "\n# MIAO" >> "$config_file"
+        echo -e "\n# miao" >> "$config_file"
         echo "$command" >> "$config_file"
         print_message info "${MUTED}Successfully added ${NC}miao ${MUTED}to \$PATH in ${NC}$config_file"
     else
@@ -470,7 +470,7 @@ echo -e "${CAT} > ^ < ${NC}   ${M1}█   █${NC}  ${M2}█${NC}  ${M3}█   █
 echo -e "          ${M1}█   █${NC}  ${M2}█${NC}  ${M3}█   █${NC}  ${M4}█████${NC}"
 echo -e ""
 echo -e ""
-echo -e "${ORANGE}MIAO${NC}${MUTED} includes free models, to start:${NC}"
+echo -e "${ORANGE}miao${NC}${MUTED} includes free models, to start:${NC}"
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
 echo -e "${ORANGE}miao${NC}      ${MUTED}# Run command${NC}"

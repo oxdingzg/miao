@@ -3,7 +3,7 @@ title: MCP-servere
 description: Tilføj lokale og eksterne MCP værktøjer.
 ---
 
-Du kan tilføje eksterne værktøjer til MIAO ved hjælp af _Model Context Protocol_ eller MCP. MIAO understøtter både lokale og eksterne servere.
+Du kan tilføje eksterne værktøjer til miao ved hjælp af _Model Context Protocol_ eller MCP. miao understøtter både lokale og eksterne servere.
 
 Når de er tilføjet, er MCP automatisk tilgængelig for LLM sammen med indbyggede værktøjer.
 
@@ -23,7 +23,7 @@ Visse MCP-servere, som GitHub MCP-servere, har en tendens til at tilføje mange 
 
 ## Aktivering
 
-Du kan definere MCP-servere i din [MIAO Config](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) under `mcp`. Tilføj hver MCP med et unikt navn. Du kan henvise til denne MCP ved navn, når du spørger LLM.
+Du kan definere MCP-servere i din [miao Config](https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/config.mdx) under `mcp`. Tilføj hver MCP med et unikt navn. Du kan henvise til denne MCP ved navn, når du spørger LLM.
 
 ```jsonc title="miao.json" {6}
 {
@@ -165,7 +165,7 @@ Tilføj ekstern MCP-server ved at indstille `type` til `"remote"`.
 
 ## OAuth
 
-Miao håndterer automatisk OAuth-godkendelse for eksterne MCP-servere. Når en server kræver godkendelse, vil Miao:
+miao håndterer automatisk OAuth-godkendelse for eksterne MCP-servere. Når en server kræver godkendelse, vil miao:
 
 1. Registrer 401-svaret, og start OAuth-flowet
 2. Brug **Dynamic Client Registration (RFC 7591)**, hvis det understøtter af serveren
@@ -189,7 +189,7 @@ For de fleste OAuth-aktiverede MCP-servere kræver ingen speciel konfiguration. 
 }
 ```
 
-Hvis serveren kræver godkendelse, vil MIAO bede dig om at godkende, når du prøver at bruge den første gang. Hvis ikke, kan du [manually trigger the flow](#authenticating) med `miao mcp auth <server-name>`.
+Hvis serveren kræver godkendelse, vil miao bede dig om at godkende, når du prøver at bruge den første gang. Hvis ikke, kan du [manually trigger the flow](#authenticating) med `miao mcp auth <server-name>`.
 
 ---
 
@@ -238,7 +238,7 @@ Fjern gemte legitimationsoplysninger:
 miao mcp logout my-oauth-server
 ```
 
-Kommandoen `mcp auth` åbner din browser for godkendelse. Når du har godkendt, vil MIAO opbevare tokens sikkert i `~/.local/share/miao/mcp-auth.json`.
+Kommandoen `mcp auth` åbner din browser for godkendelse. Når du har godkendt, vil miao opbevare tokens sikkert i `~/.local/share/miao/mcp-auth.json`.
 
 ---
 
@@ -423,7 +423,7 @@ Efter tilføjelse af konfigurationen skal du godkende med Sentry:
 miao mcp auth sentry
 ```
 
-Dette åbner et browservindue for at fuldføre OAuth-flowet og forbinde MIAO til din Sentry-konto.
+Dette åbner et browservindue for at fuldføre OAuth-flowet og forbinde miao til din Sentry-konto.
 
 Når du er godkendt, kan du bruge Sentry-værktøjer i dine prompter til at forespørge om problemer, projekter og fejldata.
 

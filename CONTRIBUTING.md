@@ -1,4 +1,4 @@
-# Contributing to MIAO
+# Contributing to miao
 
 We want to make it easy for you to contribute to Miao. Here are the most common type of changes that get merged:
 
@@ -29,7 +29,7 @@ Want to take on an issue? Leave a comment and a maintainer may assign it to you 
 New providers shouldn't require many if ANY code changes, but if you want to add support for a new provider first make a PR to:
 https://github.com/anomalyco/models.dev
 
-## Developing MIAO
+## Developing miao
 
 - Requirements: Bun 1.3+
 - Install dependencies and start the dev server from the repo root:
@@ -41,13 +41,13 @@ https://github.com/anomalyco/models.dev
 
 ### Running against a different directory
 
-By default, `bun dev` runs MIAO in the `packages/miao` directory. To run it against a different directory or repository:
+By default, `bun dev` runs miao in the `packages/miao` directory. To run it against a different directory or repository:
 
 ```bash
 bun dev <directory>
 ```
 
-To run MIAO in the root of the MIAO repo itself:
+To run miao in the root of the miao repo itself:
 
 ```bash
 bun dev .
@@ -70,14 +70,14 @@ Then run it with:
 Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
 
 - Core pieces:
-  - `packages/core`: MIAO core business logic (V2 session engine, tools, providers).
+  - `packages/core`: miao core business logic (V2 session engine, tools, providers).
   - `packages/miao`: CLI shell and server routes.
   - `packages/tui`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
   - `packages/app`: The shared web UI components, written in SolidJS
   - `packages/desktop`: The native desktop app, built with Electron (wraps `packages/app`)
   - `packages/plugin`: Source for `@opencode-ai/plugin`
 
-### Understanding bun dev vs MIAO
+### Understanding bun dev vs miao
 
 During development, `bun dev` is the local equivalent of the built `miao` command. Both run the same CLI interface:
 
@@ -97,7 +97,7 @@ miao <directory>     # Start TUI in specific directory
 
 ### Running the API Server
 
-To start the MIAO headless API server:
+To start the miao headless API server:
 
 ```bash
 bun dev serve
@@ -113,7 +113,7 @@ bun dev serve --port 8080
 
 To test UI changes during development:
 
-1. **First, start the MIAO server** (see [Running the API Server](#running-the-api-server) section above)
+1. **First, start the miao server** (see [Running the API Server](#running-the-api-server) section above)
 2. **Then run the web app:**
 
 ```bash
@@ -148,12 +148,12 @@ Please try to follow the [style guide](./AGENTS.md)
 
 Bun debugging is currently rough around the edges. We hope this guide helps you get set up and avoid some pain points.
 
-The most reliable way to debug MIAO is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
+The most reliable way to debug miao is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
 your debugger via that URL. Other methods can result in breakpoints being mapped incorrectly, at least in VSCode (YMMV).
 
 Caveats:
 
-- If you want to run the MIAO TUI and have breakpoints triggered in the server code, you might need to run `bun dev spawn` instead of
+- If you want to run the miao TUI and have breakpoints triggered in the server code, you might need to run `bun dev spawn` instead of
   the usual `bun dev`. This is because `bun dev` runs the server in a worker thread and breakpoints might not work there.
 - If `spawn` does not work for you, you can debug the server separately:
   - Debug server: `bun run --inspect=ws://localhost:6499/ --cwd packages/miao ./src/index.ts serve --port 4096`,
@@ -172,7 +172,7 @@ If you use VSCode, you can use our example configurations [.vscode/settings.exam
 Some debug methods that can be problematic:
 
 - Debug configurations with `"request": "launch"` can have breakpoints incorrectly mapped and thus unusable
-- The same problem arises when running MIAO in the VSCode `JavaScript Debug Terminal`
+- The same problem arises when running miao in the VSCode `JavaScript Debug Terminal`
 
 With that said, you may want to try these methods, as they might work for you.
 

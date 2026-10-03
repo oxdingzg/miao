@@ -1,12 +1,12 @@
 ---
 title: Server
-description: Komunicirajte s MIAO serverom preko HTTP-a.
+description: Komunicirajte s miao serverom preko HTTP-a.
 ---
 
 import config from "../../../../config.mjs"
 export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
 
-Komanda `miao serve` pokrece headless HTTP server koji izlaže OpenAPI endpoint koji MIAO klijent moze koristiti.
+Komanda `miao serve` pokrece headless HTTP server koji izlaže OpenAPI endpoint koji miao klijent moze koristiti.
 
 ---
 
@@ -49,12 +49,12 @@ MIAO_SERVER_PASSWORD=your-password miao serve
 Kada pokrenete `miao`, pokrecu se TUI i server. TUI je klijent koji komunicira sa serverom. Server izlaže OpenAPI 3.1 spec endpoint koji se koristi i za generisanje [SDK-a](/docs/sdk).
 
 :::tip
-Koristite MIAO server za programsku interakciju sa opencode-om.
+Koristite miao server za programsku interakciju sa opencode-om.
 :::
 
-Ova arhitektura omogucava MIAO podrsku za vise klijenata i programsku interakciju.
+Ova arhitektura omogucava miao podrsku za vise klijenata i programsku interakciju.
 
-Mozete pokrenuti `miao serve` da startate standalone server. Ako je MIAO TUI vec pokrenut, `miao serve` ce pokrenuti novi server.
+Mozete pokrenuti `miao serve` da startate standalone server. Ako je miao TUI vec pokrenut, `miao serve` ce pokrenuti novi server.
 
 ---
 
@@ -62,7 +62,7 @@ Mozete pokrenuti `miao serve` da startate standalone server. Ako je MIAO TUI vec
 
 Kada pokrenete TUI, port i hostname se nasumicno dodijele. Umjesto toga, mozete zadati `--hostname` i `--port` [zastave](/docs/cli), pa se povezati na taj server.
 
-Endpoint [`/tui`](#tui) mozete koristiti za upravljanje TUI-jem kroz server. Na primjer, mozete unaprijed popuniti ili pokrenuti prompt. Ovaj setup koriste MIAO [IDE](/docs/ide) pluginovi.
+Endpoint [`/tui`](#tui) mozete koristiti za upravljanje TUI-jem kroz server. Na primjer, mozete unaprijed popuniti ili pokrenuti prompt. Ovaj setup koriste miao [IDE](/docs/ide) pluginovi.
 
 ---
 

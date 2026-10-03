@@ -4,7 +4,7 @@ const arg = process.argv[2]
 const channel = arg === "dev" || arg === "beta" || arg === "prod" ? arg : resolveChannel()
 
 const appId = channel === "prod" ? "ai.miao.desktop" : `ai.miao.desktop.${channel}`
-const productName = channel === "prod" ? "MIAO" : `MIAO ${channel.charAt(0).toUpperCase() + channel.slice(1)}`
+const productName = channel === "prod" ? "miao" : `MIAO ${channel.charAt(0).toUpperCase() + channel.slice(1)}`
 const summary = `Open source AI coding agent${channel !== "prod" ? ` (${channel})` : ""}`
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -18,12 +18,12 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
   <summary>${summary}</summary>
 
   <developer id="io.github.oxdingzg">
-    <name>MIAO contributors</name>
+    <name>miao contributors</name>
   </developer>
 
   <description>
     <p>
-      MIAO is an open source agent that helps you write and run code with any AI model.
+      miao is an open source agent that helps you write and run code with any AI model.
     </p>
   </description>
 

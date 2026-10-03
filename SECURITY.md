@@ -6,11 +6,11 @@
 
 ### Overview
 
-Miao is an AI-powered coding assistant that runs locally on your machine. It provides an agent system with access to powerful tools including shell execution, file operations, and web access.
+miao is an AI-powered coding assistant that runs locally on your machine. It provides an agent system with access to powerful tools including shell execution, file operations, and web access.
 
 ### Sandboxing
 
-By default, MIAO does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
+By default, miao does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
 
 There is also an **opt-in kernel sandbox** for the V2 `bash` tool, which is off unless enabled. It builds a seatbelt profile for `sandbox-exec` on macOS and applies Landlock on Linux; `miao-sandbox` reports no backend on Windows.
 
@@ -24,7 +24,7 @@ There is also an **opt-in kernel sandbox** for the V2 `bash` tool, which is off 
 - **It fails open.** If a sandbox is requested but no backend is available, `on_unavailable` defaults to `"warn"` and the command runs **unsandboxed**. Set it to `"fail"` to refuse instead.
 - **`workspace-write` restricts writes, not reads.** Writes are limited to the active Location, the command's working directory, temp directories, `writable_roots` and paths approved after a blocked write (the command is then rerun with the directory added). Network is allowed unless denied.
 
-If you need true isolation, run MIAO inside a Docker container or VM.
+If you need true isolation, run miao inside a Docker container or VM.
 
 ### Server Mode
 

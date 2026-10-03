@@ -1,17 +1,17 @@
 ---
 title: GitHub
-description: Bruk MIAO i GitHub-problemer og pull-forespørsler.
+description: Bruk miao i GitHub-problemer og pull-forespørsler.
 ---
 
-Miao integreres med GitHub-arbeidsflyten din. Nevn `/opencode` eller `/oc` i kommentaren din, og Miao vil utføre oppgaver i din GitHub Actions-løper.
+miao integreres med GitHub-arbeidsflyten din. Nevn `/opencode` eller `/oc` i kommentaren din, og miao vil utføre oppgaver i din GitHub Actions-løper.
 
 ---
 
 ## Funksjoner
 
-- **Triage saker**: Be MIAO se på en sak og forklare den for deg.
-- **Fiks og implementer**: Be MIAO om å fikse en sak eller implementere en funksjon. Den vil jobbe i en ny gren og sende inn en PR med alle endringene.
-- **Sikkert**: MIAO kjører i GitHub-runners.
+- **Triage saker**: Be miao se på en sak og forklare den for deg.
+- **Fiks og implementer**: Be miao om å fikse en sak eller implementere en funksjon. Den vil jobbe i en ny gren og sende inn en PR med alle endringene.
+- **Sikkert**: miao kjører i GitHub-runners.
 
 ---
 
@@ -84,10 +84,10 @@ Eller du kan sette den opp manuelt.
 - `model`: Modellen som skal brukes med Miao. Tar formatet `provider/model`. Dette er **obligatorisk**.
 - `agent`: Agenten som skal brukes. Må være en primær agent. Faller tilbake til `default_agent` fra config eller `"build"` hvis ikke funnet.
 - `share`: Om Miao-økten skal deles. Standard er **true** for offentlige depoter.
-- `prompt`: Valgfri egendefinert melding for å overstyre standard oppførsel. Bruk dette til å tilpasse hvordan MIAO behandler forespørsler.
-- `token`: Valgfritt GitHub-tilgangstoken for å utføre operasjoner som å lage kommentarer, foreta endringer og åpne pull-forespørsler. Som standard bruker MIAO installasjonstilgangstokenet fra MIAO GitHub-appen, så commits, kommentarer og pull-forespørsler ser ut til å komme fra appen.
+- `prompt`: Valgfri egendefinert melding for å overstyre standard oppførsel. Bruk dette til å tilpasse hvordan miao behandler forespørsler.
+- `token`: Valgfritt GitHub-tilgangstoken for å utføre operasjoner som å lage kommentarer, foreta endringer og åpne pull-forespørsler. Som standard bruker miao installasjonstilgangstokenet fra miao GitHub-appen, så commits, kommentarer og pull-forespørsler ser ut til å komme fra appen.
 
-  Alternativt kan du bruke GitHub Action-løperens [innebygde `GITHUB_TOKEN`](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) uten å installere MIAO GitHub-appen. Bare sørg for å gi de nødvendige tillatelsene i arbeidsflyten din:
+  Alternativt kan du bruke GitHub Action-løperens [innebygde `GITHUB_TOKEN`](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) uten å installere miao GitHub-appen. Bare sørg for å gi de nødvendige tillatelsene i arbeidsflyten din:
 
   ```yaml
   permissions:
@@ -103,20 +103,20 @@ Eller du kan sette den opp manuelt.
 
 ## Støttede hendelser
 
-Miao kan utløses av følgende GitHub-hendelser:
+miao kan utløses av følgende GitHub-hendelser:
 
 | Hendelsestype                 | Utløst av                               | Detaljer                                                                                                                |
 | ----------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `issue_comment`               | Kommentar på sak eller PR               | Nevn `/opencode` eller `/oc` i kommentaren din. MIAO leser kontekst og kan opprette grener, åpne PR-er eller svare. |
-| `pull_request_review_comment` | Kommenter spesifikke kodelinjer i en PR | Nevn `/opencode` eller `/oc` mens du ser gjennom koden. MIAO mottar filbane, linjenummer og diff-kontekst.          |
-| `issues`                      | Sak åpnet eller redigert                | Utløs MIAO automatisk når saker opprettes eller endres. Krever `prompt` inngang.                                    |
-| `pull_request`                | PR åpnet eller oppdatert                | Utløs MIAO automatisk når PR-er åpnes, synkroniseres eller gjenåpnes. Nyttig for automatiserte anmeldelser.         |
-| `schedule`                    | Cron-basert tidsplan                    | Kjør MIAO etter en tidsplan. Krever `prompt` inngang. Utdata går til logger og PR (ingen sak å kommentere).         |
-| `workflow_dispatch`           | Manuell utløser fra GitHub UI           | Utløs MIAO på forespørsel via fanen Handlinger. Krever `prompt` inngang. Utdata går til logger og PR-er.            |
+| `issue_comment`               | Kommentar på sak eller PR               | Nevn `/opencode` eller `/oc` i kommentaren din. miao leser kontekst og kan opprette grener, åpne PR-er eller svare. |
+| `pull_request_review_comment` | Kommenter spesifikke kodelinjer i en PR | Nevn `/opencode` eller `/oc` mens du ser gjennom koden. miao mottar filbane, linjenummer og diff-kontekst.          |
+| `issues`                      | Sak åpnet eller redigert                | Utløs miao automatisk når saker opprettes eller endres. Krever `prompt` inngang.                                    |
+| `pull_request`                | PR åpnet eller oppdatert                | Utløs miao automatisk når PR-er åpnes, synkroniseres eller gjenåpnes. Nyttig for automatiserte anmeldelser.         |
+| `schedule`                    | Cron-basert tidsplan                    | Kjør miao etter en tidsplan. Krever `prompt` inngang. Utdata går til logger og PR (ingen sak å kommentere).         |
+| `workflow_dispatch`           | Manuell utløser fra GitHub UI           | Utløs miao på forespørsel via fanen Handlinger. Krever `prompt` inngang. Utdata går til logger og PR-er.            |
 
 ### Eksempel på tidsplan
 
-Kjør MIAO på en tidsplan for å utføre automatiserte oppgaver:
+Kjør miao på en tidsplan for å utføre automatiserte oppgaver:
 
 ```yaml title=".github/workflows/opencode-scheduled.yml"
 name: Scheduled Miao Task
@@ -150,7 +150,7 @@ jobs:
             If you find issues worth addressing, open an issue to track them.
 ```
 
-For planlagte arrangementer er `prompt`-inngangen **påkrevd** siden det ikke er noen kommentarer å trekke ut instruksjoner fra. Planlagte workflows kjører uten brukerkontekst for tillatelsessjekking, så arbeidsflyten må gi `contents: write` og `pull-requests: write` hvis du forventer at MIAO oppretter grener eller PR-er.
+For planlagte arrangementer er `prompt`-inngangen **påkrevd** siden det ikke er noen kommentarer å trekke ut instruksjoner fra. Planlagte workflows kjører uten brukerkontekst for tillatelsessjekking, så arbeidsflyten må gi `contents: write` og `pull-requests: write` hvis du forventer at miao oppretter grener eller PR-er.
 
 ---
 
@@ -191,7 +191,7 @@ jobs:
             - Suggest improvements
 ```
 
-For `pull_request`-hendelser, hvis ingen `prompt` er oppgitt, går MIAO som standard gjennom PR-en.
+For `pull_request`-hendelser, hvis ingen `prompt` er oppgitt, går miao som standard gjennom PR-en.
 
 ---
 
@@ -252,7 +252,7 @@ For `issues`-hendelser er `prompt`-inngangen **påkrevd** siden det ikke er noen
 
 ## Egendefinerte prompter
 
-Overstyr standardprompten for å tilpasse oppførselen til MIAO for arbeidsflyten din.
+Overstyr standardprompten for å tilpasse oppførselen til miao for arbeidsflyten din.
 
 ```yaml title=".github/workflows/opencode.yml"
 - uses: anomalyco/opencode/github@latest
@@ -271,7 +271,7 @@ Dette er nyttig for å håndheve spesifikke vurderingskriterier, kodestandarder 
 
 ## Eksempler
 
-Her er noen eksempler på hvordan du kan bruke MIAO i GitHub.
+Her er noen eksempler på hvordan du kan bruke miao i GitHub.
 
 :::tip
 Du kan konfigurere til å bruke en annen triggerfrase enn `@opencode`.
@@ -285,7 +285,7 @@ Du kan konfigurere til å bruke en annen triggerfrase enn `@opencode`.
   /opencode explain this issue
   ```
 
-  Miao vil lese hele tråden, inkludert alle kommentarer, og svare med en tydelig forklaring.
+  miao vil lese hele tråden, inkludert alle kommentarer, og svare med en tydelig forklaring.
 
 - **Fiks en sak**
 
@@ -295,7 +295,7 @@ Du kan konfigurere til å bruke en annen triggerfrase enn `@opencode`.
   /opencode fix this
   ```
 
-  Og MIAO vil opprette en ny gren, implementere endringene og åpne en PR med endringene.
+  Og miao vil opprette en ny gren, implementere endringene og åpne en PR med endringene.
 
 - **Se gjennom PR-er og gjør endringer**
 
@@ -305,18 +305,18 @@ Du kan konfigurere til å bruke en annen triggerfrase enn `@opencode`.
   Delete the attachment from S3 when the note is removed /oc
   ```
 
-  Miao vil implementere den forespurte endringen og committe den til samme PR.
+  miao vil implementere den forespurte endringen og committe den til samme PR.
 
 - **Review av spesifikke kodelinjer**
 
-  Legg igjen en kommentar direkte på kodelinjer i PRs "Filer"-fane. MIAO oppdager automatisk filen, linjenumrene og diff-konteksten for å gi presise svar.
+  Legg igjen en kommentar direkte på kodelinjer i PRs "Filer"-fane. miao oppdager automatisk filen, linjenumrene og diff-konteksten for å gi presise svar.
 
   ```
   [Comment on specific lines in Files tab]
   /oc add error handling here
   ```
 
-  Når du kommenterer spesifikke linjer, mottar MIAO:
+  Når du kommenterer spesifikke linjer, mottar miao:
   - Den nøyaktige filen blir gjennomgått
   - De spesifikke kodelinjene
   - Den omkringliggende diff-konteksten

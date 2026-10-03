@@ -1,9 +1,9 @@
 ---
 title: 插件
-description: 编写自己的插件来扩展 MIAO。
+description: 编写自己的插件来扩展 miao。
 ---
 
-插件允许你通过挂钩各种事件和自定义行为来扩展 MIAO。你可以创建插件来添加新功能、集成外部服务，或修改 MIAO 的默认行为。
+插件允许你通过挂钩各种事件和自定义行为来扩展 miao。你可以创建插件来添加新功能、集成外部服务，或修改 miao 的默认行为。
 
 如需了解示例，请查看社区创建的[插件](/docs/ecosystem#plugins)。
 
@@ -82,7 +82,7 @@ description: 编写自己的插件来扩展 MIAO。
 }
 ```
 
-Miao 会在启动时运行 `bun install` 来安装这些依赖项。之后你的插件和工具就可以导入它们了。
+miao 会在启动时运行 `bun install` 来安装这些依赖项。之后你的插件和工具就可以导入它们了。
 
 ```ts title=".miao/plugins/my-plugin.ts"
 import { escape } from "shescape"
@@ -117,7 +117,7 @@ export const MyPlugin = async ({ project, client, $, directory, worktree }) => {
 - `project`：当前项目信息。
 - `directory`：当前工作目录。
 - `worktree`：git 工作树路径。
-- `client`：用于与 AI 交互的 MIAO SDK 客户端。
+- `client`：用于与 AI 交互的 miao SDK 客户端。
 - `$`：Bun 的 [Shell API](https://bun.com/docs/runtime/shell)，用于执行命令。
 
 ---
@@ -210,7 +210,7 @@ export const MyPlugin: Plugin = async ({ project, client, $, directory, worktree
 
 ## 示例
 
-以下是一些可用于扩展 MIAO 的插件示例。
+以下是一些可用于扩展 miao 的插件示例。
 
 ---
 
@@ -234,14 +234,14 @@ export const NotificationPlugin = async ({ project, client, $, directory, worktr
 这里使用 `osascript` 在 macOS 上运行 AppleScript 来发送通知。
 
 :::note
-如果你使用 MIAO 桌面应用，它可以在响应就绪或会话出错时自动发送系统通知。
+如果你使用 miao 桌面应用，它可以在响应就绪或会话出错时自动发送系统通知。
 :::
 
 ---
 
 ### .env 保护
 
-阻止 MIAO 读取 `.env` 文件：
+阻止 miao 读取 `.env` 文件：
 
 ```javascript title=".miao/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
@@ -276,7 +276,7 @@ export const InjectEnvPlugin = async () => {
 
 ### 自定义工具
 
-插件还可以为 MIAO 添加自定义工具：
+插件还可以为 miao 添加自定义工具：
 
 ```ts title=".miao/plugins/custom-tools.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
@@ -299,13 +299,13 @@ export const CustomToolsPlugin: Plugin = async (ctx) => {
 }
 ```
 
-`tool` 辅助函数用于创建 MIAO 可调用的自定义工具。它接受一个 Zod schema 函数，并返回一个工具定义，包含：
+`tool` 辅助函数用于创建 miao 可调用的自定义工具。它接受一个 Zod schema 函数，并返回一个工具定义，包含：
 
 - `description`：工具的功能描述
 - `args`：工具参数的 Zod schema
 - `execute`：工具被调用时执行的函数
 
-你的自定义工具将与内置工具一起在 MIAO 中可用。
+你的自定义工具将与内置工具一起在 miao 中可用。
 
 :::note
 如果插件工具与内置工具使用相同的名称，则优先使用插件工具。

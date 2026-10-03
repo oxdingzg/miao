@@ -24,7 +24,7 @@ w `~/.local/share/miao/auth.json`.
 
 ### Konfiguracja
 
-Możesz dostosować dostawców za pomocą sekcji `provider` w swoim MIAO
+Możesz dostosować dostawców za pomocą sekcji `provider` w swoim miao
 config.
 
 ---
@@ -50,7 +50,7 @@ Możesz dostosować podstawowy adres URL dla dowolnego dostawcy, ustawiając opc
 
 ## OpenCode Zen
 
-OpenCode Zen to lista modeli dostarczonych przez zespół MIAO, które zostały
+OpenCode Zen to lista modeli dostarczonych przez zespół miao, które zostały
 przetestowane i zweryfikowane, aby dobrze współpracować z miao. [Dowiedz się więcej](/docs/zen).
 
 :::tip
@@ -80,13 +80,13 @@ Jeśli jesteś nowy, zalecamy rozpoczęcie od OpenCode Zen.
    /models
    ```
 
-Działa jak każdy inny dostawca w MIAO i jest całkowicie opcjonalny w użyciu.
+Działa jak każdy inny dostawca w miao i jest całkowicie opcjonalny w użyciu.
 
 ---
 
 ## OpenCode Go
 
-OpenCode Go to tani plan subskrypcji, który zapewnia niezawodny dostęp do popularnych modeli open coding dostarczanych przez zespół MIAO, które zostały przetestowane i zweryfikowane pod kątem dobrej współpracy z miao.
+OpenCode Go to tani plan subskrypcji, który zapewnia niezawodny dostęp do popularnych modeli open coding dostarczanych przez zespół miao, które zostały przetestowane i zweryfikowane pod kątem dobrej współpracy z miao.
 
 1. Uruchom polecenie `/connect` w TUI, wybierz `OpenCode Go` i przejdź do [opencode.ai/auth](https://opencode.ai/zen).
 
@@ -111,7 +111,7 @@ OpenCode Go to tani plan subskrypcji, który zapewnia niezawodny dostęp do popu
    /models
    ```
 
-Działa jak każdy inny dostawca w MIAO i jest całkowicie opcjonalny w użyciu.
+Działa jak każdy inny dostawca w miao i jest całkowicie opcjonalny w użyciu.
 
 ---
 
@@ -155,7 +155,7 @@ Nie widzisz tutaj dostawcy? Prześlij PR.
 
 ### Amazon Bedrock
 
-Aby używać Amazon Bedrock z MIAO:
+Aby używać Amazon Bedrock z miao:
 
 1. Przejdź do **Katalogu modeli** w konsoli Amazon Bedrock i poproś
    dostęp do wybranych modeli.
@@ -168,7 +168,7 @@ Aby używać Amazon Bedrock z MIAO:
 
    #### Zmienne środowiskowe (Szybki start)
 
-   Ustaw jedną z tych zmiennych środowiskowych podczas uruchamiania MIAO:
+   Ustaw jedną z tych zmiennych środowiskowych podczas uruchamiania miao:
 
    ```bash
    # Option 1: Using AWS access keys
@@ -310,7 +310,7 @@ W przypadku niestandardowych profili wnioskowania użyj nazwy modelu i dostawcy 
    ```
 
 :::info
-Korzystanie z subskrypcji Claude Pro/Max w MIAO nie jest oficjalnie obsługiwane przez [Anthropic](https://anthropic.com).
+Korzystanie z subskrypcji Claude Pro/Max w miao nie jest oficjalnie obsługiwane przez [Anthropic](https://anthropic.com).
 :::
 
 ##### Użycie kluczy API
@@ -323,7 +323,7 @@ Lub jeśli masz już klucz API, możesz wybrać **Wprowadź klucz API ręcznie**
 
 ### Atomic Chat
 
-Możesz skonfigurować MIAO do korzystania z modeli lokalnych przez [Atomic Chat](https://atomic.chat) — aplikację desktopową uruchamiającą lokalne LLM-y za serwerem API zgodnym z OpenAI (domyślny endpoint `http://127.0.0.1:1337/v1`).
+Możesz skonfigurować miao do korzystania z modeli lokalnych przez [Atomic Chat](https://atomic.chat) — aplikację desktopową uruchamiającą lokalne LLM-y za serwerem API zgodnym z OpenAI (domyślny endpoint `http://127.0.0.1:1337/v1`).
 
 ```json title="miao.json" "atomic-chat" {5, 6, 8, 10-14}
 {
@@ -372,7 +372,7 @@ Jeśli napotkasz błędy „Przykro mi, ale nie mogę pomóc w tej prośbie”, 
 2. Przejdź do [Azure AI Foundry](https://ai.azure.com/) i wdróż model.
 
    :::note
-   Aby kod MIAO działał poprawnie, nazwa wdrożenia musi być zgodna z nazwą modelu.
+   Aby kod miao działał poprawnie, nazwa wdrożenia musi być zgodna z nazwą modelu.
    :::
 
 3. Uruchom polecenie `/connect` i wyszukaj **Azure**.
@@ -419,7 +419,7 @@ Jeśli napotkasz błędy „Przykro mi, ale nie mogę pomóc w tej prośbie”, 
 2. Przejdź do [Azure AI Foundry](https://ai.azure.com/) i wdróż model.
 
    :::note
-   Aby kod MIAO działał poprawnie, nazwa wdrożenia musi być zgodna z nazwą modelu.
+   Aby kod miao działał poprawnie, nazwa wdrożenia musi być zgodna z nazwą modelu.
    :::
 
 3. Uruchom polecenie `/connect` i wyszukaj **Azure Cognitive Services**.
@@ -748,14 +748,14 @@ GitLab Duo zapewnia czat agentowy oparty na sztucznej inteligencji z natywnymi m
 
 :::note
 Jeśli nie chcesz, możesz także określić zmienną środowiskową „GITLAB_TOKEN”.
-to store token in MIAO auth storage.
+to store token in miao auth storage.
 :::
 
 ##### Self-Hosted GitLab
 
 :::note[compliance note]
 miao używa małego modelu do niektórych zadań AI, takich jak generowanie tytułu sesji.
-Domyślnie jest skonfigurowany do używania gpt-5-nano, hostowanego przez Zen. Aby zablokować MIAO
+Domyślnie jest skonfigurowany do używania gpt-5-nano, hostowanego przez Zen. Aby zablokować miao
 aby używać tylko własnej instancji hostowanej przez GitLab, dodaj następujące elementy do pliku
 `miao.json` plik. Zalecane jest również wyłączenie udostępniania sesji.
 
@@ -851,7 +851,7 @@ Ta wtyczka zapewnia kompleksowe możliwości zarządzania repozytorium GitLab, w
 
 ### GitHub Copilot
 
-Aby korzystać z subskrypcji GitHub Copilot z kodem MIAO:
+Aby korzystać z subskrypcji GitHub Copilot z kodem miao:
 
 :::note
 Niektóre modele mogą wymagać [subskrypcji Pro+](https://github.com/features/Copilot/plans), aby z nich korzystać.
@@ -887,7 +887,7 @@ Niektóre modele należy włączyć ręcznie w [ustawieniach GitHub Copilot](htt
 
 ### Google Vertex AI
 
-Aby używać Google Vertex AI z MIAO:
+Aby używać Google Vertex AI z miao:
 
 1. Przejdź do **Model Garden** w Google Cloud Console i sprawdź
    modele dostępne w Twoim regionie.
@@ -1016,7 +1016,7 @@ Więcej dostawców i zaawansowanych funkcji, takich jak buforowanie i ograniczan
 
 #### Opcjonalna konfiguracja
 
-Jeśli zobaczysz funkcję lub model firmy Helicone, która nie jest konfigurowana automatycznie za pomocą MIAO, zawsze możesz ją skonfigurować samodzielnie.
+Jeśli zobaczysz funkcję lub model firmy Helicone, która nie jest konfigurowana automatycznie za pomocą miao, zawsze możesz ją skonfigurować samodzielnie.
 
 Oto [Katalog modeli Helicone](https://helicone.ai/models), będziesz go potrzebować, aby pobrać identyfikatory modeli, które chcesz dodać.
 
@@ -1069,7 +1069,7 @@ Helicone obsługuje niestandardowe nagłówki dla funkcji takich jak buforowanie
 
 ##### Śledzenie sesji
 
-Funkcja [Sesje](https://docs.helicone.ai/features/sessions) firmy Helicone umożliwia grupowanie powiązanych żądań LLM. Użyj wtyczki [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session), aby automatycznie rejestrować każdą konwersację MIAO jako sesję w Helicone.
+Funkcja [Sesje](https://docs.helicone.ai/features/sessions) firmy Helicone umożliwia grupowanie powiązanych żądań LLM. Użyj wtyczki [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session), aby automatycznie rejestrować każdą konwersację miao jako sesję w Helicone.
 
 ```bash
 npm install -g opencode-helicone-session
@@ -1083,7 +1083,7 @@ Dodaj go do swojej konfiguracji.
 }
 ```
 
-Wtyczka wstawia nagłówki `Helicone-Session-Id` i `Helicone-Session-Name` do Twoich żądań. Na stronie Sesje Helicone każda konwersacja MIAO będzie wymieniona jako osobna sesja.
+Wtyczka wstawia nagłówki `Helicone-Session-Id` i `Helicone-Session-Name` do Twoich żądań. Na stronie Sesje Helicone każda konwersacja miao będzie wymieniona jako osobna sesja.
 
 ##### Najczęstsze nagłówki Helicone
 
@@ -1100,7 +1100,7 @@ Zobacz [Katalog nagłówków Helicone](https://docs.helicone.ai/helicone-headers
 
 ### llama.cpp
 
-Możesz skonfigurować MIAO tak, aby korzystał z modeli lokalnych, za pomocą narzędzia llama-server [llama.cpp](https://github.com/ggml-org/llama.cpp)
+Możesz skonfigurować miao tak, aby korzystał z modeli lokalnych, za pomocą narzędzia llama-server [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
 ```json title="miao.json" "llama.cpp" {5, 6, 8, 10-15}
 {
@@ -1167,7 +1167,7 @@ IO.NET oferuje 17 modeli zoptymalizowanych pod kątem różnych zastosowań:
 
 ### LM Studio
 
-Możesz skonfigurować MIAO tak, aby korzystał z modeli lokalnych poprzez LM Studio.
+Możesz skonfigurować miao tak, aby korzystał z modeli lokalnych poprzez LM Studio.
 
 ```json title="miao.json" "lmstudio" {5, 6, 8, 10-14}
 {
@@ -1284,7 +1284,7 @@ Aby użyć Kimi K2 z Moonshot AI:
 
 ### Ollama
 
-Możesz skonfigurować MIAO tak, aby korzystał z modeli lokalnych poprzez Ollamę.
+Możesz skonfigurować miao tak, aby korzystał z modeli lokalnych poprzez Ollamę.
 
 :::tip
 Ollama może automatycznie skonfigurować się pod kątem miao. Aby uzyskać szczegółowe informacje, zobacz [dokumentację integracji Ollama](https://docs.ollama.com/integrations/opencode).
@@ -1326,7 +1326,7 @@ Jeśli wywołania narzędzi nie działają, spróbuj zwiększyć `num_ctx` w Oll
 
 ### Ollama Cloud
 
-Aby korzystać z Ollama Cloud z MIAO:
+Aby korzystać z Ollama Cloud z miao:
 
 1. Udaj się do [https://ollama.com/](https://ollama.com/) i zaloguj się lub utwórz konto.
 
@@ -1349,7 +1349,7 @@ Aby korzystać z Ollama Cloud z MIAO:
    └ enter
    ```
 
-6. **Ważne**: Przed użyciem modeli chmurowych w MIAO musisz pobrać informacje o modelu lokalnie:
+6. **Ważne**: Przed użyciem modeli chmurowych w miao musisz pobrać informacje o modelu lokalnie:
 
    ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1606,7 +1606,7 @@ STACKIT AI Model Serving zapewnia w pełni zarządzane suwerenne środowisko hos
 
 ### Scaleway
 
-Aby używać [generatywnych interfejsów API Scaleway](https://www.scaleway.com/en/docs/generative-apis/) z MIAO:
+Aby używać [generatywnych interfejsów API Scaleway](https://www.scaleway.com/en/docs/generative-apis/) z miao:
 
 1. Przejdź do [Ustawień uprawnień konsoli Scaleway](https://console.scaleway.com/iam/api-keys), aby wygenerować nowy klucz API.
 
@@ -1967,7 +1967,7 @@ Szczegóły konfiguracji:
 - **limit.context**: Maksymalna liczba tokenów wejściowych akceptowanych przez model.
 - **limit.output**: Maksymalna liczba tokenów, które model może wygenerować.
 
-Pola `limit` pozwalają MIAO zrozumieć, ile kontekstu pozostało. Standardowi dostawcy pobierają je automatycznie z models.dev.
+Pola `limit` pozwalają miao zrozumieć, ile kontekstu pozostało. Standardowi dostawcy pobierają je automatycznie z models.dev.
 
 ---
 
@@ -1980,7 +1980,7 @@ Jeśli masz problemy z konfiguracją dostawcy, sprawdź następujące elementy:
 
    Nie dotyczy to dostawców takich jak Amazon Bedrock, którzy w procesie uwierzytelniania opierają się na zmiennych środowiskowych.
 
-2. W przypadku dostawców niestandardowych sprawdź konfigurację MIAO i:
+2. W przypadku dostawców niestandardowych sprawdź konfigurację miao i:
    - Upewnij się, że identyfikator dostawcy użyty w poleceniu `/connect` jest zgodny z identyfikatorem w konfiguracji miao.
    - Dla dostawcy używany jest właściwy pakiet npm. Na przykład użyj `@ai-sdk/cerebras` dla Cerebras. W przypadku wszystkich innych dostawców zgodnych z OpenAI użyj `@ai-sdk/openai-compatible`.
    - Sprawdź, czy w polu `options.baseURL` użyto prawidłowego punktu końcowego API.
