@@ -1,5 +1,7 @@
+import { OpenCode } from "@miao/client"
 import { createMiaoClient } from "@miao/sdk/v2"
 import type { Event, V2Event } from "@miao/sdk/v2"
+import type { OpenCodeEvent } from "@miao/client"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
 
@@ -37,6 +39,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         headers: props.headers,
       })
     }
+
+    const api = OpenCode.make({ baseUrl: props.url, fetch: props.fetch, headers: props.headers })
 
     let sdk = createSDK()
 
@@ -96,12 +100,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         while (true) {
           if (abort.signal.aborted || ctrl.signal.aborted) break
 
-          const events = await sdk.v2.event.subscribe({
-            signal: ctrl.signal,
-            sseMaxRetryAttempts: 0,
-          })
-
-          for await (const event of events.stream) {
+          for await (const event of api.events.subscribe({ signal: ctrl.signal })) {
             if (ctrl.signal.aborted) break
             handleEvent(toGlobalEvent(event))
           }
@@ -138,6 +137,9 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       get client() {
         return sdk
       },
+      get api() {
+        return api
+      },
       directory: props.directory,
       event: emitter,
       fetch: props.fetch ?? fetch,
@@ -148,7 +150,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
 // `/api/event` carries `{ id, type, data, location }`. The TUI dispatches the GlobalBus shape
 // the in-process worker forwards, so an attached TUI sees events the same way.
-function toGlobalEvent(event: V2Event): GlobalEvent {
+function toGlobalEvent(event: OpenCodeEvent): GlobalEvent {
   return {
     directory: event.location?.directory ?? "global",
     workspace: event.location?.workspaceID,
