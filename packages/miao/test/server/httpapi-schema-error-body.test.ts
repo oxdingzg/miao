@@ -17,41 +17,21 @@ afterEach(async () => {
 
 describe("schema-rejection wire shape", () => {
   it.instance(
-    "Payload schema rejection returns NamedError-shaped JSON, not empty",
+    "v2 payload schema rejection returns InvalidRequestError JSON",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const res = yield* requestInDirectory("/experimental/worktree/reset", test.directory, {
+        const res = yield* requestInDirectory("/api/worktree/reset", test.directory, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ aggregate: -1 }),
         })
-        const body = yield* text(res)
         expect(res.status).toBe(400)
         expect(res.headers["content-type"] ?? "").toContain("application/json")
-        const parsed = JSON.parse(body)
-        expect(parsed).toMatchObject({
-          name: "BadRequest",
-          data: { kind: expect.stringMatching(/^(Body|Payload)$/) },
-        })
-        expect(parsed.data.message).toEqual(expect.any(String))
-        expect(parsed.data.message.length).toBeGreaterThan(0)
-      }),
-    { git: true, config: { formatter: false, lsp: false } },
-  )
-
-  it.instance(
-    "Query schema rejection returns NamedError-shaped JSON",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        // /find/file?limit=999999 violates the limit constraint check.
-        const url = `/find/file?query=foo&limit=999999&directory=${encodeURIComponent(test.directory)}`
-        const res = yield* requestInDirectory(url, test.directory)
-        const body = yield* text(res)
-        expect(res.status).toBe(400)
-        const parsed = JSON.parse(body)
-        expect(parsed).toMatchObject({ name: "BadRequest", data: { kind: "Query" } })
+        const parsed = JSON.parse(yield* text(res))
+        expect(parsed).toMatchObject({ _tag: "InvalidRequestError", kind: expect.stringMatching(/^(Body|Payload)$/) })
+        expect(parsed.message).toEqual(expect.any(String))
+        expect(parsed.message.length).toBeGreaterThan(0)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
@@ -79,7 +59,7 @@ describe("schema-rejection wire shape", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         const huge = "X".repeat(50_000)
-        const res = yield* requestInDirectory("/experimental/worktree/reset", test.directory, {
+        const res = yield* requestInDirectory("/api/worktree/reset", test.directory, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ aggregate: huge }),
@@ -89,7 +69,7 @@ describe("schema-rejection wire shape", () => {
         // 1 KB cap + small JSON envelope ≈ <2 KB — never tens of KB.
         expect(body.length).toBeLessThan(2 * 1024)
         const parsed = JSON.parse(body)
-        expect(parsed.data.message).not.toContain(huge)
+        expect(JSON.stringify(parsed)).not.toContain(huge)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

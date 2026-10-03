@@ -6,7 +6,6 @@ import { Config, ConfigProvider, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { Server } from "../../src/server/server"
-import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
 import { testEffect } from "../lib/effect"
@@ -46,7 +45,7 @@ const it = testEffect(
 describe("HttpApi CORS", () => {
   it.live("allows browser preflight requests without credentials", () =>
     Effect.gen(function* () {
-      const response = yield* HttpClientRequest.options(InstancePaths.path).pipe(
+      const response = yield* HttpClientRequest.options("/api/path").pipe(
         HttpClientRequest.setHeaders({
           origin: "http://localhost:3000",
           "access-control-request-method": "GET",
@@ -91,7 +90,7 @@ describe("HttpApi CORS", () => {
       )
 
       const response = yield* Effect.promise(() =>
-        fetch(new URL(InstancePaths.path, listener.url), {
+        fetch(new URL("/api/path", listener.url), {
           method: "OPTIONS",
           headers: {
             origin: "https://custom.example",
@@ -106,7 +105,7 @@ describe("HttpApi CORS", () => {
       expect(response.headers.get("access-control-allow-headers")).toBe("authorization")
 
       const rejected = yield* Effect.promise(() =>
-        fetch(new URL(InstancePaths.path, listener.url), {
+        fetch(new URL("/api/path", listener.url), {
           method: "OPTIONS",
           headers: {
             origin: "https://evil.example",
