@@ -9,6 +9,7 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core"
 import { LANGUAGE_EXTENSIONS } from "../../util/filetype"
+import { createDiffHighlighter } from "../../util/diff-context-highlight"
 import { useBindings, useCommandShortcut } from "../../keymap"
 import { useTheme } from "../../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -849,6 +850,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
                                   <diff
                                     ref={(element: DiffRenderable) => diffNodeByFileIndex.set(entry.fileIndex, element)}
                                     diff={patch()}
+                                    treeSitterClient={reviewed() ? undefined : createDiffHighlighter({ patch: patch() })}
                                     view={view()}
                                     filetype={reviewed() ? PLAIN_TEXT_FILETYPE : filetype(entry.file.file)}
                                     syntaxStyle={themeState.syntax()}

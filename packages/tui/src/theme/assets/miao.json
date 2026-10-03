@@ -227,7 +227,7 @@
       "light": "lightBlue"
     },
     "syntaxVariable": {
-      "dark": "darkStep12",
+      "dark": "#f8f8f2",
       "light": "lightStep12"
     },
     "syntaxString": {

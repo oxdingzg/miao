@@ -3,7 +3,40 @@ import { parsePatch } from "diff"
 
 type Highlights = NonNullable<Awaited<ReturnType<TreeSitterClient["highlightOnce"]>>["highlights"]>
 type Side = "old" | "new"
-type Source = { side: Side; line: number } | undefined
+type Source = { side: Side; line: number; text: string; removed?: boolean } | undefined
+
+// Deleted code is shown as plain text; the current side retains syntax colors.
+export function createDiffHighlighter(input: { patch: string; current?: string }) {
+  const views = sourceMaps(parsePatch(input.patch)[0]?.hunks ?? [])
+  const base =
+    (input.current === undefined ? undefined : createDiffContextHighlighter({ patch: input.patch, current: input.current })) ??
+    getTreeSitterClient()
+  const client: TreeSitterClient = Object.create(base)
+  client.highlightOnce = async (content, filetype) => {
+    const result = await base.highlightOnce(content, filetype)
+    const lines = content.split("\n")
+    const map = views.find(
+      (view) => view.length === lines.length && view.every((source, index) => (source?.text ?? "") === lines[index]),
+    )
+    if (!map) return result
+    const bucket = bucketByLine(result.highlights ?? [], content)
+    return {
+      ...result,
+      highlights: map.flatMap((source, index): Highlights => {
+        const start = bucket.starts[index]
+        const end = start + lines[index].length
+        if (source?.removed) return end > start ? [[start, end, "diff.removed.text"]] : []
+        return (bucket.lines[index] ?? []).map((highlight) => [
+          Math.max(highlight[0], start),
+          Math.min(highlight[1], end),
+          highlight[2],
+          highlight[3],
+        ])
+      }),
+    }
+  }
+  return client
+}
 
 // The diff renderer joins the visible hunk lines into one snippet and
 // highlights that in isolation. A hunk that starts inside a block comment or a
@@ -112,20 +145,20 @@ function sourceMaps(hunks: Hunk[]) {
     for (const line of hunk.lines) {
       if (line[0] === " ") {
         flush()
-        unified.push({ side: "new", line: newLine })
-        left.push({ side: "old", line: oldLine })
-        right.push({ side: "new", line: newLine })
+        unified.push({ side: "new", line: newLine, text: line.slice(1) })
+        left.push({ side: "old", line: oldLine, text: line.slice(1) })
+        right.push({ side: "new", line: newLine, text: line.slice(1) })
         oldLine++
         newLine++
       }
       if (line[0] === "-") {
-        unified.push({ side: "old", line: oldLine })
-        removes.push({ side: "old", line: oldLine })
+        unified.push({ side: "old", line: oldLine, text: line.slice(1), removed: true })
+        removes.push({ side: "old", line: oldLine, text: line.slice(1), removed: true })
         oldLine++
       }
       if (line[0] === "+") {
-        unified.push({ side: "new", line: newLine })
-        adds.push({ side: "new", line: newLine })
+        unified.push({ side: "new", line: newLine, text: line.slice(1) })
+        adds.push({ side: "new", line: newLine, text: line.slice(1) })
         newLine++
       }
     }
