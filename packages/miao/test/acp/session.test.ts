@@ -1,3 +1,7 @@
+import { Agent } from "@miao/schema/agent"
+import { Model } from "@miao/schema/model"
+import { Provider } from "@miao/schema/provider"
+import { SessionID } from "@miao/schema/session-id"
 import { describe, expect } from "bun:test"
 import path from "node:path"
 import { OpenCode } from "@miao/client"
@@ -46,10 +50,10 @@ describe("acp V2 adapter", () => {
           ["effort", "low"],
           ["mode", "build"],
         ])
-        expect((yield* Effect.promise(() => v2.sessions.get({ sessionID: sessionId }))).model).toEqual({
-          providerID: "test",
-          id: "test-model",
-          variant: "low",
+        expect((yield* Effect.promise(() => v2.sessions.get({ sessionID: SessionID.make(sessionId) }))).model).toEqual({
+          providerID: Provider.ID.make("test"),
+          id: Model.ID.make("test-model"),
+          variant: Model.VariantID.make("low"),
         })
         yield* Effect.promise(() => until(() => acp.of(sessionId, "available_commands_update").length > 0, "commands"))
 
@@ -134,11 +138,11 @@ describe("acp V2 adapter", () => {
           acp.conn.setSessionConfigOption({ sessionId, configId: "effort", value: "high" }),
         )
         expect(effort.configOptions.find((option) => option.id === "effort")?.currentValue).toBe("high")
-        expect((yield* Effect.promise(() => v2.sessions.get({ sessionID: sessionId }))).model?.variant).toBe("high")
+        expect((yield* Effect.promise(() => v2.sessions.get({ sessionID: SessionID.make(sessionId) }))).model?.variant).toBe(Model.VariantID.make("high"))
         yield* Effect.promise(() => acp.conn.unstable_setSessionModel({ sessionId, modelId: "test/second-model" }))
-        const switched = yield* Effect.promise(() => v2.sessions.get({ sessionID: sessionId }))
-        expect(switched.agent).toBe("plan")
-        expect(switched.model?.id).toBe("second-model")
+        const switched = yield* Effect.promise(() => v2.sessions.get({ sessionID: SessionID.make(sessionId) }))
+        expect(switched.agent).toBe(Agent.ID.make("plan"))
+        expect(switched.model?.id).toBe(Model.ID.make("second-model"))
         expect(acp.of(sessionId, "config_option_update").length).toBeGreaterThan(0)
 
         // List and fork.
@@ -253,7 +257,7 @@ describe("acp V2 adapter", () => {
         expect(compacted.stopReason).toBe("end_turn")
         expect(yield* llm.calls).toBe(calls)
         const messages = yield* Effect.promise(() =>
-          OpenCode.make({ baseUrl: server.url }).messages.list({ sessionID: sessionId, limit: 5 }),
+          OpenCode.make({ baseUrl: server.url }).messages.list({ sessionID: SessionID.make(sessionId), limit: 5 }),
         )
         expect(messages.data.some((message) => message.type === "user" && message.text === "/compact")).toBe(false)
       }),

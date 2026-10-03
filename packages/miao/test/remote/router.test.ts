@@ -1,6 +1,7 @@
 // Drives the remote Router against a real `miao serve` subprocess and the fake
 // LLM server, through an in-memory channel. Nothing here touches a network
 // beyond loopback.
+import { AbsolutePath } from "@miao/schema/schema"
 import { describe, expect } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -186,8 +187,8 @@ describe("remote router", () => {
           capabilities: { replyWindowMs: 120_000, repliesPerInbound: 10, pushBudgetPerDay: 2 },
         })
         // Created before the Router subscribes: from its point of view it was never run here.
-        const foreign = yield* Effect.promise(() => env.client.sessions.create({ location: { directory: env.alpha } }))
-        yield* Effect.promise(() => env.client.sessions.create({ location: { directory: env.outside } }))
+        const foreign = yield* Effect.promise(() => env.client.sessions.create({ location: { directory: AbsolutePath.make(env.alpha) } }))
+        yield* Effect.promise(() => env.client.sessions.create({ location: { directory: AbsolutePath.make(env.outside) } }))
         const memory = env.channel()
         const router = yield* Effect.promise(() => env.router(memory))
         yield* Effect.promise(() => router.start())
