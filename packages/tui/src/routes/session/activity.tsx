@@ -77,6 +77,28 @@ function runningTool(parts: ReadonlyArray<Part>) {
   return detail ? { group, text: `${group.verb[0]} ${detail}` } : undefined
 }
 
+// The live timer answers "how long since the last output", not "how long has
+// this turn run": a tool that has produced nothing for twelve minutes must not
+// read as a healthy twelve-minute turn. Each part records when it last changed,
+// so the newest stamp is the moment output stopped. A turn with no output yet
+// falls back to the prompt that opened it.
+export function lastOutputAt(parts: ReadonlyArray<Part>, fallback: number | undefined) {
+  const times = parts.flatMap((part) => {
+    if (part.type === "tool") {
+      if (part.state.status === "pending") return []
+      return [part.state.status === "completed" ? part.state.time.end : part.state.time.start]
+    }
+    if (part.type === "text" || part.type === "reasoning") {
+      const time = part.time?.end ?? part.time?.start
+      return time === undefined ? [] : [time]
+    }
+    return []
+  })
+  if (times.length === 0) return fallback
+  const latest = Math.max(...times)
+  return fallback === undefined ? latest : Math.max(latest, fallback)
+}
+
 export function SessionActivity(props: { sessionID: string }) {
   const sync = useSync()
   const [elapsed, setElapsed] = createSignal(0)
@@ -106,9 +128,8 @@ export function SessionActivity(props: { sessionID: string }) {
     if (!busy() || blocked()) return undefined
     return turnActivity({ parts: turnParts(), working: !waiting() })
   })
-  // Measure from the prompt that opened the turn so the live timer agrees with
-  // the duration the completed assistant footer reports.
   const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.role === "user")?.time.created)
+  const lastOutput = createMemo(() => lastOutputAt(turnParts(), turnStartedAt()))
   const active = createMemo(() => busy() && !blocked())
 
   createEffect(() => {
@@ -129,7 +150,7 @@ export function SessionActivity(props: { sessionID: string }) {
     const read = () => {
       // A start that is not epoch millis would print "NaNd NaNh"; show no
       // timer rather than a broken one.
-      const elapsed = Date.now() - (turnStartedAt() ?? Number.NaN)
+      const elapsed = Date.now() - (lastOutput() ?? Number.NaN)
       return Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0
     }
     setElapsed(read())

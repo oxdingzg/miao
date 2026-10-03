@@ -27,7 +27,9 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
       role: "user",
       agent: "build",
       model: { providerID: "test", modelID: "test" },
-      time: { created: 1 },
+      // The receipt's clock is the wait, so keep it old enough that the status
+      // line renders a duration on the first frame rather than "0ms".
+      time: { created: Date.now() - 65_000 },
     },
     parts: [],
     state: "sending",
@@ -61,6 +63,7 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
     receipts.admit("msg_test")
     await app.renderOnce()
     expect(app.captureCharFrame()).toContain("RECEIVED · waiting for the next safe turn")
+    expect(app.captureCharFrame()).toMatch(/RECEIVED · waiting for the next safe turn · \d/)
     expect(app.captureCharFrame()).not.toContain("SEND FAILED")
   } finally {
     app.renderer.destroy()

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { turnActivity } from "../src/routes/session/activity"
+import { lastOutputAt, turnActivity } from "../src/routes/session/activity"
 import type { Part } from "@opencode-ai/sdk/v2"
 
 const base = { id: "part", sessionID: "ses_test", messageID: "msg_assistant" }
@@ -91,4 +91,20 @@ test("a long command is shortened to its first line", () => {
 test("running tools and text do not count as completed work", () => {
   const parts: Part[] = [tool("bash", "running"), { ...base, type: "text", text: "hello" }]
   expect(turnActivity({ parts, working: false })).toBeUndefined()
+})
+
+test("the live timer measures silence since the last output, not the turn", () => {
+  // A running tool is silence by definition: nothing else can emit while it
+  // holds the turn, so its own start is the moment output stopped.
+  const running = { ...base, type: "tool", tool: "bash", callID: "call_running", state: { status: "running", input: {}, time: { start: 900 } } } as Part
+  expect(lastOutputAt([running], 100)).toBe(900)
+  expect(lastOutputAt([reasoning("open", 5000)], 100)).toBe(5000)
+  expect(lastOutputAt([{ ...base, type: "text", text: "streaming", time: { start: 100, end: 7000 } }], 100)).toBe(7000)
+})
+
+test("a turn without any output measures from the prompt that opened it", () => {
+  const pending = { ...base, type: "tool", tool: "bash", callID: "call_pending", state: { status: "pending", input: {}, raw: "" } } as Part
+  expect(lastOutputAt([], 42)).toBe(42)
+  expect(lastOutputAt([pending], 42)).toBe(42)
+  expect(lastOutputAt([], undefined)).toBeUndefined()
 })
