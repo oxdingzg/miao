@@ -2,6 +2,16 @@
 
 The app is currently hybrid. In this document, V1 refers to the legacy unprefixed server APIs used by `@opencode-ai/sdk/v2`, despite the SDK package name.
 
+> Re-audited against the code on 2026-10-03 (see `specs/v2/p7-non-session-routes.md`). Two corrections to earlier ticks:
+>
+> - The "current API" calls (`createApiForServer` in `src/utils/server.ts`) go through the vendored upstream client
+>   `vendor/opencode-ai-client-1.17.13-v2.tgz`, not `@miao/client`. Several routes it calls are not served by miao
+>   (`/api/vcs/diff`, `/api/project` list/update, `/api/mcp/resource`, the upstream integration OAuth attempt paths,
+>   PTY shells). Items that relied on those routes are unticked below until the app moves to `@miao/client`.
+> - Several V1 calls are not migrated but disabled: they `return` early or throw when the protocol is not `v1`
+>   (project rename, directory picker path lookup, custom providers), and the global config query returns `{}`.
+>   These features are currently broken on V2 servers.
+
 ## Events
 
 - [x] Replace `GET /global/event` with `GET /api/event`.
@@ -67,10 +77,8 @@ The app is currently hybrid. In this document, V1 refers to the legacy unprefixe
   - `src/components/prompt-input/submit.ts`
 - [x] Migrate session fork from `POST /session/:sessionID/fork`.
   - `src/components/dialog-fork.tsx`
-- [ ] Migrate sharing from `POST /session/:sessionID/share` and `DELETE /session/:sessionID/share`.
-  - `src/pages/session/use-session-commands.tsx`
-  - `src/pages/session/timeline/message-timeline.tsx`
-  - Blocked: the current API has no sharing contract or implementation.
+- [x] Remove sharing (`POST`/`DELETE /session/:sessionID/share`); the fork has no share service (`be0b265ac`).
+  - Leftover `command.session.share*` i18n strings can be removed.
 
 ## Session Compatibility Fallbacks
 
@@ -85,33 +93,34 @@ These calls are retained as fallback adapters. The current production path suppl
 
 ## Filesystem
 
-- [ ] Migrate file listing from `GET /file`.
+- [ ] Migrate file listing from `GET /file` to `GET /api/fs/list`.
   - `src/context/file.tsx`
-- [ ] Migrate file reads from `GET /file/content`.
+- [ ] Migrate file reads from `GET /file/content` to `GET /api/fs/content` (endpoint in progress).
   - `src/context/file.tsx`
   - `src/pages/session/review-tab.tsx`
   - `src/pages/session/v2/review-panel-v2.tsx`
-- [x] Migrate path discovery from `GET /path` to `GET /api/path`.
-  - `src/context/global-sync/bootstrap.ts`
+- [ ] Migrate path discovery from `GET /path` to `GET /api/location`.
   - `src/components/dialog-select-directory.tsx`
   - `src/components/dialog-select-directory-v2.tsx`
+  - Still `sdk.client.path.get`, and skipped entirely when the protocol is not `v1`.
 
 ## Projects And Worktrees
 
-- [x] Migrate project listing from `GET /project` to `GET /api/project`.
+- [ ] Migrate project listing from `GET /project` to `GET /api/project` (miao serves no `/api/project` list yet).
   - `src/context/global-sync/bootstrap.ts`
 - [x] Migrate the current project lookup from `GET /project/current` to `GET /api/project/current`.
   - `src/context/global-sync/bootstrap.ts`
 - [ ] Migrate Git initialization from `POST /project/git/init`.
   - `src/pages/session.tsx`
-- [x] Migrate project updates from `PATCH /project/:projectID` to `PATCH /api/project/:projectID`.
+- [ ] Migrate project updates from `PATCH /project/:projectID` to `PATCH /api/project/:projectID`.
   - `src/context/layout.tsx`
   - `src/components/edit-project.ts`
   - `src/pages/layout.tsx`
+  - miao has no `PATCH /api/project/:projectID`; the V1 call is skipped when the protocol is not `v1`, so rename is a no-op on V2.
 - [ ] Migrate experimental worktree listing, creation, removal, and reset from `/experimental/worktree`.
   - `src/pages/layout.tsx`
   - `src/components/prompt-input/submit.ts`
-  - Listing now uses `GET /api/project/:projectID/directories`; create, removal, and reset remain.
+  - Listing now uses `GET /api/project/:projectID/directories`; create, removal, and reset remain (`/api/workspace` has create/remove, no reset).
 - [ ] Migrate instance disposal from `POST /instance/dispose`.
   - `src/pages/layout.tsx`
 
@@ -119,7 +128,7 @@ These calls are retained as fallback adapters. The current production path suppl
 
 - [x] Migrate repository information from `GET /vcs` to `GET /api/vcs`.
   - `src/context/global-sync/bootstrap.ts`
-- [x] Migrate diffs from `GET /vcs/diff` to `GET /api/vcs/diff`.
+- [ ] Migrate diffs from `GET /vcs/diff` to `GET /api/vcs/diff` (called through the vendored client; miao serves no `/api/vcs/diff`).
   - `src/pages/session.tsx`
 - [x] Migrate status from `GET /vcs/status` to `GET /api/vcs/status`.
   - `src/pages/layout.tsx`
@@ -128,13 +137,15 @@ These calls are retained as fallback adapters. The current production path suppl
 
 - [ ] Migrate global configuration reads from `GET /global/config`.
   - `src/context/global-sync/bootstrap.ts`
+  - `loadGlobalConfigQuery` currently returns `{}`; `GET /api/config` exists and returns the merged config.
 - [ ] Migrate directory configuration reads from `GET /config`.
   - `src/context/global-sync/bootstrap.ts`
 - [ ] Migrate global configuration updates from `PATCH /global/config`.
   - `src/context/server-sync.tsx`
 - [x] Migrate provider authentication method discovery from `GET /provider/auth` to `GET /api/integration/:integrationID`.
   - `src/components/dialog-connect-provider.tsx`
-- [x] Migrate built-in provider OAuth authorization and callbacks to `/api/integration/:integrationID/connect/oauth/*`.
+- [ ] Migrate built-in provider OAuth authorization and callbacks to the integration attempt API.
+  - The vendored client uses `/api/integration/:integrationID/connect/oauth/:attemptID*`; miao serves `/api/integration/attempt/:attemptID*`. Verify in a browser.
   - `src/components/dialog-connect-provider.tsx`
 - [ ] Migrate remaining credentials from `PUT /auth/:providerID` and `DELETE /auth/:providerID`.
   - Built-in provider key connections now use `POST /api/integration/:integrationID/connect/key`.
@@ -169,9 +180,9 @@ These calls are retained as fallback adapters. The current production path suppl
   - `src/context/server-sync.tsx`
 - [ ] Replace legacy MCP authentication with the Integration OAuth workflow.
   - `src/context/server-sync.tsx`
-- [x] Migrate experimental resource listing from `GET /experimental/resource` to `GET /api/mcp/resource`.
+- [ ] Migrate experimental resource listing from `GET /experimental/resource` to `GET /api/mcp/resources` (the vendored client calls `/api/mcp/resource`).
   - `src/context/server-sync.tsx`
-- [ ] Migrate LSP status from `GET /lsp`.
+- [ ] Migrate LSP status from `GET /lsp` to `GET /api/lsp` (endpoint exists).
   - `src/context/server-sync.tsx`
 - [x] Move `GET /api/reference` off the legacy generated SDK transport.
   - `src/context/global-sync/bootstrap.ts`
@@ -187,7 +198,7 @@ These calls are retained as fallback adapters. The current production path suppl
 - [x] Migrate PTY creation, reads, updates, and deletion from `/pty` to `/api/pty`.
   - `src/context/terminal.tsx`
   - `src/components/terminal.tsx`
-- [x] Migrate shell listing from `GET /pty/shells` to `GET /api/pty/shells`.
+- [ ] Migrate shell listing from `GET /pty/shells` to `GET /api/pty/shells` (miao serves no `/api/pty/shells`; the V1 call is still used behind `protocol === "v1"`).
   - `src/components/settings-general.tsx`
   - `src/components/settings-v2/general.tsx`
 - [x] Migrate connection tokens from `POST /pty/:ptyID/connect-token` to `POST /api/pty/:ptyID/connect-token`.
@@ -208,6 +219,10 @@ These are not V1 network requests, but they keep the UI coupled to V1 data contr
 - [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`, `Project`, `FileNode`, `FileDiffInfo`, and `Event` types throughout app state and rendering.
 - [ ] Remove the `@opencode-ai/sdk` runtime dependency after all legacy calls and types are gone.
   - `package.json`
+- [ ] Replace the vendored `@opencode-ai/client` (`vendor/opencode-ai-client-1.17.13-v2.tgz`) with `@miao/client`.
+  - `src/utils/server.ts`
+- [ ] Remove `detectServerProtocol` and every `protocol === "v1"` / `!== "v1"` branch.
+  - `src/utils/server-protocol.ts`, `src/utils/terminal-websocket-url.ts`, `src/components/terminal.tsx`, settings and layout call sites
 
 ## Test Infrastructure
 

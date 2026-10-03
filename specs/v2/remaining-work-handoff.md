@@ -8,6 +8,11 @@ steps, acceptance checks, and a suggested commit.
 > `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` routes are deleted; every shipped
 > client runs V2. The remaining work below is the legacy JS SDK (P5) and the non-session legacy
 > routes (P7); the Workstream B sections are historical.
+>
+> Re-audit (2026-10-03): the authoritative P7 inventory is `specs/v2/p7-non-session-routes.md`. The TUI
+> has 4 legacy calls left (console/org switching); the app still has ~25 legacy SDK calls, several
+> features silently disabled on V2 (project rename, directory picker, config reads, custom providers),
+> and its "current API" goes through a vendored upstream client rather than `@miao/client`.
 
 Read this with: `specs/v2/v1-retirement.md`, `specs/v2/tui-read-cutover.md`,
 `specs/v2/session-messaging.md`, `specs/v2/todo.md`, `specs/v2/session.md`,

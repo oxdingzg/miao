@@ -8,6 +8,10 @@ Definition of Done. Run in `miao-dev` only.
 > groups are deleted, so Stage 5 has landed. The client `MIAO_TUI_V2=0` / `?protocol=v1` fallbacks
 > are gone and every shipped client uses the V2 API. Remaining: the legacy JS SDK (P5) and the
 > non-session legacy routes (P7).
+>
+> Re-audited 2026-10-03: items that only made sense while V1 was a fallback are marked *obsolete*.
+> The live P7 inventory (TUI, app, server groups) is in `specs/v2/p7-non-session-routes.md`; the app
+> also still talks to miao through a vendored upstream client, see `packages/app/V1_API_MIGRATION.md`.
 
 ## 0. Guardrails
 - [ ] Confirm working in `miao-dev` (source), not release `miao`
@@ -17,11 +21,11 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Commit `type(scope): …` and push to `miao main` immediately
 
 ## 1. Stage 4 — read preflight
-- [ ] Transcript byte-identical to V1 for a projected session (`MIAO_TUI_V2` is now **on by default**; `=0` forces V1)
-- [ ] Legacy session renders from the V1 fallback
+- [x] ~~Transcript byte-identical to V1 for a projected session~~ — obsolete: the V1 transcript path is deleted
+- [ ] Legacy session renders from the V1 fallback (core `v1-read` is retained for un-backfilled databases)
 - [ ] Un-backfilled session send shows the `LegacyNotMigratedError` hint
 - [ ] `miao-dev db backfill` migrates a legacy session; resend succeeds
-- [ ] `MIAO_TUI_V2=0`: unchanged V1 behavior
+- [x] ~~`MIAO_TUI_V2=0`: unchanged V1 behavior~~ — obsolete: the flag was removed (P4)
 - [ ] **A.0b:** V2 runs stream live into the transcript (landed: re-hydrate on `session.next.*`; needs a manual `miao-dev` soak)
 
 ## 2. Stage 4 — TUI write flip
@@ -36,7 +40,7 @@ Definition of Done. Run in `miao-dev` only.
 - [x] Compact/revert: `summarize`→`v2.session.compact`, `revert`→`v2.session.revert.stage`, `unrevert`→`v2.session.revert.clear` (`routes/session/index.tsx`, `dialog-message.tsx`)
 - [x] Permission reply: → `v2.session.permission.reply`; V2 requests render via `permission.v2.asked`/`replied` in `context/sync.tsx` (V2 request mapped to the V1 UI shape)
 - [x] Question reply/reject: → `v2.session.question.reply/reject`; V2 requests render via `question.v2.asked`/`replied`/`rejected` in `context/sync.tsx`
-- [x] Reads and writes agree (writes gated on `MIAO_TUI_V2`, the same flag that switches reads)
+- [x] Reads and writes agree (V2 only since the `MIAO_TUI_V2` flag was removed)
 - [ ] Verify: driven session writes `session_message`, no `message`/`part` rows (`miao-dev db stats`)
 - [ ] Verify: TUI and app transcripts identical before/after flip
 - [ ] Exercise: prompt, steer, queue, tool loop, compaction, permissions, revert, interrupt (needs live `miao-dev` soak)
@@ -47,7 +51,7 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Repeat read preflight for app/desktop/web (needs a live browser soak)
 - [x] `detectServerProtocol` now prefers `/api/health` (pid) and falls back to legacy `/global/health`, so app/desktop/web select V2 whenever the server advertises it
 - [x] Reads and writes follow the selection (`utils/server-compat.ts`; app renders V2 events)
-- [x] `?protocol=v1|v2` override forces a protocol for soak/rollback
+- [x] ~~`?protocol=v1|v2` override forces a protocol for soak/rollback~~ — removed in P4; `detectServerProtocol` and `protocol === "v1"` branches still remain in the app (P7)
 - [ ] Same acceptance as TUI; commit + push (client cutover landed; live soak remains)
 
 ## 4. Stage 5 — delete V1
@@ -57,7 +61,7 @@ Definition of Done. Run in `miao-dev` only.
 - [x] Delete V1 session engine
 - [x] Delete V1 tools/transport
 - [ ] Delete `packages/core/v1` schemas — retained on purpose for legacy DB reads and backfill
-- [ ] Delete legacy SDK (P5)
+- [ ] Delete legacy SDK (P5) — in progress 2026-10-03: V1 root exports, `sdk-v1-smoke.test.ts`, `script/duplicate-pr.ts`; plugin `Hooks`/`PluginInput.client` still to move to V2
 - [x] Delete `packages/miao` V1 server/engine
 - [ ] `bun typecheck` + full suites green; commit + push
 
@@ -73,14 +77,18 @@ Definition of Done. Run in `miao-dev` only.
 ## 6. Storage hardening (§5)
 - [ ] Delta-only events: retire V1 per-delta sync events; one row per completed fragment
   - [x] V2 write path already persists one durable `text.started`/`text.ended` per fragment and no durable delta — `session-runner-recorded.test.ts`; V1 per-delta event retirement is Workstream B
-- [ ] Blob externalization: `blobs/<sha256>` for attachments + oversized tool output
-  - [x] Content-addressed `Blob` store (`blob.ts`: put/get/has/remove, atomic write, dedupe) — `blob.test.ts`; not yet wired
-- [ ] Messages/events store `hash + mime`; materialize in `to-llm-message.ts`
-  - [x] Request-time materialization: the runner resolves `blob://<hash>` user attachments to data URIs before the request (`materialize-files.ts`; `session-runner-materialize.test.ts`); write side + API boundary still open
+- [x] Blob externalization: `blobs/<sha256>` for attachments + oversized tool output
+  - [x] Content-addressed `Blob` store (`blob.ts`: put/get/has/remove, atomic write, dedupe) — `blob.test.ts`
+  - [x] Oversized prompt attachments externalized (`9f3c0b146`); images bounded at prompt and tool-result boundaries (`eb3f723f1`)
+- [x] Messages/events store `hash + mime`; materialize in `to-llm-message.ts`
+  - [x] Request-time materialization: the runner resolves `blob://<hash>` user attachments to data URIs before the request (`materialize-files.ts`; `session-runner-materialize.test.ts`)
+  - [x] API boundary: blob references materialized in assistant tool results (`aa4628dc1`) and session events (`182042946`)
 - [x] Incremental auto-vacuum enabled — native SQLite layers request `auto_vacuum = INCREMENTAL` before WAL on new databases; `database-migration.test.ts`
 - [x] Retire V1 tables and the legacy event range — `miao db compact` (batched delete of the `message.*` events, drop `message` / `part`, reset only the `event_sequence` rows it emptied, checkpoint + vacuum); the V1 readers and `miao import` explain the retirement instead of failing on a missing table
-  - [ ] Compact only after a release carries the legacy fallback: a build from before it fails a compacted database with `no such table: message`, so the two release-channel databases were restored from backup on 2026-09-30 pending that release
-  - [ ] Measure `miao.db` against the <200 MB acceptance — 297 MB of it is `session_message`, now the single copy of the history
+  - [x] Compact only after a release carries the legacy fallback — `miao.db` compacted 2026-10-02 (2746 MB → 574 MB) and read by release 0.0.34
+  - [ ] Compact `miao-main.db` (preview channel; 2.3 GB on 2026-10-03, still uncompacted)
+  - [ ] Delete the old `miao*.db.bak-*` / `*.compacted-*` copies (~15 GB in `~/.local/share/miao`) after a week of clean running — needs owner confirmation; also migrate databases on other machines (macmini)
+  - [ ] Measure `miao.db` against the <200 MB acceptance — 666 MB on 2026-10-03
 - [ ] Event-log retention/compaction (snapshot-then-truncate)
 - [ ] Per-project blob GC (refcount or mark-and-sweep)
 - [ ] Verify: `db stats` shows no `message.part.updated` bloat, no inline base64; size reclaimed by `db vacuum`
@@ -102,6 +110,7 @@ Definition of Done. Run in `miao-dev` only.
 
 ### G4 — cancellation settlement / attachments / progress
 - [ ] Cancellation: cascade-cancel child fibers, drain inbox, settle pending approvals
+  - [x] A stalled subagent is interrupted (`90d5c6544`); subagent process groups are cleaned up on a parent interrupt (`a298c467f`)
   - [x] Interrupt clears tool fibers and fails unsettled tools; durable queued/steer input survives interruption — `session-runner.test.ts` ("preserves durable queued/steering input … after interruption")
   - [x] Interrupting a pending permission/question publishes `Replied(reject)`/`Rejected` so subscribers clear the prompt — `permission.test.ts`, `question.test.ts`
 - [x] Normalize attachments by model capability at request build — image files become a text placeholder when `capabilities.input` omits `image`
@@ -151,6 +160,7 @@ Definition of Done. Run in `miao-dev` only.
 
 ### G12 — syscall-level confinement
 - [ ] Wire core-owned OS sandbox into V2 tool execution (workdir, allowed paths, network)
+  - [x] V2 bash runs under the core OS sandbox (`0b0435a79`, `7f28f8711`); a catch-all allow rule cannot lift it (`71036081c`); other tools and default-on remain
 - [ ] Fail-closed, model-visible denials
 - [ ] Verify: writes outside allowed paths denied; network denied when configured
 - [ ] Test + commit + push
@@ -170,6 +180,6 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] No other session's WIP committed
 
 ## Rollback
-- [ ] TUI: `MIAO_TUI_V2=0` forces the V1 read/write path
-- [ ] Stage 4 client: revert flipped call sites
+- [x] ~~TUI: `MIAO_TUI_V2=0` forces the V1 read/write path~~ — obsolete: V1 is deleted; roll back by installing a previous release
+- [x] ~~Stage 4 client: revert flipped call sites~~ — obsolete
 - [ ] Preview binary: `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao-preview`
