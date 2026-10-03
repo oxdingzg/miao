@@ -54,7 +54,7 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
     const url = new URL(request.url)
     calls.push(`${request.method} ${url.pathname}`)
     const json = (body: unknown, status = 200) => Response.json(body, { status })
-    if (url.pathname === "/event") {
+    if (url.pathname === "/api/event") {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           push = (event) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`))
@@ -72,9 +72,9 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
       admitted = true
       push({
         type: "permission.v2.asked",
-        properties: { id: "per_1", sessionID, action: "bash", resources: ["rm -rf /"] },
+        data: { id: "per_1", sessionID, action: "bash", resources: ["rm -rf /"] },
       })
-      push({ type: "question.v2.asked", properties: { id: "que_1", sessionID, questions: [] } })
+      push({ type: "question.v2.asked", data: { id: "que_1", sessionID, questions: [] } })
       return json({ data: { admittedSeq: 1 } })
     }
     if (url.pathname === `/api/session/${sessionID}/wait`) {
@@ -85,7 +85,7 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
       replies.push({ path: url.pathname, body: await request.json().catch(() => undefined) })
       answered.add(url.pathname)
       if (answered.size === 2) {
-        push({ type: "session.next.step.ended", properties: { sessionID } })
+        push({ type: "session.next.step.ended", data: { sessionID } })
         idle()
       }
       return json(true)

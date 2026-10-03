@@ -199,17 +199,20 @@ describe("run runtime boot", () => {
       providers: [data.all[0]!],
       default: {},
     }
-    const list = spyOn(sdk.provider, "list").mockImplementation(() =>
+    const list = spyOn(sdk.v2.config, "catalog").mockImplementation(() =>
       Promise.resolve({
-        data,
+        data: { location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } }, data },
         error: undefined,
         request: new Request("https://opencode.test"),
         response: new Response(),
       }),
     )
-    spyOn(sdk.config, "providers").mockImplementation(() =>
+    spyOn(sdk.v2.config, "providers").mockImplementation(() =>
       Promise.resolve({
-        data: configured,
+        data: {
+          location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } },
+          data: configured,
+        },
         error: undefined,
         request: new Request("https://opencode.test"),
         response: new Response(),
@@ -261,10 +264,10 @@ describe("run runtime boot", () => {
       default: {},
       connected: [],
     }
-    spyOn(sdk.config, "providers").mockRejectedValue(new Error("boom"))
-    spyOn(sdk.provider, "list").mockImplementation(() =>
+    spyOn(sdk.v2.config, "providers").mockRejectedValue(new Error("boom"))
+    spyOn(sdk.v2.config, "catalog").mockImplementation(() =>
       Promise.resolve({
-        data,
+        data: { location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } }, data },
         error: undefined,
         request: new Request("https://opencode.test"),
         response: new Response(),

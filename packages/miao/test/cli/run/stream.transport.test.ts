@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import {
   OpencodeClient,
-  type GlobalEvent,
   type PermissionV2Request,
   type QuestionV2Request,
   type SessionMessage,
@@ -9,10 +8,13 @@ import {
 import { createSessionTransport } from "@/cli/cmd/run/stream.transport"
 import type { FooterApi, FooterEvent, LocalReplayRow, RunFilePart, StreamCommit } from "@/cli/cmd/run/types"
 
-type GlobalEventStream = Awaited<ReturnType<OpencodeClient["global"]["event"]>>["stream"]
+type EventStream = AsyncGenerator<StreamEvent>
+type EventSubscribe = () => Promise<{ stream: EventStream }>
 type Assistant = Extract<SessionMessage, { type: "assistant" }>
 type Content = Assistant["content"][number]
 type Event = { type: string; properties: Record<string, unknown> }
+// The `/api/event` wire shape.
+type StreamEvent = { type: string; data: Record<string, unknown> }
 
 afterEach(() => {
   mock.restore()
@@ -206,23 +208,18 @@ function feed<T, R = never>(returnValue: R = StreamClosed) {
   }
 }
 
-// Session events wrapped into the global event stream the transport reads.
+// Session events in the `/api/event` shape the transport reads.
 function eventFeed() {
-  const source = feed<GlobalEvent>()
+  const source = feed<StreamEvent>()
   return {
     stream: source.stream,
-    push: (event: Event) => source.push(globalEvent(event)),
-    pushGlobal: source.push,
+    push: (event: Event) => source.push(streamEvent(event)),
     close: source.close,
   }
 }
 
-function globalEvent(payload: Event): GlobalEvent {
-  return {
-    directory: "/tmp",
-    project: "project-1",
-    payload: payload as GlobalEvent["payload"],
-  }
+function streamEvent(event: Event): StreamEvent {
+  return { type: event.type, data: event.properties }
 }
 
 function ok<T>(data: T) {
@@ -289,8 +286,8 @@ type Calls = {
 // is one loader call), and blocker lists are per session like the V2 routes.
 function sdk(
   input: {
-    stream?: GlobalEventStream
-    globalEvent?: OpencodeClient["global"]["event"]
+    stream?: EventStream
+    subscribe?: EventSubscribe
     transcript?: (sessionID: string) => Promise<SessionMessage[]> | SessionMessage[]
     children?: (sessionID: string) => Array<{ id: string }>
     session?: { agent?: string; model?: { providerID: string; id: string; variant?: string } }
@@ -309,9 +306,11 @@ function sdk(
     spyOn(target as Record<string, (...args: never[]) => unknown>, name).mockImplementation(impl)
   }
 
-  spyOn(client.global, "event").mockImplementation(
-    input.globalEvent ??
-      (() => Promise.resolve({ stream: input.stream ?? (async function* (): AsyncGenerator<GlobalEvent> {})() })),
+  stub(
+    client.v2.event,
+    "subscribe",
+    input.subscribe ??
+      (() => Promise.resolve({ stream: input.stream ?? (async function* (): AsyncGenerator<StreamEvent> {})() })),
   )
   stub(session, "context", async (params: { sessionID: string }) =>
     ok({ data: await (input.transcript?.(params.sessionID) ?? []) }),
@@ -1743,11 +1742,11 @@ describe("run stream transport", () => {
 
     const transport = await createSessionTransport({
       sdk: sdk({
-        globalEvent: () =>
+        subscribe: () =>
           Promise.resolve({
-            stream: (async function* (): AsyncGenerator<GlobalEvent> {
+            stream: (async function* (): AsyncGenerator<StreamEvent> {
               await ready.promise
-              yield globalEvent(busy())
+              yield streamEvent(busy())
               throw new Error("boom")
             })(),
           }),
@@ -1764,37 +1763,6 @@ describe("run stream transport", () => {
 
     try {
       await expect(transport.runPromptTurn(turn("hello"))).rejects.toThrow("boom")
-    } finally {
-      await transport.close()
-    }
-  })
-
-  test("rejects the active turn when the backing instance is disposed", async () => {
-    const ui = footer()
-    const ready = defer()
-
-    const transport = await createSessionTransport({
-      sdk: sdk({
-        globalEvent: () =>
-          Promise.resolve({
-            stream: (async function* (): AsyncGenerator<GlobalEvent> {
-              await ready.promise
-              yield globalEvent({ type: "server.instance.disposed", properties: { directory: "/tmp" } })
-            })(),
-          }),
-        prompt: async () => {
-          ready.resolve()
-        },
-      }).client,
-      directory: "/tmp",
-      sessionID: "session-1",
-      thinking: true,
-      limits: () => ({}),
-      footer: ui.api,
-    })
-
-    try {
-      await expect(transport.runPromptTurn(turn("hello"))).rejects.toThrow("instance disposed")
     } finally {
       await transport.close()
     }

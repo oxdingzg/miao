@@ -13,6 +13,7 @@
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { toAgent, toCommand } from "@miao/tui/context/v2-adapters"
 import { Flag } from "@miao/core/flag/flag"
 import { SessionMessage } from "@miao/core/session/message"
 import { createRunDemo } from "./demo"
@@ -228,9 +229,9 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   const shell = await (deps.createRuntimeLifecycle ?? createRuntimeLifecycle)({
     directory: ctx.directory,
     findFiles: (query) =>
-      ctx.sdk.find
-        .files({ query, directory: ctx.directory })
-        .then((x) => x.data ?? [])
+      ctx.sdk.v2.fs
+        .find({ location: { directory: ctx.directory }, query, type: "file" })
+        .then((x) => (x.data?.data ?? []).map((entry) => entry.path))
         .catch(() => []),
     agents: [],
     resources: [],
@@ -376,17 +377,17 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     }
 
     const [agents, resources, commands] = await Promise.all([
-      ctx.sdk.app
-        .agents({ directory: ctx.directory })
-        .then((x) => x.data ?? [])
+      ctx.sdk.v2.agent
+        .list({ location: { directory: ctx.directory } })
+        .then((x) => (x.data?.data ?? []).map(toAgent))
         .catch(() => []),
-      ctx.sdk.experimental.resource
-        .list({ directory: ctx.directory })
-        .then((x) => Object.values(x.data ?? {}))
+      ctx.sdk.v2.mcp
+        .resources({ location: { directory: ctx.directory } })
+        .then((x) => Object.values(x.data?.data ?? {}))
         .catch(() => []),
-      ctx.sdk.command
-        .list({ directory: ctx.directory })
-        .then((x) => x.data ?? [])
+      ctx.sdk.v2.command
+        .list({ location: { directory: ctx.directory } })
+        .then((x) => (x.data?.data ?? []).map(toCommand))
         .catch(() => []),
     ])
     if (footer.isClosed) {
