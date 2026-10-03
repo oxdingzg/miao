@@ -32,7 +32,8 @@ test("keeps the terminal session alive when switching session tabs in a workspac
   const connection = new URL(connections[0]!)
   expect(connection.pathname).toBe(`/api/pty/${ptyID}/connect`)
   expect(connection.searchParams.get("location[directory]")).toBe(directory)
-  expect(connection.searchParams.get("ticket")).toBeNull()
+  // The socket opens with the single-use ticket the mock server issues.
+  expect(connection.searchParams.get("ticket")).toBe("e2e-ticket")
   await writeProbe(page)
 
   await switchTab(page, titleB)

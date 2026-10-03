@@ -88,11 +88,14 @@ async function setup(page: Page) {
     sessions: [session(sessionA, titleA, 1700000000000), session(sessionB, titleB, 1700000001000)],
     pageMessages: () => ({ items: [] }),
   })
-  await page.route(/\/vcs(?:\?.*)?$/, (route) =>
+  await page.route(/\/api\/vcs(?:\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ branch: "feature", default_branch: "dev" }),
+      body: JSON.stringify({
+        location: { directory, project: { id: projectID, directory } },
+        data: { branch: "feature", default_branch: "dev" },
+      }),
     }),
   )
   // The app reads diffs through the V2 `/api/vcs/diff` route, whose payload is
