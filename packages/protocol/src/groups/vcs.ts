@@ -42,7 +42,7 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
   .add(
     HttpApiEndpoint.get("vcs.diff", "/api/vcs/diff", {
       query: DiffQuery,
-      success: Location.response(Schema.Array(Vcs.FileDiff)),
+      success: Location.response(Schema.Array(Vcs.Patch)),
     })
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(

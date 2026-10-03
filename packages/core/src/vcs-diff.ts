@@ -5,7 +5,7 @@ import { formatPatch, structuredPatch } from "diff"
 import type { Vcs } from "@miao/schema/vcs"
 import { GitCli } from "./git-cli"
 
-type FileDiff = Vcs.FileDiff
+type FileDiff = Vcs.Patch
 
 const PATCH_CONTEXT_LINES = 2_147_483_647
 const MAX_PATCH_BYTES = 10_000_000

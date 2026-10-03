@@ -2909,6 +2909,14 @@ export type ProjectCopyError = {
   }
 }
 
+export type VcsFilePatch = {
+  file: string
+  patch: string
+  additions: number
+  deletions: number
+  status: "added" | "deleted" | "modified"
+}
+
 export type ControlPlaneError = {
   name: "ControlPlaneError"
   data: {
@@ -13712,7 +13720,7 @@ export type V2VcsDiffResponses = {
    */
   200: {
     location: LocationInfo
-    data: Array<VcsFileDiff>
+    data: Array<VcsFilePatch>
   }
 }
 

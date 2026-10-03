@@ -18,6 +18,16 @@ export const FileDiff = Schema.Struct({
 }).annotate({ identifier: "VcsFileDiff" })
 export interface FileDiff extends Schema.Schema.Type<typeof FileDiff> {}
 
+// What /api/vcs/diff returns: every entry carries its patch and change kind.
+export const Patch = Schema.Struct({
+  file: Schema.String,
+  patch: Schema.String,
+  additions: Schema.Finite,
+  deletions: Schema.Finite,
+  status: Schema.Literals(["added", "deleted", "modified"]),
+}).annotate({ identifier: "VcsFilePatch" })
+export interface Patch extends Schema.Schema.Type<typeof Patch> {}
+
 export const FileStatus = Schema.Struct({
   file: Schema.String,
   additions: Schema.Finite,
