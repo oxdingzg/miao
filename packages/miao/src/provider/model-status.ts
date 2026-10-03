@@ -1,8 +1,6 @@
-import { Schema } from "effect"
 
 export { CatalogModelStatus } from "@miao/core/models-dev"
 
-export const ModelStatus = Schema.Literals(["alpha", "beta", "deprecated", "active"])
-export type ModelStatus = typeof ModelStatus.Type
+export { ModelStatus } from "@miao/schema/provider-view"
 
 export * as ProviderModelStatus from "./model-status"
