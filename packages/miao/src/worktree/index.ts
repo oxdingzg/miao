@@ -10,7 +10,7 @@ import type { ProjectV2 } from "@miao/core/project"
 import { Slug } from "@miao/core/util/slug"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
-import { Git } from "@/git"
+import { GitCli } from "@miao/core/git-cli"
 import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@miao/core/fs-util"
@@ -135,7 +135,7 @@ const layer: Layer.Layer<
   | FSUtil.Service
   | Path.Path
   | AppProcess.Service
-  | Git.Service
+  | GitCli.Service
   | Project.Service
   | InstanceStore.Service
   | Database.Service
@@ -147,7 +147,7 @@ const layer: Layer.Layer<
     const pathSvc = yield* Path.Path
     const appProcess = yield* AppProcess.Service
     const { db } = yield* Database.Service
-    const gitSvc = yield* Git.Service
+    const gitSvc = yield* GitCli.Service
     const project = yield* Project.Service
     const store = yield* InstanceStore.Service
 
@@ -617,7 +617,7 @@ const layer: Layer.Layer<
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, path, AppProcess.node, Git.node, Project.node, InstanceStore.node, Database.node],
+  deps: [FSUtil.node, path, AppProcess.node, GitCli.node, Project.node, InstanceStore.node, Database.node],
 })
 
 export * as Worktree from "."

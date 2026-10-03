@@ -1,5 +1,7 @@
-import { LayerNode } from "@miao/core/effect/layer-node"
-import { AppProcess } from "@miao/core/process"
+export * as GitCli from "./git-cli"
+
+import { AppProcess } from "./process"
+import { makeGlobalNode } from "./effect/app-node"
 import { Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 
@@ -343,6 +345,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [AppProcess.node] })
-
-export * as Git from "."
+export const node = makeGlobalNode({ service: Service, layer: layer, deps: [AppProcess.node] })

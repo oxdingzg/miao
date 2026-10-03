@@ -4,9 +4,9 @@ import { Global } from "@miao/core/global"
 import { FSUtil } from "@miao/core/fs-util"
 import { Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
 import { NonNegativeInt } from "@miao/core/schema"
-import { Git } from "@/git"
+import { GitCli } from "@miao/core/git-cli"
 
-type Migration = (dir: string, fs: FSUtil.Interface, git: Git.Interface) => Effect.Effect<void, FSUtil.Error>
+type Migration = (dir: string, fs: FSUtil.Interface, git: GitCli.Interface) => Effect.Effect<void, FSUtil.Error>
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("NotFoundError", {
   message: Schema.String,
@@ -79,7 +79,7 @@ function parseMigration(text: string) {
 }
 
 const MIGRATIONS: Migration[] = [
-  Effect.fn("Storage.migration.1")(function* (dir: string, fs: FSUtil.Interface, git: Git.Interface) {
+  Effect.fn("Storage.migration.1")(function* (dir: string, fs: FSUtil.Interface, git: GitCli.Interface) {
     const project = path.resolve(dir, "../project")
     if (!(yield* fs.isDir(project))) return
     const projectDirs = yield* fs.glob("*", {
@@ -214,7 +214,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
-    const git = yield* Git.Service
+    const git = yield* GitCli.Service
     const locks = yield* RcMap.make({
       lookup: () => TxReentrantLock.make(),
       idleTimeToLive: 0,
@@ -322,6 +322,6 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node, Git.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node, GitCli.node] })
 
 export * as Storage from "./storage"

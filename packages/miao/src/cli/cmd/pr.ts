@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd, fail } from "../effect-cmd"
-import { Git } from "@/git"
+import { GitCli } from "@miao/core/git-cli"
 import { InstanceRef } from "@/effect/instance-ref"
 import { Process } from "@/util/process"
 
@@ -21,7 +21,7 @@ export const PrCommand = effectCmd({
       return yield* fail("Could not find git repository. Please run this command from a git repository.")
     }
 
-    const git = yield* Git.Service
+    const git = yield* GitCli.Service
     const worktree = ctx.worktree
 
     const prNumber = args.number

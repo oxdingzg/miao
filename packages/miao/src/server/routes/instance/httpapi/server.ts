@@ -15,8 +15,8 @@ import { WorkspaceV2Bridge } from "@/control-plane/workspace-v2"
 import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
-import { Git } from "@/git"
-import { Git as CoreGit } from "@miao/core/git"
+import { GitCli } from "@miao/core/git-cli"
+import { Git } from "@miao/core/git"
 import { Installation } from "@/installation"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
@@ -200,10 +200,10 @@ const app = LayerNode.group([
   Account.node,
   Config.node,
   Env.node,
+  GitCli.node,
+  // The location middleware resolves Core's repository-level Git service, which is distinct from
+  // the cwd-based GitCli service above.
   Git.node,
-  // The location middleware resolves Core's Git service, which is distinct from
-  // the V1 `@/git` service above.
-  CoreGit.node,
   Ripgrep.node,
   Storage.node,
   Snapshot.node,
