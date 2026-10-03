@@ -58,6 +58,7 @@ export type Event =
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
   | EventFileEdited
+  | EventProjectUpdated
   | EventReferenceUpdated
   | EventPermissionV2Asked
   | EventPermissionV2Replied
@@ -82,7 +83,6 @@ export type Event =
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
-  | EventProjectUpdated
   | EventSessionStatus
   | EventSessionIdle
   | EventQuestionAsked
@@ -1295,6 +1295,20 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "project.updated"
+        properties: {
+          id: string
+          worktree: string
+          vcs?: ProjectVcs
+          name?: string
+          icon?: ProjectIcon
+          commands?: ProjectCommands
+          time: ProjectTime
+          sandboxes: Array<string>
+        }
+      }
+    | {
+        id: string
         type: "reference.updated"
         properties: {
           [key: string]: unknown
@@ -1521,20 +1535,6 @@ export type GlobalEvent = {
           sessionID: string
           arguments: string
           messageID: string
-        }
-      }
-    | {
-        id: string
-        type: "project.updated"
-        properties: {
-          id: string
-          worktree: string
-          vcs?: ProjectVcs
-          name?: string
-          icon?: ProjectIcon
-          commands?: ProjectCommands
-          time: ProjectTime
-          sandboxes: Array<string>
         }
       }
     | {
@@ -2842,6 +2842,7 @@ export type V2Event =
   | InstallationUpdated
   | InstallationUpdateAvailable
   | FileEdited
+  | ProjectUpdated
   | ReferenceUpdated
   | PermissionV2Asked
   | PermissionV2Replied
@@ -2866,7 +2867,6 @@ export type V2Event =
   | McpToolsChanged
   | McpBrowserOpenFailed
   | CommandExecuted
-  | ProjectUpdated
   | SessionStatus2
   | SessionIdle
   | QuestionAsked
@@ -3265,6 +3265,27 @@ export type SessionNextStatusInfo = {
   type: "idle" | "busy"
 }
 
+export type ProjectVcs = "git"
+
+export type ProjectIcon = {
+  url?: string
+  override?: string
+  color?: string
+}
+
+export type ProjectCommands = {
+  /**
+   * Startup script to run when creating a new workspace (worktree)
+   */
+  start?: string
+}
+
+export type ProjectTime = {
+  created: number
+  updated: number
+  initialized?: number
+}
+
 export type PermissionV2Source = {
   type: "tool"
   messageID: string
@@ -3308,27 +3329,6 @@ export type QuestionV2Tool = {
 }
 
 export type QuestionV2Answer = Array<string>
-
-export type ProjectVcs = "git"
-
-export type ProjectIcon = {
-  url?: string
-  override?: string
-  color?: string
-}
-
-export type ProjectCommands = {
-  /**
-   * Startup script to run when creating a new workspace (worktree)
-   */
-  start?: string
-}
-
-export type ProjectTime = {
-  created: number
-  updated: number
-  initialized?: number
-}
 
 export type EventServerInstanceDisposed = {
   id: string
@@ -5697,6 +5697,30 @@ export type FileEdited = {
   }
 }
 
+export type ProjectUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "project.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    worktree: string
+    vcs?: ProjectVcs
+    name?: string
+    icon?: ProjectIcon
+    commands?: ProjectCommands
+    time: ProjectTime
+    sandboxes: Array<string>
+  }
+}
+
 export type ReferenceUpdated = {
   id: string
   metadata?: {
@@ -6178,30 +6202,6 @@ export type CommandExecuted = {
   }
 }
 
-export type ProjectUpdated = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "project.updated"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    id: string
-    worktree: string
-    vcs?: ProjectVcs
-    name?: string
-    icon?: ProjectIcon
-    commands?: ProjectCommands
-    time: ProjectTime
-    sandboxes: Array<string>
-  }
-}
-
 export type SessionIdle = {
   id: string
   metadata?: {
@@ -6451,6 +6451,12 @@ export type ProjectCurrent = {
 export type ProjectDirectory = {
   directory: string
   strategy?: string
+}
+
+export type ProjectUpdateInput = {
+  name?: string
+  icon?: ProjectIcon
+  commands?: ProjectCommands
 }
 
 export type WorkspaceInfo = {
@@ -7095,6 +7101,21 @@ export type EventFileEdited = {
   }
 }
 
+export type EventProjectUpdated = {
+  id: string
+  type: "project.updated"
+  properties: {
+    id: string
+    worktree: string
+    vcs?: ProjectVcs
+    name?: string
+    icon?: ProjectIcon
+    commands?: ProjectCommands
+    time: ProjectTime
+    sandboxes: Array<string>
+  }
+}
+
 export type EventReferenceUpdated = {
   id: string
   type: "reference.updated"
@@ -7291,21 +7312,6 @@ export type EventCommandExecuted = {
     sessionID: string
     arguments: string
     messageID: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: {
-    id: string
-    worktree: string
-    vcs?: ProjectVcs
-    name?: string
-    icon?: ProjectIcon
-    commands?: ProjectCommands
-    time: ProjectTime
-    sandboxes: Array<string>
   }
 }
 
@@ -13442,6 +13448,43 @@ export type V2ProjectCopyRefreshResponses = {
 
 export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
 
+export type V2ProjectListData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/project"
+}
+
+export type V2ProjectListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ProjectListError = V2ProjectListErrors[keyof V2ProjectListErrors]
+
+export type V2ProjectListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<Project>
+  }
+}
+
+export type V2ProjectListResponse = V2ProjectListResponses[keyof V2ProjectListResponses]
+
 export type V2ProjectCurrentData = {
   body?: never
   path?: never
@@ -13517,6 +13560,49 @@ export type V2ProjectDirectoriesResponses = {
 }
 
 export type V2ProjectDirectoriesResponse = V2ProjectDirectoriesResponses[keyof V2ProjectDirectoriesResponses]
+
+export type V2ProjectUpdateData = {
+  body: ProjectUpdateInput
+  path: {
+    projectID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/project/{projectID}"
+}
+
+export type V2ProjectUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type V2ProjectUpdateError = V2ProjectUpdateErrors[keyof V2ProjectUpdateErrors]
+
+export type V2ProjectUpdateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Project
+  }
+}
+
+export type V2ProjectUpdateResponse = V2ProjectUpdateResponses[keyof V2ProjectUpdateResponses]
 
 export type V2VcsGetData = {
   body?: never

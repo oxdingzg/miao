@@ -120,6 +120,7 @@ import type {
   ProjectListErrors,
   ProjectListResponses,
   ProjectUpdateErrors,
+  ProjectUpdateInput,
   ProjectUpdateResponses,
   PromptInput,
   ProviderAuthErrors,
@@ -252,6 +253,10 @@ import type {
   V2ProjectCurrentResponses,
   V2ProjectDirectoriesErrors,
   V2ProjectDirectoriesResponses,
+  V2ProjectListErrors,
+  V2ProjectListResponses,
+  V2ProjectUpdateErrors,
+  V2ProjectUpdateResponses,
   V2ProviderGetErrors,
   V2ProviderGetResponses,
   V2ProviderListErrors,
@@ -6002,6 +6007,28 @@ export class ProjectCopy extends HeyApiClient {
 
 export class Project2 extends HeyApiClient {
   /**
+   * List projects
+   *
+   * List every known project with its display metadata.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2ProjectListResponses, V2ProjectListErrors, ThrowOnError>({
+      url: "/api/project",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get current project
    *
    * Resolve the project for the requested location.
@@ -6057,6 +6084,46 @@ export class Project2 extends HeyApiClient {
       url: "/api/project/{projectID}/directories",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Update project
+   *
+   * Update a project's name, icon, or workspace start command.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      projectID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      projectUpdateInput: ProjectUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "projectID" },
+            { in: "query", key: "location" },
+            { key: "projectUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<V2ProjectUpdateResponses, V2ProjectUpdateErrors, ThrowOnError>({
+      url: "/api/project/{projectID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }
