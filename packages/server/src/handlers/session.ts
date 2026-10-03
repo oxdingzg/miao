@@ -4,6 +4,7 @@ import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
+import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
   ConflictError,
@@ -439,6 +440,8 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.command",
         Effect.fn(function* (ctx) {
+          // Plugins add commands such as /init and /review while a location boots; wait for them.
+          yield* booted
           yield* session
             .command({
               sessionID: ctx.params.sessionID,
