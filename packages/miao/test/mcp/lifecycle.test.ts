@@ -17,7 +17,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { Cause, Effect, Exit } from "effect"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { MCP } from "../../src/mcp/index"
-import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
+import { McpOAuthCallback } from "@miao/core/mcp/oauth-callback"
 import { TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 

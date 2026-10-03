@@ -1,7 +1,7 @@
 import { test, expect, describe } from "bun:test"
 import { determineScope } from "@modelcontextprotocol/sdk/client/auth.js"
-import { McpOAuthProvider, OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH } from "../../src/mcp/oauth-provider"
-import type { McpAuth } from "../../src/mcp/auth"
+import { McpOAuthProvider, OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH } from "@miao/core/mcp/oauth-provider"
+import type { McpAuth } from "@miao/core/mcp/auth"
 
 // Stub auth — only synchronous getters are exercised in these tests
 const stubAuth = {} as McpAuth.Interface
