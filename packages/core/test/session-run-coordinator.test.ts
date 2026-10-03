@@ -215,7 +215,44 @@ describe("SessionRunCoordinator", () => {
     ),
   )
 
-  it.effect("interrupts active execution and clears its pending wake", () =>
+  it.effect("interrupts active execution and hands its pending wake to a successor drain", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const interrupted = yield* Deferred.make<void>()
+        const successorStarted = yield* Deferred.make<void>()
+        let runs = 0
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: () =>
+            Effect.sync(() => ++runs).pipe(
+              Effect.flatMap((run) =>
+                run === 1
+                  ? Deferred.succeed(started, undefined).pipe(
+                      Effect.andThen(Effect.never),
+                      Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined)),
+                    )
+                  : Deferred.succeed(successorStarted, undefined),
+              ),
+            ),
+        })
+
+        const resumed = yield* coordinator.run("session").pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        yield* coordinator.wake("session")
+        yield* coordinator.interrupt("session")
+        yield* Deferred.await(interrupted)
+
+        const exit = yield* Fiber.await(resumed)
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBeTrue()
+        // A wake that arrived before the interrupt is pending work, not stale
+        // state: dropping it would strand the input it stands for.
+        yield* Deferred.await(successorStarted)
+        expect(runs).toBe(2)
+      }),
+    ),
+  )
+
+  it.effect("interrupts active execution and stays idle when no wake is pending", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const started = yield* Deferred.make<void>()
@@ -232,7 +269,6 @@ describe("SessionRunCoordinator", () => {
 
         const resumed = yield* coordinator.run("session").pipe(Effect.forkChild)
         yield* Deferred.await(started)
-        yield* coordinator.wake("session")
         yield* coordinator.interrupt("session")
         yield* Deferred.await(interrupted)
 

@@ -240,7 +240,6 @@ export function RunFooterView(props: RunFooterViewProps) {
       ) ?? "",
   )
   const busy = createMemo(() => props.state().phase === "running")
-  const armed = createMemo(() => props.state().interrupt > 0)
   const exiting = createMemo(() => props.state().exit > 0)
   const queue = createMemo(() => props.state().queue)
   const usage = createMemo(() => props.state().usage)
@@ -407,7 +406,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     }
 
     if (busy()) {
-      return armed() ? "again to interrupt" : "interrupt"
+      return "interrupt"
     }
 
     if (stateStatus().length > 0) {
@@ -439,10 +438,6 @@ export function RunFooterView(props: RunFooterViewProps) {
   const statusColor = createMemo(() => {
     if (exiting()) {
       return theme().error
-    }
-
-    if (armed()) {
-      return theme().highlight
     }
 
     if (busy() || stateStatus().length > 0) {
@@ -848,7 +843,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                   <text fg={statusColor()} wrapMode="none" truncate flexGrow={1} flexShrink={1}>
                     <Show when={busy() && !exiting()} fallback={statusText()}>
                       <Show when={interruptLabel()}>
-                        {(label) => <span style={{ fg: armed() ? statusColor() : theme().muted }}>{label()} </span>}
+                        {(label) => <span style={{ fg: theme().muted }}>{label()} </span>}
                       </Show>
                       {statusText()}
                     </Show>

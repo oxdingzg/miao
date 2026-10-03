@@ -321,7 +321,6 @@ export function Prompt(props: PromptProps) {
     prompt: PromptInfo
     mode: "normal" | "shell"
     extmarkToPartIndex: Map<number, number>
-    interrupt: number
     placeholder: number
   }>({
     placeholder: randomIndex(list().length),
@@ -331,7 +330,6 @@ export function Prompt(props: PromptProps) {
     },
     mode: "normal",
     extmarkToPartIndex: new Map(),
-    interrupt: 0,
   })
 
   createEffect(
@@ -441,17 +439,7 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
-          setStore("interrupt", store.interrupt + 1)
-
-          setTimeout(() => {
-            setStore("interrupt", 0)
-          }, 5000)
-
-          if (store.interrupt >= 2 && props.sessionID) {
-            const sessionID = props.sessionID
-            void sdk.client.v2.session.interrupt({ sessionID })
-            setStore("interrupt", 0)
-          }
+          void sdk.client.v2.session.interrupt({ sessionID: props.sessionID })
           dialog.clear()
         },
       },
@@ -1635,11 +1623,8 @@ export function Prompt(props: PromptProps) {
                 <Show when={status().type === "busy" && turnElapsed() > 0}>
                   <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                 </Show>
-                <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
-                  esc{" "}
-                  <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                    {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
-                  </span>
+                <text fg={theme.text}>
+                  esc <span style={{ fg: theme.textMuted }}>interrupt</span>
                 </text>
               </box>
             </Match>
