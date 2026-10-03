@@ -155,7 +155,7 @@ function makeQueryOptionsApi(
   sdkFor: (dir: PathKey) => OpencodeClient,
 ) {
   return {
-    globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
+    globalConfig: () => loadGlobalConfigQuery(scope, serverAPI.config),
     projects: () => loadProjectsQuery(scope, serverAPI.projects),
     providers: (directory: PathKey | null) => loadProvidersQuery(scope, directory, serverAPI),
     path: (directory: PathKey | null) =>
@@ -605,7 +605,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }
 
   const updateConfigMutation = useMutation(() => ({
-    mutationFn: (config: Config) => serverSDK.client.global.config.update({ config }),
+    // Takes V2 config keys; objects merge and `null` removes a key.
+    mutationFn: (config: Record<string, unknown>) => serverSDK.api.config.update({ config }),
     onSuccess: () => {
       bootstrap.refetch()
       // Invalidate all provider queries so newly configured custom providers

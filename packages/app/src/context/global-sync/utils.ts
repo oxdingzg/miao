@@ -1,4 +1,11 @@
-import type { Agent, PermissionRequest, Project, Provider, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import type {
+  Agent,
+  Config,
+  PermissionRequest,
+  Project,
+  Provider,
+  ProviderListResponse,
+} from "@opencode-ai/sdk/v2/client"
 import type { AgentsListOutput, ModelsDefaultOutput, ModelsListOutput, ProvidersListOutput } from "@miao/client"
 import type { PermissionV2Request, Project as CurrentProject } from "@/utils/server"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
@@ -163,4 +170,31 @@ export function normalizeProjectInfo(project: Project | CurrentProject): Project
     sandboxes: [...project.sandboxes],
     vcs: project.vcs === "git" ? "git" : undefined,
   }
+}
+
+// The server returns the V2 config document; the app store still reads the V1 field names.
+export function configFromV2(document: Readonly<Record<string, unknown>>): Config {
+  const providers = record(document.providers)
+  const plugins = Array.isArray(document.plugins) ? document.plugins : []
+  return {
+    ...document,
+    provider: Object.fromEntries(
+      Object.entries(providers ?? {}).map(([id, value]) => {
+        const provider = record(value)
+        return [id, { name: provider?.name, npm: record(provider?.api)?.package, models: record(provider?.models) }]
+      }),
+    ) as Config["provider"],
+    disabled_providers: Object.entries(providers ?? {}).flatMap(([id, provider]) =>
+      record(provider)?.disabled === true ? [id] : [],
+    ),
+    plugin: plugins.flatMap((plugin): NonNullable<Config["plugin"]> => {
+      if (typeof plugin === "string") return [plugin]
+      const entry = record(plugin)
+      return typeof entry?.package === "string" ? [[entry.package, record(entry.options) ?? {}]] : []
+    }),
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 }

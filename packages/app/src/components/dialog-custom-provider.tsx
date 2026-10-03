@@ -131,24 +131,12 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
 
   const saveMutation = useMutation(() => ({
     mutationFn: async (result: NonNullable<ReturnType<typeof validate>>) => {
-      if ((await serverSDK().protocol) !== "v1") throw new Error(language.t("provider.custom.unavailable"))
-      const disabledProviders = serverSync().data.config.disabled_providers ?? []
-      const nextDisabled = disabledProviders.filter((id) => id !== result.providerID)
-
-      if (result.key) {
-        await serverSDK().client.auth.set({
-          providerID: result.providerID,
-          auth: {
-            type: "api",
-            key: result.key,
-          },
-        })
-      }
-
+      // Write the provider first: the reloaded location registers its integration, which then stores the key.
       await serverSync().updateConfig({
-        provider: { [result.providerID]: result.config },
-        disabled_providers: nextDisabled,
+        providers: { [result.providerID]: { ...result.config, disabled: null } },
       })
+      if (result.key)
+        await serverSDK().api.integrations.connectKey({ integrationID: result.providerID, key: result.key })
       return result
     },
     onSuccess: (result) => {

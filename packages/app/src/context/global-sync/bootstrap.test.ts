@@ -117,14 +117,28 @@ describe("bootstrapDirectory", () => {
 })
 
 describe("config queries", () => {
-  test("returns an empty global config", async () => {
-    const sdk = {
-      global: { config: { get: async () => ({ data: {} }) } },
-    } as unknown as OpencodeClient
+  test("projects the V2 global config onto the fields the store reads", async () => {
+    const api = {
+      get: async () => ({
+        location: {},
+        data: {
+          shell: "/bin/zsh",
+          model: "openai/gpt-5",
+          providers: { openai: { disabled: true }, custom: { name: "Custom" } },
+          plugins: ["plain", { package: "with-options", options: { level: 1 } }],
+        },
+      }),
+    } as unknown as Parameters<typeof loadGlobalConfigQuery>[1]
 
-    const result = await new QueryClient().fetchQuery(loadGlobalConfigQuery(ServerScope.local, sdk))
+    const result = await new QueryClient().fetchQuery(loadGlobalConfigQuery(ServerScope.local, api))
 
-    expect(result).toEqual({})
+    expect(result).toMatchObject({
+      shell: "/bin/zsh",
+      model: "openai/gpt-5",
+      disabled_providers: ["openai"],
+      provider: { custom: { name: "Custom" } },
+      plugin: ["plain", ["with-options", { level: 1 }]],
+    })
   })
 })
 
