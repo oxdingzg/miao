@@ -66,4 +66,4 @@ export const endpointNames = {
   "remote.account.test": "test",
 } as const
 
-export const omitEndpoints = new Set(["fs.read", "pty.connect", "pty.connectToken"])
+export const omitEndpoints = new Set(["fs.read", "pty.connect"])

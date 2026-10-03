@@ -24,6 +24,8 @@ import type {
   McpResourcesOutput,
   LocationGetInput,
   LocationGetOutput,
+  LocationPathInput,
+  LocationPathOutput,
   AgentsListInput,
   AgentsListOutput,
   SessionsListInput,
@@ -146,6 +148,8 @@ import type {
   PtysUpdateOutput,
   PtysRemoveInput,
   PtysRemoveOutput,
+  PtysConnectTokenInput,
+  PtysConnectTokenOutput,
   QuestionsListRequestsInput,
   QuestionsListRequestsOutput,
   QuestionsListInput,
@@ -500,6 +504,18 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/location`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      path: (input?: LocationPathInput, requestOptions?: RequestOptions) =>
+        request<LocationPathOutput>(
+          {
+            method: "GET",
+            path: `/api/path`,
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
@@ -1286,6 +1302,18 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [404, 401, 400],
             empty: true,
+          },
+          requestOptions,
+        ),
+      connectToken: (input: PtysConnectTokenInput, requestOptions?: RequestOptions) =>
+        request<PtysConnectTokenOutput>(
+          {
+            method: "POST",
+            path: `/api/pty/${encodeURIComponent(input.ptyID)}/connect-token`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 401, 400],
+            empty: false,
           },
           requestOptions,
         ),

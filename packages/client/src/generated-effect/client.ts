@@ -113,7 +113,12 @@ type Endpoint6_0Input = { readonly location?: Endpoint6_0Request["query"]["locat
 const Endpoint6_0 = (raw: RawClient["server.location"]) => (input?: Endpoint6_0Input) =>
   raw["location.get"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup6 = (raw: RawClient["server.location"]) => ({ get: Endpoint6_0(raw) })
+type Endpoint6_1Request = Parameters<RawClient["server.location"]["location.path"]>[0]
+type Endpoint6_1Input = { readonly location?: Endpoint6_1Request["query"]["location"] }
+const Endpoint6_1 = (raw: RawClient["server.location"]) => (input?: Endpoint6_1Input) =>
+  raw["location.path"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+const adaptGroup6 = (raw: RawClient["server.location"]) => ({ get: Endpoint6_0(raw), path: Endpoint6_1(raw) })
 
 type Endpoint7_0Request = Parameters<RawClient["server.agent"]["agent.list"]>[0]
 type Endpoint7_0Input = { readonly location?: Endpoint7_0Request["query"]["location"] }
@@ -813,6 +818,16 @@ const Endpoint19_5 = (raw: RawClient["server.pty"]) => (input: Endpoint19_5Input
     Effect.mapError(mapClientError),
   )
 
+type Endpoint19_6Request = Parameters<RawClient["server.pty"]["pty.connectToken"]>[0]
+type Endpoint19_6Input = {
+  readonly ptyID: Endpoint19_6Request["params"]["ptyID"]
+  readonly location?: Endpoint19_6Request["query"]["location"]
+}
+const Endpoint19_6 = (raw: RawClient["server.pty"]) => (input: Endpoint19_6Input) =>
+  raw["pty.connectToken"]({ params: { ptyID: input["ptyID"] }, query: { location: input["location"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
 const adaptGroup19 = (raw: RawClient["server.pty"]) => ({
   shells: Endpoint19_0(raw),
   list: Endpoint19_1(raw),
@@ -820,6 +835,7 @@ const adaptGroup19 = (raw: RawClient["server.pty"]) => ({
   get: Endpoint19_3(raw),
   update: Endpoint19_4(raw),
   remove: Endpoint19_5(raw),
+  connectToken: Endpoint19_6(raw),
 })
 
 type Endpoint20_0Request = Parameters<RawClient["server.question"]["question.request.list"]>[0]

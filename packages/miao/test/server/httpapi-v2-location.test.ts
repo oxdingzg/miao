@@ -304,6 +304,17 @@ describe("v2 location HttpApi", () => {
     expect(projects.data.find((project) => project.id === session.projectID)?.time.initialized).toBeNumber()
   })
 
+  test("reports the home, config, and checkout paths of a location", async () => {
+    await using repo = await tmpdir({ git: true })
+    const inRepo = (await (await request("/api/path", repo.path)).json()) as Record<string, string>
+    expect(inRepo).toMatchObject({ worktree: repo.path, directory: repo.path })
+    expect(inRepo.home).toBeTruthy()
+    expect(inRepo.config).toBeTruthy()
+
+    await using plain = await tmpdir()
+    expect(await (await request("/api/path", plain.path)).json()).toMatchObject({ worktree: "/", directory: plain.path })
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)
