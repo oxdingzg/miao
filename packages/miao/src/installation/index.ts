@@ -14,6 +14,7 @@ import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@miao/core/installation/version"
 import { NpmConfig } from "@miao/core/npm-config"
 import { InstallationEvent } from "@miao/schema/installation-event"
+import { windowsCommand, windowsLatest, windowsUpgrade } from "./windows"
 
 export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
@@ -149,6 +150,23 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
 
     const upgradeCurl = Effect.fnUntraced(
       function* (target: string) {
+        if (process.platform === "win32") {
+          const result = yield* run(windowsCommand(windowsUpgrade), {
+            env: {
+              MIAO_UPGRADE_VERSION: target,
+              MIAO_UPGRADE_EXECUTABLE: process.execPath,
+              MIAO_UPGRADE_ARCH: process.arch,
+            },
+          })
+          if (result.code !== 0) {
+            return yield* new UpgradeFailedError({
+              stderr:
+                result.stderr.split(/\r?\n/).find((line) => line.startsWith("Windows upgrade failed during")) ??
+                "Windows upgrade could not start PowerShell. Check that Windows PowerShell is available.",
+            })
+          }
+          return result
+        }
         const response = yield* httpOk.execute(HttpClientRequest.get(INSTALL_SCRIPT))
         const body = yield* response.text
         const bodyBytes = new TextEncoder().encode(body)
@@ -166,7 +184,9 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
           stderr: result.stderr.toString("utf8"),
         }
       },
-      Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("curl") })),
+      Effect.mapError((error) =>
+        error instanceof UpgradeFailedError ? error : new UpgradeFailedError({ stderr: upgradeFailure("curl") }),
+      ),
     )
 
     const result: Interface = {
@@ -229,9 +249,9 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
 
         if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
           const response = yield* httpOk.execute(
-            HttpClientRequest.get(
-              `${yield* NpmConfig.registry(process.cwd())}/${PACKAGE}/${InstallationChannel}`,
-            ).pipe(HttpClientRequest.acceptJson),
+            HttpClientRequest.get(`${yield* NpmConfig.registry(process.cwd())}/${PACKAGE}/${InstallationChannel}`).pipe(
+              HttpClientRequest.acceptJson,
+            ),
           )
           const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
           return data.version
@@ -257,18 +277,27 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
           return data.version
         }
 
+        if (process.platform === "win32") {
+          const release = yield* run(windowsCommand(windowsLatest))
+          const version = release.stdout.trim()
+          if (release.code === 0 && semver.valid(version)) return version
+          return yield* Effect.die(
+            new Error(
+              "Windows update check failed. Check HTTPS_PROXY or Windows system proxy settings and GitHub connectivity.",
+            ),
+          )
+        }
+
         // The REST API allows 60 unauthenticated requests an hour per IP, which a
         // few sessions checking on startup use up, after which every update check
         // and `miao upgrade` fails with 403. The web redirect to the latest release
         // tag is not rate limited, so read the tag from it and keep the API only as
         // a fallback.
-        const redirect = yield* http
-          .execute(HttpClientRequest.get(`https://github.com/${REPO}/releases/latest`))
-          .pipe(
-            Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-            Effect.map((response) => /\/releases\/tag\/v?([^/?#]+)$/.exec(response.headers.location ?? "")?.[1]),
-            Effect.orElseSucceed(() => undefined),
-          )
+        const redirect = yield* http.execute(HttpClientRequest.get(`https://github.com/${REPO}/releases/latest`)).pipe(
+          Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+          Effect.map((response) => /\/releases\/tag\/v?([^/?#]+)$/.exec(response.headers.location ?? "")?.[1]),
+          Effect.orElseSucceed(() => undefined),
+        )
         if (redirect) return redirect
         const response = yield* httpOk.execute(
           HttpClientRequest.get(`https://api.github.com/repos/${REPO}/releases/latest`).pipe(

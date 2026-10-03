@@ -68,42 +68,59 @@ function testLayer(
 
 describe("installation", () => {
   describe("latest", () => {
-    testEffect(testLayer(() => jsonResponse({ tag_name: "v1.2.3" }))).effect(
-      "reads release version from GitHub releases",
-      () =>
-        Effect.gen(function* () {
-          const result = yield* Installation.use.latest("unknown")
-          expect(result).toBe("1.2.3")
-        }),
-    )
+    describe.skipIf(process.platform === "win32")("GitHub HTTP checks", () => {
+      testEffect(testLayer(() => jsonResponse({ tag_name: "v1.2.3" }))).effect(
+        "reads release version from GitHub releases",
+        () =>
+          Effect.gen(function* () {
+            const result = yield* Installation.use.latest("unknown")
+            expect(result).toBe("1.2.3")
+          }),
+      )
 
-    testEffect(testLayer(() => jsonResponse({ tag_name: "v4.0.0-beta.1" }))).effect(
-      "strips v prefix from GitHub release tag",
-      () =>
+      testEffect(testLayer(() => jsonResponse({ tag_name: "v4.0.0-beta.1" }))).effect(
+        "strips v prefix from GitHub release tag",
+        () =>
+          Effect.gen(function* () {
+            const result = yield* Installation.use.latest("curl")
+            expect(result).toBe("4.0.0-beta.1")
+          }),
+      )
+
+      const redirectCalls: string[] = []
+      testEffect(
+        testLayer((request) => {
+          redirectCalls.push(request.url)
+          if (request.url.startsWith("https://github.com/"))
+            return new Response(null, {
+              status: 302,
+              headers: { location: "https://github.com/oxdingzg/miao/releases/tag/v0.0.28" },
+            })
+          return jsonResponse({ tag_name: "v9.9.9" })
+        }),
+      ).effect("reads the latest tag from the release redirect without the rate-limited API", () =>
         Effect.gen(function* () {
           const result = yield* Installation.use.latest("curl")
-          expect(result).toBe("4.0.0-beta.1")
+          expect(result).toBe("0.0.28")
+          expect(redirectCalls.some((url) => url.includes("api.github.com"))).toBe(false)
         }),
-    )
+      )
+    })
 
-    const redirectCalls: string[] = []
-    testEffect(
-      testLayer((request) => {
-        redirectCalls.push(request.url)
-        if (request.url.startsWith("https://github.com/"))
-          return new Response(null, {
-            status: 302,
-            headers: { location: "https://github.com/oxdingzg/miao/releases/tag/v0.0.28" },
-          })
-        return jsonResponse({ tag_name: "v9.9.9" })
-      }),
-    ).effect("reads the latest tag from the release redirect without the rate-limited API", () =>
-      Effect.gen(function* () {
-        const result = yield* Installation.use.latest("curl")
-        expect(result).toBe("0.0.28")
-        expect(redirectCalls.some((url) => url.includes("api.github.com"))).toBe(false)
-      }),
-    )
+    describe.skipIf(process.platform !== "win32")("native Windows checks", () => {
+      testEffect(
+        testLayer(
+          () => {
+            throw new Error("Bun HTTP must not be used")
+          },
+          (cmd) => (cmd === "powershell.exe" ? "0.0.35" : ""),
+        ),
+      ).effect("checks the version through PowerShell", () =>
+        Effect.gen(function* () {
+          expect(yield* Installation.use.latest("curl")).toBe("0.0.35")
+        }),
+      )
+    })
 
     const npmCalls: string[] = []
     testEffect(
@@ -220,40 +237,64 @@ describe("installation", () => {
       }),
     )
 
-    testEffect(
-      testLayer(
-        () => new Response("install script with token=secret", { status: 200 }),
-        (cmd, args) => {
-          if (cmd === "bash" && args[0] === "--version") return "GNU bash"
-          if (cmd === "bash" || cmd === "sh") return { code: 1, stderr: "script output with token=secret" }
-          return ""
-        },
-      ),
-    ).effect("returns sanitized typed errors when the curl install script fails", () =>
-      Effect.gen(function* () {
-        const error = yield* Effect.flip(Installation.use.upgrade("curl", "9.9.9"))
-        expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
-        expect(error.stderr).toBe("Upgrade failed for curl (exit code 1).")
-        expect(error.message).toBe(error.stderr)
-        expect(error.stderr).not.toContain("secret")
-        expect(error.stderr).not.toContain("script output")
-      }),
-    )
+    describe.skipIf(process.platform === "win32")("Unix script upgrades", () => {
+      testEffect(
+        testLayer(
+          () => new Response("install script with token=secret", { status: 200 }),
+          (cmd, args) => {
+            if (cmd === "bash" && args[0] === "--version") return "GNU bash"
+            if (cmd === "bash" || cmd === "sh") return { code: 1, stderr: "script output with token=secret" }
+            return ""
+          },
+        ),
+      ).effect("returns sanitized typed errors when the curl install script fails", () =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(Installation.use.upgrade("curl", "9.9.9"))
+          expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
+          expect(error.stderr).toBe("Upgrade failed for curl (exit code 1).")
+          expect(error.message).toBe(error.stderr)
+          expect(error.stderr).not.toContain("secret")
+          expect(error.stderr).not.toContain("script output")
+        }),
+      )
 
-    testEffect(
-      testLayer(
-        () => new Response("install script", { status: 200 }),
-        (cmd, args) => {
-          if (cmd === "bash" && args[0] === "--version") return { code: 1, stderr: "missing" }
-          if (cmd === "bash") return { code: 1, stderr: "should not execute installer with bash" }
-          if (cmd === "sh") return "ok"
-          return ""
-        },
-      ),
-    ).effect("falls back to sh when bash is unavailable during curl upgrade", () =>
-      Effect.gen(function* () {
-        yield* Installation.use.upgrade("curl", "9.9.9")
-      }),
-    )
+      testEffect(
+        testLayer(
+          () => new Response("install script", { status: 200 }),
+          (cmd, args) => {
+            if (cmd === "bash" && args[0] === "--version") return { code: 1, stderr: "missing" }
+            if (cmd === "bash") return { code: 1, stderr: "should not execute installer with bash" }
+            if (cmd === "sh") return "ok"
+            return ""
+          },
+        ),
+      ).effect("falls back to sh when bash is unavailable during curl upgrade", () =>
+        Effect.gen(function* () {
+          yield* Installation.use.upgrade("curl", "9.9.9")
+        }),
+      )
+    })
+
+    describe.skipIf(process.platform !== "win32")("native Windows upgrades", () => {
+      testEffect(
+        testLayer(
+          () => {
+            throw new Error("Bash installer must not be downloaded")
+          },
+          (cmd) =>
+            cmd === "powershell.exe"
+              ? {
+                  code: 1,
+                  stderr: "token=secret\nWindows upgrade failed during download (WebException). Check HTTPS_PROXY.\n",
+                }
+              : "",
+        ),
+      ).effect("retains the phase diagnostic without exposing unrelated stderr", () =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(Installation.use.upgrade("curl", "0.0.35"))
+          expect(error.stderr).toBe("Windows upgrade failed during download (WebException). Check HTTPS_PROXY.")
+        }),
+      )
+    })
   })
 })
