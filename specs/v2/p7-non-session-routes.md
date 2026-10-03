@@ -53,6 +53,13 @@
   `control-plane/move-session`（`330141bfc`）、`capabilities`（`c311394b5`）：protocol 组 + handler 已加，
   TUI 对应调用已迁到 `client.v2.*`。
 
+- 2026-10-03 下午：`/api/vcs/diff`（`290c4f394`，git CLI 封装与 diff 逻辑下沉为 core `GitCli`/`VcsDiff`，`d5fef5ee6`）、
+  `/api/pty/shells`（`be7c0f431`）、`GET /api/project` 与 `PATCH /api/project/:projectID`（`50daab309`，core 新增
+  `ProjectMetadata`，改名时为还没有会话的项目补写行，并经 EventV2 发 `project.updated`，已加入 `ServerDefinitions`）。
+- `/api/event` 修复（`5c9b22954`）：事件流原先对每个 EventV2 事件做 `encodeUnknownSync(OpenCodeEvent)`，V1 bridge
+  发出的未登记类型（`vcs.branch.updated`、`lsp.updated`、`tui.command.execute` 等）会抛错并结束整条订阅，客户端
+  只能重连且丢事件。现改为跳过无法编码的事件。
+
 ## 现状盘点（2026-10-03 按代码核实）
 
 ### TUI：只剩 4 处 V1 调用
@@ -101,9 +108,13 @@ protocol 不一致：上游有、miao 没有的路由包括 `/api/vcs/diff`、`/
 ## 剩余工作（按顺序）
 
 1. **app 切到 `@miao/client`**：替换 `createApiForServer`，按类型错误逐个对齐调用点；缺的端点记入第 2 步。
-2. **补 V2 端点**（protocol 组 + server handler + `bun run generate`）：`pty.shells`、`project.update`、
-   `project.initGit`、`vcs.diff`、`config.update`（全局）、`instance/global dispose`（或用 V2 的配置变更自动重载替代）、
-   `workspace.reset`、`fs.content`（进行中）。
+2. **补 V2 端点**（protocol 组 + server handler + `bun run generate`）：~~`pty.shells`~~、~~`project.update`~~、
+   ~~`vcs.diff`~~、~~`fs.content`~~ 已完成；剩 `config.update`（全局）、`instance/global dispose`（或用 V2 的配置变更
+   自动重载替代）、`workspace.reset`、`project.initGit`（见下一条）。
+   - **项目持久化下沉 core（删 V1 前必做）**：`ProjectTable` 的行目前只由 V1 `Project.fromDirectory` 完整维护
+     （项目 ID 迁移、sandboxes、`time_initialized`），V2 只在建会话（`session-create.ts`）和改名时 insert-or-ignore。
+     `project.initGit` 依赖 git init 后的项目重新解析与 ID 迁移，需要先把这部分搬进 core（`ProjectV2.commit`
+     注释里的过渡桥）再做；V1 `project.ts` 的 `fromRow` 与 core `ProjectMetadata.fromRow` 重复，随 V1 删除。
 3. **app 删 V1 分支**：去掉 `detectServerProtocol` 与全部 `protocol === "v1"` / `!== "v1"` 分支，恢复上表中
    V2 下静默失效的功能（项目重命名、目录选择、配置读写、自定义 provider）。
 4. **TUI console**：决定 console/org 切换是迁 V2 还是删除（上游 console 服务 fork 不用，倾向删除）。
