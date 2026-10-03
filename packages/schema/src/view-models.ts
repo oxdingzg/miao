@@ -1,10 +1,12 @@
 export * as ViewModels from "./view-models"
 
-// Unbranded projections of the schema view models for clients that only render
-// them. `StripBrand` removes Effect `Brand` from ids while keeping every field,
-// optionality and readonly modifier, so these stay derived from the single
+// Unbranded, wire-shaped projections of the schema view models for clients that
+// only render them. `StripBrand` removes Effect `Brand`; `Schema.Encoded` takes
+// the encoded (wire) form so transformed fields such as `DateTimeUtcFromMillis`
+// stay numbers, matching the generated SDK. Both stay derived from the single
 // @miao/schema source instead of a second hand-written surface.
 import type { Brand } from "effect"
+import { Schema } from "effect"
 import { Agent as AgentV2 } from "./agent"
 import { AgentView } from "./agent-view"
 import { AuthView } from "./auth-view"
@@ -54,88 +56,92 @@ export type StripBrand<T> = T extends Brand.Brand<infer _>
       ? { -readonly [K in keyof T]: StripBrand<T[K]> }
       : T
 
+type Wire<S> = StripBrand<Schema.Codec.Encoded<S>>
+
 // Session V1 view models.
-export type Message = StripBrand<SessionV1.Message>
-export type UserMessage = StripBrand<SessionV1.User>
-export type AssistantMessage = StripBrand<SessionV1.Assistant>
-export type Session = StripBrand<SessionV1.SessionInfo>
-export type Part = StripBrand<SessionV1.Part>
-export type ToolPart = StripBrand<SessionV1.ToolPart>
-export type TextPart = StripBrand<SessionV1.TextPart>
-export type ReasoningPart = StripBrand<SessionV1.ReasoningPart>
-export type FilePart = StripBrand<SessionV1.FilePart>
-export type AgentPart = StripBrand<SessionV1.AgentPart>
-export type FilePartSource = StripBrand<SessionV1.FilePartSource>
-export type ToolState = StripBrand<SessionV1.ToolState>
+export type Message = Wire<typeof SessionV1.Info>
+export type UserMessage = Wire<typeof SessionV1.User>
+export type AssistantMessage = Wire<typeof SessionV1.Assistant>
+export type Session = Wire<typeof SessionV1.SessionInfo>
+export type Part = Wire<typeof SessionV1.Part>
+export type ToolPart = Wire<typeof SessionV1.ToolPart>
+export type TextPart = Wire<typeof SessionV1.TextPart>
+export type ReasoningPart = Wire<typeof SessionV1.ReasoningPart>
+export type FilePart = Wire<typeof SessionV1.FilePart>
+export type AgentPart = Wire<typeof SessionV1.AgentPart>
+export type FilePartSource = Wire<typeof SessionV1.FilePartSource>
+export type ToolState = Wire<typeof SessionV1.ToolState>
 
 // Files and VCS.
-export type FileNode = StripBrand<FileSystemV1.FileNode>
-export type FileContent = StripBrand<FileSystemV1.FileContent>
-export type SnapshotFileDiff = StripBrand<Vcs.SnapshotFileDiff>
-export type VcsFileDiff = StripBrand<Vcs.FileDiff>
-export type VcsFileStatus = StripBrand<Vcs.FileStatus>
-export type VcsInfo = StripBrand<Vcs.Info>
+export type FileNode = Wire<typeof FileSystemV1.FileNode>
+export type FileContent = Wire<typeof FileSystemV1.FileContent>
+export type SnapshotFileDiff = Wire<typeof Vcs.SnapshotFileDiff>
+export type VcsFileDiff = Wire<typeof Vcs.FileDiff>
+export type VcsFileStatus = Wire<typeof Vcs.FileStatus>
+export type VcsInfo = Wire<typeof Vcs.Info>
 
 // Provider / model / agent / command / auth.
-export type Provider = StripBrand<ProviderView.Provider>
-export type Model = StripBrand<ProviderView.Model>
-export type AgentV2Info = StripBrand<AgentV2.Info>
-export type Agent = StripBrand<AgentView.Agent>
-export type CommandV2Info = StripBrand<CommandV2.Info>
-export type Command = StripBrand<CommandView.Command>
-export type Auth = StripBrand<AuthView.Auth>
-export type ProviderAuthMethod = StripBrand<ProviderAuthView.ProviderAuthMethod>
-export type Config = StripBrand<ConfigV2.Info>
+export type Provider = Wire<typeof ProviderView.Info>
+export type Model = Wire<typeof ProviderView.Model>
+export type ProviderV2Info = Wire<typeof ProviderV2.Info>
+export type ModelV2Info = Wire<typeof ModelV2.Info>
+export type AgentV2Info = Wire<typeof AgentV2.Info>
+export type Agent = Wire<typeof AgentView.Agent>
+export type CommandV2Info = Wire<typeof CommandV2.Info>
+export type Command = Wire<typeof CommandView.Command>
+export type Auth = Wire<typeof AuthView.Auth>
+export type ProviderAuthMethod = Wire<typeof ProviderAuthView.ProviderAuthMethod>
+export type Config = Wire<typeof ConfigV2.Info>
 
 // Sessions V2 / messages / status.
-export type SessionV2Info = StripBrand<SessionInfo.Info>
-export type SessionMessage = StripBrand<SessionMessageV2.Message>
-export type SessionMessageAssistant = StripBrand<SessionMessageV2.Assistant>
-export type SessionMessageAssistantText = StripBrand<SessionMessageV2.AssistantText>
-export type SessionMessageAssistantTool = StripBrand<SessionMessageV2.AssistantTool>
-export type SessionMessageAssistantReasoning = StripBrand<SessionMessageV2.AssistantReasoning>
-export type SessionStatus = StripBrand<SessionStatusEvent.SessionStatus>
-export type Todo = StripBrand<SessionTodo.Todo>
+export type SessionV2Info = Wire<typeof SessionInfo.Info>
+export type SessionMessage = Wire<typeof SessionMessageV2.Message>
+export type SessionMessageAssistant = Wire<typeof SessionMessageV2.Assistant>
+export type SessionMessageAssistantText = Wire<typeof SessionMessageV2.AssistantText>
+export type SessionMessageAssistantTool = Wire<typeof SessionMessageV2.AssistantTool>
+export type SessionMessageAssistantReasoning = Wire<typeof SessionMessageV2.AssistantReasoning>
+export type SessionStatus = Wire<typeof SessionStatusEvent.Info>
+export type Todo = Wire<typeof SessionTodo.Info>
 
 // Question / permission.
-export type QuestionRequest = StripBrand<Question.Request>
-export type QuestionInfo = StripBrand<Question.Info>
-export type QuestionAnswer = StripBrand<Question.Answer>
-export type QuestionV2Request = StripBrand<Question.Request>
-export type QuestionV2Answer = StripBrand<Question.Answer>
-export type PermissionRequest = StripBrand<Permission.Request>
-export type PermissionV2Request = StripBrand<Permission.Request>
-export type PermissionSavedInfo = StripBrand<PermissionSaved.Info>
+export type QuestionRequest = Wire<typeof Question.Request>
+export type QuestionInfo = Wire<typeof Question.Info>
+export type QuestionAnswer = Wire<typeof Question.Answer>
+export type QuestionV2Request = Wire<typeof Question.Request>
+export type QuestionV2Answer = Wire<typeof Question.Answer>
+export type PermissionRequest = Wire<typeof Permission.Request>
+export type PermissionV2Request = Wire<typeof Permission.Request>
+export type PermissionSavedInfo = Wire<typeof PermissionSaved.Info>
 
 // Integration / credential / reference / skill / llm / prompt.
-export type IntegrationInfo = StripBrand<Integration.Info>
-export type IntegrationAttempt = StripBrand<Integration.Attempt>
-export type IntegrationRef = StripBrand<Integration.Ref>
-export type IntegrationInputs = StripBrand<Integration.Inputs>
-export type IntegrationMethod = StripBrand<Integration.Method>
-export type IntegrationEnvMethod = StripBrand<Integration.EnvMethod>
-export type IntegrationKeyMethod = StripBrand<Integration.KeyMethod>
-export type IntegrationOAuthMethod = StripBrand<Integration.OAuthMethod>
-export type ConnectionInfo = StripBrand<Connection.Info>
-export type CredentialValue = StripBrand<Credential.Value>
-export type CredentialOAuth = StripBrand<Credential.OAuth>
-export type ReferenceInfo = StripBrand<Reference.Info>
-export type ReferenceGitSource = StripBrand<Reference.GitSource>
-export type ReferenceLocalSource = StripBrand<Reference.LocalSource>
-export type FileSystemEntry = StripBrand<FileSystem.Entry>
-export type SkillV2Info = StripBrand<Skill.Info>
-export type SkillV2Source = StripBrand<Skill.Source>
-export type LlmToolContent = StripBrand<LLM.ToolContent>
-export type PromptInput = StripBrand<PromptInputV2.Prompt>
+export type IntegrationInfo = Wire<typeof Integration.Info>
+export type IntegrationAttempt = Wire<typeof Integration.Attempt>
+export type IntegrationRef = Wire<typeof Integration.Ref>
+export type IntegrationInputs = Wire<typeof Integration.Inputs>
+export type IntegrationMethod = Wire<typeof Integration.Method>
+export type IntegrationEnvMethod = Wire<typeof Integration.EnvMethod>
+export type IntegrationKeyMethod = Wire<typeof Integration.KeyMethod>
+export type IntegrationOAuthMethod = Wire<typeof Integration.OAuthMethod>
+export type ConnectionInfo = Wire<typeof Connection.Info>
+export type CredentialValue = Wire<typeof Credential.Value>
+export type CredentialOAuth = Wire<typeof Credential.OAuth>
+export type ReferenceInfo = Wire<typeof Reference.Info>
+export type ReferenceGitSource = Wire<typeof Reference.GitSource>
+export type ReferenceLocalSource = Wire<typeof Reference.LocalSource>
+export type FileSystemEntry = Wire<typeof FileSystem.Entry>
+export type SkillV2Info = Wire<typeof Skill.Info>
+export type SkillV2Source = Wire<typeof Skill.Source>
+export type LlmToolContent = Wire<typeof LLM.ToolContent>
+export type PromptInput = Wire<typeof PromptInputV2.Prompt>
 
 // Location / workspace / project / mcp / diagnostics.
-export type LocationRef = StripBrand<Location.Ref>
-export type LocationInfo = StripBrand<Location.Info>
-export type Workspace = StripBrand<WorkspaceV2.Info>
-export type WorkspaceAdapterEntry = StripBrand<WorkspaceV2.AdapterEntry>
-export type Project = StripBrand<ProjectV2.Info>
-export type McpStatus = StripBrand<MCP.Status>
-export type McpServerStatus = StripBrand<MCP.Status>
-export type McpResource = StripBrand<MCP.Resource>
-export type FormatterStatus = StripBrand<FormatView.FormatterStatus>
-export type LspStatus = StripBrand<LspView.LspStatus>
+export type LocationRef = Wire<typeof Location.Ref>
+export type LocationInfo = Wire<typeof Location.Info>
+export type Workspace = Wire<typeof WorkspaceV2.Info>
+export type WorkspaceAdapterEntry = Wire<typeof WorkspaceV2.AdapterEntry>
+export type Project = Wire<typeof ProjectV2.Info>
+export type McpStatus = Wire<typeof MCP.Status>
+export type McpServerStatus = Wire<typeof MCP.Status>
+export type McpResource = Wire<typeof MCP.Resource>
+export type FormatterStatus = Wire<typeof FormatView.FormatterStatus>
+export type LspStatus = Wire<typeof LspView.LspStatus>
