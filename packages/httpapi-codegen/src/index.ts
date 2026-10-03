@@ -486,7 +486,10 @@ function renderPromiseTypes(
     ? "export type JsonValue = null | boolean | number | string | ReadonlyArray<JsonValue> | { readonly [key: string]: JsonValue }"
     : ""
   const imports = [...new Set(Object.values(outputTypes ?? {}).map((override) => override.import))]
-  return [...imports, json, ...errorTypes, operations].filter(Boolean).join("\n\n")
+  const brand = [...errorTypes, operations].some((part) => part.includes("Brand.Brand<"))
+    ? 'import type * as Brand from "effect/Brand"'
+    : undefined
+  return [brand, ...imports, json, ...errorTypes, operations].filter(Boolean).join("\n\n")
 }
 
 function renderPromiseClient(groups: ReadonlyArray<Group>) {
@@ -578,9 +581,7 @@ function structuralType(schema: Schema.Top) {
     }
     return type
   }
-  return expand(document.codes[0].Type)
-    .replaceAll(/ & Brand\.Brand<"[^"]+">/g, "")
-    .replaceAll("Schema.Json", "JsonValue")
+  return expand(document.codes[0].Type).replaceAll("Schema.Json", "JsonValue")
 }
 
 function promisePath(path: string, input: ReadonlyArray<InputField>) {

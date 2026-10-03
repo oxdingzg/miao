@@ -31,6 +31,8 @@
       "dependencies": {
         "@agentclientprotocol/sdk": "0.21.0",
         "@miao/client": "workspace:*",
+        "@miao/protocol": "workspace:*",
+        "@miao/schema": "workspace:*",
         "diff": "catalog:",
       },
       "devDependencies": {
@@ -586,6 +588,7 @@
       "name": "@miao/remote",
       "dependencies": {
         "@miao/client": "workspace:*",
+        "@miao/schema": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
