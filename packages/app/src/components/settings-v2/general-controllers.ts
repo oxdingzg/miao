@@ -67,7 +67,7 @@ export function createShellSettingsController() {
     current,
     select: (value: string) => {
       if (value === current()) return
-      void serverSync().updateConfig({ shell: value })
+      void serverSync().updateConfig({ shell: value || null })
     },
   }
 }

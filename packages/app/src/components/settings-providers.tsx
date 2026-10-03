@@ -6,7 +6,8 @@ import { showToast } from "@/utils/toast"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { createMemo, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
+import { useServerSDK } from "@/context/server-sdk"
+import { removeProviderCredentials } from "@/utils/server"
 import { useServerSync } from "@/context/server-sync"
 import { DialogConnectProvider, useProviderConnectController } from "./dialog-connect-provider"
 import { DialogCustomProvider } from "./dialog-custom-provider"
@@ -39,7 +40,6 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
   const dialog = useDialog()
   const language = useLanguage()
   const serverSDK = useServerSDK()
-  const protocol = useServerProtocol()
   const serverSync = useServerSync()
   const providers = useProviders(() => undefined)
   const providerConnect = useProviderConnectController({ onBack: props.onBack })
@@ -84,8 +84,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
     return language.t("settings.providers.tag.other")
   }
 
-  const canDisconnect = (item: ProviderItem) =>
-    source(item) !== "env" && (protocol() === "v1" || !isConfigCustom(item.id))
+  const canDisconnect = (item: ProviderItem) => source(item) !== "env"
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
@@ -98,13 +97,12 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
   }
 
   const disableProvider = async (providerID: string, name: string) => {
-    if (protocol() !== "v1") return
     const before = serverSync().data.config.disabled_providers ?? []
     const next = before.includes(providerID) ? before : [...before, providerID]
     serverSync().set("config", "disabled_providers", next)
 
     await serverSync()
-      .updateConfig({ disabled_providers: next })
+      .updateConfig({ providers: { [providerID]: { disabled: true } } })
       .then(() => {
         showToast({
           variant: "success",
@@ -122,16 +120,12 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
 
   const disconnect = async (providerID: string, name: string) => {
     if (isConfigCustom(providerID)) {
-      await serverSDK()
-        .client.auth.remove({ providerID })
-        .catch(() => undefined)
+      await removeProviderCredentials(serverSDK().api, providerID).catch(() => undefined)
       await disableProvider(providerID, name)
       return
     }
-    await serverSDK()
-      .client.auth.remove({ providerID })
-      .then(async () => {
-        await serverSDK().client.global.dispose()
+    await removeProviderCredentials(serverSDK().api, providerID)
+      .then(() => {
         showToast({
           variant: "success",
           icon: "circle-check",
@@ -221,33 +215,31 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
               )}
             </For>
 
-            <Show when={protocol() === "v1"}>
-              <div
-                class="flex items-center justify-between gap-4 min-h-16 border-b border-border-weak-base last:border-none flex-wrap py-3"
-                data-component="custom-provider-section"
-              >
-                <div class="flex flex-col min-w-0">
-                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
-                    <span class="text-14-medium text-text-strong">{language.t("provider.custom.title")}</span>
-                    <Tag>{language.t("settings.providers.tag.custom")}</Tag>
-                  </div>
-                  <span class="text-12-regular text-text-weak pl-8">
-                    {language.t("settings.providers.custom.description")}
-                  </span>
+            <div
+              class="flex items-center justify-between gap-4 min-h-16 border-b border-border-weak-base last:border-none flex-wrap py-3"
+              data-component="custom-provider-section"
+            >
+              <div class="flex flex-col min-w-0">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
+                  <span class="text-14-medium text-text-strong">{language.t("provider.custom.title")}</span>
+                  <Tag>{language.t("settings.providers.tag.custom")}</Tag>
                 </div>
-                <Button
-                  size="large"
-                  variant="secondary"
-                  icon="plus-small"
-                  onClick={() => {
-                    dialog.show(() => <DialogCustomProvider onBack={dialog.close} />)
-                  }}
-                >
-                  {language.t("common.connect")}
-                </Button>
+                <span class="text-12-regular text-text-weak pl-8">
+                  {language.t("settings.providers.custom.description")}
+                </span>
               </div>
-            </Show>
+              <Button
+                size="large"
+                variant="secondary"
+                icon="plus-small"
+                onClick={() => {
+                  dialog.show(() => <DialogCustomProvider onBack={dialog.close} />)
+                }}
+              >
+                {language.t("common.connect")}
+              </Button>
+            </div>
           </SettingsList>
 
           <Button

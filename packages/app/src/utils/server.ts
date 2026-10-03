@@ -91,3 +91,13 @@ export type CommandInfo = CommandsListOutput["data"][number]
 export type Project = ProjectsListOutput["data"][number]
 export type PermissionV2Request = PermissionsListRequestsOutput["data"][number]
 export type IntegrationMethod = NonNullable<IntegrationsGetOutput["data"]>["methods"][number]
+
+// Disconnecting a provider removes every credential stored for its integration.
+export async function removeProviderCredentials(api: ServerApi, providerID: string) {
+  const integration = await api.integrations.get({ integrationID: providerID })
+  await Promise.all(
+    (integration.data?.connections ?? []).flatMap((connection) =>
+      connection.type === "credential" ? [api.credentials.remove({ credentialID: connection.id })] : [],
+    ),
+  )
+}

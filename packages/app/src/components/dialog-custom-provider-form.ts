@@ -137,13 +137,10 @@ export function validateCustomProvider(input: ValidateArgs) {
       name,
       key,
       config: {
-        npm: OPENAI_COMPATIBLE,
         name,
         ...(env ? { env: [env] } : {}),
-        options: {
-          baseURL,
-          ...(Object.keys(headerConfig).length ? { headers: headerConfig } : {}),
-        },
+        api: { type: "aisdk", package: OPENAI_COMPATIBLE, url: baseURL, settings: {} },
+        ...(Object.keys(headerConfig).length ? { request: { headers: headerConfig } } : {}),
         models: modelConfig,
       },
     },

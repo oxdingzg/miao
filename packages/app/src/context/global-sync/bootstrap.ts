@@ -21,6 +21,7 @@ import type { ServerSession } from "../server-session"
 import {
   cmp,
   normalizeAgentList,
+  configFromV2,
   normalizePermissionRequest,
   normalizeProjectInfo,
   normalizeProviderList,
@@ -92,12 +93,12 @@ function showErrors(input: {
   })
 }
 
-export const loadGlobalConfigQuery = (scope: ServerScope, sdk: OpencodeClient) =>
+type ConfigApi = Pick<ServerApi["config"], "get">
+
+export const loadGlobalConfigQuery = (scope: ServerScope, api: ConfigApi) =>
   queryOptions({
     queryKey: [scope, "config"],
-    queryFn: async () => {
-      return {}
-    },
+    queryFn: () => api.get().then((result) => configFromV2(result.data)),
   })
 
 type ProjectApi = {
@@ -128,7 +129,7 @@ export const loadProjectsQuery = (scope: ServerScope, api: ProjectApi) =>
 
 export async function bootstrapGlobal(input: {
   serverSDK: OpencodeClient
-  serverAPI: CatalogApi & { readonly projects: ProjectApi }
+  serverAPI: CatalogApi & { readonly projects: ProjectApi; readonly config: ConfigApi }
   scope: ServerScope
   requestFailedTitle: string
   translate: (key: string, vars?: Record<string, string | number>) => string
@@ -137,7 +138,7 @@ export async function bootstrapGlobal(input: {
   queryClient: QueryClient
 }) {
   const slow = [
-    () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverSDK)),
+    () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverAPI.config)),
     () =>
       input.queryClient.fetchQuery(
         loadProvidersQuery(input.scope, null, input.serverAPI),
