@@ -457,7 +457,7 @@ function currentMessage(value: unknown) {
           time: state.time ?? { created: item.info.time.created },
           state:
             state.status === "pending"
-              ? { status: "streaming", input: state.raw ?? JSON.stringify(state.input ?? {}) }
+              ? { status: "pending", input: state.raw ?? JSON.stringify(state.input ?? {}) }
               : state.status === "completed"
                 ? {
                     status: "completed",
