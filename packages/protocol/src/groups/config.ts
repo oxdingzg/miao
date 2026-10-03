@@ -3,15 +3,22 @@ import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
+// These passthroughs use `Schema.Any`, not `Schema.Unknown`. Responses are
+// encoded with the JSON codec, where `Unknown` is `Link(Json, passthrough)` and
+// therefore rejects any `undefined` nested in the value — while the payloads
+// here keep optional fields such as a model's `limit.input` present as
+// `undefined` (see `@miao/schema/model`). `Any` passes them through and lets
+// JSON serialization drop them, which is what the typed V1 routes do too.
+
 // The merged config is served as a permissive object until the V2 config schema
 // moves from Core into Schema so the protocol can reference it.
-const Info = Schema.Record(Schema.String, Schema.Unknown)
+const Info = Schema.Record(Schema.String, Schema.Any)
 
 // The legacy provider shape the TUI store still consumes. Keep it permissive
 // until the V2 provider/model schemas move from Core into Schema, then tighten
 // `providers` to the public provider info array.
 const Providers = Schema.Struct({
-  providers: Schema.Array(Schema.Unknown),
+  providers: Schema.Array(Schema.Any),
   default: Schema.Record(Schema.String, Schema.String),
 })
 
@@ -19,7 +26,7 @@ const Providers = Schema.Struct({
 // Keep it permissive until the V2 provider/model schemas move from Core into
 // Schema, then tighten `all` to the public provider info array.
 const Catalog = Schema.Struct({
-  all: Schema.Array(Schema.Unknown),
+  all: Schema.Array(Schema.Any),
   default: Schema.Record(Schema.String, Schema.String),
   connected: Schema.Array(Schema.String),
 })
