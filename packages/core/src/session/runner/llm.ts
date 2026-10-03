@@ -138,6 +138,16 @@ const MAX_OVERFLOW_COMPACTIONS = 2
 const SUBAGENT_SILENCE_MINUTES = 15
 const SUBAGENT_SILENCE = Duration.minutes(SUBAGENT_SILENCE_MINUTES)
 
+/**
+ * How long the provider may go between streamed events before the gap is worth
+ * recording. A turn that is still running has no `session.turn` line yet, so a
+ * stalled stream is otherwise invisible until it settles. Only the gap is
+ * logged, not every chunk, so the volume stays proportional to the number of
+ * stalls rather than the number of tokens; per-chunk recording stays opt-in
+ * through the provider wire archive.
+ */
+const STREAM_STALL_MS = 5_000
+
 /** Goal/todo-driven autonomous loop bounds. */
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
 const LOOP_STALL_LIMIT = 2
@@ -508,6 +518,13 @@ const layer = Layer.effect(
         providerID: ProviderV2.ID.make(model.provider),
         ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
       }
+      // A provider turn that is still running has no settled `session.turn` line
+      // yet, so record its start to make an in-flight turn queryable.
+      yield* Effect.logInfo("session.turn.started", {
+        sessionID: session.id,
+        model: `${model.provider}/${model.id}`,
+        step: currentStep,
+      })
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
         agent: agent.id,
@@ -522,10 +539,19 @@ const layer = Layer.effect(
       let overflowFailure: ProviderErrorEvent | undefined
       let requestStartedAt: number | undefined
       let firstEventAt: number | undefined
+      let lastHandledAt: number | undefined
       const providerStream = llm.stream(request).pipe(
         Stream.runForEach((event) =>
           Effect.gen(function* () {
-            firstEventAt ??= Date.now()
+            const receivedAt = Date.now()
+            const stallMs = lastHandledAt === undefined ? 0 : receivedAt - lastHandledAt
+            if (stallMs >= STREAM_STALL_MS)
+              yield* Effect.logWarning("session.stream.stall", {
+                sessionID: session.id,
+                model: `${model.provider}/${model.id}`,
+                gapMs: stallMs,
+              })
+            firstEventAt ??= receivedAt
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
@@ -578,7 +604,13 @@ const layer = Layer.effect(
                 ),
               ),
             ).pipe(FiberSet.run(toolFibers))
-          }),
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                lastHandledAt = Date.now()
+              }),
+            ),
+          ),
         ),
         Effect.ensuring(withPublication(publisher.flush())),
       )
@@ -594,6 +626,7 @@ const layer = Layer.effect(
             // the previous attempt's overflow capture nor reports its latency.
             overflowFailure = undefined
             firstEventAt = undefined
+            lastHandledAt = undefined
             const retried = retrying
             retrying = undefined
             if (retried) attempt++
