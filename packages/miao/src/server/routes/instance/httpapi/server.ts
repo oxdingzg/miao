@@ -9,9 +9,7 @@ import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
 import { Workspace } from "@/control-plane/workspace"
-import { WorkspaceV2Bridge } from "@/control-plane/workspace-v2"
 import { Env } from "@/env"
-import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { GitCli } from "@miao/core/git-cli"
 import { ConfigWrite } from "@miao/core/config/write"
@@ -26,8 +24,6 @@ import { MCP } from "@/mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
-import { PluginPtyEnvironment } from "@/plugin/pty-environment"
-import { PluginShellEnvironment } from "@/plugin/shell-environment"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
@@ -57,10 +53,12 @@ import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
+import { WorkspaceLive } from "@miao/core/workspace-live"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@miao/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
+import { EventForwarder } from "@/server/event-forwarder"
 import { Api } from "@miao/server/api"
 import { PublicApi } from "./public"
 import { authorizationRouterMiddleware, serverAuthorizationLayer } from "./middleware/authorization"
@@ -98,7 +96,6 @@ const serverRoutes = (remote: RemoteControl.Interface | undefined) =>
   HttpApiBuilder.layer(Api).pipe(
     Layer.provide(handlers),
     Layer.provide(remote ? RemoteControl.layer(remote) : Layer.empty),
-    Layer.provide(PluginPtyEnvironment.layer),
     Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
   )
 
@@ -118,6 +115,9 @@ const uiRoute = HttpRouter.use((router) =>
     const fs = yield* FSUtil.Service
     const client = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
+    // Builds the EventV2 -> GlobalBus relay so in-process TUI clients keep
+    // receiving events after the V1 bridge leaves the assembly.
+    yield* EventForwarder.Service
     yield* router.add("*", "/*", (request) =>
       serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
     )
@@ -163,7 +163,6 @@ const app = LayerNode.group([
   SessionProjector.node,
   BackgroundJob.node,
   RuntimeFlags.node,
-  EventV2Bridge.node,
   LSP.node,
   MCP.node,
   McpAuth.node,
@@ -172,7 +171,7 @@ const app = LayerNode.group([
   Project.node,
   Vcs.node,
   Workspace.node,
-  WorkspaceV2Bridge.node,
+  WorkspaceLive.node,
   Worktree.node,
   Installation.node,
   InstanceStore.node,
@@ -196,6 +195,7 @@ export function createRoutes(
       corsVaryFix,
       cors(corsOptions),
       AppNodeBuilderV1.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]]),
+      AppNodeBuilderV1.build(EventForwarder.node, [[LocationServiceMap.node, locationServiceMapV2]]),
       HttpServer.layerServices,
     ]),
     Layer.provide(Layer.succeed(CorsConfig)(corsOptions)),
@@ -209,9 +209,6 @@ export function createRoutes(
       ]),
     ),
     Layer.provide(locationServiceMapV2),
-    // Plugin `shell.env` hooks for the V2 bash tool; needs the V1 plugin and instance services below.
-    Layer.provide(PluginShellEnvironment.layer),
-
     Layer.provide(
       AppNodeBuilderV1.build(app, [
         [LocationServiceMap.node, locationServiceMapV2],
