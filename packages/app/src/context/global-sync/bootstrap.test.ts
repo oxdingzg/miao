@@ -3,7 +3,8 @@ import type { AgentApi, CatalogApi, CommandApi, ReferenceApi } from "@/utils/ser
 import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Project } from "@miao/schema/view-models"
-import type { Config, MiaoClient } from "@miao/sdk/v2"
+import type { Config } from "@miao/schema/view-models"
+import type { MiaoClient } from "@miao/sdk/v2"
 import type { NormalizedProviderListResponse } from "@miao/session-ui/context"
 import {
   bootstrapDirectory,

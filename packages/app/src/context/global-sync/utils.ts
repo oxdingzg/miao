@@ -1,6 +1,6 @@
 import type { Agent, Project, Provider } from "@miao/schema/view-models"
 import type { PermissionRequest } from "@miao/schema/view-models"
-import type { Config } from "@miao/sdk/v2"
+import type { Config } from "@miao/schema/view-models"
 import type { AgentsListOutput, ModelsDefaultOutput, ModelsListOutput, ProvidersListOutput } from "@miao/client"
 import type { PermissionV2Request, Project as CurrentProject, ProviderListResponse } from "@/utils/server"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
@@ -167,27 +167,14 @@ export function normalizeProjectInfo(project: Project | CurrentProject): Project
   }
 }
 
-// The server returns the V2 config document; the app store still reads the V1 field names.
+// The server returns the V2 config document; the store keeps it as-is.
 export function configFromV2(document: Readonly<Record<string, unknown>>): Config {
-  const providers = record(document.providers)
-  const plugins = Array.isArray(document.plugins) ? document.plugins : []
-  return {
-    ...document,
-    provider: Object.fromEntries(
-      Object.entries(providers ?? {}).map(([id, value]) => {
-        const provider = record(value)
-        return [id, { name: provider?.name, npm: record(provider?.api)?.package, models: record(provider?.models) }]
-      }),
-    ) as Config["provider"],
-    disabled_providers: Object.entries(providers ?? {}).flatMap(([id, provider]) =>
-      record(provider)?.disabled === true ? [id] : [],
-    ),
-    plugin: plugins.flatMap((plugin): NonNullable<Config["plugin"]> => {
-      if (typeof plugin === "string") return [plugin]
-      const entry = record(plugin)
-      return typeof entry?.package === "string" ? [[entry.package, record(entry.options) ?? {}]] : []
-    }),
-  }
+  return document as Config
+}
+
+/** Provider ids the V2 config marks disabled. */
+export function disabledProviderIDs(config: Config): string[] {
+  return Object.entries(config.providers ?? {}).flatMap(([id, provider]) => (provider.disabled ? [id] : []))
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
