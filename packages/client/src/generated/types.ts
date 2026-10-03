@@ -3823,6 +3823,58 @@ export type WorkspaceRemoveOutput = {
   } | null
 }
 
+export type WorktreesCreateInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly name?: { readonly name?: string | undefined; readonly startCommand?: string | undefined }["name"]
+  readonly startCommand?: {
+    readonly name?: string | undefined
+    readonly startCommand?: string | undefined
+  }["startCommand"]
+}
+
+export type WorktreesCreateOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly name: string; readonly branch?: string | null; readonly directory: string }
+}
+
+export type WorktreesRemoveInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly directory: { readonly directory: string }["directory"]
+}
+
+export type WorktreesRemoveOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
+}
+
+export type WorktreesResetInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly directory: { readonly directory: string }["directory"]
+}
+
+export type WorktreesResetOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
+}
+
 export type ControlPlaneMoveSessionInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

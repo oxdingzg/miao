@@ -17,6 +17,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { GitCli } from "@miao/core/git-cli"
 import { ConfigWrite } from "@miao/core/config/write"
+import { ProjectWorktree } from "@miao/core/project/worktree"
 import { Global } from "@miao/core/global"
 import { ProjectDirectories } from "@miao/core/project/directories"
 import { ProjectMetadata } from "@miao/core/project/metadata"
@@ -206,6 +207,7 @@ const app = LayerNode.group([
   Env.node,
   GitCli.node,
   ConfigWrite.node,
+  ProjectWorktree.node,
   Global.node,
   ProjectDirectories.node,
   ProjectMetadata.node,

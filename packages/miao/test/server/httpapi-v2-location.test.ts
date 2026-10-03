@@ -315,6 +315,40 @@ describe("v2 location HttpApi", () => {
     expect(await (await request("/api/path", plain.path)).json()).toMatchObject({ worktree: "/", directory: plain.path })
   })
 
+  test("creates, resets, and removes a project worktree", async () => {
+    await using repo = await tmpdir({ git: true })
+    const json = (method: string, body: unknown) => ({
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    const current = (await (await request("/api/project/current", repo.path)).json()) as { data: { id: string } }
+    const reader = eventStream((await request("/api/event", repo.path)).body!)
+    expect((await readEvent(reader)).type).toBe("server.connected")
+
+    const created = await request("/api/worktree", repo.path, json("POST", { name: "route test" }))
+    expect(created.status).toBe(200)
+    const info = ((await created.json()) as { data: { name: string; branch: string; directory: string } }).data
+    expect(info).toMatchObject({ name: "route-test", branch: "miao/route-test" })
+    expect(await readEventType(reader, "worktree.ready")).toMatchObject({ location: { directory: info.directory } })
+    await reader.return(undefined)
+
+    const listed = (await (await request(`/api/project/${current.data.id}/directories`, repo.path)).json()) as {
+      data: { directory: string }[]
+    }
+    expect(listed.data.map((item) => item.directory)).toContain(info.directory)
+
+    await Bun.write(path.join(info.directory, "scratch.txt"), "untracked\n")
+    const reset = await request("/api/worktree/reset", repo.path, json("POST", { directory: info.directory }))
+    expect(reset.status).toBe(200)
+    expect(await Bun.file(path.join(info.directory, "scratch.txt")).exists()).toBe(false)
+    expect((await request("/api/worktree/reset", repo.path, json("POST", { directory: repo.path }))).status).toBe(400)
+
+    const removed = await request("/api/worktree", repo.path, json("DELETE", { directory: info.directory }))
+    expect(removed.status).toBe(200)
+    expect(await Bun.file(path.join(info.directory, ".git")).exists()).toBe(false)
+  })
+
   test("lists the host shells", async () => {
     await using tmp = await tmpdir({ git: true })
     const response = await request("/api/pty/shells", tmp.path)

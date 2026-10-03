@@ -31,6 +31,7 @@ import { ProjectGroup } from "./groups/project"
 import { RemoteGroup } from "./groups/remote"
 import { VcsGroup } from "./groups/vcs"
 import { WorkspaceGroup } from "./groups/workspace"
+import { WorktreeGroup } from "./groups/worktree"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -71,6 +72,7 @@ const makeApiFromGroup = <
     .add(ProjectGroup.middleware(locationMiddleware))
     .add(VcsGroup.middleware(locationMiddleware))
     .add(WorkspaceGroup.middleware(locationMiddleware))
+    .add(WorktreeGroup.middleware(locationMiddleware))
     .add(ControlPlaneGroup.middleware(locationMiddleware))
     .add(RemoteGroup)
     .annotateMerge(

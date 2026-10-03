@@ -1075,32 +1075,70 @@ const adaptGroup25 = (raw: RawClient["server.workspace"]) => ({
   remove: Endpoint25_6(raw),
 })
 
-type Endpoint26_0Request = Parameters<RawClient["server.controlPlane"]["controlPlane.moveSession"]>[0]
+type Endpoint26_0Request = Parameters<RawClient["server.worktree"]["worktree.create"]>[0]
 type Endpoint26_0Input = {
   readonly location?: Endpoint26_0Request["query"]["location"]
-  readonly sessionID: Endpoint26_0Request["payload"]["sessionID"]
-  readonly destination: Endpoint26_0Request["payload"]["destination"]
-  readonly moveChanges?: Endpoint26_0Request["payload"]["moveChanges"]
+  readonly name?: Endpoint26_0Request["payload"]["name"]
+  readonly startCommand?: Endpoint26_0Request["payload"]["startCommand"]
 }
-const Endpoint26_0 = (raw: RawClient["server.controlPlane"]) => (input: Endpoint26_0Input) =>
+const Endpoint26_0 = (raw: RawClient["server.worktree"]) => (input?: Endpoint26_0Input) =>
+  raw["worktree.create"]({
+    query: { location: input?.["location"] },
+    payload: { name: input?.["name"], startCommand: input?.["startCommand"] },
+  }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint26_1Request = Parameters<RawClient["server.worktree"]["worktree.remove"]>[0]
+type Endpoint26_1Input = {
+  readonly location?: Endpoint26_1Request["query"]["location"]
+  readonly directory: Endpoint26_1Request["payload"]["directory"]
+}
+const Endpoint26_1 = (raw: RawClient["server.worktree"]) => (input: Endpoint26_1Input) =>
+  raw["worktree.remove"]({ query: { location: input["location"] }, payload: { directory: input["directory"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint26_2Request = Parameters<RawClient["server.worktree"]["worktree.reset"]>[0]
+type Endpoint26_2Input = {
+  readonly location?: Endpoint26_2Request["query"]["location"]
+  readonly directory: Endpoint26_2Request["payload"]["directory"]
+}
+const Endpoint26_2 = (raw: RawClient["server.worktree"]) => (input: Endpoint26_2Input) =>
+  raw["worktree.reset"]({ query: { location: input["location"] }, payload: { directory: input["directory"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+const adaptGroup26 = (raw: RawClient["server.worktree"]) => ({
+  create: Endpoint26_0(raw),
+  remove: Endpoint26_1(raw),
+  reset: Endpoint26_2(raw),
+})
+
+type Endpoint27_0Request = Parameters<RawClient["server.controlPlane"]["controlPlane.moveSession"]>[0]
+type Endpoint27_0Input = {
+  readonly location?: Endpoint27_0Request["query"]["location"]
+  readonly sessionID: Endpoint27_0Request["payload"]["sessionID"]
+  readonly destination: Endpoint27_0Request["payload"]["destination"]
+  readonly moveChanges?: Endpoint27_0Request["payload"]["moveChanges"]
+}
+const Endpoint27_0 = (raw: RawClient["server.controlPlane"]) => (input: Endpoint27_0Input) =>
   raw["controlPlane.moveSession"]({
     query: { location: input["location"] },
     payload: { sessionID: input["sessionID"], destination: input["destination"], moveChanges: input["moveChanges"] },
   }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup26 = (raw: RawClient["server.controlPlane"]) => ({ moveSession: Endpoint26_0(raw) })
+const adaptGroup27 = (raw: RawClient["server.controlPlane"]) => ({ moveSession: Endpoint27_0(raw) })
 
-const Endpoint27_0 = (raw: RawClient["server.remote"]) => () =>
+const Endpoint28_0 = (raw: RawClient["server.remote"]) => () =>
   raw["remote.get"]({}).pipe(Effect.mapError(mapClientError))
 
-type Endpoint27_1Request = Parameters<RawClient["server.remote"]["remote.login.start"]>[0]
-type Endpoint27_1Input = { readonly connector: Endpoint27_1Request["params"]["connector"] }
-const Endpoint27_1 = (raw: RawClient["server.remote"]) => (input: Endpoint27_1Input) =>
+type Endpoint28_1Request = Parameters<RawClient["server.remote"]["remote.login.start"]>[0]
+type Endpoint28_1Input = { readonly connector: Endpoint28_1Request["params"]["connector"] }
+const Endpoint28_1 = (raw: RawClient["server.remote"]) => (input: Endpoint28_1Input) =>
   raw["remote.login.start"]({ params: { connector: input["connector"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint27_2Request = Parameters<RawClient["server.remote"]["remote.login.events"]>[0]
-type Endpoint27_2Input = { readonly flow: Endpoint27_2Request["params"]["flow"] }
-const Endpoint27_2 = (raw: RawClient["server.remote"]) => (input: Endpoint27_2Input) =>
+type Endpoint28_2Request = Parameters<RawClient["server.remote"]["remote.login.events"]>[0]
+type Endpoint28_2Input = { readonly flow: Endpoint28_2Request["params"]["flow"] }
+const Endpoint28_2 = (raw: RawClient["server.remote"]) => (input: Endpoint28_2Input) =>
   Stream.unwrap(
     raw["remote.login.events"]({ params: { flow: input["flow"] } }).pipe(
       Effect.mapError(mapClientError),
@@ -1108,60 +1146,60 @@ const Endpoint27_2 = (raw: RawClient["server.remote"]) => (input: Endpoint27_2In
     ),
   )
 
-type Endpoint27_3Request = Parameters<RawClient["server.remote"]["remote.login.input"]>[0]
-type Endpoint27_3Input = {
-  readonly flow: Endpoint27_3Request["params"]["flow"]
-  readonly value: Endpoint27_3Request["payload"]["value"]
+type Endpoint28_3Request = Parameters<RawClient["server.remote"]["remote.login.input"]>[0]
+type Endpoint28_3Input = {
+  readonly flow: Endpoint28_3Request["params"]["flow"]
+  readonly value: Endpoint28_3Request["payload"]["value"]
 }
-const Endpoint27_3 = (raw: RawClient["server.remote"]) => (input: Endpoint27_3Input) =>
+const Endpoint28_3 = (raw: RawClient["server.remote"]) => (input: Endpoint28_3Input) =>
   raw["remote.login.input"]({ params: { flow: input["flow"] }, payload: { value: input["value"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-type Endpoint27_4Request = Parameters<RawClient["server.remote"]["remote.login.cancel"]>[0]
-type Endpoint27_4Input = { readonly flow: Endpoint27_4Request["params"]["flow"] }
-const Endpoint27_4 = (raw: RawClient["server.remote"]) => (input: Endpoint27_4Input) =>
+type Endpoint28_4Request = Parameters<RawClient["server.remote"]["remote.login.cancel"]>[0]
+type Endpoint28_4Input = { readonly flow: Endpoint28_4Request["params"]["flow"] }
+const Endpoint28_4 = (raw: RawClient["server.remote"]) => (input: Endpoint28_4Input) =>
   raw["remote.login.cancel"]({ params: { flow: input["flow"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint27_5Request = Parameters<RawClient["server.remote"]["remote.account.remove"]>[0]
-type Endpoint27_5Input = {
-  readonly connector: Endpoint27_5Request["params"]["connector"]
-  readonly account: Endpoint27_5Request["params"]["account"]
+type Endpoint28_5Request = Parameters<RawClient["server.remote"]["remote.account.remove"]>[0]
+type Endpoint28_5Input = {
+  readonly connector: Endpoint28_5Request["params"]["connector"]
+  readonly account: Endpoint28_5Request["params"]["account"]
 }
-const Endpoint27_5 = (raw: RawClient["server.remote"]) => (input: Endpoint27_5Input) =>
+const Endpoint28_5 = (raw: RawClient["server.remote"]) => (input: Endpoint28_5Input) =>
   raw["remote.account.remove"]({ params: { connector: input["connector"], account: input["account"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-type Endpoint27_6Request = Parameters<RawClient["server.remote"]["remote.account.pair"]>[0]
-type Endpoint27_6Input = {
-  readonly connector: Endpoint27_6Request["params"]["connector"]
-  readonly account: Endpoint27_6Request["params"]["account"]
+type Endpoint28_6Request = Parameters<RawClient["server.remote"]["remote.account.pair"]>[0]
+type Endpoint28_6Input = {
+  readonly connector: Endpoint28_6Request["params"]["connector"]
+  readonly account: Endpoint28_6Request["params"]["account"]
 }
-const Endpoint27_6 = (raw: RawClient["server.remote"]) => (input: Endpoint27_6Input) =>
+const Endpoint28_6 = (raw: RawClient["server.remote"]) => (input: Endpoint28_6Input) =>
   raw["remote.account.pair"]({ params: { connector: input["connector"], account: input["account"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-type Endpoint27_7Request = Parameters<RawClient["server.remote"]["remote.account.test"]>[0]
-type Endpoint27_7Input = {
-  readonly connector: Endpoint27_7Request["params"]["connector"]
-  readonly account: Endpoint27_7Request["params"]["account"]
+type Endpoint28_7Request = Parameters<RawClient["server.remote"]["remote.account.test"]>[0]
+type Endpoint28_7Input = {
+  readonly connector: Endpoint28_7Request["params"]["connector"]
+  readonly account: Endpoint28_7Request["params"]["account"]
 }
-const Endpoint27_7 = (raw: RawClient["server.remote"]) => (input: Endpoint27_7Input) =>
+const Endpoint28_7 = (raw: RawClient["server.remote"]) => (input: Endpoint28_7Input) =>
   raw["remote.account.test"]({ params: { connector: input["connector"], account: input["account"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-const adaptGroup27 = (raw: RawClient["server.remote"]) => ({
-  get: Endpoint27_0(raw),
-  login: Endpoint27_1(raw),
-  loginEvents: Endpoint27_2(raw),
-  loginInput: Endpoint27_3(raw),
-  loginCancel: Endpoint27_4(raw),
-  remove: Endpoint27_5(raw),
-  pair: Endpoint27_6(raw),
-  test: Endpoint27_7(raw),
+const adaptGroup28 = (raw: RawClient["server.remote"]) => ({
+  get: Endpoint28_0(raw),
+  login: Endpoint28_1(raw),
+  loginEvents: Endpoint28_2(raw),
+  loginInput: Endpoint28_3(raw),
+  loginCancel: Endpoint28_4(raw),
+  remove: Endpoint28_5(raw),
+  pair: Endpoint28_6(raw),
+  test: Endpoint28_7(raw),
 })
 
 const adaptClient = (raw: RawClient) => ({
@@ -1191,8 +1229,9 @@ const adaptClient = (raw: RawClient) => ({
   projects: adaptGroup23(raw["server.project"]),
   vcs: adaptGroup24(raw["server.vcs"]),
   workspace: adaptGroup25(raw["server.workspace"]),
-  controlPlane: adaptGroup26(raw["server.controlPlane"]),
-  remote: adaptGroup27(raw["server.remote"]),
+  worktrees: adaptGroup26(raw["server.worktree"]),
+  controlPlane: adaptGroup27(raw["server.controlPlane"]),
+  remote: adaptGroup28(raw["server.remote"]),
 })
 
 export const make = (options?: { readonly baseUrl?: URL | string }) =>

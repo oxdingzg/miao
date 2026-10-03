@@ -397,6 +397,12 @@ import type {
   V2WorkspaceSyncListResponses,
   V2WorkspaceWarpErrors,
   V2WorkspaceWarpResponses,
+  V2WorktreeCreateErrors,
+  V2WorktreeCreateResponses,
+  V2WorktreeRemoveErrors,
+  V2WorktreeRemoveResponses,
+  V2WorktreeResetErrors,
+  V2WorktreeResetResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -6502,6 +6508,124 @@ export class Workspace2 extends HeyApiClient {
   }
 }
 
+export class Worktree2 extends HeyApiClient {
+  /**
+   * Remove worktree
+   *
+   * Remove a git worktree of the requested location's project, its directory, and its branch.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2WorktreeRemoveResponses, V2WorktreeRemoveErrors, ThrowOnError>({
+      url: "/api/worktree",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Create worktree
+   *
+   * Create a git worktree of the requested location's project on a new `miao/<name>` branch. Returns at once; `worktree.ready` or `worktree.failed` follows for the new directory, then the project's start command runs there.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      name?: string
+      startCommand?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "name" },
+            { in: "body", key: "startCommand" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorktreeCreateResponses, V2WorktreeCreateErrors, ThrowOnError>({
+      url: "/api/worktree",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Reset worktree
+   *
+   * Reset a secondary git worktree to the project's default branch, discarding every local change, then rerun the start command.
+   */
+  public reset<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorktreeResetResponses, V2WorktreeResetErrors, ThrowOnError>({
+      url: "/api/worktree/reset",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class ControlPlane2 extends HeyApiClient {
   /**
    * Move session
@@ -6900,6 +7024,11 @@ export class V2 extends HeyApiClient {
   private _workspace?: Workspace2
   get workspace(): Workspace2 {
     return (this._workspace ??= new Workspace2({ client: this.client }))
+  }
+
+  private _worktree?: Worktree2
+  get worktree(): Worktree2 {
+    return (this._worktree ??= new Worktree2({ client: this.client }))
   }
 
   private _controlPlane?: ControlPlane2

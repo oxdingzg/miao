@@ -58,6 +58,8 @@ export type Event =
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
   | EventConfigUpdated
+  | EventWorktreeReady
+  | EventWorktreeFailed
   | EventFileEdited
   | EventProjectUpdated
   | EventReferenceUpdated
@@ -94,8 +96,6 @@ export type Event =
   | EventWorkspaceReady
   | EventWorkspaceFailed
   | EventWorkspaceStatus
-  | EventWorktreeReady
-  | EventWorktreeFailed
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
@@ -1296,6 +1296,21 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "worktree.ready"
+        properties: {
+          name: string
+          branch?: string
+        }
+      }
+    | {
+        id: string
+        type: "worktree.failed"
+        properties: {
+          message: string
+        }
+      }
+    | {
+        id: string
         type: "file.edited"
         properties: {
           file: string
@@ -1624,21 +1639,6 @@ export type GlobalEvent = {
         properties: {
           workspaceID: string
           status: "connected" | "connecting" | "disconnected" | "error"
-        }
-      }
-    | {
-        id: string
-        type: "worktree.ready"
-        properties: {
-          name: string
-          branch?: string
-        }
-      }
-    | {
-        id: string
-        type: "worktree.failed"
-        properties: {
-          message: string
         }
       }
     | {
@@ -2850,6 +2850,8 @@ export type V2Event =
   | InstallationUpdated
   | InstallationUpdateAvailable
   | ConfigUpdated
+  | WorktreeReady
+  | WorktreeFailed
   | FileEdited
   | ProjectUpdated
   | ReferenceUpdated
@@ -2886,8 +2888,6 @@ export type V2Event =
   | WorkspaceReady
   | WorkspaceFailed
   | WorkspaceStatus
-  | WorktreeReady
-  | WorktreeFailed
   | ServerConnected
   | GlobalDisposed
 
@@ -5723,6 +5723,41 @@ export type ConfigUpdated = {
   }
 }
 
+export type WorktreeReady = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "worktree.ready"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    name: string
+    branch?: string
+  }
+}
+
+export type WorktreeFailed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "worktree.failed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    message: string
+  }
+}
+
 export type FileEdited = {
   id: string
   metadata?: {
@@ -6371,41 +6406,6 @@ export type WorkspaceStatus = {
   }
 }
 
-export type WorktreeReady = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "worktree.ready"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    name: string
-    branch?: string
-  }
-}
-
-export type WorktreeFailed = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "worktree.failed"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    message: string
-  }
-}
-
 export type ServerConnected = {
   id: string
   metadata?: {
@@ -6529,6 +6529,12 @@ export type WorkspaceWarpInput = {
   id: string | null
   sessionID: string
   copyChanges?: boolean
+}
+
+export type WorktreeInfo = {
+  name: string
+  branch?: string
+  directory: string
 }
 
 export type ControlPlaneMoveSessionDestination = {
@@ -7144,6 +7150,23 @@ export type EventConfigUpdated = {
   }
 }
 
+export type EventWorktreeReady = {
+  id: string
+  type: "worktree.ready"
+  properties: {
+    name: string
+    branch?: string
+  }
+}
+
+export type EventWorktreeFailed = {
+  id: string
+  type: "worktree.failed"
+  properties: {
+    message: string
+  }
+}
+
 export type EventFileEdited = {
   id: string
   type: "file.edited"
@@ -7454,23 +7477,6 @@ export type EventWorkspaceStatus = {
   properties: {
     workspaceID: string
     status: "connected" | "connecting" | "disconnected" | "error"
-  }
-}
-
-export type EventWorktreeReady = {
-  id: string
-  type: "worktree.ready"
-  properties: {
-    name: string
-    branch?: string
-  }
-}
-
-export type EventWorktreeFailed = {
-  id: string
-  type: "worktree.failed"
-  properties: {
-    message: string
   }
 }
 
@@ -14147,6 +14153,124 @@ export type V2WorkspaceRemoveResponses = {
 }
 
 export type V2WorkspaceRemoveResponse = V2WorkspaceRemoveResponses[keyof V2WorkspaceRemoveResponses]
+
+export type V2WorktreeRemoveData = {
+  body: {
+    directory: string
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/worktree"
+}
+
+export type V2WorktreeRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorktreeRemoveError = V2WorktreeRemoveErrors[keyof V2WorktreeRemoveErrors]
+
+export type V2WorktreeRemoveResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2WorktreeRemoveResponse = V2WorktreeRemoveResponses[keyof V2WorktreeRemoveResponses]
+
+export type V2WorktreeCreateData = {
+  body: {
+    name?: string
+    startCommand?: string
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/worktree"
+}
+
+export type V2WorktreeCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorktreeCreateError = V2WorktreeCreateErrors[keyof V2WorktreeCreateErrors]
+
+export type V2WorktreeCreateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: WorktreeInfo
+  }
+}
+
+export type V2WorktreeCreateResponse = V2WorktreeCreateResponses[keyof V2WorktreeCreateResponses]
+
+export type V2WorktreeResetData = {
+  body: {
+    directory: string
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/worktree/reset"
+}
+
+export type V2WorktreeResetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorktreeResetError = V2WorktreeResetErrors[keyof V2WorktreeResetErrors]
+
+export type V2WorktreeResetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2WorktreeResetResponse = V2WorktreeResetResponses[keyof V2WorktreeResetResponses]
 
 export type V2ControlPlaneMoveSessionData = {
   body: {

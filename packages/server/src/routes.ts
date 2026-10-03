@@ -6,6 +6,7 @@ import { EventV2 } from "@miao/core/event"
 import { Git } from "@miao/core/git"
 import { GitCli } from "@miao/core/git-cli"
 import { ConfigWrite } from "@miao/core/config/write"
+import { ProjectWorktree } from "@miao/core/project/worktree"
 import { Global } from "@miao/core/global"
 import { FSUtil } from "@miao/core/fs-util"
 import { ProjectDirectories } from "@miao/core/project/directories"
@@ -48,6 +49,7 @@ const applicationServices = LayerNode.group([
   Git.node,
   GitCli.node,
   ConfigWrite.node,
+  ProjectWorktree.node,
   Global.node,
   FSUtil.node,
   ProjectDirectories.node,
