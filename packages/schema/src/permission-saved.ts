@@ -18,3 +18,7 @@ export const Info = Schema.Struct({
   resource: Schema.String,
 }).annotate({ identifier: "PermissionSaved.Info" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
+
+// Compatibility name for the permission-saved view model.
+export const PermissionSavedInfo = Info
+export type PermissionSavedInfo = Info
