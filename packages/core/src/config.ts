@@ -172,6 +172,19 @@ export function latest<K extends keyof Info>(entries: readonly Entry[], key: K):
     .findLast((entry) => entry.info[key] !== undefined)?.info[key]
 }
 
+/** Config file names read from each config directory, lowest to highest priority. */
+export const fileNames = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"] as const
+
+const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
+const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
+const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)
+
+/** Decodes a parsed document the way a location loads it: a document with any V1 key is migrated as a whole. */
+export const decodeDocument = (input: unknown) =>
+  ConfigMigrateV1.isV1(input)
+    ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
+    : decodeInfo(input)
+
 export interface Interface {
   /** Returns location config documents and supplemental directories from lowest to highest priority. */
   readonly entries: () => Effect.Effect<Entry[]>
@@ -186,10 +199,6 @@ const layer = Layer.effect(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const policy = yield* Policy.Service
-    const names = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"]
-    const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
-    const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
-    const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)
 
     const loadFile = Effect.fnUntraced(function* (filepath: string) {
       const text = yield* fs.readFileStringSafe(filepath)
@@ -202,18 +211,14 @@ const layer = Layer.effect(
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
       if (errors.length) return
 
-      const info = Option.getOrUndefined(
-        ConfigMigrateV1.isV1(input)
-          ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
-          : decodeInfo(input),
-      )
+      const info = Option.getOrUndefined(decodeDocument(input))
       if (!info) return
       return new Document({ type: "document", path: filepath, info })
     }
 
     const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
       return [
-        ...(yield* Effect.forEach(names, (file) => loadFile(path.join(directory, file))).pipe(
+        ...(yield* Effect.forEach(fileNames, (file) => loadFile(path.join(directory, file))).pipe(
           Effect.map((configs) => configs.filter((config): config is Document => config !== undefined)),
         )),
         new Directory({ type: "directory", path: directory }),
@@ -236,7 +241,7 @@ const layer = Layer.effect(
         ? []
         : yield* fs
             .up({
-              targets: [".miao", ".opencode", ...names.toReversed()],
+              targets: [".miao", ".opencode", ...fileNames.toReversed()],
               start: location.directory,
               stop: location.project.directory,
             })
