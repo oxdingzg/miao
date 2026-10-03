@@ -1,14 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import type { FilePart } from "@miao/schema/session-v1"
-import { MessageID, PartID } from "@miao/schema/session-v1"
-import { SessionID } from "@miao/schema/session-id"
+import type { FilePart } from "@miao/schema/view-models"
 import { attached, inline, kind, typeLabel } from "./message-file"
 
 function file(part: Partial<FilePart> = {}): FilePart {
   return {
-    id: PartID.make("prt_1"),
-    sessionID: SessionID.make("ses_1"),
-    messageID: MessageID.make("msg_1"),
+    id: "prt_1",
+    sessionID: "ses_1",
+    messageID: "msg_1",
     type: "file",
     mime: "text/plain",
     url: "file:///repo/README.txt",

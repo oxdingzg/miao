@@ -1,4 +1,4 @@
-import type { FileContent } from "@miao/schema/filesystem-v1"
+import type { FileContent } from "@miao/schema/view-models"
 
 export type MediaKind = "image" | "audio" | "svg"
 
