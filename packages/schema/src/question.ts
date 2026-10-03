@@ -96,3 +96,7 @@ const Rejected = define({
   },
 })
 export const Event = { Asked, Replied, Rejected, Definitions: inventory(Asked, Replied, Rejected) }
+
+// Compatibility names for the question view models.
+export type QuestionInfo = Info
+export type QuestionAnswer = Answer

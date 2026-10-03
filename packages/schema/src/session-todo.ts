@@ -23,3 +23,6 @@ const Updated = define({
   },
 })
 export const Event = { Updated, Definitions: inventory(Updated) }
+
+// Compatibility name for the todo view model.
+export type Todo = Info

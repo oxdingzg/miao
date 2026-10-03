@@ -674,3 +674,10 @@ export const Event = {
     Error,
   ),
 }
+
+// Compatibility names the clients still use for these V1 view models.
+export type Message = Schema.Schema.Type<typeof Info>
+export type UserMessage = User
+export type AssistantMessage = Assistant
+export type Session = SessionInfo
+export type FilePartSource = Schema.Schema.Type<typeof FilePartSource>
