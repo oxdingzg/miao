@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@miao/client": "workspace:*",
     "@miao/core": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
     "@miao/server": "workspace:*",
     "@miao/tui": "workspace:*",
     "@opentui/core": "catalog:",

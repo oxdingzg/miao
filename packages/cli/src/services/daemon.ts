@@ -1,6 +1,6 @@
 import { Global } from "@miao/core/global"
 import { InstallationVersion } from "@miao/core/installation/version"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
+import { OpenCode } from "@miao/client"
 import { ServerAuth } from "@miao/server/auth"
 import { Context, Effect, FileSystem, Layer, Option, Schedule, Schema, Scope } from "effect"
 import { HttpServer } from "effect/unstable/http"
@@ -9,7 +9,7 @@ import { spawn } from "node:child_process"
 import path from "path"
 
 export interface Interface {
-  readonly client: () => Effect.Effect<ReturnType<typeof createOpencodeClient>, unknown>
+  readonly client: () => Effect.Effect<ReturnType<typeof OpenCode.make>, unknown>
   readonly transport: () => Effect.Effect<{ url: string; headers: RequestInit["headers"] }, unknown>
   readonly start: () => Effect.Effect<string, Error>
   readonly status: () => Effect.Effect<string | undefined>
@@ -60,14 +60,14 @@ export const layer = Layer.effect(
     })
 
     const createClient = Effect.fnUntraced(function* (url: string) {
-      return createOpencodeClient({ baseUrl: url, headers: ServerAuth.headers({ password: yield* password() }) })
+      return OpenCode.make({ baseUrl: url, headers: ServerAuth.headers({ password: yield* password() }) })
     })
 
     const healthy = Effect.fnUntraced(function* () {
       const info = yield* registration()
       const client = yield* createClient(info.url)
-      const response = yield* Effect.tryPromise(() => client.v2.health.get({ signal: AbortSignal.timeout(2_000) }))
-      if (response.data?.healthy === true) return info
+      const response = yield* Effect.tryPromise(() => client.health.get({ signal: AbortSignal.timeout(2_000) }))
+      if (response.healthy === true) return info
       return yield* Effect.fail(new Error("Registered server is not healthy"))
     })
 
@@ -140,7 +140,7 @@ export const layer = Layer.effect(
 
     const client = Effect.fn("cli.daemon.client")(function* () {
       const connection = yield* transport()
-      return createOpencodeClient({ baseUrl: connection.url, headers: connection.headers })
+      return OpenCode.make({ baseUrl: connection.url, headers: connection.headers })
     })
 
     const status = Effect.fn("cli.daemon.status")(function* () {
