@@ -8,7 +8,7 @@ import { errorMessage } from "@miao/tui/util/error"
 import { withTimeout } from "@/util/timeout"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
-import type { GlobalEvent } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent } from "@miao/tui/context/sdk"
 import type { EventSource } from "@miao/tui/context/sdk"
 import { validateSession } from "../tui/validate-session"
 

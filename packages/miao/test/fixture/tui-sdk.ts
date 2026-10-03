@@ -1,5 +1,4 @@
-import type { GlobalEvent } from "@opencode-ai/sdk/v2"
-import type { EventSource } from "@miao/tui/context/sdk"
+import type { EventSource, GlobalEvent } from "@miao/tui/context/sdk"
 
 export const worktree = "/tmp/opencode"
 export const directory = `${worktree}/packages/miao`

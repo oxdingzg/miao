@@ -1,4 +1,4 @@
-# miao installer for Windows (PowerShell 5.1 and PowerShell 7).
+# MIAO installer for Windows (PowerShell 5.1 and PowerShell 7).
 #
 #   irm https://mtty.dev/miao/install.ps1 | iex
 #
@@ -36,7 +36,7 @@ function Install-Miao {
   $exe = Join-Path $installDir "miao.exe"
 
   if (-not [Environment]::Is64BitOperatingSystem) {
-    throw "miao needs 64-bit Windows."
+    throw "MIAO needs 64-bit Windows."
   }
   # Releases ship windows-x64 only; Windows on ARM runs it under x64 emulation.
   $arch = $env:PROCESSOR_ARCHITEW6432
@@ -49,7 +49,7 @@ function Install-Miao {
 
   if ($Binary) {
     if (-not (Test-Path $Binary)) { throw "Binary not found: $Binary" }
-    Write-Host "Installing miao from $Binary"
+    Write-Host "Installing MIAO from $Binary"
     Copy-Item -Force $Binary $exe
   }
   else {
@@ -58,13 +58,13 @@ function Install-Miao {
       $release = Invoke-RestMethod -UseBasicParsing -Headers @{ "User-Agent" = "miao-installer" } `
         -Uri "https://api.github.com/repos/$repo/releases/latest"
       $Version = $release.tag_name -replace "^v", ""
-      if (-not $Version) { throw "Could not determine the latest miao version." }
+      if (-not $Version) { throw "Could not determine the latest MIAO version." }
     }
 
     if (Test-Path $exe) {
       $installed = (& $exe --version 2>$null | Out-String).Trim()
       if ($installed -eq $Version) {
-        Write-Host "miao $Version is already installed at $exe"
+        Write-Host "MIAO $Version is already installed at $exe"
         Add-MiaoToPath $installDir $NoModifyPath
         return
       }
@@ -72,7 +72,7 @@ function Install-Miao {
     }
 
     $url = "https://github.com/$repo/releases/download/v$Version/miao-windows-x64.zip"
-    Write-Host "Installing miao version $Version"
+    Write-Host "Installing MIAO version $Version"
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ("miao_install_" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
@@ -90,7 +90,7 @@ function Install-Miao {
       if (Test-Path $exe) {
         $old = "$exe.old"
         Remove-Item -Force $old -ErrorAction SilentlyContinue
-        try { Move-Item -Force $exe $old } catch { throw "Close every running miao and try again: $exe is in use." }
+        try { Move-Item -Force $exe $old } catch { throw "Close every running MIAO and try again: $exe is in use." }
       }
       Move-Item -Force $downloaded.FullName $exe
       Remove-Item -Force "$exe.old" -ErrorAction SilentlyContinue
@@ -103,7 +103,7 @@ function Install-Miao {
   Add-MiaoToPath $installDir $NoModifyPath
 
   Write-Host ""
-  Write-Host " /\_/\   miao $((& $exe --version 2>$null | Out-String).Trim())" -ForegroundColor Magenta
+  Write-Host " /\_/\   MIAO $((& $exe --version 2>$null | Out-String).Trim())" -ForegroundColor Magenta
   Write-Host "( o.o )  installed to $exe"
   Write-Host " > ^ <"
   Write-Host ""

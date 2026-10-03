@@ -1,4 +1,7 @@
-import type { Agent, AgentV2Info, Command, CommandV2Info, Provider, ProviderListResponse } from "@opencode-ai/sdk/v2"
+import type { Agent, AgentV2Info, Command, CommandV2Info, Provider } from "@opencode-ai/sdk/v2"
+
+// The full provider catalog in the V1 provider-list shape the TUI keeps.
+export type ProviderCatalog = { all: Provider[]; default: Record<string, string>; connected: string[] }
 
 // The V2 agent shape carries `id` and `permissions`; the TUI store still keeps
 // the V1 Agent shape, and no consumer reads the ruleset, so map the fields used.
@@ -45,6 +48,6 @@ export function toProviderCatalog(raw: {
   all: unknown[]
   default: Record<string, string>
   connected: string[]
-}): ProviderListResponse {
-  return raw as unknown as ProviderListResponse
+}): ProviderCatalog {
+  return raw as unknown as ProviderCatalog
 }

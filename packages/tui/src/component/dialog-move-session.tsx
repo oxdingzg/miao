@@ -16,11 +16,10 @@ import { useCommandShortcut } from "../keymap"
 import { useProject } from "../context/project"
 import { Spinner } from "./spinner"
 import { DialogWorkspaceFileChanges } from "./dialog-workspace-file-changes"
-import type { ProjectDirectories } from "@opencode-ai/sdk/v2"
+import type { ProjectDirectory } from "@opencode-ai/sdk/v2"
 import { useRoute } from "../context/route"
 
 export type MoveSessionSelection = { type: "directory"; directory: string; subdirectory: boolean } | { type: "new" }
-type ProjectDirectory = ProjectDirectories[number]
 
 type DialogMoveSessionProps = {
   projectID: string

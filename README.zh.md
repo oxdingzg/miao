@@ -1,21 +1,21 @@
 <p align="center">
-  <strong>miao</strong>
+  <strong>MIAO</strong>
 </p>
 <p align="center">模型由你选，工作持续推进，少浪费上下文。</p>
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh.md">简体中文</a>
 </p>
 <p align="center">
-  <a href="https://mtty.dev/zh/miao">官网</a> · <a href="#快速开始">快速开始</a> · <a href="#为什么选择-miao">为什么选择 miao</a> · <a href="docs/guide.zh.md">使用指南</a> · <a href="https://github.com/oxdingzg/miao/releases">下载版本</a> · <a href="#相关项目">相关项目</a>
+  <a href="https://mtty.dev/zh/miao">官网</a> · <a href="#快速开始">快速开始</a> · <a href="#为什么选择-miao">为什么选择 MIAO</a> · <a href="docs/guide.zh.md">使用指南</a> · <a href="https://github.com/oxdingzg/miao/releases">下载版本</a> · <a href="#相关项目">相关项目</a>
 </p>
 
 ---
 
-**miao 是一个开源 AI 编程代理，让你在终端里完成真实工程任务，也看清任务消耗了多少时间和费用。** 使用你选择的模型，让代理理解仓库、修改代码、执行命令并验证结果。
+**MIAO 是一个开源 AI 编程代理，让你在终端里完成真实工程任务，也看清任务消耗了多少时间和费用。** 使用你选择的模型，让代理理解仓库、修改代码、执行命令并验证结果。
 
 miao 基于 [opencode](https://github.com/anomalyco/opencode)，把重点放在模型周围的工程能力上：**上下文效率、持久化会话、代理协作，以及长任务的执行控制。** 目标是用更少的等待、更少浪费的 token，得到同样有用的结果。
 
-## 为什么选择 miao
+## 为什么选择 MIAO
 
 ### 按任务选择模型，保留熟悉的工作流
 
@@ -43,7 +43,7 @@ V2 使用持久化输入与事件记录保存会话。你可以查看、重新�
 
 ## 面向日常工程工作的能力
 
-| 你要完成的事       | miao 提供的能力                                                           |
+| 你要完成的事       | MIAO 提供的能力                                                           |
 | ------------------ | ------------------------------------------------------------------------- |
 | 理解陌生仓库       | 文件读取、搜索、项目指令、技能、专项子代理                                |
 | 实现功能并验证     | 文件编辑与补丁、Shell 命令、可选 LSP 诊断和格式化                         |
@@ -99,7 +99,7 @@ V2 自治循环需要显式开启：待办仍未完成时继续推进，同时�
 
 ## 用微信、QQ 遥控会话（实验性）
 
-`miao remote` 在 `127.0.0.1` 上同时运行 miao 服务和已接入的 IM 通道（微信 iLink ClawBot、QQ 机器人），可以在手机上查看会话、新建会话、发 prompt、审批工具调用、中断。只接受扫码登录者本人的消息，只能遥控 `remote.projects` 里列出的目录。
+`miao remote` 在 `127.0.0.1` 上同时运行 MIAO 服务和已接入的 IM 通道（微信 iLink ClawBot、QQ 机器人），可以在手机上查看会话、新建会话、发 prompt、审批工具调用、中断。只接受扫码登录者本人的消息，只能遥控 `remote.projects` 里列出的目录。
 
 ```sh
 miao remote login wechat   # 用微信扫码登录
@@ -151,7 +151,7 @@ miao 处于 pre-1.0。V1 会话运行时及其旧 `/session/*` 路由已删除�
 
 ### 从 V1 到 V2
 
-V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内核。V1 会话运行时、旧工具，以及 `/session/*`、`/permission/*`、`/question/*`、`/sync/*` 路由均已删除，所有已发布客户端都运行 V2。仍保留两处兼容面：读取 V2 之前历史的数据库迁移层，以及仍在迁移到 `/api/*` 的非会话旧路由。
+V1 是 MIAO 从 opencode 继承的会话运行时，V2 是 MIAO 重写的新内核。V1 会话运行时、旧工具，以及 `/session/*`、`/permission/*`、`/question/*`、`/sync/*` 路由均已删除，所有已发布客户端都运行 V2。仍保留两处兼容面：读取 V2 之前历史的数据库迁移层，以及仍在迁移到 `/api/*` 的非会话旧路由。
 
 | 关注点                                         | 状态                                            |
 | ---------------------------------------------- | ----------------------------------------------- |
@@ -170,7 +170,7 @@ V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内�
 
 | 项目             | 是什么                                                                                                | 链接                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **miao**(本仓库) | 在终端里运行的 AI 编程代理                                                                            | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **MIAO**(本仓库) | 在终端里运行的 AI 编程代理                                                                            | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
 | **mtty**         | 用 Rust 编写、GPU 渲染的终端(macOS、Linux、Windows),能看出每个窗格里的代理正在工作、在等你,还是已完成 | [mtty.dev/mtty](https://mtty.dev/zh/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term)                               |
 | **mtty.dev**     | 两者的官网与文档站                                                                                    | [mtty.dev](https://mtty.dev/zh/)                                                                                                      |
 
@@ -179,7 +179,7 @@ miao 与 mtty 是两个独立项目,任意一个都可以单独使用。在 mtty
 ## 文档与开发
 
 - [使用指南](docs/guide.zh.md) · [Usage guide](docs/guide.en.md)
-- [miao 与 opencode 基线对比](docs/miao-vs-opencode.zh.md) —— 测量数据、差异和接入状态
+- [MIAO 与 opencode 基线对比](docs/miao-vs-opencode.zh.md) —— 测量数据、差异和接入状态
 - [发布流程](docs/release.zh.md) —— 版本、构建与发布
 - [运行时设计](CONTEXT.md) · [V2 规格](specs/v2) —— 会话、上下文与客户端契约
 
