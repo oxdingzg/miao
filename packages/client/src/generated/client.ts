@@ -132,6 +132,8 @@ import type {
   SkillsListInput,
   SkillsListOutput,
   EventsSubscribeOutput,
+  PtysShellsInput,
+  PtysShellsOutput,
   PtysListInput,
   PtysListOutput,
   PtysCreateInput,
@@ -1185,6 +1187,18 @@ export function make(options: ClientOptions) {
         ),
     },
     ptys: {
+      shells: (input?: PtysShellsInput, requestOptions?: RequestOptions) =>
+        request<PtysShellsOutput>(
+          {
+            method: "GET",
+            path: `/api/pty/shells`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
       list: (input?: PtysListInput, requestOptions?: RequestOptions) =>
         request<PtysListOutput>(
           {

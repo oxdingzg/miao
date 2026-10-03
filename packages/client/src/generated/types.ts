@@ -3112,6 +3112,21 @@ export type SkillsListOutput = {
 
 export type EventsSubscribeOutput = OpenCodeEventEncoded
 
+export type PtysShellsInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type PtysShellsOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{ readonly path: string; readonly name: string; readonly acceptable: boolean }>
+}
+
 export type PtysListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

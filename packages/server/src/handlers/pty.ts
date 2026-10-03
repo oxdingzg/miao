@@ -2,6 +2,7 @@ import { Pty } from "@miao/core/pty"
 import { PtyProtocol } from "@miao/core/pty/protocol"
 import { PtyTicket } from "@miao/core/pty/ticket"
 import { Location } from "@miao/core/location"
+import { Shell } from "@miao/core/shell"
 import { Effect, Queue } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -29,6 +30,12 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
     const environment = yield* PtyEnvironment.Service
 
     return handlers
+      .handle(
+        "pty.shells",
+        Effect.fn(function* () {
+          return yield* response(Effect.promise(() => Shell.list()))
+        }),
+      )
       .handle(
         "pty.list",
         Effect.fn(function* () {

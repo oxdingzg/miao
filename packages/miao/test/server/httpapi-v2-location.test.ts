@@ -107,6 +107,15 @@ describe("v2 location HttpApi", () => {
     }
   })
 
+  test("lists the host shells", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const response = await request("/api/pty/shells", tmp.path)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: { path: string; name: string; acceptable: boolean }[] }
+    expect(body.data.length).toBeGreaterThan(0)
+    expect(body.data.some((shell) => shell.acceptable)).toBe(true)
+  })
+
   test("returns working-tree and branch diffs", async () => {
     await using tmp = await tmpdir({ git: true })
     await Bun.write(path.join(tmp.path, "tracked.txt"), "one\n")

@@ -20,6 +20,20 @@ export function hasPtyConnectTicketURL(url: URL) {
 
 export const PtyGroup = HttpApiGroup.make("server.pty")
   .add(
+    HttpApiEndpoint.get("pty.shells", "/api/pty/shells", {
+      query: LocationQuery,
+      success: Location.response(Schema.Array(Pty.Shell)),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.pty.shells",
+          summary: "List available shells",
+          description: "List the shells installed on the server host and whether each can run a terminal session.",
+        }),
+      ),
+  )
+  .add(
     HttpApiEndpoint.get("pty.list", "/api/pty", {
       query: LocationQuery,
       success: Location.response(Schema.Array(Pty.Info)),
