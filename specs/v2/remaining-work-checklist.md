@@ -3,9 +3,11 @@
 Companion to `specs/v2/remaining-work-handoff.md`. Tick items in order; each slice ends with the
 Definition of Done. Run in `miao-dev` only.
 
-> Progress (2026-10-02): the client `MIAO_TUI_V2=0` / `?protocol=v1` fallbacks are removed. The TUI
-> and app always use the V2 API; TUI test fixtures were migrated to V2 (`packages/tui` 366 pass /
-> 0 fail). Stage 5 (delete server V1) still waits on P3 DB compact and the R1 soak.
+> Progress (2026-10-03): the V1 session runtime (`packages/miao/src/session`,
+> `packages/miao/src/tool`) and the `/session/*`, `/permission/*`, `/question/*`, `/sync/*` route
+> groups are deleted, so Stage 5 has landed. The client `MIAO_TUI_V2=0` / `?protocol=v1` fallbacks
+> are gone and every shipped client uses the V2 API. Remaining: the legacy JS SDK (P5) and the
+> non-session legacy routes (P7).
 
 ## 0. Guardrails
 - [ ] Confirm working in `miao-dev` (source), not release `miao`
@@ -49,14 +51,14 @@ Definition of Done. Run in `miao-dev` only.
 - [ ] Same acceptance as TUI; commit + push (client cutover landed; live soak remains)
 
 ## 4. Stage 5 — delete V1
-- [ ] Gate: no shipped client imports/calls a `/session/*` route
-- [ ] Delete app SDK shims
-- [ ] Delete V1 route groups
-- [ ] Delete V1 session engine
-- [ ] Delete V1 tools/transport
-- [ ] Delete `packages/core/v1` schemas
-- [ ] Delete legacy SDK
-- [ ] Delete `packages/miao` V1 server/engine
+- [x] Gate: no shipped client imports/calls a `/session/*` route
+- [ ] Delete app SDK shims (non-session legacy routes still pending, P7)
+- [x] Delete V1 route groups
+- [x] Delete V1 session engine
+- [x] Delete V1 tools/transport
+- [ ] Delete `packages/core/v1` schemas — retained on purpose for legacy DB reads and backfill
+- [ ] Delete legacy SDK (P5)
+- [x] Delete `packages/miao` V1 server/engine
 - [ ] `bun typecheck` + full suites green; commit + push
 
 ## 5. SendMessage (session-to-session)

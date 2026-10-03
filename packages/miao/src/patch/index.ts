@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import * as path from "path"
 import { FSUtil } from "@miao/core/fs-util"
 import * as Bom from "../util/bom"
-import { native } from "../tool/native"
+import { native } from "../native"
 
 export const PatchSchema = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),

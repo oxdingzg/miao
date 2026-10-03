@@ -10,6 +10,19 @@ to add a section here.
 
 ## [Unreleased]
 
+### Removed
+
+- **core**: the V1 session runtime (`packages/miao/src/session`), the legacy tools
+  (`packages/miao/src/tool`), and the `/session/*`, `/permission/*`, `/question/*`, and `/sync/*`
+  routes. Every shipped client now runs V2. The migration readers (`miao db backfill` / `compact` /
+  `restore`) and old-shape config reading remain.
+- **miao**: the `miao github` command; use `miao pr`.
+
+### Changed
+
+- **core**: the OS sandbox for `bash` is part of the V2 tool, opt-in through `sandbox` config or
+  `MIAO_SANDBOX=1`.
+
 ## [0.0.15] - 2026-09-30
 
 Published release: [v0.0.15](https://github.com/oxdingzg/miao/releases/tag/v0.0.15).

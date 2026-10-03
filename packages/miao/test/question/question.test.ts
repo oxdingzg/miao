@@ -6,7 +6,7 @@ import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceStore } from "../../src/project/instance-store"
 import { QuestionID } from "../../src/question/schema"
 import { disposeAllInstances, provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
-import { SessionID } from "../../src/session/schema"
+import { SessionV2 } from "@miao/core/session"
 import { testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
@@ -16,7 +16,7 @@ const it = testEffect(questionLayer)
 const lifecycle = testEffect(Layer.mergeAll(questionLayer, testInstanceStoreLayer))
 
 const askEffect = Effect.fn("QuestionTest.ask")(function* (input: {
-  sessionID: SessionID
+  sessionID: SessionV2.ID
   questions: ReadonlyArray<Question.Info>
   tool?: Question.Tool
 }) {
@@ -70,7 +70,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions: [
           {
             question: "What would you like to do?",
@@ -106,7 +106,7 @@ it.instance(
       ]
 
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions,
       }).pipe(Effect.forkScoped)
 
@@ -137,7 +137,7 @@ it.instance(
       ]
 
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions,
       }).pipe(Effect.forkScoped)
 
@@ -159,7 +159,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions: [
           {
             question: "What would you like to do?",
@@ -210,7 +210,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions: [
           {
             question: "What would you like to do?",
@@ -238,7 +238,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions: [
           {
             question: "What would you like to do?",
@@ -302,7 +302,7 @@ it.instance(
       ]
 
       const fiber = yield* askEffect({
-        sessionID: SessionID.make("ses_test"),
+        sessionID: SessionV2.ID.make("ses_test"),
         questions,
       }).pipe(Effect.forkScoped)
 
@@ -325,7 +325,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber1 = yield* askEffect({
-        sessionID: SessionID.make("ses_test1"),
+        sessionID: SessionV2.ID.make("ses_test1"),
         questions: [
           {
             question: "Question 1?",
@@ -336,7 +336,7 @@ it.instance(
       }).pipe(Effect.forkScoped)
 
       const fiber2 = yield* askEffect({
-        sessionID: SessionID.make("ses_test2"),
+        sessionID: SessionV2.ID.make("ses_test2"),
         questions: [
           {
             question: "Question 2?",
@@ -371,7 +371,7 @@ lifecycle.live("questions stay isolated by directory", () =>
     const two = yield* tmpdirScoped({ git: true })
 
     const fiber1 = yield* askEffect({
-      sessionID: SessionID.make("ses_one"),
+      sessionID: SessionV2.ID.make("ses_one"),
       questions: [
         {
           question: "Question 1?",
@@ -382,7 +382,7 @@ lifecycle.live("questions stay isolated by directory", () =>
     }).pipe(provideInstance(one), Effect.forkScoped)
 
     const fiber2 = yield* askEffect({
-      sessionID: SessionID.make("ses_two"),
+      sessionID: SessionV2.ID.make("ses_two"),
       questions: [
         {
           question: "Question 2?",
@@ -397,8 +397,8 @@ lifecycle.live("questions stay isolated by directory", () =>
 
     expect(onePending.length).toBe(1)
     expect(twoPending.length).toBe(1)
-    expect(onePending[0].sessionID).toBe(SessionID.make("ses_one"))
-    expect(twoPending[0].sessionID).toBe(SessionID.make("ses_two"))
+    expect(onePending[0].sessionID).toBe(SessionV2.ID.make("ses_one"))
+    expect(twoPending[0].sessionID).toBe(SessionV2.ID.make("ses_two"))
 
     yield* rejectEffect(onePending[0].id).pipe(provideInstance(one))
     yield* rejectEffect(twoPending[0].id).pipe(provideInstance(two))
@@ -412,7 +412,7 @@ lifecycle.live("pending question rejects on instance dispose", () =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped({ git: true })
     const fiber = yield* askEffect({
-      sessionID: SessionID.make("ses_dispose"),
+      sessionID: SessionV2.ID.make("ses_dispose"),
       questions: [
         {
           question: "Dispose me?",
@@ -439,7 +439,7 @@ lifecycle.live("pending question rejects on instance reload", () =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped({ git: true })
     const fiber = yield* askEffect({
-      sessionID: SessionID.make("ses_reload"),
+      sessionID: SessionV2.ID.make("ses_reload"),
       questions: [
         {
           question: "Reload me?",

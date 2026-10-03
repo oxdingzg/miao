@@ -79,6 +79,11 @@
 
 ### Phase 1 —— 单一运行时（约 3–4 周）
 
+状态（2026-10-03）：V1 会话运行时已删除——`packages/miao/src/session`、`packages/miao/src/tool` 与旧
+`/session/*`、`/permission/*`、`/question/*`、`/sync/*` 路由组不再存在；`--mini`、ACP（`packages/acp`，
+只依赖 `@miao/client`）、`miao run` 都走 V2；日常库已压缩。尚未删除的未用上游包（web / console /
+enterprise / stats / function / slack 等）与旧 JS SDK 属收尾工作。
+
 - `--mini` 和 ACP 迁到 V2（ACP 放在只说 V2 的独立适配层里——日后可以用 Rust `miao-acp` 替换的接缝）。
 - 删除 V1 会话/运行时代码和未使用的上游包（web、console、enterprise、stats、function、slack、infra，
   sdks/vscode 若不采用也删）。

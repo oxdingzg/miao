@@ -21,16 +21,16 @@ miao 延续 opencode 的开源编程工作流，把工程投入集中在上下�
 
 ## 已有的原生基准记录
 
-基线是本仓库引入原生模块之前的 TypeScript 实现，不是当前的 `anomalyco/opencode`。数据为同机 release 构建的中位数，测量经 Rust 插件调用的独立操作，不包含双方共有的编排、I/O、LSP、格式化、供应商延迟或模型推理。本次文档更新没有重新运行这些基准。
+基线是本仓库引入原生模块之前的 TypeScript 实现，不是当前的 `anomalyco/opencode`。数据为同机 release 构建的中位数，测量经 Rust 插件调用的独立操作，不包含双方共有的编排、I/O、LSP、格式化、供应商延迟或模型推理。本次文档更新没有重新运行这些基准。表中的原生 edit／patch 路径属于已被删除的 V1 兼容工具，数字作为历史组件测量保留。
 
 | 操作                                            | TypeScript 基线 | Rust 原生 | 提速      | 接入范围             |
 | ----------------------------------------------- | --------------- | --------- | --------- | -------------------- |
-| edit 精确匹配（12k 行）                         | 0.21 ms         | 0.12 ms   | **1.7x**  | 兼容工具路径         |
-| edit 模糊匹配（12k 行）                         | 0.76 ms         | 0.39 ms   | **1.9x**  | 兼容工具路径         |
-| edit 匹配 + diff 统计（12k 行）                 | 2.03 ms         | 1.78 ms   | 1.14x     | 兼容工具路径         |
-| apply_patch `deriveNewContents` exact（20k 行） | 1.67 ms         | 1.28 ms   | **1.3x**  | 兼容工具路径         |
-| apply_patch trim 匹配（20k 行）                 | 3.47 ms         | 1.76 ms   | **2.0x**  | 兼容工具路径         |
-| apply_patch unicode 归一化（20k 行）            | 13.06 ms        | 5.21 ms   | **2.5x**  | 兼容工具路径         |
+| edit 精确匹配（12k 行）                         | 0.21 ms         | 0.12 ms   | **1.7x**  | 已删除的 V1 路径     |
+| edit 模糊匹配（12k 行）                         | 0.76 ms         | 0.39 ms   | **1.9x**  | 已删除的 V1 路径     |
+| edit 匹配 + diff 统计（12k 行）                 | 2.03 ms         | 1.78 ms   | 1.14x     | 已删除的 V1 路径     |
+| apply_patch `deriveNewContents` exact（20k 行） | 1.67 ms         | 1.28 ms   | **1.3x**  | 已删除的 V1 路径     |
+| apply_patch trim 匹配（20k 行）                 | 3.47 ms         | 1.76 ms   | **2.0x**  | 已删除的 V1 路径     |
+| apply_patch unicode 归一化（20k 行）            | 13.06 ms        | 5.21 ms   | **2.5x**  | 已删除的 V1 路径     |
 | git status 小仓（10 文件 / 2 变更）             | 12.3 ms         | 1.0 ms    | **11.9x** | 原型，未接入默认路径 |
 | git status 大仓（2200 文件 / 400 变更）         | 13.6 ms         | 5.8 ms    | **2.4x**  | 原型，未接入默认路径 |
 
@@ -38,18 +38,18 @@ miao 延续 opencode 的开源编程工作流，把工程投入集中在上下�
 
 ## 原生工具与沙箱：适用范围
 
-当前代码存在两套工具实现。原生接入位于 `packages/miao/src/tool`，默认 V2 runner 使用 `packages/core/src/tool` 中独立实现的工具。
+V2 是唯一的会话运行时，工具位于 `packages/core/src/tool`；V1 兼容工具及其在 `packages/miao/src/tool` 的原生 edit／patch 路径均已删除。
 
-- **兼容路径的 edit／patch：** 可用时使用原生插件，并保留 TypeScript 回退；`MIAO_NATIVE=0` 可禁用原生路径。这不代表 V2 编辑已经使用插件。
+- **edit／patch：** V2 工具是 TypeScript 实现（`edit-fuzzy.ts` 等）。上表中的原生 edit／patch 加速已不再接入任何已发布工具。
+- **OS 沙箱：** V2 `bash` 工具可以把每条命令放进沙箱运行。macOS 用 seatbelt，Linux 用 Landlock，Windows 暂无后端。用 `sandbox.mode: "workspace-write"` 或 `MIAO_SANDBOX=1` 开启，`MIAO_SANDBOX_DENY_NETWORK=1` 禁止网络。默认关闭，需显式开启。
+- **native addon：** `MIAO_NATIVE=0` 可禁用 addon。它为沙箱 runner 和其他原生辅助提供支持，不用于 V2 edit／patch。
 - **进程内 Git：** 已有 `gix` 实现和基准，尚未成为默认 Git 路径。
-- **兼容路径的 Shell 沙箱：** `MIAO_SANDBOX=1` 显式开启；macOS seatbelt 与 Linux Landlock 限制写入。Shell 接入默认放行网络，叠加 `MIAO_SANDBOX_DENY_NETWORK=1` 才限制网络。实际可用性取决于平台和打包的后端。
-- **V2 权限：** 默认依赖规则式批准。V2 `bash` 工具目前未经过兼容沙箱，单独设置环境变量不构成 V2 内核隔离。
 
-依赖沙箱前，请阅读 [使用指南](guide.zh.md#56-内核级沙箱兼容运行时需开启) 与 [接入风险](rust-integration-risks.zh.md)。Windows 内核沙箱尚未实现同等能力。
+依赖沙箱前，请阅读 [使用指南](guide.zh.md#56-内核级沙箱需开启) 与 [接入风险](rust-integration-risks.zh.md)。Windows 内核沙箱尚未实现同等能力。
 
 ## 边界与后续工作
 
-- V2 是默认 TUI 运行时，V1 退役仍在推进。
+- V1 会话运行时及其 `/session/*` 路由已删除，所有已发布客户端都运行 V2；数据库迁移与非会话旧路由仍然保留。
 - 持久化历史与精确提示重试校验，不等于模型执行自动恢复或 Shell 副作用严格只发生一次。
 - 会话执行和消息唤醒限于本进程，不宣传跨机器代理集群。
 - Code Mode 属于实验功能；生成的客户端与内嵌 host 是私有工作区包，契约仍在演进。

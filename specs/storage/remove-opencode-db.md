@@ -1,5 +1,8 @@
 # Remove `packages/miao/src/storage/db.ts`
 
+> Status (2026-10-03): done. `packages/miao/src/storage/db.ts` no longer exists and no
+> `@/storage/db` imports remain. The inventory and plan below are historical.
+
 ## Goal
 
 Remove all production usages of the legacy `packages/miao/src/storage/db.ts` module.

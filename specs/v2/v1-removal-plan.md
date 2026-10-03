@@ -30,6 +30,8 @@
 
 进展（2026-10-02，P7 开始）：TUI 已把 `find.files`→`v2.fs.find`、`path.get`→`v2.location.get`、`project.current/directories`→`v2.project.*` 迁到 V2（`packages/tui` 367 测试通过）。P7 清单与缺口（`config`/`mcp`/`lsp`/`vcs`/`formatter`/`experimental-workspace`/`instance-app`/`sync` 尚无 `/api/*` 组）见 `specs/v2/p7-non-session-routes.md`；补齐这些 V2 端点并迁移客户端是下一步主体。
 
+进展（2026-10-03，P4 会话运行时删除）：`packages/miao/src/session` 与 `packages/miao/src/tool` 已删除；V1 会话路由组 `session`/`permission`/`question`/`sync` 及其 handlers 从 assembly 移除（`legacy-route` 中间件保留，仅用于观测）。`packages/core/src/v1`（config/permission/session）与 core 的 `backfill`/`compact`/`v1-read`/`legacy-tables`/`restore` 保留，用于读取旧库以及 `miao db backfill`/`compact`/`restore`。`miao github` 已删除，`miao pr` 保留。剩余：旧 JS SDK（P5）与 `config`/`mcp`/`lsp` 等非会话旧路由（P7）。
+
 ---
 
 

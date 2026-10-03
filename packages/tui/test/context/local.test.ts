@@ -28,6 +28,9 @@ test("hydrates per-agent persisted models and drops malformed entries", () => {
       plan: { providerID: "provider" },
       broken: "nope",
       empty: null,
+      unknown: { providerID: "", modelID: "" },
+      missingProvider: { providerID: "", modelID: "model" },
+      missingModel: { providerID: "provider", modelID: "" },
     }),
   ).toEqual({ build: { providerID: "provider", modelID: "family/model" } })
 })

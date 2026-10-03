@@ -20,7 +20,6 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { Project } from "../../src/project/project"
-import { Session } from "../../src/session/session"
 import {
   InstanceContextMiddleware,
   instanceContextLayer,
@@ -122,7 +121,6 @@ const serveProbes = (input: {
       ),
     ),
     Layer.provide(instanceContextTestLayer),
-    Layer.provide(Layer.mock(Session.Service)({})),
     HttpRouter.serve,
     Layer.build,
   )

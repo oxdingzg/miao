@@ -14,7 +14,7 @@
 //   4. runs the prompt queue until the footer closes.
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { Flag } from "@miao/core/flag/flag"
-import { MessageID } from "@/session/schema"
+import { SessionMessage } from "@miao/core/session/message"
 import { createRunDemo } from "./demo"
 import { resolveModelInfo, resolveRunTuiConfig, resolveSessionInfo } from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
@@ -632,7 +632,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
                 text: error instanceof Error ? error.message : String(error),
                 phase: "start",
                 source: "system",
-                messageID: MessageID.ascending(),
+                messageID: SessionMessage.ID.create(),
               } as const
               rememberLocal(commit)
               footer.append(commit)

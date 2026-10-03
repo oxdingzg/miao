@@ -23,12 +23,11 @@ This package is an Effect Schema-first LLM core. The Schema classes in `src/sche
 
 Primary in-repo integration point:
 
-- `packages/miao/src/session/llm.ts` is the session-owned orchestration layer that decides whether a request uses AI SDK or this package's native route runtime.
-- `packages/miao/src/session/llm/native-request.ts` is the lowering adapter from opencode's session/AI SDK-shaped data into this package's `LLMRequest` model.
-- `packages/miao/src/session/llm/native-runtime.ts` is the execution adapter that calls raw `LLMClient.stream(request)` and bridges one provider turn of opencode tool calls through this package's typed dispatcher.
-- `packages/miao/src/session/llm/ai-sdk.ts` keeps the default AI SDK path compatible by converting AI SDK stream parts into this package's shared `LLMEvent`s.
+- `packages/core/src/session/runner/llm.ts` is the session-owned V2 orchestration layer. Each provider turn makes one explicit `LLMClient.stream(request)` call; there is no AI SDK versus native-route branch.
+- `packages/core/src/session/runner/to-llm-message.ts` lowers V2 session history into this package's `LLMRequest` message model.
+- `packages/core/src/session/runner/publish-llm-event.ts` projects this package's `LLMEvent`s onto durable Session events.
 
-Keep this package independent of session concerns. Session auth, permissions, plugins, telemetry headers, and runtime selection belong in `packages/miao/src/session/llm.ts` and its local adapters.
+Keep this package independent of session concerns. Session auth, permissions, plugins, telemetry headers, and continuation belong in `packages/core/src/session/runner/*`.
 
 ### Request Flow
 

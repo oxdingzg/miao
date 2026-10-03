@@ -6,7 +6,7 @@ import { SessionTable } from "@miao/core/session/sql"
 import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
 import { ProjectV2 } from "@miao/core/project"
-import { SessionID } from "../../src/session/schema"
+import { SessionV2 } from "@miao/core/session"
 import { $ } from "bun"
 import { tmpdirScoped } from "../fixture/fixture"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -18,10 +18,10 @@ const it = testEffect(LayerNode.compile(LayerNode.group([Project.node, Database.
 
 function legacySessionID() {
   // Global-session migration covers persisted IDs from before prefixed session IDs.
-  return crypto.randomUUID() as SessionID
+  return crypto.randomUUID() as SessionV2.ID
 }
 
-function seed(opts: { id: SessionID; dir: string; project: ProjectV2.ID }) {
+function seed(opts: { id: SessionV2.ID; dir: string; project: ProjectV2.ID }) {
   const now = Date.now()
   return Database.Service.use(({ db }) =>
     db

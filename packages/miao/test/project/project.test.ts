@@ -10,7 +10,7 @@ import { SessionTable } from "@miao/core/session/sql"
 import { WorkspaceTable } from "@miao/core/control-plane/workspace.sql"
 import { eq } from "drizzle-orm"
 import { Hash } from "@miao/core/util/hash"
-import { SessionID } from "@/session/schema"
+import { SessionV2 } from "@miao/core/session"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -194,7 +194,7 @@ describe("Project.fromDirectory", () => {
       const rootResult = yield* projects.fromDirectory(tmp)
       const rootProject = rootResult.project
       const remoteID = remoteProjectID("github.com/acme/app")
-      const sessionID = crypto.randomUUID() as SessionID
+      const sessionID = crypto.randomUUID() as SessionV2.ID
       const workspaceID = WorkspaceV2.ID.ascending()
 
       yield* db

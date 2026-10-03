@@ -11,6 +11,7 @@ import { Permission } from "@/permission"
 import { FSUtil } from "@miao/core/fs-util"
 import { Config } from "@/config/config"
 import { FrontmatterError } from "@miao/core/v1/config/error"
+import { SessionV1 } from "@miao/core/v1/session"
 import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@miao/core/util/glob"
@@ -111,8 +112,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
     Effect.catch(
       Effect.fnUntraced(function* (err) {
         const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match}`
-        const { Session } = yield* Effect.promise(() => import("@/session/session"))
-        yield* events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+        yield* events.publish(SessionV1.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
         yield* Effect.logError("failed to load skill", { skill: match, error: err })
         return undefined
       }),

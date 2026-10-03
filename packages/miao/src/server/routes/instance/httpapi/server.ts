@@ -31,23 +31,10 @@ import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
 import { Provider } from "@/provider/provider"
 import { Question } from "@/question"
-import { SessionCompaction } from "@/session/compaction"
-import { Instruction } from "@/session/instruction"
-import { LLM } from "@/session/llm"
-import { SessionProcessor } from "@/session/processor"
-import { SessionPrompt } from "@/session/prompt"
-import { SessionRevert } from "@/session/revert"
-import { SessionRunState } from "@/session/run-state"
-import { Session } from "@/session/session"
-import { SessionStatus } from "@/session/status"
-import { SessionSummary } from "@/session/summary"
-import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
 import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
-import { ToolRegistry } from "@/tool/registry"
-import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@miao/core/control-plane/move-session"
@@ -66,7 +53,7 @@ import { Ripgrep } from "@miao/core/ripgrep"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
-import * as SessionExecutionLocal from "@miao/core/session/execution/local"
+import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@miao/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
@@ -91,13 +78,9 @@ import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { mcpHandlers } from "./handlers/mcp"
-import { permissionHandlers } from "./handlers/permission"
 import { projectHandlers } from "./handlers/project"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
-import { questionHandlers } from "./handlers/question"
-import { sessionHandlers } from "./handlers/session"
-import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@miao/server/handlers"
 import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location-services"
@@ -162,11 +145,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     mcpHandlers,
     projectHandlers,
     ptyHandlers,
-    questionHandlers,
-    permissionHandlers,
     providerHandlers,
-    sessionHandlers,
-    syncHandlers,
     tuiHandlers,
     workspaceHandlers,
   ]),
@@ -238,27 +217,14 @@ const app = LayerNode.group([
   Question.node,
   Permission.node,
   PermissionSaved.node,
-  Todo.node,
-  Session.node,
   SessionProjector.node,
-  SessionStatus.node,
   BackgroundJob.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
-  SessionRunState.node,
-  SessionProcessor.node,
-  SessionCompaction.node,
-  SessionRevert.node,
-  SessionSummary.node,
-  SessionPrompt.node,
-  Instruction.node,
-  LLM.node,
   LSP.node,
   MCP.node,
   McpAuth.node,
   Command.node,
-  Truncate.node,
-  ToolRegistry.node,
   Format.node,
   Project.node,
   Vcs.node,
@@ -313,7 +279,12 @@ export function createRoutes(
     // Plugin `shell.env` hooks for the V2 bash tool; needs the V1 plugin and instance services below.
     Layer.provide(PluginShellEnvironment.layer),
 
-    Layer.provide(AppNodeBuilderV1.build(app)),
+    Layer.provide(
+      AppNodeBuilderV1.build(app, [
+        [LocationServiceMap.node, locationServiceMapV2],
+        [SessionExecution.node, SessionExecutionLocal.node],
+      ]),
+    ),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,
     // so Observability must come after every service graph. Otherwise eagerly forked
     // fibers (e.g. the ModelsDev background refresh) capture Effect's default stdout

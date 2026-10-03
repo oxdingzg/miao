@@ -1,12 +1,10 @@
 import { describe, expect } from "bun:test"
-import { LayerNode } from "@miao/core/effect/layer-node"
-import { Effect, Layer } from "effect"
-import { Session } from "@/session/session"
+import { Effect } from "effect"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(Session.node), httpApiLayer))
+const it = testEffect(httpApiLayer)
 
 describe("tui.selectSession endpoint", () => {
   it.instance(
@@ -14,12 +12,17 @@ describe("tui.selectSession endpoint", () => {
     () =>
       Effect.gen(function* () {
         const tmp = yield* TestInstance
-        const session = yield* Session.use.create({})
+        const created = yield* requestInDirectory("/api/session", tmp.directory, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })
+        const session = (yield* created.json) as { data: { id: string } }
 
         const response = yield* requestInDirectory("/tui/select-session", tmp.directory, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionID: session.id }),
+          body: JSON.stringify({ sessionID: session.data.id }),
         })
 
         expect(response.status).toBe(200)

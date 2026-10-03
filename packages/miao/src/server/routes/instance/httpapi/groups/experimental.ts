@@ -1,8 +1,6 @@
 import { AccountID, OrgID } from "@/account/schema"
 import { MCP } from "@/mcp"
 
-import { Session } from "@/session/session"
-import { SessionID } from "@/session/schema"
 import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@miao/core/schema"
 import { Schema } from "effect"
@@ -12,12 +10,8 @@ import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
   WorkspaceRoutingMiddleware,
   WorkspaceRoutingQuery,
-  WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
-import { QueryBoolean } from "./query"
-import { ProviderV2 } from "@miao/core/provider"
-import { ModelV2 } from "@miao/core/model"
 
 const ConsoleStateResponse = Schema.Struct({
   consoleManagedProviders: Schema.mutable(Schema.Array(Schema.String)),
@@ -47,19 +41,6 @@ export const ConsoleSwitchPayload = Schema.Struct({
   orgID: OrgID,
 })
 
-const ToolIDs = Schema.Array(Schema.String).annotate({ identifier: "ToolIDs" })
-const ToolListItem = Schema.Struct({
-  id: Schema.String,
-  description: Schema.String,
-  parameters: Schema.Unknown,
-}).annotate({ identifier: "ToolListItem" })
-const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
-export const ToolListQuery = Schema.Struct({
-  ...WorkspaceRoutingQueryFields,
-  provider: ProviderV2.ID,
-  model: ModelV2.ID,
-})
-
 const WorktreeList = Schema.Array(Schema.String)
 const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeNotGitError"),
@@ -77,27 +58,14 @@ export class WorktreeApiError extends Schema.ErrorClass<WorktreeApiError>("Workt
   },
   { httpApiStatus: 400 },
 ) {}
-export const SessionListQuery = Schema.Struct({
-  ...WorkspaceRoutingQueryFields,
-  roots: Schema.optional(QueryBoolean),
-  start: Schema.optional(Schema.NumberFromString),
-  cursor: Schema.optional(Schema.NumberFromString),
-  search: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.NumberFromString),
-  archived: Schema.optional(QueryBoolean),
-})
 
 export const ExperimentalPaths = {
   capabilities: "/experimental/capabilities",
   console: "/experimental/console",
   consoleOrgs: "/experimental/console/orgs",
   consoleSwitch: "/experimental/console/switch",
-  tool: "/experimental/tool",
-  toolIDs: "/experimental/tool/ids",
   worktree: "/experimental/worktree",
   worktreeReset: "/experimental/worktree/reset",
-  session: "/experimental/session",
-  sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
 } as const
 
@@ -149,30 +117,6 @@ export const ExperimentalApi = HttpApi.make("experimental")
             description: "Persist a new active Console account/org selection for the current local OpenCode state.",
           }),
         ),
-        HttpApiEndpoint.get("tool", ExperimentalPaths.tool, {
-          query: ToolListQuery,
-          success: described(ToolList, "Tools"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "tool.list",
-            summary: "List tools",
-            description:
-              "Get a list of available tools with their JSON schema parameters for a specific provider and model combination.",
-          }),
-        ),
-        HttpApiEndpoint.get("toolIDs", ExperimentalPaths.toolIDs, {
-          query: WorkspaceRoutingQuery,
-          success: described(ToolIDs, "Tool IDs"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "tool.ids",
-            summary: "List tool IDs",
-            description:
-              "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
-          }),
-        ),
         HttpApiEndpoint.get("worktree", ExperimentalPaths.worktree, {
           query: WorkspaceRoutingQuery,
           success: described(WorktreeList, "List of worktree directories"),
@@ -219,30 +163,6 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "worktree.reset",
             summary: "Reset worktree",
             description: "Reset a worktree branch to the primary default branch.",
-          }),
-        ),
-        HttpApiEndpoint.get("session", ExperimentalPaths.session, {
-          query: SessionListQuery,
-          success: described(Schema.Array(Session.GlobalInfo), "List of sessions"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "experimental.session.list",
-            summary: "List sessions",
-            description:
-              "Get a list of all OpenCode sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.",
-          }),
-        ),
-        HttpApiEndpoint.post("sessionBackground", ExperimentalPaths.sessionBackground, {
-          params: { sessionID: SessionID },
-          query: WorkspaceRoutingQuery,
-          success: described(Schema.Boolean, "Backgrounded subagents"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "experimental.session.background",
-            summary: "Background subagents",
-            description:
-              "Detach any synchronous subagents currently blocking the session and continue them in the background.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

@@ -7,17 +7,22 @@ endgame of the V1→V2 rebuild described in `specs/v2/todo.md`. It is staged so 
 independently verifiable and reversible, and it never leaves the daily `miao` command in a
 half-switched state that double-writes or reads intermittently.
 
-## Current topology (verified)
+## Current topology
 
-- The release binary is built from `packages/miao` and its TUI worker serves the V1 server
-  assembly (`packages/miao/src/server/routes/instance/httpapi/server.ts`), which mounts **both**
-  the V1 `/session/*` tree and the V2 `/api/session/*` tree.
-- The TUI writes through the legacy SDK `client.session.*` → `/session/*` (V1 engine
-  `packages/miao/src/session/prompt.ts`, which writes `message`/`part`).
-- The V2 engine (`packages/core/src/session/runner/llm.ts`) writes `session_message`.
-- The web/desktop app already renders V2 events (`packages/app/src/context/data.tsx`) and has a
-  protocol detector (`packages/app/src/utils/server-protocol.ts`), but the release server serves
-  `/global/health`, so the app selects V1.
+- V1 has been removed from the runtime: `packages/miao/src/session`, `packages/miao/src/tool`,
+  and the legacy `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` route groups and
+  handlers are gone.
+- The V2 engine (`packages/core/src/session/runner/llm.ts`) writes `session_message`; every
+  shipped client — TUI, `--mini`, ACP, `miao run`, the web/desktop app, and `miao remote` — reads
+  and writes through `/api/session/*`.
+- Compatibility that remains is data-only: `packages/core/src/session/{backfill,compact,v1-read,legacy-tables,restore}.ts`
+  migrate and read databases written before V2, and `packages/core/src/v1/config` still reads
+  old-shape configuration.
+- Non-session legacy routes (`/config`, `/mcp`, `/lsp`, …) are still served and are being migrated
+  to `/api/*`; see `specs/v2/p7-non-session-routes.md`.
+
+The pre-removal topology (V1 and V2 mounted side by side in the release assembly) is described in
+the git history before this change.
 
 ## Why it is staged
 
@@ -54,8 +59,8 @@ aggregate's events.
 `revert` / `unrevert` aliases are not needed: V2 already exposes `revert.stage` / `revert.clear` /
 `revert.commit`, which is what the clients call.
 
-Stage 2 is complete. Stages 3 and 4 are complete; Stage 5 (delete V1) remains, gated on a soak of
-the V2 runtime.
+Stage 2 is complete. Stages 3, 4, and 5 have landed: the runtime is V2-only. The remaining work is
+the legacy JS SDK (P5) and the non-session legacy routes (P7).
 
 
 The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
@@ -107,12 +112,11 @@ reads and continues normally.
 The 503 from the guard is the signal a client should surface to prompt the user to run
 `miao db backfill` once before the cutover.
 
-**Stage 4 — write flip, per surface (landed).** The TUI defaults to the V2 runtime
-(`MIAO_TUI_V2=0` falls back to V1): session writes, `context`/`messages`,
-`get`/`todo`/`list`/`rename`/`remove`/`diff`, permissions, questions, and status all go through
-`/api/session/*`, with V2 shapes mapped in `packages/tui/src/context/session-v2-read.ts`. The
-app/desktop/web surfaces select V2 whenever the server advertises it (`?protocol=v1` forces V1).
-V1 routes remain mounted but are reachable only through those explicit fallbacks.
+**Stage 4 — write flip, per surface (landed; rollbacks later removed).** Session writes,
+`context`/`messages`, `get`/`todo`/`list`/`rename`/`remove`/`diff`, permissions, questions, and
+status all go through `/api/session/*`, with V2 shapes mapped in
+`packages/tui/src/context/session-v2-read.ts`. The TUI and the app/desktop/web surfaces always use
+V2. The temporary `MIAO_TUI_V2=0` and `?protocol=v1` rollbacks were removed with V1.
 
 Behaviors that changed because V2 has no exact equivalent (confirm during soak): `session.list`
 drops the V1 `start` recency filter and filters roots client-side; status comes from
@@ -123,11 +127,13 @@ Creation is now fully V2: `SessionCreate` publishes `session.next.created.1` (cu
 `Session.Info` plus `slug`/`version`) instead of the legacy `session.created`, so the create path
 writes no V1 durable event. The V1 projector remains only to read/backfill older databases.
 
-**Stage 5 — delete V1 (gated on soak).** In the order from the migration map: app SDK shims → V1
-route groups → V1 session engine → V1 tools/transport → `packages/core/v1` schemas → legacy SDK →
-the `packages/miao` server/engine. Each deletion only after its prerequisite stage is soaked. With
-Stage 4 landed the default client paths no longer call `/session/*`, so the gate can be evaluated;
-deletion also removes the `MIAO_TUI_V2=0` / `?protocol=v1` rollbacks.
+**Stage 5 — delete V1 (landed).** The V1 session engine and tools
+(`packages/miao/src/session`, `packages/miao/src/tool`), the `/session/*`, `/permission/*`,
+`/question/*`, and `/sync/*` route groups and handlers, and the `MIAO_TUI_V2=0` / `?protocol=v1`
+rollbacks are removed. `packages/core/v1` (config, permission, session) and the core session
+migration readers remain deliberately: they are needed for backward-compatible reads and
+`miao db backfill` / `compact` / `restore`. The legacy JS SDK package and the non-session legacy
+routes are the remaining P5/P7 work.
 
 ## Acceptance for the cutover
 
@@ -136,7 +142,7 @@ deletion also removes the `MIAO_TUI_V2=0` / `?protocol=v1` rollbacks.
 - The TUI and app show identical transcripts for the same session before and after the write flip.
 - `bun run typecheck` plus `packages/core`, `packages/miao`, `packages/tui`, `packages/client`
   suites pass at every stage.
-- No shipped client imports or calls a `/session/*` (V1) route after Stage 5.
+- No shipped client imports or calls a `/session/*` (V1) route; the routes are no longer served.
 
 ## Stage 1 (first round, complete)
 

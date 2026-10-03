@@ -1,4 +1,4 @@
-//! `miao-run`: run a command under a macOS seatbelt sandbox.
+//! `miao-run`: run a command under an OS sandbox (macOS seatbelt, Linux Landlock).
 //!
 //! PoC for process-level isolation that the current rule-based permissions cannot
 //! provide: the sandbox denies writes outside the allowed work directories and,

@@ -14,7 +14,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { Global } from "@miao/core/global"
 import { openEditor } from "@miao/tui/editor"
 import { registerOpencodeKeymap } from "@miao/tui/keymap"
-import { Session as SessionApi } from "@/session/session"
+import { SessionTitle } from "@miao/core/session/title"
 import * as Locale from "@/util/locale"
 import { resolveInteractiveStdin } from "./runtime.stdin"
 import { entrySplash, exitSplash, splashMeta } from "./splash"
@@ -107,7 +107,7 @@ function shutdown(renderer: CliRenderer): void {
 }
 
 function splashInfo(title: string | undefined, history: RunPrompt[]) {
-  if (title && !SessionApi.isDefaultTitle(title)) {
+  if (title && !SessionTitle.isDefault(title)) {
     return {
       title,
       showSession: true,

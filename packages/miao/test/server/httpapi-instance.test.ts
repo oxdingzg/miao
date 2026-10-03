@@ -1,18 +1,12 @@
-import { PermissionV1 } from "@miao/core/v1/permission"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@miao/core/flag/flag"
 import { describe, expect } from "bun:test"
 import { Config, Context, Effect, FileSystem, Layer, Path } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
-import { WorkspaceV2 } from "@miao/core/workspace"
-import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { ProjectV2 } from "@miao/core/project"
-import { QuestionID } from "../../src/question/schema"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
-import { HEADER as FenceHeader } from "../../src/server/shared/fence"
 import { resetDatabase } from "../fixture/db"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -67,141 +61,8 @@ describe("instance HttpApi", () => {
         info: expect.any(Object),
         paths: expect.objectContaining({
           "/global/health": expect.any(Object),
-          "/session": expect.any(Object),
+          "/config": expect.any(Object),
         }),
-      })
-    }),
-  )
-
-  it.live("emits a sync fence header for fixed-workspace mutations", () =>
-    Effect.gen(function* () {
-      const originalWorkspaceID = Flag.MIAO_WORKSPACE_ID
-      Flag.MIAO_WORKSPACE_ID = WorkspaceV2.ID.ascending()
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          Flag.MIAO_WORKSPACE_ID = originalWorkspaceID
-        }),
-      )
-
-      const dir = yield* tmpdirScoped({ git: true })
-      const response = yield* HttpClientRequest.post(SessionPaths.create).pipe(
-        directoryHeader(dir),
-        HttpClientRequest.bodyJson({ title: "fenced" }),
-        Effect.flatMap(HttpClient.execute),
-      )
-
-      expect(response.status).toBe(200)
-      expect(JSON.parse(response.headers[FenceHeader] ?? "{}")).not.toEqual({})
-    }),
-  )
-
-  it.live("does not emit sync fence headers for fixed-workspace reads or no-op mutations", () =>
-    Effect.gen(function* () {
-      const originalWorkspaceID = Flag.MIAO_WORKSPACE_ID
-      Flag.MIAO_WORKSPACE_ID = WorkspaceV2.ID.ascending()
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          Flag.MIAO_WORKSPACE_ID = originalWorkspaceID
-        }),
-      )
-
-      const dir = yield* tmpdirScoped({ git: true })
-      const read = yield* HttpClientRequest.get(InstancePaths.path).pipe(directoryHeader(dir), HttpClient.execute)
-      const log = yield* HttpClientRequest.post(ControlPaths.log).pipe(
-        directoryHeader(dir),
-        HttpClientRequest.bodyJson({ service: "fence-test", level: "info", message: "noop" }),
-        Effect.flatMap(HttpClient.execute),
-      )
-
-      expect(read.status).toBe(200)
-      expect(read.headers[FenceHeader]).toBeUndefined()
-      expect(log.status).toBe(200)
-      expect(log.headers[FenceHeader]).toBeUndefined()
-    }),
-  )
-
-  it.live("rejects malformed permission and question request ids", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const request = (path: string, init?: RequestInit) =>
-        Effect.promise(() =>
-          HttpApiApp.webHandler().handler(
-            new Request(`http://localhost${path}`, {
-              ...init,
-              headers: { "x-opencode-directory": dir, "content-type": "application/json", ...init?.headers },
-            }),
-            handlerContext,
-          ),
-        )
-      const [permission, questionReply, questionReject] = yield* Effect.all(
-        [
-          request("/permission/invalid-permission-id/reply", {
-            method: "POST",
-            body: JSON.stringify({ reply: "once" }),
-          }),
-          request("/question/invalid-question-id/reply", {
-            method: "POST",
-            body: JSON.stringify({ answers: [["Yes"]] }),
-          }),
-          request("/question/invalid-question-id/reject", { method: "POST" }),
-        ],
-        { concurrency: "unbounded" },
-      )
-
-      expect(permission.status).toBe(400)
-      expect(questionReply.status).toBe(400)
-      expect(questionReject.status).toBe(400)
-    }),
-  )
-
-  it.live("returns typed not found bodies for missing permission and question requests", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const request = (path: string, init?: RequestInit) =>
-        Effect.promise(() =>
-          HttpApiApp.webHandler().handler(
-            new Request(`http://localhost${path}`, {
-              ...init,
-              headers: { "x-opencode-directory": dir, "content-type": "application/json", ...init?.headers },
-            }),
-            handlerContext,
-          ),
-        )
-      const permissionID = PermissionV1.ID.ascending()
-      const questionReplyID = QuestionID.ascending()
-      const questionRejectID = QuestionID.ascending()
-      const [permission, questionReply, questionReject] = yield* Effect.all(
-        [
-          request(`/permission/${permissionID}/reply`, {
-            method: "POST",
-            body: JSON.stringify({ reply: "once" }),
-          }),
-          request(`/question/${questionReplyID}/reply`, {
-            method: "POST",
-            body: JSON.stringify({ answers: [["Yes"]] }),
-          }),
-          request(`/question/${questionRejectID}/reject`, { method: "POST" }),
-        ],
-        { concurrency: "unbounded" },
-      )
-
-      expect(permission.status).toBe(404)
-      expect(yield* Effect.promise(() => permission.json())).toEqual({
-        _tag: "PermissionNotFoundError",
-        requestID: permissionID,
-        message: `Permission request not found: ${permissionID}`,
-      })
-      expect(questionReply.status).toBe(404)
-      expect(yield* Effect.promise(() => questionReply.json())).toEqual({
-        _tag: "QuestionNotFoundError",
-        requestID: questionReplyID,
-        message: `Question request not found: ${questionReplyID}`,
-      })
-      expect(questionReject.status).toBe(404)
-      expect(yield* Effect.promise(() => questionReject.json())).toEqual({
-        _tag: "QuestionNotFoundError",
-        requestID: questionRejectID,
-        message: `Question request not found: ${questionRejectID}`,
       })
     }),
   )

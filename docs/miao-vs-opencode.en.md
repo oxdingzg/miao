@@ -21,16 +21,16 @@ Estimated costs depend on configured model rates and currency metadata. Budget c
 
 ## Recorded native benchmarks
 
-The baseline is this repository's TypeScript implementation before the native work, not today's `anomalyco/opencode`. These are recorded same-machine release-build medians for isolated operations through the Rust addon. They exclude shared orchestration, I/O, LSP, formatting, provider latency, and model reasoning. They have not been re-run as part of this documentation update.
+The baseline is this repository's TypeScript implementation before the native work, not today's `anomalyco/opencode`. These are recorded same-machine release-build medians for isolated operations through the Rust addon. They exclude shared orchestration, I/O, LSP, formatting, provider latency, and model reasoning. They have not been re-run as part of this documentation update. The native edit/patch paths were part of the V1 compatibility tools and have since been removed; the numbers are kept as historical component measurements.
 
 | Operation                                         | TypeScript baseline | Rust native | Speedup   | Integration scope      |
 | ------------------------------------------------- | ------------------- | ----------- | --------- | ---------------------- |
-| edit exact match (12k lines)                      | 0.21 ms             | 0.12 ms     | **1.7x**  | Compatibility path     |
-| edit fuzzy match (12k lines)                      | 0.76 ms             | 0.39 ms     | **1.9x**  | Compatibility path     |
-| edit match + diff stats (12k lines)               | 2.03 ms             | 1.78 ms     | 1.14x     | Compatibility path     |
-| apply_patch `deriveNewContents` exact (20k lines) | 1.67 ms             | 1.28 ms     | **1.3x**  | Compatibility path     |
-| apply_patch trim match (20k lines)                | 3.47 ms             | 1.76 ms     | **2.0x**  | Compatibility path     |
-| apply_patch unicode-normalize (20k lines)         | 13.06 ms            | 5.21 ms     | **2.5x**  | Compatibility path     |
+| edit exact match (12k lines)                      | 0.21 ms             | 0.12 ms     | **1.7x**  | Removed V1 path        |
+| edit fuzzy match (12k lines)                      | 0.76 ms             | 0.39 ms     | **1.9x**  | Removed V1 path        |
+| edit match + diff stats (12k lines)               | 2.03 ms             | 1.78 ms     | 1.14x     | Removed V1 path        |
+| apply_patch `deriveNewContents` exact (20k lines) | 1.67 ms             | 1.28 ms     | **1.3x**  | Removed V1 path        |
+| apply_patch trim match (20k lines)                | 3.47 ms             | 1.76 ms     | **2.0x**  | Removed V1 path        |
+| apply_patch unicode-normalize (20k lines)         | 13.06 ms            | 5.21 ms     | **2.5x**  | Removed V1 path        |
 | git status small repo (10 files / 2 changes)      | 12.3 ms             | 1.0 ms      | **11.9x** | Prototype; not default |
 | git status large repo (2200 files / 400 changes)  | 13.6 ms             | 5.8 ms      | **2.4x**  | Prototype; not default |
 
@@ -38,18 +38,18 @@ CPU-heavy matching and normalization show the clearest gains. In-process Git avo
 
 ## Native tools and sandbox: where they apply
 
-The current code has two tool implementations. Native integration lives in `packages/miao/src/tool`; the default V2 runner uses the separate leaves in `packages/core/src/tool`.
+V2 is the only session runtime. Its tools live in `packages/core/src/tool`; the V1 compatibility tools and their native edit/patch paths in `packages/miao/src/tool` have been removed.
 
-- **Compatibility edit / patch:** use the native addon where available, with a TypeScript fallback; `MIAO_NATIVE=0` disables it. This is not a claim that V2 edits use the addon.
+- **Edit / patch:** the V2 tools are TypeScript (`edit-fuzzy.ts` and related code). The native edit/patch accelerators benchmarked above are no longer wired into any shipped tool.
+- **OS sandbox:** the V2 `bash` tool can run each command under the sandbox. macOS uses seatbelt and Linux Landlock; Windows has no backend. Enable it with `sandbox.mode: "workspace-write"` or `MIAO_SANDBOX=1`, and deny network with `MIAO_SANDBOX_DENY_NETWORK=1`. It is opt-in and off by default.
+- **Native addon:** `MIAO_NATIVE=0` disables the addon. It backs the sandbox runner and other native helpers; it is not used for V2 edit/patch.
 - **In-process Git:** the `gix` implementation and benchmarks exist, but it is not the default Git path.
-- **Compatibility shell sandbox:** opt in with `MIAO_SANDBOX=1`. macOS seatbelt and Linux Landlock restrict writes; network is allowed in the shell integration unless `MIAO_SANDBOX_DENY_NETWORK=1` is also set. Availability depends on the platform and packaged backend.
-- **V2 permissions:** rule-based approvals remain the relevant default control. V2's `bash` leaf does not currently route through the compatibility sandbox. An environment flag alone does not provide V2 kernel confinement.
 
-Read the [guide](guide.en.md#56-kernel-level-sandbox-compatibility-runtime-opt-in) and [integration risks](rust-integration-risks.en.md) before relying on the sandbox. Windows kernel sandbox parity is not implemented.
+Read the [guide](guide.en.md#56-kernel-level-sandbox-opt-in) and [integration risks](rust-integration-risks.en.md) before relying on the sandbox. Windows kernel sandbox parity is not implemented.
 
 ## Boundaries and ongoing work
 
-- V2 is the default TUI runtime; V1 retirement remains in progress.
+- The V1 session runtime and its `/session/*` routes have been removed; all shipped clients run V2. Database migration and non-session legacy routes remain.
 - Durable history and exact prompt retry reconciliation do not mean automatic recovery of interrupted provider execution or exactly-once shell side effects.
 - Session execution and messaging wakes remain process-local; no cross-machine agent cluster is advertised.
 - Code Mode is experimental. Generated clients and the embedded host are private workspace packages with evolving contracts.

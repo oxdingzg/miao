@@ -10,7 +10,7 @@ import { Config } from "@/config/config"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { ServerAuth } from "@/server/auth"
 import { CodexAuthPlugin } from "./openai/codex"
-import { Session } from "@/session/session"
+import { SessionV1 } from "@miao/core/v1/session"
 import { NamedError } from "@miao/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
 import { MiaottyPlugin } from "./miaotty"
@@ -142,7 +142,7 @@ const layer = Layer.effect(
         const bridge = yield* EffectBridge.make()
 
         function publishPluginError(message: string) {
-          bridge.fork(events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
+          bridge.fork(events.publish(SessionV1.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
         }
 
         const { Server } = yield* Effect.promise(() => import("../server/server"))

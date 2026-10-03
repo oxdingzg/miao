@@ -57,8 +57,8 @@ Ordered by priority, where the criterion is net benefit (performance/memory plus
 
 | Order | Module | Target files | Why first |
 |---|---|---|---|
-| 1 | Text: diff/patch/edit/format | `core/tool/{edit,apply-patch}`, `miao/src/format`, `miao/tool/{edit,apply_patch}`, `session/revert-diff` | Pure CPU text algorithms, ecosystem-free, verifiable by the existing tests |
-| 2 | Process/sandbox | `core/pty`, `AppProcess`, `miao/tool/{shell,bash}` | seccomp/landlock is something JS cannot do; Rust is required here |
+| 1 | Text: diff/patch/edit/format | `core/tool/{edit,apply-patch}`, `core/format`, `core/session/revert` | Pure CPU text algorithms, ecosystem-free, verifiable by the existing tests |
+| 2 | Process/sandbox | `core/pty`, `AppProcess`, `core/tool/bash`, `core/sandbox` | seccomp/landlock is something JS cannot do; Rust is required here |
 | 3 | Search/walk/ignore | `core/filesystem/*`, `core/tool/{grep,glob,read}` | One stack of ripgrep+ignore+globset; but fff is already native, so measure the delta first |
 | 4 | Git/worktree/snapshot | `core/git.ts`, `worktree`, `snapshot` | On large repos and high-frequency diffs, `gix` clearly beats the JS layer; text-heavy like #1 |
 
@@ -70,8 +70,8 @@ Of the four modules I start with this one, not because it is the fastest, but be
 
 **Current implementation**
 
-- Matching: `replace()` in `packages/miao/src/tool/edit.ts` runs nine replacers in sequence (Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence). `BlockAnchor` measures similarity with a full-matrix Levenshtein.
-- Diff generation: `diffLines` and `createTwoFilesPatch` from `diff` (jsdiff 8.0.2), called repeatedly in `miao/src/tool/{edit,apply_patch}.ts`, `core/src/tool/{edit,apply-patch}.ts`, `snapshot/index.ts`, and `project/vcs.ts`.
+- Matching: V2 `packages/core/src/tool/edit.ts` tries an exact match, then falls back to `edit-fuzzy.ts` (`matchFuzzy`), which tolerates per-line whitespace and indentation differences. The nine-replacer implementation (Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence) lived in the removed V1 `packages/miao/src/tool/edit.ts` and now survives only in the Rust addon.
+- Diff generation: `diffLines` and `createTwoFilesPatch` from `diff` (jsdiff 8.0.2), called repeatedly in `core/src/tool/{edit,apply-patch}.ts`, `snapshot/index.ts`, and `project/vcs.ts`.
 - A single edit calls `createTwoFilesPatch` several times: once before formatting, once after, and again on the core side.
 
 **Measurements (same machine, release/optimized; synthetic samples)**
@@ -114,16 +114,16 @@ The code is in `crates/miao-native/`: `src/lib.rs` ports the nine replacers, `re
 - Pathologic long lines: ~10 ms vs ~21-30 ms (2-3x).
 - `apply_patch` `deriveNewContents` (20k-line file, match near the end, so the 4-pass seek runs): exact native ~1.3 ms vs TS ~1.7 ms (1.3x); trim pass ~1.8 ms vs ~3.5 ms (2.0x); unicode-normalize pass ~5.2 ms vs ~13 ms (2.5x).
 - git status (repo with 2200 files, 400 changes): `gix` native `gitStatus` in-process ~5.6 ms; the `git diff-files` + `git ls-files` pair the snapshot module uses today ~13.5 ms (~2.4x); `git status --porcelain` ~8.1 ms (~1.4x).
-- Sandbox (macOS seatbelt, `miao-run`): writes inside `--workdir` succeed, writes outside are denied ("Operation not permitted"); network denied by default and restored with `--allow-network` (HTTP 200); a normal command such as `git status` still runs. This is process-level isolation the rule-based permissions cannot provide. False denials are handled with `--allow-path` or the `--compat` fallback (allow default, deny only credential paths and network); for integration, `--deny-report` returns the blocked paths and `runSandboxed` asks the user, then retries with more `--allow-path` entries.
+- Sandbox (macOS seatbelt, `miao-run`): writes inside `--workdir` succeed, writes outside are denied ("Operation not permitted"); network denied by default and restored with `--allow-network` (HTTP 200); a normal command such as `git status` still runs. This is process-level isolation the rule-based permissions cannot provide. False denials are handled with `--allow-path` or the `--compat` fallback (allow default, deny only credential paths and network); for integration, `--deny-report` returns the blocked paths; the V2 `bash` tool asks the user, then retries with more `--allow-path` entries.
 - `search` is not done separately: `grep/glob` already go through the `rg` binary and fuzzy find through the native `@ff-labs/fff-*` library, so the incremental gain is small.
 
 **One optimization pass worth recording**: the first version was slower than TS on the typical case. The cause was neither the language nor the NAPI boundary (an `echo` of a 597 KB string costs ~0.08 ms); it was `str::find`/`str::rfind` (std two-way) being slower than the JS engines' SIMD `indexOf` (0.38 / 0.45 ms vs ~0.05 ms), plus `slice_span` rebuilding the whole file with `lines.join("\n")` just to slice one block. After switching to `memchr::memmem`, replacing `rfind` with a forward uniqueness check from `index + 1`, and slicing the original content directly, native is faster than TS on every measured case. `deriveNewContents` got the same treatment: no `to_vec()` clone of the whole line vector, no per-line `format!` temporary, just direct pushes into the output.
 
-Conclusion: behaviour is correct and, after optimization, the typical and pathologic paths both lead; but the full pipeline is dominated by the diff, so the end-to-end gain is still limited. Not wired into production; `tool/edit.ts` still uses TS and jsdiff.
+Conclusion: behaviour is correct and, after optimization, the typical and pathologic paths both lead; but the full pipeline is dominated by the diff, so the end-to-end gain is still limited. The text and git paths are not wired into production: V2's `edit`/`patch` use TS and jsdiff. The sandbox runner is wired opt-in into the V2 `bash` tool.
 
 ### Native modules landed (PoC; pure functions, `MIAO_NATIVE`-gated with a TS fallback)
 
-Each function ships with Rust unit tests plus a JS parity test; parity is not allowed to skip (`MIAO_NATIVE_REQUIRED=1`).
+Each function ships with Rust unit tests. The JS parity suites were removed with the V1 tools; native coverage now also includes `packages/core/test/sandbox-policy.test.ts` and `packages/core/test/tool-bash-sandbox.test.ts`, run by the `native` and `sandbox-linux` CI jobs.
 
 | Area | Functions | Parity target |
 |---|---|---|
@@ -137,7 +137,7 @@ Each function ships with Rust unit tests plus a JS parity test; parity is not al
 | Shell | `shellAnalyze` (native tree-sitter, bash/powershell) | TS `shell/extract.ts` wasm walk (parts/tokens/source) |
 | Sandbox | macOS seatbelt + Linux landlock (write allowlist + TCP denied by default); runner is `miao-run` (dev) or the main binary self-executing `__sandbox-run` (release) | behavior tests (write allowlist / network denied) |
 
-Performance: `git rev-parse` native ~0.2-0.5 ms vs subprocess ~5-9 ms (~20x). None of it is wired into production.
+Performance: `git rev-parse` native ~0.2-0.5 ms vs subprocess ~5-9 ms (~20x). The text and git functions are not wired into production; the sandbox runner is.
 
 ### Modules not landed, and why
 

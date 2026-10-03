@@ -9,7 +9,8 @@ import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { MessageID, SessionID } from "../../src/session/schema"
+import { SessionV1 } from "@miao/core/v1/session"
+import { SessionV2 } from "@miao/core/session"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 
@@ -560,7 +561,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const result = yield* ask({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -578,7 +579,7 @@ it.instance(
     Effect.gen(function* () {
       const err = yield* fail(
         ask({
-          sessionID: SessionID.make("session_test"),
+          sessionID: SessionV2.ID.make("session_test"),
           permission: "bash",
           patterns: ["rm -rf /"],
           metadata: {},
@@ -596,7 +597,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber = yield* ask({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -616,13 +617,13 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const fiber = yield* ask({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: { cmd: "ls" },
         always: ["ls"],
         tool: {
-          messageID: MessageID.make("msg_test"),
+          messageID: SessionV1.MessageID.make("msg_test"),
           callID: "call_test",
         },
         ruleset: [],
@@ -631,13 +632,13 @@ it.instance(
       const items = yield* waitForPending(1)
       expect(items).toHaveLength(1)
       expect(items[0]).toMatchObject({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: { cmd: "ls" },
         always: ["ls"],
         tool: {
-          messageID: MessageID.make("msg_test"),
+          messageID: SessionV1.MessageID.make("msg_test"),
           callID: "call_test",
         },
       })
@@ -662,13 +663,13 @@ it.instance(
       yield* Effect.addFinalizer(() => unsub)
 
       const fiber = yield* ask({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: { cmd: "ls" },
         always: ["ls"],
         tool: {
-          messageID: MessageID.make("msg_test"),
+          messageID: SessionV1.MessageID.make("msg_test"),
           callID: "call_test",
         },
         ruleset: [],
@@ -683,7 +684,7 @@ it.instance(
           }),
         ),
       ).toMatchObject({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
       })
@@ -702,7 +703,7 @@ it.instance(
     Effect.gen(function* () {
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_test1"),
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -723,7 +724,7 @@ it.instance(
     Effect.gen(function* () {
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_test2"),
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -747,7 +748,7 @@ it.instance(
     Effect.gen(function* () {
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_test2b"),
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -779,7 +780,7 @@ it.instance(
     Effect.gen(function* () {
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_test3"),
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -792,7 +793,7 @@ it.instance(
       yield* Fiber.join(fiber)
 
       const result = yield* ask({
-        sessionID: SessionID.make("session_test2"),
+        sessionID: SessionV2.ID.make("session_test2"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -810,7 +811,7 @@ it.instance(
     Effect.gen(function* () {
       const a = yield* ask({
         id: PermissionV1.ID.make("per_test4a"),
-        sessionID: SessionID.make("session_same"),
+        sessionID: SessionV2.ID.make("session_same"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -820,7 +821,7 @@ it.instance(
 
       const b = yield* ask({
         id: PermissionV1.ID.make("per_test4b"),
-        sessionID: SessionID.make("session_same"),
+        sessionID: SessionV2.ID.make("session_same"),
         permission: "edit",
         patterns: ["foo.ts"],
         metadata: {},
@@ -846,7 +847,7 @@ it.instance(
     Effect.gen(function* () {
       const a = yield* ask({
         id: PermissionV1.ID.make("per_test5a"),
-        sessionID: SessionID.make("session_same"),
+        sessionID: SessionV2.ID.make("session_same"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -856,7 +857,7 @@ it.instance(
 
       const b = yield* ask({
         id: PermissionV1.ID.make("per_test5b"),
-        sessionID: SessionID.make("session_same"),
+        sessionID: SessionV2.ID.make("session_same"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -880,7 +881,7 @@ it.instance(
     Effect.gen(function* () {
       const a = yield* ask({
         id: PermissionV1.ID.make("per_test6a"),
-        sessionID: SessionID.make("session_a"),
+        sessionID: SessionV2.ID.make("session_a"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -890,7 +891,7 @@ it.instance(
 
       const b = yield* ask({
         id: PermissionV1.ID.make("per_test6b"),
-        sessionID: SessionID.make("session_b"),
+        sessionID: SessionV2.ID.make("session_b"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -916,14 +917,14 @@ it.instance(
     Effect.gen(function* () {
       const events = yield* EventV2Bridge.Service
       const seen = yield* Deferred.make<{
-        sessionID: SessionID
+        sessionID: SessionV2.ID
         requestID: PermissionV1.ID
         reply: PermissionV1.Reply
       }>()
 
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_test7"),
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -938,7 +939,7 @@ it.instance(
           Deferred.doneUnsafe(
             seen,
             Effect.succeed(
-              event.data as { sessionID: SessionID; requestID: PermissionV1.ID; reply: PermissionV1.Reply },
+              event.data as { sessionID: SessionV2.ID; requestID: PermissionV1.ID; reply: PermissionV1.Reply },
             ),
           )
         return Effect.void
@@ -955,7 +956,7 @@ it.instance(
           }),
         ),
       ).toEqual({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         requestID: PermissionV1.ID.make("per_test7"),
         reply: "once",
       })
@@ -974,7 +975,7 @@ it.live("permission requests stay isolated by directory", () =>
         { directory: one },
         ask({
           id: PermissionV1.ID.make("per_dir_a"),
-          sessionID: SessionID.make("session_dir_a"),
+          sessionID: SessionV2.ID.make("session_dir_a"),
           permission: "bash",
           patterns: ["ls"],
           metadata: {},
@@ -989,7 +990,7 @@ it.live("permission requests stay isolated by directory", () =>
         { directory: two },
         ask({
           id: PermissionV1.ID.make("per_dir_b"),
-          sessionID: SessionID.make("session_dir_b"),
+          sessionID: SessionV2.ID.make("session_dir_b"),
           permission: "bash",
           patterns: ["pwd"],
           metadata: {},
@@ -1023,7 +1024,7 @@ it.instance(
       const store = yield* InstanceStore.Service
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_dispose"),
-        sessionID: SessionID.make("session_dispose"),
+        sessionID: SessionV2.ID.make("session_dispose"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -1050,7 +1051,7 @@ it.instance(
       const store = yield* InstanceStore.Service
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_reload"),
-        sessionID: SessionID.make("session_reload"),
+        sessionID: SessionV2.ID.make("session_reload"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -1088,7 +1089,7 @@ it.instance(
     Effect.gen(function* () {
       const err = yield* fail(
         ask({
-          sessionID: SessionID.make("session_test"),
+          sessionID: SessionV2.ID.make("session_test"),
           permission: "bash",
           patterns: ["echo hello", "rm -rf /"],
           metadata: {},
@@ -1109,7 +1110,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const result = yield* ask({
-        sessionID: SessionID.make("session_test"),
+        sessionID: SessionV2.ID.make("session_test"),
         permission: "bash",
         patterns: ["echo hello", "ls -la", "pwd"],
         metadata: {},
@@ -1127,7 +1128,7 @@ it.instance(
     Effect.gen(function* () {
       const err = yield* fail(
         ask({
-          sessionID: SessionID.make("session_test"),
+          sessionID: SessionV2.ID.make("session_test"),
           permission: "bash",
           patterns: ["echo hello", "rm -rf /"],
           metadata: {},
@@ -1154,7 +1155,7 @@ it.instance(
 
       const fiber = yield* ask({
         id: PermissionV1.ID.make("per_reload"),
-        sessionID: SessionID.make("session_reload"),
+        sessionID: SessionV2.ID.make("session_reload"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},

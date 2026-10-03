@@ -134,7 +134,7 @@ miao includes Rust accelerators and benchmarks against this repository's earlier
 | Patch Unicode normalization, 20k lines | 13.06 ms            | 5.21 ms     | 2.5×    |
 | Git status, 10 files                   | 12.3 ms             | 1.0 ms      | 11.9×   |
 
-These are **component benchmarks, not end-to-end task speedups or comparisons with today's upstream release**. Native edit/patch integration and the opt-in macOS/Linux kernel sandbox currently belong to the compatibility tool path; V2 has separate tools. In-process Git remains a prototype. See the [full comparison and availability matrix](docs/miao-vs-opencode.en.md).
+These are **component benchmarks, not end-to-end task speedups or comparisons with today's upstream release**. The measured edit/patch accelerators belonged to the V1 compatibility tools, which have since been removed; V2's edit/patch tools are TypeScript. The Rust addon still backs the opt-in OS sandbox runner, and in-process Git remains a prototype. See the [full comparison and availability matrix](docs/miao-vs-opencode.en.md).
 
 ### Public baseline: startup, memory, idle cost, crash recovery
 
@@ -160,35 +160,31 @@ Idle RSS and idle CPU still miss the Phase 0 targets; see [specs/architecture.md
 
 ## Status and architecture
 
-miao is pre-1.0. V2 is the default for the terminal UI and supported browser connections; V1 remains for compatibility. The V2 core uses Effect services, Location-scoped tools, durable inboxes, event-backed history, and Context Epochs. Local execution coordination is process-local; clustered execution and automatic crash continuation are not implemented.
+miao is pre-1.0. The V1 session runtime and its legacy `/session/*` routes have been removed, so every shipped client runs the single V2 core. V2 uses Effect services, Location-scoped tools, durable inboxes, event-backed history, and Context Epochs. Local execution coordination is process-local; clustered execution and automatic crash continuation are not implemented.
 
-| Capability                                                                     | Availability                                                   |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| V2 sessions, prompt admission, context epochs, project-local session messaging | Implemented                                                    |
-| Autonomous continuation, cost budgets, pruning and compaction tuning           | Opt-in; behavior varies by setting                             |
-| Code Mode (`MIAO_EXPERIMENTAL_CODE_MODE=1`)                                    | Experimental                                                   |
-| Native edit/patch                                                              | Compatibility runtime; see comparison for setup and boundaries |
-| OS sandbox for bash                                                            | V2 and compatibility runtime; opt-in through `sandbox` config  |
-| Generated clients and embedded Effect host                                     | Private workspace packages; API still evolving                 |
+| Capability                                                                     | Availability                                                          |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| V2 sessions, prompt admission, context epochs, project-local session messaging | Implemented                                                           |
+| Autonomous continuation, cost budgets, pruning and compaction tuning           | Opt-in; behavior varies by setting                                   |
+| Code Mode (`MIAO_EXPERIMENTAL_CODE_MODE=1`)                                    | Experimental                                                         |
+| OS sandbox for bash                                                            | V2; opt-in through `sandbox` config or `MIAO_SANDBOX=1` (macOS/Linux) |
+| Legacy database migration (`miao db backfill` / `compact` / `restore`)         | Retained for databases written before V2                             |
+| Generated clients and embedded Effect host                                     | Private workspace packages; API still evolving                       |
 
-### V1 and V2
+### From V1 to V2
 
-V1 is the session runtime miao inherited from opencode; V2 is miao's rewritten core. They share the same database and configuration, but run sessions differently. V1 is being retired; see [specs/architecture.md](specs/architecture.md).
+V1 was the session runtime miao inherited from opencode; V2 is miao's rewritten core. The V1 session runtime, its legacy tools, and the `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` routes have been removed, so all shipped clients run V2. Two compatibility surfaces remain: the database migration layer that reads history written before V2, and the non-session legacy routes still being migrated to `/api/*`.
 
-| Area                  | V1 (inherited from opencode)                                                    | V2 (miao's core)                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Code                  | `packages/miao/src/session` and the legacy tools                                | `packages/core`, layered Schema → Core / Protocol → Server                                        |
-| Sending a prompt      | Runs as soon as it arrives                                                      | Written to a durable inbox first, then executed; a crash does not lose it                         |
-| Input while running   | Saved; the running loop reads it at its next step, with no steer / queue choice | Steer (joins the current turn at the next safe point) or queue (waits until the turn ends)        |
-| Turn loop             | One loop around tool calls                                                      | One `llm.stream` call per provider turn; history is reloaded from storage before continuing       |
-| Storage               | `message` / `part` tables                                                       | Event log with projections and a per-session `seq`, replayable from any point                     |
-| Context               | Rebuilt for every request                                                       | Context Epochs: a stable baseline plus chronological updates, keeping the cached prefix stable    |
-| API                   | Legacy `/session/*` routes and the legacy JS SDK                                | `/api/session/*` defined with Effect Schema; clients are generated from it                        |
-| Tools and permissions | Legacy tools; bash rules by sub-command prefix                                  | Location-scoped tools and permissions; OS sandbox for bash, a parse check before running, `stdin` |
-| Plugins               | All plugin hooks                                                                | Some `chat.*` hooks are not called yet                                                            |
-| Cost and cache        | Basic usage                                                                     | Per-turn usage and cost, TTFT, cache-hit ratio and miss causes, cost budgets                      |
-| Across sessions       | None                                                                            | Child sessions (`task`), `list_sessions` / `send_message`                                         |
-| Used by               | The legacy JS SDK and `/session/*` routes                                       | The default TUI, `--mini`, ACP, `miao run`, the web app, `miao remote`                            |
+| Concern                                                      | Status                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------- |
+| Session execution, tools, permissions                        | V2 only                                                  |
+| `/session/*` routes and legacy session methods in the JS SDK | No longer served by the server                           |
+| Old `message` / `part` tables                                | Read by `miao db backfill`; dropped by `miao db compact` |
+| Portable export and import (`miao export` / `import`)        | Retained                                                 |
+| Configuration written in the old shape                       | Still read by the V2 config loader                       |
+| Non-session legacy routes (`/config`, `/mcp`, `/lsp`, …)     | Still served; `/api/*` migration in progress             |
+
+See [specs/v2/v1-retirement.md](specs/v2/v1-retirement.md) and [specs/architecture.md](specs/architecture.md).
 
 Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for compiled checkout validation. New source features may not yet be in the installed release.
 

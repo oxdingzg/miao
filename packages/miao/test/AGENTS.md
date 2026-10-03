@@ -171,7 +171,7 @@ Wait on a **published readiness signal**, not wall-clock time. Available afforda
 - `pollWithTimeout(effect, message, duration?)` from `test/lib/effect.ts` — repeatedly run a predicate effect until it returns a non-`undefined` value, with a timeout.
 - `awaitWithTimeout(effect, message, duration?)` from `test/lib/effect.ts` — wrap any effect with `Effect.timeoutOrElse` and a custom error message.
 - `llm.wait(n)` from `test/lib/llm-server.ts` — wait until the mock LLM has received `n` HTTP calls.
-- `SessionStatus.Service` `.get(sessionID)` — observable per-session state (`{ type: "busy" | "idle" | ... }`).
+- `session.next.status` events — V2 publishes per-session status as events; wait for the projected status to become `busy`/`idle` (see `packages/schema/src/session-event.ts`).
 - `BackgroundJob.wait({ id, timeout })` from `src/background/job.ts` — wait for a background job to complete.
 - Bus subscriptions — fork `Stream.runForEach(bus.subscribe(Event), ...)` and open a `Latch` inside the callback to signal first-event readiness.
 - `Deferred.await(deferred).pipe(Effect.timeoutOrElse(...))` for one-shot signals.
@@ -180,21 +180,15 @@ Wait on a **published readiness signal**, not wall-clock time. Available afforda
 
 ```ts
 // Antipattern — race
-yield * prompt.shell({ command: "sleep 30" }).pipe(Effect.forkChild)
+yield * (yield * startTask()).pipe(Effect.forkChild)
 yield * Effect.sleep(50)
-yield * prompt.cancel(chat.id)
+yield * cancelTask()
 
 // Fix — wait for a published readiness signal
-yield * prompt.shell({ command: "sleep 30" }).pipe(Effect.forkChild)
-yield *
-  pollWithTimeout(
-    Effect.gen(function* () {
-      const s = yield* (yield* SessionStatus.Service).get(chat.id)
-      return s.type === "busy" ? (true as const) : undefined
-    }),
-    "session never became busy",
-  )
-yield * prompt.cancel(chat.id)
+const ready = yield * Deferred.make<void>()
+yield * (yield * startTask(ready)).pipe(Effect.forkChild)
+yield * awaitWithTimeout(Deferred.await(ready), "task never became ready")
+yield * cancelTask()
 ```
 
 ### When Fixed Sleeps Are OK
