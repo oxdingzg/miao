@@ -75,13 +75,12 @@
 
 ## 现状盘点（2026-10-03 按代码核实）
 
-### TUI：只剩 4 处 V1 调用
+### TUI：~~4 处 V1 调用~~（已清零）
 
-`rg -oN "sdk\.client\.([a-zA-Z]+)\." packages/tui/src` 的非 `v2` 命中：
-
-- `experimental.console` ×3（`context/sync.tsx:679`、`component/dialog-console-org.tsx:33,98`）：
-  console/账户切换只有 V1 `/experimental/console*`，没有 V2 group。
-- `instance.dispose` ×1（`dialog-console-org.tsx:106`）：切换 org 后重载实例。
+console 组织切换整体删除（2026-10-03，用户决定不迁移）：TUI 的组织切换对话框与 `console_state`、服务端
+`Account` 模块、CLI `miao console`、配置加载时拉取组织远程配置、V1 `/experimental/console*` 一并移除。
+数据库 `account` / `account_state` 表保留（删表需迁移，残留无害）。opencode 提供商自己的 Console OAuth
+（`core/src/plugin/provider/opencode.ts`）不受影响。
 
 `file.read`（`routes/session/index.tsx` 的 diff 高亮）正在改走新增的 `GET /api/fs/content`（工作区未提交）。
 

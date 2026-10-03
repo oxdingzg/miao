@@ -46,7 +46,6 @@ const commandLoaders: Array<[string, CommandLoader]> = [
   ["run", () => import("./cli/cmd/run").then((m) => m.RunCommand)],
   ["generate", () => import("./cli/cmd/generate").then((m) => m.GenerateCommand)],
   ["debug", () => import("./cli/cmd/debug").then((m) => m.DebugCommand)],
-  ["console", () => import("./cli/cmd/account").then((m) => m.ConsoleCommand)],
   ["providers", () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand)],
   ["agent", () => import("./cli/cmd/agent").then((m) => m.AgentCommand)],
   ["upgrade", () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand)],

@@ -5,7 +5,6 @@ import * as Observability from "@miao/core/observability"
 import { FSUtil } from "@miao/core/fs-util"
 import { Database } from "@miao/core/database/database"
 import { Auth } from "@/auth"
-import { Account } from "@/account/account"
 import { Config } from "@/config/config"
 import { GitCli } from "@miao/core/git-cli"
 import { Ripgrep } from "@miao/core/ripgrep"
@@ -49,7 +48,6 @@ export const AppLayer = AppNodeBuilderV1.build(
     FSUtil.node,
     Database.node,
     Auth.node,
-    Account.node,
     Config.node,
     GitCli.node,
     Storage.node,

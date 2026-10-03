@@ -21,7 +21,7 @@ describe("schema-rejection wire shape", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const res = yield* requestInDirectory("/experimental/console/switch", test.directory, {
+        const res = yield* requestInDirectory("/experimental/worktree/reset", test.directory, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ aggregate: -1 }),
@@ -79,7 +79,7 @@ describe("schema-rejection wire shape", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         const huge = "X".repeat(50_000)
-        const res = yield* requestInDirectory("/experimental/console/switch", test.directory, {
+        const res = yield* requestInDirectory("/experimental/worktree/reset", test.directory, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ aggregate: huge }),
