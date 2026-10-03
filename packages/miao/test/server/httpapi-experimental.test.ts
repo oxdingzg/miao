@@ -93,10 +93,7 @@ describe("experimental HttpApi", () => {
         const tmp = yield* TestInstance
         const directory = tmp.directory
         const [worktrees, resources] = yield* Effect.all(
-          [
-            request(ExperimentalPaths.worktree, directory),
-            request(ExperimentalPaths.resource, directory),
-          ],
+          [request(ExperimentalPaths.worktree, directory), request(ExperimentalPaths.resource, directory)],
           { concurrency: "unbounded" },
         )
 
