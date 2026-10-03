@@ -1,7 +1,7 @@
 import { usePlatform } from "@/context/platform"
 import { ClientError, OpenCode } from "@miao/client"
 import { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials, createSdkForServer } from "./server"
+import { authTokenFromCredentials } from "./server"
 import { Accessor, createEffect, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
@@ -102,12 +102,7 @@ export async function checkServerHealth(
       )
       .catch((error) => ({ error }))
     if ("data" in current && current.data) return current.data
-    if (signal?.aborted) return { healthy: false }
-
-    return createSdkForServer({ server, fetch, signal })
-      .global.health()
-      .then((x) => (x.error ? next(count, x.error) : { healthy: x.data?.healthy === true, version: x.data?.version }))
-      .catch((error) => next(count, error))
+    return next(count, current.error)
   }
   return attempt(0).finally(() => timeout?.clear?.())
 }

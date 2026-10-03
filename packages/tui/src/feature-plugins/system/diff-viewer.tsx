@@ -129,11 +129,16 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       )
     }
 
-    const result = await props.api.client.vcs.diff(
-      { directory: input.directory, mode: input.mode, context: VCS_DIFF_CONTEXT_LINES },
+    // V2 calls the uncommitted-changes mode `working`.
+    const result = await props.api.client.v2.vcs.diff(
+      {
+        location: { directory: input.directory },
+        mode: input.mode === "git" ? "working" : input.mode,
+        context: String(VCS_DIFF_CONTEXT_LINES),
+      },
       { throwOnError: true },
     )
-    return normalizeDiffs(result.data ?? [])
+    return normalizeDiffs(result.data.data)
   })
   const files = createMemo(() => diff() ?? [])
   const [focus, setFocus] = createSignal<DiffViewerFocus>("patches")
