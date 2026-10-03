@@ -110,9 +110,9 @@ These calls are retained as fallback adapters. The current production path suppl
   - `src/context/global-sync/bootstrap.ts`
 - [x] Migrate the current project lookup from `GET /project/current` to `GET /api/project/current`.
   - `src/context/global-sync/bootstrap.ts`
-- [ ] Migrate Git initialization from `POST /project/git/init`.
+- [x] Migrate Git initialization from `POST /project/git/init` to `POST /api/project/git/init` (`2b0e192f2`).
   - `src/pages/session.tsx`
-- [ ] Migrate project updates from `PATCH /project/:projectID` to `PATCH /api/project/:projectID`.
+- [x] Migrate project updates from `PATCH /project/:projectID` to `PATCH /api/project/:projectID` (`2b0e192f2`).
   - `src/context/layout.tsx`
   - `src/components/edit-project.ts`
   - `src/pages/layout.tsx`
