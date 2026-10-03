@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@miao/plugin/tui"
-import type { SnapshotFileDiff, VcsFileDiff } from "@miao/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@miao/schema/view-models"
 import {
   TextAttributes,
   type BorderSides,

@@ -1,4 +1,5 @@
-import type { Part, SessionMessage } from "@miao/sdk/v2"
+import type { Part } from "@miao/schema/view-models"
+import type { SessionMessage } from "@miao/sdk/v2"
 import type { TuiTranscriptMessage } from "@miao/plugin/tui"
 
 /**

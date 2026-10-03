@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@miao/sdk/v2"
+import type { AssistantMessage } from "@miao/schema/view-models"
 
 /**
  * Which way the cache hit rate is moving over recent turns. Any single turn

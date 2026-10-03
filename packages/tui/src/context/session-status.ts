@@ -1,4 +1,4 @@
-import type { Message, Part } from "@miao/sdk/v2"
+import type { Message, Part } from "@miao/schema/view-models"
 
 export function waitingForResponse(input: { busy: boolean; blocked: boolean; message?: Message; parts: Part[] }) {
   if (!input.busy || input.blocked) return false

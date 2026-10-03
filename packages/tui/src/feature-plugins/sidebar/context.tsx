@@ -1,4 +1,4 @@
-import type { Session } from "@miao/sdk/v2"
+import type { Session } from "@miao/schema/view-models"
 import type { TuiPlugin, TuiPluginApi, TuiTranscriptAssistant } from "@miao/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { Currency } from "../../util/currency"
