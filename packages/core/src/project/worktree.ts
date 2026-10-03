@@ -78,15 +78,13 @@ const layer = Layer.effect(
     const { db } = yield* Database.Service
 
     const git = (args: string[], cwd: string) =>
-      cli
-        .run(args, { cwd })
-        .pipe(
-          Effect.map((result) => ({
-            code: result.exitCode,
-            text: result.text(),
-            stderr: result.stderr.toString("utf8"),
-          })),
-        )
+      cli.run(args, { cwd }).pipe(
+        Effect.map((result) => ({
+          code: result.exitCode,
+          text: result.text(),
+          stderr: result.stderr.toString("utf8"),
+        })),
+      )
 
     const expect = Effect.fnUntraced(function* (args: string[], cwd: string, failure: string) {
       const result = yield* git(args, cwd)
