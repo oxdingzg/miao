@@ -12,7 +12,7 @@ import {
   type ProviderErrorEvent,
   type ToolOutput,
 } from "@miao/llm"
-import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -128,6 +128,15 @@ const MAX_IDENTICAL_TOOL_CALLS = 5
  * the smaller history before giving up (research G3).
  */
 const MAX_OVERFLOW_COMPACTIONS = 2
+
+/**
+ * How long a subagent may go without emitting any event before its drain is
+ * treated as stuck. Silence means no provider delta, no tool call, and no tool
+ * result, so the longest legitimate gap is a tool running to its own ceiling;
+ * Bash caps one command at ten minutes.
+ */
+const SUBAGENT_SILENCE_MINUTES = 15
+const SUBAGENT_SILENCE = Duration.minutes(SUBAGENT_SILENCE_MINUTES)
 
 /** Goal/todo-driven autonomous loop bounds. */
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
@@ -804,6 +813,18 @@ const layer = Layer.effect(
       | ((input: { readonly sessionID: SessionSchema.ID; readonly force: boolean }) => Effect.Effect<void, RunError>)
       | undefined
 
+    // Nothing inside a parent's turn can interrupt a stalled subagent: only an
+    // external interrupt reaches it. Racing the child's drain against its own
+    // event stream bounds that wait, because silence ends the stream and the
+    // lost race interrupts the drain. Without this, one wedged subagent holds
+    // its parent's turn open indefinitely.
+    const stalledSubagent = (sessionID: SessionSchema.ID) =>
+      events.all().pipe(
+        Stream.filter((event) => event.durable?.aggregateID === sessionID),
+        Stream.timeout(SUBAGENT_SILENCE),
+        Stream.runDrain,
+      )
+
     const runSubagent = Effect.fnUntraced(function* (
       parentSessionID: SessionSchema.ID,
       request: {
@@ -828,7 +849,17 @@ const layer = Layer.effect(
         prompt: Prompt.make({ text: request.prompt }),
         delivery: "steer",
       })
-      yield* runDrain!({ sessionID: child.id, force: true })
+      // A failed drain is observed through the child's projected history
+      // below, so `Effect.exit` keeps the race from ending on a drain failure
+      // and losing the outcome that decides between the two branches.
+      const outcome = yield* Effect.race(
+        runDrain!({ sessionID: child.id, force: true }).pipe(Effect.exit, Effect.as("drained" as const)),
+        stalledSubagent(child.id).pipe(Effect.as("stalled" as const)),
+      )
+      if (outcome === "stalled")
+        return yield* new ToolFailure({
+          message: `Subagent produced no output for ${SUBAGENT_SILENCE_MINUTES} minutes and was interrupted. It may be stuck; retry it, or split the work into smaller tasks.`,
+        })
       const context = yield* store.context(child.id)
       const assistant = context.findLast((message) => message.type === "assistant")
       if (assistant?.type === "assistant" && (assistant.error !== undefined || assistant.finish === "error"))
