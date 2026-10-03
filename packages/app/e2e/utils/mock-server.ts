@@ -184,6 +184,7 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       })
     if (path === "/api/command") return json(route, { location: location(config), data: [] })
     if (path === "/api/mcp") return json(route, { location: location(config), data: [] })
+    if (path === "/api/lsp") return json(route, { location: location(config), data: [] })
     if (path === "/api/mcp/resource")
       return json(route, { location: location(config), data: { resources: [], templates: [] } })
     const integration = path.match(/^\/api\/integration\/([^/]+)$/)?.[1]

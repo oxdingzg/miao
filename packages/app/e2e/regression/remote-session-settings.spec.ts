@@ -210,7 +210,6 @@ async function mockServers(
     if (requestDirectory && requestDirectory !== directory) return json(route, { name: "InvalidDirectory" }, 500)
     if (url.pathname === "/global/event" || url.pathname === "/event" || url.pathname === "/api/event")
       return sse(route)
-    if (url.pathname === "/global/health") return json(route, {}, 404)
     if (url.pathname === "/api/health") return json(route, { healthy: true, version: "2.0.0", pid: 1 })
     if (url.pathname === "/api/permission/request") {
       permissionRequests.push(url.toString())
@@ -221,7 +220,7 @@ async function mockServers(
       return json(route, { location: { directory }, data: provider(remote ? "server-b" : "server-a") })
     if (url.pathname === "/api/model" || url.pathname === "/api/agent") return json(route, { data: [] })
     if (url.pathname === "/api/model/default") return json(route, { data: null })
-    if (["/api/command", "/api/reference", "/api/question/request"].includes(url.pathname))
+    if (["/api/command", "/api/lsp", "/api/reference", "/api/question/request"].includes(url.pathname))
       return json(route, { location: { directory }, data: [] })
     if (url.pathname === "/api/mcp") return json(route, { location: { directory }, data: [] })
     if (url.pathname === "/api/mcp/resource")

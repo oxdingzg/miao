@@ -1,7 +1,16 @@
-import type { McpResourcesInput, McpResourcesOutput, McpStatusInput, McpStatusOutput, SessionsActiveOutput } from "@miao/client"
+import type {
+  LspStatusInput,
+  LspStatusOutput,
+  McpResourcesInput,
+  McpResourcesOutput,
+  McpStatusInput,
+  McpStatusOutput,
+  SessionsActiveOutput,
+} from "@miao/client"
 import type { McpResource, McpStatus } from "@/utils/server"
 import type {
   Config,
+  LspStatus,
   OpencodeClient,
   Path,
   Project,
@@ -68,6 +77,10 @@ type McpListApi = {
   readonly status: (input?: McpStatusInput) => Promise<McpStatusOutput>
 }
 
+type LspApi = {
+  readonly status: (input?: LspStatusInput) => Promise<LspStatusOutput>
+}
+
 type McpResourceApi = {
   readonly resources: (input?: McpResourcesInput) => Promise<McpResourcesOutput>
 }
@@ -116,10 +129,22 @@ export const loadMcpResourcesQuery = (
     placeholderData: {},
   })
 
-export const loadLspQuery = (scope: ServerScope, directory: string, sdk: OpencodeClient) =>
+// V2 reports each server's id and connection state; the status popover renders
+// the V1 status shape, so the name falls back to the id and the root stays empty.
+export const loadLspQuery = (scope: ServerScope, directory: string, api: LspApi) =>
   queryOptions({
     queryKey: [scope, directory, "lsp"] as const,
-    queryFn: () => sdk.lsp.status().then((r) => r.data ?? []),
+    queryFn: () =>
+      api.status({ location: { directory } }).then((result) =>
+        result.data.map(
+          (item): LspStatus => ({
+            id: item.id,
+            name: item.id,
+            root: "",
+            status: item.connected ? "connected" : "error",
+          }),
+        ),
+      ),
   })
 
 export const loadActiveSessionsQuery = (
@@ -164,7 +189,7 @@ function makeQueryOptionsApi(
     references: (directory: PathKey) => loadReferencesQuery(scope, directory, serverAPI.references),
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, serverAPI.mcp),
     mcpResources: (directory: PathKey) => loadMcpResourcesQuery(scope, directory, serverAPI.mcp),
-    lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
+    lsp: (directory: PathKey) => loadLspQuery(scope, directory, serverAPI.lsp),
     sessions: (directory: PathKey) => ({ queryKey: [scope, directory, "loadSessions"] as const }),
   }
 }
