@@ -181,7 +181,9 @@ const echo = Layer.effectDiscard(
 const echoNode = makeLocationNode({ name: "test/session-runner-tools", layer: echo, deps: [ToolRegistry.node] })
 
 // A tool that spawns a real process group, so an interrupted turn can be
-// checked against the OS instead of against durable state alone.
+// checked against the OS instead of against durable state alone. It is
+// provided per test rather than through the shared layer: a registered tool
+// changes the definitions sent to the provider, which other tests assert on.
 const spawnPidFile = `${os.tmpdir()}/miao-runner-spawn-${process.pid}.pid`
 const spawnTool = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -210,11 +212,6 @@ const spawnTool = Layer.effectDiscard(
     })
   }),
 )
-const spawnNode = makeLocationNode({
-  name: "test/session-runner-spawn",
-  layer: spawnTool,
-  deps: [ToolRegistry.node, AppProcess.node],
-})
 
 const processAlive = (pid: number) => {
   try {
@@ -368,7 +365,6 @@ const it = testEffect(
       ToolRegistry.node,
       ToolRegistry.toolsNode,
       echoNode,
-      spawnNode,
       AppProcess.node,
       SessionRunnerModel.node,
       SystemContextRegistry.node,
@@ -1928,6 +1924,70 @@ describe("SessionRunnerLLM", () => {
         name: "task",
         state: { status: "error", error: { type: "unknown", message: "Subagent failed: child boom" } },
       })
+    }),
+  )
+
+  it.effect("interrupts a subagent that stops producing events", () =>
+    Effect.gen(function* () {
+      yield* setup
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate this" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "child", prompt: "Say sub", subagent_type: "build" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+      ]
+
+      // Hold the subagent's provider stream open so it emits nothing at all:
+      // only the silence watchdog can end the parent's wait.
+      const gate = yield* Deferred.make<void>()
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      while (requests.length < 1) yield* Effect.yieldNow
+      streamGate = gate
+      while (requests.length < 2) yield* Effect.yieldNow
+
+      const taskTool = (context: SessionMessage.Message[]) =>
+        context
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((item) => item.type === "tool" && item.name === "task")
+      const taskFailed = (context: SessionMessage.Message[]) =>
+        context
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .some((item) => item.type === "tool" && item.name === "task" && item.state.status === "error")
+
+      // Short of the deadline the subagent is still only slow.
+      yield* TestClock.adjust("14 minutes")
+      expect(taskTool(yield* session.context(sessionID))).toMatchObject({ state: { status: "running" } })
+
+      yield* TestClock.adjust("2 minutes")
+      let failed = taskFailed(yield* session.context(sessionID))
+      for (let attempt = 0; attempt < 100 && !failed; attempt++) {
+        yield* Effect.yieldNow
+        failed = taskFailed(yield* session.context(sessionID))
+      }
+      expect(failed).toBe(true)
+      expect(taskTool(yield* session.context(sessionID))).toMatchObject({
+        type: "tool",
+        name: "task",
+        state: { status: "error", error: { message: expect.stringContaining("no output for 15 minutes") } },
+      })
+
+      streamGate = undefined
+      yield* Fiber.interrupt(run)
     }),
   )
 
@@ -3621,7 +3681,7 @@ describe("SessionRunnerLLM", () => {
       responseStream = undefined
       response = []
       requests.length = 0
-    }),
+    }).pipe(Effect.provide(spawnTool)),
   )
 
   it.live("stops a subagent's spawned process group when the parent run is interrupted", () =>
@@ -3691,7 +3751,7 @@ describe("SessionRunnerLLM", () => {
       responses = undefined
       response = []
       requests.length = 0
-    }),
+    }).pipe(Effect.provide(spawnTool)),
   )
 
   it.effect("durably fails blocked local tools when a provider turn is interrupted", () =>
