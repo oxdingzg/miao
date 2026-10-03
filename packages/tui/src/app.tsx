@@ -201,6 +201,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             destroyRenderer(renderer)
           }),
       )
+      // The kitty keyboard protocol encodes every key as CSI sequences and is a
+      // known source of CJK IME breakage; allow turning it off to confirm.
+      if (Flag.MIAO_DISABLE_KITTY_KEYBOARD) renderer.disableKittyKeyboard()
       win32DisableProcessedInput()
       yield* Effect.acquireRelease(
         Effect.sync(() => settleResizes(renderer)),
