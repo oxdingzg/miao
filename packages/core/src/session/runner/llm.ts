@@ -374,13 +374,33 @@ const layer = Layer.effect(
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
       const resolveStartedAt = Date.now()
-      const resolved = yield* models.resolve(session).pipe(
+      const catalogRetry = { attempt: 0, error: undefined as SessionRunnerModel.Error | undefined }
+      const resolved = yield* Effect.suspend(() => {
+        const previous = catalogRetry.error
+        catalogRetry.error = undefined
+        return (
+          previous
+            ? events.publish(SessionEvent.Retried, {
+                sessionID: session.id,
+                timestamp: DateTime.makeUnsafe(Date.now()),
+                attempt: ++catalogRetry.attempt,
+                error: retryDetail(previous),
+              })
+            : Effect.void
+        ).pipe(Effect.andThen(models.resolve(session)))
+      }).pipe(
         // A provider can be missing from the catalog for a few seconds while a
         // credential refresh or plugin boot settles; waiting for it beats
         // failing the turn.
         Effect.tapError((error) =>
           SessionRunnerProviderRetry.retryable(error)
-            ? Effect.logWarning("retrying unavailable model", { sessionID: session.id, tag: error._tag })
+            ? Effect.sync(() => {
+                catalogRetry.error = error
+              }).pipe(
+                Effect.andThen(
+                  Effect.logWarning("retrying unavailable model", { sessionID: session.id, tag: error._tag }),
+                ),
+              )
             : Effect.void,
         ),
         Effect.retry({
@@ -710,7 +730,10 @@ const layer = Layer.effect(
           const llmFailure = failure instanceof LLMError ? failure : undefined
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
-            yield* withPublication(publisher.failAssistant(llmFailure.reason.message))
+            const detail = retryDetail(llmFailure)
+            yield* withPublication(publisher.failAssistant(detail.statusCode === undefined
+              ? llmFailure.reason.message
+              : `API Error: ${detail.statusCode} · ${llmFailure.reason.message}`))
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)

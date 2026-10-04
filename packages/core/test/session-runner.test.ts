@@ -4337,6 +4337,61 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("keeps the HTTP status visible in terminal assistant errors", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      streamFailure = new LLMError({
+        module: "RequestExecutor", method: "execute",
+        reason: new InvalidRequestReason({
+          message: "Invalid model request",
+          http: new HttpContext({
+            request: new HttpRequestDetails({ method: "POST", url: "https://api.example/v1/chat/completions", headers: {} }),
+            response: new HttpResponseDetails({ status: 400, headers: {} }),
+          }),
+        }),
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Show the model error" }), resume: false })
+      yield* session.resume(sessionID).pipe(Effect.flip)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({
+        type: "assistant", error: { message: "API Error: 400 · Invalid model request" },
+      })
+    }),
+  )
+
+  it.effect("announces an unavailable model when catalog resolution actually retries", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const database = yield* Database.Service
+      const failure = new SessionRunnerModel.ModelUnavailableError({
+        providerID: ProviderV2.ID.make("fake"),
+        modelID: ModelV2.ID.make("fake-model"),
+      })
+      const calls = { count: 0 }
+      modelResolveHook = Effect.suspend(() => (++calls.count === 1 ? Effect.fail(failure) : Effect.void))
+      response = fragmentFixture("text", "catalog-recovered", ["Recovered catalog"]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Wait for catalog recovery" }), resume: false })
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (calls.count < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+      const notices = yield* database.db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(notices.map((notice) => notice.data)).toMatchObject([
+        { sessionID, attempt: 1, error: { message: failure.message, isRetryable: true } },
+      ])
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({
+        type: "assistant",
+        finish: "stop",
+        content: [{ type: "text", text: "Recovered catalog" }],
+      })
+    }),
+  )
+
   it.effect("records why a throttled provider attempt was retried", () =>
     Effect.gen(function* () {
       yield* setup

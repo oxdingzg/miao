@@ -244,6 +244,7 @@ test("classifies live V2 session events for transcript refresh", () => {
   expect(isLiveSessionV2Event("session.next.step.ended")).toBe(true)
   expect(isLiveSessionV2Event("session.next.moved")).toBe(false)
   expect(isLiveSessionV2Event("session.next.status")).toBe(false)
+  expect(isLiveSessionV2Event("session.next.retried")).toBe(false)
   expect(isLiveSessionV2Event("message.part.updated")).toBe(false)
 })
 
