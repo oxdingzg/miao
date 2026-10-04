@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { $ } from "bun"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
@@ -15,6 +16,8 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
   const database = path.join(directory, "sessions.db")
   const project = path.join(directory, "project")
   await mkdir(project)
+  await $`git init --quiet ${project}`
+  await $`git -C ${project} -c user.name=Fixture -c user.email=fixture@example.invalid commit --allow-empty --quiet -m fixture`
   const sessionID = "ses_remote_runtime_test"
   const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
   const device = await SecureChannel.createIdentity()
@@ -82,27 +85,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     }
     throw new Error("Runtime readiness timed out")
   }
-  try {
-    const first = start()
-    const record = await ready(first)
-    const status = Bun.spawn([process.execPath, "run", "src/index.ts", "remote", "status"], {
-      cwd: path.resolve(import.meta.dir, "../.."),
-      env: environment,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-    expect(await status.exited).toBe(0)
-    expect(await new Response(status.stdout).text()).toContain(record.url)
-    const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
-    expect((await fetch(new URL("/api/health", record.url))).status).toBe(401)
-    expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(200)
-    const created = await fetch(new URL("/api/session", record.url), {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ id: sessionID, location: { directory: project } }),
-    })
-    expect(created.status).toBe(200)
-    const session = ((await created.json()) as { data: { id: string } }).data
+  const connectRemote = async (record: RuntimeDiscovery.Record, approved: DeviceGrants.Grant) => {
     // Use the actual encrypted Hub -> Runtime Agent -> local API path.
     const socket = new WebSocket(`ws://127.0.0.1:${hub.port}/v1/client?hostID=${grants.hostID}`)
     sockets.push(socket)
@@ -126,7 +109,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
         grants.identity.publicKey,
       )
     ).channel
-    const call = async (method: string, payload: unknown, operationID?: string) => {
+    const call = async (method: string, payload: unknown, operationID?: string, projectID?: string) => {
       socket.send(
         await channel.seal(
           new TextEncoder().encode(
@@ -135,11 +118,12 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
               requestID: crypto.randomUUID(),
               hostID: grants.hostID,
               runtimeID: record.runtimeID,
-              grantID: grant.id,
-              grantVersion: grant.version,
+              grantID: approved.id,
+              grantVersion: approved.version,
               method,
               sessionID,
               operationID,
+              projectID,
               payload,
             }),
           ),
@@ -151,6 +135,30 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
         code?: string
       }
     }
+    return call
+  }
+  try {
+    const first = start()
+    const record = await ready(first)
+    const status = Bun.spawn([process.execPath, "run", "src/index.ts", "remote", "status"], {
+      cwd: path.resolve(import.meta.dir, "../.."),
+      env: environment,
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    expect(await status.exited).toBe(0)
+    expect(await new Response(status.stdout).text()).toContain(record.url)
+    const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
+    expect((await fetch(new URL("/api/health", record.url))).status).toBe(401)
+    expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(200)
+    const created = await fetch(new URL("/api/session", record.url), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ id: sessionID, location: { directory: project } }),
+    })
+    expect(created.status).toBe(200)
+    const session = ((await created.json()) as { data: { id: string; projectID: string } }).data
+    const call = await connectRemote(record, grant)
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { id: sessionID } })
     const sibling = await fetch(new URL("/api/session", record.url), {
       method: "POST",
@@ -200,6 +208,14 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     expect((await fetch(new URL("/api/runtime/stop", record.url), { method: "POST", headers })).status).toBe(204)
     expect(await first.exited).toBe(0)
     expect(await RuntimeDiscovery.read(database)).toBeUndefined()
+    const projectGrant = await grants.approve({
+      publicKey: device.publicKey,
+      label: "project phone",
+      permissions: ["read", "session.create"],
+      projectIDs: [session.projectID],
+      sessionIDs: [],
+      expiresAt: Date.now() + 120_000,
+    })
     const next = await ready(start())
     expect(next.runtimeID).not.toBe(record.runtimeID)
     expect(next.credential).not.toBe(record.credential)
@@ -207,6 +223,36 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
     })
     expect(resumed.status).toBe(200)
+    const restoredCall = await connectRemote(next, grant)
+    expect(await restoredCall("operation.get", { operationID })).toMatchObject({
+      type: "result",
+      data: { status: "accepted", result: accepted.data },
+    })
+    expect(
+      (await restoredCall("session.prompt", { text: "remote test input", delivery: "queue" }, operationID)).data,
+    ).toEqual(accepted.data)
+    const projectCall = await connectRemote(next, projectGrant)
+    const projects = await projectCall("project.list", {})
+    expect(projects.type).toBe("result")
+    const directoryID = (
+      projects.data as { data: Array<{ id: string; directories: Array<{ id: string }> }> }
+    ).data.find((entry) => entry.id === session.projectID)?.directories[0]?.id
+    expect(directoryID).toBeDefined()
+    const createID = crypto.randomUUID()
+    const remoteCreated = await projectCall("session.create", { directoryID }, createID, session.projectID)
+    expect(remoteCreated).toMatchObject({
+      type: "result",
+      data: { status: "completed", session: { projectID: session.projectID } },
+    })
+    expect((await projectCall("session.create", { directoryID }, createID, session.projectID)).data).toEqual(
+      remoteCreated.data,
+    )
+    expect(
+      await projectCall("session.create", { directoryID, directory: project }, crypto.randomUUID(), session.projectID),
+    ).toMatchObject({ type: "error", code: "invalid_request" })
+    expect(
+      await projectCall("session.create", { directoryID: "0".repeat(64) }, crypto.randomUUID(), session.projectID),
+    ).toMatchObject({ type: "error", code: "forbidden" })
   } finally {
     sockets.forEach((socket) => socket.close())
     children.forEach((child) => {

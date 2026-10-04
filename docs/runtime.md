@@ -72,7 +72,7 @@ HTTP only on loopback for local verification.
 
 The Agent currently exposes capabilities, authorized project and Session lists, Session reads, paginated durable
 history, pending inputs/permissions/questions, diffs, text prompt admission and
-operation receipt lookup. This is the Runtime transport integration; device
+operation receipt lookup, and Session creation in registered project directories. Project listing returns opaque directory IDs; Session creation accepts an ID instead of a filesystem path. Exact create retries adopt the same Session and do not start execution. This is the Runtime transport integration; device
 pairing UI and the remaining client flows are separate work.
 
 Prompt retries use one stable operation ID. The Runtime persists a receipt

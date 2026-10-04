@@ -1,6 +1,7 @@
 export * as RuntimeControlMethods from "./control-methods"
 
 import { createHash } from "node:crypto"
+import path from "node:path"
 import { Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { RemoteOperations } from "@miao/core/runtime/operations"
@@ -26,10 +27,83 @@ export function make(options: {
       const projects = await options.client.projects.list(undefined, { signal: context.signal })
       context.authorize()
       return {
-        data: projects.data
-          .filter((project) => context.grant.projectIDs.includes(project.id))
-          .map((project) => ({ id: project.id, name: project.name, vcs: project.vcs })),
+        data: await Promise.all(
+          projects.data
+            .filter((project) => context.grant.projectIDs.includes(project.id))
+            .map(async (project) => {
+              const registered = await options.client.projects.directories(
+                { projectID: project.id },
+                { signal: context.signal },
+              )
+              context.authorize()
+              return {
+                id: project.id,
+                name: project.name,
+                vcs: project.vcs,
+                directories: registered.data.map((entry) => ({
+                  id: directoryID(project.id, entry.directory),
+                  name: path.basename(entry.directory),
+                })),
+              }
+            }),
+        ),
       }
+    },
+    "session.create": async (request, context) => {
+      const decoded = Schema.decodeUnknownOption(
+        Schema.Struct({ directoryID: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) }),
+        { onExcessProperty: "error" },
+      )(request.payload)
+      if (Option.isNone(decoded) || !request.operationID || !request.projectID)
+        throw new ControlAgent.RequestError("invalid_request")
+      const projectID = request.projectID
+      if (!context.grant.projectIDs.includes(projectID)) throw new ControlAgent.RequestError("forbidden")
+      const registered = await options.client.projects.directories({ projectID }, { signal: context.signal })
+      context.authorize()
+      const directory = registered.data.find(
+        (entry) => directoryID(projectID, entry.directory) === decoded.value.directoryID,
+      )?.directory
+      if (!directory) throw new ControlAgent.RequestError("forbidden")
+      const actual = await options.client.projects.current({ location: { directory } }, { signal: context.signal })
+      context.authorize()
+      if (actual.data.id !== projectID) throw new ControlAgent.RequestError("conflict")
+      const subject = createHash("sha256").update(`${context.grant.id}:${context.grant.publicKey}`).digest("hex")
+      const id = request.operationID
+      const key = `${subject}:${id}`
+      const sessionID = `ses_remote_${createHash("sha256").update(key).digest("hex")}`
+      const previous = tails.get(key) ?? Promise.resolve()
+      const pending = previous
+        .catch(() => undefined)
+        .then(async () => {
+          context.authorize()
+          const prepared = await query((db) =>
+            RemoteOperations.prepare(db, {
+              subject,
+              id,
+              method: request.method,
+              session_id: sessionID,
+              project_id: projectID,
+              digest: decoded.value.directoryID,
+            }),
+          )
+          if (prepared.type === "conflict") throw new ControlAgent.RequestError("conflict")
+          if (prepared.type === "existing" && prepared.record.status !== "prepared") return prepared.record.result
+          context.authorize()
+          // Core adopts an existing ID; creation itself never starts provider work.
+          const session = await options.client.sessions.create({ id: sessionID, location: { directory } })
+          if (session.projectID !== projectID) throw new ControlAgent.RequestError("conflict")
+          const result = { status: "completed", session }
+          await query((db) => RemoteOperations.settle(db, subject, id, "completed", result))
+          context.authorize()
+          return result
+        })
+      tails.set(key, pending)
+      void pending
+        .finally(() => {
+          if (tails.get(key) === pending) tails.delete(key)
+        })
+        .catch(() => undefined)
+      return pending
     },
     "session.list": async (request, context) => {
       const page = Schema.decodeUnknownOption(
@@ -188,4 +262,10 @@ export function make(options: {
     },
   }
   return methods
+}
+
+function directoryID(projectID: string, directory: string) {
+  return createHash("sha256")
+    .update(JSON.stringify([projectID, directory]))
+    .digest("hex")
 }
