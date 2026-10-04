@@ -6,6 +6,7 @@ import { ControlAgent } from "../src/agent"
 import { DeviceGrants } from "../src/grants"
 import { ControlHub } from "../src/hub"
 import { SecureChannel } from "../src/secure-channel"
+import { ControlPairing } from "../src/pairing"
 
 const cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => {
@@ -35,6 +36,8 @@ async function fixture(
   const hub = ControlHub.listen({ hosts: new Map([[grants.hostID, token]]), port: 0 })
   cleanup.push(() => hub.stop())
   const base = `http://127.0.0.1:${hub.port}`
+  const pairing = ControlPairing.make({ grants, target: { hostID: grants.hostID, runtimeID }, hubURL: base })
+  cleanup.push(() => pairing.stop())
   const agent = ControlAgent.connect({
     hubURL: base,
     hostToken: token,
@@ -43,12 +46,13 @@ async function fixture(
     methods,
     projectForSession,
     allowLoopbackHTTP: true,
+    pairing,
   })
   cleanup.push(() => agent.stop())
   const deadline = Date.now() + 2000
   while (!agent.connected() && Date.now() < deadline) await Bun.sleep(5)
   expect(agent.connected()).toBe(true)
-  return { base, agent, grants, device, grant, runtimeID }
+  return { base, agent, grants, device, grant, runtimeID, pairing }
 }
 
 async function socket(base: string, hostID: string) {
@@ -264,4 +268,100 @@ describe("outbound authorized encrypted Agent", () => {
       }),
     ).toThrow("HTTPS")
   })
+})
+
+test("provisional encrypted pairing through the Hub requires local approval before business access", async () => {
+  const f = await fixture({ "session.get": async () => ({ title: "approved Session" }) })
+  const device = await SecureChannel.createIdentity()
+  const invitation = f.pairing.issue({
+    permissions: ["read"],
+    sessionIDs: ["session-one"],
+    projectIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  const transport = await socket(f.base, f.grants.hostID)
+  const pending = await SecureChannel.startClient(device, { hostID: f.grants.hostID, runtimeID: f.runtimeID })
+  transport.ws.send(
+    Buffer.from(
+      JSON.stringify({
+        pairingID: invitation.pairingID,
+        label: "phone",
+        hello: pending.hello,
+        proof: ControlPairing.proof(invitation, "phone", pending.hello),
+      }),
+    ).toString("base64url"),
+  )
+  const accepted = await pending.finish(
+    JSON.parse(Buffer.from(await transport.receive(), "base64url").toString()),
+    invitation.hostPublicKey,
+  )
+  expect(JSON.parse(new TextDecoder().decode(await accepted.channel.open(await transport.receive())))).toMatchObject({
+    type: "pairing",
+    status: "pending",
+  })
+  expect(f.grants.active(device.publicKey)).toEqual([])
+  const grant = await f.pairing.approve(invitation.pairingID, device.publicKey)
+  expect(JSON.parse(new TextDecoder().decode(await accepted.channel.open(await transport.receive())))).toMatchObject({
+    type: "pairing",
+    status: "approved",
+    grant: { id: grant.id },
+  })
+  transport.ws.send(
+    await accepted.channel.seal(
+      new TextEncoder().encode(
+        JSON.stringify({
+          version: 1,
+          requestID: crypto.randomUUID(),
+          hostID: f.grants.hostID,
+          runtimeID: f.runtimeID,
+          grantID: grant.id,
+          grantVersion: grant.version,
+          method: "session.get",
+          sessionID: "session-one",
+          payload: {},
+        }),
+      ),
+    ),
+  )
+  expect(JSON.parse(new TextDecoder().decode(await accepted.channel.open(await transport.receive())))).toMatchObject({
+    type: "result",
+    data: { title: "approved Session" },
+  })
+})
+
+test("business frames sent during pairing close the provisional channel without issuing a grant", async () => {
+  const f = await fixture({
+    "session.get": async () => {
+      throw new Error("Must not dispatch")
+    },
+  })
+  const device = await SecureChannel.createIdentity()
+  const invitation = f.pairing.issue({
+    permissions: ["read"],
+    sessionIDs: ["session-one"],
+    projectIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  const transport = await socket(f.base, f.grants.hostID)
+  const pending = await SecureChannel.startClient(device, { hostID: f.grants.hostID, runtimeID: f.runtimeID })
+  transport.ws.send(
+    Buffer.from(
+      JSON.stringify({
+        pairingID: invitation.pairingID,
+        label: "phone",
+        hello: pending.hello,
+        proof: ControlPairing.proof(invitation, "phone", pending.hello),
+      }),
+    ).toString("base64url"),
+  )
+  const accepted = await pending.finish(
+    JSON.parse(Buffer.from(await transport.receive(), "base64url").toString()),
+    invitation.hostPublicKey,
+  )
+  await accepted.channel.open(await transport.receive())
+  const disconnect = closed(transport.ws)
+  transport.ws.send(await accepted.channel.seal(new TextEncoder().encode("unapproved request")))
+  expect((await disconnect).code).toBe(1008)
+  expect(f.grants.active(device.publicKey)).toEqual([])
+  expect(f.pairing.list()).toEqual([])
 })

@@ -3,6 +3,7 @@ export * as ControlAgent from "./agent"
 import { Option, Schema } from "effect"
 import { SecureChannel } from "./secure-channel"
 import { DeviceGrants } from "./grants"
+import { ControlPairing } from "./pairing"
 
 // The Agent runs under Bun. Keep its authenticated constructor explicit when
 // consumers also include DOM declarations, whose WebSocket lacks header options.
@@ -76,6 +77,7 @@ export type Options = {
   readonly methods: Partial<Record<Method, Handler>>
   readonly projectForSession: (sessionID: string) => Promise<string | undefined>
   readonly allowLoopbackHTTP?: boolean
+  readonly pairing?: ReturnType<typeof ControlPairing.make>
 }
 type Peer = {
   readonly abort: AbortController
@@ -83,6 +85,7 @@ type Peer = {
   readonly timer: ReturnType<typeof setTimeout>
   key?: string
   channel?: SecureChannel.Channel
+  pairing?: string
 }
 const required: Partial<Record<Method, DeviceGrants.Permission>> = {
   "session.create": "session.create",
@@ -185,6 +188,35 @@ export function connect(options: Options) {
       const bytes = Buffer.from(encoded, "base64url")
       if (bytes.length > 4096 || bytes.toString("base64url") !== encoded) return closePeer(id)
       const hello: unknown = JSON.parse(bytes.toString("utf8"))
+      if (options.pairing && hello && typeof hello === "object" && "pairingID" in hello) {
+        peer.pairing = "pending"
+        const claimed = await options.pairing.claim(hello, id)
+        peer.pairing = claimed.pairingID
+        clearTimeout(peer.timer)
+        const cancel = () => options.pairing?.reject(claimed.pairingID)
+        peer.abort.signal.addEventListener("abort", cancel, { once: true })
+        if (peer.abort.signal.aborted) {
+          cancel()
+          return
+        }
+        peer.channel = claimed.channel
+        send(id, Buffer.from(JSON.stringify(claimed.hello)).toString("base64url"))
+        try {
+          await reply(id, peer, { version: 1, type: "pairing", status: "pending", pairingID: claimed.pairingID })
+          const grant = await claimed.result
+          const check = () => {
+            if (peer.abort.signal.aborted || options.grants.get(grant.id, grant.publicKey)?.version !== grant.version)
+              throw new Error("Pairing unavailable")
+          }
+          check()
+          peer.key = grant.publicKey
+          await reply(id, peer, { version: 1, type: "pairing", status: "approved", grant }, check)
+          peer.pairing = undefined
+        } finally {
+          peer.abort.signal.removeEventListener("abort", cancel)
+        }
+        return
+      }
       const key =
         typeof hello === "object" && hello !== null && "signingKey" in hello && typeof hello.signingKey === "string"
           ? hello.signingKey
@@ -255,6 +287,9 @@ export function connect(options: Options) {
       if (envelope.type !== "frame") return
       const peer = peers.get(envelope.connectionID)
       if (!peer) return
+      // A provisional channel accepts no business requests, including queued
+      // writes sent before local approval completes.
+      if (peer.pairing) return closePeer(envelope.connectionID)
       if (peer.queue.count >= 8 || peer.queue.bytes + envelope.payload.length > 512 * 1024)
         return closePeer(envelope.connectionID)
       peer.queue.count++
