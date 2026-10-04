@@ -27,4 +27,8 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run typecheck
-        run: bun typecheck
+        # Bound turbo parallelism: the full graph runs many `tsgo` processes at
+        # once, which can exhaust the hosted runner's memory and get SIGKILLed
+        # (exit 137) even though a warm run finishes in ~2 minutes. Serializing
+        # to a couple of tasks keeps peak memory under the runner limit.
+        run: bun typecheck --concurrency=2
