@@ -13,6 +13,7 @@ to add a section here.
 ## [0.1.6] - 2026-10-04
 
 ### Added
+- **remote-control**: add authorized outbound Agent and durable grants (#87) (`1238d58a`)
 - **ios**: persist remote operations and coordinate scene connections (#85) (`2a60a650c`)
 - **core**: restore V2 LSP navigation tool (#74) (`4bd3dc762`)
 - **core**: restore safe apply_patch file moves (#80) (`21ec0ccc1`)
