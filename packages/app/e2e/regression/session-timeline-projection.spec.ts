@@ -1,13 +1,11 @@
 import { expect, test } from "@playwright/test"
-import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
+import { assistant, setup, text, tool, user, type Message } from "../utils/session-v2"
 import {
   assistantMessage,
   setupTimeline,
   status,
   toolPart,
   userMessage,
-  userText,
-  type PartSeed,
 } from "../performance/timeline-stability/fixture"
 
 test.describe("session timeline projection", () => {
@@ -69,99 +67,53 @@ test.describe("session timeline projection", () => {
     await expect(page.locator('[data-timeline-part-id="prt_todo"]')).toHaveCount(0)
   })
 
-  test("projects gaps, dividers, assistant parts, and errors together", async ({ page }) => {
-    test.fixme(true, LEGACY_V1_FIXTURE)
-    const firstUser = userMessage(
-      [
-        userText("The user made the following comment regarding lines 4 through 8 of src/a.ts: Keep this stable", {
-          id: "prt_comment",
-          synthetic: true,
-          metadata: {
-            opencodeComment: {
-              path: "src/a.ts",
-              selection: { startLine: 4, startChar: 0, endLine: 8, endChar: 0 },
-              comment: "Keep this stable",
-            },
-          },
-        }),
-        userText("Continue after the comment", { id: "prt_visible_user" }),
+  test("projects gaps, compaction dividers, assistant parts, and errors together", async ({ page }) => {
+    const compacted: Message = {
+      id: "msg_projection_compaction",
+      type: "compaction",
+      reason: "auto",
+      summary: "Compacted earlier work",
+      recent: "Recent work",
+      time: { created: 1700000002500 },
+    }
+    await setup(page, {
+      messages: [
+        user("Continue after compaction"),
+        { ...assistant([text("Before compaction")]), error: { type: "unknown", message: "Visible provider failure" } },
+        compacted,
+        user("Second turn", { id: "msg_2000_second_user", created: 1700000005000 }),
+        assistant([text("Second response")], { id: "msg_2001_second_assistant", created: 1700000006000 }),
       ],
-      { summary: { diffs: Array.from({ length: 11 }, (_, index) => summaryDiff(index)) } },
-    )
-    const aborted = assistantMessage(
-      [
-        { id: "prt_before_abort", type: "text", text: "Before interruption" },
-        { id: "prt_compaction", type: "compaction", auto: true },
-      ],
-      {
-        id: "msg_1001_assistant_aborted",
-        error: { name: "MessageAbortedError", data: { message: "Stopped" } },
-      },
-    )
-    const failed = assistantMessage([{ id: "prt_after_abort", type: "text", text: "After interruption" }], {
-      id: "msg_1002_assistant_failed",
-      error: {
-        name: "APIError",
-        data: {
-          message: JSON.stringify({ error: { type: "provider_error", message: "Visible provider failure" } }),
-          isRetryable: false,
-        },
-      },
-      created: 1700000003000,
     })
-    const nextUser = userMessage([userText("Second turn", { id: "prt_second_user" })], {
-      id: "msg_2000_second_user",
-      created: 1700000005000,
-    })
-    const nextAssistant = assistantMessage([{ id: "prt_second_text", type: "text", text: "Second response" }], {
-      id: "msg_2001_second_assistant",
-      parentID: "msg_2000_second_user",
-      created: 1700000006000,
-    })
-    const timeline = await setupTimeline(page, { messages: [firstUser, aborted, failed, nextUser, nextAssistant] })
-    await timeline.send(status("idle"), 100)
-    const scroller = page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
-    await scroller.evaluate((element) => (element.scrollTop = 0))
-
     await expect(page.locator('[data-timeline-row="TurnDivider"]')).toHaveCount(1)
     await expect(page.getByText("Session compacted", { exact: true })).toBeVisible()
     await expect(page.getByText("Visible provider failure")).toBeVisible()
-    await scroller.evaluate((element) => (element.scrollTop = element.scrollHeight))
+    await expect(page.getByText("Second response", { exact: true })).toBeVisible()
     await expect(page.locator('[data-timeline-row="TurnGap"]')).toBeVisible()
   })
 
-  test("renders inline comments and historical diff summary overflow", async ({ page }) => {
-    test.fixme(true, LEGACY_V1_FIXTURE)
-    const user = userMessage(
-      [
-        userText("The user made the following comment regarding lines 4 through 8 of src/a.ts: Keep this stable", {
-          id: "prt_comment_only",
-          synthetic: true,
-          metadata: {
-            opencodeComment: {
-              path: "src/a.ts",
-              selection: { startLine: 4, startChar: 0, endLine: 8, endChar: 0 },
-              comment: "Keep this stable",
-            },
-          },
-        }),
-        userText("Continue after the comment", { id: "prt_comment_visible" }),
+  test("renders user comment instructions and historical multi-file patch details", async ({ page }) => {
+    const files = Array.from({ length: 11 }, (_, index) => patchFile(`src/diff-${index}.ts`, "update"))
+    await setup(page, {
+      messages: [
+        user("Regarding src/a.ts lines 4 through 8: Keep this stable. Continue after the comment."),
+        assistant([
+          tool(
+            "call_historical_patch",
+            "apply_patch",
+            "completed",
+            { files: files.map((file) => file.filePath) },
+            "Applied patches",
+            { files },
+          ),
+        ]),
       ],
-      { summary: { diffs: Array.from({ length: 11 }, (_, index) => summaryDiff(index)) } },
-    )
-    const nextUser = userMessage(undefined, { id: "msg_2000_diff_next_user", created: 1700000010000 })
-    const nextAssistant = assistantMessage([], {
-      id: "msg_2001_diff_next_assistant",
-      parentID: "msg_2000_diff_next_user",
-      created: 1700000011000,
+      settings: { editToolPartsExpanded: true },
     })
-    await setupTimeline(page, { messages: [user, assistantMessage(), nextUser, nextAssistant] })
-    const scroller = page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
-    await scroller.evaluate((element) => (element.scrollTop = 0))
-
-    await expect(page.getByText("Keep this stable", { exact: true })).toBeVisible()
-    await expect(page.locator('[data-timeline-row="DiffSummary"]')).toBeVisible()
-    await expect(page.getByText(/show all/i)).toBeVisible()
+    await expect(page.getByText(/Keep this stable/)).toBeVisible()
+    const patch = page.locator('[data-timeline-part-id="call_historical_patch"]')
+    await expect(patch).toContainText("diff-0.ts")
+    await expect(patch).toContainText("diff-10.ts")
   })
 
   test("renders interruption independently when the turn is not compacted", async ({ page }) => {
@@ -184,41 +136,20 @@ test.describe("session timeline projection", () => {
   })
 
   test("renders user image, file attachment, file reference, and agent reference", async ({ page }) => {
-    test.fixme(true, LEGACY_V1_FIXTURE)
-    const text = "Use @explore with @src/a.ts and inspect the attachments"
-    const parts: PartSeed<"user">[] = [
-      userText(text, { id: "prt_user_rich" }),
-      {
-        id: "prt_user_image",
-        type: "file",
-        mime: "image/png",
-        filename: "pixel.png",
-        url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-      },
-      {
-        id: "prt_user_attachment",
-        type: "file",
-        mime: "application/json",
-        filename: "tsconfig.json",
-        url: "data:application/json;base64,e30=",
-      },
-      {
-        id: "prt_user_reference",
-        type: "file",
-        mime: "text/plain",
-        filename: "a.ts",
-        url: "src/a.ts",
-        source: { type: "file", path: "src/a.ts", text: { value: "@src/a.ts", start: 18, end: 27 } },
-      },
-      {
-        id: "prt_user_agent",
-        type: "agent",
-        name: "explore",
-        source: { value: "@explore", start: 4, end: 12 },
-      },
-    ]
-    await setupTimeline(page, { messages: [userMessage(parts), assistantMessage()] })
-
+    const rich: Message = {
+      ...user("Use @explore with @src/a.ts and inspect the attachments"),
+      files: [
+        {
+          mime: "image/png",
+          name: "pixel.png",
+          uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        },
+        { mime: "application/json", name: "tsconfig.json", uri: "data:application/json;base64,e30=" },
+        { mime: "text/plain", name: "a.ts", uri: "src/a.ts", source: { text: "@src/a.ts", start: 18, end: 27 } },
+      ],
+      agents: [{ name: "explore", source: { text: "@explore", start: 4, end: 12 } }],
+    }
+    await setup(page, { messages: [rich, assistant()] })
     await expect(page.getByAltText("pixel.png")).toBeVisible()
     await expect(page.getByText("tsconfig.json")).toBeVisible()
     await expect(page.getByText("@src/a.ts", { exact: true })).toBeVisible()
@@ -274,14 +205,5 @@ function patchFile(filePath: string, type: "add" | "update" | "delete" | "move")
     deletions: type === "add" ? 0 : 1,
     before: type === "add" ? undefined : "export const before = true\n",
     after: type === "delete" ? undefined : "export const after = true\n",
-  }
-}
-
-function summaryDiff(index: number) {
-  return {
-    file: `src/diff-${index}.ts`,
-    additions: 1,
-    deletions: 1,
-    patch: `@@ -1 +1 @@\n-export const value = ${index}\n+export const value = ${index + 1}`,
   }
 }
