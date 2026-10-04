@@ -152,6 +152,18 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       }
     }
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { id: sessionID } })
+    const sibling = await fetch(new URL("/api/session", record.url), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ id: "ses_unapproved_sibling", location: { directory: project } }),
+    })
+    expect(sibling.status).toBe(200)
+    expect(await call("session.list", {})).toMatchObject({
+      type: "result",
+      data: { data: [{ id: sessionID }], cursor: { next: null } },
+    })
+    expect(await call("project.list", {})).toMatchObject({ type: "result", data: { data: [] } })
+    expect(await call("session.list", { directory: project })).toMatchObject({ type: "error", code: "invalid_request" })
     const operationID = crypto.randomUUID()
     const accepted = await call("session.prompt", { text: "remote test input", delivery: "queue" }, operationID)
     expect(accepted).toMatchObject({ type: "result", data: { status: "accepted", sessionID } })

@@ -22,6 +22,54 @@ export function make(options: {
   const query = <A, E>(use: (db: Database.Interface["db"]) => Effect.Effect<A, E>) =>
     options.run(Database.Service.use((service) => use(service.db)))
   const methods: Partial<Record<ControlAgent.Method, ControlAgent.Handler>> = {
+    "project.list": async (_request, context) => {
+      const projects = await options.client.projects.list(undefined, { signal: context.signal })
+      context.authorize()
+      return {
+        data: projects.data
+          .filter((project) => context.grant.projectIDs.includes(project.id))
+          .map((project) => ({ id: project.id, name: project.name, vcs: project.vcs })),
+      }
+    },
+    "session.list": async (request, context) => {
+      const page = Schema.decodeUnknownOption(
+        Schema.Struct({
+          cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(2048))),
+          limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
+        }),
+        { onExcessProperty: "error" },
+      )(request.payload)
+      if (Option.isNone(page)) throw new ControlAgent.RequestError("invalid_request")
+      if (request.projectID) {
+        if (!context.grant.projectIDs.includes(request.projectID)) throw new ControlAgent.RequestError("forbidden")
+        const sessions = await options.client.sessions.list(
+          { project: request.projectID, limit: page.value.limit ?? 100, cursor: page.value.cursor },
+          { signal: context.signal },
+        )
+        context.authorize()
+        return { ...sessions, data: sessions.data.filter((session) => session.projectID === request.projectID) }
+      }
+      // Session-only grants must not enumerate sibling Sessions in their project.
+      // Their cursor is an index into the stable, owner-approved ID list.
+      const offset = page.value.cursor === undefined ? 0 : Number(page.value.cursor)
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > context.grant.sessionIDs.length)
+        throw new ControlAgent.RequestError("invalid_request")
+      const ids = context.grant.sessionIDs.slice(offset, offset + (page.value.limit ?? 100))
+      const sessions = await Promise.all(
+        ids.map((sessionID) =>
+          options.client.sessions.get({ sessionID }, { signal: context.signal }).catch((error: unknown) => {
+            if (error && typeof error === "object" && "_tag" in error && error._tag === "SessionNotFoundError")
+              return undefined
+            throw error
+          }),
+        ),
+      )
+      context.authorize()
+      return {
+        data: sessions.filter((session) => session !== undefined),
+        cursor: { next: offset + ids.length < context.grant.sessionIDs.length ? String(offset + ids.length) : null },
+      }
+    },
     capabilities: async () => ({
       protocol: 1,
       operationReceipts: true,

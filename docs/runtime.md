@@ -70,7 +70,7 @@ and credential with the Hub. Remote requests cannot approve devices or modify
 the host configuration. HTTPS is required; `allowLoopbackHTTP: true` permits
 HTTP only on loopback for local verification.
 
-The Agent currently exposes capabilities, Session reads, paginated durable
+The Agent currently exposes capabilities, authorized project and Session lists, Session reads, paginated durable
 history, pending inputs/permissions/questions, diffs, text prompt admission and
 operation receipt lookup. This is the Runtime transport integration; device
 pairing UI and the remaining client flows are separate work.
