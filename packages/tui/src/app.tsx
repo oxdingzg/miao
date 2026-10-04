@@ -704,9 +704,10 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "remote.manage",
-        title: "Remote control (WeChat, QQ)",
+        title: "Remote control (App, Web, WeChat, QQ)",
         category: "Agent",
-        slashName: "remote",
+        slashName: "remote-control",
+        slashAliases: ["remote"],
         run: () => {
           dialog.replace(() => <DialogRemote />)
         },

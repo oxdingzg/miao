@@ -18,6 +18,10 @@ import type {
   RemoteEnvironment,
   RemoteLocal,
 } from "../../../src/component/dialog-remote"
+import type { DeviceApi } from "../../../src/component/dialog-devices"
+import type { ClipboardService } from "../../../src/context/clipboard"
+import type { RemoteAccess } from "@miao/schema/remote-access"
+import { createHash } from "node:crypto"
 
 const wechat = {
   id: "wechat",
@@ -86,7 +90,7 @@ function daemon(initial: DaemonStatus | undefined) {
   return { api, calls, push, set: (next: DaemonStatus | undefined) => void (state.status = next) }
 }
 
-async function mount(root: string, environment: RemoteEnvironment) {
+async function mount(root: string, environment: RemoteEnvironment, clipboard?: ClipboardService) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
@@ -98,6 +102,7 @@ async function mount(root: string, environment: RemoteEnvironment) {
     { TuiConfigProvider },
     { ToastProvider, Toast },
     { OpencodeKeymapProvider, registerOpencodeKeymap },
+    { ClipboardProvider },
   ] = await Promise.all([
     import("../../../src/ui/dialog"),
     import("../../../src/component/dialog-remote"),
@@ -106,6 +111,7 @@ async function mount(root: string, environment: RemoteEnvironment) {
     import("../../../src/config"),
     import("../../../src/ui/toast"),
     import("../../../src/keymap"),
+    import("../../../src/context/clipboard"),
   ])
 
   function Opener() {
@@ -126,10 +132,12 @@ async function mount(root: string, environment: RemoteEnvironment) {
             <KVProvider>
               <ThemeProvider mode="dark">
                 <ToastProvider>
-                  <DialogProvider>
-                    <Opener />
-                    <Toast />
-                  </DialogProvider>
+                  <ClipboardProvider value={clipboard}>
+                    <DialogProvider>
+                      <Opener />
+                      <Toast />
+                    </DialogProvider>
+                  </ClipboardProvider>
                 </ToastProvider>
               </ThemeProvider>
             </KVProvider>
@@ -503,6 +511,273 @@ test("stopping the daemon asks first, then signals the pid it reported", async (
     await view.app.mockInput.pressEnter()
     await view.until((value) => value.includes("○ 未运行（127.0.0.1:4097）"))
     expect(here.calls).toEqual([{ name: "stop", args: [42] }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+function deviceControl(enabled = true) {
+  const publicKey = `B${"A".repeat(86)}`
+  const issued: RemoteAccess.Invitation = {
+    version: 1,
+    pairingID: "pairing_device_01",
+    secret: "1".repeat(64),
+    hubURL: "https://relay.example.invalid",
+    hostID: "host_device_0001",
+    runtimeID: "runtime_device_01",
+    hostPublicKey: publicKey,
+    expiresAt: Date.now() + 120_000,
+  }
+  const state = {
+    status: { enabled, connected: enabled } as RemoteAccess.Status,
+    policy: undefined as RemoteAccess.Policy | undefined,
+    pending: [] as RemoteAccess.Candidate[],
+    grants: [] as RemoteAccess.Grant[],
+  }
+  const calls: Array<{ name: string; args: unknown }> = []
+  const api: DeviceApi = {
+    get: async () => state.status,
+    invite: async (policy) => {
+      calls.push({ name: "invite", args: policy })
+      state.policy = policy
+      return issued
+    },
+    pending: async () => state.pending,
+    devices: async () => state.grants,
+    approve: async (input) => {
+      calls.push({ name: "approve", args: input })
+      const candidate = state.pending.find((item) => item.pairingID === input.pairingID)!
+      const grant: RemoteAccess.Grant = {
+        ...candidate.policy,
+        id: "grant_device_0001",
+        publicKey: candidate.candidate.publicKey,
+        label: candidate.candidate.label,
+        version: 1,
+        createdAt: Date.now(),
+        revokedAt: null,
+      }
+      state.pending = state.pending.filter((item) => item !== candidate)
+      state.grants = [...state.grants, grant]
+      return grant
+    },
+    reject: async (input) => {
+      calls.push({ name: "reject", args: input })
+      state.pending = state.pending.filter((item) => item.pairingID !== input.pairingID)
+    },
+    revoke: async (input) => {
+      calls.push({ name: "revoke", args: input })
+      const grant = state.grants.find((item) => item.id === input.grantID)!
+      const revoked = { ...grant, version: grant.version + 1, revokedAt: Date.now() }
+      state.grants = state.grants.map((item) => (item === grant ? revoked : item))
+      return revoked
+    },
+  }
+  return { api, state, calls, issued, publicKey }
+}
+
+async function openDevices(view: Awaited<ReturnType<typeof mount>>) {
+  await view.until((frame) => frame.includes("扫码、批准设备和撤销授权"))
+  await view.app.mockInput.typeText("Web")
+  await view.app.mockInput.pressEnter()
+  await view.until((frame) => frame.includes("中继已连接") || frame.includes("中继尚未配置"))
+}
+
+test("device access is available without IM and shows an unconfigured relay truthfully", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  const view = await mount(tmp.path, environment(daemon(undefined).api, { devices: control.api }))
+  try {
+    await openDevices(view)
+    const frame = await view.until((value) => value.includes("中继尚未配置"))
+    expect(frame).not.toContain("分享当前会话")
+    expect(frame).not.toContain("持续接入")
+    expect(control.calls).toEqual([])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("read-only pairing is scoped and needs exact-key owner approval without cancelling on confirmation", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const copied: string[] = []
+  const view = await mount(tmp.path, environment(daemon(undefined).api, { devices: control.api }), {
+    write: async (text) => void copied.push(text),
+  })
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("只读")
+    await view.app.mockInput.pressEnter()
+    const frame = await view.until((value) => value.includes("二维码到期"))
+    expect(frame).not.toContain(control.issued.secret)
+    expect(control.state.policy?.permissions).toEqual(["read"])
+    expect(control.state.policy?.projectIDs).toEqual([])
+    expect(control.state.policy?.sessionIDs).toEqual(["ses_current"])
+    expect(control.state.policy!.expiresAt - Date.now()).toBeLessThanOrEqual(3_600_000)
+
+    // Issuing an invitation resets the old search. Copy is the first action.
+    await view.select(0)
+    await view.until(() => copied.length === 1)
+    expect(copied[0]).toStartWith("miao://pair#")
+    const url = new URL(copied[0])
+    expect(url.search).toBe("")
+    expect(JSON.parse(Buffer.from(url.hash.slice(1), "base64url").toString())).toEqual(control.issued)
+
+    control.state.pending = [
+      {
+        pairingID: control.issued.pairingID,
+        candidate: { publicKey: control.publicKey, label: "iPhone\u001b\u202e", clientChallenge: "challenge" },
+        policy: control.state.policy!,
+        expiresAt: control.issued.expiresAt,
+      },
+    ]
+    // Polling is real; wait for the pending row.
+    await view.until((value) => value.includes("等待批准"), 5000)
+    await view.app.mockInput.typeText("iPhone")
+    await view.app.mockInput.pressEnter()
+    const confirm = await view.until((value) => value.includes("名称由设备提供"))
+    expect(confirm).toContain(
+      createHash("sha256").update(Buffer.from(control.publicKey, "base64url")).digest("base64url"),
+    )
+    expect(confirm).toContain("权限：read")
+    expect(confirm).toContain("会话：ses_current")
+    expect(confirm).not.toContain("\u202e")
+    expect(control.calls.filter((call) => call.name === "approve" || call.name === "reject")).toEqual([])
+    // Cancel is selected first. Returning to the list must keep the invitation alive.
+    await view.select(0)
+    await view.until((value) => value.includes("二维码到期"))
+    expect(control.calls.some((call) => call.name === "reject")).toBe(false)
+    await Bun.sleep(30)
+    await view.app.mockInput.typeText("iPhone")
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("名称由设备提供"))
+    await view.select(1)
+    await view.until((value) => value.includes("设备已授权"))
+    expect(control.calls.filter((call) => call.name === "approve")).toEqual([
+      {
+        name: "approve",
+        args: { pairingID: control.issued.pairingID, publicKey: control.publicKey },
+      },
+    ])
+    expect(control.calls.some((call) => call.name === "reject")).toBe(false)
+  } finally {
+    view.cleanup()
+  }
+  expect(control.calls.some((call) => call.name === "reject")).toBe(false)
+})
+
+test("closing an invitation cancels it and persistent access only covers the current project", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const view = await mount(
+    tmp.path,
+    environment(daemon(undefined).api, { devices: control.api, projectID: "proj_current" }),
+  )
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("持续接入")
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("二维码到期"))
+    expect(control.state.policy?.projectIDs).toEqual(["proj_current"])
+    expect(control.state.policy?.sessionIDs).toEqual([])
+    expect(control.state.policy?.permissions).toContain("session.create")
+    expect(control.state.policy!.expiresAt - Date.now()).toBeLessThanOrEqual(7 * 86_400_000)
+    await view.app.mockInput.pressEscape()
+    await view.until(() => control.calls.some((call) => call.name === "reject"))
+    expect(control.calls.filter((call) => call.name === "reject")).toEqual([
+      {
+        name: "reject",
+        args: { pairingID: control.issued.pairingID },
+      },
+    ])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("revocation confirms the observed grant version and leaves execution running", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  control.state.grants = [
+    {
+      id: "grant_device_0001",
+      version: 7,
+      publicKey: control.publicKey,
+      label: "iPad",
+      permissions: ["read", "prompt"],
+      projectIDs: ["proj_current"],
+      sessionIDs: [],
+      expiresAt: Date.now() + 86_400_000,
+      createdAt: Date.now(),
+      revokedAt: null,
+    },
+  ]
+  const view = await mount(tmp.path, environment(daemon(undefined).api, { devices: control.api }))
+  try {
+    await openDevices(view)
+    await view.until((value) => value.includes("已授权设备"))
+    await view.app.mockInput.typeText("iPad")
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("撤销会断开设备连接"))
+    expect(control.calls).toEqual([])
+    await view.select(1)
+    await view.until((value) => value.includes("设备已撤销；运行中的任务继续执行"))
+    expect(control.calls).toEqual([{ name: "revoke", args: { grantID: "grant_device_0001", version: 7 } }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("an invitation issued after the window closes is cancelled rather than leaked", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const release = Promise.withResolvers<RemoteAccess.Invitation>()
+  const api: DeviceApi = {
+    ...control.api,
+    invite: async (policy) => {
+      control.calls.push({ name: "invite", args: policy })
+      return release.promise
+    },
+  }
+  const view = await mount(tmp.path, environment(daemon(undefined).api, { devices: api }))
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("只读")
+    await view.app.mockInput.pressEnter()
+    await view.until(() => control.calls.some((call) => call.name === "invite"))
+    await view.app.mockInput.pressEscape()
+    await view.until((value) => !value.includes("Web / iOS 设备"))
+    release.resolve(control.issued)
+    await view.until(() => control.calls.some((call) => call.name === "reject"))
+    expect(control.calls.filter((call) => call.name === "reject")).toEqual([
+      {
+        name: "reject",
+        args: { pairingID: control.issued.pairingID },
+      },
+    ])
+  } finally {
+    release.resolve(control.issued)
+    view.cleanup()
+  }
+})
+
+test("pairing failures never display a secret carried by SDK error details", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const api: DeviceApi = {
+    ...control.api,
+    invite: async () => {
+      throw new Error(`request failed: ${JSON.stringify(control.issued)}`)
+    },
+  }
+  const view = await mount(tmp.path, environment(daemon(undefined).api, { devices: api }))
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("只读")
+    await view.app.mockInput.pressEnter()
+    const frame = await view.until((value) => value.includes("操作未完成"))
+    expect(frame).not.toContain(control.issued.secret)
+    expect(frame).not.toContain(control.issued.hostPublicKey)
   } finally {
     view.cleanup()
   }
