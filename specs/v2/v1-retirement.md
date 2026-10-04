@@ -3,7 +3,7 @@
 ## Goal
 
 Make V2 the only session runtime the shipped clients use, then delete V1. This is the
-endgame of the V1→V2 rebuild described in `specs/v2/todo.md`. It is staged so each step is
+endgame of the V1→V2 rebuild described in `docs/roadmap.md` (formerly `specs/v2/todo.md`). It is staged so each step is
 independently verifiable and reversible, and it never leaves the daily `miao` command in a
 half-switched state that double-writes or reads intermittently.
 
@@ -19,7 +19,7 @@ half-switched state that double-writes or reads intermittently.
   migrate and read databases written before V2, and `packages/core/src/v1/config` still reads
   old-shape configuration.
 - Non-session legacy routes (`/config`, `/mcp`, `/lsp`, …) are still served and are being migrated
-  to `/api/*`; see `specs/v2/p7-non-session-routes.md`.
+  to `/api/*`; see `docs/roadmap.md` (P7 inventory archived at `docs/archive/p7-non-session-routes.md`).
 
 The pre-removal topology (V1 and V2 mounted side by side in the release assembly) is described in
 the git history before this change.

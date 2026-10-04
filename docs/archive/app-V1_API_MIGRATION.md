@@ -1,3 +1,8 @@
+> ARCHIVED (2026-10-04). This tracker is superseded by `docs/roadmap.md`; its open items were
+> folded into that document. Kept for historical context only; do not edit. See `docs/roadmap.md`
+> for current status.
+
+
 # V1 API Migration Checklist
 
 The app is currently hybrid. In this document, V1 refers to the legacy unprefixed server APIs used by `@miao/sdk/v2`, despite the SDK package name.

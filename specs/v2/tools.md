@@ -181,7 +181,7 @@ Leaf tools translate only errors they deliberately classify as recoverable. Broa
 
 ## Plugin Hooks And Custom Tools
 
-Decision 2 of `v1-removal-plan.md` keeps three V1 tool hooks for plugins. `ToolPlugins` (`core/src/tool/plugins.ts`) is a dependency-free Location service shared by the plugin host and the registry, so there is no `PluginBoot -> Tools -> PluginBoot` cycle:
+Decision 2 of `docs/archive/v1-removal-plan.md` keeps three V1 tool hooks for plugins. `ToolPlugins` (`core/src/tool/plugins.ts`) is a dependency-free Location service shared by the plugin host and the registry, so there is no `PluginBoot -> Tools -> PluginBoot` cycle:
 
 - `ctx.tool.before` runs inside settlement after the stale check and before input decoding. It sees `{ tool, sessionID, callID, agent, args }` and may replace `args`. A failing or throwing hook settles the call as a model-visible error without invoking the tool.
 - `ctx.tool.after` runs on a successful output before bounding. It sees the arguments, the model-facing text as `output`, and the structured output as `metadata`; replacing either replaces that part of the output. A failing hook settles the call as an error. Failed calls do not reach it, as in V1.
