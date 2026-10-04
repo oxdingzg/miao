@@ -4136,3 +4136,131 @@ export type ServerRuntimeIdentityOutput = {
 }
 
 export type ServerRuntimeStopOutput = void
+
+export type ServerRuntimeGetOutput = {
+  readonly enabled: boolean
+  readonly connected: boolean
+  readonly hostID?: string
+  readonly runtimeID?: string
+  readonly hostPublicKey?: string
+  readonly hubURL?: string
+}
+
+export type ServerRuntimeInviteInput = {
+  readonly permissions: {
+    readonly permissions: ReadonlyArray<
+      "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+  }["permissions"]
+  readonly projectIDs: {
+    readonly permissions: ReadonlyArray<
+      "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+  }["projectIDs"]
+  readonly sessionIDs: {
+    readonly permissions: ReadonlyArray<
+      "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+  }["sessionIDs"]
+  readonly expiresAt: {
+    readonly permissions: ReadonlyArray<
+      "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+  }["expiresAt"]
+}
+
+export type ServerRuntimeInviteOutput = {
+  readonly version: 1
+  readonly pairingID: string
+  readonly secret: string
+  readonly hubURL: string
+  readonly hostID: string
+  readonly runtimeID: string
+  readonly hostPublicKey: string
+  readonly expiresAt: number
+}
+
+export type ServerRuntimePendingOutput = ReadonlyArray<{
+  readonly pairingID: string
+  readonly candidate: { readonly publicKey: string; readonly label: string; readonly clientChallenge: string }
+  readonly policy: {
+    readonly permissions: ReadonlyArray<
+      "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+  }
+  readonly expiresAt: number
+}>
+
+export type ServerRuntimeApproveInput = {
+  readonly pairingID: { readonly pairingID: string }["pairingID"]
+  readonly publicKey: { readonly publicKey: string }["publicKey"]
+}
+
+export type ServerRuntimeApproveOutput = {
+  readonly permissions: ReadonlyArray<
+    "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+  >
+  readonly projectIDs: ReadonlyArray<string>
+  readonly sessionIDs: ReadonlyArray<string>
+  readonly expiresAt: number
+  readonly id: string
+  readonly version: number
+  readonly publicKey: string
+  readonly label: string
+  readonly createdAt: number
+  readonly revokedAt: number | null
+}
+
+export type ServerRuntimeRejectInput = { readonly pairingID: { readonly pairingID: string }["pairingID"] }
+
+export type ServerRuntimeRejectOutput = void
+
+export type ServerRuntimeDevicesOutput = ReadonlyArray<{
+  readonly permissions: ReadonlyArray<
+    "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+  >
+  readonly projectIDs: ReadonlyArray<string>
+  readonly sessionIDs: ReadonlyArray<string>
+  readonly expiresAt: number
+  readonly id: string
+  readonly version: number
+  readonly publicKey: string
+  readonly label: string
+  readonly createdAt: number
+  readonly revokedAt: number | null
+}>
+
+export type ServerRuntimeRevokeInput = {
+  readonly grantID: { readonly grantID: string }["grantID"]
+  readonly version: { readonly version: number }["version"]
+}
+
+export type ServerRuntimeRevokeOutput = {
+  readonly permissions: ReadonlyArray<
+    "read" | "prompt" | "permission.reply" | "question.reply" | "interrupt" | "session.create" | "session.rename"
+  >
+  readonly projectIDs: ReadonlyArray<string>
+  readonly sessionIDs: ReadonlyArray<string>
+  readonly expiresAt: number
+  readonly id: string
+  readonly version: number
+  readonly publicKey: string
+  readonly label: string
+  readonly createdAt: number
+  readonly revokedAt: number | null
+}

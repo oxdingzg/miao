@@ -13,7 +13,8 @@
     "hub": "bun src/hub-main.ts"
   },
   "dependencies": {
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "@miao/schema": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
