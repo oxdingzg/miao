@@ -134,6 +134,9 @@ export class SubscriberOverflowError extends Schema.TaggedErrorClass<SubscriberO
  */
 export const DURABLE_POLL_MS = 1_000
 
+/** Rows read per durable-log page, so a stale cursor cannot load the whole tail at once. */
+const DURABLE_READ_PAGE = 500
+
 export const define = Event.define
 export const versionedType = Event.versionedType
 
@@ -565,7 +568,7 @@ export const layerWith = (options?: LayerOptions) =>
 
       const streamAll = (): Stream.Stream<Payload> => Stream.fromPubSub(pubsub.all)
 
-      const readAfter = (aggregateID: string, after: number) =>
+      const readPage = (aggregateID: string, after: number) =>
         (options?.beforeAggregateRead?.(aggregateID) ?? Effect.void).pipe(
           Effect.andThen(
             db
@@ -573,19 +576,26 @@ export const layerWith = (options?: LayerOptions) =>
               .from(EventTable)
               .where(and(eq(EventTable.aggregate_id, aggregateID), gt(EventTable.seq, after)))
               .orderBy(asc(EventTable.seq))
+              .limit(DURABLE_READ_PAGE)
               .all(),
           ),
           Effect.orDie,
-          Effect.map((rows) =>
-            rows.map((event) =>
-              decodeSerializedEvent({
-                id: event.id,
-                aggregateID: event.aggregate_id,
-                seq: event.seq,
-                type: event.type,
-                data: event.data,
-              }),
-            ),
+          Effect.map(
+            (rows) =>
+              [
+                rows.map((event) =>
+                  decodeSerializedEvent({
+                    id: event.id,
+                    aggregateID: event.aggregate_id,
+                    seq: event.seq,
+                    type: event.type,
+                    data: event.data,
+                  }),
+                ),
+                rows.length === DURABLE_READ_PAGE
+                  ? Option.some(rows[rows.length - 1]!.seq)
+                  : Option.none<number>(),
+              ] as const,
           ),
         )
 
@@ -618,25 +628,26 @@ export const layerWith = (options?: LayerOptions) =>
           Effect.gen(function* () {
             const wakes = yield* subscribeDurable(input.aggregateID)
             let sequence = input.after ?? -1
-            const read = Effect.suspend(() => readAfter(input.aggregateID, sequence)).pipe(
-              Effect.tap((events) =>
-                Effect.sync(() => {
-                  sequence = events.at(-1)?.durable?.seq ?? sequence
-                }),
-              ),
-            )
-            const historical = yield* read
+            // Page the read so a stale cursor cannot load the whole remaining tail
+            // into one array; each page advances `sequence`.
+            const pages = () =>
+              Stream.paginate(sequence, (after) =>
+                readPage(input.aggregateID, after).pipe(
+                  Effect.tap(([events]) =>
+                    Effect.sync(() => {
+                      sequence = events.at(-1)?.durable?.seq ?? sequence
+                    }),
+                  ),
+                ),
+              )
             // Merge the in-process wake with a database poll so a second process
             // writing to the same database cannot leave rows unobserved.
             const triggers = Stream.merge(
               Stream.fromSubscription(wakes),
               Stream.tick(input.pollInterval ?? DURABLE_POLL_MS),
             )
-            const live = triggers.pipe(
-              Stream.mapEffect(() => read),
-              Stream.flattenIterable,
-            )
-            return Stream.concat(Stream.fromIterable(historical), live)
+            const live = triggers.pipe(Stream.flatMap(() => pages(), { concurrency: 1 }))
+            return Stream.concat(pages(), live)
           }),
         )
 

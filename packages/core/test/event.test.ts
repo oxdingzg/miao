@@ -439,6 +439,25 @@ describe("EventV2", () => {
     }),
   )
 
+  it.effect("pages a durable tail longer than one read page in order", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const aggregateID = Session.ID.create()
+      const total = 1_200
+      for (let index = 0; index < total; index++)
+        yield* events.publish(DurableMessage, durableData(aggregateID, `m${index}`))
+      const collected = yield* events
+        .durable({ aggregateID, after: -1 })
+        .pipe(Stream.take(total), Stream.runCollect)
+      expect(Array.from(collected).map((event) => event.durable?.seq)).toEqual(
+        Array.from({ length: total }, (_, index) => index),
+      )
+      expect(Array.from(collected).map((event) => event.data)).toEqual(
+        Array.from({ length: total }, (_, index) => durableData(aggregateID, `m${index}`)),
+      )
+    }),
+  )
+
   it.effect("catches durable aggregate events published during replay handoff", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service
