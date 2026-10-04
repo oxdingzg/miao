@@ -1,0 +1,26 @@
+{
+  "runtime": "Bun 1.4.2",
+  "resolutionMs": 20,
+  "deliberatePauseMs": 90,
+  "blocked": {
+    "count": 7,
+    "meanMs": 13.864813714285715,
+    "p95Ms": 85.786623,
+    "p99Ms": 85.786623,
+    "maxMs": 85.766
+  },
+  "reset": {
+    "count": 0,
+    "meanMs": null,
+    "p95Ms": 0,
+    "p99Ms": 0,
+    "maxMs": 0
+  },
+  "idle": {
+    "count": 5,
+    "meanMs": 1.7434112,
+    "p95Ms": 2.018303,
+    "p99Ms": 2.018303,
+    "maxMs": 2.018
+  }
+}
