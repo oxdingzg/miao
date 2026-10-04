@@ -178,6 +178,23 @@ With that said, you may want to try these methods, as they might work for you.
 
 ## Pull Request Expectations
 
+### Branches and merging
+
+Development is trunk-based: `main` is always releasable, and every change
+reaches it through a pull request. Branches are short-lived.
+
+| | |
+|---|---|
+| **Naming** | `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, or `test/` plus a short subject, e.g. `fix/session-recovery` |
+| **Lifetime** | Merge within a day or two |
+| **Merging** | Squash, so one pull request becomes one commit on `main` |
+| **After merge** | The branch is deleted |
+
+`main` is protected: it cannot be pushed to directly, and every change needs an
+approving review from a code owner and passing CI before it can merge. Keep one
+pull request to one concern; a review that has to hold several unrelated changes
+in mind finds fewer problems in all of them.
+
 ### Issue First Policy
 
 **All PRs must reference an existing issue.** Before opening a PR, open an issue describing the bug or feature. This helps maintainers triage and prevents duplicate work. PRs without a linked issue may be closed without review.
