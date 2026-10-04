@@ -32,6 +32,7 @@ import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
+import { GoalTool } from "../../tool/goal"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
 import { ToolOutputStore } from "../../tool-output-store"
@@ -1130,6 +1131,11 @@ const layer = Layer.effect(
                   ),
                 ),
                 list_sessions: ListSessionsTool.make(() => runListSessions(input.sessionID)),
+                goal: GoalTool.make((goal) =>
+                  GoalTool.record(events, input.sessionID, goal).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
+                  ),
+                ),
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
