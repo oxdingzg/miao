@@ -161,6 +161,18 @@ export function Autocomplete(props: {
     setSearch(next ? next : "")
   })
 
+  // The file listing is a server round trip. Typing a mention changes `search`
+  // on every keystroke, so debounce the value the resource keys on; local option
+  // filtering still reads `search` immediately.
+  const [searchQuery, setSearchQuery] = createSignal(search())
+  let searchTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const value = search()
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => setSearchQuery(value), 120)
+  })
+  onCleanup(() => clearTimeout(searchTimer))
+
   // When the filter changes due to how TUI works, the mousemove might still be triggered
   // via a synthetic event as the layout moves underneath the cursor. This is a workaround to make sure the input mode remains keyboard so
   // that the mouseover event doesn't trigger when filtering.
@@ -314,7 +326,7 @@ export function Autocomplete(props: {
   }
 
   const [files] = createResource(
-    () => ({ query: search(), location: location() }),
+    () => ({ query: searchQuery(), location: location() }),
     async (input) => {
       if (!store.visible || store.visible === "/") return []
       if (referenceMatch()) return []
