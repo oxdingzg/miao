@@ -13,7 +13,8 @@ import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
-import { SessionTable } from "@miao/core/session/sql"
+import { SessionHistory } from "@miao/core/session/history"
+import { SessionMessageTable, SessionTable } from "@miao/core/session/sql"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
 import { ModelV2 } from "@miao/core/model"
@@ -38,6 +39,13 @@ const it = testEffect(
   ),
 )
 const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
+const encodeMessage = Schema.encodeSync(SessionMessage.Message)
+const decodedRows = () => {
+  const value = DiagnosticMetrics.snapshot().find((item) => item.name === "core.history")?.value
+  return typeof value === "object" && value !== null && "decodedRows" in value && typeof value.decodedRows === "number"
+    ? value.decodedRows
+    : 0
+}
 
 const GapEvent = EventV2.define({
   type: "test.session.history.gap",
@@ -312,6 +320,61 @@ describe("SessionV2.history", () => {
           .filter((message) => message.type === "assistant" || message.type === "compaction")
           .map((message) => message.id),
       ).toEqual([before, compactionID, after])
+    }),
+  )
+
+  it.effect("drops the legacy metadata blob before decoding a history row", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      const store = yield* SessionStore.Service
+      const sessionID = SessionV2.ID.make("ses_history_legacy_metadata")
+      yield* db
+        .insert(ProjectTable)
+        .values({ id: ProjectV2.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+        .onConflictDoNothing()
+        .run()
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: ProjectV2.ID.global,
+          slug: "legacy-metadata",
+          directory: "/project",
+          title: "Legacy metadata",
+          version: "test",
+        })
+        .run()
+      const messageID = SessionMessage.ID.make("msg_history_legacy_metadata")
+      const blob = "x".repeat(2_000_000)
+      const encoded = encodeMessage(
+        SessionMessage.User.make({
+          id: messageID,
+          type: "user",
+          text: "hello",
+          metadata: { v1: { info: { blob } }, kept: "yes" },
+          time: { created: DateTime.makeUnsafe(0) },
+        }),
+      )
+      const { id: _id, type: _type, ...data } = encoded
+      yield* db
+        .insert(SessionMessageTable)
+        .values({ id: messageID, session_id: sessionID, type: "user", seq: 0, time_created: 0, data })
+        .run()
+
+      const before = decodedRows()
+      const messages = yield* SessionHistory.load(db, sessionID)
+      const after = decodedRows()
+
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toMatchObject({ id: messageID, type: "user", text: "hello" })
+      // The 2 MB blob is gone from the decoded message even though the row still
+      // stores it, while metadata the runner reads back is preserved.
+      expect(messages[0]?.metadata).toEqual({ kept: "yes" })
+      expect(JSON.stringify(messages[0]).length).toBeLessThan(1_000)
+      expect(after - before).toBe(1)
+
+      const [stored] = yield* store.timeline(sessionID)
+      expect((stored?.metadata as { v1?: unknown } | undefined)?.v1).toBeDefined()
     }),
   )
 })

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, ne, or } from "drizzle-orm"
+import { and, asc, desc, eq, getTableColumns, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -93,6 +93,17 @@ const messageFilter = (
       : or(ne(SessionMessageTable.type, "system"), gt(SessionMessageTable.seq, baselineSeq)),
   )
 
+const messageColumns = getTableColumns(SessionMessageTable)
+
+// A row can carry megabytes of legacy detail under `metadata.v1` (the preserved
+// V1 transcript an export rebuilds), and nothing on the history read path reads
+// it. Drop it in SQLite before drizzle JSON-parses the row so the decode never
+// materializes the blob. `metadata` itself stays: the runner reads its
+// leak-recovery marker, and `data.snapshot` is the live V2 assistant snapshot.
+const withoutLegacyMetadata = sql`json_remove(${SessionMessageTable.data}, '$.metadata.v1')`.mapWith(
+  SessionMessageTable.data.mapFromDriverValue,
+)
+
 const messageRows = Effect.fnUntraced(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
@@ -101,7 +112,7 @@ const messageRows = Effect.fnUntraced(function* (
   afterSeq?: number,
 ) {
   const rows = yield* db
-    .select()
+    .select({ ...messageColumns, data: withoutLegacyMetadata })
     .from(SessionMessageTable)
     .where(messageFilter(sessionID, compaction, baselineSeq, afterSeq))
     .orderBy(asc(SessionMessageTable.seq))
@@ -141,7 +152,7 @@ const messageRowsBySeq = Effect.fnUntraced(function* (
   seqs: ReadonlyArray<number>,
 ) {
   const rows = yield* db
-    .select()
+    .select({ ...messageColumns, data: withoutLegacyMetadata })
     .from(SessionMessageTable)
     .where(and(messageFilter(sessionID, compaction, baselineSeq), inArray(SessionMessageTable.seq, seqs)))
     .orderBy(asc(SessionMessageTable.seq))
