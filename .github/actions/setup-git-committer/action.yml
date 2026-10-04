@@ -1,43 +1,58 @@
 name: "Setup Git Committer"
-description: "Create app token and configure git user"
+description: "Create an app token and configure the git user, or fall back to the default token"
 inputs:
   opencode-app-id:
-    description: "OpenCode GitHub App ID"
-    required: true
+    description: "GitHub App ID; when empty, the workflow's default token is used"
+    required: false
+    default: ""
   opencode-app-secret:
-    description: "OpenCode GitHub App private key"
-    required: true
+    description: "GitHub App private key"
+    required: false
+    default: ""
 outputs:
   token:
-    description: "GitHub App token"
+    description: "GitHub App token, when an app is configured"
     value: ${{ steps.apptoken.outputs.token }}
   app-slug:
-    description: "GitHub App slug"
+    description: "GitHub App slug, when an app is configured"
     value: ${{ steps.apptoken.outputs.app-slug }}
 runs:
   using: "composite"
   steps:
     - name: Create app token
       id: apptoken
+      if: ${{ inputs.opencode-app-id != '' }}
       uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
       with:
         app-id: ${{ inputs.opencode-app-id }}
         private-key: ${{ inputs.opencode-app-secret }}
         owner: ${{ github.repository_owner }}
 
-    - name: Configure git user
+    - name: Configure git user (app token)
+      if: ${{ inputs.opencode-app-id != '' }}
       run: |
         slug="${{ steps.apptoken.outputs.app-slug }}"
         git config --global user.name "${slug}[bot]"
         git config --global user.email "${slug}[bot]@users.noreply.github.com"
       shell: bash
 
+    # Without a configured app the checkout's default token is used, so the
+    # workflow does not hard-fail when MIAO_APP_ID / MIAO_APP_SECRET are unset.
+    - name: Configure git user (default token)
+      if: ${{ inputs.opencode-app-id == '' }}
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      shell: bash
+
     - name: Clear checkout auth
+      if: ${{ inputs.opencode-app-id != '' }}
       run: |
         git config --local --unset-all http.https://github.com/.extraheader || true
       shell: bash
 
     - name: Configure git remote
+      if: ${{ inputs.opencode-app-id != '' }}
       run: |
         git remote set-url origin https://x-access-token:${{ steps.apptoken.outputs.token }}@github.com/${{ github.repository }}
       shell: bash
