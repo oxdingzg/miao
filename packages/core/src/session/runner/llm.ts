@@ -338,10 +338,10 @@ const layer = Layer.effect(
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
     const stopAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "StopAfterCompaction", step })
 
-    const loadSystemContext = (agent: AgentV2.Selection) =>
+    const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID) =>
       Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load()], {
         concurrency: "unbounded",
-      }).pipe(Effect.map(SystemContext.combine))
+      }).pipe(Effect.map((contexts) => SystemContext.combine([...contexts, SessionTodo.context(todos, sessionID)])))
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
@@ -358,7 +358,7 @@ const layer = Layer.effect(
       const agent = yield* agents.select(session.agent)
       const agentMs = Date.now() - agentStartedAt
       const epochStartedAt = Date.now()
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
+      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)
       const epochMs = Date.now() - epochStartedAt
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
@@ -374,7 +374,7 @@ const layer = Layer.effect(
         if (promoted > 0) currentStep = 1
       }
       const system =
-        initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
+        initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id))
       const resolveStartedAt = Date.now()
       const catalogRetry = { attempt: 0, error: undefined as SessionRunnerModel.Error | undefined }
       const resolved = yield* Effect.suspend(() => {

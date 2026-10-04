@@ -1,13 +1,14 @@
 export * as SessionTodo from "./todo"
 
 import { asc, eq } from "drizzle-orm"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { SessionTodo } from "@miao/schema/session-todo"
 import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { SessionSchema } from "./schema"
 import { TodoTable } from "./sql"
+import { SystemContext } from "../system-context"
 
 export const Info = SessionTodo.Info
 export type Info = typeof Info.Type
@@ -22,6 +23,26 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/SessionTodo") {}
+
+/** Session-owned task state, refreshed at provider-turn boundaries and after compaction. */
+export function context(todos: Interface, sessionID: SessionSchema.ID) {
+  return SystemContext.make({
+    key: SystemContext.Key.make("session/todos"),
+    codec: Schema.toCodecJson(Schema.Array(Info)),
+    load: todos.get(sessionID),
+    baseline: renderContext,
+    update: (_previous, current) => renderContext(current),
+  })
+}
+
+function renderContext(todos: ReadonlyArray<Info>) {
+  return [
+    "# Current session task list",
+    "This is the current persisted todo list, also displayed to the user. It supersedes older todo lists in the conversation.",
+    "Use todowrite to track multi-step work. Keep this list synchronized with actual progress: mark work in_progress when starting, completed immediately after finishing and verifying it, and cancelled when it is no longer required. Update it before a final response or handoff; do not leave finished work pending or mark unfinished work completed. If blocked, leave the task open and explain the blocker. Do not infer completion merely from an idle session or a successful tool call.",
+    JSON.stringify(todos, null, 2),
+  ].join("\n")
+}
 
 const layer = Layer.effect(
   Service,
