@@ -1,8 +1,8 @@
 # Device pairing
 
-The pairing coordinator is an optional Agent capability. Runtime administration
-and client scanning interfaces still need to invoke it; a deployed Agent does
-not enable pairing merely because this module exists.
+The pairing coordinator is an optional Agent capability. A configured Runtime
+composes it with the outbound Agent and exposes owner-authenticated local
+administration. Unconfigured Runtimes report device access as disabled.
 
 An owner issues a scoped invitation containing protocol version 1, pairing ID,
 256-bit secret, Hub URL, host/runtime IDs, pinned host public key and expiry.
@@ -10,6 +10,31 @@ Invitations last at most three minutes, expire no later than the proposed grant,
 and are limited to eight concurrent flows. Put invitation secrets in a URL
 fragment or transfer them directly; never place them in query strings or logs.
 The invitation contains no local Server password or Hub host credential.
+
+The TUI's `/remote-control` command (also available as `/remote`) opens the
+device and IM access menu. The device dialog proposes either one-hour read-only
+or interactive access to the current Session, or seven-day interactive access
+to the current registered project, including Session creation. The local owner
+must explicitly approve the scanned device after comparing its SHA-256 public
+key fingerprint, scope, permissions and grant expiry. Device labels are
+untrusted; the dialog strips terminal controls and bidirectional formatting.
+
+For an App invitation, the QR code and copy action use this URI:
+
+```text
+miao://pair#<base64url UTF-8 JSON invitation>
+```
+
+The fragment decodes to the entire version-1 invitation above. QR expiry is
+distinct from grant expiry. If the terminal cannot fit the entire QR code, the
+dialog offers copying the same link rather than displaying a clipped code.
+Closing the dialog cancels its unapproved invitation, including an invitation
+whose issue response arrives after the window closes. A confirmation view does
+not dispose the invitation. Revocation names the observed grant version and
+disconnects the device without interrupting the Session's execution.
+
+This URI documents the native client entry point; it does not itself provide a
+published App or a hosted web frontend.
 
 The client creates the normal signed ClientHello and submits this initial frame,
 encoded as base64url JSON through the Hub client channel:

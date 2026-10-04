@@ -10,6 +10,7 @@ import { useTheme } from "../context/theme"
 import { useSync } from "../context/sync"
 import { useSDK } from "../context/sdk"
 import { useRoute } from "../context/route"
+import { useProject } from "../context/project"
 import { useDialog, type DialogContext } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { DialogAlert } from "../ui/dialog-alert"
@@ -17,6 +18,7 @@ import { DialogConfirm } from "../ui/dialog-confirm"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { useToast } from "../ui/toast"
 import { useBindings } from "../keymap"
+import { DialogDevices, type DeviceApi } from "./dialog-devices"
 
 export const DefaultPort = 4097
 
@@ -127,10 +129,12 @@ export const RemoteLocalProvider = RemoteLocalContext.Provider
 
 export type RemoteEnvironment = {
   readonly api: RemoteApi
+  readonly devices?: DeviceApi
   readonly port: number
   /** This TUI is attached to the daemon's server, so its sessions can be driven from IM. */
   readonly attached: boolean
   readonly sessionID?: string
+  readonly projectID?: string
   readonly uid: number
   readonly platform: string
   /** Absent when the host cannot log in or start a daemon here; the dialog then only shows commands. */
@@ -167,16 +171,20 @@ export function DialogRemote() {
   const sync = useSync()
   const sdk = useSDK()
   const route = useRoute()
+  const project = useProject()
   const factory = useContext(RemoteLocalContext)
   const url = sdk.url
   const port = Number(new URL(url).port) || DefaultPort
+  const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
   return (
     <DialogRemoteView
       environment={{
         api: createRemoteApi({ url, client: sdk.api.remote }),
+        devices: sdk.api["server.runtime"],
         port,
         attached: sameServer(sdk.url, url),
-        sessionID: route.data.type === "session" ? route.data.sessionID : undefined,
+        sessionID,
+        projectID: sync.data.session.find((session) => session.id === sessionID)?.projectID ?? project.data.project.id,
         uid: process.getuid?.() ?? 0,
         platform: process.platform,
         local: factory ? lazyLocal(() => factory(sync.data.config.remote)) : undefined,
@@ -517,7 +525,27 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
   return (
     <DialogSelect
       title="远程遥控"
-      options={options()}
+      options={[
+        ...(environment.devices
+          ? [
+              {
+                value: "devices",
+                title: "Web / iOS 设备",
+                description: "扫码、批准设备和撤销授权",
+                category: "设备接入",
+                onSelect: () =>
+                  dialog.replace(() => (
+                    <DialogDevices
+                      api={environment.devices!}
+                      sessionID={environment.sessionID}
+                      projectID={environment.projectID}
+                    />
+                  )),
+              },
+            ]
+          : []),
+        ...options(),
+      ]}
       footer={<text fg={theme.textMuted}>手机上发 /help 查看用法 · 状态每 3 秒刷新</text>}
     />
   )
