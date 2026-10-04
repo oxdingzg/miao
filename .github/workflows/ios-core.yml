@@ -22,6 +22,12 @@ jobs:
           install-flags: --ignore-scripts --frozen-lockfile
       - name: Swift core tests
         run: swift test --package-path apps/ios/MiaoCore
+      - name: iOS platform source check
+        run: >-
+          xcrun --sdk iphoneos swiftc -typecheck
+          -target arm64-apple-ios17.0
+          -sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
+          apps/ios/MiaoCore/Sources/MiaoCore/*.swift
       - name: WebCrypto and CryptoKit interoperability
         env:
           MIAO_SWIFT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/InteropProbe"]'
