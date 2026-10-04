@@ -147,6 +147,42 @@ describe("SessionV2.history", () => {
     }),
   )
 
+  it.effect("reuses decoded rows when a durable bump leaves every session_message row unchanged", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const created = yield* session.create({ location })
+      const base = { sessionID: created.id, assistantMessageID: SessionMessage.ID.create() }
+      yield* events.publish(SessionEvent.Step.Started, {
+        ...base,
+        timestamp: DateTime.makeUnsafe(0),
+        agent: "build",
+        model: { id: ModelV2.ID.make("gpt-6.1-sol"), providerID: ProviderV2.ID.openai },
+      })
+      yield* events.publish(SessionEvent.Text.Started, { ...base, timestamp: DateTime.makeUnsafe(0), textID: "text" })
+      yield* events.publish(SessionEvent.Text.Ended, {
+        ...base,
+        timestamp: DateTime.makeUnsafe(0),
+        textID: "text",
+        text: "OK",
+      })
+      const first = yield* session.context(created.id)
+      expect(first).toHaveLength(1)
+
+      // A title update bumps the durable revision but never touches
+      // session_message, so the decoded cache is reused and nothing is re-decoded.
+      const before = historyDecodedRows()
+      yield* events.publish(SessionEvent.Info.Updated, {
+        sessionID: created.id,
+        timestamp: DateTime.makeUnsafe(1),
+        title: "renamed",
+      })
+      const after = yield* session.context(created.id)
+      expect(after).toEqual(first)
+      expect(historyDecodedRows() - before).toBe(0)
+    }),
+  )
+
   it.effect("returns an exhausted page for a migrated Session with no event sequence", () =>
     Effect.gen(function* () {
       const db = (yield* Database.Service).db
