@@ -11,7 +11,6 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
-import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -179,7 +178,7 @@ type ServerSDKBase = {
   server: ServerConnection.Any
   scope: ServerScope
   url: string
-  api: CompatibleApi
+  api: ServerApi
   currentApi: ServerApi
   event: {
     on: ServerEventEmitter["on"]
@@ -325,7 +324,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   })
 
   const currentApi: ServerApi = createApiForServer({ server: server.http, fetch: platform.fetch })
-  const api = createCompatibleApi({ current: currentApi })
+  const api = currentApi
 
   return {
     server,
@@ -378,7 +377,7 @@ type SDKEventMap = {
 export interface DirectorySDK {
   scope: ServerScope
   directory: string
-  api: CompatibleApi
+  api: ServerApi
   event: ReturnType<typeof createGlobalEmitter<SDKEventMap>>
   readonly url: string
 }
@@ -394,7 +393,7 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase): Direc
   return {
     scope: serverSDK.scope,
     directory,
-    api: createCompatibleApi({ current: serverSDK.currentApi }),
+    api: serverSDK.currentApi,
     event: emitter,
     get url() {
       return serverSDK.url
