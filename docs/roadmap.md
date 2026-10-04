@@ -38,18 +38,18 @@ entry points where known, and an observable acceptance check.
 left, and no client depends on `@miao/sdk` or unprefixed legacy routes.
 
 ### 1.1 Legacy JS SDK (P5)
-The V1 root exports are being torn down; the plugin `Hooks` / `PluginInput.client` move to V2 is
-still outstanding.
-- [ ] Remove the remaining V1 root exports and regenerate the SDK against V2 only.
-- [ ] Move plugin `Hooks` / `PluginInput.client` from V1 to V2.
-- [ ] Drop the `@miao/sdk` runtime dependency once all consumers and types are gone.
-- **Acceptance:** no package imports a V1 SDK surface; the plugin API uses V2 shapes.
+The legacy V1 SDK is gone: no package depends on a V1 SDK surface, the app and CLI talk through
+`@miao/client`, and `packages/sdk` is now the **embedded SDK entry point** (`OpenCode.create()` for
+library use), not a legacy surface — keep it. Remaining:
+- [ ] Move the plugin `Hooks` interface and `PluginInput.client` off the V1 shape
+      (`packages/plugin/src/index.ts`). This is plugin-API design work (section 3), not a cleanup.
+- **Acceptance:** <code>PluginInput.client</code> exposes a V2 client and the V1 `Hooks` interface is
+  either adapted or retired.
 
 ### 1.2 App legacy types and adapters
-The app's network calls are migrated, but its internal state still passes through V1-shaped
-adapters and types, and V1 event compatibility layers remain.
-- [ ] Replace `src/utils/session.ts` current→legacy session adapter.
-- [ ] Replace `src/utils/session-message.ts` message/part adapter.
+The app's network calls are migrated and the identity `server-compat` shim is gone (#40). Note that
+`src/utils/session.ts` and `src/utils/session-message.ts` are current V2→view-model normalizers, not
+legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
 - [ ] Replace `src/context/global-sync/utils.ts` agent/provider/model adapters.
 - [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`,
       `Project`, `FileNode`, `FileDiffInfo`, `Event` types across app state and rendering.
