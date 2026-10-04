@@ -1,6 +1,7 @@
 export * as SessionBlobStorage from "./blob-storage"
 
 import { Effect } from "effect"
+import type { ToolOutput } from "@miao/llm"
 import { Blob } from "../blob"
 import { Prompt } from "./prompt"
 
@@ -36,3 +37,21 @@ export const externalizePromptAttachments = (blob: Blob.Interface, prompt: Promp
     )
     return Prompt.make({ ...prompt, files })
   })
+
+/** Replaces oversized inline tool-result files with `blob://<hash>` references. */
+export const externalizeToolContent = (blob: Blob.Interface, content: ToolOutput["content"]) =>
+  Effect.forEach(
+    content,
+    (part): Effect.Effect<ToolOutput["content"][number]> => {
+      if (part.type !== "file") return Effect.succeed(part)
+      const base64 = oversizedBase64(part.uri)
+      if (base64 === undefined) return Effect.succeed(part)
+      // Best-effort: a failed blob write keeps the inline payload.
+      return blob
+        .put({ bytes: Buffer.from(base64, "base64"), mime: part.mime })
+        .pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.map((ref) => (ref === undefined ? part : { ...part, uri: Blob.refUri(ref.hash) })),
+        )
+    },
+  )

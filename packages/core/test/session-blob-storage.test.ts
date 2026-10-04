@@ -53,4 +53,31 @@ describe("SessionBlobStorage", () => {
       }),
     ),
   )
+
+  it.live("externalizes an oversized inline tool-result file", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const base64 = Buffer.alloc(200 * 1024, 2).toString("base64")
+        const content = [{ type: "file" as const, uri: `data:image/png;base64,${base64}`, mime: "image/png", name: "shot.png" }]
+        const result = yield* SessionBlobStorage.externalizeToolContent(blob, content)
+        const part = result[0]
+        const uri = part?.type === "file" ? part.uri : ""
+        expect(Blob.isRef(uri)).toBe(true)
+        expect(yield* blob.has(Blob.hashOf(uri) ?? "")).toBe(true)
+      }),
+    ),
+  )
+
+  it.live("keeps a small inline tool-result file untouched", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const uri = "data:image/png;base64,aGk="
+        const result = yield* SessionBlobStorage.externalizeToolContent(blob, [
+          { type: "file" as const, uri, mime: "image/png" },
+        ])
+        const part = result[0]
+        expect(part?.type === "file" ? part.uri : undefined).toBe(uri)
+      }),
+    ),
+  )
 })
