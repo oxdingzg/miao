@@ -54,6 +54,42 @@ describe("Patch", () => {
     ])
   })
 
+  test("appends an insertion after a trailing blank line", () => {
+    expect(Patch.derive("update.txt", [{ oldLines: [], newLines: ["inserted"] }], "line1\n\n")).toEqual({
+      content: "line1\n\ninserted\n",
+      bom: false,
+    })
+    expect(Patch.derive("update.txt", [{ oldLines: [], newLines: ["inserted"] }], "line1\n")).toEqual({
+      content: "line1\ninserted\n",
+      bom: false,
+    })
+  })
+
+  test("keeps the derive reference and the wired backend equal", () => {
+    const inputs: Array<Parameters<typeof Patch.derive>> = [
+      ["update.txt", [{ oldLines: ["line2"], newLines: ["CHANGED"] }], "line1\nline2\nline3\n"],
+      ["update.txt", [{ oldLines: [], newLines: ["inserted"] }], "line1\n\n"],
+      ["update.txt", [{ oldLines: ["  old   "], newLines: ["new"] }], "\uFEFFold\n"],
+      [
+        "update.txt",
+        [{ oldLines: ["marker", "end"], newLines: ["marker changed", "end"], endOfFile: true }],
+        "marker\nmiddle\nmarker\nend\n",
+      ],
+    ]
+    for (const [path, chunks, original] of inputs) {
+      expect(Patch.derive(path, chunks, original)).toEqual(Patch.deriveTs(path, chunks, original))
+    }
+  })
+
+  test("reports a missing chunk the same way through both backends", () => {
+    expect(() => Patch.derive("update.txt", [{ oldLines: ["missing"], newLines: ["x"] }], "line1\nline2\n")).toThrow(
+      "Failed to find expected lines in update.txt:\nmissing",
+    )
+    expect(() => Patch.deriveTs("update.txt", [{ oldLines: ["missing"], newLines: ["x"] }], "line1\nline2\n")).toThrow(
+      "Failed to find expected lines in update.txt:\nmissing",
+    )
+  })
+
   test("rejects malformed hunk bodies", () => {
     expect(() => Patch.parse("*** Begin Patch\n*** Add File: add.txt\nmissing plus\n*** End Patch")).toThrow(
       "Invalid add file line",

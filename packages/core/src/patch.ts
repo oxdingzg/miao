@@ -1,5 +1,8 @@
 export * as Patch from "./patch"
 
+import { native, type NativeModule } from "@miao/native"
+import { Flag } from "./flag/flag"
+
 export type Hunk =
   | { readonly type: "add"; readonly path: string; readonly contents: string }
   | { readonly type: "delete"; readonly path: string }
@@ -69,7 +72,21 @@ export function parse(patchText: string): ReadonlyArray<Hunk> {
   return hunks
 }
 
+/**
+ * Derive the new content and BOM for `original` from update `chunks`.
+ *
+ * Uses the native `deriveNewContentsV2` primitive when the addon exposes it;
+ * otherwise the TypeScript reference. The primitive is pure computation: file
+ * IO, permissions, conditional writes and settlement stay with the caller.
+ */
 export function derive(path: string, chunks: ReadonlyArray<UpdateFileChunk>, original: string): FileUpdate {
+  if (Flag.MIAO_NATIVE && native && typeof native.deriveNewContentsV2 === "function")
+    return deriveNative(native, path, chunks, original)
+  return deriveTs(path, chunks, original)
+}
+
+/** The TypeScript reference implementation of the derive contract. */
+export function deriveTs(path: string, chunks: ReadonlyArray<UpdateFileChunk>, original: string): FileUpdate {
   const source = splitBom(original)
   const lines = source.text.split("\n")
   if (lines.at(-1) === "") lines.pop()
@@ -79,6 +96,30 @@ export function derive(path: string, chunks: ReadonlyArray<UpdateFileChunk>, ori
   if (updated.at(-1) !== "") updated.push("")
   const next = splitBom(updated.join("\n"))
   return { content: next.text, bom: source.bom || next.bom }
+}
+
+/** Whether the loaded addon serves the V2 derive contract. */
+export function nativeDeriveActive() {
+  return Flag.MIAO_NATIVE && typeof native?.deriveNewContentsV2 === "function"
+}
+
+function deriveNative(
+  module: NativeModule,
+  path: string,
+  chunks: ReadonlyArray<UpdateFileChunk>,
+  original: string,
+): FileUpdate {
+  const result = module.deriveNewContentsV2(
+    chunks.map((chunk) => ({
+      oldLines: [...chunk.oldLines],
+      newLines: [...chunk.newLines],
+      changeContext: chunk.changeContext,
+      isEndOfFile: chunk.endOfFile,
+    })),
+    path,
+    original,
+  )
+  return { content: result.content, bom: result.bom }
 }
 
 export function joinBom(text: string, bom: boolean) {
