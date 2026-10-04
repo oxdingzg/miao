@@ -169,28 +169,26 @@ const inspect = (db: Client) =>
 
 const deleteType = (db: Client, type: string, options: Options) =>
   Effect.gen(function* () {
+    // Collect the ids once. Deleting `WHERE type = ?` in a loop re-scans the
+    // whole `event` table for every batch (there is no type-leading index), so
+    // it is O(rows^2 / BATCH) on a multi-gigabyte table. The id list is bounded
+    // by one legacy type, and the deletes then use the primary key.
+    const ids = yield* db.all<{ id: string }>(sql`SELECT id FROM event WHERE type = ${type}`).pipe(Effect.orDie)
     let deleted = 0
-    let previous = Number.POSITIVE_INFINITY
-    for (;;) {
-      const remaining = yield* db
-        .get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM event WHERE type = ${type}`)
-        .pipe(Effect.orDie)
-      const left = Number(remaining?.n ?? 0)
-      if (left === 0) return deleted
-      if (left >= previous) return yield* Effect.die(new Error(`no progress deleting ${type}: ${left} rows remain`))
-      previous = left
-      options.onProgress?.({ type, remaining: left })
-      // `run` reports nothing back through this driver, so the rows come from
-      // `RETURNING`; each batch is only ever `BATCH` ids wide.
-      const written = yield* db
-        .all(sql`DELETE FROM event WHERE id IN (SELECT id FROM event WHERE type = ${type} LIMIT ${BATCH}) RETURNING id`)
-        .pipe(Effect.orDie)
+    for (let index = 0; index < ids.length; index += BATCH) {
+      const list = sql.join(
+        ids.slice(index, index + BATCH).map((row) => sql`${row.id}`),
+        sql`, `,
+      )
+      const written = yield* db.all(sql`DELETE FROM event WHERE id IN (${list}) RETURNING id`).pipe(Effect.orDie)
       deleted += written.length
+      options.onProgress?.({ type, remaining: ids.length - deleted })
       // Move each batch out of the WAL as it goes: a passive checkpoint cannot
       // truncate while this connection reads, but it keeps reusing the same
       // frames instead of letting the WAL grow to the size of the whole delete.
       yield* db.run(sql.raw("PRAGMA wal_checkpoint(PASSIVE)")).pipe(Effect.orDie)
     }
+    return deleted
   })
 
 const dropTables = (db: Client) =>
