@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { $ } from "bun"
+import { Database } from "bun:sqlite"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
@@ -24,7 +25,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
   const grant = await grants.approve({
     publicKey: device.publicKey,
     label: "test phone",
-    permissions: ["read", "prompt"],
+    permissions: ["read", "prompt", "interrupt", "session.rename", "permission.reply", "question.reply"],
     projectIDs: [],
     sessionIDs: [sessionID],
     expiresAt: Date.now() + 120_000,
@@ -160,6 +161,29 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     const session = ((await created.json()) as { data: { id: string; projectID: string } }).data
     const call = await connectRemote(record, grant)
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { id: sessionID } })
+    const renameID = crypto.randomUUID()
+    expect(await call("session.rename", { title: "Phone session" }, renameID)).toMatchObject({
+      type: "result",
+      data: { status: "completed" },
+    })
+    expect(await call("session.get", {})).toMatchObject({ type: "result", data: { title: "Phone session" } })
+    expect(await call("session.rename", { title: "Changed retry" }, renameID)).toMatchObject({
+      type: "error",
+      code: "conflict",
+    })
+    expect(await call("session.interrupt", { executionID: "old-execution" }, crypto.randomUUID())).toMatchObject({
+      type: "result",
+      data: { status: "rejected", code: "conflict" },
+    })
+    expect(
+      await call("permission.reply", { requestID: "per_missing", reply: "always" }, crypto.randomUUID()),
+    ).toMatchObject({ type: "error", code: "invalid_request" })
+    expect(
+      await call("permission.reply", { requestID: "per_missing", reply: "once" }, crypto.randomUUID()),
+    ).toMatchObject({ type: "result", data: { status: "rejected", code: "not_found" } })
+    expect(await call("question.reply", { requestID: "que_missing", reject: true }, crypto.randomUUID())).toMatchObject(
+      { type: "result", data: { status: "rejected", code: "not_found" } },
+    )
     const sibling = await fetch(new URL("/api/session", record.url), {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
@@ -208,6 +232,28 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     expect((await fetch(new URL("/api/runtime/stop", record.url), { method: "POST", headers })).status).toBe(204)
     expect(await first.exited).toBe(0)
     expect(await RuntimeDiscovery.read(database)).toBeUndefined()
+    // Reproduce the crash window after preparing a mutation, before its durable
+    // result. The next Runtime must not replay that mutation automatically.
+    const unknownID = crypto.randomUUID()
+    const stored = new Database(database)
+    stored
+      .query(
+        "INSERT INTO remote_operation(subject,id,method,session_id,project_id,digest,status,time_created,time_updated) VALUES(?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        createHash("sha256").update(`${grant.id}:${grant.publicKey}`).digest("hex"),
+        unknownID,
+        "session.rename",
+        sessionID,
+        null,
+        createHash("sha256")
+          .update(JSON.stringify({ title: "Interrupted rename" }))
+          .digest("hex"),
+        "prepared",
+        Date.now(),
+        Date.now(),
+      )
+    stored.close()
     const projectGrant = await grants.approve({
       publicKey: device.publicKey,
       label: "project phone",
@@ -224,6 +270,11 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     })
     expect(resumed.status).toBe(200)
     const restoredCall = await connectRemote(next, grant)
+    expect(await restoredCall("session.rename", { title: "Interrupted rename" }, unknownID)).toMatchObject({
+      type: "result",
+      data: { status: "outcome_unknown" },
+    })
+    expect(await restoredCall("session.get", {})).toMatchObject({ type: "result", data: { title: "Phone session" } })
     expect(await restoredCall("operation.get", { operationID })).toMatchObject({
       type: "result",
       data: { status: "accepted", result: accepted.data },

@@ -81,3 +81,11 @@ checks durable input records before sending another admission request. An input
 already admitted is acknowledged without waking its execution again. Disconnecting
 the remote transport does not interrupt execution. Stopping the Runtime closes
 the Agent before shutting down its execution services.
+
+Remote mutations also support Session renaming, interruption by observed
+execution ID, one-time permission acceptance/rejection, and question answers or
+rejection. Remote permission replies cannot install a permanent policy. Each
+mutation uses a stable operation ID and an immutable receipt. If a crash leaves
+a prepared mutation without a confirmed result, its retry reports
+`outcome_unknown` instead of automatically repeating the action. Refresh the
+Session's pending state before deciding whether another action is needed.

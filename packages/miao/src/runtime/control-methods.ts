@@ -22,7 +22,129 @@ export function make(options: {
   const tails = new Map<string, Promise<unknown>>()
   const query = <A, E>(use: (db: Database.Interface["db"]) => Effect.Effect<A, E>) =>
     options.run(Database.Service.use((service) => use(service.db)))
+  const mutation =
+    <A>(
+      schema: Schema.Decoder<A, never>,
+      apply: (payload: A, request: ControlAgent.Request, context: ControlAgent.Context) => Promise<void>,
+    ): ControlAgent.Handler =>
+    async (request, context) => {
+      const decoded = Schema.decodeUnknownOption(schema, { onExcessProperty: "error" })(request.payload)
+      if (Option.isNone(decoded) || !request.operationID) throw new ControlAgent.RequestError("invalid_request")
+      const subject = createHash("sha256").update(`${context.grant.id}:${context.grant.publicKey}`).digest("hex")
+      const id = request.operationID
+      const key = `${subject}:${id}`
+      const digest = createHash("sha256").update(JSON.stringify(decoded.value)).digest("hex")
+      const previous = tails.get(key) ?? Promise.resolve()
+      const pending = previous
+        .catch(() => undefined)
+        .then(async () => {
+          context.authorize()
+          const prepared = await query((db) =>
+            RemoteOperations.prepare(db, {
+              subject,
+              id,
+              method: request.method,
+              session_id: request.sessionID!,
+              project_id: request.projectID ?? null,
+              digest,
+            }),
+          )
+          if (prepared.type === "conflict") throw new ControlAgent.RequestError("conflict")
+          if (prepared.type === "existing") {
+            if (prepared.record.status !== "prepared") return prepared.record.result
+            // A crash can occur between the authoritative mutation and its receipt.
+            // Never automatically replay an approval or interrupt into a new run.
+            const unknown = { status: "outcome_unknown" }
+            await query((db) => RemoteOperations.settle(db, subject, id, "outcome_unknown", unknown))
+            return unknown
+          }
+          try {
+            context.authorize()
+            await apply(decoded.value, request, context)
+          } catch (error) {
+            const status = error instanceof ControlAgent.RequestError ? "rejected" : "outcome_unknown"
+            const result = { status, ...(error instanceof ControlAgent.RequestError ? { code: error.code } : {}) }
+            await query((db) => RemoteOperations.settle(db, subject, id, status, result))
+            return result
+          }
+          const result = { status: "completed" }
+          await query((db) => RemoteOperations.settle(db, subject, id, "completed", result))
+          context.authorize()
+          return result
+        })
+      tails.set(key, pending)
+      void pending
+        .finally(() => {
+          if (tails.get(key) === pending) tails.delete(key)
+        })
+        .catch(() => undefined)
+      return pending
+    }
   const methods: Partial<Record<ControlAgent.Method, ControlAgent.Handler>> = {
+    "session.rename": mutation(
+      Schema.Struct({ title: Schema.String.check(Schema.isLengthBetween(1, 256)) }),
+      async (payload, request, context) => {
+        context.authorize()
+        await options.client.sessions.rename({ sessionID: request.sessionID!, title: payload.title })
+      },
+    ),
+    "session.interrupt": mutation(
+      Schema.Struct({ executionID: Schema.String.check(Schema.isLengthBetween(1, 128)) }),
+      async (payload, request, context) => {
+        const execution = await options.client.sessions.execution(
+          { sessionID: request.sessionID! },
+          { signal: context.signal },
+        )
+        context.authorize()
+        if (execution.type !== "running" || execution.executionID !== payload.executionID)
+          throw new ControlAgent.RequestError("conflict")
+        await options.client.sessions.interruptIf({ sessionID: request.sessionID!, executionID: payload.executionID })
+      },
+    ),
+    "permission.reply": mutation(
+      Schema.Struct({ requestID: Schema.String, reply: Schema.Literals(["once", "reject"]) }),
+      async (payload, request, context) => {
+        const pending = await options.client.permissions.list(
+          { sessionID: request.sessionID! },
+          { signal: context.signal },
+        )
+        context.authorize()
+        if (!pending.some((entry) => entry.id === payload.requestID)) throw new ControlAgent.RequestError("not_found")
+        await options.client.permissions.reply({
+          sessionID: request.sessionID!,
+          requestID: payload.requestID,
+          reply: payload.reply,
+        })
+      },
+    ),
+    "question.reply": mutation(
+      Schema.Struct({
+        requestID: Schema.String,
+        answers: Schema.optional(
+          Schema.Array(
+            Schema.Array(Schema.String.check(Schema.isMaxLength(16384))).check(Schema.isMaxLength(32)),
+          ).check(Schema.isMaxLength(32)),
+        ),
+        reject: Schema.optional(Schema.Boolean),
+      }),
+      async (payload, request, context) => {
+        if ((payload.reject === true) === (payload.answers !== undefined))
+          throw new ControlAgent.RequestError("invalid_request")
+        const pending = await options.client.questions.list(
+          { sessionID: request.sessionID! },
+          { signal: context.signal },
+        )
+        context.authorize()
+        if (!pending.some((entry) => entry.id === payload.requestID)) throw new ControlAgent.RequestError("not_found")
+        if (payload.reject)
+          return options.client.questions.reject({ sessionID: request.sessionID!, requestID: payload.requestID })
+        await options.client.questions.reply({
+          sessionID: request.sessionID!,
+          requestID: payload.requestID,
+          answers: payload.answers!,
+        })
+      },
+    ),
     "project.list": async (_request, context) => {
       const projects = await options.client.projects.list(undefined, { signal: context.signal })
       context.authorize()
