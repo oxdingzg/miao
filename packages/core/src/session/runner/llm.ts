@@ -979,7 +979,7 @@ const layer = Layer.effect(
       yield* permission.assert({
         action: "message",
         resources: [target.id],
-        save: ["*"],
+        save: [target.id],
         sessionID: sender.id,
         agent: context.agent,
         source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },

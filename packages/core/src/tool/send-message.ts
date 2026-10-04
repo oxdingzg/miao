@@ -31,6 +31,8 @@ const DESCRIPTION = [
   "Send a message to another Session in the same project so agents can coordinate.",
   "The target sees it as a queued input attributed to this session and continues on its next turn.",
   "Pass the target's Session ID in `to`.",
+  "Send only when the recipient needs to act or learns a materially new result.",
+  "Do not acknowledge acknowledgments, repeat completion reports, or resend requests that are already resolved.",
 ].join(" ")
 
 /** Builds the canonical send_message tool around a runner-provided delivery capability. */
@@ -39,6 +41,6 @@ export const make = (send: Send): AnyTool =>
     description: DESCRIPTION,
     input: Input,
     output: Output,
-    toModelOutput: ({ output }) => [{ type: "text", text: `Message delivered to ${output.sessionID}` }],
+    toModelOutput: ({ output }) => [{ type: "text", text: `Message queued for ${output.sessionID}; the recipient reads it when idle. No acknowledgment is required.` }],
     execute: (input, context) => send({ to: input.to, message: input.message }, context),
   })
