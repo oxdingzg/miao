@@ -234,6 +234,15 @@ permission action per target (default ask). A → B delivery works in the same p
       ones.
 - **Acceptance:** A sends to B; B receives; reply routes back; restart produces no duplicate.
 
+### 2.12 Repetitive provider output protection
+- [x] Bound per-stream text/reasoning detection state, abort high-confidence short-prose loops
+      without automatic retry, and preserve prior tool settlement.
+- [x] Neutralize recognized repetitive assistant output in provider-facing history only, retaining
+      durable records and completed tool calls/results.
+- [ ] Extend coverage beyond short newline-delimited prose after collecting more wire evidence.
+- **Evidence:** [Investigation and limits](provider-output-repetition.en.md), including concurrent
+  same-model normal-session controls. This is a client mitigation, not a proven provider root fix.
+
 ---
 
 ## 3. Config, plugins, services

@@ -47,6 +47,7 @@ import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { BashTool } from "@miao/core/tool/bash"
 import { ToolCallLeak } from "@miao/core/session/tool-call-leak"
+import { SessionOutputGuard } from "@miao/core/session/runner/output-guard"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { SendMessageTool } from "@miao/core/tool/send-message"
@@ -4400,6 +4401,69 @@ describe("SessionRunnerLLM", () => {
       }),
     )
   })
+
+  it.effect("stops repetitive output without retrying or replaying completed tools", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work once" }), resume: false })
+      const before = executions.length
+      response = [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({ id: "before-loop", name: "echo", input: { text: "already completed" } }),
+        LLMEvent.textStart({ id: "loop" }),
+        ...Array.from({ length: 80 }, () => LLMEvent.textDelta({ id: "loop", text: "Emit.\nedit.\n" })),
+        LLMEvent.toolCall({ id: "after-loop", name: "echo", input: { text: "must not execute" } }),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      requests.length = 0
+      const error = yield* session.resume(sessionID).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(LLMError)
+      expect(error.message).toContain("Stopped repetitive text output")
+      expect(requests).toHaveLength(1)
+      expect(executions.slice(before)).toEqual(["already completed"])
+      const recorded = (yield* session.context(sessionID)).at(-1)
+      expect(recorded).toMatchObject({ type: "assistant", finish: "error" })
+      if (recorded?.type !== "assistant") throw new Error("Missing assistant record")
+      expect(recorded.content.some((part) => part.type === "text" && part.text.includes("Emit."))).toBe(true)
+      expect(recorded.content).toContainEqual(
+        expect.objectContaining({
+          type: "tool",
+          id: "before-loop",
+          state: expect.objectContaining({ status: "completed" }),
+        }),
+      )
+
+      response = fragmentFixture("text", "recovered", ["Continuing without repeating work."]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue safely" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(executions.slice(before)).toEqual(["already completed"])
+      const history = requests.at(-1)?.messages ?? []
+      expect(
+        history.some((message) =>
+          message.content.some((part) => part.type === "text" && part.text === SessionOutputGuard.NEUTRALIZED),
+        ),
+      ).toBe(true)
+      expect(
+        history.some((message) =>
+          message.content.some((part) => part.type === "text" && part.text.includes("Emit.\nedit.")),
+        ),
+      ).toBe(false)
+      expect(
+        history.some((message) =>
+          message.content.some((part) => part.type === "tool-call" && part.id === "before-loop"),
+        ),
+      ).toBe(true)
+      expect(
+        (yield* session.context(sessionID)).some(
+          (message) =>
+            message.type === "assistant" &&
+            message.content.some((part) => part.type === "text" && part.text.includes("Emit.")),
+        ),
+      ).toBe(true)
+    }),
+  )
 
   it.effect("does not replay a connection failure after publishing assistant text", () =>
     Effect.gen(function* () {

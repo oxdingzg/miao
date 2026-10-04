@@ -57,6 +57,7 @@ import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
+import { SessionOutputGuard } from "./output-guard"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
@@ -430,6 +431,21 @@ const layer = Layer.effect(
       // malformed block. Neutralize the body in the provider-facing copy only.
       const providerContext = context.map((message) => {
         if (message.type !== "assistant") return message
+        const repetitive =
+          message.error?.message.startsWith(SessionOutputGuard.ERROR_PREFIX) ||
+          message.content.some(
+            (item) => (item.type === "text" || item.type === "reasoning") && SessionOutputGuard.detect(item.text),
+          )
+        if (repetitive)
+          return {
+            ...message,
+            content: message.content.map((item) => {
+              if (item.type === "text") return { ...item, text: SessionOutputGuard.NEUTRALIZED }
+              if (item.type === "reasoning")
+                return { ...item, text: SessionOutputGuard.NEUTRALIZED, providerMetadata: undefined }
+              return item
+            }),
+          }
         if (!ToolCallLeak.isLeakedAssistant(message)) return message
         return {
           ...message,
@@ -591,6 +607,7 @@ const layer = Layer.effect(
       let firstEventAt: number | undefined
       let lastHandledAt: number | undefined
       const providerStream = llm.stream(request).pipe(
+        SessionOutputGuard.wrap,
         Stream.runForEach((event) =>
           Effect.gen(function* () {
             const receivedAt = Date.now()
