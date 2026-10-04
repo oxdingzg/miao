@@ -4134,3 +4134,5 @@ export type ServerRuntimeIdentityOutput = {
   readonly url: string
   readonly proof: string
 }
+
+export type ServerRuntimeStopOutput = void

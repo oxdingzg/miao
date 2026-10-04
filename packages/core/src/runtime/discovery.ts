@@ -14,6 +14,7 @@ const Record = Schema.Struct({
   protocol: Schema.Literal(1),
   storageID: Challenge,
   credential: Schema.String.check(Schema.isMinLength(32), Schema.isMaxLength(256)),
+  configurationID: Schema.optional(Challenge),
 })
 export type Record = typeof Record.Type
 

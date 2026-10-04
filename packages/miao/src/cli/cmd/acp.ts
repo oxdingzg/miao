@@ -1,55 +1,60 @@
-import { Effect } from "effect"
-import { effectCmd } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { cmd } from "./cmd"
+import { withNetworkOptions, hasArg, resolveNetworkOptionsNoConfig } from "../network"
 
-export const AcpCommand = effectCmd({
+export const AcpCommand = cmd({
   command: "acp",
   describe: "start ACP (Agent Client Protocol) server",
-  builder: (yargs) => {
-    return withNetworkOptions(yargs).option("cwd", {
-      describe: "working directory",
-      type: "string",
-      default: process.cwd(),
-    })
-  },
-  handler: Effect.fn("Cli.acp")(function* (args) {
-    const { Server } = yield* Effect.promise(() => import("@/server/server"))
-    const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
-    const { OpenCode } = yield* Effect.promise(() => import("@miao/client"))
-    const { serve } = yield* Effect.promise(() => import("@miao/acp"))
-    const { InstallationVersion } = yield* Effect.promise(() => import("@miao/core/installation/version"))
+  builder: (yargs) =>
+    withNetworkOptions(yargs)
+      .option("attach", { describe: "connect to an existing server URL", type: "string" })
+      .option("cwd", { describe: "working directory", type: "string", default: process.cwd() }),
+  async handler(args) {
+    const { ServerAuth } = await import("@/server/auth")
+    const { OpenCode } = await import("@miao/client")
+    const { serve } = await import("@miao/acp")
+    const { InstallationVersion } = await import("@miao/core/installation/version")
     process.env.MIAO_CLIENT = "acp"
-    const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => Server.listen(opts))
-
-    // The adapter only speaks the V2 protocol to this process's server, like any other client.
-    const client = OpenCode.make({
-      baseUrl: `http://${server.hostname}:${server.port}`,
-      headers: ServerAuth.headers(),
-    })
-
+    const explicit = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].some(hasArg)
+    const state: { server?: Awaited<ReturnType<(typeof import("@/server/server"))["Server"]["listen"]>> } = {}
+    const client = await (async () => {
+      if (args.attach) return OpenCode.make({ baseUrl: args.attach, headers: ServerAuth.headers() })
+      if (explicit) {
+        const { Server } = await import("@/server/server")
+        state.server = await Server.listen(resolveNetworkOptionsNoConfig(args))
+        return OpenCode.make({ baseUrl: state.server.url.href, headers: ServerAuth.headers() })
+      }
+      const { DatabaseFile } = await import("@miao/core/database/file")
+      const { RuntimeConnect } = await import("@/runtime/connect")
+      const record = await RuntimeConnect.ensure(DatabaseFile.path())
+      return OpenCode.make({
+        baseUrl: record.url,
+        headers: ServerAuth.headers({ username: "miao", password: record.credential }),
+      })
+    })()
     const output = new WritableStream<Uint8Array>({
       write: (chunk) =>
-        new Promise<void>((resolve, reject) => process.stdout.write(chunk, (err) => (err ? reject(err) : resolve()))),
+        new Promise<void>((resolve, reject) =>
+          process.stdout.write(chunk, (error) => (error ? reject(error) : resolve())),
+        ),
     })
+    const callbacks: { data?: (chunk: Buffer) => void; end?: () => void; error?: (error: Error) => void } = {}
     const input = new ReadableStream<Uint8Array>({
       start(controller) {
-        process.stdin.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)))
-        process.stdin.on("end", () => controller.close())
-        process.stdin.on("error", (err) => controller.error(err))
+        callbacks.data = (chunk) => controller.enqueue(new Uint8Array(chunk))
+        callbacks.end = () => controller.close()
+        callbacks.error = (error) => controller.error(error)
+        process.stdin.on("data", callbacks.data)
+        process.stdin.on("end", callbacks.end)
+        process.stdin.on("error", callbacks.error)
       },
     })
-
-    serve({ client, version: InstallationVersion, output, input })
-
-    yield* Effect.logInfo("setup connection")
-    process.stdin.resume()
-    yield* Effect.promise(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          process.stdin.on("end", () => resolve())
-          process.stdin.on("error", reject)
-        }),
-    )
-  }),
+    try {
+      await serve({ client, version: InstallationVersion, output, input }).closed
+    } finally {
+      if (callbacks.data) process.stdin.off("data", callbacks.data)
+      if (callbacks.end) process.stdin.off("end", callbacks.end)
+      if (callbacks.error) process.stdin.off("error", callbacks.error)
+      await state.server?.stop(true)
+    }
+  },
 })

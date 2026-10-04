@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
 import { OpenCode } from "@miao/client"
+import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { createFakeQQ } from "@miao/remote/connectors/qq/fake-qq"
 import { createFakeIlink } from "@miao/remote/connectors/wechat/fake-ilink"
 import { Effect } from "effect"
@@ -33,7 +34,7 @@ describe("miao remote daemon", () => {
           ),
         )
         const child = yield* daemon(home, { MIAO_CONFIG_CONTENT: JSON.stringify(testProviderConfig(llm.url)) })
-        const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
+        const client = yield* Effect.promise(() => runtimeClient(home, child))
         const stderr = new Response(child.stderr).text()
 
         yield* Effect.promise(async () => {
@@ -91,7 +92,7 @@ describe("miao remote daemon", () => {
         )
         const child = yield* daemon(home, { MIAO_CONFIG_CONTENT: JSON.stringify(testProviderConfig(llm.url)) })
         const stderr = new Response(child.stderr).text()
-        const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
+        const client = yield* Effect.promise(() => runtimeClient(home, child))
         yield* Effect.promise(async () => {
           const status = await ready(client, child)
           expect(status.connectors[0].accounts[0]).toMatchObject({ account: "bot@im.bot", state: "needs-login" })
@@ -130,9 +131,9 @@ describe("miao remote daemon", () => {
 
         const status = yield* opencode.spawn(["remote", "status"])
         opencode.expectExit(status, 0, "remote status")
-        expect(status.stdout).toContain("守护进程：未运行")
+        expect(status.stdout).toContain("Runtime：http://127.0.0.1:")
         expect(status.stdout).toContain(`QQ 机器人：${qq.appId}，主人 OWNE…OPENID`)
-        expect(status.stdout).toContain("连接：未运行")
+        expect(status.stdout).toContain("连接：运行中")
         expect(status.stdout).toContain("微信：未登录（miao remote login wechat）")
       }),
     120_000,
@@ -173,7 +174,7 @@ describe("miao remote daemon", () => {
         )
         const env = { MIAO_CONFIG_CONTENT: JSON.stringify(testProviderConfig(llm.url)) }
         const child = yield* daemon(home, env)
-        const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
+        const client = yield* Effect.promise(() => runtimeClient(home, child))
 
         yield* Effect.promise(async () => {
           await qq.until(() => qq.connected(), 30_000)
@@ -209,7 +210,7 @@ describe("miao remote daemon", () => {
         const identified = qq.frames.filter((frame) => frame.op === 2 || frame.op === 6).length
         const login = yield* opencode.spawn(["remote", "login", "qq"], { env })
         opencode.expectExit(login, 0, "remote login qq through the daemon")
-        expect(login.stdout).toContain(`通过正在运行的 miao remote（pid ${child.pid}）登录`)
+        expect(login.stdout).toContain(`通过本机 Runtime（pid ${child.pid}）登录`)
         expect(login.stdout).toContain(`已连接QQ 机器人（${qq.appId}）`)
         yield* Effect.promise(async () => {
           await qq.until(
@@ -231,11 +232,11 @@ describe("miao remote daemon", () => {
         })
 
         const status = yield* opencode.spawn(["remote", "status"], { env })
-        expect(status.stdout).toContain(`守护进程：运行中（pid ${child.pid}`)
+        expect(status.stdout).toContain(`（pid ${child.pid}）`)
         expect(status.stdout).toContain("QQ 机器人：未登录（miao remote login qq）")
 
         // A plain `miao serve` has no remote control.
-        const server = yield* opencode.serve({ env })
+        const server = yield* opencode.serve({ env: { ...env, MIAO_DB: path.join(home, "plain.db") } })
         const plain = yield* Effect.promise(() =>
           OpenCode.make({ baseUrl: server.url })
             .remote.get()
@@ -273,6 +274,7 @@ function daemon(home: string, env: Record<string, string>) {
             HOME: home,
             PWD: home,
             MIAO_TEST_HOME: home,
+            MIAO_DB: path.join(home, "sessions.db"),
             XDG_CONFIG_HOME: path.join(home, ".config"),
             XDG_DATA_HOME: path.join(home, ".local/share"),
             XDG_STATE_HOME: path.join(home, ".local/state"),
@@ -319,4 +321,22 @@ function freePort() {
       server.close(() => resolve(port))
     })
   })
+}
+
+async function runtimeClient(
+  home: string,
+  child: { readonly exitCode: number | null; readonly stderr: ReadableStream<Uint8Array> },
+) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(await new Response(child.stderr).text())
+    const record = await RuntimeDiscovery.read(path.join(home, "sessions.db"))
+    if (record)
+      return OpenCode.make({
+        baseUrl: record.url,
+        headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
+      })
+    await Bun.sleep(100)
+  }
+  throw new Error("Runtime discovery missing")
 }

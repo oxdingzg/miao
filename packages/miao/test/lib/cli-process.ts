@@ -19,6 +19,10 @@
 // different return shape — see the TODO at the bottom of OpencodeCli.
 import { test, type TestOptions } from "bun:test"
 import { FSUtil } from "@miao/core/fs-util"
+import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { RuntimeOwnership } from "@miao/core/runtime/ownership"
+import { InstallationVersion } from "@miao/core/installation/version"
+import { createHash } from "node:crypto"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppProcess } from "@miao/core/process"
@@ -62,6 +66,7 @@ function forkStderrDrain(stream: ReadableStream<Uint8Array>, into: string[]) {
 function isolatedEnv(home: string, configJson: string): Record<string, string> {
   return {
     MIAO_TEST_HOME: home,
+    MIAO_DB: path.join(home, "sessions.db"),
     HOME: home,
     // The child runs with cwd = home; without this it inherits the test runner's
     // PWD, which miao trusts over cwd, and the session lands in this repository.
@@ -89,6 +94,7 @@ export type RunResult = {
 
 export type RunHandle = {
   readonly interrupt: () => void
+  readonly disconnect: () => void
   readonly result: Effect.Effect<RunResult>
 }
 
@@ -206,10 +212,50 @@ export function withCliFixture<A, E>(
 
     const configJson = JSON.stringify(testProviderConfig(llm.url))
     const env = isolatedEnv(home, configJson)
+    // A CLI run now leaves its Runtime alive. Close this fixture's verified owner
+    // before removing its database, without touching any other test's Runtime.
+    const runtimeStores = new Set([env.MIAO_DB])
+    const stopRuntime = async (filename = env.MIAO_DB) => {
+      const storage = await RuntimeOwnership.canonicalStorage(filename)
+      const record = await RuntimeDiscovery.read(storage)
+      if (!record) return
+      await RuntimeDiscovery.attest(record, {
+        version: InstallationVersion,
+        storageID: createHash("sha256").update(storage).digest("hex"),
+      })
+      const response = await fetch(new URL("/api/runtime/stop", record.url), {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(3000),
+        headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
+      })
+      if (!response.ok) throw new Error("Test Runtime shutdown failed")
+      const deadline = Date.now() + 5000
+      while (Date.now() < deadline) {
+        if (!(await RuntimeDiscovery.read(storage))) return
+        await new Promise<void>((resolve) => setTimeout(resolve, 50))
+      }
+      throw new Error("Test Runtime did not finish shutdown")
+    }
+    yield* Effect.addFinalizer(() =>
+      Effect.promise(async () => {
+        for (const filename of runtimeStores) await stopRuntime(filename)
+      }),
+    )
+    const runtimeConfig = { content: configJson }
 
     const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
+      runtimeStores.add(opts?.env?.MIAO_DB ?? env.MIAO_DB)
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? 30_000
+      const content = opts?.env?.MIAO_CONFIG_CONTENT ?? configJson
+      if (runtimeConfig.content !== content) {
+        // Each test configuration needs its own Runtime startup snapshot. This
+        // fixture explicitly shuts down its idle owner instead of changing an
+        // existing session's policy through another client's environment.
+        yield* Effect.promise(() => stopRuntime())
+        runtimeConfig.content = content
+      }
       // stdin: "ignore" so the child doesn't see a piped stdin and block
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to
@@ -282,6 +328,7 @@ export function withCliFixture<A, E>(
     }
 
     const startRun = Effect.fn("opencode.startRun")(function* (message: string, opts?: RunOpts) {
+      runtimeStores.add(opts?.env?.MIAO_DB ?? env.MIAO_DB)
       const start = Date.now()
       const options = runOpts(opts)
       const proc = yield* Effect.acquireRelease(
@@ -305,6 +352,7 @@ export function withCliFixture<A, E>(
 
       return {
         interrupt: () => proc.kill("SIGINT"),
+        disconnect: () => proc.kill("SIGTERM"),
         result: Effect.promise(async () => ({
           exitCode: await proc.exited,
           stdout: normalizeLines(await stdout),
@@ -399,6 +447,7 @@ export function withCliFixture<A, E>(
     })
 
     const acp = Effect.fn("opencode.acp")(function* (opts?: AcpOpts) {
+      runtimeStores.add(opts?.env?.MIAO_DB ?? env.MIAO_DB)
       const argv = ["acp"]
       if (opts?.cwd) argv.push("--cwd", opts.cwd)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)

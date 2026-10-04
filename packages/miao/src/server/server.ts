@@ -2,6 +2,7 @@ import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
+import { memoMap } from "@miao/core/effect/memo-map"
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
@@ -100,11 +101,13 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
 )
 
 function listenerLayer(opts: ListenOptions, port: number) {
-  return HttpRouter.serve(HttpApiApp.createRoutes(opts, opts.remote, opts.runtime), {
-    disableLogger: true,
-    disableListenLog: true,
-  }).pipe(
-    Layer.provideMerge(AppNodeBuilder.build(WebSocketTracker.node)),
+  return Layer.unwrap(Effect.gen(function* () {
+    const router = yield* HttpRouter.HttpRouter
+    return HttpServer.serve(router.asHttpEffect())
+  })).pipe(
+    Layer.provideMerge(HttpApiApp.createRoutes(opts, opts.remote, opts.runtime)),
+    Layer.provide(Layer.fresh(HttpRouter.layer)),
+    Layer.provideMerge(Layer.fresh(AppNodeBuilder.build(WebSocketTracker.node))),
     Layer.provideMerge(serverLayer({ port, hostname: opts.hostname })),
     // Install a fresh `ConfigProvider` per listener so `Config.string(...)`
     // reads reflect the current `process.env`. Effect's default
@@ -124,7 +127,7 @@ function startWithPortFallback(opts: ListenOptions) {
 
 function startListener(opts: ListenOptions, port: number) {
   const scope = Scope.makeUnsafe()
-  return Layer.buildWithMemoMap(listenerLayer(opts, port), Layer.makeMemoMapUnsafe(), scope).pipe(
+  return Layer.buildWithMemoMap(listenerLayer(opts, port), memoMap, scope).pipe(
     Effect.provide(HttpApiApp.context),
     Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
     Effect.map(

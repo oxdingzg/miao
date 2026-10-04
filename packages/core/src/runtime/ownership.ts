@@ -16,18 +16,38 @@ export type Owner = {
   readonly release: () => void
 }
 
+const shared = new Map<string, { owner: Promise<Owner>; users: number }>()
+
+/** Independent service scopes in one process share its single OS ownership lease. */
+export async function acquireShared(filename: string): Promise<Owner> {
+  const storage = await canonicalStorage(filename)
+  const existing = shared.get(storage)
+  const entry = existing ?? { owner: acquire(storage), users: 0 }
+  if (!existing) shared.set(storage, entry)
+  entry.users++
+  const owner = await entry.owner.catch((error: unknown) => {
+    if (shared.get(storage) === entry) shared.delete(storage)
+    throw error
+  })
+  const state = { released: false }
+  return {
+    storage,
+    release: () => {
+      if (state.released) return
+      state.released = true
+      entry.users--
+      if (entry.users > 0) return
+      shared.delete(storage)
+      owner.release()
+    },
+  }
+}
+
 /** Holds a kernel-backed SQLite exclusive lock until release or process death.
  * The sidecar is never deleted: replacing it would allow two independent locks.
  */
 export async function acquire(filename: string): Promise<Owner> {
-  if (filename === ":memory:") throw new Error("Runtime ownership requires persistent storage")
-  const resolved = path.resolve(filename)
-  await mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 })
-  const storage = await realpath(resolved).catch((error: unknown) => {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
-      return realpath(path.dirname(resolved)).then((parent) => path.join(parent, path.basename(resolved)))
-    throw error
-  })
+  const storage = await canonicalStorage(filename)
   const lockfile = `${storage}.runtime-lock`
   const native = openRuntimeLock(lockfile)
   const state = { released: false }
@@ -57,4 +77,15 @@ export async function acquire(filename: string): Promise<Owner> {
       }
     },
   }
+}
+
+export async function canonicalStorage(filename: string): Promise<string> {
+  if (filename === ":memory:") throw new Error("Runtime ownership requires persistent storage")
+  const resolved = path.resolve(filename)
+  await mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 })
+  return realpath(resolved).catch((error: unknown) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
+      return realpath(path.dirname(resolved)).then((parent) => path.join(parent, path.basename(resolved)))
+    throw error
+  })
 }

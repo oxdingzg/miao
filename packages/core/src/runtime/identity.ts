@@ -6,6 +6,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 
 export interface Interface {
   readonly prove: (challenge: string) => RuntimeIdentity.Proof | undefined
+  readonly stop?: () => void
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/core/RuntimeIdentity") {}

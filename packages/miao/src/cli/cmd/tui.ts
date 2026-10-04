@@ -214,6 +214,40 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
+      const network = resolveNetworkOptionsNoConfig(args)
+      const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
+      if (!external) {
+        const { RuntimeConnect } = await import("@/runtime/connect")
+        const { DatabaseFile } = await import("@miao/core/database/file")
+        const runtime = await RuntimeConnect.ensure(DatabaseFile.path())
+        const { ServerAuth } = await import("@/server/auth")
+        const headers = ServerAuth.headers({ username: "miao", password: runtime.credential })
+        await validateSession({ url: runtime.url, sessionID: args.session, directory: cwd, headers })
+        const { TuiConfig } = await import("@/config/tui")
+        const { Effect } = await import("effect")
+        const { run } = await import("../tui/layer")
+        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
+        await Effect.runPromise(
+          run({
+            url: runtime.url,
+            config: await TuiConfig.get(),
+            pluginHost: createLegacyTuiPluginHost(),
+            directory: cwd,
+            headers,
+            args: {
+              continue: args.continue,
+              sessionID: args.session,
+              agent: args.agent,
+              model: args.model,
+              prompt: await input(args.prompt),
+              fork: args.fork,
+              auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
+            },
+          }),
+        )
+        return
+      }
+
       const worker = new Worker(file, {
         env: Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
@@ -240,9 +274,6 @@ export const TuiThreadCommand = cmd({
       // on its own thread meanwhile.
       const { TuiConfig } = await import("@/config/tui")
       const config = await TuiConfig.get()
-
-      const network = resolveNetworkOptionsNoConfig(args)
-      const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
 
       const headers = external ? (await import("@/server/auth")).ServerAuth.headers() : undefined
 

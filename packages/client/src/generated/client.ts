@@ -231,6 +231,7 @@ import type {
   RemoteTestOutput,
   ServerRuntimeIdentityInput,
   ServerRuntimeIdentityOutput,
+  ServerRuntimeStopOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -1851,6 +1852,17 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [503, 401, 400],
             empty: false,
+          },
+          requestOptions,
+        ),
+      stop: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeStopOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/stop`,
+            successStatus: 204,
+            declaredStatuses: [503, 401, 400],
+            empty: true,
           },
           requestOptions,
         ),
