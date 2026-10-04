@@ -143,7 +143,7 @@ export type CapabilitiesGetOutput = {
     readonly workspaceID?: string
     readonly project: { readonly id: string; readonly directory: string }
   }
-  readonly data: { readonly backgroundSubagents: boolean }
+  readonly data: { readonly backgroundSubagents: boolean; readonly pendingSessionInputs?: boolean | null }
 }
 
 export type FormattersStatusInput = {
@@ -1096,6 +1096,39 @@ export type SessionsDiffOutput = {
     readonly patch: string
   }>
 }["data"]
+
+export type SessionsInputsInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly limit?: { readonly limit?: number | undefined; readonly after?: number | undefined }["limit"]
+  readonly after?: { readonly limit?: number | undefined; readonly after?: number | undefined }["after"]
+}
+
+export type SessionsInputsOutput = {
+  readonly data: ReadonlyArray<{
+    readonly admittedSeq: number
+    readonly id: string
+    readonly sessionID: string
+    readonly prompt: {
+      readonly text: string
+      readonly files?: ReadonlyArray<{
+        readonly uri: string
+        readonly mime: string
+        readonly name?: string
+        readonly description?: string
+        readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+        readonly path?: string
+      }>
+      readonly agents?: ReadonlyArray<{
+        readonly name: string
+        readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+      }>
+    }
+    readonly delivery: "steer" | "queue"
+    readonly timeCreated: number
+    readonly promotedSeq?: number
+  }>
+  readonly hasMore: boolean
+}
 
 export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 

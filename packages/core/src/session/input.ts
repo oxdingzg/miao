@@ -1,6 +1,6 @@
 export * as SessionInput from "./input"
 
-import { and, asc, count, eq, isNull, lte } from "drizzle-orm"
+import { and, asc, count, eq, gt, isNull, lte } from "drizzle-orm"
 import { DateTime, Effect, Schema } from "effect"
 import { Admitted, Delivery } from "@miao/schema/session-input"
 import type { Database } from "../database/database"
@@ -32,6 +32,27 @@ const fromRow = (row: typeof SessionInputTable.$inferSelect): Admitted =>
 export const find = Effect.fn("SessionInput.find")(function* (db: DatabaseService, id: SessionMessage.ID) {
   const row = yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.id, id)).get().pipe(Effect.orDie)
   return row === undefined ? undefined : fromRow(row)
+})
+
+export const pending = Effect.fn("SessionInput.pending")(function* (
+  db: DatabaseService,
+  input: { sessionID: SessionSchema.ID; after?: number; limit: number },
+) {
+  const rows = yield* db
+    .select()
+    .from(SessionInputTable)
+    .where(
+      and(
+        eq(SessionInputTable.session_id, input.sessionID),
+        isNull(SessionInputTable.promoted_seq),
+        input.after === undefined ? undefined : gt(SessionInputTable.admitted_seq, input.after),
+      ),
+    )
+    .orderBy(asc(SessionInputTable.admitted_seq))
+    .limit(input.limit + 1)
+    .all()
+    .pipe(Effect.orDie)
+  return { inputs: rows.slice(0, input.limit).map(fromRow), hasMore: rows.length > input.limit }
 })
 
 export class LifecycleConflict extends Schema.TaggedErrorClass<LifecycleConflict>()("SessionInput.LifecycleConflict", {

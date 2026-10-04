@@ -6,7 +6,9 @@ import { LocationQuery, locationQueryOpenApi } from "./location"
 export const CapabilitiesGroup = HttpApiGroup.make("server.capabilities").add(
   HttpApiEndpoint.get("capabilities.get", "/api/capabilities", {
     query: LocationQuery,
-    success: Location.response(Schema.Struct({ backgroundSubagents: Schema.Boolean })),
+    success: Location.response(
+      Schema.Struct({ backgroundSubagents: Schema.Boolean, pendingSessionInputs: Schema.optional(Schema.Boolean) }),
+    ),
   })
     .annotateMerge(locationQueryOpenApi)
     .annotateMerge(

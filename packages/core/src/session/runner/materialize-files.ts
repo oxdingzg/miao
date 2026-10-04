@@ -70,11 +70,7 @@ export const materializeEvent = (
     }
   })
 
-const materializePrompt = (
-  blob: Blob.Interface,
-  cache: Cache,
-  prompt: Prompt,
-): Effect.Effect<Prompt> =>
+export const materializePrompt = (blob: Blob.Interface, cache: Cache, prompt: Prompt): Effect.Effect<Prompt> =>
   Effect.gen(function* () {
     if (prompt.files === undefined || prompt.files.length === 0) return prompt
     const resolved = yield* resolveAttachments(blob, cache, prompt.files)
@@ -173,10 +169,11 @@ const materializeToolContent = (
       part.type !== "file"
         ? Effect.succeed(part)
         : resolve(blob, cache, part.uri, part.mime).pipe(
-            Effect.map((uri): ToolPart =>
-              uri !== undefined
-                ? { ...part, uri }
-                : { type: "text", text: `[attachment unavailable: ${part.name ?? Blob.hashOf(part.uri)}]` },
+            Effect.map(
+              (uri): ToolPart =>
+                uri !== undefined
+                  ? { ...part, uri }
+                  : { type: "text", text: `[attachment unavailable: ${part.name ?? Blob.hashOf(part.uri)}]` },
             ),
           ),
   )
@@ -195,10 +192,11 @@ const resolveAttachments = (
     files,
     (file): Effect.Effect<AttachmentResolution> =>
       resolve(blob, cache, file.uri, file.mime).pipe(
-        Effect.map((uri): AttachmentResolution =>
-          uri !== undefined
-            ? { file: { ...file, uri } }
-            : { note: `[attachment unavailable: ${file.name ?? Blob.hashOf(file.uri)}]` },
+        Effect.map(
+          (uri): AttachmentResolution =>
+            uri !== undefined
+              ? { file: { ...file, uri } }
+              : { note: `[attachment unavailable: ${file.name ?? Blob.hashOf(file.uri)}]` },
         ),
       ),
   ).pipe(

@@ -374,9 +374,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         error: SessionNotFoundError,
       })
         .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({ identifier: "v2.session.rename", summary: "Rename session" }),
-        ),
+        .annotateMerge(OpenApi.annotations({ identifier: "v2.session.rename", summary: "Rename session" })),
     )
     .add(
       HttpApiEndpoint.post("session.archive", "/api/session/:sessionID/archive", {
@@ -386,9 +384,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         error: SessionNotFoundError,
       })
         .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({ identifier: "v2.session.archive", summary: "Archive session" }),
-        ),
+        .annotateMerge(OpenApi.annotations({ identifier: "v2.session.archive", summary: "Archive session" })),
     )
     .add(
       HttpApiEndpoint.post("session.remove", "/api/session/:sessionID/remove", {
@@ -397,9 +393,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         error: SessionNotFoundError,
       })
         .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({ identifier: "v2.session.remove", summary: "Delete session" }),
-        ),
+        .annotateMerge(OpenApi.annotations({ identifier: "v2.session.remove", summary: "Delete session" })),
     )
     .add(
       HttpApiEndpoint.post("session.command", "/api/session/:sessionID/command", {
@@ -454,6 +448,23 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Get session diff",
             description:
               "Files changed by the session since its first recorded snapshot, or within the turn that answered `messageID`.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.inputs", "/api/session/:sessionID/inputs", {
+        params: { sessionID: Session.ID },
+        query: SessionHistoryQuery,
+        success: Schema.Struct({ data: Schema.Array(SessionInput.Admitted), hasMore: Schema.Boolean }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.inputs",
+            summary: "List pending session inputs",
+            description:
+              "Durably admitted inputs awaiting promotion, ordered by admission sequence. Does not resume execution.",
           }),
         ),
     )

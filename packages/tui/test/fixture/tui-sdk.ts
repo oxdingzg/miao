@@ -93,7 +93,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/capabilities")
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree } },
-        data: { backgroundSubagents: false },
+        data: { backgroundSubagents: false, pendingSessionInputs: true },
       })
     if (url.pathname === "/path") return json({ home: "", state: "", config: "", worktree, directory })
     if (url.pathname === "/api/location") return json({ directory, project: { id: "proj_test", directory: worktree } })
@@ -208,6 +208,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (/^\/api\/session\/[^/]+\/todo$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/diff$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/status$/.test(url.pathname)) return json({ data: { type: "idle" } })
+    if (/^\/api\/session\/[^/]+\/inputs$/.test(url.pathname)) return json({ data: [], hasMore: false })
     if (/^\/api\/session\/[^/]+$/.test(url.pathname))
       return json({
         data: {

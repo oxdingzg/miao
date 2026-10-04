@@ -1,4 +1,5 @@
 import { mutableResponse } from "../util/mutable-response"
+import type { SessionsInputsOutput } from "@miao/client"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { Renderable } from "@opentui/core"
 import type { Message, UserMessage, Session, Part, VcsInfo, SnapshotFileDiff } from "@miao/schema/view-models"
@@ -133,6 +134,7 @@ export const {
       provider_next: ProviderCatalog
       capabilities: {
         experimentalBackgroundSubagents: boolean
+        pendingSessionInputs: boolean
       }
       provider_auth: Record<string, TuiAuthMethod[]>
       agent: Agent[]
@@ -177,6 +179,7 @@ export const {
       },
       capabilities: {
         experimentalBackgroundSubagents: false,
+        pendingSessionInputs: false,
       },
       provider_auth: {},
       config: {},
@@ -303,6 +306,39 @@ export const {
       )
     }
 
+    const projectInput = (
+      input: Pick<SessionsInputsOutput["data"][number], "id" | "sessionID" | "prompt" | "timeCreated">,
+    ) => {
+      const session = store.session.find((session) => session.id === input.sessionID)
+      const [message] = sessionContextToMessages({
+        sessionID: input.sessionID,
+        cwd: session?.directory ?? "",
+        root: session?.directory ?? "",
+        messages: [
+          mutableResponse({
+            id: input.id,
+            type: "user" as const,
+            time: { created: input.timeCreated },
+            text: input.prompt.text,
+            files: input.prompt.files,
+            agents: input.prompt.agents,
+          }),
+        ],
+      })
+      if (message.info.role !== "user") return
+      return {
+        ...message,
+        info: {
+          ...message.info,
+          agent: pendingPrompts.data[input.id]?.info.agent ?? session?.agent ?? "",
+          model: pendingPrompts.data[input.id]?.info.model ?? {
+            providerID: session?.model?.providerID ?? "",
+            modelID: session?.model?.id ?? "",
+          },
+        },
+      }
+    }
+
     event.subscribe((event, { workspace }) => {
       if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
@@ -327,31 +363,14 @@ export const {
           // leave the receipt pinned to the tail of the transcript forever.
           if (event.type === "session.next.prompted") pendingPrompts.remove(input.messageID)
           if (store.message[input.sessionID]?.some((message) => message.id === input.messageID)) break
-          const session = store.session.find((session) => session.id === input.sessionID)
-          const [message] = sessionContextToMessages({
+          const message = projectInput({
+            id: input.messageID,
             sessionID: input.sessionID,
-            cwd: session?.directory ?? "",
-            root: session?.directory ?? "",
-            messages: [
-              {
-                id: input.messageID,
-                type: "user",
-                time: { created: input.timestamp },
-                text: input.prompt.text,
-                files: input.prompt.files,
-                agents: input.prompt.agents,
-              },
-            ],
+            prompt: input.prompt,
+            timeCreated: input.timestamp,
           })
-          if (message.info.role !== "user") break
-          const info = {
-            ...message.info,
-            agent: pendingPrompts.data[input.messageID]?.info.agent ?? session?.agent ?? "",
-            model: pendingPrompts.data[input.messageID]?.info.model ?? {
-              providerID: session?.model?.providerID ?? "",
-              modelID: session?.model?.id ?? "",
-            },
-          }
+          if (!message) break
+          const info = message.info
           if (event.type === "session.next.prompt.admitted") {
             pendingPrompts.add({ info, parts: message.parts, state: "admitted", delivery: input.delivery })
             pendingPrompts.admit(input.messageID)
@@ -686,6 +705,7 @@ export const {
               setStore("provider", reconcile(providers.providers))
               setStore("provider_default", reconcile(providers.default))
               setStore("capabilities", "experimentalBackgroundSubagents", capabilities?.backgroundSubagents === true)
+              setStore("capabilities", "pendingSessionInputs", capabilities?.pendingSessionInputs === true)
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
               if (sessions !== undefined) setStore("session", reconcile(sessions))
@@ -861,7 +881,37 @@ export const {
           // An idle transition is also a recovery path for a missed terminal
           // event: fetch the final transcript instead of leaving stale output.
           if (previous === "busy" && status === "idle") v2Refresh.schedule(sessionID)
+          await result.session.syncInputs(sessionID, signal)
           return status
+        },
+        async syncInputs(sessionID: string, signal?: AbortSignal) {
+          if (!store.capabilities.pendingSessionInputs) return
+          // Only receipts present before this read may be removed. A live
+          // admission racing the snapshot must survive until the next poll.
+          const observed = Object.values(pendingPrompts.data)
+            .filter((entry) => entry.info.sessionID === sessionID && entry.state === "admitted")
+            .map((entry) => entry.info.id)
+          const read = async (after?: number): Promise<SessionsInputsOutput["data"]> => {
+            const page = await sdk.api.sessions.inputs({ sessionID, after, limit: 100 }, { signal })
+            if (page.hasMore && page.data.length === 0)
+              throw new Error("Pending input page has no continuation sequence")
+            return page.hasMore ? [...page.data, ...(await read(page.data.at(-1)?.admittedSeq))] : page.data
+          }
+          const inputs = await read()
+          if (signal?.aborted) return
+          const ids = new Set(inputs.map((entry) => entry.id))
+          batch(() => {
+            inputs.forEach((input) => {
+              if (store.message[sessionID]?.some((message) => message.id === input.id)) return
+              if (pendingPrompts.data[input.id]?.state === "admitted") return
+              const message = projectInput(input)
+              if (!message) return
+              pendingPrompts.add({ ...message, state: "admitted", delivery: input.delivery })
+              pendingPrompts.admit(input.id)
+            })
+            observed.filter((id) => !ids.has(id)).forEach((id) => pendingPrompts.remove(id))
+          })
+          if (observed.some((id) => !ids.has(id))) v2Refresh.schedule(sessionID)
         },
         status(sessionID: string) {
           const session = result.session.get(sessionID)

@@ -100,6 +100,40 @@ const eventCount = (type: string) =>
   )
 
 describe("SessionV2.prompt", () => {
+  it.effect("pages durable pending inputs in admission order and drops promoted inputs", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      const first = yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Queued", files: [{ uri: "data:image/png;base64,aGVsbG8=", name: "image.png", mime: "image/png" }] }),
+        delivery: "queue",
+        resume: false,
+      })
+      const second = yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Steer" }),
+        delivery: "steer",
+        resume: false,
+      })
+      const page = yield* session.inputs({ sessionID, limit: 1 })
+      expect(page.hasMore).toBe(true)
+      expect(page.inputs.map((entry) => entry.id)).toEqual([first.id])
+      expect(page.inputs[0].prompt.files?.[0].uri).toBe("data:image/png;base64,aGVsbG8=")
+      const next = yield* session.inputs({ sessionID, after: page.inputs[0].admittedSeq, limit: 1 })
+      expect(next.hasMore).toBe(false)
+      expect(next.inputs.map((entry) => entry.id)).toEqual([second.id])
+      yield* SessionInput.promoteNextQueued(database.db, events, sessionID)
+      expect((yield* session.inputs({ sessionID, limit: 200 })).inputs.map((entry) => entry.id)).toEqual([second.id])
+      const missing = yield* session
+        .inputs({ sessionID: SessionV2.ID.make("ses_missing_inputs"), limit: 200 })
+        .pipe(Effect.flip)
+      expect(missing._tag).toBe("Session.NotFoundError")
+    }),
+  )
+
   it.effect("exposes the execution registry", () =>
     Effect.gen(function* () {
       activeSessions.add(sessionID)
