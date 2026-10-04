@@ -12,6 +12,15 @@ to add a section here.
 
 ### Fixed
 
+- **integration**: OAuth connection accepts omitted prompt inputs from older clients,
+  and the TUI explicitly sends empty inputs for methods without prompts.
+- **llm**: retry transient TLS verification failures within the existing retry budget;
+  definitive certificate errors remain non-retryable.
+- **tui**: show outgoing session message receipts and avoid history reloading for
+  repeated busy status heartbeats.
+- **miao**: monitoring probes and writes are asynchronous, with one sample in flight
+  and windowed event-loop metrics.
+
 - **miao**: Windows binary installations upgrade through native PowerShell 5.1,
   including system proxy support, release verification, and replacement of a running
   executable with rollback on failure. Errors identify the failing phase. Windows
@@ -22,12 +31,12 @@ to add a section here.
 
 ### Changed
 
-- **sdk / plugin**: remove the V1 SDK root, client, and server exports. Import
-  `createMiaoClient` and `createMiaoServer` from `@miao/sdk/v2` and use
-  `client.v2.session` for sessions. Plugin clients use that same SDK; function-returning
-  V1 `Hooks` remain deprecated and do not run in V2 sessions. New plugins should use
-  `define` from `@miao/plugin/v2/promise` or `/v2/effect`, with
-  `ctx.tool.before`, `after`, `definition`, and `register` for tool customization.
+- **sdk / plugin**: retire the legacy network SDK and migrate App, TUI, CLI, and
+  plugin consumers to `@miao/client`. Use `OpenCode.make(...)` and capability groups
+  such as `client.sessions`; endpoint values no longer have an extra transport
+  envelope. `@miao/sdk` now owns the Effect-native scoped embedded host. See
+  [the migration guide](docs/client-sdk-migration.md). Function-returning V1 `Hooks`
+  remain deprecated; current plugins use `/v2/promise` or `/v2/effect`.
 
 ### Added
 
