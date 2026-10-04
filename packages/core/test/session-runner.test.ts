@@ -3278,6 +3278,63 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("reports a tool the prior process never dispatched as not executed", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover undispatched tool" }), resume: false })
+      yield* SessionInput.promoteSteers((yield* Database.Service).db, events, sessionID, Number.MAX_SAFE_INTEGER)
+      const assistantMessageID = SessionMessage.ID.create()
+      yield* events.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID,
+        timestamp: yield* DateTime.now,
+        agent: "build",
+        model: { id: ModelV2.ID.make("fake-model"), providerID: ProviderV2.ID.make("fake") },
+      })
+      // Input streamed, but no `Tool.Called`: the runner never dispatched it.
+      yield* events.publish(SessionEvent.Tool.Input.Started, {
+        sessionID,
+        timestamp: yield* DateTime.now,
+        assistantMessageID,
+        callID: "call-undispatched",
+        name: "echo",
+      })
+      yield* events.publish(SessionEvent.Tool.Input.Ended, {
+        sessionID,
+        timestamp: yield* DateTime.now,
+        assistantMessageID,
+        callID: "call-undispatched",
+        text: '{"text":"never ran"}',
+      })
+      requests.length = 0
+      response = []
+      yield* session.resume(sessionID)
+
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Recover undispatched tool" },
+        {
+          type: "assistant",
+          content: [
+            {
+              type: "tool",
+              id: "call-undispatched",
+              state: {
+                status: "error",
+                error: {
+                  type: "unknown",
+                  message:
+                    "Tool was not executed: the process stopped before it was dispatched, so it is safe to retry.",
+                },
+              },
+            },
+          ],
+        },
+      ])
+    }),
+  )
+
   it.effect("durably fails hosted tools left running by a prior process before continuing inline", () =>
     Effect.gen(function* () {
       yield* setup
