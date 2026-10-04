@@ -126,6 +126,39 @@ attachments and oversized tool output.
    only refs; a large attachment round-trips to the model and renders in the TUI; `db vacuum`
    reclaims the freed pages.
 
+## Event log retention (implementation plan)
+
+`event` grows without bound per session; it is deleted only when the whole session is removed. This
+section scopes bounding it. It is **not yet implemented**.
+
+**Consumer audit.** Only one in-tree reader replays event payloads:
+
+- **Session fork** (`V2Session.fork`) reads every `event` row for the parent aggregate and replays
+  it into the child (`events.replay(..., { publish: true })`). Pruning events must not break it.
+- `SessionHistory` reads only `EventV2.latestSequence` (a number), never event payloads.
+- The durable stream (`EventV2.durable`) serves live and resuming subscribers over `/api/event`;
+  an attached client can resume from a cursor, and no event before the resume window is replayed.
+
+**Policy (snapshot-then-truncate).** The latest `compaction` message in `session_message` is the
+baseline. Keep every event at or after that baseline plus a small trailing window; prune the rest
+per session.
+
+**Prerequisite (must land first).** Make `V2Session.fork` reconstruct the parent from its
+`session_message` projection (remapping ids) instead of replaying events, so pruning cannot lose
+forkable history. Cover a fully-inline session, a backfilled one, and a compacted one.
+
+**Steps.**
+
+1. Fork from the projection. Behavior-preserving; no retention yet.
+2. `miao db retention --dry-run` reports prunable rows per session (events before the kept window,
+   never below the baseline seq).
+3. `miao db retention --yes` deletes the planned rows in primary-key batches (reuse the `compact`
+   delete path) and resets only the `event_sequence` rows it empties.
+4. Document the contract: a subscriber resuming below the retained window full-syncs
+   (`session.context`) instead of replaying.
+
+**Non-goals.** Pruning `session_message` (the projection is the record) and cross-session dedup.
+
 ## Migration plan (staged, non-destructive)
 
 1. **Tooling first (this slice):** `miao db stats` reports file/table/event-type sizes;
