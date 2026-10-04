@@ -10,6 +10,23 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-04
+
+### Fixed
+- **miao**: forward streaming events only once (#24) (`fb880f18e`)
+- **core**: decode Windows shell output by console code page (#23) (`53df1c90e`)
+- **tui**: render prompt placeholder on a single row (#18) (`78c64e93a`)
+- **core**: decode only changed rows when reloading session history (#17) (`0e0828566`)
+- **core**: neutralize leaked tool-call text in projected history (#16) (`5312554e0`)
+- **core**: detect tool-call leaks whose openers the server ate (#14) (`2d3c60d6c`)
+- **core**: seed Tencent Token Plan models in the V2 catalog (#13) (`96da9b728`)
+- **miao**: correct the health endpoint and stale e2e copy (#11) (`0e1829712`)
+
+### Performance
+- **tui**: apply durable session events incrementally (#21) (`4d2d1ad20`)
+- **tui**: window the transcript around the viewport (#22) (`4e430437e`)
+- **core**: drop legacy metadata from the history read path (#19) (`0177fc28f`)
+
 ## [0.1.2] - 2026-10-04
 
 Published release: [v0.1.2](https://github.com/oxdingzg/miao/releases/tag/v0.1.2).
