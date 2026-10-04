@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer, Random, Ref } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import { Headers, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { LLM, LLMError } from "../src"
 import { LLMClient, RequestExecutor } from "../src/route"
 import * as OpenAIChat from "../src/protocols/openai-chat"
@@ -73,6 +73,58 @@ const expectLLMError = (error: unknown) => {
 const errorHttp = (error: LLMError) => ("http" in error.reason ? error.reason.http : undefined)
 
 describe("RequestExecutor", () => {
+  it.live("retries an unknown TLS verification failure before a response", () =>
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0)
+      const http = HttpClient.make((request) =>
+        Effect.gen(function* () {
+          const attempt = yield* Ref.getAndUpdate(attempts, (value) => value + 1)
+          if (attempt === 0)
+            return yield* new HttpClientError.HttpClientError({
+              reason: new HttpClientError.TransportError({
+                request,
+                cause: Object.assign(new Error("unknown certificate verification error"), {
+                  code: "UNKNOWN_CERTIFICATE_VERIFICATION_ERROR",
+                }),
+              }),
+            })
+          return HttpClientResponse.fromWeb(request, new Response("ok"))
+        }),
+      )
+      const response = yield* Effect.flatMap(RequestExecutor.Service, (executor) => executor.execute(request)).pipe(
+        Effect.provide(RequestExecutor.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http)))),
+      )
+      expect(response.status).toBe(200)
+      expect(yield* Ref.get(attempts)).toBe(2)
+    }),
+  )
+
+  for (const code of ["CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "ERR_TLS_CERT_ALTNAME_INVALID"]) {
+    it.effect(`does not retry a definitive certificate failure: ${code}`, () =>
+      Effect.gen(function* () {
+        const attempts = yield* Ref.make(0)
+        const http = HttpClient.make((request) =>
+          Ref.update(attempts, (value) => value + 1).pipe(
+            Effect.andThen(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({
+                  request,
+                  cause: Object.assign(new Error(code), { code }),
+                }),
+              }),
+            ),
+          ),
+        )
+        const error = yield* Effect.flatMap(RequestExecutor.Service, (executor) => executor.execute(request)).pipe(
+          Effect.flip,
+          Effect.provide(RequestExecutor.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http)))),
+        )
+        expect(error.retryable).toBe(false)
+        expect(yield* Ref.get(attempts)).toBe(1)
+      }),
+    )
+  }
+
   it.effect("classifies context overflow responses", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
@@ -452,9 +504,7 @@ describe("RequestExecutor", () => {
       // produces for any connection failure: `TransportError({ request, cause })`
       // with no description. Before, every one of these collapsed into the bare
       // constant and nothing about the failure survived.
-      const error = yield* executor
-        .execute(HttpClientRequest.post("http://127.0.0.1:1/v1/chat"))
-        .pipe(Effect.flip)
+      const error = yield* executor.execute(HttpClientRequest.post("http://127.0.0.1:1/v1/chat")).pipe(Effect.flip)
 
       expectLLMError(error)
       expect(error.reason).toMatchObject({ _tag: "Transport", kind: "TransportError" })
