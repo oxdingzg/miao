@@ -28,7 +28,7 @@ echo "==> smoke test"
 VERSION="$("${SRC}" --version)"
 echo "    version: ${VERSION}"
 
-mkdir -p "${BIN_DIR}"
+mkdir -p "${BIN_DIR}" "$(dirname "${LINK}")"
 
 if [ -e "${LINK}" ] || [ -L "${LINK}" ]; then
   rm -f "${BIN_DIR}/miao.prev"
