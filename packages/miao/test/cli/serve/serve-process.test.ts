@@ -11,10 +11,10 @@ import { HttpClient } from "effect/unstable/http"
 import { cliIt } from "../../lib/cli-process"
 
 describe("opencode serve (subprocess)", () => {
-  // Smoke test: server starts, binds a port, and /global/health responds.
+  // Smoke test: server starts, binds a port, and /api/health responds.
   // If this fails, all other serve tests likely will too — debug here first.
   cliIt.live(
-    "starts, binds a port, and serves /global/health",
+    "starts, binds a port, and serves /api/health",
     ({ opencode }) =>
       Effect.gen(function* () {
         const server = yield* opencode.serve()
@@ -22,7 +22,7 @@ describe("opencode serve (subprocess)", () => {
         expect(server.url).toMatch(/^http:\/\//)
 
         const client = yield* HttpClient.HttpClient
-        const res = yield* client.get(`${server.url}/global/health`)
+        const res = yield* client.get(`${server.url}/api/health`)
         expect(res.status).toBe(200)
         // GlobalHealth schema is { success: true, ... } | { success: false, error }.
         // We don't lock in further shape here — any 200 with parseable JSON is
