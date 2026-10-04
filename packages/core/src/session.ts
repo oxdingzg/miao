@@ -29,7 +29,6 @@ import { ChildProcess } from "effect/unstable/process"
 import { SessionTodo } from "./session/todo"
 import { SessionCreate } from "./session-create"
 import { SessionDiff } from "./session/diff"
-import { SessionFork } from "./session/fork"
 import { SessionCommand } from "./session/command"
 import { CommandV2 } from "./command"
 import { SkillV2 } from "./skill"
@@ -48,7 +47,7 @@ import { Blob } from "./blob"
 import { SessionBlobStorage } from "./session/blob-storage"
 import { materializeBlobRefs, materializeEvent, materializePrompt } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
-import { EventSequenceTable, EventTable } from "./event/sql"
+import { EventSequenceTable } from "./event/sql"
 
 export const RevertState = Revert.State
 export type RevertState = Revert.State
@@ -503,94 +502,43 @@ const layer = Layer.effect(
           agent: parent.agent,
           location: parent.location,
         })
+        // Fork from the projection, not the event log: the projection is the
+        // durable record, and a session's event log may be pruned. Copy the
+        // parent's messages (including backfilled legacy rows at negative
+        // sequences) with fresh message ids, then advance the child's sequence
+        // past the copy so its new events cannot collide with the copied rows.
         const rows = yield* db
           .select()
-          .from(EventTable)
-          .where(eq(EventTable.aggregate_id, input.sessionID))
-          .orderBy(asc(EventTable.seq))
-          .all()
-          .pipe(Effect.orDie)
-        // Backfilled legacy history has no EventV2 rows, so replay cannot
-        // reproduce it. It lives in the projection at a negative sequence.
-        const legacyRows = yield* db
-          .select()
           .from(SessionMessageTable)
-          .where(and(eq(SessionMessageTable.session_id, parent.id), lt(SessionMessageTable.seq, 0)))
+          .where(eq(SessionMessageTable.session_id, parent.id))
           .orderBy(asc(SessionMessageTable.seq))
           .all()
           .pipe(Effect.orDie)
-        const legacyCutoff =
-          input.messageID === undefined ? -1 : legacyRows.findIndex((row) => row.id === input.messageID)
-        let cutoff: number | undefined
-        if (input.messageID !== undefined) {
-          const target = rows.find((row) => {
-            const data = row.data as Record<string, unknown>
-            return data?.messageID === input.messageID || data?.assistantMessageID === input.messageID
-          })
-          // A cutoff at a legacy message stops before any event.
-          cutoff = legacyCutoff >= 0 ? -1 : (target?.seq ?? rows.at(-1)?.seq)
+        const cutoff = input.messageID === undefined ? rows.length : rows.findIndex((row) => row.id === input.messageID)
+        const included = cutoff < 0 ? rows : rows.slice(0, cutoff + 1)
+        let maxSeq = -1
+        for (const row of included) {
+          yield* db
+            .insert(SessionMessageTable)
+            .values({
+              id: SessionMessage.ID.create(),
+              session_id: child.id,
+              type: row.type,
+              seq: row.seq,
+              time_created: row.time_created,
+              data: row.data,
+            })
+            .run()
+            .pipe(Effect.orDie)
+          maxSeq = Math.max(maxSeq, row.seq)
         }
-        const allowed = new Set(SessionDurable.definitions.keys())
-        // The child owns its own Session info; never replay the parent's
-        // creation or info updates under the child aggregate.
-        allowed.delete(
-          EventV2.versionedType(SessionEvent.Info.Created.type, SessionEvent.Info.Created.durable?.version ?? 1),
-        )
-        allowed.delete(
-          EventV2.versionedType(SessionEvent.Info.Updated.type, SessionEvent.Info.Updated.durable?.version ?? 1),
-        )
-        const sequence = yield* db
-          .select()
-          .from(EventSequenceTable)
-          .where(eq(EventSequenceTable.aggregate_id, child.id))
-          .get()
-          .pipe(Effect.orDie)
-        let seq = (sequence?.seq ?? -1) + 1
-        const remapped = new Map<string, string>()
-        const next = (old: string) => {
-          const existing = remapped.get(old)
-          if (existing !== undefined) return existing
-          const created = SessionMessage.ID.create()
-          remapped.set(old, created)
-          return created
-        }
-        for (const row of rows) {
-          if (!allowed.has(row.type)) continue
-          if (cutoff !== undefined && row.seq > cutoff) break
-          const data = SessionFork.remapEventData(row.data, next) as Record<string, unknown>
-          yield* events
-            .replay(
-              {
-                id: EventV2.ID.create(),
-                type: row.type,
-                aggregateID: child.id,
-                seq,
-                data: { ...data, sessionID: child.id },
-              },
-              { publish: true },
-            )
-            .pipe(Effect.catchCause(() => Effect.void))
-          seq += 1
-        }
-        if (legacyRows.length > 0) {
-          const included = legacyCutoff >= 0 ? legacyRows.slice(0, legacyCutoff + 1) : legacyRows
-          let legacySeq = -included.length
-          for (const row of included) {
-            yield* db
-              .insert(SessionMessageTable)
-              .values({
-                id: SessionMessage.ID.create(),
-                session_id: child.id,
-                type: row.type,
-                seq: legacySeq,
-                time_created: row.time_created,
-                data: row.data,
-              })
-              .run()
-              .pipe(Effect.orDie)
-            legacySeq += 1
-          }
-        }
+        if (maxSeq >= 0)
+          yield* db
+            .insert(EventSequenceTable)
+            .values({ aggregate_id: child.id, seq: maxSeq })
+            .onConflictDoUpdate({ target: EventSequenceTable.aggregate_id, set: { seq: maxSeq } })
+            .run()
+            .pipe(Effect.orDie)
         return child
       }),
       diff: Effect.fn("V2Session.diff")(function* (sessionID, options) {

@@ -541,6 +541,31 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.live("forks from the projection after the parent's event log is pruned", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const session = yield* SessionV2.Service
+          const created = yield* session.create({
+            location: Location.Ref.make({ directory: AbsolutePath.make(tmp.path) }),
+          })
+          yield* session.shell({ sessionID: created.id, command: "echo fork-pruned", resume: false })
+          const database = yield* Database.Service
+          yield* database.db
+            .delete(EventTable)
+            .where(eq(EventTable.aggregate_id, created.id))
+            .run()
+            .pipe(Effect.orDie)
+
+          const forked = yield* session.fork({ sessionID: created.id })
+          const childShell = (yield* session.context(forked.id)).find((message) => message.type === "shell")
+          expect(childShell?.type === "shell" ? childShell.output : "").toContain("fork-pruned")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.effect("renames, archives, and removes a session", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
