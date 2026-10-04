@@ -25,7 +25,7 @@ import { McpAuth } from "@miao/core/mcp/auth"
 import { Command } from "@/command"
 import { Format } from "@/format"
 import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
+import { ProjectMetadata } from "@miao/core/project/metadata"
 import { Vcs } from "@/project/vcs"
 import { Worktree } from "@/worktree"
 import { Installation } from "@/installation"
@@ -72,7 +72,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Command.node,
     Format.node,
     InstanceStore.node,
-    Project.node,
+    ProjectMetadata.node,
     Vcs.node,
     Worktree.node,
     Installation.node,

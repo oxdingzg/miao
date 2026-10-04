@@ -75,11 +75,10 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       `ProjectMetadata` now also owns `setInitialized`, `sandboxes`, `addSandbox`, and
       `removeSandbox`. The `packages/miao` `Project` service delegates to core and no longer writes
       `ProjectTable` directly (#35, #36). The server handlers already use core only.
-- [ ] Delete the now-thin `packages/miao` `Project` facade. It retains only `fromDirectory`
-      (resolve + `ProjectRegistry.register`), the `/init` subscription, and `discover`
-      (`ProjectRegistry.discoverIcon`); its tests still exercise `discover`. Repoint
-      `instance-store`, `bootstrap`, `worktree`, `control-plane/workspace`, `stats`, and `scrap` at
-      core, then move the `/init` subscription to a small miao-owned service.
+- [x] Delete the legacy `packages/miao` `Project` facade. Instance startup calls core's complete
+      registration directly; the `/init` subscription lives in instance bootstrap and is released
+      with the instance. Worktrees, CLI commands, and tests use `ProjectRegistry`, `ProjectMetadata`,
+      and Schema types directly. Migration, directory, icon, and metadata regressions are retained.
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy routes;
       switch the release server to the V2-only assembly.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config

@@ -10,7 +10,7 @@ import { Workspace } from "../../src/control-plane/workspace"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
-import { Project } from "../../src/project/project"
+import { ProjectMetadata } from "@miao/core/project/metadata"
 import { Vcs } from "../../src/project/vcs"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 
@@ -20,7 +20,7 @@ export const workspaceLayerWithRuntimeFlags = (overrides: Partial<RuntimeFlags.I
       Workspace.node,
       Auth.node,
       SessionV2.node,
-      Project.node,
+      ProjectMetadata.node,
       Vcs.node,
       Database.node,
       EventV2Bridge.node,

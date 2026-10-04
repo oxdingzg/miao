@@ -1,6 +1,6 @@
 import { LocalContext } from "@/util/local-context"
 import { FSUtil } from "@miao/core/fs-util"
-import type * as Project from "./project"
+import type { Project } from "@miao/schema/project"
 
 export interface InstanceContext {
   directory: string

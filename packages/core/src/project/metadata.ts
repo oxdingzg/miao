@@ -19,6 +19,8 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Pro
 
 export interface Interface {
   readonly list: () => Effect.Effect<Project.Info[]>
+  /** A single project's metadata, or undefined when it has no row yet. */
+  readonly get: (id: Project.ID) => Effect.Effect<Project.Info | undefined>
   /** Record a resolved project that no session has been created in yet, so it can carry metadata. */
   readonly ensure: (project: ProjectV2.Resolved) => Effect.Effect<void>
   readonly update: (id: Project.ID, input: Project.UpdateInput) => Effect.Effect<Project.Info, NotFoundError>
@@ -42,6 +44,10 @@ const layer = Layer.effect(
     return Service.of({
       list: Effect.fn("ProjectMetadata.list")(function* () {
         return (yield* db.select().from(ProjectTable).all().pipe(Effect.orDie)).map(fromRow)
+      }),
+      get: Effect.fn("ProjectMetadata.get")(function* (id: Project.ID) {
+        const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
+        return row ? fromRow(row) : undefined
       }),
       ensure: Effect.fn("ProjectMetadata.ensure")(function* (project: ProjectV2.Resolved) {
         yield* db
@@ -84,7 +90,11 @@ const layer = Layer.effect(
         if (!row) return []
         return yield* Effect.forEach(
           fromRow(row).sandboxes,
-          (dir) => fs.isDir(dir).pipe(Effect.orDie, Effect.map((ok) => (ok ? dir : undefined))),
+          (dir) =>
+            fs.isDir(dir).pipe(
+              Effect.orDie,
+              Effect.map((ok) => (ok ? dir : undefined)),
+            ),
           { concurrency: "unbounded" },
         ).pipe(Effect.map((arr) => arr.filter((x): x is string => x !== undefined)))
       }),

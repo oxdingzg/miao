@@ -2,10 +2,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { path } from "@miao/core/effect/app-node-platform"
 import { Global } from "@miao/core/global"
 import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
-import { Database } from "@miao/core/database/database"
-import { eq } from "drizzle-orm"
-import { ProjectTable } from "@miao/core/project/sql"
+import { ProjectMetadata } from "@miao/core/project/metadata"
 import type { ProjectV2 } from "@miao/core/project"
 import { Slug } from "@miao/core/util/slug"
 import { errorMessage } from "../util/error"
@@ -136,9 +133,8 @@ const layer: Layer.Layer<
   | Path.Path
   | AppProcess.Service
   | GitCli.Service
-  | Project.Service
+  | ProjectMetadata.Service
   | InstanceStore.Service
-  | Database.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -146,9 +142,8 @@ const layer: Layer.Layer<
     const fs = yield* FSUtil.Service
     const pathSvc = yield* Path.Path
     const appProcess = yield* AppProcess.Service
-    const { db } = yield* Database.Service
     const gitSvc = yield* GitCli.Service
-    const project = yield* Project.Service
+    const metadata = yield* ProjectMetadata.Service
     const store = yield* InstanceStore.Service
 
     const git = Effect.fnUntraced(
@@ -225,7 +220,7 @@ const layer: Layer.Layer<
         })
       }
 
-      yield* project.addSandbox(ctx.project.id, info.directory).pipe(Effect.catch(() => Effect.void))
+      yield* metadata.addSandbox(ctx.project.id, info.directory).pipe(Effect.catch(() => Effect.void))
     })
 
     const boot = Effect.fnUntraced(function* (info: Info, startCommand?: string) {
@@ -482,13 +477,7 @@ const layer: Layer.Layer<
       directory: string,
       input: { projectID: ProjectV2.ID; extra?: string },
     ) {
-      const row = yield* db
-        .select()
-        .from(ProjectTable)
-        .where(eq(ProjectTable.id, input.projectID))
-        .get()
-        .pipe(Effect.orDie)
-      const project = row ? Project.fromRow(row) : undefined
+      const project = yield* metadata.get(input.projectID)
       const startup = project?.commands?.start?.trim() ?? ""
       const ok = yield* runStartScript(directory, startup, "project")
       if (!ok) return false
@@ -617,7 +606,7 @@ const layer: Layer.Layer<
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, path, AppProcess.node, GitCli.node, Project.node, InstanceStore.node, Database.node],
+  deps: [FSUtil.node, path, AppProcess.node, GitCli.node, ProjectMetadata.node, InstanceStore.node],
 })
 
 export * as Worktree from "."
