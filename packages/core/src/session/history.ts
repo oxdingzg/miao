@@ -23,7 +23,7 @@ export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService
     .pipe(Effect.orDie)
 })
 
-type Fingerprint = { readonly id: string; readonly time_updated: number }
+type Fingerprint = { readonly id: string; readonly time_updated: number; readonly bytes: number }
 
 type CachedEntries = {
   readonly revision: number
@@ -71,6 +71,19 @@ export function invalidate(db: object) {
   caches.get(db)?.clear()
 }
 
+// Bound so a long-lived process that visits many sessions does not retain every
+// decoded transcript (including its base64 media) for its whole lifetime.
+const MAX_CACHED_SESSIONS = 64
+
+// Insertion order doubles as recency: a re-set moves the session to the end.
+function remember(map: Map<string, CachedEntries>, sessionID: SessionSchema.ID, value: CachedEntries) {
+  map.delete(sessionID)
+  map.set(sessionID, value)
+  if (map.size <= MAX_CACHED_SESSIONS) return
+  const oldest = map.keys().next().value
+  if (oldest !== undefined) map.delete(oldest)
+}
+
 const messageFilter = (
   sessionID: SessionSchema.ID,
   compaction: { readonly seq: number } | undefined,
@@ -112,7 +125,11 @@ const messageRows = Effect.fnUntraced(function* (
   afterSeq?: number,
 ) {
   const rows = yield* db
-    .select({ ...messageColumns, data: withoutLegacyMetadata })
+    .select({
+      ...messageColumns,
+      data: withoutLegacyMetadata,
+      bytes: sql<number>`length(${SessionMessageTable.data})`,
+    })
     .from(SessionMessageTable)
     .where(messageFilter(sessionID, compaction, baselineSeq, afterSeq))
     .orderBy(asc(SessionMessageTable.seq))
@@ -135,6 +152,7 @@ const messageFingerprints = Effect.fnUntraced(function* (
       id: SessionMessageTable.id,
       seq: SessionMessageTable.seq,
       time_updated: SessionMessageTable.time_updated,
+      bytes: sql<number>`length(${SessionMessageTable.data})`,
     })
     .from(SessionMessageTable)
     .where(messageFilter(sessionID, compaction, baselineSeq))
@@ -152,7 +170,11 @@ const messageRowsBySeq = Effect.fnUntraced(function* (
   seqs: ReadonlyArray<number>,
 ) {
   const rows = yield* db
-    .select({ ...messageColumns, data: withoutLegacyMetadata })
+    .select({
+      ...messageColumns,
+      data: withoutLegacyMetadata,
+      bytes: sql<number>`length(${SessionMessageTable.data})`,
+    })
     .from(SessionMessageTable)
     .where(and(messageFilter(sessionID, compaction, baselineSeq), inArray(SessionMessageTable.seq, seqs)))
     .orderBy(asc(SessionMessageTable.seq))
@@ -179,8 +201,8 @@ const decodeRows = (rows: ReadonlyArray<typeof SessionMessageTable.$inferSelect>
 
 // Rebuild the cache after a revision bump by reusing every decoded message whose
 // row fingerprint is unchanged and decoding only the rows that are new or edited
-// in place. Returns undefined when the change cannot be attributed to a
-// fingerprint, so the caller falls back to a full reload.
+// in place. A bump that leaves every fingerprint intact (a session-level event
+// that never touches `session_message`) reuses the decoded entries unchanged.
 const incrementalEntries = Effect.fnUntraced(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
@@ -195,12 +217,20 @@ const incrementalEntries = Effect.fnUntraced(function* (
     .filter((row) => {
       const fingerprint = cached.fingerprints.get(row.seq)
       const message = cachedBySeq.get(row.seq)
-      return !(fingerprint?.id === row.id && fingerprint.time_updated === row.time_updated && message)
+      return !(
+        fingerprint?.id === row.id &&
+        fingerprint.time_updated === row.time_updated &&
+        fingerprint.bytes === row.bytes &&
+        message
+      )
     })
     .map((row) => row.seq)
-  // A revision change with the same rows and no differing fingerprint means the
-  // edit landed within the fingerprint's resolution, so decode everything.
-  if (changed.length === 0 && rows.length === cached.entries.length) return undefined
+  // The revision advanced but every row's identity, update time, and encoded
+  // length are unchanged, so the event did not touch `session_message` (a title,
+  // archive, or agent switch, for example). Reuse the decoded cache instead of
+  // re-decoding the whole session. Length is part of the fingerprint so an
+  // in-place edit in the same millisecond that changed the payload is detected.
+  if (changed.length === 0 && rows.length === cached.entries.length) return { ...cached, revision }
   const decoded =
     changed.length === 0
       ? new Map<number, SessionMessage.Message>()
@@ -218,7 +248,9 @@ const incrementalEntries = Effect.fnUntraced(function* (
       const message = decoded.get(row.seq) ?? cachedBySeq.get(row.seq)
       return message ? [{ seq: row.seq, message }] : []
     }),
-    fingerprints: new Map(rows.map((row) => [row.seq, { id: row.id, time_updated: row.time_updated }])),
+    fingerprints: new Map(
+      rows.map((row) => [row.seq, { id: row.id, time_updated: row.time_updated, bytes: row.bytes }]),
+    ),
   } satisfies CachedEntries
 })
 
@@ -240,9 +272,12 @@ const loadEntries = Effect.fnUntraced(function* (
   ) {
     reads.hits += 1
     const rows = yield* messageRows(db, sessionID, compaction, baselineSeq, cached.maxSeq)
-    if (rows.length === 0) return cached.entries
+    if (rows.length === 0) {
+      remember(map, sessionID, cached)
+      return cached.entries
+    }
     const entries = [...cached.entries, ...(yield* decodeRows(rows))]
-    map.set(sessionID, {
+    remember(map, sessionID, {
       revision,
       baselineSeq,
       compactionSeq,
@@ -250,7 +285,7 @@ const loadEntries = Effect.fnUntraced(function* (
       entries,
       fingerprints: new Map([
         ...cached.fingerprints,
-        ...rows.map((row) => [row.seq, { id: row.id, time_updated: row.time_updated }] as const),
+        ...rows.map((row) => [row.seq, { id: row.id, time_updated: row.time_updated, bytes: row.bytes }] as const),
       ]),
     })
     return entries
@@ -261,18 +296,20 @@ const loadEntries = Effect.fnUntraced(function* (
       ? yield* incrementalEntries(db, sessionID, compaction, baselineSeq, revision, cached)
       : undefined
   if (incremental) {
-    map.set(sessionID, incremental)
+    remember(map, sessionID, incremental)
     return incremental.entries
   }
   const rows = yield* messageRows(db, sessionID, compaction, baselineSeq)
   const entries = yield* decodeRows(rows)
-  map.set(sessionID, {
+  remember(map, sessionID, {
     revision,
     baselineSeq,
     compactionSeq,
     maxSeq: rows.at(-1)?.seq ?? -1,
     entries,
-    fingerprints: new Map(rows.map((row) => [row.seq, { id: row.id, time_updated: row.time_updated }])),
+    fingerprints: new Map(
+      rows.map((row) => [row.seq, { id: row.id, time_updated: row.time_updated, bytes: row.bytes }]),
+    ),
   })
   return entries
 })
