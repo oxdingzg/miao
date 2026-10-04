@@ -189,7 +189,7 @@ V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内�
 | 项目             | 是什么                                                                                                | 链接                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | **miao**(本仓库) | 在终端里运行的 AI 编程代理                                                                            | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
-| **mtty**         | 用 Rust 编写、GPU 渲染的终端(macOS、Linux、Windows),能看出每个窗格里的代理正在工作、在等你,还是已完成 | [mtty.dev/mtty](https://mtty.dev/zh/mtty) · [oxdingzg/miao-term](https://github.com/oxdingzg/miao-term)                               |
+| **mtty**         | 用 Rust 编写、GPU 渲染的终端(macOS、Linux、Windows),能看出每个窗格里的代理正在工作、在等你,还是已完成 | [mtty.dev/mtty](https://mtty.dev/zh/mtty) · [oxdingzg/mtty](https://github.com/oxdingzg/mtty)                               |
 | **mtty.dev**     | 两者的官网与文档站                                                                                    | [mtty.dev](https://mtty.dev/zh/)                                                                                                      |
 
 miao 与 mtty 是两个独立项目,任意一个都可以单独使用。在 mtty 的窗格里运行 miao 时,miao 会把自己的状态(工作中、等待你、已完成、出错)上报给 mtty;mtty 据此给窗格加徽章、在代理需要你时通知你,并在它空闲时发出你排队的提示。离开 mtty,上报不产生任何作用。`miaotty` 是这个终端的个人 macOS 原型,已由 mtty 取代。

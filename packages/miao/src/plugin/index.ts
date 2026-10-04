@@ -87,7 +87,7 @@ function internalPlugins(flags: RuntimeFlags.Info): Array<(input: InternalPlugin
     SnowflakeCortexAuthPlugin,
     XaiAuthPlugin,
     CerebrasPlugin,
-    // Reports agent state to miao-term's terminal (miaotty) when it hosts us.
+    // Reports agent state to mtty's terminal (formerly miaotty) when it hosts us.
     MiaottyPlugin,
   ]
 }

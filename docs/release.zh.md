@@ -34,7 +34,7 @@
   - 发布时 `script/version.ts` 以 `--to <sha>` 调用它生成 `UPCOMING_CHANGELOG.md`，即 release notes。
 - Release notes **统一用英文，并且始终链接到简体中文镜像**：`docs/releases/<tag>.zh.md`，
   在第一个标题下以 `[简体中文](…)` 链接。发布前先写好镜像——缺少镜像时
-  `script/release-notes.ts` 会让发布作业失败。所有 miao 项目（包括 `miao-term`）都遵循同一规则。
+  `script/release-notes.ts` 会让发布作业失败。所有 miao 项目（包括 `mtty`）都遵循同一规则。
 
 ## 发布前检查清单
 

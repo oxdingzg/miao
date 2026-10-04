@@ -113,7 +113,7 @@ miao remote status               # 通道连接状态、今日主动推送用量
 {
   "remote": {
     "port": 4097,
-    "projects": { "miao": "~/workspace/code/github/miao", "mtty": "~/workspace/code/github/miao-term" },
+    "projects": { "miao": "~/workspace/code/github/miao", "mtty": "~/workspace/code/github/mtty" },
     "wechat": { "push_budget_per_day": 4 }
   }
 }
