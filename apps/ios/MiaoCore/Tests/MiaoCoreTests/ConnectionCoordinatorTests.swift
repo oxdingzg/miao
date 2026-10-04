@@ -5,12 +5,26 @@ private actor ControlledConnection: ClientConnection {
     var synchronized = false
     var closed = false
     private let blocked: Bool
-    init(blocked: Bool = false) { self.blocked = blocked }
+    private let incompatible: Bool
+    private var waiters: [CheckedContinuation<Void, Error>] = []
+    init(blocked: Bool = false, incompatible: Bool = false) {
+        self.blocked = blocked
+        self.incompatible = incompatible
+    }
     func synchronize() async throws {
         if blocked { throw RemoteConnectionError.authorizationBlocked }
+        if incompatible { throw RemoteConnectionError.protocolIncompatible }
         synchronized = true
     }
-    func close() async { closed = true }
+    func close() async {
+        closed = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
+    func waitForDisconnect() async throws {
+        if closed { return }
+        try await withCheckedThrowingContinuation { waiters.append($0) }
+    }
 }
 
 private actor ConnectionGate {
@@ -28,6 +42,42 @@ private actor ConnectionGate {
 }
 
 final class ConnectionCoordinatorTests: XCTestCase {
+    func testProtocolFailureCannotBeRetriedAsAnOrdinaryNetworkError() async throws {
+        let gate = ConnectionGate()
+        let coordinator = ConnectionCoordinator { await gate.open() }
+        let scene = UUID()
+        await coordinator.scene(scene, phase: .active)
+        try await eventually { await gate.count() == 1 }
+        await gate.release(ControlledConnection(incompatible: true))
+        try await eventually { await coordinator.state == .protocolBlocked }
+        await coordinator.retry()
+        await coordinator.scene(scene, phase: .background)
+        await coordinator.scene(scene, phase: .active)
+        let count = await gate.count()
+        XCTAssertEqual(count, 1)
+        let state = await coordinator.state
+        XCTAssertEqual(state, .protocolBlocked)
+    }
+
+    func testForegroundTransportLossReconnectsButBackgroundCancelsRecovery() async throws {
+        let gate = ConnectionGate()
+        let first = ControlledConnection()
+        let coordinator = ConnectionCoordinator { await gate.open() }
+        let scene = UUID()
+        await coordinator.scene(scene, phase: .active)
+        try await eventually { await gate.count() == 1 }
+        await gate.release(first)
+        try await eventually { await coordinator.state == .ready }
+        await first.close()
+        try await eventually { await gate.count() == 2 }
+        await coordinator.scene(scene, phase: .background)
+        let stale = ControlledConnection()
+        await gate.release(stale)
+        try await eventually { await stale.closed }
+        let state = await coordinator.state
+        XCTAssertEqual(state, .quiescent)
+    }
+
     func testTwoScenesShareConnectionAndInactiveDoesNotDisconnect() async throws {
         let gate = ConnectionGate()
         let connection = ControlledConnection()
