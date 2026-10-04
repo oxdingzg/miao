@@ -197,7 +197,11 @@ export async function run() {
     const timeout = setTimeout(() => state.ui?.kill(), 240_000)
     try {
       if ((await state.ui.exited) !== 0) {
-        await Bun.write(path.join(directory, "ui.log"), (await output) + "\n" + (await errors))
+        const log = (await output) + "\n" + (await errors)
+        await Bun.write(path.join(directory, "ui.log"), log)
+        // Publish source coordinates only; XCTest logs and attachments can contain pairing secrets.
+        const coordinates = [...log.matchAll(/PairingUITests\.swift:(\d+)(?::\d+)?: error:/g)]
+        coordinates.forEach((match) => console.error(`Native UI assertion failed at PairingUITests.swift:${match[1]}`))
         throw new Error("Native live Runtime UI test failed")
       }
       await Bun.write(path.join(directory, "ui.log"), (await output) + "\n" + (await errors))
