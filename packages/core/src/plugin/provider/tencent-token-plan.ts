@@ -2,12 +2,39 @@ import { Effect, Stream } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { EventV2 } from "../../event"
 import { Integration } from "../../integration"
+import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
 import { TencentTokenPlan } from "../../tencent-token-plan"
 import { define } from "../define"
 
 /**
- * Hides the catalog models a Token Plan key cannot call.
+ * Token Plan model IDs the gateway publishes that models.dev does not list yet.
+ * An entry is only seeded when the gateway's own per-key list confirms the key
+ * can call it, so the plan a key is scoped to decides what appears. The last
+ * field marks models that accept image input.
+ *
+ * Mirrors `TENCENT_TOKEN_PLAN_MODELS` in `packages/miao/src/provider/provider.ts`,
+ * which seeds the same entries for the V1 provider list; the V2 catalog needs
+ * its own seeding because its plugin only removes unauthorized models.
+ */
+const SEEDED_MODELS = [
+  ["tc-code-latest", "Auto", "auto", false],
+  ["deepseek-v4-flash-202605", "DeepSeek V4 Flash", "deepseek", false],
+  ["deepseek-v4-pro-202606", "DeepSeek V4 Pro", "deepseek", false],
+  ["minimax-m2.7", "MiniMax M2.7", "minimax", false],
+  ["minimax-m3", "MiniMax M3", "minimax", true],
+  ["glm-5", "GLM-5", "glm", false],
+  ["glm-5.1", "GLM-5.1", "glm", false],
+  ["glm-5.2", "GLM-5.2", "glm", false],
+  ["glm-5.3", "GLM-5.3", "glm", false],
+  ["glm-5.3-flash", "GLM-5.3 Flash", "glm", true],
+  ["kimi-k2.7-code", "Kimi K2.7 Code", "kimi", true],
+  ["kimi-k3", "Kimi K3", "kimi", true],
+] as const
+
+/**
+ * Hides the catalog models a Token Plan key cannot call, and seeds the models
+ * the gateway lists that models.dev has not caught up with.
  *
  * models.dev describes the plan from the outside, so it lists models the key is
  * not scoped for, and calling one answers 403002 "not authorized". Only the
@@ -91,6 +118,32 @@ export const TencentTokenPlanPlugin = define<HttpClient.HttpClient | EventV2.Ser
           for (const [modelID, model] of record.models) {
             if (models.has(modelID) || models.has(model.api.id)) continue
             catalog.model.remove(record.provider.id, modelID)
+          }
+          // Seed from a model the gateway left in place, never from a hidden
+          // one, so a seeded entry inherits a template the plan can call.
+          const template =
+            record.models.get(ModelV2.ID.make("hy4-preview")) ??
+            [...record.models.values()].find((model) => models.has(model.id) || models.has(model.api.id))
+          if (template === undefined) continue
+          for (const [id, name, family, image] of SEEDED_MODELS) {
+            if (!models.has(id)) continue
+            if (record.models.has(ModelV2.ID.make(id))) continue
+            catalog.model.update(record.provider.id, ModelV2.ID.make(id), (model) => {
+              Object.assign(model, {
+                name,
+                family,
+                api: { ...template.api, id: ModelV2.ID.make(id) },
+                capabilities: {
+                  ...template.capabilities,
+                  input: image
+                    ? Array.from(new Set([...template.capabilities.input, "image"]))
+                    : template.capabilities.input,
+                },
+                // Conservative fallback until the catalog provides verified limits.
+                limit: { context: 128_000, output: 8_192 },
+                variants: [],
+              })
+            })
           }
         }
       }),

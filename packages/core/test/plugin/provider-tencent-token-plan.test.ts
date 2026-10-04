@@ -143,6 +143,11 @@ describe("TencentTokenPlanPlugin", () => {
       expect((yield* catalog.model.get(planID, modelID("hy4-preview")))?.id).toBe(modelID("hy4-preview"))
       // Authorized through the ID it sends, not the catalog ID it is listed as.
       expect((yield* catalog.model.get(planID, modelID("flash")))?.id).toBe(modelID("flash"))
+      // Seeded from the documented plan list because models.dev has no entry,
+      // and only when the gateway's own list confirms the key can call it.
+      expect((yield* catalog.model.get(planID, modelID("glm-5.2")))?.name).toBe("GLM-5.2")
+      // A documented plan model the gateway did not authorize is not seeded.
+      expect(yield* catalog.model.get(planID, modelID("kimi-k3"))).toBeUndefined()
       // A provider on the plan gateway with no connected credential is left alone.
       expect((yield* catalog.model.get(unconnectedID, modelID("hy3")))?.id).toBe(modelID("hy3"))
       // A provider pointed at another gateway is left alone.
@@ -151,7 +156,8 @@ describe("TencentTokenPlanPlugin", () => {
       const calls = yield* Ref.get(reachable.calls)
       expect(calls.urls).toEqual([`${TencentTokenPlan.API}/models`])
       expect(calls.authorization).toEqual([`Bearer ${reachable.key}`])
-      expect((yield* catalog.model.available()).filter((model) => model.providerID === planID)).toHaveLength(2)
+      // hy4-preview (kept) + flash (kept) + glm-5.2 (seeded).
+      expect((yield* catalog.model.available()).filter((model) => model.providerID === planID)).toHaveLength(3)
     }),
   )
 
