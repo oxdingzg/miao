@@ -52,11 +52,37 @@ export class Connection {
     this.notifications.set(method, handler)
   }
 
-  request(method: string, params: unknown): Promise<unknown> {
+  /**
+   * Sends a request and resolves with its result. When `timeoutMs` is set the
+   * pending entry is dropped and the promise rejects after that long, so a
+   * language server that never answers cannot pin a caller — or leak a pending
+   * entry — forever.
+   */
+  request(method: string, params: unknown, options?: { readonly timeoutMs?: number }): Promise<unknown> {
     if (this.exited) return Promise.reject(new Error("LSP connection closed"))
     const id = this.nextID++
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timeoutMs = options?.timeoutMs
+      const timer =
+        timeoutMs === undefined
+          ? undefined
+          : setTimeout(() => {
+              if (!this.pending.delete(id)) return
+              reject(new Error(`LSP request timed out after ${timeoutMs}ms: ${method}`))
+            }, timeoutMs)
+      const clear = () => {
+        if (timer !== undefined) clearTimeout(timer)
+      }
+      this.pending.set(id, {
+        resolve: (value) => {
+          clear()
+          resolve(value)
+        },
+        reject: (error) => {
+          clear()
+          reject(error)
+        },
+      })
       this.send({ jsonrpc: "2.0", id, method, params })
     })
   }
