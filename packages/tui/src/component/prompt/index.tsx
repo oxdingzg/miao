@@ -14,6 +14,8 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@miao/core/flag/flag"
+import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
+import { createInputLatency } from "../../context/input-latency"
 import { tint, useTheme } from "../../context/theme"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -166,6 +168,15 @@ export function Prompt(props: PromptProps) {
   const agentShortcut = useCommandShortcut("agent.cycle")
   const paletteShortcut = useCommandShortcut("command.palette.show")
   const renderer = useRenderer()
+  const latency = createInputLatency()
+  let observingFrame = false
+  const submitted = () => {
+    if (!latency.submitted()) return
+    renderer.off("frame", submitted)
+    observingFrame = false
+  }
+  onCleanup(DiagnosticMetrics.register("tui.input", () => ({ sessionID: props.sessionID, ...latency.snapshot() })))
+  onCleanup(() => renderer.off("frame", submitted))
   const exit = useExit()
   const dimensions = useTerminalDimensions()
   const { theme, syntax } = useTheme()
@@ -1372,13 +1383,18 @@ export function Prompt(props: PromptProps) {
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
                 setCursorVersion((value) => value + 1)
+                if (latency.updated() && !observingFrame) {
+                  renderer.on("frame", submitted)
+                  observingFrame = true
+                }
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
-              onKeyDown={(e: { preventDefault(): void }) => {
+              onKeyDown={(e: KeyEvent) => {
                 if (props.disabled) {
                   e.preventDefault()
                   return
                 }
+                if (!e.ctrl && !e.meta && (e.name.length === 1 || e.name === "backspace" || e.name === "delete")) latency.received()
               }}
               onSubmit={() => {
                 // IME: double-defer so the last composed character (e.g. Korean
@@ -1403,6 +1419,7 @@ export function Prompt(props: PromptProps) {
                   keymap.dispatchCommand("prompt.paste")
                   return
                 }
+                latency.received()
 
                 // Once we cross an async boundary below, the terminal may perform its
                 // default paste unless we suppress it first and handle insertion ourselves.

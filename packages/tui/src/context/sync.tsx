@@ -1,3 +1,5 @@
+import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
+import { Renderable } from "@opentui/core"
 import type { Message, UserMessage, Session, Part, VcsInfo, SnapshotFileDiff } from "@miao/schema/view-models"
 import type { Agent, Provider, Todo, Command, LspStatus, McpStatus, McpServerStatus, McpResource, FormatterStatus, SessionStatus, ProviderAuthMethod } from "@miao/schema/view-models"
 import type { IntegrationInfo } from "@miao/schema/view-models"
@@ -195,6 +197,35 @@ export const {
     // opening a long session never pays for its whole history up front.
     const olderHistory = new Map<string, OlderHistory>()
     const loadingOlder = new Set<string>()
+    const hydration = { count: 0, totalMs: 0, maxMs: 0, lastMs: 0 }
+    onCleanup(
+      DiagnosticMetrics.register("tui.sync", () => ({
+        hydration: { ...hydration },
+        renderNodes: Renderable.renderablesByNumber.size,
+        inFlight: syncingSessions.size,
+        sessions: Object.entries(store.message).map(([sessionID, messages]) => ({
+          sessionID,
+          messages: messages.length,
+          parts: messages.reduce((count, message) => count + (store.part[message.id]?.length ?? 0), 0),
+          textUnits: messages.reduce(
+            (count, message) =>
+              count +
+              (store.part[message.id] ?? []).reduce(
+                (sum, part) =>
+                  sum +
+                  (part.type === "text" || part.type === "reasoning"
+                    ? part.text.length
+                    : part.type === "tool" && part.state.status === "completed"
+                      ? part.state.output.length
+                      : 0),
+                0,
+              ),
+            0,
+          ),
+          olderMessages: olderHistory.get(sessionID)?.messages.length ?? 0,
+        })),
+      })),
+    )
     const touchMessage = (sessionID: string, messageID: string) => {
       hydratingSessions.get(sessionID)?.messages.add(messageID)
     }
@@ -263,6 +294,15 @@ export const {
         if (sessionID) v2Refresh.schedule(sessionID)
       }
       switch (event.type) {
+        case "session.next.status": {
+          const input = event.properties
+          const previous = store.session_status[input.sessionID]?.type
+          if (previous !== input.status.type) setStore("session_status", input.sessionID, { type: input.status.type })
+          // Status changes do not change history. Only an idle transition may
+          // recover a final settlement missed by the live event stream.
+          if (input.status.type === "idle" && previous === "busy") v2Refresh.schedule(input.sessionID)
+          break
+        }
         case "session.next.prompt.admitted":
         case "session.next.prompted": {
           const input = event.properties
@@ -832,6 +872,8 @@ export const {
           const syncing = syncingSessions.get(sessionID)
           if (syncing) return syncing
           const tracker = { messages: new Set<string>(), parts: new Set<string>() }
+          const started = performance.now()
+          hydration.count += 1
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
             const sessionPromise = sdk.client.v2.session
@@ -937,6 +979,9 @@ export const {
             )
             fullSyncedSessions.add(sessionID)
           })().finally(() => {
+            hydration.lastMs = performance.now() - started
+            hydration.totalMs += hydration.lastMs
+            hydration.maxMs = Math.max(hydration.maxMs, hydration.lastMs)
             syncingSessions.delete(sessionID)
             hydratingSessions.delete(sessionID)
           })
