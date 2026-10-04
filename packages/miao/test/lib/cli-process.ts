@@ -94,6 +94,7 @@ export type RunResult = {
 
 export type RunHandle = {
   readonly interrupt: () => void
+  readonly disconnect: () => void
   readonly result: Effect.Effect<RunResult>
 }
 
@@ -344,6 +345,7 @@ export function withCliFixture<A, E>(
 
       return {
         interrupt: () => proc.kill("SIGINT"),
+        disconnect: () => proc.kill("SIGTERM"),
         result: Effect.promise(async () => ({
           exitCode: await proc.exited,
           stdout: normalizeLines(await stdout),
