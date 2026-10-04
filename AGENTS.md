@@ -1,6 +1,13 @@
-- To regenerate the legacy JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
+## Highest-priority project rule: commit and push promptly
+
+- After each coherent change passes its required checks, commit it immediately with a conventional commit message and push it to `origin main`. Do not let completed, verified work accumulate uncommitted or unpushed while starting more work.
+- Stage only the paths or hunks belonging to that change. Preserve other Sessions' work, and do not commit unfinished or unverified changes merely to clear the working tree.
+- Report commit, push, and release status accurately: a successful build or local preview install does not mean the change was committed, pushed, or published. If a push fails, resolve or record the blocker promptly.
+
+## Project rules
+
 - After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit `src/generated` or `src/generated-effect` directly.
-- Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
+- Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk` composes Client, Core, and Server.
 - The default branch in this repo is `main`. Keep this repo single-branch; do not create a `dev` branch.
 - `origin` is this fork (`oxdingzg/miao`); `upstream` is `anomalyco/opencode`, which is fetch-only and narrowed to its `dev` branch. When diffing against upstream use `upstream/dev`.
 
