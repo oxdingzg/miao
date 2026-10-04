@@ -34,13 +34,13 @@ function global(payload: GlobalEvent["payload"]): GlobalEvent {
   return { directory: "/tmp/other", project: "proj_test", payload }
 }
 
-// Any durable `session.next.*` event that is not a stream fragment schedules a
-// re-hydration. Tests use an in-flight text start to trigger one on demand.
+// Incremental durable events do not re-hydrate; compaction still does because it
+// rewrites the transcript. Tests trigger a full re-hydration on demand with it.
 function refresh(id: string): GlobalEvent["payload"] {
   return {
     id,
-    type: "session.next.text.started",
-    properties: { timestamp: 1, sessionID, assistantMessageID: messageID, textID: partID },
+    type: "session.next.compaction.started",
+    properties: { timestamp: 1, sessionID, messageID: "msg_compaction", reason: "auto" },
   }
 }
 
