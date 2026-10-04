@@ -1,7 +1,7 @@
 import type { Argv } from "yargs"
 import { spawn } from "child_process"
 import { readdir, stat } from "node:fs/promises"
-import { dirname, join } from "path"
+import { basename, dirname, join } from "path"
 import { Blob } from "@miao/core/blob"
 import { Database } from "@miao/core/database/database"
 import { SessionBackfill } from "@miao/core/session/backfill"
@@ -310,28 +310,30 @@ const GcBlobsCommand = effectCmd({
         describe: "only delete blobs last modified longer ago than this",
       }),
   handler: Effect.fn("Cli.db.gcBlobs")(function* (args: { yes: boolean; "grace-hours": number }) {
+    const { db } = yield* Database.Service
     const blob = yield* Blob.Service
     const databaseDir = dirname(Database.path())
+    const configured = basename(Database.path())
     const directory = join(databaseDir, Blob.DIRECTORY)
-    // A blob directory is shared by every channel database, so mark across all
-    // of them; marking only the configured one would delete another's live blobs.
-    const referenced = new Set<string>()
-    const files = yield* Effect.promise(() => readdir(databaseDir).catch(() => [] as string[]))
-    for (const file of files.filter((name) => /^miao.*\.db$/.test(name))) {
-      const hashes = yield* SessionBlobGc.collectFromPath(join(databaseDir, file))
-      for (const hash of hashes) referenced.add(hash)
-    }
+    // The blob directory is shared by every channel database, but only the
+    // configured database's references can be marked. When another channel
+    // database is present its references are unknown, so refuse to delete.
+    const siblings = (yield* Effect.promise(() => readdir(databaseDir).catch(() => [] as string[]))).filter(
+      (name) => /^miao.*\.db$/.test(name) && name !== configured,
+    )
+    const referenced = yield* SessionBlobGc.collect(db)
     const result = yield* SessionBlobGc.sweep({
       blob,
       directory,
       referenced,
-      dryRun: !args.yes,
+      dryRun: !args.yes || siblings.length > 0,
       graceMs: args["grace-hours"] * 3_600_000,
     })
-    console.log(
-      `blobs: ${result.referenced} referenced across databases, ${result.orphans} unreferenced (${mb(result.bytes)} MB)`,
-    )
-    if (args.yes) console.log(`deleted ${result.deleted} blob(s)`)
+    console.log(`blobs: ${result.referenced} referenced, ${result.orphans} unreferenced (${mb(result.bytes)} MB)`)
+    if (siblings.length > 0) {
+      console.log(`refusing to delete: other channel databases share this blob store (${siblings.join(", ")})`)
+      console.log("their references are not scanned, so deleting could remove live blobs")
+    } else if (args.yes) console.log(`deleted ${result.deleted} blob(s)`)
     else if (result.orphans > 0) console.log("re-run with --yes to delete")
   }),
 })

@@ -5,7 +5,7 @@ import { join } from "path"
 import { eq } from "drizzle-orm"
 import { Effect } from "effect"
 import { Blob } from "../blob"
-import { Database } from "../database/database"
+import type { Database } from "../database/database"
 import { EventTable } from "../event/sql"
 import { SessionInputTable, SessionMessageTable } from "./sql"
 
@@ -88,13 +88,6 @@ export const collect = (db: DatabaseService) =>
 
     return referenced
   })
-
-/** Marks one database at `filename` (a channel file opened on its own). */
-export const collectFromPath = (filename: string) =>
-  Effect.gen(function* () {
-    const { db } = yield* Database.Service
-    return yield* collect(db)
-  }).pipe(Effect.provide(Database.layerFromPath(filename)))
 
 /**
  * Deletes blob files that no channel database references and that are older than
