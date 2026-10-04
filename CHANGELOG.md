@@ -10,6 +10,46 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-04
+
+### Added
+- **core**: add `miao db retention` to report prunable events (#77) (`a314d26b7`)
+- **remote-control**: add opaque authenticated relay hub (#70) (`6d16bd993`)
+- **remote-control**: expose execution-aware interruption (#67) (`16ee7326e`)
+- **core**: add OS-backed runtime storage ownership (#69) (`6b715ca7f`)
+- **core**: add `miao db gc-blobs` to delete unreferenced blobs (#61) (`f4131241c`)
+- **core**: add `miao db externalize-blobs` to move inline payloads into the blob store (#55) (`c6ec4b3ba`)
+- **db**: report blob store and inline base64 in db stats (#56) (`dbd030930`)
+- **core**: host project metadata writes and directory registration (#35) (`abf3c6b83`)
+
+### Changed
+- **core**: reconstruct a forked session from the projection (#75) (`390062cd3`)
+- **miao**: retire the legacy project facade (#46) (`a760251de`)
+- **app**: drop the identity server-compat shim (#40) (`479665d35`)
+- **miao**: delegate the project service to core persistence (#36) (`ae1906f67`)
+
+### Fixed
+- **core**: refuse blob GC when other channel databases share the store (#68) (`ebfd2ff54`)
+- **core**: mark blob GC across every channel database sharing the store (#66) (`2ad9efc71`)
+- **core**: externalize session_message payloads by column type, not data.type (#65) (`85328ef5d`)
+- **cli**: remove the duplicate Blob import in db commands (#62) (`e6995e0e6`)
+- **core**: stop repetitive provider output without replaying tools (#53) (`bc23b5264`)
+- **llm**: retry transient connection and timeout failures (#47) (`cf8f74f35`)
+- **tui**: stop a stale full-sync todo snapshot from reverting a live update (#42) (`d7c5b059e`)
+- **tui**: reconcile queued stream text with history snapshots (#45) (`0834754f9`)
+- **tui**: drop older history when a session is deleted (#32) (`8ddd3b956`)
+- **core**: release session caches when a session is deleted (#31) (`118ef0313`)
+
+### Performance
+- **core**: externalize oversized tool-result files to the blob store (#54) (`ab191634f`)
+- **core**: page the durable log read instead of loading the whole tail (#52) (`061cef019`)
+- **tui**: debounce the mention file search while typing (#51) (`ba786a496`)
+- **core**: skip rewriting an assistant row when a durable event is a no-op (#50) (`d50308062`)
+- **core**: skip the legacy read for a fully projected session (#49) (`a13c4b273`)
+- **core**: cache base64 of immutable blobs across turns (#48) (`c70e58e99`)
+- **core**: delete compact events by primary key instead of rescanning (#44) (`4f1704d0b`)
+- **core**: reuse the session history cache when a revision bump changes no rows (#29) (`c286085b1`)
+
 ## [0.1.4] - 2026-10-04
 
 ### Fixed
