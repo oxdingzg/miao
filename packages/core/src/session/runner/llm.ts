@@ -44,6 +44,7 @@ import { SessionHistory } from "../history"
 import { SessionMessage } from "../message"
 import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
+import { ToolCallLeak } from "../tool-call-leak"
 import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionTable } from "../sql"
@@ -289,6 +290,24 @@ const layer = Layer.effect(
 
     const awaitToolFibers = (fibers: FiberSet.FiberSet<void, ToolOutputStore.Error>) =>
       Effect.raceFirst(FiberSet.join(fibers), FiberSet.awaitEmpty(fibers))
+
+    /**
+     * Detect a turn that ended because the model wrote its tool call as plain
+     * text instead of emitting a structured call. Returns the leaked assistant
+     * message and how many nudges this user prompt already spent, or undefined
+     * when the turn is fine. Only a `stop` turn with no recorded tool call is a
+     * candidate: a normal completion, or a turn that already ran tools, is not.
+     */
+    const leakedToolCall = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      const context = yield* getContext(sessionID)
+      const assistant = context.findLast((message) => message.type === "assistant")
+      if (!assistant) return undefined
+      if (assistant.finish !== "stop") return undefined
+      if (assistant.content.some((item) => item.type === "tool")) return undefined
+      const text = assistant.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("")
+      if (!ToolCallLeak.detect(text)) return undefined
+      return { messageID: assistant.id, attempts: ToolCallLeak.countAttempts(context) }
+    })
 
     // Match V1: declining a user prompt halts the loop instead of becoming model-facing tool output.
     const isUserDeclined = (cause: Cause.Cause<unknown>) =>
@@ -1090,6 +1109,48 @@ const layer = Layer.effect(
               step = result.step + 1
               promotion = "steer"
               if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+              // A model behind an OpenAI-compatible server can write its tool
+              // call as plain text instead of emitting a structured call. The
+              // turn then looks finished ("stop", no tool part) even though the
+              // model meant to act, and once that raw text is in history the
+              // model imitates it on every later turn. Nudge it to re-issue the
+              // call through the tool-calling mechanism; after MAX_ATTEMPTS,
+              // fail the assistant message so the stop is explained instead of
+              // silently stalling.
+              if (!needsContinuation) {
+                const leak = yield* leakedToolCall(input.sessionID)
+                if (leak && leak.attempts < ToolCallLeak.MAX_ATTEMPTS) {
+                  yield* Effect.logWarning("session.tool-call-leak", {
+                    sessionID: input.sessionID,
+                    messageID: leak.messageID,
+                    attempts: leak.attempts,
+                  })
+                  yield* events.publish(SessionEvent.Synthetic, {
+                    sessionID: input.sessionID,
+                    timestamp: yield* DateTime.now,
+                    messageID: SessionMessage.ID.create(),
+                    text: ToolCallLeak.NUDGE,
+                    metadata: { [ToolCallLeak.NUDGE_MARKER]: true },
+                  })
+                  needsContinuation = true
+                } else if (leak) {
+                  yield* Effect.logWarning("session.tool-call-leak-exhausted", {
+                    sessionID: input.sessionID,
+                    messageID: leak.messageID,
+                    attempts: leak.attempts,
+                  })
+                  yield* events.publish(SessionEvent.Step.Failed, {
+                    sessionID: input.sessionID,
+                    timestamp: yield* DateTime.now,
+                    assistantMessageID: leak.messageID,
+                    error: {
+                      type: "unknown",
+                      message:
+                        "The model repeatedly wrote tool calls as plain text instead of using the tool-calling mechanism, so they were not executed. Check the inference server's tool-call parser configuration.",
+                    },
+                  })
+                }
+              }
             }
             shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
             if (!shouldRun && settings.loop !== undefined) {
