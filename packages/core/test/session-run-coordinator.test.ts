@@ -6,6 +6,39 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Layer.empty)
 
 describe("SessionRunCoordinator", () => {
+  it.effect("caps concurrent drains across keys when maxConcurrent is set", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let running = 0
+        let peak = 0
+        const twoRunning = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          maxConcurrent: 2,
+          drain: () =>
+            Effect.suspend(() => {
+              running++
+              peak = Math.max(peak, running)
+              return (running >= 2 ? Deferred.succeed(twoRunning, undefined) : Effect.void).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.ensuring(Effect.sync(() => running--)),
+              )
+            }),
+        })
+
+        yield* coordinator.wake("a")
+        yield* coordinator.wake("b")
+        yield* coordinator.wake("c")
+        yield* Deferred.await(twoRunning)
+        expect(peak).toBe(2)
+        yield* Deferred.succeed(gate, undefined)
+        yield* coordinator.awaitIdle("a")
+        yield* coordinator.awaitIdle("b")
+        yield* coordinator.awaitIdle("c")
+        expect(peak).toBe(2)
+      }),
+    ),
+  )
   it.effect("stale targeted interruption leaves a queued successor running", () =>
     Effect.scoped(
       Effect.gen(function* () {
