@@ -40,6 +40,7 @@ interrupts active execution, closes IM channels and service scopes, removes
 discovery information, then releases storage ownership. Restarting preserves
 session history but does not automatically repeat interrupted provider or tool
 work.
+
 # ACP clients
 
 `miao acp` uses the same persistent Runtime by default. Closing the editor's
@@ -47,3 +48,56 @@ stdio connection closes the adapter, while the Runtime retains ownership of
 its sessions. `--attach <server URL>` selects an existing endpoint; explicit
 network options retain the foreground server mode. A foreground server and a
 Runtime cannot own the same on-disk storage at the same time.
+
+# Outbound Remote Control Agent
+
+Set `MIAO_REMOTE_CONTROL_CONFIG` to an owner-only configuration file to attach
+the Runtime to a Hub. On Unix, the file must belong to the current user and have
+no group or other permissions. Keep this file and its credentials outside the
+checkout:
+
+```json
+{
+  "hubURL": "https://<hub-host>",
+  "hostToken": "<host credential of at least 32 characters>",
+  "grantFile": "devices.json"
+}
+```
+
+The grant file is resolved relative to the configuration file. It stores the
+stable host identity and locally approved device grants. Register that host ID
+and credential with the Hub. Remote requests cannot approve devices or modify
+the host configuration. HTTPS is required; `allowLoopbackHTTP: true` permits
+HTTP only on loopback for local verification.
+
+The Agent currently exposes capabilities, authorized project and Session lists, Session reads, paginated durable
+history, pending inputs/permissions/questions, diffs, text prompt admission and
+operation receipt lookup, and Session creation in registered project directories. Project listing returns opaque directory IDs; Session creation accepts an ID instead of a filesystem path. Exact create retries adopt the same Session and do not start execution. This is the Runtime transport integration; device
+pairing UI and the remaining client flows are separate work.
+
+Prompt retries use one stable operation ID. The Runtime persists a receipt
+before admission, rejects changes to that operation's content or target, and
+checks durable input records before sending another admission request. An input
+already admitted is acknowledged without waking its execution again. Disconnecting
+the remote transport does not interrupt execution. Stopping the Runtime closes
+the Agent before shutting down its execution services.
+
+Remote mutations also support Session renaming, interruption by observed
+execution ID, one-time permission acceptance/rejection, and question answers or
+rejection. Remote permission replies cannot install a permanent policy. Each
+mutation uses a stable operation ID and an immutable receipt. If a crash leaves
+a prepared mutation without a confirmed result, its retry reports
+`outcome_unknown` instead of automatically repeating the action. Refresh the
+Session's pending state before deciding whether another action is needed.
+
+`session.events` accepts an exclusive durable `after` cursor, a page limit up to
+100, and `waitMs` from 0 to 1000. It returns an ordered page, `hasMore`, and the
+last delivered durable cursor. The local replaying event stream closes the gap
+between checking history and waiting for an update. Clients persist the returned
+cursor only after applying the complete page, then request the next page; an
+empty response retains the previous cursor. A short bounded wait keeps other
+operations responsive on the same connection.
+
+`selection.list` requires an authorized Session or registered project directory.
+It returns selectable agent and model metadata without provider settings,
+request headers, or agent system prompts.

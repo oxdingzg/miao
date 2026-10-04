@@ -18,6 +18,7 @@ export async function start(filename: string) {
     server?: Awaited<ReturnType<(typeof import("@/server/server"))["Server"]["listen"]>>
     im?: Awaited<ReturnType<(typeof import("@/cli/cmd/remote"))["prepareRuntimeIM"]>>
     stopped: boolean
+    agent?: { stop: () => void }
     execution?: { interruptAll: () => Promise<void>; dispose: () => Promise<void> }
   } = { stopped: false }
   const completion: { resolve?: () => void } = {}
@@ -30,6 +31,7 @@ export async function start(filename: string) {
     const errors: unknown[] = []
     try {
       const actions = [
+        () => state.agent?.stop(),
         () => state.im?.stop(),
         () => (state.server ? state.execution?.interruptAll() : undefined),
         () => state.server?.stop(true),
@@ -91,6 +93,12 @@ export async function start(filename: string) {
       remote: state.im.control,
     })
     identity.bind(state.server.url.href)
+    const { RuntimeControlAgent } = await import("./control-agent")
+    state.agent = await RuntimeControlAgent.start({
+      url: state.server.url.href,
+      credential,
+      runtimeID: identity.runtimeID,
+    })
     await state.im.start(state.server.url)
     const record: RuntimeDiscovery.Record = {
       url: state.server.url.href,
