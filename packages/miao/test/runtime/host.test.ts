@@ -11,6 +11,7 @@ import path from "node:path"
 import { DeviceGrants } from "@miao/remote-control/grants"
 import { SecureChannel } from "@miao/remote-control/secure-channel"
 import { ControlHub } from "@miao/remote-control/hub"
+import { ControlPairing } from "@miao/remote-control/pairing"
 
 test("Runtime owns storage, hosts IM controls, authenticates clients, and persists sessions across restart", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-host-test-"))
@@ -86,7 +87,11 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     }
     throw new Error("Runtime readiness timed out")
   }
-  const connectRemote = async (record: RuntimeDiscovery.Record, approved: DeviceGrants.Grant) => {
+  const connection = async (
+    record: RuntimeDiscovery.Record,
+    identity = device,
+    invitation?: ControlPairing.Invitation,
+  ) => {
     // Use the actual encrypted Hub -> Runtime Agent -> local API path.
     const socket = new WebSocket(`ws://127.0.0.1:${hub.port}/v1/client?hostID=${grants.hostID}`)
     sockets.push(socket)
@@ -102,14 +107,31 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       if (!messages.length) throw new Error("Runtime Agent response timed out")
       return messages.shift()!
     }
-    const handshake = await SecureChannel.startClient(device, { hostID: grants.hostID, runtimeID: record.runtimeID })
-    socket.send(Buffer.from(JSON.stringify(handshake.hello)).toString("base64url"))
+    const handshake = await SecureChannel.startClient(identity, { hostID: grants.hostID, runtimeID: record.runtimeID })
+    socket.send(
+      Buffer.from(
+        JSON.stringify(
+          invitation
+            ? {
+                pairingID: invitation.pairingID,
+                label: "new phone",
+                hello: handshake.hello,
+                proof: ControlPairing.proof(invitation, "new phone", handshake.hello),
+              }
+            : handshake.hello,
+        ),
+      ).toString("base64url"),
+    )
     const channel = (
       await handshake.finish(
         JSON.parse(Buffer.from(await receive(), "base64url").toString()),
-        grants.identity.publicKey,
+        invitation?.hostPublicKey ?? grants.identity.publicKey,
       )
     ).channel
+    return { socket, receive, channel }
+  }
+  const connectRemote = async (record: RuntimeDiscovery.Record, approved: DeviceGrants.Grant) => {
+    const transport = await connection(record)
     const call = async (
       method: string,
       payload: unknown,
@@ -117,8 +139,8 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       projectID?: string,
       targetSessionID = sessionID,
     ) => {
-      socket.send(
-        await channel.seal(
+      transport.socket.send(
+        await transport.channel.seal(
           new TextEncoder().encode(
             JSON.stringify({
               version: 1,
@@ -136,7 +158,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
           ),
         ),
       )
-      return JSON.parse(new TextDecoder().decode(await channel.open(await receive()))) as {
+      return JSON.parse(new TextDecoder().decode(await transport.channel.open(await transport.receive()))) as {
         type: string
         data?: unknown
         code?: string
@@ -165,6 +187,74 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     })
     expect(created.status).toBe(200)
     const session = ((await created.json()) as { data: { id: string; projectID: string } }).data
+    expect((await fetch(new URL("/api/runtime/control", record.url))).status).toBe(401)
+    const control = await fetch(new URL("/api/runtime/control", record.url), { headers })
+    expect(await control.json()).toMatchObject({ enabled: true, hostID: grants.hostID })
+    const invitationResponse = await fetch(new URL("/api/runtime/control/invitation", record.url), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        permissions: ["read"],
+        sessionIDs: [sessionID],
+        projectIDs: [],
+        expiresAt: Date.now() + 60000,
+      }),
+    })
+    expect(invitationResponse.status).toBe(200)
+    const invitation = (await invitationResponse.json()) as ControlPairing.Invitation
+    const newDevice = await SecureChannel.createIdentity()
+    const provisional = await connection(record, newDevice, invitation)
+    expect(
+      JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
+    ).toMatchObject({ type: "pairing", status: "pending" })
+    const candidates = await fetch(new URL("/api/runtime/control/pairing", record.url), { headers })
+    expect(await candidates.json()).toMatchObject([
+      { pairingID: invitation.pairingID, candidate: { publicKey: newDevice.publicKey } },
+    ])
+    const approvedResponse = await fetch(
+      new URL(`/api/runtime/control/pairing/${invitation.pairingID}/approve`, record.url),
+      {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ publicKey: newDevice.publicKey }),
+      },
+    )
+    expect(approvedResponse.status).toBe(200)
+    const newGrant = (await approvedResponse.json()) as DeviceGrants.Grant
+    expect(
+      JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
+    ).toMatchObject({ type: "pairing", status: "approved", grant: { id: newGrant.id } })
+    provisional.socket.send(
+      await provisional.channel.seal(
+        new TextEncoder().encode(
+          JSON.stringify({
+            version: 1,
+            requestID: crypto.randomUUID(),
+            hostID: grants.hostID,
+            runtimeID: record.runtimeID,
+            grantID: newGrant.id,
+            grantVersion: newGrant.version,
+            method: "session.get",
+            sessionID,
+            payload: {},
+          }),
+        ),
+      ),
+    )
+    expect(
+      JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
+    ).toMatchObject({ type: "result", data: { id: sessionID } })
+    const revoked = await fetch(new URL(`/api/runtime/control/device/${newGrant.id}/revoke`, record.url), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ version: newGrant.version }),
+    })
+    expect(revoked.status).toBe(200)
+    expect(await revoked.json()).toMatchObject({
+      id: newGrant.id,
+      version: newGrant.version + 1,
+      revokedAt: expect.any(Number),
+    })
     const call = await connectRemote(record, grant)
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { id: sessionID } })
     const renameID = crypto.randomUUID()
@@ -300,7 +390,8 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
         Date.now(),
       )
     stored.close()
-    const projectGrant = await grants.approve({
+    const ownerGrants = await DeviceGrants.load(path.join(directory, "devices.json"))
+    const projectGrant = await ownerGrants.approve({
       publicKey: device.publicKey,
       label: "project phone",
       permissions: ["read", "session.create"],
@@ -308,6 +399,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       sessionIDs: [],
       expiresAt: Date.now() + 120_000,
     })
+    await ownerGrants.close()
     const next = await ready(start())
     expect(next.runtimeID).not.toBe(record.runtimeID)
     expect(next.credential).not.toBe(record.credential)
@@ -315,6 +407,10 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
     })
     expect(resumed.status).toBe(200)
+    const devices = await fetch(new URL("/api/runtime/control/device", next.url), {
+      headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
+    })
+    expect(await devices.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: newGrant.id, version: newGrant.version + 1, revokedAt: expect.any(Number) })]))
     const restoredCall = await connectRemote(next, grant)
     expect(await restoredCall("session.rename", { title: "Interrupted rename" }, unknownID)).toMatchObject({
       type: "result",

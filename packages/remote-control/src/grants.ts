@@ -5,32 +5,13 @@ import path from "node:path"
 import { constants } from "node:fs"
 import { Option, Schema } from "effect"
 import { SecureChannel } from "./secure-channel"
+import { RemoteAccess } from "@miao/schema/remote-access"
 
 const ID = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{16,128}$/))
-const PublicKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{87}$/))
-export const Permission = Schema.Literals([
-  "read",
-  "prompt",
-  "permission.reply",
-  "question.reply",
-  "interrupt",
-  "session.create",
-  "session.rename",
-])
-export const Grant = Schema.Struct({
-  id: ID,
-  version: Schema.Int.check(Schema.isGreaterThan(0)),
-  publicKey: PublicKey,
-  label: Schema.String.check(Schema.isLengthBetween(1, 128)),
-  permissions: Schema.Array(Permission).check(Schema.isLengthBetween(1, 16)),
-  projectIDs: Schema.Array(Schema.String.check(Schema.isLengthBetween(1, 128))).check(Schema.isMaxLength(128)),
-  sessionIDs: Schema.Array(Schema.String.check(Schema.isLengthBetween(1, 128))).check(Schema.isMaxLength(256)),
-  createdAt: Schema.Int,
-  expiresAt: Schema.Int,
-  revokedAt: Schema.NullOr(Schema.Int),
-})
-export type Grant = typeof Grant.Type
-export type Permission = typeof Permission.Type
+export const Permission = RemoteAccess.Permission
+export const Grant = RemoteAccess.Grant
+export type Grant = RemoteAccess.Grant
+export type Permission = RemoteAccess.Permission
 
 const State = Schema.Struct({
   version: Schema.Literal(1),
@@ -61,9 +42,10 @@ export async function load(filename: string) {
     grants: [],
   }
   const identity = generated ?? (await importIdentity(initial.privateKey))
-  const state = { value: initial, tail: Promise.resolve(), available: true }
+  const state = { value: initial, tail: Promise.resolve(), available: true, accepting: true }
   if (!saved) await persist(filename, initial)
   function mutate<T>(update: (current: State) => { next: State; result: T }) {
+    if (!state.accepting) return Promise.reject(new Error("Device grant storage closed"))
     const pending = state.tail.then(async () => {
       if (!state.available) throw new Error("Device grant storage unavailable")
       const updated = update(state.value)
@@ -87,6 +69,11 @@ export async function load(filename: string) {
     )
   }
   return {
+    close: async () => {
+      state.accepting = false
+      await state.tail
+      state.available = false
+    },
     hostID: initial.hostID,
     identity,
     list: () => structuredClone(state.value.grants),

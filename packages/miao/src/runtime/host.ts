@@ -5,6 +5,7 @@ import { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { createHash, randomBytes } from "node:crypto"
+import type { RuntimeAdministration } from "@miao/core/runtime/administration"
 
 export async function start(filename: string) {
   const owner = await RuntimeOwnership.acquireShared(filename)
@@ -18,7 +19,7 @@ export async function start(filename: string) {
     server?: Awaited<ReturnType<(typeof import("@/server/server"))["Server"]["listen"]>>
     im?: Awaited<ReturnType<(typeof import("@/cli/cmd/remote"))["prepareRuntimeIM"]>>
     stopped: boolean
-    agent?: { stop: () => void }
+    agent?: { stop: () => Promise<void>; administration: RuntimeAdministration.Interface }
     execution?: { interruptAll: () => Promise<void>; dispose: () => Promise<void> }
   } = { stopped: false }
   const completion: { resolve?: () => void } = {}
@@ -83,6 +84,7 @@ export async function start(filename: string) {
       mdns: false,
       cors: [],
       runtime: {
+        administration: () => (state.stopped ? undefined : state.agent?.administration),
         prove: identity.prove,
         stop: () => {
           setTimeout(() => {

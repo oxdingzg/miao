@@ -4,6 +4,16 @@ import os from "node:os"
 import path from "node:path"
 import { DeviceGrants } from "../src/grants"
 import { SecureChannel } from "../src/secure-channel"
+import { RemoteAccess } from "@miao/schema/remote-access"
+import { Option, Schema } from "effect"
+
+test("wire contracts retain canonical facade identity and omit absent status fields", () => {
+  expect(DeviceGrants.Grant).toBe(RemoteAccess.Grant)
+  expect(DeviceGrants.Permission).toBe(RemoteAccess.Permission)
+  const status = Schema.decodeUnknownSync(RemoteAccess.Status)({ enabled: false, connected: false })
+  expect(Schema.encodeSync(RemoteAccess.Status)(status)).toEqual({ enabled: false, connected: false })
+  expect(Option.isNone(Schema.decodeUnknownOption(RemoteAccess.Permission)("device.admin"))).toBe(true)
+})
 
 describe("durable locally approved device grants", () => {
   test("keeps host identity and revocation versions across a restart", async () => {
@@ -104,4 +114,31 @@ describe("durable locally approved device grants", () => {
       await rm(directory, { recursive: true, force: true })
     }
   })
+})
+
+test("closing grant storage drains admitted revocation writes and prevents late mutations", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-grants-close-"))
+  try {
+    const filename = path.join(directory, "devices.json")
+    const store = await DeviceGrants.load(filename)
+    const device = await SecureChannel.createIdentity()
+    const grant = await store.approve({
+      publicKey: device.publicKey,
+      label: "phone",
+      permissions: ["read"],
+      sessionIDs: ["ses_shared"],
+      projectIDs: [],
+      expiresAt: Date.now() + 60000,
+    })
+    const revoked = store.revoke(grant.id, grant.version)
+    await store.close()
+    expect((await revoked).revokedAt).not.toBeNull()
+    expect(store.active(device.publicKey)).toEqual([])
+    const restored = await DeviceGrants.load(filename)
+    expect(restored.list()).toMatchObject([{ id: grant.id, version: grant.version + 1, revokedAt: expect.any(Number) }])
+    await expect(store.revoke(grant.id, grant.version + 1)).rejects.toThrow("storage closed")
+    expect((await DeviceGrants.load(filename)).list()).toEqual(restored.list())
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })

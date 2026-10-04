@@ -7,6 +7,8 @@ import { Option, Schema } from "effect"
 import { OpenCode } from "@miao/client"
 import { DeviceGrants } from "@miao/remote-control/grants"
 import { ControlAgent } from "@miao/remote-control/agent"
+import { ControlPairing } from "@miao/remote-control/pairing"
+import type { RuntimeAdministration } from "@miao/core/runtime/administration"
 import { RuntimeControlMethods } from "./control-methods"
 import { AppRuntime } from "../effect/app-runtime"
 import { ServerAuth } from "../server/auth"
@@ -46,16 +48,55 @@ export async function start(input: { url: string; credential: string; runtimeID:
     baseUrl: input.url,
     headers: ServerAuth.headers({ username: "miao", password: input.credential }),
   })
-  return ControlAgent.connect({
+  const pairing = ControlPairing.make({
+    grants,
+    target: { hostID: grants.hostID, runtimeID: input.runtimeID },
+    hubURL: configuration.hubURL,
+  })
+  const state = { stopped: false }
+  const agent = ControlAgent.connect({
     hubURL: configuration.hubURL,
     hostToken: configuration.hostToken,
     allowLoopbackHTTP: configuration.allowLoopbackHTTP,
     runtimeID: input.runtimeID,
     grants,
+    pairing,
     methods: RuntimeControlMethods.make({ client, run: (effect) => AppRuntime.runPromise(effect) }),
     projectForSession: async (sessionID) => {
       const session = await client.sessions.get({ sessionID }).catch(() => undefined)
       return session?.projectID
     },
   })
+  const administration: RuntimeAdministration.Interface = {
+    status: () => ({
+      enabled: !state.stopped,
+      connected: agent.connected(),
+      hostID: grants.hostID,
+      runtimeID: input.runtimeID,
+      hostPublicKey: grants.identity.publicKey,
+      hubURL: configuration.hubURL,
+    }),
+    invite: async (policy) => {
+      const projects = await client.projects.list()
+      if (policy.projectIDs.some((id) => !projects.data.some((project) => project.id === id)))
+        throw new Error("Unknown project scope")
+      await Promise.all(policy.sessionIDs.map((sessionID) => client.sessions.get({ sessionID })))
+      if (state.stopped) throw new Error("Remote Control stopped")
+      return pairing.issue(policy)
+    },
+    pending: () => pairing.list(),
+    approve: (pairingID, publicKey) => pairing.approve(pairingID, publicKey),
+    reject: (pairingID) => pairing.reject(pairingID),
+    devices: () => grants.list(),
+    revoke: (grantID, version) => agent.revoke(grantID, version),
+  }
+  return {
+    administration,
+    stop: async () => {
+      state.stopped = true
+      agent.stop()
+      await pairing.stop()
+      await grants.close()
+    },
+  }
 }

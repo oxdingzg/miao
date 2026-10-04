@@ -596,6 +596,7 @@
     "packages/remote-control": {
       "name": "@miao/remote-control",
       "dependencies": {
+        "@miao/schema": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {

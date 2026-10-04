@@ -101,3 +101,26 @@ operations responsive on the same connection.
 `selection.list` requires an authorized Session or registered project directory.
 It returns selectable agent and model metadata without provider settings,
 request headers, or agent system prompts.
+
+# Local pairing administration
+
+The Runtime's authenticated local API controls device pairing. These endpoints
+require the local administrator credential and are excluded from remote device
+RPC, even for grants that can submit prompts or answer tool approvals.
+
+| Method and path                                        | Operation                                                                     |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `GET /api/runtime/control`                             | Inspect host identity and Hub connection status                               |
+| `POST /api/runtime/control/invitation`                 | Issue a short-lived invitation for registered project or Session IDs          |
+| `GET /api/runtime/control/pairing`                     | Inspect candidate device keys and proposed scopes, without invitation secrets |
+| `POST /api/runtime/control/pairing/:pairingID/approve` | Confirm the exact candidate public key                                        |
+| `DELETE /api/runtime/control/pairing/:pairingID`       | Reject or cancel the invitation                                               |
+| `GET /api/runtime/control/device`                      | Inspect persistent device grants and revocations                              |
+| `POST /api/runtime/control/device/:grantID/revoke`     | Revoke the observed grant version and close its live channels                 |
+
+Invitation payloads specify `permissions`, `projectIDs`, `sessionIDs`, and
+`expiresAt`. The Runtime validates those scopes against its registered projects
+and existing Sessions. Approval supplies `publicKey`; revocation supplies
+`version`. Clients obtain the wire types and methods from the generated SDK's
+`server.runtime` group. Pairing UI and client scanning are separate integrations;
+the API does not require stopping the running Session.
