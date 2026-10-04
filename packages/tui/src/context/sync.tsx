@@ -2,7 +2,16 @@ import { mutableResponse } from "../util/mutable-response"
 import type { SessionsInputsOutput } from "@miao/client"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { Renderable } from "@opentui/core"
-import type { Message, UserMessage, Session, Part, VcsInfo, SnapshotFileDiff } from "@miao/schema/view-models"
+import type {
+  Message,
+  UserMessage,
+  Session,
+  SessionMessage as V2TranscriptMessage,
+  Part,
+  VcsInfo,
+  SnapshotFileDiff,
+} from "@miao/schema/view-models"
+import type { Event as TuiEvent } from "@miao/schema/event-view"
 import type {
   Agent,
   Provider,
@@ -36,6 +45,7 @@ import {
 import { sessionInfo } from "./session-v2-read"
 import { toAgent, toCommand, toProviderCatalog, toProviderList, type ProviderCatalog } from "./v2-adapters"
 import { createSessionRefreshScheduler } from "./session-refresh"
+import { createTuiV2SessionReducer } from "./session-v2-reducer"
 import { createPendingPrompts } from "./pending-prompts"
 import { promptInputFromParts } from "./session-v2-write"
 import { SessionMessage } from "@miao/core/session/message"
@@ -292,6 +302,13 @@ export const {
     })
     onCleanup(() => v2Refresh.dispose())
 
+    // Full `session.sync()` writes the whole transcript; the shadow keeps the V2
+    // messages a full sync projected so durable events can update a single
+    // message instead of refetching. `sessionContextToMessages` projects only the
+    // touched ids back into the store's `message`/`part` shape.
+    const sessionMessages = new Map<string, V2TranscriptMessage[]>()
+    const v2Reducer = createTuiV2SessionReducer()
+
     // Text and reasoning fragments append in place. `touchPart` keeps an
     // in-flight re-hydration from clobbering the locally streamed value; the
     // durable `ended` event later replaces it with the authoritative text.
@@ -314,6 +331,29 @@ export const {
           if (target?.type === "text" || target?.type === "reasoning") target.text += delta
         }),
       )
+      // Keep the shadow in step with the streamed value as well, so a later
+      // durable event on the same message does not project a stale empty part.
+      const message = sessionMessages.get(sessionID)?.find((item) => item.id === messageID)
+      if (message?.type !== "assistant") return
+      const content = message.content.find((item) => item.id === partID)
+      if (content?.type === "text" || content?.type === "reasoning") content.text += delta
+    }
+
+    // A locally streamed part can be longer than the server snapshot a full sync
+    // just returned, because the sync started after the stream. Carry the longer
+    // local value into the freshly seeded shadow so an incremental projection
+    // does not roll it back before the authoritative `*.ended` arrives.
+    const mergeStreamedTextIntoShadow = (source: V2TranscriptMessage[]) => {
+      for (const message of source) {
+        if (message.type !== "assistant") continue
+        const parts = store.part[message.id]
+        if (!parts) continue
+        for (const content of message.content) {
+          if (content.type !== "text" && content.type !== "reasoning") continue
+          const part = parts.find((item) => item.id === content.id)
+          if (part?.type === content.type && part.text.length > content.text.length) content.text = part.text
+        }
+      }
     }
 
     const projectInput = (
@@ -349,8 +389,124 @@ export const {
       }
     }
 
+    // Events that rewrite or replace the transcript rather than extend it still
+    // need a full re-sync; everything else is folded into the shadow in place.
+    const FULL_SYNC_V2_EVENTS = new Set<string>([
+      "session.next.compaction.started",
+      "session.next.compaction.delta",
+      "session.next.compaction.ended",
+      "session.next.revert.staged",
+      "session.next.revert.cleared",
+      "session.next.revert.committed",
+      "session.next.created",
+      "session.next.info.updated",
+      "session.next.failed",
+    ])
+
+    function sessionIDOf(event: TuiEvent): string | undefined {
+      const properties = event.properties as { sessionID?: unknown } | undefined
+      return typeof properties?.sessionID === "string" ? properties.sessionID : undefined
+    }
+
+    // Message-scoped events must touch a message to be meaningful. If the reducer
+    // cannot find its target the shadow is behind, so a full sync is the safe
+    // recovery instead of silently dropping the event.
+    const MESSAGE_V2_EVENTS = new Set<string>([
+      "session.next.step.started",
+      "session.next.step.ended",
+      "session.next.step.failed",
+      "session.next.text.started",
+      "session.next.text.ended",
+      "session.next.reasoning.started",
+      "session.next.reasoning.ended",
+      "session.next.tool.input.started",
+      "session.next.tool.input.ended",
+      "session.next.tool.called",
+      "session.next.tool.success",
+      "session.next.tool.failed",
+      "session.next.shell.started",
+      "session.next.shell.ended",
+    ])
+
+    // Apply a durable `session.next.*` event to one or two messages instead of
+    // refetching the whole session. Returns false when the session has no
+    // up-to-date shadow, so the caller can fall back to a conservative full sync.
+    function applyV2DurableEvent(sessionID: string, event: TuiEvent): boolean {
+      const source = sessionMessages.get(sessionID)
+      if (!source || !fullSyncedSessions.has(sessionID) || syncingSessions.has(sessionID)) return false
+      const reduction = v2Reducer.reduce(source, event)
+      if (!reduction) return false
+      sessionMessages.set(sessionID, reduction.messages)
+      if (reduction.touched.length === 0) return !MESSAGE_V2_EVENTS.has(event.type)
+      const touched = new Set(reduction.touched)
+      // An assistant projection inherits the last user id as `parentID`, so a
+      // touched assistant also refreshes the user message it belongs to.
+      let parentID: string | undefined
+      for (const message of reduction.messages) {
+        if (message.type === "user") parentID = message.id
+        if (message.type === "assistant" && touched.has(message.id) && parentID) touched.add(parentID)
+      }
+      const session = store.session.find((item) => item.id === sessionID)
+      const cwd = session?.directory ?? ""
+      const projected = sessionContextToMessages({
+        sessionID,
+        cwd,
+        root: cwd,
+        messages: reduction.messages,
+        only: touched,
+      })
+      if (projected.length === 0) return true
+      batch(() => {
+        for (const message of projected) {
+          // The context projection derives a user's agent/model from preceding
+          // meta messages; a live prompt carries the footer selection instead.
+          if (message.info.role === "user") {
+            const pending = pendingPrompts.data[message.info.id]?.info
+            message.info.agent = pending?.agent ?? session?.agent ?? message.info.agent
+            if (pending?.model) message.info.model = pending.model
+            else if (session?.model)
+              message.info.model = {
+                providerID: session.model.providerID,
+                modelID: session.model.id,
+                variant: session.model.variant,
+              }
+          }
+          const current = store.message[sessionID] ?? []
+          const index = current.findIndex((item) => item.id === message.info.id)
+          if (index >= 0) setStore("message", sessionID, index, reconcile(message.info))
+          else setStore("message", sessionID, (messages = []) => [...messages, message.info].toSorted(compareMessage))
+          setStore("part", message.info.id, reconcile(mergeProjectedParts(message.info.id, message.parts)))
+        }
+      })
+      return true
+    }
+
+    // A durable boundary can project slightly behind a fragment that already
+    // reached the store; keep the local text rather than rolling it back.
+    function mergeProjectedParts(messageID: string, parts: Part[]): Part[] {
+      const current = store.part[messageID]
+      if (!current) return parts
+      const byID = new Map(current.map((part) => [part.id, part]))
+      return parts.map((part) => {
+        const existing = byID.get(part.id)
+        if (!existing) return part
+        if (
+          (part.type === "text" || part.type === "reasoning") &&
+          (existing.type === "text" || existing.type === "reasoning") &&
+          existing.text.length > 0 &&
+          (part.text.length === 0 || existing.text.startsWith(part.text))
+        )
+          return existing
+        return part
+      })
+    }
+
     event.subscribe((event, { workspace }) => {
-      if (RECOVERED_EVENTS.has(event.type) && "sessionID" in event.properties && typeof event.properties.sessionID === "string") {
+      if (
+        RECOVERED_EVENTS.has(event.type) &&
+        "sessionID" in event.properties &&
+        typeof event.properties.sessionID === "string"
+      ) {
         const sessionID = event.properties.sessionID
         if (store.session_status[sessionID]?.type === "retry") setStore("session_status", sessionID, { type: "busy" })
         if (store.session_error[sessionID])
@@ -362,8 +518,9 @@ export const {
           )
       }
       if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
-        const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
-        if (sessionID) v2Refresh.schedule(sessionID)
+        const sessionID = sessionIDOf(event)
+        if (sessionID && (FULL_SYNC_V2_EVENTS.has(event.type) || !applyV2DurableEvent(sessionID, event)))
+          v2Refresh.schedule(sessionID)
       }
       switch (event.type) {
         case "session.next.status": {
@@ -593,6 +750,8 @@ export const {
           fullSyncedSessions.delete(id)
           syncingSessions.delete(id)
           hydratingSessions.delete(id)
+          sessionMessages.delete(id)
+          v2Reducer.clear(id)
           pendingPrompts.clear(id)
           setStore(
             "session_error",
@@ -1008,15 +1167,17 @@ export const {
                 const seeded = olderHistory.get(sessionID)
                 const older = seeded ?? { messages: [], cursor: history.cursor.next ?? undefined }
                 if (!seeded) olderHistory.set(sessionID, older)
+                const source = mergeTranscript(mutableResponse(context), [
+                  ...older.messages,
+                  ...mutableResponse(history.data),
+                ])
                 return {
+                  source,
                   data: sessionContextToMessages({
                     sessionID,
                     cwd: session.data!.directory,
                     root: session.data!.directory,
-                    messages: mergeTranscript(mutableResponse(context), [
-                      ...older.messages,
-                      ...mutableResponse(history.data),
-                    ]),
+                    messages: source,
                   }),
                 }
               }),
@@ -1096,6 +1257,11 @@ export const {
               sessionID,
               (messages.data ?? []).map((message) => message.info),
             )
+            // Seed the incremental shadow from the same transcript the store just
+            // projected, then carry over text that streamed while this sync ran.
+            sessionMessages.set(sessionID, messages.source)
+            v2Reducer.clear(sessionID)
+            mergeStreamedTextIntoShadow(messages.source)
             fullSyncedSessions.add(sessionID)
           })().finally(() => {
             hydration.lastMs = performance.now() - started

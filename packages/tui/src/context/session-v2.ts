@@ -47,6 +47,8 @@ export function sessionContextToMessages(input: {
   cwd: string
   root: string
   messages: SessionMessage[]
+  /** Restrict projections to these ids while still accumulating the agent/model/user context they inherit. */
+  only?: ReadonlySet<string>
 }): { info: TuiTranscriptMessage; parts: Part[] }[] {
   const result: { info: TuiTranscriptMessage; parts: Part[] }[] = []
   let lastAgent = ""
@@ -63,6 +65,7 @@ export function sessionContextToMessages(input: {
     }
     if (message.type === "user") {
       lastUserID = message.id
+      if (input.only && !input.only.has(message.id)) continue
       result.push({
         info: {
           id: message.id,
@@ -77,6 +80,7 @@ export function sessionContextToMessages(input: {
       continue
     }
     if (message.type === "assistant") {
+      if (input.only && !input.only.has(message.id)) continue
       result.push({
         info: {
           id: message.id,
