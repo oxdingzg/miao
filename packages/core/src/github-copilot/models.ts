@@ -4,7 +4,7 @@ import { shouldUseResponsesApi } from "@miao/llm/providers/github-copilot"
 import { Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { InstallationVersion } from "../installation/version"
-import type { ModelV2Info } from "@miao/sdk/v2/types"
+import type { ModelV2Info } from "@miao/schema/view-models"
 
 /** Copilot API version the V1 plugin pinned; Copilot rejects unknown versions. */
 export const API_VERSION = "2026-06-01"
@@ -94,7 +94,11 @@ export type Remote = {
  * `undefined` when the API could not say. Callers keep the catalog as-is on
  * `undefined`: an unreachable API must not hide models the account can use.
  */
-export const list = (input: { readonly baseURL: string; readonly token: string; readonly http: HttpClient.HttpClient }) =>
+export const list = (input: {
+  readonly baseURL: string
+  readonly token: string
+  readonly http: HttpClient.HttpClient
+}) =>
   HttpClientRequest.get(`${input.baseURL}/models`).pipe(
     HttpClientRequest.acceptJson,
     HttpClientRequest.bearerToken(input.token),
@@ -191,7 +195,7 @@ function remote(item: Item): Remote {
 // get no effort variants here.
 function variants(item: Remote): ModelV2Info["variants"] {
   if (item.endpoint === "messages") return []
-  return item.efforts.map((effort) => ({
+  return item.efforts.map((effort): ModelV2Info["variants"][number] => ({
     id: effort,
     headers: {},
     body:

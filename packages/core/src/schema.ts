@@ -24,20 +24,28 @@ export { AbsolutePath, DateTimeUtcFromMillis, NonNegativeInt, optional, Positive
  * `string & Brand<"SessionID">` fall into the object branch and get their
  * prototype methods walked.
  *
+ * Recursive JSON remains a schema leaf. Request overlays replace its values;
+ * expanding the union would require mutable nested arrays and can overwhelm
+ * the type checker.
+ *
  * Tuple branch preserves readonly tuples (e.g. `ConfigPlugin.Spec`'s
  * `readonly [string, Options]`); the general array branch would otherwise
  * widen them to unbounded arrays.
  */
 // eslint-disable-next-line @typescript-eslint/ban-types
-export type DeepMutable<T> = T extends string | number | boolean | bigint | symbol | Function
+export type DeepMutable<T> = unknown extends T
   ? T
-  : T extends readonly [unknown, ...unknown[]]
-    ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
-    : T extends readonly (infer U)[]
-      ? DeepMutable<U>[]
-      : T extends object
+  : Schema.Json extends T
+    ? Schema.Json | Extract<T, undefined>
+    : T extends string | number | boolean | bigint | symbol | Function
+      ? T
+      : T extends readonly [unknown, ...unknown[]]
         ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
-        : T
+        : T extends readonly (infer U)[]
+          ? DeepMutable<U>[]
+          : T extends object
+            ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
+            : T
 
 /**
  * Nominal wrapper for scalar types. The class itself is a valid schema —

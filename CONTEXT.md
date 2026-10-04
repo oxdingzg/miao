@@ -158,7 +158,7 @@ _Avoid_: Response envelope
 - Effect client construction accepts an explicit `baseUrl` and obtains `HttpClient.HttpClient` from the Effect environment. It does not install fetch or duplicate per-call transport policy; callers transform/provide the client for headers, tracing, retries, recording, and tests, while fiber interruption owns cancellation.
 - Promise and Effect emitters each own their generated public type modules. The **SDK Contract IR**, not a physically shared generated type package, is the common source; this permits zero-Effect wire types and rich decoded Effect types to evolve independently.
 - Promise and Effect network clients ship from `@miao/client` behind isolated root and `/effect` exports. The root has no runtime path to Effect; `/effect` imports only Effect, Schema, and Protocol.
-- The Effect-native scoped host belongs to `@miao/sdk-next`, which will assume the existing `@miao/sdk` name after legacy consumers migrate. Client remains network-only and SDK depends one-way on Client.
+- The Effect-native scoped host belongs to `@miao/sdk`, which now owns the scoped host after legacy consumers migrated. Client remains network-only and SDK depends one-way on Client.
 - SDK executes Server's assembled `HttpRouter` in memory. It opens no listener and performs no network I/O, while preserving Server routing, middleware, codecs, handlers, and errors.
 - The Effect Client and SDK re-export their decoded datatype facade from Schema so callers do not depend on internal package locations or Core's versioned names.
 - A capability intended for both networked and **Embedded miao** belongs in the authoritative public `HttpApi`; embedded-only same-process capabilities extend **Embedded miao** separately.
@@ -200,7 +200,7 @@ _Avoid_: Response envelope
 
 ## Client contract architecture
 
-Semantic values that mean the same thing internally and publicly live in the lightweight Schema leaf. Core consumes Schema for domain behavior; Protocol composes Schema values into paths, payloads, envelopes, errors, cursors, and streams; Server imports both, hosts Protocol's exact groups, and owns protocol/domain adaptation. The root Promise client remains zero-Effect, `/effect` depends on Effect plus Schema and Protocol, and `@miao/sdk-next` composes the scoped in-process host above Client, Core, and Server.
+Semantic values that mean the same thing internally and publicly live in the lightweight Schema leaf. Core consumes Schema for domain behavior; Protocol composes Schema values into paths, payloads, envelopes, errors, cursors, and streams; Server imports both, hosts Protocol's exact groups, and owns protocol/domain adaptation. The root Promise client remains zero-Effect, `/effect` depends on Effect plus Schema and Protocol, and `@miao/sdk` composes the scoped in-process host above Client, Core, and Server.
 
 Shared public records are plain objects declared with `Schema.Struct`. A same-name inferred interface gives object records readable TypeScript signatures without constructors, prototypes, or nominal identity; unions retain explicit type aliases.
 

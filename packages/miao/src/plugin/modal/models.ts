@@ -1,4 +1,4 @@
-import type { Model } from "@miao/sdk/v2"
+import type { Model } from "@miao/schema/view-models"
 import { Schema } from "effect"
 
 const reasoningOption = Schema.Struct({

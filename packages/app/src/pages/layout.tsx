@@ -874,7 +874,7 @@ export default function LegacyLayout(props: ParentProps) {
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
-    await serverSDK().client.v2.session.archive({ sessionID: session.id, archived: true })
+    await serverSDK().api.sessions.archive({ sessionID: session.id, archived: true })
     setStore(
       produce((draft) => {
         const match = Binary.search(draft.session, session.id, (s) => s.id)
@@ -1469,7 +1469,7 @@ export default function LegacyLayout(props: ParentProps) {
         .filter((session) => session.time.archived === undefined)
         .map((session) =>
           serverSDK()
-            .client.v2.session.archive({ sessionID: session.id, archived: true })
+            .api.sessions.archive({ sessionID: session.id, archived: true })
             .catch(() => undefined),
         ),
     )

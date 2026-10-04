@@ -1,10 +1,19 @@
-import type { AgentsListInput, AgentsListOutput, CommandsListInput, CommandsListOutput, ProjectsCurrentInput, ProjectsCurrentOutput, ProjectsListOutput, ReferencesListInput, ReferencesListOutput } from "@miao/client"
+import type {
+  AgentsListInput,
+  AgentsListOutput,
+  CommandsListInput,
+  CommandsListOutput,
+  ProjectsCurrentInput,
+  ProjectsCurrentOutput,
+  ProjectsListOutput,
+  ReferencesListInput,
+  ReferencesListOutput,
+} from "@miao/client"
 import type { CatalogApi, CommandInfo, ProviderAuthResponse, SessionApi } from "@/utils/server"
 import type { Project, ReferenceInfo, Session } from "@miao/schema/view-models"
 import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import type { LocationPath } from "@miao/protocol/groups/location"
 import type { Config } from "@miao/schema/view-models"
-import type { MiaoClient } from "@miao/sdk/v2"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@miao/core/util/path"
 import { retry } from "@miao/core/util/retry"
@@ -122,7 +131,6 @@ export const loadProjectsQuery = (scope: ServerScope, api: ProjectApi) =>
   })
 
 export async function bootstrapGlobal(input: {
-  serverSDK: MiaoClient
   serverAPI: CatalogApi & { readonly projects: ProjectApi; readonly config: ConfigApi; readonly location: PathApi }
   scope: ServerScope
   requestFailedTitle: string
@@ -133,10 +141,7 @@ export async function bootstrapGlobal(input: {
 }) {
   const slow = [
     () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverAPI.config)),
-    () =>
-      input.queryClient.fetchQuery(
-        loadProvidersQuery(input.scope, null, input.serverAPI),
-      ),
+    () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverAPI)),
     () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverAPI.location)),
     () =>
       input.queryClient
@@ -198,11 +203,7 @@ function warmSessions(input: {
   ).then(() => undefined)
 }
 
-export const loadProvidersQuery = (
-  scope: ServerScope,
-  directory: string | null,
-  sdk: CatalogApi,
-) =>
+export const loadProvidersQuery = (scope: ServerScope, directory: string | null, sdk: CatalogApi) =>
   queryOptions({
     queryKey: [scope, directory, "providers"],
     queryFn: () =>
@@ -229,11 +230,7 @@ type ReferenceListApi = {
   readonly list: (input?: ReferencesListInput) => Promise<ReferencesListOutput>
 }
 
-export const loadAgentsQuery = (
-  scope: ServerScope,
-  directory: string,
-  sdk: AgentListApi,
-) =>
+export const loadAgentsQuery = (scope: ServerScope, directory: string, sdk: AgentListApi) =>
   queryOptions({
     queryKey: [scope, directory, "agents"],
     queryFn: () =>
@@ -242,10 +239,7 @@ export const loadAgentsQuery = (
       }),
   })
 
-export const loadCommands = (
-  directory: string,
-  api: CommandListApi,
-): Promise<CommandInfo[]> =>
+export const loadCommands = (directory: string, api: CommandListApi): Promise<CommandInfo[]> =>
   retry(async () => {
     return api.list({ location: { directory } }).then((result) => [...result.data])
   })
@@ -258,11 +252,7 @@ export const loadPathQuery = (scope: ServerScope, directory: string | null, api:
     queryFn: () => api.path(directory ? { location: { directory } } : undefined),
   })
 
-export const loadReferencesQuery = (
-  scope: ServerScope,
-  directory: string,
-  api: ReferenceListApi,
-) =>
+export const loadReferencesQuery = (scope: ServerScope, directory: string, api: ReferenceListApi) =>
   queryOptions<ReferenceInfo[]>({
     queryKey: [scope, directory, "references"] as const,
     queryFn: () =>
@@ -276,7 +266,6 @@ export async function bootstrapDirectory(input: {
   directory: string
   scope: ServerScope
   mcp: boolean
-  sdk: MiaoClient
   api: CatalogApi & {
     readonly agents: AgentListApi
     readonly commands: CommandListApi
@@ -346,13 +335,8 @@ export async function bootstrapDirectory(input: {
         ),
       input.mcp &&
         (() =>
-          loadCommands(input.directory, input.api.commands).then((commands) =>
-            input.setStore("command", commands),
-          )),
-      () =>
-        input.queryClient.fetchQuery(
-          loadReferencesQuery(input.scope, input.directory, input.api.references),
-        ),
+          loadCommands(input.directory, input.api.commands).then((commands) => input.setStore("command", commands))),
+      () => input.queryClient.fetchQuery(loadReferencesQuery(input.scope, input.directory, input.api.references)),
       () =>
         retry(() =>
           (async () => {
@@ -424,27 +408,18 @@ export async function bootstrapDirectory(input: {
           }),
         ),
       () => Promise.resolve(input.loadSessions(input.directory)),
+      input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.api.mcp))),
       input.mcp &&
-        (() =>
-          input.queryClient.fetchQuery(
-            loadMcpQuery(input.scope, input.directory, input.api.mcp),
-          )),
-      input.mcp &&
-        (() =>
-          input.queryClient.fetchQuery(
-            loadMcpResourcesQuery(input.scope, input.directory, input.api.mcp),
-          )),
+        (() => input.queryClient.fetchQuery(loadMcpResourcesQuery(input.scope, input.directory, input.api.mcp))),
       () =>
-        input.queryClient
-          .fetchQuery(loadProvidersQuery(input.scope, input.directory, input.api))
-          .catch((err) => {
-            const project = getFilename(input.directory)
-            showToast({
-              variant: "error",
-              title: input.translate("toast.project.reloadFailed.title", { project }),
-              description: formatServerError(err, input.translate),
-            })
-          }),
+        input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.api)).catch((err) => {
+          const project = getFilename(input.directory)
+          showToast({
+            variant: "error",
+            title: input.translate("toast.project.reloadFailed.title", { project }),
+            description: formatServerError(err, input.translate),
+          })
+        }),
     ].filter(Boolean) as (() => Promise<any>)[]
 
     await waitForPaint()

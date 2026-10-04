@@ -39,4 +39,4 @@ export function layerFromPath(filename: string) {
 
 export const path = DatabaseFile.path
 
-export const node = makeGlobalNode({ service: Service, layer: layerFromPath(path()), deps: [] })
+export const node = makeGlobalNode({ service: Service, layer: Layer.suspend(() => layerFromPath(path())), deps: [] })

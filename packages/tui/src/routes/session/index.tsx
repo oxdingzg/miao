@@ -293,9 +293,7 @@ export function Session() {
     const sessionID = route.sessionID
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
-      const result = await sdk.client.v2.session
-        .get({ sessionID }, { throwOnError: true })
-        .then((x) => ({ data: sessionInfo(x.data.data) }))
+      const result = await sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
@@ -550,7 +548,7 @@ export function Session() {
           })
           return
         }
-        void sdk.client.v2.session.compact({ sessionID: route.sessionID })
+        void sdk.api.sessions.compact({ sessionID: route.sessionID })
         dialog.clear()
       },
     },
@@ -563,11 +561,10 @@ export function Session() {
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
-        if (status?.type !== "idle")
-          await sdk.client.v2.session.interrupt({ sessionID: route.sessionID }).catch(() => {})
+        if (status?.type !== "idle") await sdk.api.sessions.interrupt({ sessionID: route.sessionID }).catch(() => {})
         const message = messagesBeforeRevert().findLast((item) => item.role === "user")
         if (!message) return
-        void sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id }).then(() => {
+        void sdk.api.sessions.stage({ sessionID: route.sessionID, messageID: message.id }).then(() => {
           toBottom()
         })
         const parts = sync.data.part[message.id]
@@ -600,11 +597,11 @@ export function Session() {
         if (!messageID) return
         const message = messages().find((x) => x.role === "user" && x.id > messageID)
         if (!message) {
-          void sdk.client.v2.session.revert.clear({ sessionID: route.sessionID })
+          void sdk.api.sessions.clear({ sessionID: route.sessionID })
           prompt?.set({ input: "", parts: [] })
           return
         }
-        void sdk.client.v2.session.revert.stage({ sessionID: route.sessionID, messageID: message.id })
+        void sdk.api.sessions.stage({ sessionID: route.sessionID, messageID: message.id })
       },
     },
     {
@@ -2550,9 +2547,9 @@ function useDiffHighlighter(input: {
       return relative
     },
     (relative) =>
-      sdk.client.v2.fs
-        .content({ path: relative }, { throwOnError: true })
-        .then((result) => (result.data.data.type === "text" ? result.data.data.content : undefined))
+      sdk.api.files
+        .content({ path: relative }, {})
+        .then((result) => (result.data.type === "text" ? result.data.content : undefined))
         .catch(() => undefined),
   )
   return {

@@ -350,7 +350,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory
-    let client = sdk().client
 
     if (isNewSession) {
       if (worktreeSelection === "create") {
@@ -381,10 +380,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
 
       if (sessionDirectory !== projectDirectory) {
-        client = sdk().createClient({
-          directory: sessionDirectory,
-          throwOnError: true,
-        })
         serverSync().child(sessionDirectory)
       }
 

@@ -1,7 +1,20 @@
+import { mutableResponse } from "../util/mutable-response"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { Renderable } from "@opentui/core"
 import type { Message, UserMessage, Session, Part, VcsInfo, SnapshotFileDiff } from "@miao/schema/view-models"
-import type { Agent, Provider, Todo, Command, LspStatus, McpStatus, McpServerStatus, McpResource, FormatterStatus, SessionStatus, ProviderAuthMethod } from "@miao/schema/view-models"
+import type {
+  Agent,
+  Provider,
+  Todo,
+  Command,
+  LspStatus,
+  McpStatus,
+  McpServerStatus,
+  McpResource,
+  FormatterStatus,
+  SessionStatus,
+  ProviderAuthMethod,
+} from "@miao/schema/view-models"
 import type { IntegrationInfo } from "@miao/schema/view-models"
 import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import type { Config } from "@miao/schema/view-models"
@@ -75,7 +88,9 @@ type TuiAuthMethod = ProviderAuthMethod & { id?: string }
 
 // The V2 integration list replaces the V1 provider-auth map; env methods are
 // discovery-only, so only oauth and key methods become connectable entries.
-function toProviderAuth(integrations: ReadonlyArray<IntegrationInfo>): Record<string, TuiAuthMethod[]> {
+function toProviderAuth(
+  integrations: ReadonlyArray<Pick<IntegrationInfo, "id" | "methods">>,
+): Record<string, TuiAuthMethod[]> {
   const result: Record<string, TuiAuthMethod[]> = {}
   for (const integration of integrations) {
     result[integration.id] = integration.methods.flatMap((method): TuiAuthMethod[] => {
@@ -245,9 +260,9 @@ export const {
 
     function listSessions() {
       const query = sessionListQuery()
-      const promise = sdk.client.v2.session
+      const promise = sdk.api.sessions
         .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
-        .then((x) => ({ data: (x.data?.data ?? []).map(sessionInfo) }))
+        .then((x) => ({ data: (x.data ?? []).map(sessionInfo) }))
       return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
@@ -390,7 +405,7 @@ export const {
                 : undefined,
           } as unknown as PermissionRequest
           if (permission.mode === "auto") {
-            void sdk.client.v2.session.permission.reply({
+            void sdk.api.permissions.reply({
               sessionID: request.sessionID,
               requestID: request.id,
               reply: "once",
@@ -590,9 +605,7 @@ export const {
 
         case "lsp.updated": {
           const workspace = project.workspace.current()
-          void sdk.client.v2.lsp
-            .status({ location: { workspace } })
-            .then((x) => setStore("lsp", toLspStatus(x.data?.data ?? [])))
+          void sdk.api.lsp.status({ location: { workspace } }).then((x) => setStore("lsp", toLspStatus(x.data ?? [])))
           break
         }
 
@@ -613,9 +626,9 @@ export const {
     // catalog loads when something like the connect dialog first asks for it.
     let providerCatalog: Promise<void> | undefined
     function loadProviderCatalog() {
-      providerCatalog ??= sdk.client.v2.config
-        .catalog({ location: { workspace: project.workspace.current() } }, { throwOnError: true })
-        .then((x) => setStore("provider_next", reconcile(toProviderCatalog(x.data!.data))))
+      providerCatalog ??= sdk.api.config
+        .catalog({ location: { workspace: project.workspace.current() } }, {})
+        .then((x) => setStore("provider_next", reconcile(toProviderCatalog(x.data))))
         .catch((error) => {
           providerCatalog = undefined
           throw error
@@ -634,13 +647,13 @@ export const {
       const sessionListPromise = projectPromise.then(() => listSessions())
 
       // blocking - include session.list when continuing a session
-      const providersPromise = sdk.client.v2.config.providers({ location: { workspace } }, { throwOnError: true })
-      const capabilitiesPromise = sdk.client.v2.capabilities
-        .get({ location: { workspace } }, { throwOnError: true })
-        .then((x) => x.data?.data)
+      const providersPromise = sdk.api.config.providers({ location: { workspace } }, {})
+      const capabilitiesPromise = sdk.api.capabilities
+        .get({ location: { workspace } }, {})
+        .then((x) => x.data)
         .catch(() => undefined)
-      const agentsPromise = sdk.client.v2.agent.list({ location: { workspace } }, { throwOnError: true })
-      const configPromise = sdk.client.v2.config.get({ location: { workspace } }, { throwOnError: true })
+      const agentsPromise = sdk.api.agents.list({ location: { workspace } }, {})
+      const configPromise = sdk.api.config.get({ location: { workspace } }, {})
       await Promise.all([
         providersPromise,
         capabilitiesPromise,
@@ -650,10 +663,10 @@ export const {
         ...(args.continue ? [sessionListPromise] : []),
       ])
         .then(async () => {
-          const providersResponse = providersPromise.then((x) => toProviderList(x.data!.data))
+          const providersResponse = providersPromise.then((x) => toProviderList(x.data))
           const capabilitiesResponse = capabilitiesPromise
-          const agentsResponse = agentsPromise.then((x) => (x.data?.data ?? []).map(toAgent))
-          const configResponse = configPromise.then((x) => toConfig(x.data?.data ?? {}))
+          const agentsResponse = agentsPromise.then((x) => (x.data ?? []).map(toAgent))
+          const configResponse = configPromise.then((x) => toConfig(x.data ?? {}))
           const sessionListResponse = args.continue ? sessionListPromise : undefined
 
           return Promise.all([
@@ -686,32 +699,32 @@ export const {
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
             // The palette only shows names and descriptions; executing a command
             // resolves its template on the server.
-            sdk.client.v2.command
+            sdk.api.commands
               .list({ location: { workspace } })
-              .then((x) => setStore("command", reconcile((x.data?.data ?? []).map(toCommand)))),
-            sdk.client.v2.lsp
+              .then((x) => setStore("command", reconcile((x.data ?? []).map(toCommand)))),
+            sdk.api.lsp
               .status({ location: { workspace } })
-              .then((x) => setStore("lsp", reconcile(toLspStatus(x.data?.data ?? [])))),
-            sdk.client.v2.mcp
+              .then((x) => setStore("lsp", reconcile(toLspStatus(x.data ?? [])))),
+            sdk.api.mcp
               .status({ location: { workspace } })
-              .then((x) => setStore("mcp", reconcile(toMcpStatus(x.data?.data ?? {})))),
-            sdk.client.v2.mcp
-              .resources({ location: { workspace } }, { throwOnError: true })
-              .then((x) => setStore("mcp_resource", reconcile(x.data?.data ?? {}))),
-            sdk.client.v2.formatter
+              .then((x) => setStore("mcp", reconcile(toMcpStatus(x.data ?? {})))),
+            sdk.api.mcp
+              .resources({ location: { workspace } }, {})
+              .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
+            sdk.api.formatters
               .status({ location: { workspace } })
-              .then((x) => setStore("formatter", reconcile(x.data?.data ?? []))),
-            sdk.client.v2.session
+              .then((x) => setStore("formatter", reconcile(mutableResponse(x.data)))),
+            sdk.api.sessions
               .active()
               .then((x) => ({
-                data: Object.fromEntries(Object.keys(x.data?.data ?? {}).map((id) => [id, { type: "busy" as const }])),
+                data: Object.fromEntries(Object.keys(x).map((id) => [id, { type: "busy" as const }])),
               }))
               .then((x) => {
                 setStore("session_status", reconcile(x.data ?? {}))
               }),
-            sdk.client.v2.integration
+            sdk.api.integrations
               .list({ location: { workspace } })
-              .then((x) => setStore("provider_auth", reconcile(toProviderAuth(x.data?.data ?? [])))),
+              .then((x) => setStore("provider_auth", reconcile(toProviderAuth(mutableResponse(x.data))))),
             ...(reloadProviderCatalog
               ? [
                   loadProviderCatalog().catch((error) =>
@@ -719,9 +732,7 @@ export const {
                   ),
                 ]
               : []),
-            sdk.client.v2.vcs
-              .get({ location: { workspace } }, { throwOnError: true })
-              .then((x) => setStore("vcs", reconcile(x.data?.data))),
+            sdk.api.vcs.get({ location: { workspace } }, {}).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
           ]).then(() => {
             setStore("status", "complete")
@@ -754,17 +765,14 @@ export const {
       const match = search(store.session, input.sessionID, (s) => s.id)
       const session = match.found ? store.session[match.index] : undefined
       if (input.agent && session?.agent !== input.agent)
-        await sdk.client.v2.session.switchAgent(
-          { sessionID: input.sessionID, agent: input.agent },
-          { throwOnError: true },
-        )
+        await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, {})
       if (!input.model.providerID || !input.model.modelID) return
-      await sdk.client.v2.session.switchModel(
+      await sdk.api.sessions.switchModel(
         {
           sessionID: input.sessionID,
           model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.model.variant },
         },
-        { throwOnError: true },
+        {},
       )
     }
 
@@ -799,9 +807,9 @@ export const {
           })
           return applySelection(input)
             .then(() =>
-              sdk.client.v2.session.prompt(
+              sdk.api.sessions.prompt(
                 { id, sessionID: input.sessionID, prompt: promptInputFromParts(input.parts) },
-                { throwOnError: true },
+                {},
               ),
             )
             .then(
@@ -842,8 +850,8 @@ export const {
           setStore("session", reconcile(list))
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
-          const response = await sdk.client.v2.session.status({ sessionID }, { throwOnError: true, signal })
-          const status = response.data.data.type
+          const response = await sdk.api.sessions.status({ sessionID }, { signal })
+          const status = response.type
           if (signal?.aborted) return status
           const previous = store.session_status[sessionID]?.type
           // Every store write notifies subscribers, and one tick repaints the
@@ -876,28 +884,29 @@ export const {
           hydration.count += 1
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
-            const sessionPromise = sdk.client.v2.session
-              .get({ sessionID }, { throwOnError: true })
-              .then((x) => ({ data: sessionInfo(x.data.data) }))
+            const sessionPromise = sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
             const messagesPromise = sessionPromise.then((session) =>
               Promise.all([
-                sdk.client.v2.session.context({ sessionID }, { throwOnError: true }),
+                sdk.api.sessions.context({ sessionID }, {}),
                 // `context` stops at the last compaction, so also read a page
                 // of the projected timeline to keep older history reachable.
-                sdk.client.v2.session.messages({ sessionID, limit: 200, order: "desc" }, { throwOnError: true }),
+                sdk.api.messages.list({ sessionID, limit: 200, order: "desc" }, {}),
               ]).then(([context, history]) => {
                 // Seed the older-history walk once. Later re-hydrations must
                 // not reset it to the newest page, or every scroll to the
                 // top would refetch a page that is already loaded.
                 const seeded = olderHistory.get(sessionID)
-                const older = seeded ?? { messages: [], cursor: history.data.cursor.next }
+                const older = seeded ?? { messages: [], cursor: history.cursor.next ?? undefined }
                 if (!seeded) olderHistory.set(sessionID, older)
                 return {
                   data: sessionContextToMessages({
                     sessionID,
                     cwd: session.data!.directory,
                     root: session.data!.directory,
-                    messages: mergeTranscript(context.data.data, [...older.messages, ...history.data.data]),
+                    messages: mergeTranscript(mutableResponse(context), [
+                      ...older.messages,
+                      ...mutableResponse(history.data),
+                    ]),
                   }),
                 }
               }),
@@ -905,9 +914,9 @@ export const {
             const [session, messages, todo, diff] = await Promise.all([
               sessionPromise,
               messagesPromise,
-              sdk.client.v2.session.todo({ sessionID }).then((x) => ({ data: x.data?.data })),
-              sdk.client.v2.session.diff({ sessionID }).then((x) => ({
-                data: (x.data?.data ?? []).map((file) => ({
+              sdk.api.sessions.todo({ sessionID }).then((x) => ({ data: mutableResponse(x) })),
+              sdk.api.sessions.diff({ sessionID }).then((x) => ({
+                data: x.map((file) => ({
                   file: file.path,
                   patch: file.patch,
                   additions: file.additions,
@@ -998,17 +1007,14 @@ export const {
           if (!older?.cursor || loadingOlder.has(sessionID)) return false
           loadingOlder.add(sessionID)
           try {
-            const page = await sdk.client.v2.session.messages(
-              { sessionID, limit: 200, cursor: older.cursor },
-              { throwOnError: true },
-            )
-            if (page.data.data.length === 0) {
+            const page = await sdk.api.messages.list({ sessionID, limit: 200, cursor: older.cursor }, {})
+            if (page.data.length === 0) {
               olderHistory.set(sessionID, { ...older, cursor: undefined })
               return false
             }
             olderHistory.set(sessionID, {
-              messages: [...page.data.data, ...older.messages],
-              cursor: page.data.cursor.next,
+              messages: [...mutableResponse(page.data), ...older.messages],
+              cursor: page.cursor.next ?? undefined,
             })
             fullSyncedSessions.delete(sessionID)
             await result.session.sync(sessionID)

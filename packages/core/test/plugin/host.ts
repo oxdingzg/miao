@@ -5,7 +5,7 @@ import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
-import type { IntegrationEnvMethod, IntegrationKeyMethod, IntegrationOAuthMethod } from "@miao/sdk/v2/types"
+import type { IntegrationEnvMethod, IntegrationKeyMethod, IntegrationOAuthMethod } from "@miao/schema/view-models"
 import { Effect } from "effect"
 
 type Overrides = Partial<Omit<PluginContext, "options">>

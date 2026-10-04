@@ -7,7 +7,7 @@ import type {
   WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@miao/plugin"
 import { Config } from "@/config/config"
-import { createMiaoClient } from "@miao/sdk/v2"
+import { createClient } from "@/client"
 import { ServerAuth } from "@/server/auth"
 import { Auth } from "@/auth"
 import type { InternalPluginInput } from "./auth-store"
@@ -151,7 +151,7 @@ const layer = Layer.effect(
         const { Server } = yield* Effect.promise(() => import("../server/server"))
 
         const serverUrl = Server.url
-        const client = createMiaoClient({
+        const client = createClient({
           baseUrl: serverUrl?.toString() ?? "http://localhost:4096",
           directory: ctx.directory,
           headers: ServerAuth.headers() ?? {},

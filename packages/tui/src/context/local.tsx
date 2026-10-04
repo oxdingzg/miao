@@ -200,8 +200,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         .then((x) => {
           if (!x || typeof x !== "object") return
           const value = x as Record<string, unknown>
-          if (value.current && typeof value.current === "object")
-            setModelStore("model", readModelRecord(value.current))
+          if (value.current && typeof value.current === "object") setModelStore("model", readModelRecord(value.current))
           if (Array.isArray(value.recent)) setModelStore("recent", value.recent)
           if (Array.isArray(value.favorite)) setModelStore("favorite", value.favorite)
           if (typeof value.variant === "object" && value.variant !== null)
@@ -525,10 +524,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const status = sync.data.mcp[name]
         if (status?.status === "connected") {
           // Disable: disconnect the MCP
-          await sdk.client.v2.mcp.disconnect({ name, location })
+          await sdk.api.mcp.disconnect({ name, location })
         } else {
           // Enable/Retry: connect the MCP (handles disabled, failed, and other states)
-          await sdk.client.v2.mcp.connect({ name, location })
+          await sdk.api.mcp.connect({ name, location })
         }
       },
     }

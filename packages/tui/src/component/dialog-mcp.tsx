@@ -58,9 +58,9 @@ export function DialogMcp() {
         try {
           await local.mcp.toggle(option.value)
           // Refresh MCP status from server
-          const status = await sdk.client.v2.mcp.status({ location: { workspace: project.workspace.current() } })
+          const status = await sdk.api.mcp.status({ location: { workspace: project.workspace.current() } })
           if (status.data) {
-            sync.set("mcp", toMcpStatus(status.data.data))
+            sync.set("mcp", toMcpStatus(status.data))
           } else {
             console.error("Failed to refresh MCP status: no data returned")
           }

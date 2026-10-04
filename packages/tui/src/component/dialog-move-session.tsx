@@ -1,5 +1,6 @@
 import { useTerminalDimensions } from "@opentui/solid"
 import { TextAttributes } from "@opentui/core"
+import { isProjectCopyError } from "@miao/client"
 import { createMemo, createResource, createSignal, onMount, Show } from "solid-js"
 import path from "path"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
@@ -59,9 +60,9 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
   const [loadedProject] = createResource(
     () => (projectContext.project() === props.projectID ? undefined : props.projectID),
     (projectID) =>
-      sdk.client.v2.project
-        .current({ location: { directory: sdk.directory } }, { throwOnError: true })
-        .then((result) => (result.data?.data?.id === projectID ? result.data.data.directory : undefined))
+      sdk.api.projects
+        .current({ location: { directory: sdk.directory } }, {})
+        .then((result) => (result.data?.id === projectID ? result.data.directory : undefined))
         .catch(() => undefined),
   )
   const currentCheckout = createMemo(() => {
@@ -73,16 +74,13 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
     () => (props.initialRemoving ? undefined : props.projectID),
     async (projectID, info): Promise<ProjectDirectory[] | undefined> => {
       try {
-        await sdk.client.v2.projectCopy.refresh(
+        await sdk.api.projectCopies.refresh({ projectID, location: { directory: sdk.directory } }, {})
+        const directories = await sdk.api.projects.directories(
           { projectID, location: { directory: sdk.directory } },
-          { throwOnError: true },
-        )
-        const directories = await sdk.client.v2.project.directories(
-          { projectID, location: { directory: sdk.directory } },
-          { throwOnError: true },
+          {},
         )
         setLoadError(undefined)
-        return directories.data?.data ?? []
+        return directories.data.map((entry) => ({ ...entry, strategy: entry.strategy ?? undefined }))
       } catch (error) {
         setLoadError(error)
         // An initial load with no data surfaces the inline error view below. A
@@ -223,22 +221,25 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
     setToDelete(undefined)
     setRemoving(selected.directory)
     setWorking(true)
-    const result = await sdk.client.v2.projectCopy
+    const error = await sdk.api.projectCopies
       .remove({
         projectID: props.projectID,
         location: { directory: sdk.directory },
         directory: selected.directory,
         force: false,
       })
-      .catch((error) => ({ error }))
-    if (result.error) {
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+    if (error) {
       setRemoving(undefined)
       setWorking(false)
-      if ("data" in result.error && result.error.data.forceRequired) {
-        const status = await sdk.client.v2.vcs
-          .status({ location: { directory: selected.directory } }, { throwOnError: true })
+      if (isProjectCopyError(error) && error.data.forceRequired) {
+        const status = await sdk.api.vcs
+          .status({ location: { directory: selected.directory } }, {})
           .catch(() => undefined)
-        const choice = await DialogWorkspaceFileChanges.show(dialog, status?.data?.data ?? [], {
+        const choice = await DialogWorkspaceFileChanges.show(dialog, [...(status?.data ?? [])], {
           title: "Delete working copy?",
           message: "This working copy has file changes. Do you want to delete it anyway?",
         })
@@ -247,19 +248,22 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
           return
         }
         reopen(selected.directory)
-        const forced = await sdk.client.v2.projectCopy
+        const forced = await sdk.api.projectCopies
           .remove({
             projectID: props.projectID,
             location: { directory: sdk.directory },
             directory: selected.directory,
             force: true,
           })
-          .catch((error) => ({ error }))
-        if (forced.error) {
+          .then(
+            () => undefined,
+            (error: unknown) => error,
+          )
+        if (forced) {
           toast.show({
             variant: "error",
             title: "Failed to delete project copy",
-            message: errorMessage(forced.error),
+            message: errorMessage(forced),
           })
           reopen()
           return
@@ -273,7 +277,7 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
       toast.show({
         variant: "error",
         title: "Failed to delete project copy",
-        message: errorMessage(result.error),
+        message: errorMessage(error),
       })
       return
     }

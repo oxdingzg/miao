@@ -1,4 +1,3 @@
-import { createMiaoClient } from "@miao/sdk/v2/client"
 import {
   OpenCode,
   type CommandsListOutput,
@@ -28,29 +27,6 @@ export function authFromToken(token: string | null) {
     username: decoded.slice(0, separator) || "miao",
     password: decoded.slice(separator + 1),
   }
-}
-
-export function createSdkForServer({
-  server,
-  ...config
-}: Omit<NonNullable<Parameters<typeof createMiaoClient>[0]>, "baseUrl"> & {
-  server: ServerConnection.HttpBase
-}) {
-  const auth = (() => {
-    if (!server.password) return
-    return {
-      Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
-    }
-  })()
-
-  return createMiaoClient({
-    ...config,
-    headers: {
-      ...(config.headers instanceof Headers ? Object.fromEntries(config.headers.entries()) : config.headers),
-      ...auth,
-    },
-    baseUrl: server.url,
-  })
 }
 
 export function createApiForServer(input: {

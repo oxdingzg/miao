@@ -1,12 +1,12 @@
 import type { Session } from "@miao/schema/view-models"
-import type { SessionV2Info } from "@miao/schema/view-models"
+import type { SessionsGetOutput } from "@miao/client"
 
 /**
  * Maps a V2 `SessionV2Info` into the V1 `Session` shape the TUI store and
  * components already use. V2 has no `slug` or `version`, and exposes the
  * location as `location`/`subpath` instead of `directory`/`path`.
  */
-export function sessionInfo(session: SessionV2Info): Session {
+export function sessionInfo(session: SessionsGetOutput): Session {
   return {
     id: session.id,
     slug: session.id,

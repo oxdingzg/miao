@@ -61,7 +61,7 @@ export function DialogSessionList() {
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
 
   const listSessions = (query: ReturnType<typeof createDialogSessionListQuery>) =>
-    sdk.client.v2.session
+    sdk.api.sessions
       .list({
         limit: query.limit,
         ...(query.search ? { search: query.search } : {}),
@@ -69,7 +69,7 @@ export function DialogSessionList() {
       })
       .then((x) => ({
         // V2 list has no roots filter; keep only root sessions like the V1 query did.
-        data: (x.data?.data ?? []).map(sessionInfo).filter((session) => session.parentID === undefined),
+        data: (x.data ?? []).map(sessionInfo).filter((session) => session.parentID === undefined),
       }))
 
   const [browseResults, { refetch: refetchBrowse }] = createResource(
@@ -120,7 +120,7 @@ export function DialogSessionList() {
         if (selection.type === "existing") return selection.workspaceID
         let result
         try {
-          result = await sdk.client.v2.workspace.create({ workspaceCreateInput: { type: selection.workspaceType } })
+          result = await sdk.api.workspace.create({ type: selection.workspaceType })
         } catch (err) {
           toast.show({
             title: "Failed to create workspace",
@@ -129,11 +129,11 @@ export function DialogSessionList() {
           })
           return
         }
-        const workspace = result?.data?.data
+        const workspace = result?.data
         if (!workspace) {
           toast.show({
             title: "Failed to create workspace",
-            message: errorMessage(result?.error ?? "no response"),
+            message: "no response",
             variant: "error",
           })
           return
@@ -163,12 +163,15 @@ export function DialogSessionList() {
         onDelete={async () => {
           const current = currentSessionID()
           const info = current ? sync.data.session.find((item) => item.id === current) : undefined
-          const result = await sdk.client.v2.workspace.remove({ id: session.workspaceID! })
-          if (result.error) {
+          const error = await sdk.api.workspace.remove({ id: session.workspaceID! }).then(
+            () => undefined,
+            (error: unknown) => error,
+          )
+          if (error) {
             toast.show({
               variant: "error",
               title: "Failed to delete workspace",
-              message: errorMessage(result.error),
+              message: errorMessage(error),
             })
             return false
           }
@@ -317,20 +320,7 @@ export function DialogSessionList() {
               const status = session?.workspaceID ? project.workspace.status(session.workspaceID) : undefined
 
               try {
-                const result = await sdk.client.v2.session.remove({ sessionID: option.value })
-                if (result.error) {
-                  if (session?.workspaceID) {
-                    recover(session)
-                  } else {
-                    toast.show({
-                      variant: "error",
-                      title: "Failed to delete session",
-                      message: errorMessage(result.error),
-                    })
-                  }
-                  setToDelete(undefined)
-                  return
-                }
+                await sdk.api.sessions.remove({ sessionID: option.value })
               } catch (err) {
                 if (session?.workspaceID) {
                   recover(session)

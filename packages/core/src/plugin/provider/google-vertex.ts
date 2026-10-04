@@ -77,9 +77,6 @@ export const GoogleVertexPlugin = define({
             if (provider.api.type === "aisdk" && provider.api.url) {
               provider.api.url = replaceVertexVars(provider.api.url, project, location)
             }
-            if (provider.api.type === "aisdk" && provider.api.package.includes("@ai-sdk/openai-compatible")) {
-              provider.request.body.fetch = authFetch(provider.request.body.fetch)
-            }
           })
         }
       }),

@@ -3,7 +3,7 @@
 // The V2 transcript is mapped to V1-shaped messages plus shell and compaction
 // entries by `session-v2.ts`; each entry is fed through the same reducer the
 // live stream uses, so a replayed turn renders like the turn did live.
-import type { PermissionRequest, QuestionRequest } from "@miao/sdk/v2"
+import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import {
   bootstrapSessionData,
   compactionCommit,

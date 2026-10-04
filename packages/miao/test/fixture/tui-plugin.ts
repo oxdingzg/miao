@@ -1,4 +1,4 @@
-import { createMiaoClient } from "@miao/sdk/v2"
+import { OpenCode } from "@miao/client"
 import { RGBA, type CliRenderer } from "@opentui/core"
 import type { HostPluginApi } from "@miao/tui/plugin/slots"
 import { createTuiResolvedConfig } from "./tui-runtime"
@@ -127,7 +127,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
   const kv: Record<string, unknown> = {}
   const count = opts.count
   const ctrl = new AbortController()
-  const own = createMiaoClient({
+  const own = OpenCode.make({
     baseUrl: "http://localhost:4096",
   })
   const fallback = () => own

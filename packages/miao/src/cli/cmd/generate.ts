@@ -7,28 +7,7 @@ export const GenerateCommand = {
   builder: (yargs) => yargs,
   handler: async () => {
     const { Server } = await import("../../server/server")
-    const specs = (await Server.openapi()) as {
-      paths: Record<string, Record<string, any>>
-    }
-    for (const item of Object.values(specs.paths)) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item[method]
-        if (!operation?.operationId) continue
-        operation["x-codeSamples"] = [
-          {
-            lang: "js",
-            source: [
-              `import { createMiaoClient } from "@miao/sdk/v2"`,
-              ``,
-              `const client = createMiaoClient()`,
-              `await client.${operation.operationId}({`,
-              `  ...`,
-              `})`,
-            ].join("\n"),
-          },
-        ]
-      }
-    }
+    const specs = await Server.openapi()
     const raw = JSON.stringify(specs, null, 2)
 
     // Format through prettier so output is byte-identical to committed file

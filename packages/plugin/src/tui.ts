@@ -1,5 +1,22 @@
-import type { AgentPart, AssistantMessage, FilePart, LspStatus, McpStatus, Todo, Part, Provider, PermissionRequest, QuestionRequest, Session, SessionStatus, TextPart, UserMessage, Config } from "@miao/schema/view-models"
-import type { MiaoClient, Event } from "@miao/sdk/v2"
+import type {
+  AgentPart,
+  AssistantMessage,
+  FilePart,
+  LspStatus,
+  McpStatus,
+  Todo,
+  Part,
+  Provider,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SessionStatus,
+  TextPart,
+  UserMessage,
+  Config,
+} from "@miao/schema/view-models"
+import type { Event } from "@miao/schema/event-view"
+import type { OpenCode } from "@miao/client"
 import type { CliRenderer, KeyEvent, RGBA, Renderable, SlotMode } from "@opentui/core"
 import type { Binding, Keymap } from "@opentui/keymap"
 import {
@@ -608,7 +625,7 @@ export type TuiPluginApi = {
   kv: TuiKV
   state: TuiState
   theme: TuiTheme
-  client: MiaoClient
+  client: ReturnType<typeof OpenCode.make>
   event: TuiEventBus
   renderer: CliRenderer
   slots: TuiSlots

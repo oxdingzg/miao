@@ -35,7 +35,7 @@ describe("Home V2 session index", () => {
     const calls: unknown[] = []
     const result = await loadHomeSessionIndex(async (input) => {
       calls.push(input)
-      return { data: { data: [session({ id: "root" })], cursor: {} } }
+      return { data: [session({ id: "root" })], cursor: {} }
     })
 
     expect(result.sessions).toHaveLength(1)
@@ -50,15 +50,11 @@ describe("Home V2 session index", () => {
         calls.push({ input, signal: options.signal })
         if (!("cursor" in input)) {
           return {
-            data: {
-              data: Array.from({ length: HOME_V2_SESSION_PAGE_LIMIT }, (_, index) =>
-                session({ id: `page-1-${index}` }),
-              ),
-              cursor: { next: "next-page" },
-            },
+            data: Array.from({ length: HOME_V2_SESSION_PAGE_LIMIT }, (_, index) => session({ id: `page-1-${index}` })),
+            cursor: { next: "next-page" },
           }
         }
-        return { data: { data: [session({ id: "page-2" })], cursor: {} } }
+        return { data: [session({ id: "page-2" })], cursor: {} }
       },
       0,
       controller.signal,

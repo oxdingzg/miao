@@ -67,7 +67,7 @@ export function createHomeSessionsController(home: HomeController) {
       const cache = homeSessions()
       const eventSequence = cache.eventSequence()
       const index = await loadHomeSessionIndex(
-        (input, options) => ctx.sdk.client.v2.session.list(input, options),
+        (input, options) => ctx.sdk.api.sessions.list(input, options),
         eventSequence,
         signal,
       )
@@ -212,7 +212,7 @@ export function createHomeSessionsController(home: HomeController) {
         await archiveHomeSession({
           server: ServerConnection.key(conn),
           session,
-          archive: (sessionID) => ctx.sdk.client.v2.session.archive({ sessionID, archived: true }),
+          archive: (sessionID) => ctx.sdk.api.sessions.archive({ sessionID, archived: true }),
           remove: () => {
             setStore(
               produce((draft) => {

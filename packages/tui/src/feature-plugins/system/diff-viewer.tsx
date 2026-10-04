@@ -117,9 +117,9 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       const sessionID = input.sessionID
       if (!sessionID) return []
       // V2 has no message-scoped diff; show the session diff instead.
-      const result = await props.api.client.v2.session.diff({ sessionID }, { throwOnError: true })
+      const result = await props.api.client.sessions.diff({ sessionID }, {})
       return normalizeDiffs(
-        (result.data?.data ?? []).map((file) => ({
+        result.map((file) => ({
           file: file.path,
           patch: file.patch,
           additions: file.additions,
@@ -130,15 +130,15 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     }
 
     // V2 calls the uncommitted-changes mode `working`.
-    const result = await props.api.client.v2.vcs.diff(
+    const result = await props.api.client.vcs.diff(
       {
         location: { directory: input.directory },
         mode: input.mode === "git" ? "working" : input.mode,
-        context: String(VCS_DIFF_CONTEXT_LINES),
+        context: VCS_DIFF_CONTEXT_LINES,
       },
-      { throwOnError: true },
+      {},
     )
-    return normalizeDiffs(result.data.data)
+    return normalizeDiffs(result.data)
   })
   const files = createMemo(() => diff() ?? [])
   const [focus, setFocus] = createSignal<DiffViewerFocus>("patches")
@@ -855,7 +855,9 @@ function DiffViewer(props: { api: TuiPluginApi }) {
                                   <diff
                                     ref={(element: DiffRenderable) => diffNodeByFileIndex.set(entry.fileIndex, element)}
                                     diff={patch()}
-                                    treeSitterClient={reviewed() ? undefined : createDiffHighlighter({ patch: patch() })}
+                                    treeSitterClient={
+                                      reviewed() ? undefined : createDiffHighlighter({ patch: patch() })
+                                    }
                                     view={view()}
                                     filetype={reviewed() ? PLAIN_TEXT_FILETYPE : filetype(entry.file.file)}
                                     syntaxStyle={themeState.syntax()}

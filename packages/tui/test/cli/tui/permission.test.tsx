@@ -67,7 +67,7 @@ async function mountPermission(
     calls.push(url.pathname)
     return Bun.sleep(delay).then(() =>
       status === 200
-        ? json(true)
+        ? new Response(null, { status: 204 })
         : json(
             {
               name: status === 404 ? "PermissionNotFoundError" : "ServiceUnavailableError",

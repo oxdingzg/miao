@@ -1,4 +1,4 @@
-import type { SkillV2Source } from "@miao/sdk/v2/types"
+import type { SkillV2Source } from "@miao/schema/view-models"
 import type { Hooks } from "./registration.js"
 
 export interface SkillDraft {

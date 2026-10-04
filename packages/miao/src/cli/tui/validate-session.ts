@@ -1,4 +1,4 @@
-import { createMiaoClient } from "@miao/sdk/v2"
+import { createClient } from "@/client"
 // The core session module drags in the database; the TUI thread only needs the ID schema.
 import { SessionSchema } from "@miao/core/session/schema"
 import { Schema } from "effect"
@@ -21,12 +21,18 @@ export async function validateSession(input: {
     throw new Error(`Invalid session ID: ${error instanceof Error ? error.message : "unknown error"}`, { cause: error })
   }
 
-  const result = await createMiaoClient({
+  const error = await createClient({
     baseUrl: input.url,
     directory: input.directory,
     fetch: input.fetch,
     headers: input.headers,
-  }).v2.session.get({ sessionID })
-  if (result.response.status === 404) throw new Error(`Session not found: ${sessionID}`)
-  if (result.error !== undefined) throw new Error("Failed to load session", { cause: { body: result.error } })
+  })
+    .sessions.get({ sessionID })
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+  if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "SessionNotFoundError")
+    throw new Error(`Session not found: ${sessionID}`)
+  if (error !== undefined) throw new Error("Failed to load session", { cause: { body: error } })
 }

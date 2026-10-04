@@ -17,13 +17,14 @@ export function DialogTag(props: { onSelect?: (value: string) => void }) {
   const [files] = createResource(
     () => [store.filter],
     async () => {
-      const result = await sdk.client.v2.fs.find({
-        query: store.filter,
-        type: "file",
-        location: { workspace: project.workspace.current() },
-      })
-      if (result.error) return []
-      const sliced = (result.data?.data ?? []).map((entry) => entry.path).slice(0, 5)
+      const result = await sdk.api.files
+        .find({
+          query: store.filter,
+          type: "file",
+          location: { workspace: project.workspace.current() },
+        })
+        .catch(() => undefined)
+      const sliced = (result?.data ?? []).map((entry) => entry.path).slice(0, 5)
       return sliced
     },
   )

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { MiaoClient, type Provider } from "@miao/sdk/v2"
+import type { Provider } from "@miao/schema/view-models"
+import { createClient } from "@/client"
 import type { Resolved } from "@miao/tui/config"
 import { TuiConfig } from "@/config/tui"
 import { resolveDiffStyle, resolveModelInfo, resolveRunTuiConfig } from "@/cli/cmd/run/runtime.boot"
@@ -161,7 +162,7 @@ describe("run runtime boot", () => {
   })
 
   test("prefers configured providers for model selector data", async () => {
-    const sdk = new MiaoClient()
+    const sdk = createClient({ baseUrl: "http://localhost:4096" })
     const data: {
       all: Provider[]
       default: Record<string, string>
@@ -199,23 +200,13 @@ describe("run runtime boot", () => {
       providers: [data.all[0]!],
       default: {},
     }
-    const list = spyOn(sdk.v2.config, "catalog").mockImplementation(() =>
-      Promise.resolve({
-        data: { location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } }, data },
-        error: undefined,
-        request: new Request("https://opencode.test"),
-        response: new Response(),
-      }),
+    const list = spyOn(sdk.config, "catalog").mockImplementation(() =>
+      Promise.resolve({ location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } }, data }),
     )
-    spyOn(sdk.v2.config, "providers").mockImplementation(() =>
+    spyOn(sdk.config, "providers").mockImplementation(() =>
       Promise.resolve({
-        data: {
-          location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } },
-          data: configured,
-        },
-        error: undefined,
-        request: new Request("https://opencode.test"),
-        response: new Response(),
+        location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } },
+        data: configured,
       }),
     )
 
@@ -230,7 +221,7 @@ describe("run runtime boot", () => {
   })
 
   test("falls back to provider list when configured providers are unavailable", async () => {
-    const sdk = new MiaoClient()
+    const sdk = createClient({ baseUrl: "http://localhost:4096" })
     const data: {
       all: Provider[]
       default: Record<string, string>
@@ -264,14 +255,9 @@ describe("run runtime boot", () => {
       default: {},
       connected: [],
     }
-    spyOn(sdk.v2.config, "providers").mockRejectedValue(new Error("boom"))
-    spyOn(sdk.v2.config, "catalog").mockImplementation(() =>
-      Promise.resolve({
-        data: { location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } }, data },
-        error: undefined,
-        request: new Request("https://opencode.test"),
-        response: new Response(),
-      }),
+    spyOn(sdk.config, "providers").mockRejectedValue(new Error("boom"))
+    spyOn(sdk.config, "catalog").mockImplementation(() =>
+      Promise.resolve({ location: { directory: "/workspace", project: { id: "p", directory: "/workspace" } }, data }),
     )
 
     await expect(resolveModelInfo(sdk, "/workspace", { providerID: "openai", modelID: "gpt-5" })).resolves.toEqual({

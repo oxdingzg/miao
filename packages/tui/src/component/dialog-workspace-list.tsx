@@ -64,15 +64,16 @@ export function DialogWorkspaceList() {
 
     setDeleting(undefined)
     setRemoving(workspace.id)
-    const result = await sdk.client.v2.workspace.remove({ id: workspace.id }).catch((err) => ({
-      error: err,
-    }))
-    if (result?.error) {
+    const error = await sdk.api.workspace.remove({ id: workspace.id }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    if (error) {
       setRemoving(undefined)
       toast.show({
         variant: "error",
         title: "Failed to delete workspace",
-        message: errorMessage(result.error),
+        message: errorMessage(error),
       })
       return
     }
@@ -88,7 +89,7 @@ export function DialogWorkspaceList() {
 
   onMount(() => {
     dialog.setSize("large")
-    void sdk.client.v2.workspace.syncList().catch(() => undefined)
+    void sdk.api.workspace.syncList().catch(() => undefined)
     void project.workspace.sync()
   })
 

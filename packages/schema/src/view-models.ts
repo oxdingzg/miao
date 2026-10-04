@@ -44,19 +44,23 @@ import { Skill } from "./skill"
 import { Vcs } from "./vcs"
 import { Workspace as WorkspaceV2 } from "./workspace"
 
-export type StripBrand<T> = T extends Brand.Brand<infer _>
-  ? T extends string
-    ? string
-    : T extends number
-      ? number
-      : T extends boolean
-        ? boolean
-        : T
-  : T extends ReadonlyArray<infer U>
-    ? Array<StripBrand<U>>
-    : T extends object
-      ? { -readonly [K in keyof T]: StripBrand<T[K]> }
-      : T
+export type StripBrand<T> = unknown extends T
+  ? T
+  : Schema.Json extends T
+    ? Schema.Json | Extract<T, undefined>
+    : T extends Brand.Brand<infer _>
+      ? T extends string
+        ? string
+        : T extends number
+          ? number
+          : T extends boolean
+            ? boolean
+            : T
+      : T extends ReadonlyArray<infer U>
+        ? Array<StripBrand<U>>
+        : T extends object
+          ? { -readonly [K in keyof T]: StripBrand<T[K]> }
+          : T
 
 type Wire<S> = StripBrand<Schema.Codec.Encoded<S>>
 

@@ -25,9 +25,7 @@ export function DialogForkFromTimeline(props: { sessionID: string; onMove: (mess
       title: "Full session",
       value: undefined,
       onSelect: async (dialog: DialogContext) => {
-        const forked = await sdk.client.v2.session
-          .fork({ sessionID: props.sessionID })
-          .then((r) => ({ data: r.data?.data }))
+        const forked = await sdk.api.sessions.fork({ sessionID: props.sessionID }).then((r) => ({ data: r }))
         route.navigate({
           sessionID: forked.data!.id,
           type: "session",
@@ -47,9 +45,9 @@ export function DialogForkFromTimeline(props: { sessionID: string; onMove: (mess
         value: message.id,
         footer: Locale.time(message.time.created),
         onSelect: async (dialog) => {
-          const forked = await sdk.client.v2.session
+          const forked = await sdk.api.sessions
             .fork({ sessionID: props.sessionID, messageID: message.id })
-            .then((r) => ({ data: r.data?.data }))
+            .then((r) => ({ data: r }))
           const parts = sync.data.part[message.id] ?? []
           const prompt = parts.reduce(
             (agg, part) => {

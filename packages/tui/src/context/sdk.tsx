@@ -1,6 +1,5 @@
 import { OpenCode } from "@miao/client"
-import { createMiaoClient } from "@miao/sdk/v2"
-import type { Event, V2Event } from "@miao/sdk/v2"
+import type { Event, V2Event } from "@miao/schema/event-view"
 import type { OpenCodeEvent } from "@miao/client"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -30,19 +29,21 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     const abort = new AbortController()
     let sse: AbortController | undefined
 
-    function createSDK() {
-      return createMiaoClient({
-        baseUrl: props.url,
-        signal: abort.signal,
-        directory: props.directory,
-        fetch: props.fetch,
-        headers: props.headers,
-      })
-    }
-
-    const api = OpenCode.make({ baseUrl: props.url, fetch: props.fetch, headers: props.headers })
-
-    let sdk = createSDK()
+    const headers = new Headers(props.headers)
+    if (props.directory) headers.set("x-opencode-directory", encodeURIComponent(props.directory))
+    const api = OpenCode.make({
+      baseUrl: props.url,
+      headers,
+      fetch: Object.assign(
+        (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          const request = new Request(input, init)
+          return (props.fetch ?? fetch)(
+            new Request(request, { signal: AbortSignal.any([abort.signal, request.signal]) }),
+          )
+        },
+        { preconnect: (props.fetch ?? fetch).preconnect },
+      ),
+    })
 
     const handlers = new Set<(event: GlobalEvent) => void>()
     const emitter = {
@@ -100,10 +101,13 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         while (true) {
           if (abort.signal.aborted || ctrl.signal.aborted) break
 
-          for await (const event of api.events.subscribe({ signal: ctrl.signal })) {
-            if (ctrl.signal.aborted) break
-            handleEvent(toGlobalEvent(event))
-          }
+          await (async () => {
+            for await (const event of api.events.subscribe({ signal: ctrl.signal })) {
+              if (ctrl.signal.aborted) break
+              attempt = 0
+              handleEvent(toGlobalEvent(event))
+            }
+          })().catch(() => {})
 
           if (timer) clearTimeout(timer)
           if (queue.length > 0) flush()
@@ -134,9 +138,6 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     })
 
     return {
-      get client() {
-        return sdk
-      },
       get api() {
         return api
       },

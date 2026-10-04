@@ -1,4 +1,4 @@
-import type { Event } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
 import type { Hooks, Plugin } from "@miao/plugin"
 
 // miao-term's terminal, mtty (named miaotty up to v0.0.5), spawns every pane

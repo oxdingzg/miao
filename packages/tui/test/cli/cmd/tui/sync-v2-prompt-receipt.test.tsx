@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import type { SessionMessage } from "@miao/sdk/v2"
+import type { SessionMessage } from "@miao/schema/view-models"
 import type { GlobalEvent } from "../../../../src/context/sdk"
 import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { adaptServerEvent, coalesceServerEvents, enqueueServerEvent, resumeStreamAfterPageShow } from "./server-sdk"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
-import type { Event } from "@miao/sdk/v2/client"
+import type { Event } from "@miao/schema/event-view"
 
 describe("resumeStreamAfterPageShow", () => {
   test("restarts a stream only after a back-forward cache restore", () => {

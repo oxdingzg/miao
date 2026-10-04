@@ -11,7 +11,6 @@ import type { McpResource, McpStatus, ProviderAuthResponse } from "@/utils/serve
 import type { LspStatus, Project, SessionStatus } from "@miao/schema/view-models"
 import type { LocationPath } from "@miao/protocol/groups/location"
 import type { Config } from "@miao/schema/view-models"
-import type { MiaoClient } from "@miao/sdk/v2"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@miao/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -94,12 +93,7 @@ export const loadMcpQuery = (
   directory: string,
   api: McpListApi,
 ): ApiQueryOptions<Record<string, McpStatus>, readonly [ServerScope, string, "mcp"]> =>
-  queryOptions<
-    Record<string, McpStatus>,
-    Error,
-    Record<string, McpStatus>,
-    readonly [ServerScope, string, "mcp"]
-  >({
+  queryOptions<Record<string, McpStatus>, Error, Record<string, McpStatus>, readonly [ServerScope, string, "mcp"]>({
     queryKey: [scope, directory, "mcp"] as const,
     queryFn: async () => {
       return api.status({ location: { directory } }).then((result) => ({ ...result.data }))
@@ -168,18 +162,12 @@ export function seedActiveSessionStatuses(
   }
 }
 
-function makeQueryOptionsApi(
-  scope: ServerScope,
-  serverSDK: () => MiaoClient,
-  serverAPI: ServerApi,
-  sdkFor: (dir: PathKey) => MiaoClient,
-) {
+function makeQueryOptionsApi(scope: ServerScope, serverAPI: ServerApi) {
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverAPI.config),
     projects: () => loadProjectsQuery(scope, serverAPI.projects),
     providers: (directory: PathKey | null) => loadProvidersQuery(scope, directory, serverAPI),
-    path: (directory: PathKey | null) =>
-      loadPathQuery(scope, directory, serverAPI.location),
+    path: (directory: PathKey | null) => loadPathQuery(scope, directory, serverAPI.location),
     agents: (directory: PathKey) => loadAgentsQuery(scope, directory, serverAPI.agents),
     references: (directory: PathKey) => loadReferencesQuery(scope, directory, serverAPI.references),
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, serverAPI.mcp),
@@ -195,30 +183,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const owner = getOwner()
   if (!owner) throw new Error("ServerSync must be created within owner")
 
-  const sdkCache = new Map<string, MiaoClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
   const sessionMeta = new Map<string, { limit: number }>()
 
-  const sdkFor = (directory: string) => {
-    const key = directoryKey(directory)
-    const cached = sdkCache.get(key)
-    if (cached) return cached
-    const sdk = serverSDK.createClient({
-      directory,
-      throwOnError: true,
-    })
-    sdkCache.set(key, sdk)
-    return sdk
-  }
-
-  const session = createServerSession(serverSDK.client, serverSDK.api.sessions, serverSDK.api.messages)
-  const queryOptionsApi = makeQueryOptionsApi(
-    serverSDK.scope,
-    () => serverSDK.client,
-    serverSDK.api,
-    sdkFor,
-  )
+  const session = createServerSession(serverSDK.api, serverSDK.api.sessions, serverSDK.api.messages)
+  const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, serverSDK.api)
 
   const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
     queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
@@ -294,7 +264,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     queryKey: [serverSDK.scope, "bootstrap"],
     queryFn: async () => {
       await bootstrapGlobal({
-        serverSDK: serverSDK.client,
         serverAPI: serverSDK.api,
         scope: serverSDK.scope,
         requestFailedTitle: language.t("common.requestFailed"),
@@ -349,7 +318,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       const key = directoryKey(directory)
       queue.clear(key)
       sessionMeta.delete(key)
-      sdkCache.delete(key)
       clearProviderRev(serverSDK.scope, key)
     },
     translate: language.t,
@@ -446,7 +414,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       const child = children.ensureChild(directory)
       const cache = children.vcsCache.get(key)
       if (!cache) return
-      const sdk = sdkFor(directory)
       await bootstrapDirectory({
         directory,
         scope: serverSDK.scope,
@@ -457,7 +424,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
           project: globalStore.project,
           provider: globalStore.provider,
         },
-        sdk,
         api: serverSDK.api,
         store: child[0],
         setStore: child[1],

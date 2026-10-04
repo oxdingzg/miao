@@ -1,5 +1,5 @@
+import type { Event } from "@miao/schema/event-view"
 import type {
-  Event,
   Project,
   Model,
   Provider,
@@ -7,9 +7,10 @@ import type {
   Message,
   Part,
   Config as SDKConfig,
-} from "@miao/sdk/v2"
-import type { PermissionV2Request } from "@miao/sdk/v2"
-import type { Provider as ProviderV2, Model as ModelV2, Auth, createMiaoClient } from "@miao/sdk/v2"
+} from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@miao/schema/view-models"
+import type { Auth } from "@miao/schema/view-models"
+import type { OpenCode } from "@miao/client"
 
 import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
@@ -55,10 +56,10 @@ export type WorkspaceAdapter = {
 export type PluginInput = {
   /**
    * Client for the running server, generated from its current API (the
-   * `@miao/sdk/v2` shape: flat parameters such as
-   * `auth.set({ providerID, auth })`). Session work belongs on `client.v2.session`.
+   * `@miao/client` Promise API. Session work belongs on `client.sessions`;
+   * provider connections use `client.integrations`.
    */
-  client: ReturnType<typeof createMiaoClient>
+  client: ReturnType<typeof OpenCode.make>
   project: Project
   directory: string
   worktree: string
@@ -223,7 +224,7 @@ export type ProviderHookContext = {
 
 export type ProviderHook = {
   id: string
-  models?: (provider: ProviderV2, ctx: ProviderHookContext) => Promise<Record<string, ModelV2>>
+  models?: (provider: Provider, ctx: ProviderHookContext) => Promise<Record<string, Model>>
 }
 
 /** @deprecated Use AuthOAuthResult instead. */
@@ -318,7 +319,7 @@ export interface Hooks {
       system: string[]
     },
   ) => Promise<void>
-  "experimental.provider.small_model"?: (input: { provider: ProviderV2 }, output: { model?: ModelV2 }) => Promise<void>
+  "experimental.provider.small_model"?: (input: { provider: Provider }, output: { model?: Model }) => Promise<void>
   /**
    * Called before session compaction starts. Allows plugins to customize
    * the compaction prompt.

@@ -1,6 +1,6 @@
 export * as ModelVariants from "./model-variants"
 
-import type { ModelV2Info } from "@miao/sdk/v2/types"
+import type { ModelV2Info } from "@miao/schema/view-models"
 
 /** A model's declared reasoning controls, as published by the catalog. */
 export type ReasoningOption =
@@ -23,7 +23,7 @@ const supportsReasoningBody = (api: Api) =>
   api.package === "@ai-sdk/openai" || api.package === "@ai-sdk/openai-compatible"
 
 const effortVariants = (api: Api, values: ReadonlyArray<string | null>): ModelV2Info["variants"] =>
-  values.map((value) => {
+  values.map((value): ModelV2Info["variants"][number] => {
     // A null entry is the catalog's "none": no effort, not an absent value.
     const id = value ?? "none"
     return {
@@ -56,10 +56,7 @@ const COMPATIBLE_REASONING = [
   { names: ["deepseek-flash", "deepseek-v4"], efforts: ["low", "high", "max"] },
 ]
 
-export function generate(model: {
-  readonly id: string
-  readonly api: Api
-}): ModelV2Info["variants"] {
+export function generate(model: { readonly id: string; readonly api: Api }): ModelV2Info["variants"] {
   if (model.api.type !== "aisdk") return []
   if (model.api.package === "@ai-sdk/openai" && /(?:^|\/)(?:gpt-[5-9](?:[.-]|$)|o[134](?:[.-]|$))/.test(model.api.id)) {
     return effortVariants(model.api, ["low", "medium", "high"])

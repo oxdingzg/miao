@@ -56,9 +56,8 @@ async function loadWorkspaceAdapters(input: {
 }) {
   const dir = input.sync.path.directory || input.sdk.directory
   try {
-    const response = await input.sdk.client.v2.workspace.adapters({ location: { directory: dir } })
-    if (response.error) throw response.error
-    return response.data?.data
+    const response = await input.sdk.api.workspace.adapters({ location: { directory: dir } })
+    return [...response.data]
   } catch (err) {
     input.toast.show({
       title: "Failed to load workspace adapters",
@@ -78,7 +77,7 @@ export async function openWorkspaceSelect(input: {
   onSelect: (selection: WorkspaceSelection) => Promise<void> | void
 }) {
   input.dialog.clear()
-  await input.sdk.client.v2.workspace.syncList().catch(() => undefined)
+  await input.sdk.api.workspace.syncList().catch(() => undefined)
   await input.project.workspace.sync().catch(() => undefined)
   const adapters = await loadWorkspaceAdapters(input)
   if (!adapters) return
@@ -99,12 +98,10 @@ export async function warpWorkspaceSession(input: {
 }): Promise<boolean> {
   let result
   try {
-    result = await input.sdk.client.v2.workspace.warp({
-      workspaceWarpInput: {
-        id: input.workspaceID,
-        sessionID: input.sessionID,
-        copyChanges: input.copyChanges,
-      },
+    result = await input.sdk.api.workspace.warp({
+      id: input.workspaceID,
+      sessionID: input.sessionID,
+      copyChanges: input.copyChanges,
     })
   } catch (err) {
     input.toast.show({
@@ -115,18 +112,9 @@ export async function warpWorkspaceSession(input: {
     return false
   }
   if (!result?.data) {
-    if (result?.error && "name" in result.error && result.error.name === "VcsApplyError") {
-      await DialogAlert.show(
-        input.dialog,
-        "Unable to Warp Session",
-        "Unable to apply file changes to this workspace. It has existing changes that conflict or is based off a different branch. Session has not been warped.",
-      )
-      return false
-    }
-
     input.toast.show({
       title: "Failed to warp session",
-      message: errorMessage(result?.error ?? "no response"),
+      message: "no response",
       variant: "error",
     })
     return false
@@ -139,7 +127,7 @@ export async function warpWorkspaceSession(input: {
   const dir = input.project.instance.directory() || input.sync.path.directory
   if (dir) {
     // Admit the reminder without running a turn: the model reads it with the next prompt.
-    await input.sdk.client.v2.session
+    await input.sdk.api.sessions
       .prompt({
         sessionID: input.sessionID,
         prompt: { text: warpReminderText(dir) },
@@ -163,10 +151,10 @@ export async function confirmWorkspaceFileChanges(input: {
   sdk: ReturnType<typeof useSDK>
   sourceWorkspaceID?: string
 }) {
-  const status = await input.sdk.client.v2.vcs
-    .status({ location: { workspace: input.sourceWorkspaceID } }, { throwOnError: true })
+  const status = await input.sdk.api.vcs
+    .status({ location: { workspace: input.sourceWorkspaceID } }, {})
     .catch(() => undefined)
-  const files = status?.data?.data ?? []
+  const files = [...(status?.data ?? [])]
   const fileChangeChoice = files.length ? await DialogWorkspaceFileChanges.show(input.dialog, files) : "no"
   if (!fileChangeChoice) return
   return fileChangeChoice === "yes"

@@ -65,14 +65,14 @@ export function QuestionPrompt(props: {
     setSettling(true)
     const request = props.request
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void sdk.client.v2.session.question
+    void sdk.api.questions
       .reply(
         {
           sessionID: request.sessionID,
           requestID: request.id,
-          questionV2Reply: { answers },
+          answers,
         },
-        { throwOnError: true },
+        {},
       )
       .then(
         () => props.onSettled?.(request),
@@ -91,13 +91,13 @@ export function QuestionPrompt(props: {
     if (settling()) return
     setSettling(true)
     const request = props.request
-    void sdk.client.v2.session.question
+    void sdk.api.questions
       .reject(
         {
           sessionID: request.sessionID,
           requestID: request.id,
         },
-        { throwOnError: true },
+        {},
       )
       .then(
         () => props.onSettled?.(request),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Project } from "@miao/sdk/v2/client"
+import type { Project } from "@miao/schema/view-models"
 import type { SessionInfo } from "@/utils/server"
 import { createRoot } from "solid-js"
 import { createServerSessionEntries } from "@/components/command-palette"

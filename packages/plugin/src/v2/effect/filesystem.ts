@@ -1,4 +1,4 @@
-import type { FileSystemEntry } from "@miao/sdk/v2/types"
+import type { FileSystemEntry } from "@miao/schema/view-models"
 import type { Effect } from "effect"
 
 export interface FileSystem {

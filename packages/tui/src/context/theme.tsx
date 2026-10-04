@@ -26,7 +26,8 @@ import { useKV } from "./kv"
 import { useTuiConfig } from "../config"
 import { Global } from "@miao/core/global"
 import { Glob } from "@miao/core/util/glob"
-import { appendFile, readFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
+import { DiagnosticFiles } from "@miao/core/diagnostic-files"
 import path from "node:path"
 
 export type ThemeSource = Readonly<{
@@ -281,7 +282,11 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
         return resolveTheme(store.themes.miao, store.mode)
       } catch (error) {
-        themeLog("theme failed to resolve; falling back to miao", { active: store.active, mode: store.mode, error: String(error) })
+        themeLog("theme failed to resolve; falling back to miao", {
+          active: store.active,
+          mode: store.mode,
+          error: String(error),
+        })
         return resolveTheme(DEFAULT_THEMES.miao, store.mode)
       }
     }
@@ -372,5 +377,9 @@ function uncoloredKeys(theme: ReturnType<typeof resolveTheme>) {
 // diagnostics need to survive the session, so they append to their own file.
 function themeLog(message: string, data: Record<string, unknown>) {
   const line = `${new Date().toISOString()} pid=${process.pid} ${message} ${JSON.stringify(data)}\n`
-  void appendFile(path.join(Global.Path.log, "tui.log"), line).catch(() => {})
+  DiagnosticFiles.append(path.join(Global.Path.log, "tui.log"), line, DiagnosticFiles.MiB, {
+    match: (name) => name === "tui.log" || name === "tui.log.previous",
+    maxBytes: 2 * DiagnosticFiles.MiB,
+    maxFiles: 2,
+  })
 }

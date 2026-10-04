@@ -1,4 +1,4 @@
-import type { Event } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
 import type { TuiAttentionSoundName, TuiPlugin, TuiPluginApi } from "@miao/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 

@@ -1,4 +1,4 @@
-import type { ReferenceGitSource, ReferenceLocalSource } from "@miao/sdk/v2/types"
+import type { ReferenceGitSource, ReferenceLocalSource } from "@miao/schema/view-models"
 import type { Hooks } from "./registration.js"
 
 export interface ReferenceDraft {

@@ -1,10 +1,21 @@
-import { expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Flag } from "@miao/core/flag/flag"
 import { Deferred, Effect, Latch, Option, Schema, Stream } from "effect"
 import type { OpenCodeEvent } from "../src"
+
+const originalModelsPath = Flag.MIAO_MODELS_PATH
+const modelsDirectory = await mkdtemp(join(tmpdir(), "miao-sdk-models-"))
+beforeAll(async () => {
+  await Bun.write(join(modelsDirectory, "models.json"), "{}")
+  Flag.MIAO_MODELS_PATH = join(modelsDirectory, "models.json")
+})
+afterAll(async () => {
+  Flag.MIAO_MODELS_PATH = originalModelsPath
+  await rm(modelsDirectory, { recursive: true, force: true })
+})
 
 test("embedded client uses the real router and handlers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-"))
@@ -53,7 +64,7 @@ test("embedded client uses the real router and handlers", async () => {
       )
       const wakeContext = yield* opencode.sessions.context({ sessionID })
       const event = yield* opencode.sessions
-        .events({ sessionID })
+        .events({ sessionID, after: 0 })
         .pipe(Stream.take(1), Stream.runHead, Effect.map(Option.getOrUndefined))
       const modelMessage = Option.fromNullishOr(context.find((message) => message.type === "model-switched")).pipe(
         Option.getOrThrow,
@@ -108,7 +119,7 @@ test("Location-owned runner events reach the ready global client", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-events-"))
   const database = Flag.MIAO_DB
   Flag.MIAO_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Location, OpenCode, Prompt, Session } = await import("../src")
+  const { AbsolutePath, Location, Model, OpenCode, Prompt, Provider, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
@@ -129,6 +140,7 @@ test("Location-owned runner events reach the ready global client", async () => {
       yield* connected.await
       yield* opencode.sessions.create({
         id: sessionID,
+        model: Model.Ref.make({ id: Model.ID.make("embedded"), providerID: Provider.ID.make("test") }),
         location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
       })
       yield* opencode.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Observe this input" }) })

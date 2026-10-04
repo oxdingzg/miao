@@ -1,4 +1,4 @@
-import { Types } from "effect"
+import type { DeepMutable } from "./schema"
 import { Model } from "@miao/schema/model"
 import { ProviderV2 } from "./provider"
 
@@ -26,7 +26,7 @@ export type Api = Model.Api
 export const Info = Model.Info
 export type Info = Model.Info
 
-export type MutableInfo = Omit<Types.DeepMutable<Info>, "api"> & {
+export type MutableInfo = Omit<DeepMutable<Info>, "api"> & {
   api: ProviderV2.MutableApi<Api>
 }
 

@@ -6,12 +6,14 @@
 // `--format json` output has always used), answers permission and question asks
 // that a headless run cannot put to a person, and returns once the session's
 // agent loop goes idle.
-import type { MiaoClient, Part, SessionMessage, ToolPart } from "@miao/sdk/v2"
+import type { Part, SessionMessage, ToolPart } from "@miao/schema/view-models"
+import { type Client } from "@/client"
+import { mutableResponse } from "@miao/tui/util/mutable-response"
 import { isV2StreamFragmentEvent, sessionContextToMessages } from "@miao/tui/context/session-v2"
 import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
 
 export type HeadlessInput = {
-  client: MiaoClient
+  client: Client
   sessionID: string
   directory: string
   agent: string | undefined
@@ -61,19 +63,30 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
   // The signal cancels the SSE read on shutdown. Without it the pending next()
   // keeps the generator busy, so iterator.return() waits for the next server
   // event — up to a heartbeat interval when the session has gone quiet.
-  const events = await client.v2.event.subscribe({ signal: abort.signal })
-  const watching = watch()
+  const events = client.events.subscribe({ signal: abort.signal })
+  const watching = watch().catch((error: unknown) => {
+    if (!abort.signal.aborted) report(errorText(error), error)
+  })
 
-  await applySelection(input)
-  const sent = input.command
-    ? await client.v2.session.command({ sessionID, command: input.command, arguments: input.message })
-    : await client.v2.session.prompt({
+  const error = await applySelection(input)
+    .then(async () => {
+      if (input.command) {
+        await client.sessions.command({ sessionID, command: input.command, arguments: input.message })
+        return
+      }
+      await client.sessions.prompt({
         sessionID,
         prompt: promptInputFromParts([...input.files, { type: "text", text: input.message }]),
       })
-  if (sent.error) {
+    })
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+  if (error) {
     abort.abort()
-    return report(errorText(sent.error), sent.error)
+    await watching
+    return report(errorText(error), error)
   }
 
   await waitIdle()
@@ -85,7 +98,7 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
   return errors.length > 0 ? errors.join("\n") : undefined
 
   async function watch() {
-    const iterator = events.stream[Symbol.asyncIterator]()
+    const iterator = events[Symbol.asyncIterator]()
     const stopped = new Promise<IteratorResult<unknown>>((resolve) =>
       abort.signal.addEventListener("abort", () => resolve({ done: true, value: undefined })),
     )
@@ -155,7 +168,12 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
         await input.print.toolError(part)
         return input.print.error(part.state.error)
       }
-      if (part.tool === "task" && part.state.status === "running" && !input.json && once(`${part.messageID}:${part.id}:running`))
+      if (
+        part.tool === "task" &&
+        part.state.status === "running" &&
+        !input.json &&
+        once(`${part.messageID}:${part.id}:running`)
+      )
         await input.print.tool(part)
       return
     }
@@ -184,7 +202,7 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
         `permission requested: ${String(action)} (${Array.isArray(resources) ? resources.join(", ") : ""}); auto-rejecting`,
       )
     }
-    await client.v2.session.permission.reply({
+    await client.permissions.reply({
       sessionID: owner,
       requestID,
       reply: input.auto ? "once" : "reject",
@@ -197,14 +215,17 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     const requestID = field(properties, "id")
     const owner = field(properties, "sessionID")
     if (typeof requestID !== "string" || typeof owner !== "string" || !sessions.has(owner)) return
-    await client.v2.session.question.reject({ sessionID: owner, requestID })
+    await client.questions.reject({ sessionID: owner, requestID })
   }
 
   // session.wait returns once the agent loop is idle; it is a long request, so
   // retry it if the connection drops before the session settles.
   async function waitIdle(): Promise<void> {
-    const result = await client.v2.session.wait({ sessionID }).catch((error: unknown) => ({ error }))
-    if (!("error" in result) || result.error === undefined) return
+    const error = await client.sessions.wait({ sessionID }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    if (error === undefined) return
     await Bun.sleep(500)
     return waitIdle()
   }
@@ -239,29 +260,26 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
 }
 
 async function applySelection(input: HeadlessInput) {
-  const session = await input.client.v2.session.get({ sessionID: input.sessionID }, { throwOnError: true })
-  const current = session.data.data
+  const session = await input.client.sessions.get({ sessionID: input.sessionID }, {})
+  const current = session
   if (input.agent && current.agent !== input.agent)
-    await input.client.v2.session.switchAgent(
-      { sessionID: input.sessionID, agent: input.agent },
-      { throwOnError: true },
-    )
+    await input.client.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, {})
   if (!input.model) return
-  await input.client.v2.session.switchModel(
+  await input.client.sessions.switchModel(
     {
       sessionID: input.sessionID,
       model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.variant },
     },
-    { throwOnError: true },
+    {},
   )
 }
 
 async function missingModel(input: HeadlessInput) {
   if (!input.model) return undefined
   const model = input.model
-  const listed = await input.client.v2.model
+  const listed = await input.client.models
     .list({ location: { directory: input.directory } })
-    .then((result) => result.data?.data)
+    .then((result) => result.data)
     .catch(() => undefined)
   // An unreadable catalog is not proof the model is missing; let the run report it.
   if (!listed) return undefined
@@ -269,9 +287,9 @@ async function missingModel(input: HeadlessInput) {
   return `Model not found: ${model.providerID}/${model.modelID}`
 }
 
-async function context(client: MiaoClient, sessionID: string): Promise<SessionMessage[]> {
-  const result = await client.v2.session.context({ sessionID }, { throwOnError: true })
-  return result.data.data
+async function context(client: Client, sessionID: string): Promise<SessionMessage[]> {
+  const result = await client.sessions.context({ sessionID }, {})
+  return mutableResponse(result)
 }
 
 // `/api/event` carries the payload in `data`.

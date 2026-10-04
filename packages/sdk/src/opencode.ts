@@ -48,6 +48,6 @@ export const create = Effect.fn("OpenCode.create")(function* () {
 
 export type Interface = Effect.Success<ReturnType<typeof create>>
 
-export class Service extends Context.Service<Service, Interface>()("@miao/sdk-next/OpenCode") {}
+export class Service extends Context.Service<Service, Interface>()("@miao/sdk/OpenCode") {}
 
 export const layer = Layer.effect(Service, create())

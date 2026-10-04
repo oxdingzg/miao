@@ -39,15 +39,15 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
     async function sync() {
       const workspace = store.workspace.current
       const [instancePath, project] = await Promise.all([
-        sdk.client.v2.location.get({ location: { workspace } }),
-        sdk.client.v2.project.current({ location: { workspace } }),
+        sdk.api.location.get({ location: { workspace } }),
+        sdk.api.projects.current({ location: { workspace } }),
       ])
-      const current = project.data?.data
+      const current = project.data
       const directories = current?.id
-        ? await sdk.client.v2.project.directories({ projectID: current.id, location: { workspace } })
+        ? await sdk.api.projects.directories({ projectID: current.id, location: { workspace } })
         : undefined
       batch(() => {
-        const location = instancePath.data
+        const location = instancePath
         setStore(
           "instance",
           "path",
@@ -59,20 +59,16 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
         )
         setStore("project", "id", current?.id)
         setStore("project", "worktree", current?.directory)
-        setStore(
-          "project",
-          "mainDir",
-          directories?.data?.data?.findLast((item) => item.strategy === undefined)?.directory,
-        )
+        setStore("project", "mainDir", directories?.data?.findLast((item) => item.strategy === undefined)?.directory)
       })
     }
 
     async function syncWorkspace() {
-      const listed = await sdk.client.v2.workspace.list().catch(() => undefined)
+      const listed = await sdk.api.workspace.list().catch(() => undefined)
       if (!listed?.data) return
-      const status = await sdk.client.v2.workspace.status().catch(() => undefined)
-      const next = Object.fromEntries((status?.data?.data ?? []).map((item) => [item.workspaceID, item.status]))
-      const workspaces = (listed.data.data ?? []) as Workspace[]
+      const status = await sdk.api.workspace.status().catch(() => undefined)
+      const next = Object.fromEntries((status?.data ?? []).map((item) => [item.workspaceID, item.status]))
+      const workspaces = (listed.data ?? []) as Workspace[]
 
       batch(() => {
         setStore("workspace", "list", reconcile(workspaces))
