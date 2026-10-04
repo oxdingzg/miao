@@ -272,17 +272,21 @@ const layer = Layer.effect(
         if (message.type !== "assistant") continue
         for (const tool of message.content) {
           if (tool.type !== "tool" || (tool.state.status !== "pending" && tool.state.status !== "running")) continue
+          // `pending` means the runner never dispatched the call (there is no
+          // `session.next.tool.called`), so no side effect happened and the model
+          // may retry it. `running` means it was dispatched; the side effect may
+          // or may not have happened, so the outcome is unknown.
+          const dispatched = tool.state.status === "running"
           yield* events.publish(SessionEvent.Tool.Failed, {
             sessionID,
             timestamp: yield* DateTime.now,
             assistantMessageID: message.id,
             callID: tool.id,
-            // The process stopped while this tool was running, so the side
-            // effect may or may not have happened. Tell the model it is
-            // unknown rather than reporting a definite failure.
             error: {
               type: "unknown",
-              message: "Tool execution outcome unknown: the process stopped while it was running.",
+              message: dispatched
+                ? "Tool execution outcome unknown: the process stopped while it was running."
+                : "Tool was not executed: the process stopped before it was dispatched, so it is safe to retry.",
             },
             provider: {
               executed: tool.provider?.executed === true,
