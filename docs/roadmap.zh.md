@@ -36,16 +36,16 @@
 依赖 `@miao/sdk` 或无前缀的旧路由。
 
 ### 1.1 legacy JS SDK（P5）
-V1 根导出正在拆除；插件 `Hooks` / `PluginInput.client` 迁 V2 仍未完成。
-- [ ] 移除剩余的 V1 根导出，并仅针对 V2 重新生成 SDK。
-- [ ] 把插件 `Hooks` / `PluginInput.client` 从 V1 迁到 V2。
-- [ ] 在所有消费方与类型清理完后，去掉 `@miao/sdk` 运行时依赖。
-- **验收：** 没有任何包导入 V1 SDK 表面；插件 API 使用 V2 结构。
+旧 V1 SDK 已移除：没有任何包依赖 V1 SDK 表面，app 与 CLI 都走 `@miao/client`，`packages/sdk` 现在是
+**嵌入式 SDK 入口**（库用法 `OpenCode.create()`），不是 legacy 表面——保留它。剩余：
+- [ ] 把插件的 `Hooks` 接口与 `PluginInput.client` 从 V1 形状迁走
+      （`packages/plugin/src/index.ts`）。这是插件 API 设计工作（见第 3 节），不是清理。
+- **验收：** `PluginInput.client` 暴露 V2 客户端，V1 `Hooks` 接口被适配或退役。
 
 ### 1.2 app 旧类型与适配层
-app 的网络调用已迁移，但其内部状态仍经过 V1 形状的适配与类型，且 V1 事件兼容层仍在。
-- [ ] 替换 `src/utils/session.ts` 的 current→legacy session 适配。
-- [ ] 替换 `src/utils/session-message.ts` 的 message/part 适配。
+app 的网络调用已迁移，恒等的 `server-compat` shim 已删除（#40）。注意：`src/utils/session.ts` 与
+`src/utils/session-message.ts` 是当前 V2→视图模型的归一化，不是 legacy 适配，保留。剩余为真正
+V1 形状的遗留：
 - [ ] 替换 `src/context/global-sync/utils.ts` 的 agent/provider/model 适配。
 - [ ] 在 app 状态与渲染中替换 legacy 的 `Session`、`Message`、`Part`、`PermissionRequest`、
       `QuestionRequest`、`Project`、`FileNode`、`FileDiffInfo`、`Event` 类型。
