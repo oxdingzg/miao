@@ -310,17 +310,27 @@ const GcBlobsCommand = effectCmd({
         describe: "only delete blobs last modified longer ago than this",
       }),
   handler: Effect.fn("Cli.db.gcBlobs")(function* (args: { yes: boolean; "grace-hours": number }) {
-    const { db } = yield* Database.Service
     const blob = yield* Blob.Service
-    const directory = join(dirname(Database.path()), Blob.DIRECTORY)
+    const databaseDir = dirname(Database.path())
+    const directory = join(databaseDir, Blob.DIRECTORY)
+    // A blob directory is shared by every channel database, so mark across all
+    // of them; marking only the configured one would delete another's live blobs.
+    const referenced = new Set<string>()
+    const files = yield* Effect.promise(() => readdir(databaseDir).catch(() => [] as string[]))
+    for (const file of files.filter((name) => /^miao.*\.db$/.test(name))) {
+      const hashes = yield* SessionBlobGc.collectFromPath(join(databaseDir, file))
+      for (const hash of hashes) referenced.add(hash)
+    }
     const result = yield* SessionBlobGc.sweep({
       blob,
-      db,
       directory,
+      referenced,
       dryRun: !args.yes,
       graceMs: args["grace-hours"] * 3_600_000,
     })
-    console.log(`blobs: ${result.referenced} referenced, ${result.orphans} unreferenced (${mb(result.bytes)} MB)`)
+    console.log(
+      `blobs: ${result.referenced} referenced across databases, ${result.orphans} unreferenced (${mb(result.bytes)} MB)`,
+    )
     if (args.yes) console.log(`deleted ${result.deleted} blob(s)`)
     else if (result.orphans > 0) console.log("re-run with --yes to delete")
   }),
