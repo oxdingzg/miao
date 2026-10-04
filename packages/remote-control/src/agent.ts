@@ -4,6 +4,12 @@ import { Option, Schema } from "effect"
 import { SecureChannel } from "./secure-channel"
 import { DeviceGrants } from "./grants"
 
+// The Agent runs under Bun. Keep its authenticated constructor explicit when
+// consumers also include DOM declarations, whose WebSocket lacks header options.
+const HostWebSocket = WebSocket as unknown as {
+  new (url: URL, options: { headers: Record<string, string> }): WebSocket
+}
+
 export const Method = Schema.Literals([
   "capabilities",
   "project.list",
@@ -221,7 +227,7 @@ export function connect(options: Options) {
   }
   function start() {
     if (state.stopped) return
-    const socket = new WebSocket(url, { headers: { authorization: `Bearer ${options.hostToken}` } })
+    const socket = new HostWebSocket(url, { headers: { authorization: `Bearer ${options.hostToken}` } })
     state.socket = socket
     socket.onopen = () => {
       if (state.socket !== socket || state.stopped) return socket.close()

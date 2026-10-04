@@ -40,6 +40,7 @@ interrupts active execution, closes IM channels and service scopes, removes
 discovery information, then releases storage ownership. Restarting preserves
 session history but does not automatically repeat interrupted provider or tool
 work.
+
 # ACP clients
 
 `miao acp` uses the same persistent Runtime by default. Closing the editor's
@@ -47,3 +48,36 @@ stdio connection closes the adapter, while the Runtime retains ownership of
 its sessions. `--attach <server URL>` selects an existing endpoint; explicit
 network options retain the foreground server mode. A foreground server and a
 Runtime cannot own the same on-disk storage at the same time.
+
+# Outbound Remote Control Agent
+
+Set `MIAO_REMOTE_CONTROL_CONFIG` to an owner-only configuration file to attach
+the Runtime to a Hub. On Unix, the file must belong to the current user and have
+no group or other permissions. Keep this file and its credentials outside the
+checkout:
+
+```json
+{
+  "hubURL": "https://<hub-host>",
+  "hostToken": "<host credential of at least 32 characters>",
+  "grantFile": "devices.json"
+}
+```
+
+The grant file is resolved relative to the configuration file. It stores the
+stable host identity and locally approved device grants. Register that host ID
+and credential with the Hub. Remote requests cannot approve devices or modify
+the host configuration. HTTPS is required; `allowLoopbackHTTP: true` permits
+HTTP only on loopback for local verification.
+
+The Agent currently exposes capabilities, Session reads, paginated durable
+history, pending inputs/permissions/questions, diffs, text prompt admission and
+operation receipt lookup. This is the Runtime transport integration; device
+pairing UI and the remaining client flows are separate work.
+
+Prompt retries use one stable operation ID. The Runtime persists a receipt
+before admission, rejects changes to that operation's content or target, and
+checks durable input records before sending another admission request. An input
+already admitted is acknowledged without waking its execution again. Disconnecting
+the remote transport does not interrupt execution. Stopping the Runtime closes
+the Agent before shutting down its execution services.
