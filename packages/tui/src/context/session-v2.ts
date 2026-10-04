@@ -8,7 +8,12 @@ import type { TuiTranscriptMessage } from "@miao/plugin/tui"
  * the sync owner handles idle transitions separately.
  */
 export function isLiveSessionV2Event(type: string): boolean {
-  return type.startsWith("session.next.") && type !== "session.next.moved" && type !== "session.next.status"
+  return (
+    type.startsWith("session.next.") &&
+    type !== "session.next.moved" &&
+    type !== "session.next.status" &&
+    type !== "session.next.retried"
+  )
 }
 
 /**

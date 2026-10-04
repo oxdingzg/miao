@@ -6,6 +6,7 @@ import { waitingForResponse, watchSessionStatus } from "../../context/session-st
 import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
 import type { Part, ReasoningPart, ToolPart } from "@miao/schema/view-models"
+import { ProviderFailure } from "./provider-failure"
 
 // Claude Code reports a turn as `[running|ran] N shell commands` on one live
 // status line. miao's V2 core emits one assistant message per provider turn, so
@@ -158,7 +159,15 @@ export function SessionActivity(props: { sessionID: string }) {
     onCleanup(() => clearInterval(timer))
   })
 
-  return <SessionWaiting waiting={waiting()} elapsed={elapsed()} activity={activity()} />
+  const error = createMemo(() => {
+    const status = sync.data.session_status[props.sessionID]
+    return status?.type === "retry" ? status.message : sync.data.session_error[props.sessionID]
+  })
+  return (
+    <Show when={error()} fallback={<SessionWaiting waiting={waiting()} elapsed={elapsed()} activity={activity()} />}>
+      {(message) => <ProviderFailure message={message()} />}
+    </Show>
+  )
 }
 
 export function turnActivity(input: { parts: Part[]; working: boolean }) {

@@ -86,6 +86,14 @@ export function toMcpStatus(raw: Record<string, McpServerStatus>): Record<string
 // The V2 integration method carries the id, but the V1 provider-auth shape the
 // TUI store keeps does not; preserve it so OAuth connect can target the method.
 type TuiAuthMethod = ProviderAuthMethod & { id?: string }
+const RECOVERED_EVENTS = new Set([
+  "session.next.text.started",
+  "session.next.text.delta",
+  "session.next.reasoning.started",
+  "session.next.reasoning.delta",
+  "session.next.tool.called",
+  "session.next.step.ended",
+])
 
 // The V2 integration list replaces the V1 provider-auth map; env methods are
 // discovery-only, so only oauth and key methods become connectable entries.
@@ -150,6 +158,7 @@ export const {
       session_status: {
         [sessionID: string]: SessionStatus
       }
+      session_error: Record<string, string>
       session_diff: {
         [sessionID: string]: SnapshotFileDiff[]
       }
@@ -192,6 +201,7 @@ export const {
       provider_default: {},
       session: [],
       session_status: {},
+      session_error: {},
       session_diff: {},
       todo: {},
       message: {},
@@ -340,6 +350,17 @@ export const {
     }
 
     event.subscribe((event, { workspace }) => {
+      if (RECOVERED_EVENTS.has(event.type) && "sessionID" in event.properties && typeof event.properties.sessionID === "string") {
+        const sessionID = event.properties.sessionID
+        if (store.session_status[sessionID]?.type === "retry") setStore("session_status", sessionID, { type: "busy" })
+        if (store.session_error[sessionID])
+          setStore(
+            "session_error",
+            produce((errors) => {
+              delete errors[sessionID]
+            }),
+          )
+      }
       if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = (event.properties as { sessionID?: string } | undefined)?.sessionID
         if (sessionID) v2Refresh.schedule(sessionID)
@@ -348,10 +369,42 @@ export const {
         case "session.next.status": {
           const input = event.properties
           const previous = store.session_status[input.sessionID]?.type
-          if (previous !== input.status.type) setStore("session_status", input.sessionID, { type: input.status.type })
+          if (previous !== input.status.type && !(previous === "retry" && input.status.type === "busy"))
+            setStore("session_status", input.sessionID, { type: input.status.type })
+          if (input.status.type === "busy" && previous === "idle" && store.session_error[input.sessionID])
+            setStore(
+              "session_error",
+              produce((errors) => {
+                delete errors[input.sessionID]
+              }),
+            )
           // Status changes do not change history. Only an idle transition may
           // recover a final settlement missed by the live event stream.
-          if (input.status.type === "idle" && previous === "busy") v2Refresh.schedule(input.sessionID)
+          if (input.status.type === "idle" && (previous === "busy" || previous === "retry"))
+            v2Refresh.schedule(input.sessionID)
+          break
+        }
+        case "session.next.retried": {
+          const input = event.properties
+          setStore("session_status", input.sessionID, {
+            type: "retry",
+            attempt: input.attempt,
+            next: input.timestamp,
+            message:
+              input.error.statusCode === undefined
+                ? input.error.message
+                : `API Error: ${input.error.statusCode} · ${input.error.message}`,
+          })
+          break
+        }
+        case "session.next.failed": {
+          const input = event.properties
+          setStore("session_error", input.sessionID, input.error.message)
+          setStore("session_status", input.sessionID, { type: "idle" })
+          break
+        }
+        case "session.next.step.failed": {
+          setStore("session_status", event.properties.sessionID, { type: "idle" })
           break
         }
         case "session.next.prompt.admitted":
@@ -541,6 +594,12 @@ export const {
           syncingSessions.delete(id)
           hydratingSessions.delete(id)
           pendingPrompts.clear(id)
+          setStore(
+            "session_error",
+            produce((errors) => {
+              delete errors[id]
+            }),
+          )
           break
         }
         case "session.updated": {
@@ -877,10 +936,11 @@ export const {
           // Every store write notifies subscribers, and one tick repaints the
           // whole screen (see sidebar/context.tsx), so an unchanged idle status
           // must not be written back once a second.
-          if (previous !== status) setStore("session_status", sessionID, { type: status })
+          if (previous !== status && !(previous === "retry" && status === "busy"))
+            setStore("session_status", sessionID, { type: status })
           // An idle transition is also a recovery path for a missed terminal
           // event: fetch the final transcript instead of leaving stale output.
-          if (previous === "busy" && status === "idle") v2Refresh.schedule(sessionID)
+          if ((previous === "busy" || previous === "retry") && status === "idle") v2Refresh.schedule(sessionID)
           await result.session.syncInputs(sessionID, signal)
           return status
         },

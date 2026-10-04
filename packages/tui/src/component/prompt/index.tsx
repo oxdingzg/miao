@@ -17,6 +17,7 @@ import { Flag } from "@miao/core/flag/flag"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { createInputLatency } from "../../context/input-latency"
 import { tint, useTheme } from "../../context/theme"
+import { ProviderRetryStatus } from "../../routes/session/provider-failure"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
@@ -41,7 +42,6 @@ import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import type { AssistantMessage, FilePart, UserMessage } from "@miao/schema/view-models"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
-import { formatDuration } from "../../util/format"
 import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
@@ -1580,62 +1580,7 @@ export function Prompt(props: PromptProps) {
                     </Show>
                   </box>
                   <box flexDirection="row" gap={1} flexShrink={0}>
-                    {(() => {
-                      const retry = createMemo(() => {
-                        const s = status()
-                        if (s.type !== "retry") return
-                        return s
-                      })
-                      const message = createMemo(() => {
-                        const r = retry()
-                        if (!r) return
-                        if (r.message.includes("exceeded your current quota") && r.message.includes("gemini"))
-                          return "gemini is way too hot right now"
-                        if (r.message.length > 80) return r.message.slice(0, 80) + "…"
-                        return r.message
-                      })
-                      const isTruncated = createMemo(() => {
-                        const r = retry()
-                        if (!r) return false
-                        return r.message.length > 120
-                      })
-                      const [seconds, setSeconds] = createSignal(0)
-                      onMount(() => {
-                        const timer = setInterval(() => {
-                          const next = retry()?.next
-                          if (next) setSeconds(Math.round((next - Date.now()) / 1000))
-                        }, 1000)
-
-                        onCleanup(() => {
-                          clearInterval(timer)
-                        })
-                      })
-                      const handleMessageClick = () => {
-                        const r = retry()
-                        if (!r) return
-                        if (isTruncated()) {
-                          void DialogAlert.show(dialog, "Retry Error", r.message)
-                        }
-                      }
-
-                      const retryText = () => {
-                        const r = retry()
-                        if (!r) return ""
-                        const baseMessage = message()
-                        const truncatedHint = isTruncated() ? " (click to expand)" : ""
-                        const duration = formatDuration(seconds())
-                        const retryInfo = ` [retrying ${duration ? `in ${duration} ` : ""}attempt #${r.attempt}]`
-                        return baseMessage + truncatedHint + retryInfo
-                      }
-
-                      return (
-                        <Show when={retry()}>
-                          <box onMouseUp={handleMessageClick}>
-                            <text fg={theme.error}>{retryText()}</text>
-                          </box>
-                        </Show>
-                      )
-                    })()}
+                    <ProviderRetryStatus status={status()} />
                   </box>
                 </box>
                 <Show when={status().type === "busy" && turnElapsed() > 0}>

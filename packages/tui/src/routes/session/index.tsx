@@ -63,6 +63,7 @@ import { QuestionPrompt } from "./question"
 import { SessionActivity } from "./activity"
 import { SessionMessageContent } from "./session-message"
 import { PromptStatus } from "./prompt-status"
+import { providerErrorText } from "./provider-failure"
 import type { PendingPrompt } from "../../context/pending-prompts"
 import { parseSessionMessage } from "../../util/session-message"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
@@ -1519,7 +1520,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           customBorderChars={SplitBorder.customBorderChars}
           borderColor={theme.error}
         >
-          <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
+          <text fg={theme.error}>{providerErrorText(errorMessage(props.message.error))}</text>
         </box>
       </Show>
       <Switch>
@@ -1799,7 +1800,9 @@ function SentSessionMessage(props: ToolProps) {
   const ctx = use()
   const sync = useSync()
   const [expanded, setExpanded] = createSignal(false)
-  const target = createMemo(() => typeof props.metadata.sessionID === "string" ? props.metadata.sessionID : String(props.input.to ?? ""))
+  const target = createMemo(() =>
+    typeof props.metadata.sessionID === "string" ? props.metadata.sessionID : String(props.input.to ?? ""),
+  )
   const title = createMemo(() => sync.data.session.find((session) => session.id === target())?.title)
   return (
     <box onMouseUp={() => setExpanded((value) => !value)}>
