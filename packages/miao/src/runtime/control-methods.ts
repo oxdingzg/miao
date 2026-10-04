@@ -81,6 +81,56 @@ export function make(options: {
       return pending
     }
   const methods: Partial<Record<ControlAgent.Method, ControlAgent.Handler>> = {
+    "selection.list": async (request, context) => {
+      const decoded = Schema.decodeUnknownOption(Schema.Struct({ directoryID: Schema.optional(Schema.String) }), {
+        onExcessProperty: "error",
+      })(request.payload)
+      if (Option.isNone(decoded)) throw new ControlAgent.RequestError("invalid_request")
+      const location = await (async () => {
+        if (request.sessionID) {
+          const session = await options.client.sessions.get(
+            { sessionID: request.sessionID },
+            { signal: context.signal },
+          )
+          context.authorize()
+          if (!context.grant.sessionIDs.includes(session.id) && !context.grant.projectIDs.includes(session.projectID))
+            throw new ControlAgent.RequestError("forbidden")
+          if (request.projectID && request.projectID !== session.projectID)
+            throw new ControlAgent.RequestError("forbidden")
+          return session.location
+        }
+        if (!request.projectID || !context.grant.projectIDs.includes(request.projectID))
+          throw new ControlAgent.RequestError("forbidden")
+        const registered = await options.client.projects.directories(
+          { projectID: request.projectID },
+          { signal: context.signal },
+        )
+        context.authorize()
+        const directory = registered.data.find(
+          (entry) => directoryID(request.projectID!, entry.directory) === decoded.value.directoryID,
+        )?.directory
+        if (!directory) throw new ControlAgent.RequestError("forbidden")
+        return { directory }
+      })()
+      const results = await Promise.all([
+        options.client.agents.list({ location }, { signal: context.signal }),
+        options.client.models.list({ location }, { signal: context.signal }),
+      ])
+      context.authorize()
+      // Provider settings, request headers and agent system prompts stay local.
+      return {
+        agents: results[0].data
+          .filter((agent) => !agent.hidden && agent.mode !== "subagent")
+          .map((agent) => ({ id: agent.id, description: agent.description, color: agent.color, model: agent.model })),
+        models: results[1].data.map((model) => ({
+          id: model.id,
+          providerID: model.providerID,
+          name: model.name,
+          capabilities: model.capabilities,
+          variants: model.variants.map((variant) => ({ id: variant.id })),
+        })),
+      }
+    },
     "session.rename": mutation(
       Schema.Struct({ title: Schema.String.check(Schema.isLengthBetween(1, 256)) }),
       async (payload, request, context) => {
@@ -270,11 +320,58 @@ export function make(options: {
       protocol: 1,
       operationReceipts: true,
       history: "paged",
+      events: "long-poll",
       methods: Object.keys(methods),
       promptDelivery: ["steer", "queue"],
     }),
     "session.get": (request, context) =>
       options.client.sessions.get({ sessionID: request.sessionID! }, { signal: context.signal }),
+    "session.events": async (request, context) => {
+      const decoded = Schema.decodeUnknownOption(
+        Schema.Struct({
+          after: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+          limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
+          waitMs: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1000 }))),
+        }),
+        { onExcessProperty: "error" },
+      )(request.payload)
+      if (Option.isNone(decoded)) throw new ControlAgent.RequestError("invalid_request")
+      const input = { sessionID: request.sessionID!, after: decoded.value.after, limit: decoded.value.limit ?? 100 }
+      const initial = await options.client.sessions.history(input, { signal: context.signal })
+      context.authorize()
+      const waitMs = decoded.value.waitMs ?? 1000
+      if (!initial.data.length && waitMs > 0) {
+        const stop = new AbortController()
+        const timer = setTimeout(() => stop.abort(), waitMs)
+        const iterator = options.client.sessions
+          .events(
+            { sessionID: input.sessionID, after: input.after },
+            { signal: AbortSignal.any([context.signal, stop.signal]) },
+          )
+          [Symbol.asyncIterator]()
+        try {
+          // Local SSE replays from the same cursor before listening for live
+          // events, closing the gap between this history read and subscription.
+          await iterator.next()
+        } catch (error) {
+          if (!stop.signal.aborted || context.signal.aborted) throw error
+        } finally {
+          clearTimeout(timer)
+          stop.abort()
+          await iterator.return?.()
+        }
+      }
+      context.authorize()
+      const page = initial.data.length
+        ? initial
+        : await options.client.sessions.history(input, { signal: context.signal })
+      context.authorize()
+      const cursor = page.data.reduce((cursor, event) => {
+        if (!event.durable || event.durable.seq <= cursor) throw new ControlAgent.RequestError("conflict")
+        return event.durable.seq
+      }, input.after)
+      return { ...page, cursor }
+    },
     "session.history": async (request, context) => {
       const page = Schema.decodeUnknownOption(
         Schema.Struct({

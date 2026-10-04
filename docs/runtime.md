@@ -89,3 +89,15 @@ mutation uses a stable operation ID and an immutable receipt. If a crash leaves
 a prepared mutation without a confirmed result, its retry reports
 `outcome_unknown` instead of automatically repeating the action. Refresh the
 Session's pending state before deciding whether another action is needed.
+
+`session.events` accepts an exclusive durable `after` cursor, a page limit up to
+100, and `waitMs` from 0 to 1000. It returns an ordered page, `hasMore`, and the
+last delivered durable cursor. The local replaying event stream closes the gap
+between checking history and waiting for an update. Clients persist the returned
+cursor only after applying the complete page, then request the next page; an
+empty response retains the previous cursor. A short bounded wait keeps other
+operations responsive on the same connection.
+
+`selection.list` requires an authorized Session or registered project directory.
+It returns selectable agent and model metadata without provider settings,
+request headers, or agent system prompts.

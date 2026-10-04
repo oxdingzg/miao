@@ -110,7 +110,13 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
         grants.identity.publicKey,
       )
     ).channel
-    const call = async (method: string, payload: unknown, operationID?: string, projectID?: string) => {
+    const call = async (
+      method: string,
+      payload: unknown,
+      operationID?: string,
+      projectID?: string,
+      targetSessionID = sessionID,
+    ) => {
       socket.send(
         await channel.seal(
           new TextEncoder().encode(
@@ -122,7 +128,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
               grantID: approved.id,
               grantVersion: approved.version,
               method,
-              sessionID,
+              sessionID: targetSessionID,
               operationID,
               projectID,
               payload,
@@ -167,6 +173,42 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       data: { status: "completed" },
     })
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { title: "Phone session" } })
+    const replay = await call("session.events", { after: 0, waitMs: 0 })
+    const replayData = replay.data as { data: Array<{ id: string; durable: { seq: number } }>; cursor: number }
+    expect(replayData.cursor).toBe(replayData.data.at(-1)!.durable.seq)
+    expect(await call("session.events", { after: replayData.cursor, waitMs: 0 })).toMatchObject({
+      type: "result",
+      data: { data: [], cursor: replayData.cursor },
+    })
+    expect(await call("session.events", { after: replayData.cursor, waitMs: 50 })).toMatchObject({
+      type: "result",
+      data: { data: [], cursor: replayData.cursor },
+    })
+    const live = call("session.events", { after: replayData.cursor, waitMs: 1000 })
+    await Bun.sleep(50)
+    const changed = await fetch(new URL(`/api/session/${sessionID}/rename`, record.url), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ title: "Live title" }),
+    })
+    if (changed.status !== 204)
+      throw new Error(`Rename during event wait failed: ${changed.status} ${await changed.text()}`)
+    const events = (await live).data as { data: Array<{ id: string }>; cursor: number }
+    expect(events.data.length).toBeGreaterThan(0)
+    expect(events.cursor).toBeGreaterThan(replayData.cursor)
+    expect(events.data.some((event) => replayData.data.some((old) => old.id === event.id))).toBe(false)
+    expect(await call("session.rename", { title: "Phone session" }, crypto.randomUUID())).toMatchObject({
+      type: "result",
+      data: { status: "completed" },
+    })
+    expect(await call("session.events", { after: 0, waitMs: 1001 })).toMatchObject({
+      type: "error",
+      code: "invalid_request",
+    })
+    expect(await call("selection.list", {})).toMatchObject({
+      type: "result",
+      data: { agents: expect.any(Array), models: expect.any(Array) },
+    })
     expect(await call("session.rename", { title: "Changed retry" }, renameID)).toMatchObject({
       type: "error",
       code: "conflict",
@@ -190,6 +232,10 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       body: JSON.stringify({ id: "ses_unapproved_sibling", location: { directory: project } }),
     })
     expect(sibling.status).toBe(200)
+    expect(await call("selection.list", {}, undefined, undefined, "ses_unapproved_sibling")).toMatchObject({
+      type: "error",
+      code: "forbidden",
+    })
     expect(await call("session.list", {})).toMatchObject({
       type: "result",
       data: { data: [{ id: sessionID }], cursor: { next: null } },
