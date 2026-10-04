@@ -24,6 +24,21 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`remote_operation\` (
+          \`subject\` text NOT NULL,
+          \`id\` text NOT NULL,
+          \`method\` text NOT NULL,
+          \`session_id\` text,
+          \`project_id\` text,
+          \`digest\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`result\` text,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`remote_operation_pk\` PRIMARY KEY(\`subject\`, \`id\`)
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`account_state\` (
           \`id\` integer PRIMARY KEY,
           \`active_account_id\` text,
@@ -236,6 +251,7 @@ export default {
           CONSTRAINT \`fk_session_share_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(`CREATE INDEX \`remote_operation_session_idx\` ON \`remote_operation\` (\`session_id\`);`)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(
