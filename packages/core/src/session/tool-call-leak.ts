@@ -28,9 +28,18 @@ const OPENING =
 
 // A complete block ends in a closing tag, which real leaks carry even when the
 // server ate the opening wrapper. A bare opener truncated mid-argument is a
-// "length" finish, not a parser miss, so it is intentionally not matched.
+// "length" finish, not a parser miss, so it is intentionally not matched. The
+// tail itself may be cut mid-tag (`</parameter>`, `</para`) when the stream
+// ended, so a truncated closing-tag prefix at the very end also counts.
 const CLOSING_TAIL =
-  /<\/(?:tool_calls?|function|parameter|antml:function_calls|antml:invoke)>$|<\/[^>]*DSML[^>]*>$/i
+  /<\/(?:antml:)?(?:tool_calls?|function|parameter|invoke|tool|par|inv|fun|DSML)[a-z_]*>?$|<\/[^>]*DSML[^>]*>$/i
+
+// A model that streamed a full call as text often keeps emitting the closing
+// markers after the server ate the opening ones: `</parameter></invoke>` repeats
+// with no matching `<invoke`/`<parameter`. A single stray closing tag can appear
+// in prose, so require a run of them before treating the tail as a leak.
+const STRAY_CLOSING = /<\/(?:invoke|parameter|tool_calls?|function)>/gi
+const STRAY_CLOSING_MIN = 3
 
 /** Recovery attempts allowed per real user prompt. */
 export const MAX_ATTEMPTS = 2
@@ -46,8 +55,11 @@ export const NUDGE =
 /** Whether the assistant text ends with a leaked tool-call block. */
 export function detect(text: string): boolean {
   const trimmed = text.trimEnd()
-  if (!OPENING.test(trimmed)) return false
-  if (CLOSING_TAIL.test(trimmed)) return true
+  const stray = trimmed.match(STRAY_CLOSING)?.length ?? 0
+  // A tail that begins a closing tool-call tag (or a truncated prefix of one)
+  // only counts when its openers are also present, or when it is the end of a
+  // long closer run the server left behind — so prose stays prose.
+  if (CLOSING_TAIL.test(trimmed.slice(-40)) && (OPENING.test(trimmed) || stray >= STRAY_CLOSING_MIN)) return true
   // An unclosed wrapper still leaks a whole call after a complete `<invoke>`:
   // the opening `</invoke>` is present but the outer `</tool_calls>` was eaten.
   const invokeOpen = trimmed.lastIndexOf("<invoke")
