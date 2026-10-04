@@ -1,3 +1,8 @@
+> ARCHIVED (2026-10-04). This tracker is superseded by `docs/roadmap.md`; its open items were
+> folded into that document. Kept for historical context only; do not edit. See `docs/roadmap.md`
+> for current status.
+
+
 # Remaining Work — miao-dev Handoff
 
 Everything still open in the V2 rebuild, written so a `miao-dev` session can execute it

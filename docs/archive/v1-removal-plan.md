@@ -1,3 +1,8 @@
+> ARCHIVED (2026-10-04). This tracker is superseded by `docs/roadmap.md`; its open items were
+> folded into that document. Kept for historical context only; do not edit. See `docs/roadmap.md`
+> for current status.
+
+
 # 彻底去除 V1：方案与决策
 
 状态：已定稿，2026-10-02。范围：P0–P7 全部纳入本轮（含非会话类旧路由）。
