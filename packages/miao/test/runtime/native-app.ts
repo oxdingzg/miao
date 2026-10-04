@@ -63,6 +63,21 @@ export async function run() {
   let approvalTask: Promise<void> | undefined
 
   try {
+    // Complete native compilation before issuing a short-lived invitation or starting the Runtime.
+    const build = Bun.spawn([
+      "sh", "apps/ios/scripts/test-app.sh", process.env.MIAO_UI_TEST_FAMILY ?? "iphone",
+      `MIAO_UI_TEST_FIXTURE=${fixture}`, "-derivedDataPath", path.join(directory, "derived"),
+    ], { cwd: root, env: { ...process.env, MIAO_UI_TEST_ACTION: "build-for-testing" }, stdout: "pipe", stderr: "pipe" })
+    state.ui = build
+    const buildOutput = new Response(build.stdout).text()
+    const buildErrors = new Response(build.stderr).text()
+    const buildTimeout = setTimeout(() => build.kill(), 240_000)
+    try {
+      if ((await build.exited) !== 0) throw new Error("Native live fixture build failed")
+    } finally {
+      clearTimeout(buildTimeout)
+      await Bun.write(path.join(directory, "build.log"), (await buildOutput) + "\n" + (await buildErrors))
+    }
     await mkdir(project)
     if ((await Bun.spawn(["git", "init", "--quiet", project]).exited) !== 0)
       throw new Error("Fixture project initialization failed")
@@ -187,6 +202,7 @@ export async function run() {
       ],
       {
         cwd: root,
+        env: { ...process.env, MIAO_UI_TEST_ACTION: "test-without-building" },
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -212,6 +228,10 @@ export async function run() {
           testingFailure: log.includes("TEST FAILED"),
           provisioningFailure: log.includes("No profiles for") || log.includes("No Accounts"),
           exitCode: state.ui.exitCode,
+          approvalFailed: state.approvalError !== undefined,
+          approvalTimeout: state.approvalError instanceof Error && state.approvalError.name === "TimeoutError",
+          approvalHTTPStatus: state.approvalError instanceof Error ? Number(/rejected with (\d+)$/.exec(state.approvalError.message)?.[1] ?? 0) : 0,
+          runtimeExitCode: state.runtime?.exitCode,
           osErrors: [...log.matchAll(/(NSCocoaErrorDomain|NSPOSIXErrorDomain)[^\n]{0,80}?Code=(\d+)/g)].map((match) => ({ domain: match[1], code: Number(match[2]) })),
         }))
         throw new Error("Native live Runtime UI test failed")
