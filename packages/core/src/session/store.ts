@@ -50,6 +50,21 @@ const layer = Layer.effect(
 
     const loadV1 = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
       if (!(yield* SessionLegacyTables.present(db))) return undefined
+      // A completed backfill preserves legacy message ids. When every legacy
+      // message for this session already has a projected row there is nothing to
+      // merge, so skip the (potentially multi-megabyte) legacy read that would
+      // otherwise run on every `context` call.
+      const stranded = yield* db
+        .get(sql`
+          SELECT 1 AS present FROM message m
+          WHERE m.session_id = ${sessionID}
+            AND NOT EXISTS (
+              SELECT 1 FROM session_message x WHERE x.id = m.id AND x.session_id = m.session_id
+            )
+          LIMIT 1
+        `)
+        .pipe(Effect.orDie)
+      if (stranded === undefined) return undefined
       const session = yield* db
         .select({ directory: SessionTable.directory })
         .from(SessionTable)
