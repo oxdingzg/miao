@@ -24,7 +24,10 @@ describe("acp V2 replay", () => {
         const server = yield* opencode.serve({ env: { MIAO_CONFIG_CONTENT: JSON.stringify(verifierConfig(llm.url)) } })
         const v2 = OpenCode.make({ baseUrl: server.url })
         const session = yield* Effect.promise(() =>
-          v2.sessions.create({ location: { directory: AbsolutePath.make(home) }, model: { providerID: Provider.ID.make("test"), id: Model.ID.make("test-model") } }),
+          v2.sessions.create({
+            location: { directory: AbsolutePath.make(home) },
+            model: { providerID: Provider.ID.make("test"), id: Model.ID.make("test-model") },
+          }),
         )
         // Admitted without running, then promoted together by the last prompt's drain.
         for (const index of Array.from({ length: 449 }, (_, index) => index))
@@ -105,6 +108,10 @@ describe("acp V2 replay", () => {
         )
         expect(continued.stopReason).toBe("end_turn")
         expect(acp.text(legacyID, "agent_message_chunk")).toEndWith("continued on V2")
+
+        // The database has one process owner. Close the embedded server before
+        // the stdio adapter starts its persistent Runtime for this same store.
+        yield* stop(third)
 
         // The real `miao acp` command over stdio, on the compacted database.
         const stdio = yield* fixture.opencode.acp({

@@ -40,3 +40,10 @@ interrupts active execution, closes IM channels and service scopes, removes
 discovery information, then releases storage ownership. Restarting preserves
 session history but does not automatically repeat interrupted provider or tool
 work.
+# ACP clients
+
+`miao acp` uses the same persistent Runtime by default. Closing the editor's
+stdio connection closes the adapter, while the Runtime retains ownership of
+its sessions. `--attach <server URL>` selects an existing endpoint; explicit
+network options retain the foreground server mode. A foreground server and a
+Runtime cannot own the same on-disk storage at the same time.

@@ -214,8 +214,9 @@ export function withCliFixture<A, E>(
     const env = isolatedEnv(home, configJson)
     // A CLI run now leaves its Runtime alive. Close this fixture's verified owner
     // before removing its database, without touching any other test's Runtime.
-    const stopRuntime = async () => {
-      const storage = await RuntimeOwnership.canonicalStorage(env.MIAO_DB)
+    const runtimeStores = new Set([env.MIAO_DB])
+    const stopRuntime = async (filename = env.MIAO_DB) => {
+      const storage = await RuntimeOwnership.canonicalStorage(filename)
       const record = await RuntimeDiscovery.read(storage)
       if (!record) return
       await RuntimeDiscovery.attest(record, {
@@ -236,10 +237,15 @@ export function withCliFixture<A, E>(
       }
       throw new Error("Test Runtime did not finish shutdown")
     }
-    yield* Effect.addFinalizer(() => Effect.promise(stopRuntime))
+    yield* Effect.addFinalizer(() =>
+      Effect.promise(async () => {
+        for (const filename of runtimeStores) await stopRuntime(filename)
+      }),
+    )
     const runtimeConfig = { content: configJson }
 
     const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
+      runtimeStores.add(opts?.env?.MIAO_DB ?? env.MIAO_DB)
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? 30_000
       const content = opts?.env?.MIAO_CONFIG_CONTENT ?? configJson
@@ -247,7 +253,7 @@ export function withCliFixture<A, E>(
         // Each test configuration needs its own Runtime startup snapshot. This
         // fixture explicitly shuts down its idle owner instead of changing an
         // existing session's policy through another client's environment.
-        yield* Effect.promise(stopRuntime)
+        yield* Effect.promise(() => stopRuntime())
         runtimeConfig.content = content
       }
       // stdin: "ignore" so the child doesn't see a piped stdin and block
@@ -322,6 +328,7 @@ export function withCliFixture<A, E>(
     }
 
     const startRun = Effect.fn("opencode.startRun")(function* (message: string, opts?: RunOpts) {
+      runtimeStores.add(opts?.env?.MIAO_DB ?? env.MIAO_DB)
       const start = Date.now()
       const options = runOpts(opts)
       const proc = yield* Effect.acquireRelease(
@@ -440,6 +447,7 @@ export function withCliFixture<A, E>(
     })
 
     const acp = Effect.fn("opencode.acp")(function* (opts?: AcpOpts) {
+      runtimeStores.add(opts?.env?.MIAO_DB ?? env.MIAO_DB)
       const argv = ["acp"]
       if (opts?.cwd) argv.push("--cwd", opts.cwd)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)

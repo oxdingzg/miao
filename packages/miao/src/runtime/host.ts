@@ -77,7 +77,7 @@ export async function start(filename: string) {
     const { Server } = await import("@/server/server")
     state.server = await Server.listen({
       hostname: "127.0.0.1",
-      port: 0,
+      port: state.im.port,
       mdns: false,
       cors: [],
       runtime: {

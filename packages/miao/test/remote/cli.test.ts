@@ -6,6 +6,7 @@ import { mkdir } from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
 import { OpenCode } from "@miao/client"
+import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { createFakeIlink, textMessage } from "@miao/remote/connectors/wechat/fake-ilink"
 import { Effect } from "effect"
 import { cliIt } from "../lib/cli-process"
@@ -20,8 +21,7 @@ describe("miao remote command", () => {
       Effect.gen(function* () {
         const status = yield* opencode.spawn(["remote", "status"])
         opencode.expectExit(status, 0, "remote status")
-        expect(status.stdout).toContain("微信：未登录")
-        expect(status.stdout).toContain("服务端口：127.0.0.1:4097")
+        expect(status.stdout).toContain("Runtime 未运行")
 
         // Running with no account or only an expired one is covered in daemon.test.ts: it now starts and keeps serving.
         if (process.platform !== "darwin") return
@@ -77,6 +77,7 @@ describe("miao remote command", () => {
                 HOME: home,
                 PWD: home,
                 MIAO_TEST_HOME: home,
+                MIAO_DB: path.join(home, "sessions.db"),
                 XDG_CONFIG_HOME: path.join(home, ".config"),
                 XDG_DATA_HOME: path.join(home, ".local/share"),
                 XDG_STATE_HOME: path.join(home, ".local/state"),
@@ -103,7 +104,20 @@ describe("miao remote command", () => {
         yield* llm.text("hello from remote")
         yield* Effect.promise(async () => {
           await ilink.until((request) => request.path === "/ilink/bot/getupdates", 30_000)
-          const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${port}` })
+          const deadline = Date.now() + 5000
+          const record = await (async () => {
+            while (Date.now() < deadline) {
+              const record = await RuntimeDiscovery.read(path.join(home, "sessions.db"))
+              if (record) return record
+              await Bun.sleep(50)
+            }
+          })()
+          if (!record) throw new Error("Runtime discovery missing")
+          const client = OpenCode.make({
+            baseUrl: record.url,
+            headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
+          })
+          expect(new URL(record.url).port).toBe(String(port))
           expect(await client.health.get()).toBeDefined()
 
           ilink.update({
@@ -119,19 +133,19 @@ describe("miao remote command", () => {
 
         const second = yield* opencode.spawn(["remote"], { env })
         expect(second.exitCode).toBe(1)
-        expect(second.stderr).toMatch(/端口被占用|另一个 miao remote/)
+        expect(second.stderr).toContain("already has a running Runtime")
 
         const status = yield* opencode.spawn(["remote", "status"], { env })
         opencode.expectExit(status, 0, "remote status while running")
-        expect(status.stdout).toContain(`服务端口：127.0.0.1:${port}`)
+        expect(status.stdout).toContain(`Runtime：http://127.0.0.1:${port}/`)
         expect(status.stdout).toMatch(/轮询：运行中（pid \d+）/)
         expect(status.stdout).toContain("今日主动推送 0/4")
 
         child.kill("SIGTERM")
         expect(yield* Effect.promise(() => child.exited)).toBe(0)
-        expect(yield* Effect.promise(() => stdout)).toContain(`miao attach http://127.0.0.1:${port}`)
+        expect(yield* Effect.promise(() => stdout)).toContain(`miao Runtime ready at http://127.0.0.1:${port}/`)
         const after = yield* opencode.spawn(["remote", "status"], { env })
-        expect(after.stdout).toContain("轮询：未运行")
+        expect(after.stdout).toContain("Runtime 未运行")
       }),
     180_000,
   )

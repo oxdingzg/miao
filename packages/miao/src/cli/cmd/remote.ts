@@ -108,6 +108,7 @@ const LoginCommand = cmd({
     const status = await remote.get()
     const connector = status.connectors.find((item) => item.id === args.connector)
     if (!connector) throw new Error(`没有名为 ${args.connector} 的连接器`)
+    console.log(`通过本机 Runtime（pid ${status.pid}）登录`)
     if (connector.notice) console.log(connector.notice)
     const started = await remote.login({ connector: connector.id })
     const result = await renderLogin(remote.loginEvents({ flow: started.flow }), async (value) => {
@@ -162,11 +163,15 @@ export async function prepareRuntimeIM(credential: string) {
     port: 0,
   }
   return {
+    port: config.remote.port ?? 0,
     control: control(host, () => state.port),
     async start(url: URL) {
       state.port = Number(url.port)
       const opened = await host.open()
       opened.failures.forEach((failure) => log(`${failure.id}: ${failure.error}`))
+      const accounts = (await host.status()).flatMap((connector) => connector.accounts)
+      if (!accounts.length) log("还没有登录任何 IM，可在 /remote 中连接账号")
+      if (accounts.some((account) => account.state === "needs-login")) log("已有 IM 登录失效，请重新扫码登录")
       const { OpenCode } = await import("@miao/client")
       const { ServerAuth } = await import("@/server/auth")
       const { createRouter } = await import("@miao/remote")
@@ -241,6 +246,10 @@ const StatusCommand = cmd({
     const { RuntimeConnect } = await import("@/runtime/connect")
     const { DatabaseFile } = await import("@miao/core/database/file")
     const record = await RuntimeConnect.current(DatabaseFile.path())
+    if (process.platform === "darwin") {
+      const { Label } = await import("@miao/remote/launchd")
+      if (await Bun.file(path.join(paths().agents, `${Label}.plist`)).exists()) console.log("launchd：已安装")
+    }
     if (!record) {
       console.log("Runtime 未运行；运行 miao 会自动启动")
       return
@@ -251,7 +260,7 @@ const StatusCommand = cmd({
       baseUrl: record.url,
       headers: ServerAuth.headers({ username: "miao", password: record.credential }),
     }).remote.get()
-    console.log([`Runtime：${record.url}`, ...statusLines(status.connectors)].join("\n"))
+    console.log([`Runtime：${record.url}（pid ${status.pid}）`, ...statusLines(status.connectors)].join("\n"))
   },
 })
 
