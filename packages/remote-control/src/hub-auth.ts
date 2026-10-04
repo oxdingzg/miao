@@ -12,6 +12,8 @@ export type Options = {
   baseURL: string
   secret: string
   allowLoopbackHTTP?: boolean
+  /** Disable migrations when opening an existing production database. */
+  migrate?: boolean
 }
 export type Bootstrap = { email: string; password: string; name: string }
 export type Principal = { accountID: string; sessionID: string; expiresAt: number }
@@ -44,13 +46,13 @@ export async function create(options: Options) {
   const factory = (disableSignUp: boolean, validateSchema = true) =>
     betterAuth({
       database: options.database,
-      advanced: { database: { validateSchema } },
+      advanced: { database: { validateSchema }, ipAddress: { ipAddressHeaders: ["x-miao-peer-ip"] } },
       baseURL,
       secret: options.secret,
       trustedOrigins: [baseURL],
       emailAndPassword: { enabled: true, disableSignUp, autoSignIn: false, minPasswordLength: 12 },
       session: { expiresIn: 7 * 24 * 60 * 60, updateAge: 24 * 60 * 60, cookieCache: { enabled: false } },
-      rateLimit: { enabled: true, window: 60, max: 30 },
+      rateLimit: { enabled: true, window: 60, max: 30, storage: "database" },
       plugins: [
         bearer({ requireSignature: true }),
         jwt({
@@ -65,16 +67,20 @@ export async function create(options: Options) {
       ],
     })
   // Migration discovery runs before creating the schema-validated serving instance.
-  const initializer = factory(true, false)
-  const migration = await getMigrations(initializer.options)
-  await migration.runMigrations()
-  await initializer.$context
+  if (options.migrate !== false) {
+    const initializer = factory(true, false)
+    const migration = await getMigrations(initializer.options)
+    await migration.runMigrations()
+    await initializer.$context
+  }
   const auth = factory(true)
   const context = await auth.$context
   await context.explicitSchemaCheck?.()
-  options.database.exec(
-    "CREATE TABLE IF NOT EXISTS hub_bootstrap (id INTEGER PRIMARY KEY CHECK (id = 1), reservation TEXT NOT NULL)",
-  )
+  if (options.migrate !== false)
+    options.database.exec(
+      "CREATE TABLE IF NOT EXISTS hub_bootstrap (id INTEGER PRIMARY KEY CHECK (id = 1), reservation TEXT NOT NULL)",
+    )
+  options.database.query("SELECT reservation FROM hub_bootstrap WHERE id = 1").get()
   return {
     auth,
     /** Invoke only before exposing a listener, with a private one-time administrator configuration. */
