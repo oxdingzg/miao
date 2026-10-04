@@ -54,6 +54,15 @@ export const record = (events: EventV2.Interface, sessionID: SessionSchema.ID, g
     })
   })
 
+/** A goal may be `done` or `blocked` only with evidence; returns the reason otherwise. */
+export const validate = (goal: Info): string | undefined => {
+  const evidence = goal.evidence?.trim()
+  if (goal.status === "done" && !evidence)
+    return "A goal may be marked done only with evidence that proves completion."
+  if (goal.status === "blocked" && !evidence) return "A blocked goal must name the blocker as evidence."
+  return undefined
+}
+
 /** Builds the canonical goal tool around a runner-provided durable recorder. */
 export const make = (record: (goal: Info) => Effect.Effect<void, ToolFailure>): AnyTool =>
   Tool.make({
@@ -61,5 +70,11 @@ export const make = (record: (goal: Info) => Effect.Effect<void, ToolFailure>): 
     input: Input,
     output: Output,
     toModelOutput: ({ output }) => [{ type: "text", text: render(output) }],
-    execute: (input) => record(input).pipe(Effect.as(input)),
+    execute: (input) =>
+      Effect.gen(function* () {
+        const invalid = validate(input)
+        if (invalid !== undefined) return yield* new ToolFailure({ message: invalid })
+        yield* record(input)
+        return input
+      }),
   })

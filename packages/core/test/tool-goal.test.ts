@@ -64,4 +64,13 @@ describe("GoalTool", () => {
       expect(text).toContain("evidence: waiting on upstream")
     }),
   )
+
+  it.effect("requires evidence for done and blocked", () =>
+    Effect.sync(() => {
+      expect(GoalTool.validate({ objective: "x", status: "done" })).toBeDefined()
+      expect(GoalTool.validate({ objective: "x", status: "done", evidence: "tests pass" })).toBeUndefined()
+      expect(GoalTool.validate({ objective: "x", status: "blocked" })).toBeDefined()
+      expect(GoalTool.validate({ objective: "x", status: "active" })).toBeUndefined()
+    }),
+  )
 })
