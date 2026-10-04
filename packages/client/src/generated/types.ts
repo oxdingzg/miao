@@ -4123,3 +4123,14 @@ export type RemoteTestInput = {
 }
 
 export type RemoteTestOutput = { readonly ok: boolean; readonly sent: number; readonly error?: string | undefined }
+
+export type ServerRuntimeIdentityInput = { readonly challenge: { readonly challenge: string }["challenge"] }
+
+export type ServerRuntimeIdentityOutput = {
+  readonly runtimeID: string
+  readonly version: string
+  readonly protocol: 1
+  readonly storageID: string
+  readonly url: string
+  readonly proof: string
+}

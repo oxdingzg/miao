@@ -12,6 +12,7 @@ import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
 import { PublicApi } from "./routes/instance/httpapi/public"
 import type { CorsOptions } from "@miao/server/cors"
 import type { RemoteControl } from "@miao/server/remote-control"
+import type { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { lazy } from "@/util/lazy"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
@@ -36,6 +37,7 @@ type ListenOptions = CorsOptions & {
   mdnsDomain?: string
   /** Serves the /api/remote control routes; only `miao remote` passes it. */
   remote?: RemoteControl.Interface
+  runtime?: RuntimeIdentity.Interface
 }
 type ListenerState = {
   scope: Scope.Scope
@@ -51,9 +53,7 @@ interface ListenerServer {
   readonly closeAll: Effect.Effect<void>
 }
 
-class ListenerServerService extends Context.Service<ListenerServerService, ListenerServer>()(
-  "@miao/ListenerServer",
-) {}
+class ListenerServerService extends Context.Service<ListenerServerService, ListenerServer>()("@miao/ListenerServer") {}
 
 export const Default = lazy(() => {
   const handler = HttpApiApp.webHandler().handler
@@ -100,7 +100,7 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
 )
 
 function listenerLayer(opts: ListenOptions, port: number) {
-  return HttpRouter.serve(HttpApiApp.createRoutes(opts, opts.remote), {
+  return HttpRouter.serve(HttpApiApp.createRoutes(opts, opts.remote, opts.runtime), {
     disableLogger: true,
     disableListenLog: true,
   }).pipe(

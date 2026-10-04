@@ -43,6 +43,7 @@ import { layer as locationLayer } from "./location"
 import { sessionLocationLayer } from "./middleware/session-location"
 import { PtyEnvironment } from "./pty-environment"
 import { RemoteControl } from "./remote-control"
+import { RuntimeIdentity } from "@miao/core/runtime/identity"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
@@ -58,6 +59,7 @@ const cors = (corsOptions?: CorsOptions) =>
 export interface AssemblyOptions {
   readonly cors?: CorsOptions
   readonly remote?: RemoteControl.Interface
+  readonly runtime?: RuntimeIdentity.Interface
   /** Provides `ServerAuth.Config`; defaults to the environment-backed layer. */
   readonly auth?: Layer.Layer<ServerAuth.Config, any, any>
   /**
@@ -73,10 +75,15 @@ export interface AssemblyOptions {
 // - extensions: host-supplied raw routes (OpenAPI document, embedded UI).
 // - the catch-all UI fallback lives in the host extension so the server package
 //   stays free of build-time virtual modules.
-const apiRoutes = (remote: RemoteControl.Interface | undefined, auth: AssemblyOptions["auth"]) =>
+const apiRoutes = (
+  remote: RemoteControl.Interface | undefined,
+  auth: AssemblyOptions["auth"],
+  runtime: AssemblyOptions["runtime"],
+) =>
   HttpApiBuilder.layer(Api).pipe(
     Layer.provide(handlers),
     Layer.provide(remote ? RemoteControl.layer(remote) : Layer.empty),
+    Layer.provide(runtime ? Layer.succeed(RuntimeIdentity.Service)(runtime) : Layer.empty),
     Layer.provide([authorizationLayer.pipe(Layer.provide(auth ?? ServerAuth.Config.layer)), schemaErrorLayer]),
   )
 
@@ -120,7 +127,10 @@ export function createRoutes(
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = buildLocationServiceMap()
 
-  return Layer.mergeAll(apiRoutes(options.remote, options.auth), options.extensions ?? Layer.empty).pipe(
+  return Layer.mergeAll(
+    apiRoutes(options.remote, options.auth, options.runtime),
+    options.extensions ?? Layer.empty,
+  ).pipe(
     Layer.provide([
       errorLayer,
       compressionLayer,

@@ -43,6 +43,10 @@ export const authorizationLayer = Layer.effect(
     return Authorization.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
+        // Discovery proves server identity before clients disclose their credential.
+        // This single read-only endpoint never exposes application state.
+        if (request.method === "GET" && new URL(request.url, "http://localhost").pathname === "/api/runtime/identity")
+          return yield* effect
         // Browsers cannot set headers on WebSocket upgrades, so a ticketed PTY connect skips
         // credential checks here; the connect handler consumes and validates the ticket.
         if (hasPtyConnectTicketURL(new URL(request.url, "http://localhost"))) return yield* effect
