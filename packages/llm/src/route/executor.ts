@@ -308,7 +308,10 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
       // Prefer the concrete cause; Effect's own message carries only the method
       // and URL, which is still far more useful than a bare constant.
       message: detail.length > 0 ? detail : error.reason.message,
-      kind: error.reason._tag,
+      // The generic verification result can recur between successful turns.
+      // Retry a normally verified handshake; definitive trust failures keep
+      // their non-retryable TransportError classification.
+      kind: detail.includes("UNKNOWN_CERTIFICATE_VERIFICATION_ERROR") ? "tls-handshake" : error.reason._tag,
       request,
     })
   }
@@ -361,13 +364,11 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
           redactedNames,
         })
         if (trace !== undefined) yield* trace.request()
-        return yield* http
-          .execute(request)
-          .pipe(
-            Effect.mapError(toHttpError(redactedNames)),
-            Effect.flatMap(statusError(request, redactedNames, trace)),
-            Effect.tapError((error) => (trace === undefined ? Effect.void : trace.error(error))),
-          )
+        return yield* http.execute(request).pipe(
+          Effect.mapError(toHttpError(redactedNames)),
+          Effect.flatMap(statusError(request, redactedNames, trace)),
+          Effect.tapError((error) => (trace === undefined ? Effect.void : trace.error(error))),
+        )
       })
     return Service.of({
       execute: (request) => retryStatusFailures(executeOnce(request)),
