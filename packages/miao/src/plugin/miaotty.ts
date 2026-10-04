@@ -1,7 +1,7 @@
 import type { Event } from "@miao/schema/event-view"
 import type { Hooks, Plugin } from "@miao/plugin"
 
-// miao-term's terminal, mtty (named miaotty up to v0.0.5), spawns every pane
+// mtty (the terminal, named miaotty up to v0.0.5) spawns every pane
 // with MTTY_PANE_ID and MTTY_CLI set (and, during the rename, the MIAOTTY_*
 // names too). When we detect that environment we report the agent state so the
 // terminal can badge the pane, deliver queued prompts and drive notifications.

@@ -36,7 +36,7 @@ Windows binaries are currently unsigned. The `publish` step records this status 
   `docs/releases/<tag>.zh.md`, linked as `[简体中文](…)` under the first
   heading. Write the mirror before dispatching a release — `script/release-notes.ts`
   fails the publish job when it is missing. The same rule applies to every miao
-  project, including `miao-term`.
+  project, including `mtty`.
 
 ## Pre-release checklist
 

@@ -242,7 +242,7 @@ Published release: [v0.0.35](https://github.com/oxdingzg/miao/releases/tag/v0.0.
 - **core**: implement session.wait for the V2 runner (`c36acf45f`)
 - **cli**: add --format jsonl to session export (`3e5f0c360`)
 - **cli**: add db stats and vacuum maintenance commands (`fc28cc9c9`)
-- **plugin**: report agent state to the miao-term terminal (`53c037dfa`)
+- **plugin**: report agent state to the mtty terminal (`53c037dfa`)
 - **provider**: list documented Tencent Token Plan models missing from models.dev (`674db112e`)
 - **core**: enable the native edit/patch paths by default (`aa09adb84`)
 - **shell**: run commands under the process sandbox when MIAO_SANDBOX is set (`2ac4cc590`)
