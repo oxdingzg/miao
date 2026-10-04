@@ -6,6 +6,90 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Layer.empty)
 
 describe("SessionRunCoordinator", () => {
+  it.effect("stale targeted interruption leaves a queued successor running", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const successorStarted = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        let runs = 0
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: () =>
+            Effect.suspend(() => {
+              runs++
+              return Deferred.succeed(runs === 1 ? started : successorStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(gate)),
+              )
+            }),
+        })
+
+        yield* coordinator.wake("session")
+        yield* Deferred.await(started)
+        const first = (yield* coordinator.executions).get("session")!
+        const snapshot = yield* coordinator.executions
+        yield* coordinator.wake("session")
+        expect(yield* coordinator.interruptIf("session", first)).toBe(true)
+        yield* Deferred.await(successorStarted)
+        const second = (yield* coordinator.executions).get("session")!
+        expect(second).not.toBe(first)
+        expect(snapshot.get("session")).toBe(first)
+        expect(yield* coordinator.interruptIf("session", first)).toBe(false)
+        expect((yield* coordinator.executions).get("session")).toBe(second)
+        expect(yield* coordinator.interruptIf("session", second)).toBe(true)
+        yield* coordinator.awaitIdle("session")
+        expect(yield* coordinator.interruptIf("session", second)).toBe(false)
+      }),
+    ),
+  )
+
+  it.effect("successful wake follow-ups receive a new execution identity", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const secondStarted = yield* Deferred.make<void>()
+        const firstGate = yield* Deferred.make<void>()
+        const secondGate = yield* Deferred.make<void>()
+        let runs = 0
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: () =>
+            Effect.suspend(() => {
+              runs++
+              return Deferred.succeed(runs === 1 ? firstStarted : secondStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(runs === 1 ? firstGate : secondGate)),
+              )
+            }),
+        })
+        yield* coordinator.wake("session")
+        yield* Deferred.await(firstStarted)
+        const first = (yield* coordinator.executions).get("session")!
+        yield* coordinator.wake("session")
+        yield* Deferred.succeed(firstGate, undefined)
+        yield* Deferred.await(secondStarted)
+        expect((yield* coordinator.executions).get("session")).not.toBe(first)
+        expect(yield* coordinator.interruptIf("session", first)).toBe(false)
+        yield* Deferred.succeed(secondGate, undefined)
+        yield* coordinator.awaitIdle("session")
+        expect((yield* coordinator.executions).size).toBe(0)
+      }),
+    ),
+  )
+
+  it.effect("separate coordinators cannot accept each other's execution identities", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>()
+        const first = yield* SessionRunCoordinator.make<string, never>({ drain: () => Deferred.await(gate) })
+        const second = yield* SessionRunCoordinator.make<string, never>({ drain: () => Deferred.await(gate) })
+        yield* first.wake("session")
+        yield* second.wake("session")
+        const identity = (yield* first.executions).get("session")!
+        expect(yield* second.interruptIf("session", identity)).toBe(false)
+        expect(yield* first.interruptIf("session", identity)).toBe(true)
+        yield* second.interrupt("session")
+      }),
+    ),
+  )
+
   it.effect("joins concurrent resumes for one key", () =>
     Effect.scoped(
       Effect.gen(function* () {
