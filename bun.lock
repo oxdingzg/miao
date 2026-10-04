@@ -592,6 +592,17 @@
         "@typescript/native-preview": "catalog:",
       },
     },
+    "packages/remote-control": {
+      "name": "@miao/remote-control",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+      },
+    },
     "packages/schema": {
       "name": "@miao/schema",
       "dependencies": {
@@ -1377,6 +1388,8 @@
     "@miao/protocol": ["@miao/protocol@workspace:packages/protocol"],
 
     "@miao/remote": ["@miao/remote@workspace:packages/remote"],
+
+    "@miao/remote-control": ["@miao/remote-control@workspace:packages/remote-control"],
 
     "@miao/schema": ["@miao/schema@workspace:packages/schema"],
 
