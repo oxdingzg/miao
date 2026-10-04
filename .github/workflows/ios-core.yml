@@ -28,6 +28,15 @@ jobs:
           -target arm64-apple-ios17.0
           -sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
           apps/ios/MiaoCore/Sources/MiaoCore/*.swift
+      - name: Universal native app build
+        run: >-
+          sh apps/ios/scripts/build-app.sh -configuration Release
+          -sdk iphoneos -destination 'generic/platform=iOS'
+          -derivedDataPath "$RUNNER_TEMP/miao-ios-app" CODE_SIGNING_ALLOWED=NO
+      - name: iPhone UI smoke test
+        run: sh apps/ios/scripts/test-app.sh iphone -derivedDataPath "$RUNNER_TEMP/miao-ios-ui"
+      - name: iPad UI smoke test
+        run: sh apps/ios/scripts/test-app.sh ipad -derivedDataPath "$RUNNER_TEMP/miao-ios-ui"
       - name: WebCrypto and CryptoKit interoperability
         env:
           MIAO_SWIFT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/InteropProbe"]'

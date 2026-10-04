@@ -26,7 +26,7 @@ public struct AuthorizationScope: Codable, Hashable, Sendable {
 }
 
 public enum OperationKind: String, Codable, Sendable {
-    case prompt, sessionCreate, permissionReply, questionReply, interrupt
+    case prompt, sessionCreate, permissionReply, questionReply, interrupt, sessionRename
 }
 
 public enum OperationStatus: String, Codable, Sendable {
@@ -36,7 +36,7 @@ public enum OperationStatus: String, Codable, Sendable {
 public struct PendingOperation: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
     public let scope: AuthorizationScope
-    public let address: SessionAddress
+    public let target: OperationTarget
     public let kind: OperationKind
     /// Serialized immutable wire parameters, protected with the rest of the checkpoint.
     public let payload: Data
@@ -46,13 +46,38 @@ public struct PendingOperation: Codable, Sendable, Equatable, Identifiable {
 
     public init(id: UUID = UUID(), scope: AuthorizationScope, address: SessionAddress,
                 kind: OperationKind, payload: Data, createdAt: Date = Date()) {
+        self.init(id: id, scope: scope, target: OperationTarget(session: address), kind: kind, payload: payload, createdAt: createdAt)
+    }
+
+    public init(id: UUID = UUID(), scope: AuthorizationScope, target: OperationTarget,
+                kind: OperationKind, payload: Data, createdAt: Date = Date()) {
         self.id = id
         self.scope = scope
-        self.address = address
+        self.target = target
         self.kind = kind
         self.payload = payload
         self.createdAt = createdAt
         self.status = .prepared
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, scope, target, address, kind, payload, createdAt, status, result }
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.container(keyedBy: CodingKeys.self)
+        id = try value.decode(UUID.self, forKey: .id)
+        scope = try value.decode(AuthorizationScope.self, forKey: .scope)
+        if let current = try value.decodeIfPresent(OperationTarget.self, forKey: .target) { target = current }
+        else { target = try OperationTarget(session: value.decode(SessionAddress.self, forKey: .address)) }
+        kind = try value.decode(OperationKind.self, forKey: .kind)
+        payload = try value.decode(Data.self, forKey: .payload)
+        createdAt = try value.decode(Date.self, forKey: .createdAt)
+        status = try value.decode(OperationStatus.self, forKey: .status)
+        result = try value.decodeIfPresent(Data.self, forKey: .result)
+    }
+    public func encode(to encoder: Encoder) throws {
+        var value = encoder.container(keyedBy: CodingKeys.self)
+        try value.encode(id, forKey: .id); try value.encode(scope, forKey: .scope); try value.encode(target, forKey: .target)
+        try value.encode(kind, forKey: .kind); try value.encode(payload, forKey: .payload); try value.encode(createdAt, forKey: .createdAt)
+        try value.encode(status, forKey: .status); try value.encodeIfPresent(result, forKey: .result)
     }
 
     mutating func transition(_ status: OperationStatus, result: Data?) throws {
@@ -112,7 +137,8 @@ public struct ClientCheckpoint: Codable, Sendable, Equatable {
               Set(operations.map(\.id)).count == operations.count,
               Set(sessions.map(\.address)).count == sessions.count,
               Set(drafts.map(\.address)).count == drafts.count else { throw ClientStateError.limitExceeded }
-        guard operations.allSatisfy({ $0.scope == scope && $0.address.hostID == scope.hostID }),
+        guard operations.allSatisfy({ $0.scope == scope && $0.target.hostID == scope.hostID &&
+                  ($0.target.sessionID?.isEmpty == false || $0.target.projectID?.isEmpty == false) }),
               sessions.allSatisfy({ $0.address.hostID == scope.hostID && $0.cursor >= 0 }),
               drafts.allSatisfy({ $0.address.hostID == scope.hostID }) else { throw ClientStateError.scopeMismatch }
     }
