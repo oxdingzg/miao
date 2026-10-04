@@ -10,8 +10,14 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-04
+
+Published release: [v0.1.2](https://github.com/oxdingzg/miao/releases/tag/v0.1.2).
+
 ### Fixed
 
+- **cli**: positional provider names work with `miao auth login opencode` and
+  `miao auth login opencode-go`, instead of being treated as invalid URLs.
 - **integration**: OAuth connection accepts omitted prompt inputs from older clients,
   and the TUI explicitly sends empty inputs for methods without prompts.
 - **llm**: retry transient TLS verification failures within the existing retry budget;

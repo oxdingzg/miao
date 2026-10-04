@@ -1,6 +1,6 @@
 # Provider connection and recovery
 
-The 0.1.2 source and preview build include these fixes. Check the GitHub release page for publication status before assuming the stable command has them.
+These fixes shipped in [v0.1.2](https://github.com/oxdingzg/miao/releases/tag/v0.1.2), published on 2026-10-04. Run `miao upgrade`, then restart miao and confirm `miao --version` reports `0.1.2` or later.
 
 ## Log in by provider name
 
