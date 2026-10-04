@@ -11,12 +11,14 @@
 // live queries on demand instead.
 //
 // On by default (30s x ~200B is negligible). Disable with MIAO_MONITOR=0.
-import { execFileSync } from "child_process"
+import { execFile } from "node:child_process"
 import fs from "fs"
 import os from "os"
 import path from "path"
 import { monitorEventLoopDelay } from "perf_hooks"
+import { isMainThread, threadId } from "node:worker_threads"
 import { DatabaseFile } from "@miao/core/database/file"
+import { DiagnosticFiles } from "@miao/core/diagnostic-files"
 import { Global } from "@miao/core/global"
 import { InstallationChannel, InstallationVersion } from "@miao/core/installation/version"
 
@@ -24,40 +26,55 @@ const INTERVAL = 30_000
 // Thread and swap probes shell out, so run them on every Nth tick only.
 const HEAVY_EVERY = 10
 const BUCKET = "monitor"
+const budget = {
+  match: (name: string) => /^(cli|tui|serve)-\d+\.jsonl(?:\.previous)?$/.test(name),
+  maxBytes: 32 * DiagnosticFiles.MiB,
+  maxFiles: 64,
+}
 
 let timer: Timer | undefined
 let ticks = 0
 let target: string | undefined
 let loop: ReturnType<typeof monitorEventLoopDelay> | undefined
+let pending: Promise<void> | undefined
+let writes = Promise.resolve()
+let skipped = 0
+let windowStarted = performance.now()
 
 /** Detached timer so the sampler never keeps a short-lived CLI invocation alive. */
-export function start() {
+export function start(options: { intervalMs?: number } = {}) {
   if (timer) return
+  writes = writes.then(async () => {
+    await DiagnosticFiles.cleanupAsync(path.join(Global.Path.log, BUCKET), budget)
+    await DiagnosticFiles.cleanupAsync(Global.Path.log, {
+      match: (name) => name === "tui.log" || name === "tui.log.previous",
+      maxBytes: 2 * DiagnosticFiles.MiB,
+      maxFiles: 2,
+    })
+  })
   if (process.env["MIAO_MONITOR"] === "0") return
 
   loop = monitorEventLoopDelay({ resolution: 20 })
   loop.enable()
+  windowStarted = performance.now()
 
-  append(header())
+  const interval = options.intervalMs ?? INTERVAL
+  append(header(interval))
   ticks = 0
   timer = setInterval(() => {
+    if (pending) {
+      skipped += 1
+      return
+    }
     ticks += 1
-    append(sample())
-  }, INTERVAL)
+    pending = sample()
+      .then(append)
+      .catch(() => {})
+      .finally(() => {
+        pending = undefined
+      })
+  }, interval)
   timer.unref?.()
-}
-
-/**
- * Best-effort probe: a metric that cannot be read is recorded as null rather
- * than aborting the sample. A sampler that stops on the first permission error
- * is worse than no sampler, because the gap looks like the process died.
- */
-function probe<T>(read: () => T): T | null {
-  try {
-    return read()
-  } catch {
-    return null
-  }
 }
 
 function file() {
@@ -69,22 +86,30 @@ function file() {
 }
 
 function append(line: unknown) {
-  probe(() => {
-    fs.mkdirSync(path.dirname(file()), { recursive: true })
-    fs.appendFileSync(file(), JSON.stringify(line) + "\n")
-  })
+  const text = JSON.stringify(line) + "\n"
+  writes = writes
+    .then(() => DiagnosticFiles.appendAsync(file(), text, DiagnosticFiles.MiB, budget))
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+  return writes
 }
 
-function header() {
+function header(interval: number) {
   return {
     type: "start",
     t: Date.now(),
     pid: process.pid,
+    isolate: isMainThread ? "main" : "worker",
+    threadId,
+    loopStats: "window",
+    loopResolutionMs: 20,
     version: InstallationVersion,
     channel: InstallationChannel,
     argv: process.argv.slice(2),
     cwd: process.cwd(),
-    intervalMs: INTERVAL,
+    intervalMs: interval,
     platform: process.platform,
     arch: process.arch,
     cpus: os.cpus().length,
@@ -92,19 +117,51 @@ function header() {
   }
 }
 
-function sample() {
+async function sample() {
+  const started = performance.now()
+  const timestamp = Date.now()
   const mem = process.memoryUsage()
   const cpu = process.cpuUsage()
   // Ticks start at 1, so `=== 1` puts thread/swap in the very first sample
   // rather than making the report wait out a full heavy interval.
   const heavy = ticks === 1 || ticks % HEAVY_EVERY === 0
   const db = DatabaseFile.path()
-  const ms = (nanos: number) => Math.round(nanos / 1e5) / 10
+  const count = loop?.count ?? 0
+  const ms = (nanos: number | undefined) =>
+    count > 0 && nanos !== undefined && Number.isFinite(nanos) ? Math.round(nanos / 1e5) / 10 : null
+  const latency = {
+    loopWindowMs: Math.round(started - windowStarted),
+    loopCount: count,
+    loopMeanMs: ms(loop?.mean),
+    loopP95Ms: ms(loop?.percentile(95)),
+    loopP99Ms: ms(loop?.percentile(99)),
+    loopMaxMs: ms(loop?.max),
+  }
+  loop?.reset()
+  windowStarted = started
+  const [threads, swap, fds, dbFileBytes, dbWalBytes] = await Promise.all([
+    heavy ? threadCount().catch(() => null) : null,
+    heavy ? swapUsed().catch(() => null) : null,
+    fs.promises.readdir(fdDir()).then(
+      (files) => files.length,
+      () => null,
+    ),
+    fs.promises.stat(db).then(
+      (stat) => stat.size,
+      () => null,
+    ),
+    fs.promises.stat(`${db}-wal`).then(
+      (stat) => stat.size,
+      () => null,
+    ),
+  ])
 
   return {
     type: "sample",
-    t: Date.now(),
+    t: timestamp,
     pid: process.pid,
+    isolate: isMainThread ? "main" : "worker",
+    threadId,
     uptime: Math.round(process.uptime()),
     rss: mem.rss,
     heapUsed: mem.heapUsed,
@@ -115,41 +172,60 @@ function sample() {
     // sampler: an instantaneous `%CPU` is a lifetime average in disguise.
     cpuUser: cpu.user,
     cpuSystem: cpu.system,
-    fds: probe(() => fs.readdirSync(fdDir()).length),
-    threads: heavy ? probe(threadCount) : null,
-    swapUsed: heavy ? probe(swapUsed) : null,
-    loopMeanMs: loop ? ms(loop.mean) : null,
-    loopP99Ms: loop ? ms(loop.percentile(99)) : null,
+    fds,
+    threads,
+    swapUsed: swap,
+    ...latency,
+    probeMs: Math.round(performance.now() - started),
+    skippedSamples: skipped,
     load1: os.loadavg()[0],
     freeMem: os.freemem(),
     totalMem: os.totalmem(),
-    dbFileBytes: probe(() => fs.statSync(db).size),
-    dbWalBytes: probe(() => fs.statSync(`${db}-wal`).size),
+    dbFileBytes,
+    dbWalBytes,
   }
+}
+
+export async function stop() {
+  if (timer) clearInterval(timer)
+  timer = undefined
+  loop?.disable()
+  await pending
+  await writes
+  loop = undefined
 }
 
 const fdDir = () => (process.platform === "darwin" ? "/dev/fd" : "/proc/self/fd")
 
-function threadCount() {
+function command(name: string, args: string[]) {
+  return new Promise<string>((resolve, reject) => {
+    execFile(name, args, { encoding: "utf8", timeout: 5_000 }, (error, stdout) => {
+      if (error) return reject(error)
+      resolve(stdout)
+    })
+  })
+}
+
+async function threadCount() {
   if (process.platform === "darwin") {
-    const out = execFileSync("ps", ["-M", String(process.pid)], { encoding: "utf8", timeout: 5_000 })
+    const out = await command("ps", ["-M", String(process.pid)])
     // One header line, then one line per thread.
     return Math.max(0, out.trimEnd().split("\n").length - 1)
   }
-  const status = fs.readFileSync("/proc/self/status", "utf8")
+  const status = await fs.promises.readFile("/proc/self/status", "utf8")
   const match = /^Threads:\s*(\d+)/m.exec(status)
   if (!match) throw new Error("no Threads line in /proc/self/status")
   return Number(match[1])
 }
 
-function swapUsed() {
+async function swapUsed() {
   if (process.platform === "darwin") {
-    const out = execFileSync("sysctl", ["-n", "vm.swapusage"], { encoding: "utf8", timeout: 5_000 })
+    const out = await command("sysctl", ["-n", "vm.swapusage"])
     const match = /used\s*=\s*([\d.]+)M/.exec(out)
     if (!match) throw new Error("unrecognized vm.swapusage output")
     return Math.round(Number(match[1]) * 1024 * 1024)
   }
-  const info = fs.readFileSync("/proc/meminfo", "utf8")
+  const info = await fs.promises.readFile("/proc/meminfo", "utf8")
   const total = Number(/^SwapTotal:\s*(\d+) kB/m.exec(info)?.[1] ?? 0)
   const free = Number(/^SwapFree:\s*(\d+) kB/m.exec(info)?.[1] ?? 0)
   return (total - free) * 1024
