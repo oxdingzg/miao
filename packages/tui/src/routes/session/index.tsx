@@ -1083,17 +1083,19 @@ export function Session() {
 
   let loadingHistory = false
   async function loadOlder() {
-    if (!scroll || scroll.isDestroyed || loadingHistory) return
+    if (!scroll || scroll.isDestroyed || loadingHistory || transcript.start() > 0) return
     loadingHistory = true
     const sessionID = route.sessionID
+    const boundary = transcript.messages()[0]?.id
     const height = scroll.scrollHeight
-    const local = transcript.older()
-    const loaded = local || (await sync.session.loadOlder(sessionID).catch(() => false))
+    const loaded = await sync.session.loadOlder(sessionID).catch(() => false)
     if (sessionID !== route.sessionID || !loaded) {
       loadingHistory = false
       return
     }
-    if (!local) transcript.older()
+    // Anchor the window on the message that was at the top so the prepended
+    // page stays above the reader and only the spacers grow.
+    if (boundary) transcript.reveal(boundary)
     setTimeout(() => {
       loadingHistory = false
       if (!scroll || scroll.isDestroyed || sessionID !== route.sessionID) return
@@ -1103,9 +1105,22 @@ export function Session() {
 
   function loadOlderAtTop() {
     if (!scroll || scroll.isDestroyed) return
-    transcript.pin()
     if (scroll.scrollTop > 1) return
     void loadOlder()
+  }
+
+  // Keep the mounted window around the viewport. Spacers preserve the height of
+  // the whole loaded timeline, so the scrollbar and scroll position stay put
+  // while only the rows near the reader remain mounted.
+  function followWindow() {
+    if (!scroll || scroll.isDestroyed || loadingHistory) return
+    // Lifecycle passes run before layout; skip until the scrollbox has geometry.
+    if (scroll.scrollHeight <= 0) return
+    transcript.follow({
+      scrollTop: scroll.scrollTop,
+      viewportHeight: scroll.height,
+      mountedHeight: scroll.scrollHeight - transcript.top() - transcript.bottom(),
+    })
   }
 
   return (
@@ -1132,7 +1147,15 @@ export function Session() {
           <box flexGrow={1} minWidth={0} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
             <Show when={session()}>
               <SessionScrollbox
-                ref={(r) => (scroll = r)}
+                ref={(r) => {
+                  scroll = r
+                  const pass = r.onLifecyclePass
+                  r.onLifecyclePass = () => {
+                    pass?.call(r)
+                    followWindow()
+                  }
+                  r.ctx.registerLifecyclePass(r)
+                }}
                 alwaysShow={showScrollbar()}
                 thumbColor={theme.border}
                 trackColor={theme.backgroundElement}
@@ -1150,6 +1173,9 @@ export function Session() {
                   <box paddingLeft={3} onMouseUp={() => void loadOlder()}>
                     <text fg={theme.textMuted}>↑ Scroll up or click to load earlier messages</text>
                   </box>
+                </Show>
+                <Show when={transcript.top() > 0}>
+                  <box height={transcript.top()} flexShrink={0} />
                 </Show>
                 <For each={transcript.messages()}>
                   {(message, index) => (
@@ -1252,6 +1278,9 @@ export function Session() {
                     </Switch>
                   )}
                 </For>
+                <Show when={transcript.bottom() > 0}>
+                  <box height={transcript.bottom()} flexShrink={0} />
+                </Show>
                 <SessionActivity sessionID={route.sessionID} />
               </SessionScrollbox>
               <box flexShrink={0}>
