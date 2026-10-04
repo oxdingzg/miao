@@ -15,6 +15,10 @@ concurrency:
 jobs:
   typecheck:
     runs-on: ubuntu-latest
+    # Bound the job so a stalled typecheck fails fast instead of running until
+    # the runner is reclaimed (and reports as a shutdown signal). The graph
+    # completes in ~2 minutes with a warm cache.
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
