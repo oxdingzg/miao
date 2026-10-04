@@ -4355,47 +4355,74 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("retries a provider stream that breaks before its first event", () =>
+  ;["stream-read", "connection-closed", "connection-failed", "Timeout", "tls-handshake"].forEach((kind) => {
+    it.effect(`retries ${kind} before its first event`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a dropped stream" }), resume: false })
+        // A retry resubscribes the same provider stream, which re-sends the HTTP
+        // request; the first subscription drops before any event arrives.
+        let attempts = 0
+        responseStream = Stream.unwrap(
+          Effect.sync(() =>
+            attempts++ === 0
+              ? Stream.fail(
+                  new LLMError({
+                    module: "test",
+                    method: "stream",
+                    reason: new TransportReason({ message: "connection reset", kind }),
+                  }),
+                )
+              : Stream.fromIterable(fragmentFixture("text", "text-after-drop", ["Recovered"]).completeEvents),
+          ),
+        )
+
+        const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+        while (attempts < 2) yield* TestClock.adjust("1 second")
+        yield* Fiber.join(resumed)
+
+        expect(attempts).toBe(2)
+        expect(yield* session.context(sessionID)).toMatchObject([
+          { type: "user", text: "Survive a dropped stream" },
+          { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
+        ])
+        const { db } = yield* Database.Service
+        const retried = yield* db
+          .select({ data: EventTable.data })
+          .from(EventTable)
+          .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+          .all()
+          .pipe(Effect.orDie)
+        expect(retried.map((row) => row.data)).toMatchObject([
+          { sessionID, attempt: 1, error: { message: "test.stream: connection reset", isRetryable: true } },
+        ])
+      }),
+    )
+  })
+
+  it.effect("does not replay a connection failure after publishing assistant text", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a dropped stream" }), resume: false })
-      // A retry resubscribes the same provider stream, which re-sends the HTTP
-      // request; the first subscription drops before any event arrives.
-      let attempts = 0
-      responseStream = Stream.unwrap(
-        Effect.sync(() =>
-          attempts++ === 0
-            ? Stream.fail(
-                new LLMError({
-                  module: "test",
-                  method: "stream",
-                  reason: new TransportReason({ message: "connection reset", kind: "stream-read" }),
-                }),
-              )
-            : Stream.fromIterable(fragmentFixture("text", "text-after-drop", ["Recovered"]).completeEvents),
-        ),
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Keep partial output" }), resume: false })
+      const failure = new LLMError({
+        module: "test",
+        method: "stream",
+        reason: new TransportReason({ message: "connection reset", kind: "connection-closed" }),
+      })
+      responseStream = Stream.concat(
+        Stream.fromIterable(fragmentFixture("text", "partial-connection", ["Partial"]).partialEvents),
+        Stream.fail(failure),
       )
-
-      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
-      while (attempts < 2) yield* TestClock.adjust("1 second")
-      yield* Fiber.join(resumed)
-
-      expect(attempts).toBe(2)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Survive a dropped stream" },
-        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
-      ])
-      const { db } = yield* Database.Service
-      const retried = yield* db
-        .select({ data: EventTable.data })
-        .from(EventTable)
-        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
-        .all()
-        .pipe(Effect.orDie)
-      expect(retried.map((row) => row.data)).toMatchObject([
-        { sessionID, attempt: 1, error: { message: "test.stream: connection reset", isRetryable: true } },
-      ])
+      requests.length = 0
+      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
+      expect(requests).toHaveLength(1)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({
+        type: "assistant",
+        finish: "error",
+        content: [{ type: "text", text: "Partial" }],
+      })
     }),
   )
 

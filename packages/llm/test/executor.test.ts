@@ -73,6 +73,50 @@ const expectLLMError = (error: unknown) => {
 const errorHttp = (error: LLMError) => ("http" in error.reason ? error.reason.http : undefined)
 
 describe("RequestExecutor", () => {
+  ;[408, 409, 429, 500, 502, 503, 504, 529].forEach((status) => {
+    it.effect(`retries transient HTTP ${status} with backoff`, () =>
+      Effect.gen(function* () {
+        const attempts = yield* Ref.make(0)
+        const fiber = yield* Effect.gen(function* () {
+          const executor = yield* RequestExecutor.Service
+          return yield* executor.execute(request)
+        }).pipe(
+          Effect.provide(
+            countedResponsesLayer(attempts, [new Response("temporary failure", { status }), new Response("ok")]),
+          ),
+          Effect.forkChild,
+        )
+        yield* TestClock.adjust(499)
+        expect(yield* Ref.get(attempts)).toBe(1)
+        yield* TestClock.adjust(1)
+        expect((yield* Fiber.join(fiber)).status).toBe(200)
+        expect(yield* Ref.get(attempts)).toBe(2)
+      }).pipe(Effect.provideService(Random.Random, randomMidpoint)),
+    )
+  })
+  ;[
+    { status: 400, body: "invalid request" },
+    { status: 401, body: "invalid key" },
+    { status: 403, body: "forbidden" },
+    { status: 404, body: "unknown model" },
+    { status: 413, body: "request too large" },
+    { status: 422, body: "invalid parameter" },
+    { status: 429, body: "insufficient_quota" },
+    { status: 400, body: "content_policy" },
+  ].forEach(({ status, body }) => {
+    it.effect(`does not retry HTTP ${status}: ${body}`, () =>
+      Effect.gen(function* () {
+        const attempts = yield* Ref.make(0)
+        const error = yield* Effect.gen(function* () {
+          const executor = yield* RequestExecutor.Service
+          return yield* executor.execute(request)
+        }).pipe(Effect.provide(countedResponsesLayer(attempts, [new Response(body, { status })])), Effect.flip)
+        expect(error.retryable).toBe(false)
+        expect(yield* Ref.get(attempts)).toBe(1)
+      }),
+    )
+  })
+
   it.live("retries an unknown TLS verification failure before a response", () =>
     Effect.gen(function* () {
       const attempts = yield* Ref.make(0)
@@ -497,7 +541,7 @@ describe("RequestExecutor", () => {
     }).pipe(Effect.provideService(Random.Random, randomMidpoint)),
   )
 
-  it.effect("names the underlying cause when the fetch layer rejects", () =>
+  it.live("names the underlying cause when the fetch layer rejects", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
       // Port 1 refuses immediately, so this is the same shape the fetch client
@@ -507,7 +551,7 @@ describe("RequestExecutor", () => {
       const error = yield* executor.execute(HttpClientRequest.post("http://127.0.0.1:1/v1/chat")).pipe(Effect.flip)
 
       expectLLMError(error)
-      expect(error.reason).toMatchObject({ _tag: "Transport", kind: "TransportError" })
+      expect(error.reason).toMatchObject({ _tag: "Transport" })
       expect(error.reason.message).not.toBe("HTTP transport failed")
       // Bun and Node word a refused connection differently, but both name it.
       expect(error.reason.message.toLowerCase()).toContain("connect")
