@@ -332,7 +332,7 @@ const layer = Layer.effectDiscard(
         })
         .pipe(Effect.option)
       if (result._tag === "None" || result.value.exitCode === 0) return undefined
-      return result.value.output?.toString("utf8") ?? ""
+      return result.value.output ? AppProcess.decodeOutput(result.value.output) : ""
     })
 
     // A declined, corrected, or rule-blocked escalation is an answer, not a
@@ -422,7 +422,7 @@ const layer = Layer.effectDiscard(
         const directories = [...new Set(blocked)].filter(
           (directory) => !current.writable.some((root) => FSUtil.contains(root, directory)),
         )
-        const unmapped = SandboxPolicy.unmappedDenials(current.result.output?.toString("utf8") ?? "", {
+        const unmapped = SandboxPolicy.unmappedDenials(current.result.output ? AppProcess.decodeOutput(current.result.output) : "", {
           network: input.network,
         })
         // Nothing the sandbox could have caused: an ordinary failing command.
@@ -611,7 +611,7 @@ const layer = Layer.effectDiscard(
                 }
               }
 
-              const output = outcome.result.output?.toString("utf8") || "(no output)"
+              const output = (outcome.result.output ? AppProcess.decodeOutput(outcome.result.output) : "") || "(no output)"
               const notice = outcome.result.outputTruncated
                 ? "[output capture truncated at the in-memory safety limit]"
                 : undefined
