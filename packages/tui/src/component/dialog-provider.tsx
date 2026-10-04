@@ -178,7 +178,7 @@ export function createDialogProviderOptions() {
                 integrationID: providerID,
                 location: { directory: sdk.directory },
                 ...(method.id ? { methodID: method.id } : {}),
-                inputs,
+                inputs: inputs ?? {},
               })
               if (result.error) {
                 toast.show({

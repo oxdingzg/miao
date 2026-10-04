@@ -1,11 +1,18 @@
 import { Integration } from "@miao/schema/integration"
 import { Location } from "@miao/schema/location"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 const Inputs = Schema.Record(Schema.String, Schema.String)
+
+export const OAuthConnectPayload = Schema.Struct({
+  methodID: Integration.MethodID,
+  // Older clients omit inputs for methods without additional prompts.
+  inputs: Inputs.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
+  label: Schema.optional(Schema.String),
+})
 
 export const IntegrationGroup = HttpApiGroup.make("server.integration")
   .add(
@@ -61,11 +68,7 @@ export const IntegrationGroup = HttpApiGroup.make("server.integration")
     HttpApiEndpoint.post("integration.connect.oauth", "/api/integration/:integrationID/connect/oauth", {
       params: { integrationID: Integration.ID },
       query: LocationQuery,
-      payload: Schema.Struct({
-        methodID: Integration.MethodID,
-        inputs: Inputs,
-        label: Schema.optional(Schema.String),
-      }),
+      payload: OAuthConnectPayload,
       success: Location.response(Integration.Attempt),
       error: InvalidRequestError,
     })
