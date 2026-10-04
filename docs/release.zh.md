@@ -12,8 +12,8 @@
 
 ## 发布流程
 
-1. **确认 main 是绿的**：`bun typecheck`、对应包的 `bun test`，以及原生 CI `.github/workflows/native.yml`。发布前用 `./script/install-local.sh` 构建并冒烟测试 `miao-preview`。
-2. **触发发布**：在干净的 main 上运行 `./script/release X.Y.Z`。脚本依次执行 `bun script/set-version.ts X.Y.Z`、提交 `chore: release X.Y.Z`、push，然后 `gh workflow run release.yml --ref main`。工作流**没有输入参数**，版本完全取自根 `package.json`；在 Actions 页面手动 dispatch 也一样。
+1. **通过 PR 准备版本**：创建短期发布分支，运行 `bun script/set-version.ts X.Y.Z`，准备 changelog 和简体中文 release notes 镜像。只提交发布相关路径，推送并创建 PR。包检查与原生 CI 通过后，squash 合入 `main`。正式发布前，在配置好的构建机上构建并冒烟测试 preview。
+2. **从已合并的 main 触发**：获得明确发布确认后，运行 `gh workflow run release.yml --ref main --repo oxdingzg/miao`。工作流**没有输入参数**，版本完全取自根 `package.json`；在 Actions 页面手动 dispatch 也一样。不要直接向 `main` 提交或推送版本准备改动。
 3. **工作流 `.github/workflows/release.yml`**：
    - `version`：运行 `script/version.ts`，以根 `package.json` 的版本创建**草稿** release `vX.Y.Z`，并生成 release notes，输出 `version/release/tag/repo`。
    - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
