@@ -42,6 +42,29 @@ describe("ToolCallLeak.detect", () => {
     expect(ToolCallLeak.detect(text)).toBe(true)
   })
 
+  // Field evidence 2026-10-04 (session `项目复盘与效果优化方案`, seq 3852): DeepSeek
+  // V4 Flash wrote a call as text but the gateway ate every opening marker, so
+  // the message ended on a long run of stray `</parameter></invoke>` closers with
+  // no `<invoke` anywhere. The old detect() missed it (no opener, and the bare
+  // `</invoke>` tail was not in CLOSING_TAIL), so the leak stayed in history and
+  // was imitated every later turn.
+  test("fires on a stray closer run with the openers eaten", () => {
+    const text =
+      "I traced the Enter handler. The overlay is harmless.\n" +
+      "</parameter>\n</invoke>\n".repeat(8)
+    expect(ToolCallLeak.detect(text)).toBe(true)
+  })
+
+  test("fires on the archived leak from seq 3852", async () => {
+    const text = await Bun.file(new URL("./fixtures/tool-call-leak-seq3852.txt", import.meta.url)).text()
+    expect(ToolCallLeak.detect(text)).toBe(true)
+  })
+
+  test("ignores a small number of stray closers in prose", () => {
+    const text = "Close the block with </parameter> and </invoke>. That is all."
+    expect(ToolCallLeak.detect(text)).toBe(false)
+  })
+
   test("ignores plain prose", () => {
     expect(ToolCallLeak.detect("The refactor is complete. All tests pass.")).toBe(false)
   })
