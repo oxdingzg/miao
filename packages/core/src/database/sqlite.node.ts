@@ -201,3 +201,12 @@ export const layer = (config: Config) => {
     Layer.provide(Reactivity.layer),
   )
 }
+
+/** A separate connection whose transaction holds the Runtime ownership lock. */
+export function openRuntimeLock(filename: string) {
+  const native = new DatabaseSync(filename, { timeout: 0 })
+  return {
+    exec: (sql: string) => { native.exec(sql) },
+    close: () => native.close(),
+  }
+}
