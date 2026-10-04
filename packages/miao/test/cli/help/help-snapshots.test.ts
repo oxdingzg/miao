@@ -53,6 +53,8 @@ const TOP_LEVEL = [
   "upgrade",
   "uninstall",
   "serve",
+  "runtime",
+  "remote",
   "web",
   "models",
   "stats",

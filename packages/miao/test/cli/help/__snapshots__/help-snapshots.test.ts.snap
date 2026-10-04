@@ -22,6 +22,7 @@ Options:
       --mdns-domain  custom domain name for mDNS service (default: miao.local)
                                                                     [string] [default: "miao.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
+      --attach       connect to an existing server URL                                      [string]
       --cwd          working directory [string] [default: "<HOME>"]
 "
 `;
@@ -268,6 +269,54 @@ Options:
       --mdns-domain  custom domain name for mDNS service (default: miao.local)
                                                                     [string] [default: "miao.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao runtime --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao runtime [action]
+
+run the persistent local session Runtime
+
+Positionals:
+  action                                     [choices: "start", "status", "stop"] [default: "start"]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao remote --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao remote
+
+drive sessions from WeChat, QQ, and other IM apps
+
+Commands:
+  miao remote                    run the persistent Runtime with its IM channels (foreground)
+                                                                                           [default]
+  miao remote login <connector>  connect an IM account through the local Runtime
+  miao remote status             show the running Runtime's IM accounts and usage
+  miao remote install            write a launchd agent that keeps miao remote running (does not load
+                                 it)
+  miao remote uninstall          remove the launchd agent file (prints the command to unload it)
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
 "
 `;
 
