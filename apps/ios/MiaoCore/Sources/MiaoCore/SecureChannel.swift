@@ -184,7 +184,7 @@ private func verify(key: String, signature: String, transcript: [Any]) throws {
     guard publicKey.isValidSignature(signature, for: try canonical(transcript)) else { throw ChannelError.invalidSignature }
 }
 
-private func canonical(_ object: Any) throws -> Data {
+func canonical(_ object: Any) throws -> Data {
     try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
 }
 

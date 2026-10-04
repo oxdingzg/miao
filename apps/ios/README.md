@@ -26,4 +26,10 @@ The client core also provides device-only, unlock-protected Keychain identity st
 
 The `TransportProbe` executable is test-only. Its explicit local test identity/grant is supplied by the harness, and cleartext loopback access is enabled only for that test. `check-transport.ts` exercises real native URLSession → Hub → Agent traffic, encrypted large history reconstruction and stable operation IDs. Production connections require HTTPS.
 
-CI runs native core tests, the iOS platform source check, crypto interoperability and native transport integration on a macOS runner. The SwiftUI app, pairing UI, Runtime-specific reconciliation and speech input remain subsequent implementation steps.
+`PairingInvitation.parse` accepts the TUI's `miao://pair#<base64url JSON>` invitation, validates its expiry and pinned host key, and requires a root HTTPS relay URL. Cleartext loopback access is an explicit test-only opt-in. `HubConnection.pair` creates the signed device claim and invitation HMAC, verifies the host's reply, and exposes the device fingerprint while waiting for local owner approval. No Session RPC reader starts before approval and the caller's mandatory save callback succeeds. Large grant notifications use the same bounded, ordered chunk assembly as RPC responses.
+
+If approval is lost or saving fails, pairing reports an uncertain outcome and closes the socket. The caller must reconcile authorization before reconnecting; this API never assumes a grant or repeats a business operation. The App must provide durable host/grant storage and its recovery flow.
+
+`PairingProbe` is test-only. `check-pairing.ts` connects real native URLSession transport to the Hub and Agent, exercises a Unicode invitation proof and explicit local approval, checks large grant reconstruction, and verifies that a failed save cannot send RPCs. Its generated test identities never come from production Keychain storage.
+
+CI runs native core tests, the iOS platform source check, crypto interoperability, native transport and pairing integration on a macOS runner. The SwiftUI app, camera UI, durable host registry, Runtime-specific reconciliation and speech input remain subsequent implementation steps.
