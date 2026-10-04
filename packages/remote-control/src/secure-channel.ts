@@ -83,7 +83,8 @@ export async function startClient(device: Identity, target: Target) {
   }
 }
 
-/** Device authorization must precede this call; an unknown key is never auto-trusted. */
+/** Authenticate the explicitly selected device key. The caller must separately
+ * authorize every data-plane request; a provisional pairing channel grants none. */
 export async function acceptClient(
   host: Identity,
   target: Target,
@@ -217,7 +218,11 @@ async function channel(
 }
 
 function json(value: unknown) {
-  return new TextEncoder().encode(JSON.stringify(canonical(value)))
+  return new TextEncoder().encode(canonicalJSON(value))
+}
+
+export function canonicalJSON(value: unknown) {
+  return JSON.stringify(canonical(value))
 }
 
 function encode(value: Uint8Array<ArrayBuffer>) {
