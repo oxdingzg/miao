@@ -2,7 +2,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { path } from "@miao/core/effect/app-node-platform"
 import { Global } from "@miao/core/global"
 import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
+import { ProjectMetadata } from "@miao/core/project/metadata"
 import { Database } from "@miao/core/database/database"
 import { eq } from "drizzle-orm"
 import { ProjectTable } from "@miao/core/project/sql"
@@ -136,7 +136,7 @@ const layer: Layer.Layer<
   | Path.Path
   | AppProcess.Service
   | GitCli.Service
-  | Project.Service
+  | ProjectMetadata.Service
   | InstanceStore.Service
   | Database.Service
 > = Layer.effect(
@@ -148,7 +148,7 @@ const layer: Layer.Layer<
     const appProcess = yield* AppProcess.Service
     const { db } = yield* Database.Service
     const gitSvc = yield* GitCli.Service
-    const project = yield* Project.Service
+    const metadata = yield* ProjectMetadata.Service
     const store = yield* InstanceStore.Service
 
     const git = Effect.fnUntraced(
@@ -225,7 +225,7 @@ const layer: Layer.Layer<
         })
       }
 
-      yield* project.addSandbox(ctx.project.id, info.directory).pipe(Effect.catch(() => Effect.void))
+      yield* metadata.addSandbox(ctx.project.id, info.directory).pipe(Effect.catch(() => Effect.void))
     })
 
     const boot = Effect.fnUntraced(function* (info: Info, startCommand?: string) {
@@ -488,7 +488,7 @@ const layer: Layer.Layer<
         .where(eq(ProjectTable.id, input.projectID))
         .get()
         .pipe(Effect.orDie)
-      const project = row ? Project.fromRow(row) : undefined
+      const project = row ? ProjectMetadata.fromRow(row) : undefined
       const startup = project?.commands?.start?.trim() ?? ""
       const ok = yield* runStartScript(directory, startup, "project")
       if (!ok) return false
@@ -617,7 +617,7 @@ const layer: Layer.Layer<
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, path, AppProcess.node, GitCli.node, Project.node, InstanceStore.node, Database.node],
+  deps: [FSUtil.node, path, AppProcess.node, GitCli.node, ProjectMetadata.node, InstanceStore.node, Database.node],
 })
 
 export * as Worktree from "."

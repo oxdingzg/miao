@@ -5,11 +5,18 @@ import { serviceUse } from "@miao/core/effect/service-use"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { disposeInstance as runDisposers } from "@/effect/instance-registry"
+import { ProjectV2 } from "@miao/core/project"
 import { FSUtil } from "@miao/core/fs-util"
+import { Database } from "@miao/core/database/database"
+import { ProjectDirectories } from "@miao/core/project/directories"
+import { ProjectRegistry } from "@miao/core/project/registry"
+import { EventV2 } from "@miao/core/event"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ProjectMetadata } from "@miao/core/project/metadata"
+import type { Project } from "@miao/schema/project"
 import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
-import * as Project from "./project"
 
 export interface LoadInput {
   directory: string
@@ -34,13 +41,32 @@ interface Entry {
   readonly deferred: Deferred.Deferred<InstanceContext>
 }
 
-const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service> = Layer.effect(
+const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const project = yield* Project.Service
     const bootstrap = yield* InstanceBootstrap.Service
+    const flags = yield* RuntimeFlags.Service
+    const registry = yield* Effect.context<
+      | Database.Service
+      | FSUtil.Service
+      | ProjectDirectories.Service
+      | EventV2.Service
+      | ProjectV2.Service
+      | ProjectMetadata.Service
+    >()
     const scope = yield* Scope.Scope
     const cache = new Map<string, Entry>()
+
+    const resolveProject = Effect.fnUntraced(function* (directory: string) {
+      const result = yield* ProjectRegistry.registerDirectory(directory).pipe(Effect.provideContext(registry))
+      if (flags.experimentalIconDiscovery)
+        yield* ProjectRegistry.discoverIcon(result.project).pipe(
+          Effect.provideContext(registry),
+          Effect.ignore,
+          Effect.forkIn(scope),
+        )
+      return { project: result.project, worktree: result.sandbox }
+    })
 
     const boot = (input: LoadInput & { directory: string }) =>
       Effect.gen(function* () {
@@ -51,10 +77,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
                 worktree: input.worktree,
                 project: input.project,
               }
-            : yield* project.fromDirectory(input.directory).pipe(
+            : yield* resolveProject(input.directory).pipe(
                 Effect.map((result) => ({
                   directory: input.directory,
-                  worktree: result.sandbox,
+                  worktree: result.worktree,
                   project: result.project,
                 })),
               )
@@ -207,7 +233,16 @@ export const bootstrapNode = LayerNode.unbound(InstanceBootstrap.Service, Node.t
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [Project.node, bootstrapNode],
+  deps: [
+    ProjectV2.node,
+    ProjectMetadata.node,
+    Database.node,
+    FSUtil.node,
+    ProjectDirectories.node,
+    EventV2.node,
+    RuntimeFlags.node,
+    bootstrapNode,
+  ],
 })
 
 export * as InstanceStore from "./instance-store"

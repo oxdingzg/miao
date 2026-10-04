@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { Database } from "@miao/core/database/database"
 import { SessionStats } from "@miao/core/session/stats"
-import { Project } from "@/project/project"
+import { Project } from "@miao/schema/project"
 import { InstanceRef } from "@/effect/instance-ref"
 
 interface StatsReport {

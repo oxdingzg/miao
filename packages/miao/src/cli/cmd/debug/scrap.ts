@@ -6,10 +6,10 @@ export const ScrapCommand = cmd({
   describe: "list all known projects",
   builder: (yargs) => yargs,
   async handler() {
-    const { Project } = await import("@/project/project")
+    const { ProjectMetadata } = await import("@miao/core/project/metadata")
     const { AppNodeBuilder } = await import("@miao/core/effect/app-node-builder")
     const { makeRuntime } = await import("@miao/core/effect/runtime")
-    const runtime = makeRuntime(Project.Service, AppNodeBuilder.build(Project.node))
+    const runtime = makeRuntime(ProjectMetadata.Service, AppNodeBuilder.build(ProjectMetadata.node))
     const list = await runtime.runPromise((project) => project.list())
     process.stdout.write(JSON.stringify(list, null, 2) + EOL)
   },

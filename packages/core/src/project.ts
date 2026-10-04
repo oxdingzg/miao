@@ -38,13 +38,9 @@ export interface Interface {
   readonly directories: (input: DirectoriesInput) => Effect.Effect<Directories>
   readonly resolve: (input: AbsolutePath) => Effect.Effect<Resolved>
   /**
-   * Temporary bridge method for writing the resolved project ID to the repo-local cache.
-   *
-   * This exists while the old opencode project service and this core project
-   * service work together: core resolves the ID, while the old service still owns
-   * database migration and persistence. The old service should call this after it
-   * finishes migrating from `resolve().previous` to `resolve().id`; once project
-   * persistence moves into core, this separate bridge method can go away.
+   * Writes the resolved project ID to the repository-local cache after
+   * ProjectRegistry has committed its database migration. Resolution itself
+   * stays read-only so a failed registration cannot advance the cache.
    */
   readonly commit: (input: { store: AbsolutePath; id: ID }) => Effect.Effect<void>
 }

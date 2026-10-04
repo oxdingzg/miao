@@ -3,6 +3,14 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@miao/core/effect/layer-node"
+import { EventV2 } from "@miao/core/event"
+import { Location } from "@miao/core/location"
+import { AbsolutePath } from "@miao/core/schema"
+import { ProjectMetadata } from "@miao/core/project/metadata"
+import { Session } from "@miao/schema/session"
+import { SessionV1 } from "@miao/schema/v1/session"
+import { Command } from "@/command"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { Cause, Effect, Exit, Fiber } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
@@ -13,7 +21,7 @@ import { testEffect } from "../lib/effect"
 import { waitGlobalBusEvent } from "../server/global-bus"
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node]), [
+  LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node, EventV2.node, ProjectMetadata.node]), [
     [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ]),
 )
@@ -111,5 +119,63 @@ it.live("InstanceStore.reload runs InstanceBootstrap", () =>
     yield* store.reload({ directory: tmp.directory })
 
     expect(existsSync(tmp.marker)).toBe(true)
+  }),
+)
+
+it.live("init subscription is scoped to the instance and released on disposal", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped({ git: true })
+    const other = yield* tmpdirScoped({ git: true })
+    const store = yield* InstanceStore.Service
+    const metadata = yield* ProjectMetadata.Service
+    const events = yield* EventV2.Service
+    const ctx = yield* store.load({ directory })
+    const payload = {
+      name: Command.Default.INIT,
+      sessionID: Session.ID.make("ses_init_subscription"),
+      arguments: "",
+      messageID: SessionV1.MessageID.make("msg_init_subscription"),
+    }
+    const location = (dir: string) =>
+      new Location.Info({
+        directory: AbsolutePath.make(dir),
+        project: { id: ctx.project.id, directory: AbsolutePath.make(ctx.worktree) },
+      })
+    yield* events.publish(Command.Event.Executed, payload, { location: location(other) })
+    expect((yield* metadata.get(ctx.project.id))?.time.initialized).toBeUndefined()
+    yield* events.publish(Command.Event.Executed, payload, { location: location(directory) })
+    expect((yield* metadata.get(ctx.project.id))?.time.initialized).toBeNumber()
+    yield* store.dispose(ctx)
+    yield* metadata.setInitialized(ctx.project.id)
+    const settled = (yield* metadata.get(ctx.project.id))?.time.initialized
+    yield* Effect.sleep("10 millis")
+    yield* events.publish(Command.Event.Executed, payload, { location: location(directory) })
+    expect((yield* metadata.get(ctx.project.id))?.time.initialized).toBe(settled)
+  }),
+)
+
+const iconIt = testEffect(
+  LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node, ProjectMetadata.node]), [
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    [RuntimeFlags.node, RuntimeFlags.layer({ experimentalIconDiscovery: true })],
+  ]),
+)
+
+iconIt.live("instance registration still discovers icons when enabled", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped({ git: true })
+    yield* Effect.promise(() => Bun.write(path.join(directory, "favicon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47])))
+    const store = yield* InstanceStore.Service
+    const metadata = yield* ProjectMetadata.Service
+    const ctx = yield* store.load({ directory })
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const project = yield* metadata.get(ctx.project.id)
+      if (project?.icon?.url) {
+        expect(project.icon.url).toStartWith("data:image/png;base64,")
+        return
+      }
+      yield* Effect.sleep("10 millis")
+    }
+    throw new Error("Instance icon was not discovered")
   }),
 )

@@ -1,5 +1,8 @@
 import { describe, expect } from "bun:test"
-import { Project } from "@/project/project"
+import { Project } from "@miao/schema/project"
+import { ProjectMetadata } from "@miao/core/project/metadata"
+import { ProjectRegistry } from "@miao/core/project/registry"
+import { projectTestNode } from "../fixture/project-node"
 import { Database } from "@miao/core/database/database"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@miao/core/session/sql"
@@ -14,7 +17,7 @@ import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { Effect } from "effect"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(LayerNode.compile(LayerNode.group([Project.node, Database.node, CrossSpawnSpawner.node])))
+const it = testEffect(LayerNode.compile(projectTestNode))
 
 function legacySessionID() {
   // Global-session migration covers persisted IDs from before prefixed session IDs.
@@ -67,8 +70,7 @@ describe("migrateFromGlobal", () => {
       yield* Effect.promise(() => $`git config user.name "Test"`.cwd(tmp).quiet())
       yield* Effect.promise(() => $`git config user.email "test@opencode.test"`.cwd(tmp).quiet())
       yield* Effect.promise(() => $`git config commit.gpgsign false`.cwd(tmp).quiet())
-      const projects = yield* Project.Service
-      const { project: pre } = yield* projects.fromDirectory(tmp)
+      const { project: pre } = yield* ProjectRegistry.registerDirectory(tmp)
       expect(pre.id).toBe(ProjectV2.ID.global)
 
       // 2. Seed a session under "global" with matching directory
@@ -78,7 +80,7 @@ describe("migrateFromGlobal", () => {
       // 3. Make a commit so the project gets a real ID
       yield* Effect.promise(() => $`git commit --allow-empty -m "root"`.cwd(tmp).quiet())
 
-      const { project: real } = yield* projects.fromDirectory(tmp)
+      const { project: real } = yield* ProjectRegistry.registerDirectory(tmp)
       expect(real.id).not.toBe(ProjectV2.ID.global)
 
       // 4. The session should have been migrated to the real project ID
@@ -94,8 +96,7 @@ describe("migrateFromGlobal", () => {
     Effect.gen(function* () {
       // 1. Create a repo with a commit — real project ID created immediately
       const tmp = yield* tmpdirScoped({ git: true })
-      const projects = yield* Project.Service
-      const { project } = yield* projects.fromDirectory(tmp)
+      const { project } = yield* ProjectRegistry.registerDirectory(tmp)
       expect(project.id).not.toBe(ProjectV2.ID.global)
 
       // 2. Ensure "global" project row exists (as it would from a prior no-git session)
@@ -109,7 +110,7 @@ describe("migrateFromGlobal", () => {
 
       // 4. Call fromDirectory again — project row already exists,
       //    so the current code skips migration entirely. This is the bug.
-      yield* projects.fromDirectory(tmp)
+      yield* ProjectRegistry.registerDirectory(tmp)
 
       const row = yield* Database.Service.use(({ db }) =>
         db.select().from(SessionTable).where(eq(SessionTable.id, id)).get().pipe(Effect.orDie),
@@ -122,8 +123,7 @@ describe("migrateFromGlobal", () => {
   it.live("does not claim sessions with empty directory", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const projects = yield* Project.Service
-      const { project } = yield* projects.fromDirectory(tmp)
+      const { project } = yield* ProjectRegistry.registerDirectory(tmp)
       expect(project.id).not.toBe(ProjectV2.ID.global)
 
       yield* ensureGlobal()
@@ -133,7 +133,7 @@ describe("migrateFromGlobal", () => {
       const id = legacySessionID()
       yield* seed({ id, dir: "", project: ProjectV2.ID.global })
 
-      yield* projects.fromDirectory(tmp)
+      yield* ProjectRegistry.registerDirectory(tmp)
 
       const row = yield* Database.Service.use(({ db }) =>
         db.select().from(SessionTable).where(eq(SessionTable.id, id)).get().pipe(Effect.orDie),
@@ -146,8 +146,7 @@ describe("migrateFromGlobal", () => {
   it.live("does not steal sessions from unrelated directories", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const projects = yield* Project.Service
-      const { project } = yield* projects.fromDirectory(tmp)
+      const { project } = yield* ProjectRegistry.registerDirectory(tmp)
       expect(project.id).not.toBe(ProjectV2.ID.global)
 
       yield* ensureGlobal()
@@ -156,7 +155,7 @@ describe("migrateFromGlobal", () => {
       const id = legacySessionID()
       yield* seed({ id, dir: "/some/other/dir", project: ProjectV2.ID.global })
 
-      yield* projects.fromDirectory(tmp)
+      yield* ProjectRegistry.registerDirectory(tmp)
       const row = yield* Database.Service.use(({ db }) =>
         db.select().from(SessionTable).where(eq(SessionTable.id, id)).get().pipe(Effect.orDie),
       )

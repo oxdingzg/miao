@@ -10,11 +10,14 @@ import { AbsolutePath } from "@miao/core/schema"
 import { Database } from "@miao/core/database/database"
 import { ProjectDirectoryTable, ProjectTable } from "@miao/core/project/sql"
 import { ProjectV2 } from "@miao/core/project"
-import { Project } from "@/project/project"
+import { Project } from "@miao/schema/project"
+import { ProjectMetadata } from "@miao/core/project/metadata"
+import { ProjectRegistry } from "@miao/core/project/registry"
+import { projectTestNode } from "../fixture/project-node"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(LayerNode.compile(LayerNode.group([Project.node, Database.node, CrossSpawnSpawner.node])))
+const it = testEffect(LayerNode.compile(projectTestNode))
 
 function directories(projectID: ProjectV2.ID) {
   return Database.Service.use(({ db }) =>
@@ -38,9 +41,9 @@ describe("Project directory persistence", () => {
   it.live("stores the first opened checkout directory", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.Service
+      const project = yield* ProjectMetadata.Service
 
-      const result = yield* project.fromDirectory(tmp)
+      const result = yield* ProjectRegistry.registerDirectory(tmp)
 
       expect(yield* directories(result.project.id)).toEqual([
         { directory: AbsolutePath.make(tmp), strategy: undefined },
@@ -51,10 +54,10 @@ describe("Project directory persistence", () => {
   it.live("stores a repeatedly opened checkout directory only once", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.Service
+      const project = yield* ProjectMetadata.Service
 
-      const result = yield* project.fromDirectory(tmp)
-      const next = yield* project.fromDirectory(tmp)
+      const result = yield* ProjectRegistry.registerDirectory(tmp)
+      const next = yield* ProjectRegistry.registerDirectory(tmp)
 
       expect(next.project.id).toBe(result.project.id)
       expect(yield* directories(result.project.id)).toEqual([
@@ -66,15 +69,15 @@ describe("Project directory persistence", () => {
   it.live("stores an opened linked worktree directory", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.Service
-      const main = yield* project.fromDirectory(tmp)
+      const project = yield* ProjectMetadata.Service
+      const main = yield* ProjectRegistry.registerDirectory(tmp)
       const worktree = path.join(tmp, "..", path.basename(tmp) + "-project-directory-worktree")
       yield* Effect.addFinalizer(() =>
         Effect.promise(() => $`git worktree remove ${worktree}`.cwd(tmp).quiet().nothrow()).pipe(Effect.ignore),
       )
       yield* Effect.promise(() => $`git worktree add ${worktree} -b project-directory-${Date.now()}`.cwd(tmp).quiet())
 
-      yield* project.fromDirectory(worktree)
+      yield* ProjectRegistry.registerDirectory(worktree)
 
       expect(yield* directories(main.project.id)).toEqual(
         [
@@ -93,9 +96,9 @@ describe("Project directory persistence", () => {
         Effect.promise(() => $`git worktree remove ${worktree}`.cwd(tmp).quiet().nothrow()).pipe(Effect.ignore),
       )
       yield* Effect.promise(() => $`git worktree add --detach ${worktree} HEAD`.cwd(tmp).quiet())
-      const project = yield* Project.Service
+      const project = yield* ProjectMetadata.Service
 
-      const result = yield* project.fromDirectory(worktree)
+      const result = yield* ProjectRegistry.registerDirectory(worktree)
 
       expect(yield* directories(result.project.id)).toEqual([
         { directory: AbsolutePath.make(worktree), strategy: undefined },
@@ -113,10 +116,10 @@ describe("Project directory persistence", () => {
       )
       yield* Effect.promise(() => $`git clone --bare ${tmp} ${bare}`.quiet())
       yield* Effect.promise(() => $`git clone ${bare} ${clone}`.quiet())
-      const project = yield* Project.Service
-      const main = yield* project.fromDirectory(tmp)
+      const project = yield* ProjectMetadata.Service
+      const main = yield* ProjectRegistry.registerDirectory(tmp)
 
-      yield* project.fromDirectory(clone)
+      yield* ProjectRegistry.registerDirectory(clone)
 
       expect(yield* directories(main.project.id)).toEqual(
         [
@@ -137,9 +140,9 @@ describe("Project directory persistence", () => {
       )
       yield* Effect.promise(() => $`git clone --bare ${tmp} ${bare}`.quiet())
       yield* Effect.promise(() => $`git worktree add ${worktree} HEAD`.cwd(bare).quiet())
-      const project = yield* Project.Service
+      const project = yield* ProjectMetadata.Service
 
-      const result = yield* project.fromDirectory(worktree)
+      const result = yield* ProjectRegistry.registerDirectory(worktree)
 
       expect(yield* directories(result.project.id)).toEqual([
         { directory: AbsolutePath.make(worktree), strategy: undefined },
@@ -150,8 +153,7 @@ describe("Project directory persistence", () => {
   it.live("records the active directory under its newly resolved project id", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.Service
-      yield* project.fromDirectory(tmp)
+      yield* ProjectRegistry.registerDirectory(tmp)
       const remoteID = ProjectV2.ID.make(Hash.fast("git-remote:github.com/project-directory-test/collision"))
       const { db } = yield* Database.Service
       yield* db
@@ -170,7 +172,7 @@ describe("Project directory persistence", () => {
         $`git remote add origin git@github.com:project-directory-test/collision.git`.cwd(tmp).quiet(),
       )
 
-      yield* project.fromDirectory(tmp)
+      yield* ProjectRegistry.registerDirectory(tmp)
 
       expect(yield* directories(remoteID)).toEqual([{ directory: AbsolutePath.make(tmp), strategy: undefined }])
     }),
@@ -179,8 +181,8 @@ describe("Project directory persistence", () => {
   it.live("clears stale directories when the project id changes", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.Service
-      const original = yield* project.fromDirectory(tmp)
+      const project = yield* ProjectMetadata.Service
+      const original = yield* ProjectRegistry.registerDirectory(tmp)
       const stale = AbsolutePath.make(tmp + "-stale-checkout")
       const { db } = yield* Database.Service
       yield* db
@@ -193,7 +195,7 @@ describe("Project directory persistence", () => {
         $`git remote add origin git@github.com:project-directory-test/migration.git`.cwd(tmp).quiet(),
       )
 
-      yield* project.fromDirectory(tmp)
+      yield* ProjectRegistry.registerDirectory(tmp)
 
       expect(yield* directories(original.project.id)).toEqual([])
       expect(yield* directories(remoteID)).toEqual([{ directory: AbsolutePath.make(tmp), strategy: undefined }])
