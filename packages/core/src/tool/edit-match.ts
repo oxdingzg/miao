@@ -1,6 +1,6 @@
 export * as EditMatch from "./edit-match"
 
-import { native as addon, type NativeModule } from "@miao/native"
+import { native, type NativeModule } from "@miao/native"
 import { Flag } from "../flag/flag"
 import { EditFuzzy } from "./edit-fuzzy"
 
@@ -24,7 +24,8 @@ import { EditFuzzy } from "./edit-fuzzy"
 export type Result = EditFuzzy.Result
 
 export function match(text: string, oldString: string, replaceAll: boolean): Result {
-  if (Flag.MIAO_NATIVE && typeof addon?.matchEdit === "function") return matchNative(addon, text, oldString, replaceAll)
+  if (Flag.MIAO_NATIVE && native && typeof native.matchEdit === "function")
+    return matchNative(native, text, oldString, replaceAll)
   return matchTs(text, oldString, replaceAll)
 }
 
@@ -44,7 +45,7 @@ export function matchTs(text: string, oldString: string, replaceAll: boolean): R
 
 /** Whether the loaded addon can serve the shared contract. */
 export function nativeActive() {
-  return Flag.MIAO_NATIVE && typeof addon?.matchEdit === "function"
+  return Flag.MIAO_NATIVE && typeof native?.matchEdit === "function"
 }
 
 function matchNative(module: NativeModule, text: string, oldString: string, replaceAll: boolean): Result {

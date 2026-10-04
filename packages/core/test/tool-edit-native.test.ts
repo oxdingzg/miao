@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { native as addon } from "@miao/native"
+import { native } from "@miao/native"
 import { EditMatch } from "@miao/core/tool/edit-match"
 
 /**
@@ -7,16 +7,16 @@ import { EditMatch } from "@miao/core/tool/edit-match"
  * `matchEdit` primitive. The addon is absent in a plain checkout, so the suite
  * skips; CI builds it and sets `MIAO_NATIVE_REQUIRED=1` to fail instead.
  */
-const native = typeof addon?.matchEdit === "function" ? addon : undefined
+const activeNative = typeof native?.matchEdit === "function" ? native : undefined
 
-if (process.env.MIAO_NATIVE_REQUIRED === "1" && native === undefined) {
+if (process.env.MIAO_NATIVE_REQUIRED === "1" && activeNative === undefined) {
   throw new Error("MIAO_NATIVE_REQUIRED=1 but the @miao/native addon does not expose matchEdit")
 }
 
 type Case = { content: string; oldString: string; replaceAll?: boolean }
 
 const canonicalNative = (content: string, oldString: string, replaceAll: boolean): EditMatch.Result => {
-  const result = native!.matchEdit(content, oldString, replaceAll)
+  const result = activeNative!.matchEdit(content, oldString, replaceAll)
   if (result.kind === "match") return { _tag: "match", find: result.find ?? "", count: result.count ?? 0 }
   if (result.kind === "ambiguous") return { _tag: "ambiguous" }
   if (result.kind === "disproportionate") return { _tag: "disproportionate" }
@@ -46,7 +46,7 @@ const cases: Case[] = [
   { content: "x = 1\nx = 1\n", oldString: "x = 1" },
 ]
 
-const withNative = native ? describe : describe.skip
+const withNative = activeNative ? describe : describe.skip
 
 withNative("native edit match parity", () => {
   test("matchTs and the addon agree on the fixture set", () => {
