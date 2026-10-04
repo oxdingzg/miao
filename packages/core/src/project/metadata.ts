@@ -6,6 +6,8 @@ import { Project } from "@miao/schema/project"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
+import { FSUtil } from "../fs-util"
+import { AbsolutePath } from "../schema"
 import { ProjectV2 } from "../project"
 import { ProjectTable } from "./sql"
 
@@ -20,6 +22,12 @@ export interface Interface {
   /** Record a resolved project that no session has been created in yet, so it can carry metadata. */
   readonly ensure: (project: ProjectV2.Resolved) => Effect.Effect<void>
   readonly update: (id: Project.ID, input: Project.UpdateInput) => Effect.Effect<Project.Info, NotFoundError>
+  /** Stamps the project's initialized time (the `/init` command fired for it). */
+  readonly setInitialized: (id: Project.ID) => Effect.Effect<void>
+  /** Existing, still-present sandbox checkouts for a project. */
+  readonly sandboxes: (id: Project.ID) => Effect.Effect<string[]>
+  readonly addSandbox: (id: Project.ID, directory: string) => Effect.Effect<void>
+  readonly removeSandbox: (id: Project.ID, directory: string) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/ProjectMetadata") {}
@@ -29,6 +37,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const events = yield* EventV2.Service
+    const fs = yield* FSUtil.Service
 
     return Service.of({
       list: Effect.fn("ProjectMetadata.list")(function* () {
@@ -62,11 +71,59 @@ const layer = Layer.effect(
         yield* events.publish(Project.Event.Updated, info)
         return info
       }),
+      setInitialized: Effect.fn("ProjectMetadata.setInitialized")(function* (id: Project.ID) {
+        yield* db
+          .update(ProjectTable)
+          .set({ time_initialized: Date.now() })
+          .where(eq(ProjectTable.id, id))
+          .run()
+          .pipe(Effect.orDie)
+      }),
+      sandboxes: Effect.fn("ProjectMetadata.sandboxes")(function* (id: Project.ID) {
+        const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
+        if (!row) return []
+        return yield* Effect.forEach(
+          fromRow(row).sandboxes,
+          (dir) => fs.isDir(dir).pipe(Effect.orDie, Effect.map((ok) => (ok ? dir : undefined))),
+          { concurrency: "unbounded" },
+        ).pipe(Effect.map((arr) => arr.filter((x): x is string => x !== undefined)))
+      }),
+      addSandbox: Effect.fn("ProjectMetadata.addSandbox")(function* (id: Project.ID, directory: string) {
+        const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
+        if (!row) throw new Error(`Project not found: ${id}`)
+        const sandbox = AbsolutePath.make(directory)
+        const sboxes = [...row.sandboxes]
+        if (!sboxes.includes(sandbox)) sboxes.push(sandbox)
+        const result = yield* db
+          .update(ProjectTable)
+          .set({ sandboxes: sboxes, time_updated: Date.now() })
+          .where(eq(ProjectTable.id, id))
+          .returning()
+          .get()
+          .pipe(Effect.orDie)
+        if (!result) throw new Error(`Project not found: ${id}`)
+        yield* events.publish(Project.Event.Updated, fromRow(result))
+      }),
+      removeSandbox: Effect.fn("ProjectMetadata.removeSandbox")(function* (id: Project.ID, directory: string) {
+        const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
+        if (!row) throw new Error(`Project not found: ${id}`)
+        const sandbox = AbsolutePath.make(directory)
+        const sboxes = row.sandboxes.filter((s) => s !== sandbox)
+        const result = yield* db
+          .update(ProjectTable)
+          .set({ sandboxes: sboxes, time_updated: Date.now() })
+          .where(eq(ProjectTable.id, id))
+          .returning()
+          .get()
+          .pipe(Effect.orDie)
+        if (!result) throw new Error(`Project not found: ${id}`)
+        yield* events.publish(Project.Event.Updated, fromRow(result))
+      }),
     })
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, EventV2.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, EventV2.node, FSUtil.node] })
 
 export function fromRow(row: Row): Project.Info {
   const icon =

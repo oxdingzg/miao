@@ -100,6 +100,24 @@ export const register = Effect.fn("ProjectRegistry.register")(function* (input: 
   return result.after
 })
 
+/**
+ * Resolves a directory to its project and registers it, mirroring the legacy
+ * `Project.fromDirectory` facade. Returns the registered project plus the
+ * checkout directory a caller should treat as the worktree.
+ */
+export const registerDirectory = Effect.fn("ProjectRegistry.registerDirectory")(function* (directory: string) {
+  const projects = yield* Project.Service
+  const data = yield* projects.resolve(AbsolutePath.make(directory))
+  const project = yield* register({
+    id: data.id,
+    previous: data.previous === data.id ? undefined : data.previous,
+    directory: data.directory,
+    vcs: data.vcs,
+  })
+  const worktree = data.id === Project.ID.global && !data.vcs ? "/" : data.directory
+  return { project, sandbox: data.vcs ? data.directory : worktree }
+})
+
 // Copies the old project's row to the new ID (keeping one that already exists), moves its sessions and
 // workspaces, and drops its directory list, which the new ID rebuilds as checkouts are opened.
 const migrate = Effect.fnUntraced(function* (tx: ProjectDirectories.Transaction, from: Project.ID, to: Project.ID) {
