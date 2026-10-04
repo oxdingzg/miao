@@ -52,6 +52,16 @@ export const NUDGE =
   "Do not write tool-call XML, DSML, or JSON inside message text. " +
   "Re-issue the intended call now through the tool-calling mechanism with valid syntax."
 
+/**
+ * Replaces a leaked assistant message's body when it is projected into history.
+ * The model imitates its own prior output, so a leak left verbatim in context
+ * reseeds the same malformed block every turn (a self-reinforcing cascade). The
+ * durable row keeps the original text for the user; only the provider context
+ * sees this placeholder, which also explains to the model why nothing ran.
+ */
+export const NEUTRALIZED =
+  "[Removed from context: this message wrote a tool call as plain text, so it was not executed. Re-issue calls through the tool-calling mechanism.]"
+
 /** Whether the assistant text ends with a leaked tool-call block. */
 export function detect(text: string): boolean {
   const trimmed = text.trimEnd()
@@ -64,6 +74,24 @@ export function detect(text: string): boolean {
   // the opening `</invoke>` is present but the outer `</tool_calls>` was eaten.
   const invokeOpen = trimmed.lastIndexOf("<invoke")
   return invokeOpen !== -1 && trimmed.includes("</invoke>", invokeOpen)
+}
+
+/**
+ * Whether an assistant message is a turn that finished on a leaked tool call:
+ * `stop` with no recorded tool part and text the detector recognizes. The same
+ * test guards both the live nudge and history neutralization, so a message is
+ * treated identically in the turn it happens and on every later projection.
+ */
+export function isLeakedAssistant(message: {
+  readonly type: string
+  readonly finish?: string
+  readonly content: ReadonlyArray<{ readonly type: string; readonly text?: string }>
+}): boolean {
+  if (message.type !== "assistant") return false
+  if (message.finish !== "stop") return false
+  if (message.content.some((item) => item.type === "tool")) return false
+  const text = message.content.flatMap((item) => (item.type === "text" ? [item.text ?? ""] : [])).join("")
+  return detect(text)
 }
 
 /** Whether a synthetic message is a leak-recovery nudge this module emitted. */

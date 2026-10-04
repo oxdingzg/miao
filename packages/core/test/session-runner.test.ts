@@ -1898,6 +1898,68 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("neutralizes a leaked assistant message in later projections", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "List files" }), resume: false })
+
+      requests.length = 0
+      const leaked =
+        "Let me look.\n< | DSML | invoke name=\"bash\">\n<parameter name=\"command\">ls</parameter>\n</ | DSML | invoke>"
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-leak" }),
+          LLMEvent.textDelta({ id: "text-leak", text: leaked }),
+          LLMEvent.textEnd({ id: "text-leak" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.resume(sessionID)
+      expect(requests.flatMap((request) => request.messages).length).toBeGreaterThan(0)
+      // The leaked turn is already neutralized in the request it nudge-triggered.
+      expect(JSON.stringify(requests.flatMap((request) => request.messages))).not.toContain("invoke name=")
+
+      // A later turn must project the leaked body as the placeholder, not the raw block.
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-later" }),
+          LLMEvent.textDelta({ id: "text-later", text: "Sure" }),
+          LLMEvent.textEnd({ id: "text-later" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
+      yield* session.resume(sessionID)
+
+      const projected = JSON.stringify(requests.at(-1)?.messages ?? [])
+      expect(projected).not.toContain("invoke name=")
+      expect(projected).toContain(ToolCallLeak.NEUTRALIZED)
+      // The durable row still holds the original text for the user.
+      const stored = yield* session.context(sessionID)
+      expect(
+        stored.some(
+          (message) =>
+            message.type === "assistant" &&
+            message.content.some((item) => item.type === "text" && item.text.includes("invoke name=")),
+        ),
+      ).toBe(true)
+    }),
+  )
+
   it.effect("stops with a visible error when a tool call keeps leaking as text", () =>
     Effect.gen(function* () {
       yield* setup
