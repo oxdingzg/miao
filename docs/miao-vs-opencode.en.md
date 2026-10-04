@@ -10,20 +10,19 @@ version number; its commit and build provenance determine which fixes it contain
 
 ## What changes the daily workflow
 
-| Area                      | miao's implementation                                                                        | Practical value                                                             | Availability                         |
-| ------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------ |
-| Input during execution    | Durable admission; steer at safe provider-turn boundaries; explicit queue at idle boundaries | Add constraints while work continues, with a recorded pending input         | V2                                   |
-| Session collaboration     | `task`, resumable child sessions, project-scoped `list_sessions` / `send_message`            | Delegate focused work and exchange findings across conversations            | V2; messaging subject to permissions |
-| Context stability         | Immutable Context Epoch baseline; chronological context updates                              | Reduce unnecessary changes to a reusable provider-cache prefix              | V2                                   |
-| Cost and cache visibility | Per-turn usage, estimated cost, TTFT, cache-hit ratio and cache-state classification         | Diagnose expensive or slow turns with measurements                          | Implemented                          |
-| Context controls          | Output bounding, optional pruning, compaction settings and cache TTL                         | Keep large tool results and long histories from consuming context unchecked | V2; advanced settings opt-in         |
-| Long-task continuation    | Todo-driven loop with iteration / stall guards and optional cost budget                      | Continue multi-step work without a new prompt after every idle boundary     | V2, opt-in                           |
-| Durable history           | Stored inbox and event-backed history; fork and export                                       | Keep inspectable conversations beyond a terminal's lifetime                 | V2; no automatic crash continuation  |
-| Independent distribution  | Own release source and versioning; separate release, source, and preview commands            | Validate development builds while keeping the daily command usable          | Implemented                          |
-
-| Transcript updates | Incremental durable-event application and viewport-windowed rendering | Reduce full-history reloads and off-screen rendering work | Released in v0.1.4 |
-| Pending-input recovery | Read durable queued inputs even when another process admitted them without a live event | Recover visible pending work across processes | Released; v0.1.4 binary verified on Linux |
-| Provider failure visibility | Visible final errors and bounded retry status | Distinguish a failed request from an apparently idle agent | Released in v0.1.4 |
+| Area                        | miao's implementation                                                                        | Practical value                                                             | Availability                              |
+| --------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------- |
+| Input during execution      | Durable admission; steer at safe provider-turn boundaries; explicit queue at idle boundaries | Add constraints while work continues, with a recorded pending input         | V2                                        |
+| Session collaboration       | `task`, resumable child sessions, project-scoped `list_sessions` / `send_message`            | Delegate focused work and exchange findings across conversations            | V2; messaging subject to permissions      |
+| Context stability           | Immutable Context Epoch baseline; chronological context updates                              | Reduce unnecessary changes to a reusable provider-cache prefix              | V2                                        |
+| Cost and cache visibility   | Per-turn usage, estimated cost, TTFT, cache-hit ratio and cache-state classification         | Diagnose expensive or slow turns with measurements                          | Implemented                               |
+| Context controls            | Output bounding, optional pruning, compaction settings and cache TTL                         | Keep large tool results and long histories from consuming context unchecked | V2; advanced settings opt-in              |
+| Long-task continuation      | Todo-driven loop with iteration / stall guards and optional cost budget                      | Continue multi-step work without a new prompt after every idle boundary     | V2, opt-in                                |
+| Durable history             | Stored inbox and event-backed history; fork and export                                       | Keep inspectable conversations beyond a terminal's lifetime                 | V2; no automatic crash continuation       |
+| Independent distribution    | Own release source and versioning; separate release, source, and preview commands            | Validate development builds while keeping the daily command usable          | Implemented                               |
+| Transcript updates          | Incremental durable-event application and viewport-windowed rendering                        | Reduce full-history reloads and off-screen rendering work                   | Released in v0.1.4                        |
+| Pending-input recovery      | Read durable queued inputs even when another process admitted them without a live event      | Recover visible pending work across processes                               | Released; v0.1.4 binary verified on Linux |
+| Provider failure visibility | Visible final errors and bounded retry status                                                | Distinguish a failed request from an apparently idle agent                  | Released in v0.1.4                        |
 
 Estimated costs depend on configured model rates and currency metadata. Budget checks stop further scheduling once the threshold is reached; they do not cap a request already in flight or replace provider billing. Prompt caching depends on the provider and workload, so there is no guaranteed task-level savings percentage.
 
