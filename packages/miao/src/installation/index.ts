@@ -14,7 +14,7 @@ import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@miao/core/installation/version"
 import { NpmConfig } from "@miao/core/npm-config"
 import { InstallationEvent } from "@miao/schema/installation-event"
-import { windowsCommand, windowsLatest, windowsUpgrade } from "./windows"
+import { isWindowsStandalone, windowsCommand, windowsLatest, windowsUpgrade } from "./windows"
 
 export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
@@ -197,6 +197,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
+        if (process.platform === "win32" && isWindowsStandalone(process.execPath)) return "curl" as Method
         if (process.execPath.includes(path.join(".miao", "bin"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()

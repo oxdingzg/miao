@@ -1,3 +1,13 @@
+import path from "node:path"
+
+export function isWindowsStandalone(executable: string, localAppData = process.env.LOCALAPPDATA) {
+  if (!localAppData) return false
+  return (
+    path.win32.normalize(executable).toLowerCase() ===
+    path.win32.join(localAppData, "Programs", "Miao", "miao.exe").toLowerCase()
+  )
+}
+
 // PowerShell 5.1 is included in supported Windows releases. Use its system proxy
 // settings when no explicit proxy is configured; Bun does not read WinINet.
 const network = String.raw`
