@@ -606,6 +606,27 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         ),
       )
       .handle(
+        "session.execution",
+        Effect.fn(function* (ctx) {
+          const executionID = (yield* session.executions).get(ctx.params.sessionID)
+          return executionID ? { type: "running" as const, executionID } : { type: "idle" as const }
+        }),
+      )
+      .handle(
+        "session.interruptIf",
+        Effect.fn(function* (ctx) {
+          const interrupted = yield* Effect.uninterruptible(
+            session.interruptIf(ctx.params.sessionID, ctx.params.executionID),
+          )
+          if (!interrupted)
+            return yield* new ConflictError({
+              message: "Session execution changed or is no longer active",
+              resource: ctx.params.sessionID,
+            })
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.interrupt",
         Effect.fn(function* (ctx) {
           yield* session.interrupt(ctx.params.sessionID)

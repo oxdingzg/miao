@@ -9,12 +9,14 @@ import { SessionSchema } from "./schema"
 export interface Interface {
   /** Snapshots active execution owned by this process. */
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
+  readonly executions: Effect.Effect<ReadonlyMap<SessionSchema.ID, string>>
   /** Starts execution while idle or joins the active execution. */
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, SessionRunner.RunError>
   /** Registers newly recorded work. Repeated wakeups may coalesce. */
   readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /** Interrupt active work owned by this process. Idle interruption is a no-op. */
   readonly interrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  readonly interruptIf: (sessionID: SessionSchema.ID, execution: string) => Effect.Effect<boolean>
   /** Wait until the Session has no active execution in this process. Never fails. */
   readonly wait: (sessionID: SessionSchema.ID) => Effect.Effect<void>
 }
@@ -29,9 +31,11 @@ export const noopLayer = Layer.succeed(
   Service,
   Service.of({
     active: Effect.succeed(new Set()),
+    executions: Effect.succeed(new Map()),
     resume: () => Effect.void,
     wake: () => Effect.void,
     interrupt: () => Effect.void,
+    interruptIf: () => Effect.succeed(false),
     wait: () => Effect.void,
   }),
 )

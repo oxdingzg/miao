@@ -85,6 +85,10 @@ import type {
   SessionsHistoryOutput,
   SessionsEventsInput,
   SessionsEventsOutput,
+  SessionsExecutionInput,
+  SessionsExecutionOutput,
+  SessionsInterruptIfInput,
+  SessionsInterruptIfOutput,
   SessionsInterruptInput,
   SessionsInterruptOutput,
   SessionsMessageInput,
@@ -908,6 +912,28 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [404, 400, 401],
             empty: false,
+          },
+          requestOptions,
+        ),
+      execution: (input: SessionsExecutionInput, requestOptions?: RequestOptions) =>
+        request<SessionsExecutionOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/execution`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      interruptIf: (input: SessionsInterruptIfInput, requestOptions?: RequestOptions) =>
+        request<SessionsInterruptIfOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/execution/${encodeURIComponent(input.executionID)}/interrupt`,
+            successStatus: 204,
+            declaredStatuses: [404, 409, 400, 401],
+            empty: true,
           },
           requestOptions,
         ),

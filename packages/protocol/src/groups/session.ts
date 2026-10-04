@@ -22,6 +22,7 @@ import { Model } from "@miao/schema/model"
 import { Location } from "@miao/schema/location"
 import { Revert } from "@miao/schema/revert"
 import { SessionEvent } from "@miao/schema/session-event"
+import { SessionExecution } from "@miao/schema/session-execution"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
@@ -533,6 +534,38 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.events",
             summary: "Subscribe to session events",
             description: "Replay durable events after an aggregate sequence, then continue with new durable events.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.execution", "/api/session/:sessionID/execution", {
+        params: { sessionID: Session.ID },
+        success: SessionExecution.State,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.execution",
+            summary: "Get current process execution identity",
+            description:
+              "Observe the currently owned drain. Identities change for every successor and across processes.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.interruptIf", "/api/session/:sessionID/execution/:executionID/interrupt", {
+        params: { sessionID: Session.ID, executionID: SessionExecution.ID },
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, ConflictError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.interruptIf",
+            summary: "Interrupt the observed session execution",
+            description:
+              "Reject stale execution identities without stopping subsequent work. Returns 409 when no matching active drain exists.",
           }),
         ),
     )
