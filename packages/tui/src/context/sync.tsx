@@ -751,6 +751,8 @@ export const {
           syncingSessions.delete(id)
           hydratingSessions.delete(id)
           sessionMessages.delete(id)
+          olderHistory.delete(id)
+          loadingOlder.delete(id)
           v2Reducer.clear(id)
           pendingPrompts.clear(id)
           setStore(
