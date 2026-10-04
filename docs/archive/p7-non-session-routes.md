@@ -1,3 +1,8 @@
+> ARCHIVED (2026-10-04). This tracker is superseded by `docs/roadmap.md`; its open items were
+> folded into that document. Kept for historical context only; do not edit. See `docs/roadmap.md`
+> for current status.
+
+
 # P7 — 非会话旧路由迁 `/api/*`
 
 状态：进行中（2026-10-02 开始，2026-10-03 按代码重新盘点）。目标：让 TUI / app / CLI 完全脱离 V1 无前缀路由与 `@miao/sdk`，
