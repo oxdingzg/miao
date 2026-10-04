@@ -3,10 +3,12 @@ export * as RuntimeIdentity from "./identity"
 import { RuntimeIdentity } from "@miao/schema/runtime-identity"
 import { Context, Schema } from "effect"
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto"
+import type { RuntimeAdministration } from "./administration"
 
 export interface Interface {
   readonly prove: (challenge: string) => RuntimeIdentity.Proof | undefined
   readonly stop?: () => void
+  readonly administration?: () => RuntimeAdministration.Interface | undefined
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/core/RuntimeIdentity") {}

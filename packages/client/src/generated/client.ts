@@ -232,6 +232,17 @@ import type {
   ServerRuntimeIdentityInput,
   ServerRuntimeIdentityOutput,
   ServerRuntimeStopOutput,
+  ServerRuntimeGetOutput,
+  ServerRuntimeInviteInput,
+  ServerRuntimeInviteOutput,
+  ServerRuntimePendingOutput,
+  ServerRuntimeApproveInput,
+  ServerRuntimeApproveOutput,
+  ServerRuntimeRejectInput,
+  ServerRuntimeRejectOutput,
+  ServerRuntimeDevicesOutput,
+  ServerRuntimeRevokeInput,
+  ServerRuntimeRevokeOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -1863,6 +1874,91 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [503, 401, 400],
             empty: true,
+          },
+          requestOptions,
+        ),
+      get: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeGetOutput>(
+          {
+            method: "GET",
+            path: `/api/runtime/control`,
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      invite: (input: ServerRuntimeInviteInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeInviteOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/invitation`,
+            body: {
+              permissions: input["permissions"],
+              projectIDs: input["projectIDs"],
+              sessionIDs: input["sessionIDs"],
+              expiresAt: input["expiresAt"],
+            },
+            successStatus: 200,
+            declaredStatuses: [503, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      pending: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimePendingOutput>(
+          {
+            method: "GET",
+            path: `/api/runtime/control/pairing`,
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      approve: (input: ServerRuntimeApproveInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeApproveOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/pairing/${encodeURIComponent(input.pairingID)}/approve`,
+            body: { publicKey: input["publicKey"] },
+            successStatus: 200,
+            declaredStatuses: [503, 409, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      reject: (input: ServerRuntimeRejectInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeRejectOutput>(
+          {
+            method: "DELETE",
+            path: `/api/runtime/control/pairing/${encodeURIComponent(input.pairingID)}`,
+            successStatus: 204,
+            declaredStatuses: [503, 401, 400],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      devices: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeDevicesOutput>(
+          {
+            method: "GET",
+            path: `/api/runtime/control/device`,
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      revoke: (input: ServerRuntimeRevokeInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeRevokeOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/device/${encodeURIComponent(input.grantID)}/revoke`,
+            body: { version: input["version"] },
+            successStatus: 200,
+            declaredStatuses: [503, 409, 401, 400],
+            empty: false,
           },
           requestOptions,
         ),
