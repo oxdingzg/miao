@@ -11,12 +11,6 @@ const HostWebSocket = WebSocket as unknown as {
   new (url: URL, options: { headers: Record<string, string> }): WebSocket
 }
 
-// The Agent runs under Bun. Keep its authenticated constructor explicit when
-// consumers also include DOM declarations, whose WebSocket lacks header options.
-const HostWebSocket = WebSocket as unknown as {
-  new (url: URL, options: { headers: Record<string, string> }): WebSocket
-}
-
 export const Method = Schema.Literals([
   "capabilities",
   "project.list",
