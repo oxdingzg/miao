@@ -50,6 +50,7 @@ import { SessionSchema } from "../schema"
 import { SessionTable } from "../sql"
 import { SessionStore } from "../store"
 import { SessionImageNormalize } from "../image-normalize"
+import { SessionBlobStorage } from "../blob-storage"
 import { SessionTodo } from "../todo"
 import { SessionTitle } from "../title"
 import { LegacyNotMigratedError } from "../error"
@@ -184,7 +185,10 @@ const layer = Layer.effect(
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
     const image = yield* Image.Service
-    const normalizeToolContent = (content: ToolOutput["content"]) => SessionImageNormalize.toolContent(image, content)
+    const normalizeToolContent = (content: ToolOutput["content"]) =>
+      SessionImageNormalize.toolContent(image, content).pipe(
+        Effect.flatMap((normalized) => SessionBlobStorage.externalizeToolContent(blob, normalized)),
+      )
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
