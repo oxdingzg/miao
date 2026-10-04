@@ -4,7 +4,9 @@ import { readdir, stat } from "node:fs/promises"
 import { dirname, join } from "path"
 import { Blob } from "@miao/core/blob"
 import { Database } from "@miao/core/database/database"
+import { Blob } from "@miao/core/blob"
 import { SessionBackfill } from "@miao/core/session/backfill"
+import { SessionBlobMigrate } from "@miao/core/session/blob-migrate"
 import { SessionCompact } from "@miao/core/session/compact"
 import { SessionRestore } from "@miao/core/session/restore"
 import { Effect } from "effect"
@@ -268,6 +270,29 @@ const RestoreCommand = effectCmd({
   }),
 })
 
+const ExternalizeBlobsCommand = effectCmd({
+  command: "externalize-blobs",
+  describe: "move existing inline attachments and tool files into the content-addressed blob store",
+  instance: false,
+  builder: (yargs: Argv) =>
+    yargs.option("dry-run", {
+      type: "boolean",
+      default: false,
+      describe: "report what would be moved without writing",
+    }),
+  handler: Effect.fn("Cli.db.externalizeBlobs")(function* (args: { "dry-run": boolean }) {
+    const { db } = yield* Database.Service
+    const blob = yield* Blob.Service
+    const result = yield* SessionBlobMigrate.migrate(blob, db, { dryRun: args["dry-run"] })
+    const verb = args["dry-run"] ? "would externalize" : "externalized"
+    console.log(
+      `${verb} ${result.messages} session_message row(s) and ${result.events} event row(s) (${mb(result.bytes)} MB of inline payload)`,
+    )
+    if (!args["dry-run"] && (result.messages > 0 || result.events > 0))
+      console.log("run `miao db vacuum` to reclaim the freed pages")
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
@@ -281,6 +306,7 @@ export const DbCommand = effectCmd({
       .command(BackfillCommand)
       .command(CompactCommand)
       .command(RestoreCommand)
+      .command(ExternalizeBlobsCommand)
       .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),
