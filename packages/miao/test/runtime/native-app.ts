@@ -202,6 +202,18 @@ export async function run() {
         // Publish source coordinates only; XCTest logs and attachments can contain pairing secrets.
         const coordinates = [...log.matchAll(/PairingUITests\.swift:(\d+)(?::\d+)?: error:/g)]
         coordinates.forEach((match) => console.error(`Native UI assertion failed at PairingUITests.swift:${match[1]}`))
+        // Fixed categories and numeric OS codes expose runner failures without publishing dynamic messages.
+        console.error(JSON.stringify({
+          testsStarted: log.includes("Test Case '-["),
+          caughtError: log.includes("caught error"),
+          fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
+          missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
+          buildFailure: log.includes("BUILD FAILED"),
+          testingFailure: log.includes("TEST FAILED"),
+          provisioningFailure: log.includes("No profiles for") || log.includes("No Accounts"),
+          exitCode: state.ui.exitCode,
+          osErrors: [...log.matchAll(/(NSCocoaErrorDomain|NSPOSIXErrorDomain)[^\n]{0,80}?Code=(\d+)/g)].map((match) => ({ domain: match[1], code: Number(match[2]) })),
+        }))
         throw new Error("Native live Runtime UI test failed")
       }
       await Bun.write(path.join(directory, "ui.log"), (await output) + "\n" + (await errors))
