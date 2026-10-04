@@ -235,6 +235,10 @@ export const {
     // opening a long session never pays for its whole history up front.
     const olderHistory = new Map<string, OlderHistory>()
     const loadingOlder = new Set<string>()
+    // A full sync's todo snapshot can resolve after a newer live `todo.updated`
+    // and would otherwise revert it. Record when a live update lands so a sync
+    // that started earlier can skip its stale snapshot.
+    const todoLiveAt = new Map<string, number>()
     const hydration = { count: 0, totalMs: 0, maxMs: 0, lastMs: 0 }
     onCleanup(
       DiagnosticMetrics.register("tui.sync", () => ({
@@ -715,6 +719,7 @@ export const {
         }
 
         case "todo.updated":
+          todoLiveAt.set(event.properties.sessionID, performance.now())
           setStore("todo", event.properties.sessionID, event.properties.todos)
           break
 
@@ -1202,7 +1207,7 @@ export const {
               const match = search(store.session, sessionID, (s) => s.id)
               if (match.found) setStore("session", match.index, reconcile(session.data!))
               if (!match.found) setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data!))
-              setStore("todo", sessionID, reconcile(todo.data ?? []))
+              if ((todoLiveAt.get(sessionID) ?? 0) < started) setStore("todo", sessionID, reconcile(todo.data ?? []))
               const currentMessages = store.message[sessionID] ?? []
               const currentByID = new Map(currentMessages.map((message) => [message.id, message]))
               const infos = (messages.data ?? []).flatMap((message) => {
