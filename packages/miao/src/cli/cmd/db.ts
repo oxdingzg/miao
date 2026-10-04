@@ -7,6 +7,7 @@ import { Database } from "@miao/core/database/database"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { SessionBlobGc } from "@miao/core/session/blob-gc"
 import { SessionBlobMigrate } from "@miao/core/session/blob-migrate"
+import { SessionRetention } from "@miao/core/session/retention"
 import { SessionCompact } from "@miao/core/session/compact"
 import { SessionRestore } from "@miao/core/session/restore"
 import { Effect } from "effect"
@@ -338,6 +339,20 @@ const GcBlobsCommand = effectCmd({
   }),
 })
 
+const RetentionCommand = effectCmd({
+  command: "retention",
+  describe: "report durable events a bounded event log could prune (report only)",
+  instance: false,
+  handler: Effect.fn("Cli.db.retention")(function* () {
+    const { db } = yield* Database.Service
+    const result = yield* SessionRetention.plan(db)
+    console.log(
+      `prunable: ${result.events} event(s) before compaction across ${result.sessions} session(s) (${mb(result.bytes)} MB)`,
+    )
+    console.log("report only: deletion needs diff, the event stream, and history to read the projection first")
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
@@ -353,6 +368,7 @@ export const DbCommand = effectCmd({
       .command(RestoreCommand)
       .command(ExternalizeBlobsCommand)
       .command(GcBlobsCommand)
+      .command(RetentionCommand)
       .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),
