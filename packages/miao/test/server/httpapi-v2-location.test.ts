@@ -67,11 +67,12 @@ async function readEvent(reader: AsyncIterator<typeof Event.Type>) {
 }
 
 async function readEventType(reader: AsyncIterator<typeof Event.Type>, type: string) {
-  for (let index = 0; index < 20; index++) {
+  // Unrelated global events must not exhaust a fixed event-count budget.
+  // The test runner bounds elapsed time if the expected event never arrives.
+  while (true) {
     const event = await readEvent(reader)
     if (event.type === type) return event
   }
-  throw new Error(`timed out waiting for ${type}`)
 }
 
 afterEach(async () => {
