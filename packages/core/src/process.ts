@@ -5,6 +5,35 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
 import { CrossSpawnSpawner } from "./cross-spawn-spawner"
 import { makeGlobalNode } from "./effect/app-node"
 
+// Windows shells write bytes in the console's active code page, not UTF-8, so a
+// Chinese `cmd.exe` (`chcp 936`) emits GBK and `dir` file names rendered as
+// replacement characters when decoded as UTF-8. Decode strictly as UTF-8 first
+// and fall back to the OEM code page only when those bytes are not valid UTF-8,
+// so already-UTF-8 output (the common case) is untouched. The label may be
+// overridden with `MIAO_WINDOWS_CODEPAGE`; the default 936 (GBK) covers the
+// reported case, and latin1 is the last resort because it never throws.
+const windowsCodepageLabel = (): ConstructorParameters<typeof TextDecoder>[0] =>
+  (process.env["MIAO_WINDOWS_CODEPAGE"] ?? "gbk") as ConstructorParameters<typeof TextDecoder>[0]
+
+// Split out from `decodeOutput` so the Windows fallback is exercisable off
+// Windows: pass `windows: true` in a test to run the code-page branch.
+export function decodeBytes(buffer: Buffer, options: { windows: boolean }): string {
+  if (!options.windows) return buffer.toString("utf8")
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
+  } catch {
+    try {
+      return new TextDecoder(windowsCodepageLabel()).decode(buffer)
+    } catch {
+      return buffer.toString("latin1")
+    }
+  }
+}
+
+export function decodeOutput(buffer: Buffer): string {
+  return decodeBytes(buffer, { windows: process.platform === "win32" })
+}
+
 export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()("AppProcessError", {
   command: Schema.String,
   exitCode: Schema.optional(Schema.Number),
@@ -63,7 +92,7 @@ export const requireSuccess = (result: RunResult): Effect.Effect<RunResult, AppP
         new AppProcessError({
           command: result.command,
           exitCode: result.exitCode,
-          stderr: result.stderr.toString("utf8"),
+          stderr: decodeOutput(result.stderr),
         }),
       )
 
@@ -76,7 +105,7 @@ export const requireExitIn =
           new AppProcessError({
             command: result.command,
             exitCode: result.exitCode,
-            stderr: result.stderr.toString("utf8"),
+            stderr: decodeOutput(result.stderr),
           }),
         )
 
@@ -221,7 +250,7 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           const handle = yield* spawner.spawn(command)
           const stderrFiber = yield* Effect.forkScoped(
-            collectStream(handle.stderr, options?.maxErrorBytes).pipe(Effect.map((x) => x.buffer.toString("utf8"))),
+            collectStream(handle.stderr, options?.maxErrorBytes).pipe(Effect.map((x) => decodeOutput(x.buffer))),
           )
           const source = options?.includeStderr === true ? handle.all : handle.stdout
           const lines = source.pipe(
