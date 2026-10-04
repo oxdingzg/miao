@@ -1,17 +1,22 @@
 export * as SessionRunCoordinator from "./run-coordinator"
 
 import { Deferred, Effect, Exit, Fiber, FiberSet, Scope, Semaphore } from "effect"
+import { randomUUID } from "node:crypto"
 
 /** Serializes execution for each key while allowing different keys to run concurrently. */
 export interface Coordinator<Key, E> {
   /** Snapshots keys with an execution owned by this coordinator. */
   readonly active: Effect.Effect<ReadonlySet<Key>>
+  /** Process-unique identities for the currently owned drains; never reused by successors. */
+  readonly executions: Effect.Effect<ReadonlyMap<Key, string>>
   /** Starts execution while idle or joins the active execution. */
   readonly run: (key: Key) => Effect.Effect<void, E>
   /** Registers one coalesced follow-up after newly recorded work. */
   readonly wake: (key: Key) => Effect.Effect<void>
   /** Stops active execution and waits for its cleanup. */
   readonly interrupt: (key: Key) => Effect.Effect<void>
+  /** Interrupt only the observed drain. Stale identities cannot stop subsequent work. */
+  readonly interruptIf: (key: Key, execution: string) => Effect.Effect<boolean>
   /**
    * Waits until no execution is active for the key. Never fails; the drain
    * outcome is observed through durable state, not through this wait.
@@ -24,6 +29,7 @@ type Entry<E> = {
   owner?: Fiber.Fiber<void, never>
   pendingWake: boolean
   stopping: boolean
+  execution: string
 }
 
 export const make = <Key, E>(options: {
@@ -56,9 +62,11 @@ export const make = <Key, E>(options: {
       done: Deferred.makeUnsafe<void, E>(),
       pendingWake: false,
       stopping: false,
+      execution: randomUUID(),
     })
 
     const start = (key: Key, entry: Entry<E>, force: boolean, successor = false) => {
+      entry.execution = randomUUID()
       const ready = Deferred.makeUnsafe<void>()
       const owner = fork(
         (successor ? Effect.yieldNow : Deferred.await(ready)).pipe(
@@ -135,6 +143,14 @@ export const make = <Key, E>(options: {
         return Fiber.interrupt(entry.owner)
       })
 
+    const interruptIf = (key: Key, execution: string): Effect.Effect<boolean> =>
+      Effect.suspend(() => {
+        const entry = active.get(key)
+        if (entry?.owner === undefined || entry.execution !== execution || entry.stopping) return Effect.succeed(false)
+        entry.stopping = true
+        return Fiber.interrupt(entry.owner).pipe(Effect.as(true))
+      })
+
     // A settled entry may hand off to a successor for a coalesced wake, so
     // re-check after each settle until the key is truly idle.
     const awaitIdle = (key: Key): Effect.Effect<void> =>
@@ -144,5 +160,13 @@ export const make = <Key, E>(options: {
         return Deferred.await(entry.done).pipe(Effect.exit, Effect.asVoid, Effect.andThen(awaitIdle(key)))
       })
 
-    return { active: Effect.sync(() => new Set(active.keys())), run, wake, interrupt, awaitIdle }
+    return {
+      active: Effect.sync(() => new Set(active.keys())),
+      executions: Effect.sync(() => new Map(Array.from(active, ([key, entry]) => [key, entry.execution]))),
+      run,
+      wake,
+      interrupt,
+      interruptIf,
+      awaitIdle,
+    }
   })

@@ -48,7 +48,9 @@ const layer = Layer.effect(
 
     return SessionExecution.Service.of({
       active: coordinator.active,
+      executions: coordinator.executions,
       interrupt: coordinator.interrupt,
+      interruptIf: coordinator.interruptIf,
       resume: coordinator.run,
       wake: coordinator.wake,
       wait: coordinator.awaitIdle,

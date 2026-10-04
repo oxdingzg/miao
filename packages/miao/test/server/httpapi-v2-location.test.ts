@@ -67,11 +67,12 @@ async function readEvent(reader: AsyncIterator<typeof Event.Type>) {
 }
 
 async function readEventType(reader: AsyncIterator<typeof Event.Type>, type: string) {
-  for (let index = 0; index < 20; index++) {
+  // Unrelated global events must not exhaust a fixed event-count budget.
+  // The test runner bounds elapsed time if the expected event never arrives.
+  while (true) {
     const event = await readEvent(reader)
     if (event.type === type) return event
   }
-  throw new Error(`timed out waiting for ${type}`)
 }
 
 afterEach(async () => {
@@ -80,6 +81,36 @@ afterEach(async () => {
 })
 
 describe("v2 location HttpApi", () => {
+  test("execution observation and targeted interruption validate identity and session ownership", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const created = await request("/api/session", tmp.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location: { directory: tmp.path } }),
+    })
+    expect(created.status).toBe(200)
+    const id = ((await created.json()) as { data: { id: string } }).data.id
+    const state = await request(`/api/session/${id}/execution`, tmp.path)
+    expect(state.status).toBe(200)
+    expect(await state.json()).toEqual({ type: "idle" })
+    const stale = await request(
+      `/api/session/${id}/execution/00000000-0000-4000-8000-000000000000/interrupt`,
+      tmp.path,
+      {
+        method: "POST",
+      },
+    )
+    expect(stale.status).toBe(409)
+    const malformed = await request(`/api/session/${id}/execution/not-an-execution/interrupt`, tmp.path, {
+      method: "POST",
+    })
+    expect(malformed.status).toBe(400)
+    const missing = await request("/api/session/ses_missing_execution/execution", tmp.path)
+    expect(missing.status).toBe(404)
+    const legacy = await request(`/api/session/${id}/interrupt`, tmp.path, { method: "POST" })
+    expect(legacy.status).toBe(204)
+  })
+
   test("decodes EventV2 location refs without resolved project metadata", () => {
     expect(
       Schema.decodeUnknownSync(Event)({
@@ -165,9 +196,11 @@ describe("v2 location HttpApi", () => {
     const child = ((await fork.json()) as { data: { id: string } }).data.id
 
     const ids = async (query: string) =>
-      ((await (await request(`/api/session?directory=${encodeURIComponent(tmp.path)}${query}`, tmp.path)).json()) as {
-        data: { id: string }[]
-      }).data.map((session) => session.id)
+      (
+        (await (await request(`/api/session?directory=${encodeURIComponent(tmp.path)}${query}`, tmp.path)).json()) as {
+          data: { id: string }[]
+        }
+      ).data.map((session) => session.id)
     expect((await ids("")).toSorted()).toEqual([parent, child].toSorted())
     expect(await ids("&roots=true")).toEqual([parent])
   })
@@ -295,7 +328,10 @@ describe("v2 location HttpApi", () => {
     expect(inRepo.config).toBeTruthy()
 
     await using plain = await tmpdir()
-    expect(await (await request("/api/path", plain.path)).json()).toMatchObject({ worktree: "/", directory: plain.path })
+    expect(await (await request("/api/path", plain.path)).json()).toMatchObject({
+      worktree: "/",
+      directory: plain.path,
+    })
   })
 
   test("creates, resets, and removes a project worktree", async () => {

@@ -2209,6 +2209,19 @@ export type SessionsEventsOutput =
       readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
     }
 
+export type SessionsExecutionInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsExecutionOutput =
+  | { readonly type: "idle" }
+  | { readonly type: "running"; readonly executionID: string }
+
+export type SessionsInterruptIfInput = {
+  readonly sessionID: { readonly sessionID: string; readonly executionID: string }["sessionID"]
+  readonly executionID: { readonly sessionID: string; readonly executionID: string }["executionID"]
+}
+
+export type SessionsInterruptIfOutput = void
+
 export type SessionsInterruptInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsInterruptOutput = void
