@@ -5,7 +5,7 @@ import { join } from "path"
 import { eq } from "drizzle-orm"
 import { Effect } from "effect"
 import { Blob } from "../blob"
-import type { Database } from "../database/database"
+import { Database } from "../database/database"
 import { EventTable } from "../event/sql"
 import { SessionInputTable, SessionMessageTable } from "./sql"
 
@@ -27,73 +27,90 @@ const REF = /blob:\/\/([a-f0-9]{64})/g
  * about still protects its blob (a false positive keeps a blob, never deletes a
  * live one).
  */
-const collect = (into: Set<string>, value: unknown) => {
+export const collectHashes = (into: Set<string>, value: unknown) => {
   if (typeof value === "string") {
     for (const match of value.matchAll(REF)) into.add(match[1]!)
     return
   }
   if (Array.isArray(value)) {
-    for (const item of value) collect(into, item)
+    for (const item of value) collectHashes(into, item)
     return
   }
   if (typeof value === "object" && value !== null) {
-    for (const item of Object.values(value)) collect(into, item)
+    for (const item of Object.values(value)) collectHashes(into, item)
   }
 }
 
 /**
- * Mark-and-sweep for the content-addressed blob store. Marks every `blob://`
- * hash referenced by `session_message`, `event`, and `session_input` rows, then
- * deletes blob files that nothing references and that are older than the grace
- * window (so a blob written for an in-flight write is not collected). Pass
- * `dryRun` to report without deleting. See `specs/storage/session-storage-hardening.md`.
+ * Marks every `blob://` hash one database references from `session_message`,
+ * `event`, and `session_input` rows. A blob directory can be shared by several
+ * channel databases, so callers must union this across all of them before
+ * sweeping.
  */
-export const sweep = (input: {
-  readonly blob: Blob.Interface
-  readonly db: DatabaseService
-  readonly directory: string
-  readonly dryRun?: boolean
-  readonly graceMs?: number
-  readonly now?: number
-}) =>
+export const collect = (db: DatabaseService) =>
   Effect.gen(function* () {
     const referenced = new Set<string>()
 
-    const sessions = yield* input.db
+    const sessions = yield* db
       .selectDistinct({ id: SessionMessageTable.session_id })
       .from(SessionMessageTable)
       .all()
       .pipe(Effect.orDie)
     for (const { id } of sessions) {
-      const rows = yield* input.db
+      const rows = yield* db
         .select({ data: SessionMessageTable.data })
         .from(SessionMessageTable)
         .where(eq(SessionMessageTable.session_id, id))
         .all()
         .pipe(Effect.orDie)
-      for (const row of rows) collect(referenced, row.data)
+      for (const row of rows) collectHashes(referenced, row.data)
     }
 
-    const aggregates = yield* input.db
+    const aggregates = yield* db
       .selectDistinct({ id: EventTable.aggregate_id })
       .from(EventTable)
       .all()
       .pipe(Effect.orDie)
     for (const { id } of aggregates) {
-      const rows = yield* input.db
+      const rows = yield* db
         .select({ data: EventTable.data })
         .from(EventTable)
         .where(eq(EventTable.aggregate_id, id))
         .all()
         .pipe(Effect.orDie)
-      for (const row of rows) collect(referenced, row.data)
+      for (const row of rows) collectHashes(referenced, row.data)
     }
 
-    const inputs = yield* input.db.select({ prompt: SessionInputTable.prompt }).from(SessionInputTable).all().pipe(
+    const inputs = yield* db.select({ prompt: SessionInputTable.prompt }).from(SessionInputTable).all().pipe(
       Effect.orDie,
     )
-    for (const row of inputs) collect(referenced, row.prompt)
+    for (const row of inputs) collectHashes(referenced, row.prompt)
 
+    return referenced
+  })
+
+/** Marks one database at `filename` (a channel file opened on its own). */
+export const collectFromPath = (filename: string) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    return yield* collect(db)
+  }).pipe(Effect.provide(Database.layerFromPath(filename)))
+
+/**
+ * Deletes blob files that no channel database references and that are older than
+ * the grace window (so a blob written for an in-flight write is not collected).
+ * Pass `dryRun` to report without deleting. See
+ * `specs/storage/session-storage-hardening.md`.
+ */
+export const sweep = (input: {
+  readonly blob: Blob.Interface
+  readonly directory: string
+  readonly referenced: ReadonlySet<string>
+  readonly dryRun?: boolean
+  readonly graceMs?: number
+  readonly now?: number
+}) =>
+  Effect.gen(function* () {
     const now = input.now ?? Date.now()
     const grace = input.graceMs ?? 24 * 60 * 60 * 1000
     const files = yield* Effect.promise(() => readdir(input.directory).catch(() => [] as string[]))
@@ -101,7 +118,7 @@ export const sweep = (input: {
     let bytes = 0
     let deleted = 0
     for (const hash of files) {
-      if (referenced.has(hash)) continue
+      if (input.referenced.has(hash)) continue
       const info = yield* Effect.promise(() => stat(join(input.directory, hash)).catch(() => undefined))
       if (info?.isFile() !== true) continue
       if (now - info.mtimeMs < grace) continue
@@ -112,5 +129,5 @@ export const sweep = (input: {
         if (removed) deleted += 1
       }
     }
-    return { referenced: referenced.size, orphans, bytes, deleted } satisfies Report
+    return { referenced: input.referenced.size, orphans, bytes, deleted } satisfies Report
   })

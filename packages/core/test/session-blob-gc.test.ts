@@ -102,12 +102,13 @@ describe("SessionBlobGc", () => {
           .run()
           .pipe(Effect.orDie)
 
-        const dry = yield* SessionBlobGc.sweep({ blob, db, directory, dryRun: true, graceMs: 0 })
+        const referenced = yield* SessionBlobGc.collect(db)
+        const dry = yield* SessionBlobGc.sweep({ blob, directory, referenced, dryRun: true, graceMs: 0 })
         expect(dry).toMatchObject({ orphans: 1, deleted: 0 })
         expect(dry.referenced).toBeGreaterThanOrEqual(2)
         expect(yield* blob.has(orphan.hash)).toBe(true)
 
-        const result = yield* SessionBlobGc.sweep({ blob, db, directory, graceMs: 0 })
+        const result = yield* SessionBlobGc.sweep({ blob, directory, referenced, graceMs: 0 })
         expect(result).toMatchObject({ orphans: 1, deleted: 1 })
         expect(yield* blob.has(orphan.hash)).toBe(false)
         expect(yield* blob.has(message.hash)).toBe(true)
@@ -120,7 +121,8 @@ describe("SessionBlobGc", () => {
     withEnv(({ db, blob, directory }) =>
       Effect.gen(function* () {
         const fresh = yield* blob.put({ bytes: new Uint8Array([9]), mime: "image/png" })
-        const result = yield* SessionBlobGc.sweep({ blob, db, directory, graceMs: 60_000 })
+        const referenced = yield* SessionBlobGc.collect(db)
+        const result = yield* SessionBlobGc.sweep({ blob, directory, referenced, graceMs: 60_000 })
         expect(result.orphans).toBe(0)
         expect(yield* blob.has(fresh.hash)).toBe(true)
       }),
