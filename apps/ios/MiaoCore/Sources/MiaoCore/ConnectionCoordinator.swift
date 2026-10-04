@@ -1,17 +1,18 @@
 import Foundation
 
 public enum RemoteConnectionState: String, Sendable {
-    case quiescent, connecting, syncing, ready, offline, draining, authorizationBlocked
+    case quiescent, connecting, syncing, ready, offline, draining, authorizationBlocked, protocolBlocked
 }
 
 public enum ClientScenePhase: Sendable { case active, inactive, background }
-public enum RemoteConnectionError: Error { case authorizationBlocked }
+public enum RemoteConnectionError: Error { case authorizationBlocked, protocolIncompatible }
 
 public protocol ClientConnection: Sendable {
     /// Revalidate authorization and reconcile the operation ledger before becoming ready.
     func synchronize() async throws
     /// Close only transport resources. Never interrupt a host execution here.
     func close() async
+    func waitForDisconnect() async throws
 }
 
 /// Shared by every scene for one signed-in Hub identity.
@@ -23,6 +24,7 @@ public actor ConnectionCoordinator {
     private var epoch: UInt64 = 0
     private var connection: (any ClientConnection)?
     private var task: Task<Void, Never>?
+    private var attempts = 0
     private var observers: [UUID: AsyncStream<RemoteConnectionState>.Continuation] = [:]
     public private(set) var state: RemoteConnectionState = .quiescent
 
@@ -86,7 +88,7 @@ public actor ConnectionCoordinator {
                 do {
                     try await opened.synchronize()
                     try Task.checkCancellation()
-                    finished(epoch: current)
+                    finished(opened, epoch: current)
                 } catch {
                     await opened.close()
                     failed(error, epoch: current)
@@ -104,21 +106,40 @@ public actor ConnectionCoordinator {
         return true
     }
 
-    private func finished(epoch current: UInt64) {
+    private func finished(_ opened: any ClientConnection, epoch current: UInt64) {
         guard epoch == current else { return }
-        task = nil
+        attempts = 0
         setState(.ready)
+        task = Task {
+            do {
+                try await opened.waitForDisconnect()
+                failed(CancellationError(), epoch: current)
+            } catch { failed(error, epoch: current) }
+        }
     }
 
     private func failed(_ error: Error, epoch current: UInt64) {
         guard epoch == current else { return }
         connection = nil
         task = nil
-        setState(error is RemoteConnectionError ? .authorizationBlocked : .offline)
+        if let reason = error as? RemoteConnectionError {
+            setState(reason == .authorizationBlocked ? .authorizationBlocked : .protocolBlocked)
+        } else {
+            setState(.offline)
+        }
+        guard state == .offline, scenes.values.contains(.active) else { return }
+        let delay = min(30.0, 0.5 * pow(2.0, Double(min(attempts, 6)))) * Double.random(in: 0.75...1.25)
+        attempts += 1
+        task = Task {
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard epoch == current, scenes.values.contains(.active), state == .offline else { return }
+            start()
+        }
     }
 
     private func quiesce() {
-        guard state != .authorizationBlocked, state != .quiescent, state != .draining else { return }
+        guard state != .authorizationBlocked, state != .protocolBlocked,
+              state != .quiescent, state != .draining else { return }
         stop(next: .draining)
     }
 
