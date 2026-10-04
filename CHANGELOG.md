@@ -10,6 +10,18 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-04
+
+### Added
+- **ios**: persist remote operations and coordinate scene connections (#85) (`2a60a650c`)
+- **core**: restore V2 LSP navigation tool (#74) (`4bd3dc762`)
+- **core**: restore safe apply_patch file moves (#80) (`21ec0ccc1`)
+- **ios**: add CryptoKit remote protocol core and interoperability checks (#72) (`d0e726605`)
+
+### Fixed
+- **app**: keep todo sync fresh across live updates and reconnect (#84) (`617f4ed63`)
+- **core**: refresh persisted todos in session model context (#82) (`8352a2851`)
+
 ## [0.1.5] - 2026-10-04
 
 ### Added
