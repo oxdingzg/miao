@@ -195,6 +195,51 @@ describe("server session", () => {
     expect(store.data.todo.child).toEqual([{ content: "Verify it", status: "in_progress", priority: "medium" }])
   })
 
+  test("a todo snapshot that resolves after a live update does not revert it", async () => {
+    const stale = [{ content: "old", status: "pending", priority: "low" }]
+    const live = [{ content: "new", status: "in_progress", priority: "high" }]
+    const snapshot = Promise.withResolvers<typeof stale>()
+    const client = {
+      sessions: {
+        // The stale snapshot resolves only after the live event below.
+        todo: () => snapshot.promise,
+      },
+    } as unknown as SessionReadClient
+    const store = createServerSession(client)
+
+    const loading = store.todo("child")
+    store.apply({ type: "todo.updated", properties: { sessionID: "child", todos: live } })
+    expect(store.data.todo.child?.[0]?.content).toBe("new")
+
+    snapshot.resolve(stale)
+    await loading
+    expect(store.data.todo.child?.[0]?.content).toBe("new")
+  })
+
+  test("a reconnect refetches a cached todo list", async () => {
+    const before = [{ content: "before", status: "pending", priority: "low" }]
+    const after = [{ content: "after", status: "completed", priority: "high" }]
+    let calls = 0
+    const client = {
+      sessions: {
+        todo: async () => {
+          calls += 1
+          return calls === 1 ? before : after
+        },
+      },
+    } as unknown as SessionReadClient
+    const store = createServerSession(client)
+
+    await store.todo("child")
+    expect(store.data.todo.child?.[0]?.content).toBe("before")
+
+    store.apply({ type: "server.connected" })
+    const deadline = Date.now() + 500
+    while (store.data.todo.child?.[0]?.content !== "after" && Date.now() < deadline) await Bun.sleep(5)
+    expect(calls).toBeGreaterThanOrEqual(2)
+    expect(store.data.todo.child?.[0]?.content).toBe("after")
+  })
+
   test("projects V2 session events into current and legacy message state", () => {
     const ctx = setup({ child: session("child") })
     ctx.store.remember(session("child"))

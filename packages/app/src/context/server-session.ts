@@ -218,6 +218,10 @@ export function createServerSession(
   const requests = new Map<string, Promise<Session>>()
   const inflight = new Map<string, Promise<void>>()
   const inflightTodo = new Map<string, Promise<void>>()
+  // Bumped on every live `todo.updated`. A snapshot fetch records the count when
+  // it starts and skips its result if a live update landed while it was in
+  // flight, so a slow snapshot cannot revert a newer live todo list.
+  const todoRevisions = new Map<string, number>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
   const v2 = createV2SessionReducer()
   const messageLoads = new Map<string, MessageLoadState>()
@@ -496,6 +500,7 @@ export function createServerSession(
       requests.delete(sessionID)
       inflight.delete(sessionID)
       inflightTodo.delete(sessionID)
+      todoRevisions.delete(sessionID)
       messageLoads.delete(sessionID)
       v2.clear(sessionID)
       pendingParts.delete(sessionID)
@@ -543,6 +548,20 @@ export function createServerSession(
     evict(
       pickSessionCacheEvictions({ seen, keep: sessionID, limit: SESSION_CACHE_LIMIT, preserve: protectedSessions() }),
     )
+
+  const loadTodo = (sessionID: string, request?: { force?: boolean }) => {
+    if (data.todo[sessionID] !== undefined && !request?.force) return Promise.resolve()
+    if (!("sessions" in client)) return Promise.reject(new Error("V2 Session API is required"))
+    return runInflight(inflightTodo, sessionID, () => {
+      const active = generation(sessionID)
+      const revision = todoRevisions.get(sessionID) ?? 0
+      return (options?.retry ?? retry)(() => client.sessions.todo({ sessionID })).then((result) => {
+        if (generations.get(sessionID) !== active) return
+        if ((todoRevisions.get(sessionID) ?? 0) !== revision) return
+        setData("todo", sessionID, reconcile([...result], { key: "id" }))
+      })
+    })
+  }
 
   const fetchMessages = async (sessionID: string, limit: number, before?: string, onAttempt?: () => void) => {
     if (messageApi) {
@@ -1020,7 +1039,18 @@ export function createServerSession(
       }
       case "todo.updated": {
         const props = event.properties as { sessionID: string; todos: Todo[] }
+        todoRevisions.set(props.sessionID, (todoRevisions.get(props.sessionID) ?? 0) + 1)
         setData("todo", props.sessionID, reconcile(props.todos, { key: "id" }))
+        return
+      }
+      case "server.connected": {
+        // A reconnect can miss todo updates, so refetch every cached list rather
+        // than trust the value from before the stream dropped. The stale value
+        // stays visible until the fresh snapshot resolves.
+        for (const sessionID of Object.keys(data.todo)) {
+          if (data.todo[sessionID] === undefined) continue
+          void loadTodo(sessionID, { force: true }).catch(() => {})
+        }
         return
       }
       case "session.status": {
@@ -1380,15 +1410,7 @@ export function createServerSession(
     },
     async todo(sessionID: string, request?: { force?: boolean }) {
       touch(sessionID)
-      if (data.todo[sessionID] !== undefined && !request?.force) return
-      if (!("sessions" in client)) throw new Error("V2 Session API is required")
-      return runInflight(inflightTodo, sessionID, () => {
-        const active = generation(sessionID)
-        return (options?.retry ?? retry)(() => client.sessions.todo({ sessionID })).then((result) => {
-          if (generations.get(sessionID) !== active) return
-          setData("todo", sessionID, reconcile([...result], { key: "id" }))
-        })
-      })
+      return loadTodo(sessionID, request)
     },
     history: {
       more: (sessionID: string) =>
