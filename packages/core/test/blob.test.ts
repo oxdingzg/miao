@@ -83,6 +83,20 @@ describe("Blob", () => {
     ),
   )
 
+  it.live("serves base64 from cache and drops it when the blob is removed", () =>
+    withBlob(({ blob }) =>
+      Effect.gen(function* () {
+        const ref = yield* blob.put({ bytes: new Uint8Array([104, 105]) })
+        expect(yield* blob.getBase64(ref.hash)).toBe("aGk=")
+        // A second read is served from the cache.
+        expect(yield* blob.getBase64(ref.hash)).toBe("aGk=")
+        // Removing the blob must not leave the cached value readable.
+        expect(yield* blob.remove(ref.hash)).toBe(true)
+        expect(yield* blob.getBase64(ref.hash)).toBeUndefined()
+      }),
+    ),
+  )
+
   it.live("builds and parses blob references", () =>
     Effect.sync(() => {
       expect(Blob.refUri("abc")).toBe("blob://abc")
