@@ -3,7 +3,7 @@ on:
   pull_request:
     paths:
       - apps/ios/**
-      - packages/remote-control/src/secure-channel.ts
+      - packages/remote-control/src/**
       - .github/workflows/ios-core.yml
   workflow_dispatch:
 permissions:
@@ -32,3 +32,7 @@ jobs:
         env:
           MIAO_SWIFT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/InteropProbe"]'
         run: bun apps/ios/scripts/check-interop.ts
+      - name: Native WebSocket transport integration
+        env:
+          MIAO_SWIFT_TRANSPORT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/TransportProbe"]'
+        run: bun apps/ios/scripts/check-transport.ts
