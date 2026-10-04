@@ -89,10 +89,6 @@ fn slice_span(content: &str, lines: &[&str], start_line: usize, end_line: usize)
     content[match_start..match_end].to_string()
 }
 
-fn simple(_content: &str, find: &str) -> Vec<String> {
-    vec![find.to_string()]
-}
-
 fn line_trimmed(content: &str, find: &str) -> Vec<String> {
     let original: Vec<&str> = content.split('\n').collect();
     let mut search: Vec<&str> = find.split('\n').collect();
@@ -380,14 +376,6 @@ fn context_aware(content: &str, find: &str) -> Vec<String> {
     Vec::new()
 }
 
-fn multi_occurrence(content: &str, find: &str) -> Vec<String> {
-    if content.contains(find) {
-        vec![find.to_string()]
-    } else {
-        Vec::new()
-    }
-}
-
 fn is_disproportionate_match(search: &str, old_string: &str) -> bool {
     let old_lines = old_string.split('\n').count();
     let search_lines = search.split('\n').count();
@@ -401,7 +389,151 @@ fn is_disproportionate_match(search: &str, old_string: &str) -> bool {
         > std::cmp::max(old_string.trim().chars().count() + 500, old_string.trim().chars().count() * 4)
 }
 
-/// Pure port of `replace()` in `packages/miao/src/tool/edit.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchKind {
+    None,
+    Ambiguous,
+    Disproportionate,
+    Match,
+}
+
+struct EditMatch {
+    kind: MatchKind,
+    find: Option<String>,
+    count: u32,
+}
+
+/// Number of non-overlapping occurrences, matching `String.prototype.replaceAll`.
+fn count_occurrences(content: &str, find: &str) -> u32 {
+    if find.is_empty() {
+        return content.chars().count() as u32 + 1;
+    }
+    let mut count = 0u32;
+    let mut offset = 0usize;
+    while offset <= content.len() {
+        match memmem::find(&content.as_bytes()[offset..], find.as_bytes()) {
+            Some(index) => {
+                count += 1;
+                offset += index + find.len();
+            }
+            None => break,
+        }
+    }
+    count
+}
+
+/// The first occurrence that begins a line, or `None` for a mid-line first hit.
+fn first_line_anchored_index(content: &str, find: &str) -> Option<usize> {
+    let index = memmem::find(content.as_bytes(), find.as_bytes())?;
+    if index == 0 || content.as_bytes()[index - 1] == b'\n' {
+        Some(index)
+    } else {
+        None
+    }
+}
+
+/// Whether `find` occurs exactly once. Searching past the first index also catches
+/// self-overlapping patterns such as `"aaa"` / `"aa"`, matching the TypeScript side.
+fn is_unique_occurrence(content: &str, find: &str) -> bool {
+    match memmem::find(content.as_bytes(), find.as_bytes()) {
+        Some(first) => memmem::find(&content.as_bytes()[first + 1..], find.as_bytes()).is_none(),
+        None => false,
+    }
+}
+
+fn fuzzy_candidates(content: &str, find: &str) -> Vec<String> {
+    if find.trim().is_empty() {
+        return Vec::new();
+    }
+    type Replacer = fn(&str, &str) -> Vec<String>;
+    const REPLACERS: [Replacer; 7] = [
+        line_trimmed,
+        block_anchor,
+        whitespace_normalized,
+        indentation_flexible,
+        escape_normalized,
+        trimmed_boundary,
+        context_aware,
+    ];
+    let mut out = Vec::new();
+    for replacer in REPLACERS {
+        out.extend(replacer(content, find));
+    }
+    out
+}
+
+/// The one matching contract shared with `packages/core/src/tool/edit-match.ts`:
+/// an exact occurrence wins, otherwise the restored V1 strategies are tried in
+/// order, each gated by line-anchor, disproportionate-span and uniqueness safety.
+fn match_plan(content: &str, old_string: &str, replace_all: bool) -> EditMatch {
+    if old_string.is_empty() {
+        return EditMatch {
+            kind: MatchKind::None,
+            find: None,
+            count: 0,
+        };
+    }
+
+    if memmem::find(content.as_bytes(), old_string.as_bytes()).is_some() {
+        if !replace_all && !is_unique_occurrence(content, old_string) {
+            return EditMatch {
+                kind: MatchKind::Ambiguous,
+                find: None,
+                count: 0,
+            };
+        }
+        return EditMatch {
+            kind: MatchKind::Match,
+            find: Some(old_string.to_string()),
+            count: if replace_all { count_occurrences(content, old_string) } else { 1 },
+        };
+    }
+
+    let mut saw_ambiguous = false;
+    for candidate in fuzzy_candidates(content, old_string) {
+        if first_line_anchored_index(content, &candidate).is_none() {
+            continue;
+        }
+        if is_disproportionate_match(&candidate, old_string) {
+            return EditMatch {
+                kind: MatchKind::Disproportionate,
+                find: None,
+                count: 0,
+            };
+        }
+        if replace_all {
+            return EditMatch {
+                kind: MatchKind::Match,
+                find: Some(candidate.clone()),
+                count: count_occurrences(content, &candidate),
+            };
+        }
+        if is_unique_occurrence(content, &candidate) {
+            return EditMatch {
+                kind: MatchKind::Match,
+                find: Some(candidate),
+                count: 1,
+            };
+        }
+        saw_ambiguous = true;
+    }
+
+    if saw_ambiguous {
+        EditMatch {
+            kind: MatchKind::Ambiguous,
+            find: None,
+            count: 0,
+        }
+    } else {
+        EditMatch {
+            kind: MatchKind::None,
+            find: None,
+            count: 0,
+        }
+    }
+}
+
+/// Match and replace `oldString`, applying the shared matching contract.
 pub fn replace(content: &str, old_string: &str, new_string: &str, replace_all: bool) -> Result<String, EditError> {
     if old_string == new_string {
         return Err(EditError::Identical);
@@ -410,50 +542,25 @@ pub fn replace(content: &str, old_string: &str, new_string: &str, replace_all: b
         return Err(EditError::EmptyOld);
     }
 
-    type Replacer = fn(&str, &str) -> Vec<String>;
-    const REPLACERS: [Replacer; 9] = [
-        simple,
-        line_trimmed,
-        block_anchor,
-        whitespace_normalized,
-        indentation_flexible,
-        escape_normalized,
-        trimmed_boundary,
-        context_aware,
-        multi_occurrence,
-    ];
-
-    let mut not_found = true;
-    for replacer in REPLACERS {
-        for search in replacer(content, old_string) {
-            let Some(index) = memmem::find(content.as_bytes(), search.as_bytes()) else {
-                continue;
+    let matched = match_plan(content, old_string, replace_all);
+    match matched.kind {
+        MatchKind::Disproportionate => Err(EditError::Disproportionate),
+        MatchKind::Ambiguous => Err(EditError::Multiple),
+        MatchKind::None => Err(EditError::NotFound),
+        MatchKind::Match => {
+            let find = matched.find.expect("a match carries a find string");
+            let Some(index) = memmem::find(content.as_bytes(), find.as_bytes()) else {
+                return Err(EditError::NotFound);
             };
-            not_found = false;
-            if is_disproportionate_match(&search, old_string) {
-                return Err(EditError::Disproportionate);
-            }
             if replace_all {
-                return Ok(content.replace(&search, new_string));
-            }
-            // `index` is already the leftmost occurrence, so uniqueness is just
-            // "no further occurrence after index". Searching from index + 1
-            // preserves JS lastIndexOf semantics for self-overlapping patterns.
-            if memmem::find(&content.as_bytes()[index + 1..], search.as_bytes()).is_some() {
-                continue;
+                return Ok(content.replace(&find, new_string));
             }
             let mut out = String::with_capacity(content.len() + new_string.len());
             out.push_str(&content[..index]);
             out.push_str(new_string);
-            out.push_str(&content[index + search.len()..]);
-            return Ok(out);
+            out.push_str(&content[index + find.len()..]);
+            Ok(out)
         }
-    }
-
-    if not_found {
-        Err(EditError::NotFound)
-    } else {
-        Err(EditError::Multiple)
     }
 }
 
@@ -523,6 +630,35 @@ pub fn apply_edit(
         additions,
         deletions,
     })
+}
+
+#[napi(object)]
+pub struct EditMatchResult {
+    pub kind: String,
+    pub find: Option<String>,
+    pub count: Option<u32>,
+}
+
+/// Pure match plan for the V2 edit tool. Returns `none`, `ambiguous`,
+/// `disproportionate` or `match`; the caller owns replacement and safety policy.
+#[napi(js_name = "matchEdit")]
+pub fn match_edit(content: String, old_string: String, replace_all: Option<bool>) -> EditMatchResult {
+    let matched = match_plan(&content, &old_string, replace_all.unwrap_or(false));
+    EditMatchResult {
+        kind: match matched.kind {
+            MatchKind::None => "none",
+            MatchKind::Ambiguous => "ambiguous",
+            MatchKind::Disproportionate => "disproportionate",
+            MatchKind::Match => "match",
+        }
+        .to_string(),
+        find: matched.find,
+        count: if matched.kind == MatchKind::Match {
+            Some(matched.count)
+        } else {
+            None
+        },
+    }
 }
 
 #[napi(js_name = "diffStats")]
@@ -1436,6 +1572,41 @@ mod tests {
         let content = ["function configure() {", "  removeAllUserData()", "}"].join("\n");
         let old = ["function configure() {", "  const enabled = true", "}"].join("\n");
         assert_eq!(replace(&content, &old, "x", false), Err(EditError::NotFound));
+    }
+
+    #[test]
+    fn match_plan_prefers_an_exact_occurrence() {
+        let matched = match_plan("old content here", "old content", false);
+        assert_eq!(matched.kind, MatchKind::Match);
+        assert_eq!(matched.find.as_deref(), Some("old content"));
+        assert_eq!(matched.count, 1);
+    }
+
+    #[test]
+    fn match_plan_reports_self_overlap_as_ambiguous() {
+        assert_eq!(match_plan("aaa", "aa", false).kind, MatchKind::Ambiguous);
+        assert_eq!(match_plan("same same", "same", false).kind, MatchKind::Ambiguous);
+        assert_eq!(match_plan("same same same", "same", true).count, 3);
+    }
+
+    #[test]
+    fn match_plan_keeps_fuzzy_matches_line_anchored() {
+        assert_eq!(match_plan("  xfoo   y\nbar\n", "foo y", false).kind, MatchKind::None);
+    }
+
+    #[test]
+    fn match_plan_refuses_disproportionate_spans() {
+        let content = format!("a{}b\nc{}d\n", " ".repeat(600), " ".repeat(600));
+        assert_eq!(match_plan(&content, "a b\nc d", false).kind, MatchKind::Disproportionate);
+    }
+
+    #[test]
+    fn match_plan_recovers_a_fuzzy_block_anchor() {
+        let content = ["start", "  alpha beta gamma", "end"].join("\n");
+        let find = ["start", "  alpha beta delta", "end"].join("\n");
+        let matched = match_plan(&content, &find, false);
+        assert_eq!(matched.kind, MatchKind::Match);
+        assert_eq!(matched.find.as_deref(), Some(content.as_str()));
     }
 
     #[test]

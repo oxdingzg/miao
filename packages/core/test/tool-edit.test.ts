@@ -465,6 +465,65 @@ describe("EditTool", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+
+  it.live("applies a line-trimmed fuzzy match through the tool", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "fuzzy.txt")
+        return Effect.promise(() => fs.writeFile(target, "function f() {\n    const x = 1\n}\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              settleTool(
+                registry,
+                call({
+                  path: "fuzzy.txt",
+                  oldString: "function f() {\n  const x = 1\n}",
+                  newString: "function f() {\n  const x = 2\n}",
+                }),
+              ),
+            ),
+          ),
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.output?.structured).toMatchObject({ replacements: 1 })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe(
+                "function f() {\n  const x = 2\n}\n",
+              )
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("refuses a disproportionate fuzzy match without writing", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "disproportionate.txt")
+        const content = `a${" ".repeat(600)}b\nc${" ".repeat(600)}d\n`
+        return Effect.promise(() => fs.writeFile(target, content)).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              executeTool(registry, call({ path: "disproportionate.txt", oldString: "a b\nc d", newString: "x" })),
+            ),
+          ),
+          Effect.andThen((result) =>
+            Effect.gen(function* () {
+              expect(result).toMatchObject({ type: "error", value: expect.stringContaining("Refusing replacement") })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe(content)
+              expect(writes).toEqual([])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
 })
 
 test("trimDiff removes the indentation every diff line shares, as the V1 prompt did", () => {
@@ -485,7 +544,7 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
     "absolute external paths retain mutation capability through a separate\n * external_directory approval before edit approval.",
   )
   for (const todo of [
-    "Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.",
+    "Review block-anchor similarity thresholds as more real edits are observed.",
     "Publish watcher/file-edit events after V2 watcher integration exists.",
     "Add snapshots / undo after design exists.",
   ]) {
