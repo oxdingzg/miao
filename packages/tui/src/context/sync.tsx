@@ -808,6 +808,7 @@ export const {
           fullSyncedSessions.delete(id)
           syncingSessions.delete(id)
           hydratingSessions.delete(id)
+          todoLiveAt.delete(id)
           sessionMessages.delete(id)
           olderHistory.delete(id)
           loadingOlder.delete(id)
