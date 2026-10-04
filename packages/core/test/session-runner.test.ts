@@ -46,6 +46,7 @@ import { SessionRunner } from "@miao/core/session/runner"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { BashTool } from "@miao/core/tool/bash"
+import { ToolCallLeak } from "@miao/core/session/tool-call-leak"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { SendMessageTool } from "@miao/core/tool/send-message"
@@ -276,7 +277,7 @@ const waitForChild = (pid: number) =>
     return yield* Effect.die(new Error(`Process ${pid} never spawned a child`))
   })
 
-let modelResolveHook = Effect.void
+let modelResolveHook: Effect.Effect<void, SessionRunnerModel.Error> = Effect.void
 let modelResolveFailure: SessionRunnerModel.Error | undefined
 let currentModel = model
 const models = SessionRunnerModel.layerWith((session) =>
@@ -1856,6 +1857,76 @@ describe("SessionRunnerLLM", () => {
       const context = yield* (yield* SessionStore.Service).context(sessionID)
       const last = context.at(-1)
       expect(last?.type === "assistant" ? last.content.at(-1) : undefined).toMatchObject({ type: "text", text: "Done" })
+    }),
+  )
+
+  it.effect("nudges the model to retry when a tool call leaks as text", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "List files" }), resume: false })
+
+      requests.length = 0
+      const leaked =
+        "Let me look.\n< | DSML | invoke name=\"bash\">\n<parameter name=\"command\">ls</parameter>\n</ | DSML | invoke>"
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-leak" }),
+          LLMEvent.textDelta({ id: "text-leak", text: leaked }),
+          LLMEvent.textEnd({ id: "text-leak" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      // The leak triggered a second provider turn carrying the nudge.
+      expect(requests).toHaveLength(2)
+      expect(userTexts(requests[1]!)).toContain(ToolCallLeak.NUDGE)
+      const context = yield* session.context(sessionID)
+      expect(context.some((message) => message.type === "synthetic" && message.text === ToolCallLeak.NUDGE)).toBe(true)
+    }),
+  )
+
+  it.effect("stops with a visible error when a tool call keeps leaking as text", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "List files" }), resume: false })
+
+      requests.length = 0
+      const leaked =
+        "<tool_calls>\n<invoke name=\"bash\"><parameter name=\"command\">ls</parameter></invoke>\n</tool_calls>"
+      const leakTurn = (id: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id }),
+        LLMEvent.textDelta({ id, text: leaked }),
+        LLMEvent.textEnd({ id }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ]
+      // MAX_ATTEMPTS nudges, then a third leaking turn exhausts the budget.
+      responses = [leakTurn("leak-1"), leakTurn("leak-2"), leakTurn("leak-3")]
+
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(ToolCallLeak.MAX_ATTEMPTS + 1)
+      const context = yield* session.context(sessionID)
+      const lastAssistant = context.findLast((message) => message.type === "assistant")
+      expect(lastAssistant?.type === "assistant" ? lastAssistant.finish : undefined).toBe("error")
+      expect(lastAssistant?.type === "assistant" ? lastAssistant.error?.message : undefined).toContain(
+        "plain text",
+      )
     }),
   )
 
