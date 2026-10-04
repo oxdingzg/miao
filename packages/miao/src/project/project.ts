@@ -1,9 +1,7 @@
 import { LayerNode } from "@miao/core/effect/layer-node"
-import { eq } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
 import { ProjectTable } from "@miao/core/project/sql"
 import { ProjectDirectories } from "@miao/core/project/directories"
-import { GlobalBus } from "@/bus/global"
 import { which } from "@miao/core/util/which"
 import { Command } from "@/command"
 import { InstanceState } from "@/effect/instance-state"
@@ -105,13 +103,12 @@ type GitResult = { code: number; text: string; stderr: string }
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const projectV2 = yield* ProjectV2.Service
     const projectDirectories = yield* ProjectDirectories.Service
+    const projectMetadata = yield* ProjectMetadata.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
-    const { db } = yield* Database.Service
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
@@ -128,15 +125,6 @@ const layer = Layer.effect(
       Effect.scoped,
       Effect.catch(() => Effect.succeed({ code: 1, text: "", stderr: "" } satisfies GitResult)),
     )
-
-    const emitUpdated = (data: Info) =>
-      Effect.sync(() =>
-        GlobalBus.emit("event", {
-          directory: "global",
-          project: data.id,
-          payload: { type: Event.Updated.type, properties: data },
-        }),
-      )
 
     const registryContext = yield* Effect.context<
       | Database.Service
@@ -176,33 +164,24 @@ const layer = Layer.effect(
     })
 
     const list = Effect.fn("Project.list")(function* () {
-      return (yield* db.select().from(ProjectTable).all().pipe(Effect.orDie)).map(fromRow)
+      return (yield* projectMetadata.list()) as Info[]
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectV2.ID) {
-      const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
-      return row ? fromRow(row) : undefined
+      const row = yield* projectMetadata
+        .list()
+        .pipe(Effect.map((rows) => rows.find((project) => project.id === id)))
+      return row as Info | undefined
     })
 
     const update = Effect.fn("Project.update")(function* (input: UpdateInput) {
-      const result = yield* db
-        .update(ProjectTable)
-        .set({
-          name: input.name,
-          icon_url: input.icon?.url,
-          icon_url_override: input.icon?.override,
-          icon_color: input.icon?.color,
-          commands: input.commands,
-          time_updated: Date.now(),
-        })
-        .where(eq(ProjectTable.id, input.projectID))
-        .returning()
-        .get()
-        .pipe(Effect.orDie)
-      if (!result) return yield* new NotFoundError({ projectID: input.projectID })
-      const data = fromRow(result)
-      yield* emitUpdated(data)
-      return data
+      return (yield* projectMetadata.update(input.projectID, {
+        name: input.name,
+        icon: input.icon,
+        commands: input.commands,
+      }).pipe(
+        Effect.catchTag("ProjectMetadata.NotFoundError", () => new NotFoundError({ projectID: input.projectID })),
+      )) as Info
     })
 
     const initGit = Effect.fn("Project.initGit")(function* (input: { directory: string; project: Info }) {
@@ -217,12 +196,7 @@ const layer = Layer.effect(
     })
 
     const setInitialized = Effect.fn("Project.setInitialized")(function* (id: ProjectV2.ID) {
-      yield* db
-        .update(ProjectTable)
-        .set({ time_initialized: Date.now() })
-        .where(eq(ProjectTable.id, id))
-        .run()
-        .pipe(Effect.orDie)
+      yield* projectMetadata.setInitialized(id)
     })
 
     const initState = yield* InstanceState.make(
@@ -242,51 +216,15 @@ const layer = Layer.effect(
     })
 
     const sandboxes = Effect.fn("Project.sandboxes")(function* (id: ProjectV2.ID) {
-      const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
-      if (!row) return []
-      const data = fromRow(row)
-      return yield* Effect.forEach(
-        data.sandboxes,
-        (dir) =>
-          fs.isDir(dir).pipe(
-            Effect.orDie,
-            Effect.map((ok) => (ok ? dir : undefined)),
-          ),
-        { concurrency: "unbounded" },
-      ).pipe(Effect.map((arr) => arr.filter((x): x is string => x !== undefined)))
+      return yield* projectMetadata.sandboxes(id)
     })
 
     const addSandbox = Effect.fn("Project.addSandbox")(function* (id: ProjectV2.ID, directory: string) {
-      const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
-      if (!row) throw new Error(`Project not found: ${id}`)
-      const sandbox = AbsolutePath.make(directory)
-      const sboxes = [...row.sandboxes]
-      if (!sboxes.includes(sandbox)) sboxes.push(sandbox)
-      const result = yield* db
-        .update(ProjectTable)
-        .set({ sandboxes: sboxes, time_updated: Date.now() })
-        .where(eq(ProjectTable.id, id))
-        .returning()
-        .get()
-        .pipe(Effect.orDie)
-      if (!result) throw new Error(`Project not found: ${id}`)
-      yield* emitUpdated(fromRow(result))
+      yield* projectMetadata.addSandbox(id, directory)
     })
 
     const removeSandbox = Effect.fn("Project.removeSandbox")(function* (id: ProjectV2.ID, directory: string) {
-      const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
-      if (!row) throw new Error(`Project not found: ${id}`)
-      const sandbox = AbsolutePath.make(directory)
-      const sboxes = row.sandboxes.filter((s) => s !== sandbox)
-      const result = yield* db
-        .update(ProjectTable)
-        .set({ sandboxes: sboxes, time_updated: Date.now() })
-        .where(eq(ProjectTable.id, id))
-        .returning()
-        .get()
-        .pipe(Effect.orDie)
-      if (!result) throw new Error(`Project not found: ${id}`)
-      yield* emitUpdated(fromRow(result))
+      yield* projectMetadata.removeSandbox(id, directory)
     })
 
     return Service.of({
