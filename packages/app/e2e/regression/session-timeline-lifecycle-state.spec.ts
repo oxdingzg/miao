@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { LEGACY_V1_FIXTURE } from "../utils/mock-server"
+import { assistant, ended, event, sessionID, setup, text, user } from "../utils/session-v2"
 import {
   assistantMessage,
   completedAssistantInfo,
@@ -73,39 +73,44 @@ test("transitions thinking and hidden reasoning through busy to idle", async ({ 
 })
 
 test("moves busy through retry and recovery to final idle content", async ({ page }) => {
-  test.fixme(true, LEGACY_V1_FIXTURE)
-  const assistant = assistantMessage([], { completed: false })
-  const timeline = await setupTimeline(page, {
-    messages: [
-      userMessage(undefined, {
-        summary: {
-          diffs: [
-            {
-              file: "src/retry.ts",
-              additions: 1,
-              deletions: 1,
-              patch: "@@ -1 +1 @@\n-export const retry = false\n+export const retry = true",
-            },
-          ],
-        },
-      }),
-      assistant,
-    ],
-  })
-  await timeline.send(status("busy"), 140)
+  const pendingAssistant = assistant([], { completed: false })
+  const timeline = await setup(page, { messages: [user(), pendingAssistant] })
+  await timeline.send(event("session.next.status", { sessionID, timestamp: 1700000001100, status: { type: "busy" } }))
   await expect(page.locator('[data-timeline-row="Thinking"]')).toBeVisible()
-  await expect(page.locator('[data-timeline-row="DiffSummary"]')).toHaveCount(0)
-  await timeline.send(status("retry"), 180)
+  await timeline.send(
+    event("session.next.retried", {
+      sessionID,
+      timestamp: 1700000001200,
+      attempt: 1,
+      error: { message: "Temporary provider failure", isRetryable: true },
+    }),
+  )
   await expect(page.locator('[data-timeline-row="Retry"]')).toBeVisible()
   await expect(page.locator('[data-timeline-row="Thinking"]')).toHaveCount(0)
-  await timeline.send(status("busy", 2), 180)
+  await timeline.send(event("session.next.status", { sessionID, timestamp: 1700000001300, status: { type: "busy" } }))
   await expect(page.locator('[data-timeline-row="Thinking"]')).toBeVisible()
-  await timeline.send(partUpdated(textPart("prt_recovered", "Recovered response")), 140)
-  await timeline.send(messageUpdated(completedAssistantInfo(assistant.info)), 100)
-  await timeline.send(status("idle"), 350)
+  await timeline.send(
+    event("session.next.text.started", {
+      sessionID,
+      timestamp: 1700000001400,
+      assistantMessageID: pendingAssistant.id,
+      textID: "recovered",
+    }),
+  )
+  await timeline.send(
+    event("session.next.text.ended", {
+      sessionID,
+      timestamp: 1700000001500,
+      assistantMessageID: pendingAssistant.id,
+      textID: "recovered",
+      text: "Recovered response",
+    }),
+  )
+  await expect(page.getByText("Recovered response", { exact: true })).toBeVisible()
+  await timeline.send(ended(assistant([text("Recovered response", "recovered")])))
   await expect(page.locator('[data-timeline-row="Retry"]')).toHaveCount(0)
   await expect(page.locator('[data-timeline-row="Thinking"]')).toHaveCount(0)
-  await expect(page.locator('[data-timeline-row="DiffSummary"]')).toBeVisible()
+  await expect(page.getByText("Recovered response", { exact: true })).toBeVisible()
 })
 
 function lines(count: number) {
