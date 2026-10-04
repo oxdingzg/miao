@@ -3,16 +3,14 @@ name: test
 on:
   push:
     branches:
-      - dev
       - main
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  # Keep every run on upstream dev so cancelled checks do not pollute its commit history.
-  # main (miao's default branch) shares a per-ref group with PRs and other branches, so a
-  # new push cancels the still-running run of an older commit instead of queueing behind it.
-  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  # A new push to main (or a PR) cancels the still-running run of an older commit
+  # instead of queueing behind it.
+  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
   cancel-in-progress: true
 
 permissions:

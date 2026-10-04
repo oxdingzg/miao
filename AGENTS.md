@@ -1,14 +1,32 @@
-## Highest-priority project rule: commit and push promptly
+## Highest-priority project rule: every change lands through a pull request
 
-- After each coherent change passes its required checks, commit it immediately with a conventional commit message and push it to `origin main`. Do not let completed, verified work accumulate uncommitted or unpushed while starting more work.
-- Stage only the paths or hunks belonging to that change. Preserve other Sessions' work, and do not commit unfinished or unverified changes merely to clear the working tree.
-- Report commit, push, and release status accurately: a successful build or local preview install does not mean the change was committed, pushed, or published. If a push fails, resolve or record the blocker promptly.
+`main` is protected: it must stay releasable, and every change reaches it
+through a pull request with an approving review. Direct pushes to `main` are
+rejected, including for maintainers.
+
+- Work on a short-lived branch, open a pull request, and let CI pass before
+  merging. Never commit or push directly to `main`.
+- After each coherent change passes its required checks, commit it to its branch
+  promptly with a conventional commit message and push the branch. Do not let
+  completed, verified work accumulate uncommitted or unpushed while starting
+  more work.
+- Open one pull request per concern. A review that has to hold several
+  unrelated changes in mind finds fewer problems in all of them.
+- Merge by squash, so one pull request becomes one commit on `main`, then delete
+  the branch. A branch's cost grows faster than its age; land it within a day or
+  two, or split it into pieces that are each safe on their own.
+- Stage only the paths or hunks belonging to that change. Preserve other
+  Sessions' work, and do not commit unfinished or unverified changes merely to
+  clear the working tree.
+- Report commit, push, and release status accurately: a successful build or
+  local preview install does not mean the change was committed, pushed, or
+  published. If a push fails, resolve or record the blocker promptly.
 
 ## Project rules
 
 - After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit `src/generated` or `src/generated-effect` directly.
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk` composes Client, Core, and Server.
-- The default branch in this repo is `main`. Keep this repo single-branch; do not create a `dev` branch.
+- The default branch in this repo is `main`. It is the only long-lived branch, and it is protected: changes arrive by pull request, never by direct push, and no `dev` branch exists. Short-lived topic branches are created per change and deleted after merge.
 - `origin` is this fork (`oxdingzg/miao`); `upstream` is `anomalyco/opencode`, which is fetch-only and narrowed to its `dev` branch. When diffing against upstream use `upstream/dev`.
 
 ## Licence and Upstream Code
@@ -22,9 +40,12 @@ miao is a derivative of opencode under the MIT licence, and most of its code sti
 
 ## Branch Names
 
-Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
+Use a type prefix from the conventional-commit set plus a short subject:
+`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, or `test/`, then a few
+hyphen-separated words. Keep the branch short-lived and delete it after the
+pull request merges.
 
-Examples: `session-recovery`, `fix-scroll-state`, `regenerate-sdk`.
+Examples: `fix/session-recovery`, `fix/scroll-state`, `chore/regenerate-sdk`.
 
 ## Commits and PR Titles
 
