@@ -47,6 +47,117 @@ function hydrationCount() {
   return value?.hydration?.count ?? 0
 }
 
+for (const type of ["text", "reasoning"] as const) {
+  test(`a history snapshot ahead of queued ${type} fragments does not duplicate visible text`, async () => {
+    await using tmp = await tmpdir()
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    let app: Awaited<ReturnType<typeof mount>>["app"] | undefined
+    try {
+      const mounted = await mount((url) => {
+        if (url.pathname === "/api/session") return json({ data: [session] })
+        if (url.pathname === `/api/session/${sessionID}`) return json({ data: session })
+        if (url.pathname === `/api/session/${sessionID}/context`)
+          return json({
+            data: [
+              {
+                id: messageID,
+                type: "assistant",
+                agent: "build",
+                model: session.model,
+                time: { created: 1 },
+                content: [{ type, id: textID, text: "你好Swissquote" }],
+              },
+            ],
+          })
+        if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
+        if (url.pathname === `/api/session/${sessionID}/todo` || url.pathname === `/api/session/${sessionID}/diff`)
+          return json({ data: [] })
+        if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "idle" } })
+        return undefined
+      }, tmp.path)
+      app = mounted.app
+      await mounted.sync.session.sync(sessionID)
+      mounted.emit(
+        global(
+          type === "text"
+            ? {
+                id: "evt_snapshot_start",
+                type: "session.next.text.started",
+                properties: { timestamp: 2, sessionID, assistantMessageID: messageID, textID },
+              }
+            : {
+                id: "evt_snapshot_start",
+                type: "session.next.reasoning.started",
+                properties: { timestamp: 2, sessionID, assistantMessageID: messageID, reasoningID: textID },
+              },
+        ),
+      )
+      for (const [index, delta] of ["你", "好", "Swiss", "quote"].entries())
+        mounted.emit(
+          global(
+            type === "text"
+              ? {
+                  id: `evt_snapshot_delta_${index}`,
+                  type: "session.next.text.delta",
+                  properties: { timestamp: index + 3, sessionID, assistantMessageID: messageID, textID, delta },
+                }
+              : {
+                  id: `evt_snapshot_delta_${index}`,
+                  type: "session.next.reasoning.delta",
+                  properties: {
+                    timestamp: index + 3,
+                    sessionID,
+                    assistantMessageID: messageID,
+                    reasoningID: textID,
+                    delta,
+                  },
+                },
+          ),
+        )
+      // This marker is dispatched after the queued deltas, avoiding a timing sleep.
+      mounted.emit(
+        global({
+          id: "evt_snapshot_status",
+          type: "session.next.status",
+          properties: { timestamp: 7, sessionID, status: { type: "busy" } },
+        }),
+      )
+      await wait(() => mounted.sync.data.session_status[sessionID]?.type === "busy")
+      expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type, text: "你好Swissquote" })
+      // The ended payload is authoritative even when it is a shorter prefix.
+      mounted.emit(
+        global(
+          type === "text"
+            ? {
+                id: "evt_snapshot_end",
+                type: "session.next.text.ended",
+                properties: { timestamp: 8, sessionID, assistantMessageID: messageID, textID, text: "你好Swiss" },
+              }
+            : {
+                id: "evt_snapshot_end",
+                type: "session.next.reasoning.ended",
+                properties: {
+                  timestamp: 8,
+                  sessionID,
+                  assistantMessageID: messageID,
+                  reasoningID: textID,
+                  text: "你好Swiss",
+                },
+              },
+        ),
+      )
+      await wait(() => {
+        const part = mounted.sync.data.part[messageID][0]
+        return (part.type === "text" || part.type === "reasoning") && part.text === "你好Swiss"
+      })
+      expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type, text: "你好Swiss" })
+      if (type === "reasoning") expect(mounted.sync.data.part[messageID][0]).toMatchObject({ time: { end: 8 } })
+    } finally {
+      app?.renderer.destroy()
+    }
+  })
+}
+
 test("a durable-event burst on a long transcript applies incrementally without re-hydrating", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
