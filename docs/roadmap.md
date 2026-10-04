@@ -4,31 +4,14 @@ Status snapshot: **2026-10-04**, latest published release **v0.1.4**.
 
 This document consolidates every still-open item discovered while reconciling the V1→V2
 rebuild trackers with the actual repository state. It exists so that no remaining work is
-lost between sessions. Each item names its source tracker, the exact code entry points where
-known, and an acceptance check.
+lost between sessions. Each item names the exact code entry points where known, and an
+acceptance check.
 
 ## How to read this
 
-- **Source** points at the authoritative spec or handoff a slice was derived from. Prefer
-  the source for detail; this file is the index and the status of record.
 - **Status**: `open`, `partial` (some slices landed), or `blocked`.
 - **Acceptance** is the observable proof the slice is done, not just "code merged".
 - Ordered roughly by dependency and value, not strictly.
-
-### Authoritative sources
-
-| Source | Covers |
-| --- | --- |
-| `specs/v2/todo.md` | V2 native-runner slices, deferred hardening, service reworks |
-| `specs/v2/remaining-work-checklist.md` | Ticked checklist with DoD per slice |
-| `specs/v2/remaining-work-handoff.md` | Per-workstream entry points and acceptance |
-| `specs/v2/v1-retirement.md` | V1→V2 cutover stages and remaining P5/P7 |
-| `specs/v2/p7-non-session-routes.md` | Non-session legacy route migration inventory |
-| `packages/app/V1_API_MIGRATION.md` | App-level legacy API/type migration checklist |
-| `docs/handoff-2026-10-04.md` | Publication, performance, and storage acceptance handoff |
-| `docs/input-latency-monitoring.{en,zh}.md` | Input-latency monitoring and its open items |
-| `docs/storage-acceptance-2026-10-04.md` | Storage recovery acceptance and observation |
-| `CONTEXT.md` | V2 System Context algebra; follow-ups at the end |
 
 ## Already done (context, not remaining)
 
@@ -44,8 +27,7 @@ known, and an acceptance check.
 
 ## 1. V1 residue — P5 (legacy SDK) and P7 (non-session routes)
 
-**Source:** `specs/v2/v1-retirement.md`, `specs/v2/p7-non-session-routes.md`,
-`packages/app/V1_API_MIGRATION.md`. **Status:** partial.
+**Status:** partial.
 
 The goal is that the released server can run the V2-only assembly with only the CLI shell
 left, and that no client depends on `@miao/sdk` or unprefixed legacy routes.
@@ -57,8 +39,7 @@ left, and that no client depends on `@miao/sdk` or unprefixed legacy routes.
 - **Acceptance:** no package imports V1 SDK surface; plugin API uses V2 shapes.
 
 ### 1.2 App legacy types and adapters
-**Source:** `packages/app/V1_API_MIGRATION.md` (Legacy Types And Adapters, Events, Test
-Infrastructure sections still open). **Status:** partial.
+**Status:** partial.
 - [ ] Replace `src/utils/session.ts` current→legacy session adapter.
 - [ ] Replace `src/utils/session-message.ts` message/part adapter.
 - [ ] Replace `src/context/global-sync/utils.ts` agent/provider/model adapters.
@@ -75,7 +56,7 @@ Infrastructure sections still open). **Status:** partial.
   app state.
 
 ### 1.3 Non-session legacy routes
-**Source:** `specs/v2/p7-non-session-routes.md`. **Status:** partial (most endpoints added).
+**Status:** partial (most endpoints added).
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy
       routes; switch the release server to the V2-only assembly.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2
@@ -86,10 +67,9 @@ Infrastructure sections still open). **Status:** partial.
 
 ## 2. V2 architecture gaps
 
-**Source:** `specs/v2/todo.md`, `specs/v2/remaining-work-checklist.md` §7,
-`specs/v2/remaining-work-handoff.md` Workstream E. **Status:** open / partial per item.
+**Status:** open / partial per item.
 
-### 2.1 Native runner slices (`specs/v2/todo.md`)
+### 2.1 Native runner slices
 - [ ] Preserve eager structured local-tool settlement: durably record each complete call,
       start child execution immediately, await every settlement after the provider turn
       closes, then reload projected history once.
@@ -159,8 +139,7 @@ Infrastructure sections still open). **Status:** partial.
   network denied when configured.
 
 ### 2.9 Durable continuation recovery
-**Source:** `specs/v2/todo.md` (Deferred durable continuation recovery). **Status:** blocked
-on explicit design.
+**Status:** blocked on explicit design.
 - [ ] Design post-crash continuation recovery as one explicit slice: promoted input and
       projected-history state, queued-input promotion and steering assignment,
       provider-attempt preparation vs dispatch ambiguity, required post-turn continuation
@@ -170,7 +149,7 @@ on explicit design.
 - **Acceptance:** a documented policy with a concrete consumer; no inferred retry from an
   advisory wake.
 
-### 2.10 Deferred hardening cleanup (`specs/v2/todo.md`)
+### 2.10 Deferred hardening cleanup
 Keep visible, do not block functionality slices unless a concrete failure appears.
 - [ ] Serialize database migration claiming across processes (currently in-process semaphore
       only; two processes can race).
@@ -190,7 +169,7 @@ Keep visible, do not block functionality slices unless a concrete failure appear
       (`openat`, `O_NOFOLLOW`, descriptor-relative mutation).
 
 ### 2.11 SendMessage remainder
-**Source:** `specs/v2/session-messaging.md`, checklist §5. **Status:** partial.
+**Status:** partial.
 - [ ] Loop-guard cost accounting for a receiving drain.
 - [ ] Replies route back; no duplicate delivery after restart; sessions isolated.
 - **Acceptance:** A sends to B; B receives; reply routes back; restart produces no duplicate.
@@ -199,13 +178,12 @@ Keep visible, do not block functionality slices unless a concrete failure appear
 
 ## 3. Config, plugins, services
 
-**Source:** `specs/v2/todo.md`, `CONTEXT.md` follow-ups,
-`specs/v2/catalog-config-plugin-lifecycle.md`. **Status:** open.
+**Status:** open.
 - [ ] Rework config for a cleaner shape with auto-conversion of old configs.
 - [ ] Plugin-defined context registration and hot-reload lifecycle on the scoped registry
-      seam (`CONTEXT.md` follow-up).
+      seam.
 - [ ] Nested project instruction discovery after successful reads, admitted durably at the
-      next Safe Provider-Turn Boundary (`CONTEXT.md` follow-up).
+      next Safe Provider-Turn Boundary.
 - [ ] Design server plugin API and hooks (immer drafts, global instance, tool registration).
 - [ ] Make every service hot-reloadable via granular events instead of teardown.
 - [ ] Decide provider/model registration as plugins feeding the model database.
@@ -214,8 +192,7 @@ Keep visible, do not block functionality slices unless a concrete failure appear
 
 ## 4. Storage operations
 
-**Source:** `specs/storage/session-storage-hardening.md`, checklist §6,
-`docs/storage-acceptance-2026-10-04.md`. **Status:** partial.
+**Status:** partial.
 - [ ] Compact `miao-main.db` (preview channel; **2.34 GB** on 2026-10-04, uncompacted).
 - [ ] Measure `miao.db` against the <200 MB acceptance (**876 MB** on 2026-10-04).
 - [x] Delete old `miao*.db.bak-*` / `*.compacted-*` copies and the `retirement-20261003`
@@ -234,10 +211,10 @@ Keep visible, do not block functionality slices unless a concrete failure appear
 
 ## 5. Performance analysis and reporting
 
-**Source:** `docs/handoff-2026-10-04.md`, `docs/input-latency-monitoring.{en,zh}.md`.
 **Status:** partial (measurement done, analysis/report open).
-- [ ] Run the downloaded 0.1.0 artifact (`/tmp/miao-input-baseline-artifact/miao-darwin-arm64.zip`)
-      against the identical fixture for a controlled before/after comparison.
+- [ ] Run the downloaded 0.1.0 artifact against the identical fixture for a controlled
+      before/after comparison. The artifact path is recorded in the 2026-10-04 handoff; do
+      not hard-code a temporary path here.
 - [ ] Audit input-timing correlation for batched keys; the current receipt logic can
       overwrite a pre-update receipt, so results must not be called per-key latency.
 - [ ] Analyze RSS/native allocations and object owners; add a Session
@@ -249,7 +226,7 @@ Keep visible, do not block functionality slices unless a concrete failure appear
 
 ## 6. Released-binary acceptance
 
-**Source:** `docs/handoff-2026-10-04.md`. **Status:** open.
+**Status:** open.
 - [ ] Validate the released **Windows 0.1.4** artifact and upgrade from 0.1.2; confirm
       provider errors and inbox recovery in that artifact.
 - [ ] Validate outgoing message cards and cross-process sender/recipient behavior in a
@@ -265,7 +242,7 @@ Keep visible, do not block functionality slices unless a concrete failure appear
 
 ## 7. Documentation
 
-**Source:** `docs/handoff-2026-10-04.md`. **Status:** open.
+**Status:** open.
 - [ ] Update current guides that still describe the removed SDK or superseded architecture.
 - [ ] Preserve historical release/research records and upstream licensing notices.
 - [ ] Keep OpenCode vendor provider IDs (`opencode`, `opencode-go`) as real provider

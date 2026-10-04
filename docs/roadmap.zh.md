@@ -3,31 +3,13 @@
 状态快照：**2026-10-04**，最新发布版本 **v0.1.4**。
 
 本文档汇总了在核对 V1→V2 重建各项追踪文档与仓库实际状态时发现的**所有仍未完成项**，
-目的是避免剩余工作在多次会话之间遗漏。每一项都标明来源追踪文档、已知的确切代码入口，
-以及验收标准。
+目的是避免剩余工作在多次会话之间遗漏。每一项都标明已知的确切代码入口，以及验收标准。
 
 ## 阅读说明
 
-- **来源（Source）** 指向该切片所依据的权威 spec 或交接文档。细节以来源为准；本文件是
-  索引与状态记录。
 - **状态（Status）**：`open`（未开始）、`partial`（部分切片已落地）、`blocked`（受阻）。
 - **验收（Acceptance）** 是「切片完成」的可观察证据，而不只是「代码已合并」。
 - 大致按依赖与价值排序，非严格。
-
-### 权威来源
-
-| 来源 | 覆盖范围 |
-| --- | --- |
-| `specs/v2/todo.md` | V2 原生 runner 切片、延迟硬化、service 重构 |
-| `specs/v2/remaining-work-checklist.md` | 带勾选和每切片 DoD 的清单 |
-| `specs/v2/remaining-work-handoff.md` | 各 workstream 的入口点与验收 |
-| `specs/v2/v1-retirement.md` | V1→V2 切换阶段及剩余 P5/P7 |
-| `specs/v2/p7-non-session-routes.md` | 非会话旧路由迁移盘点 |
-| `packages/app/V1_API_MIGRATION.md` | app 层旧 API/类型迁移清单 |
-| `docs/handoff-2026-10-04.md` | 发布、性能、存储验收交接 |
-| `docs/input-latency-monitoring.{en,zh}.md` | 输入延迟监控及其未完成项 |
-| `docs/storage-acceptance-2026-10-04.md` | 存储恢复验收与观测 |
-| `CONTEXT.md` | V2 System Context 代数；末尾的 follow-up |
 
 ## 已完成（背景，非剩余工作）
 
@@ -43,8 +25,7 @@
 
 ## 1. V1 残留 — P5（legacy SDK）与 P7（非会话路由）
 
-**来源：** `specs/v2/v1-retirement.md`、`specs/v2/p7-non-session-routes.md`、
-`packages/app/V1_API_MIGRATION.md`。**状态：** partial。
+**状态：** partial。
 
 目标是让已发布的服务端能运行 V2-only 的组装，只剩 CLI 外壳，且没有任何客户端依赖
 `@miao/sdk` 或无前缀的旧路由。
@@ -56,8 +37,7 @@
 - **验收：** 没有任何包导入 V1 SDK 表面；插件 API 使用 V2 结构。
 
 ### 1.2 app 旧类型与适配层
-**来源：** `packages/app/V1_API_MIGRATION.md`（Legacy Types And Adapters、Events、Test
-Infrastructure 各节仍开放）。**状态：** partial。
+**状态：** partial。
 - [ ] 替换 `src/utils/session.ts` 的 current→legacy session 适配。
 - [ ] 替换 `src/utils/session-message.ts` 的 message/part 适配。
 - [ ] 替换 `src/context/global-sync/utils.ts` 的 agent/provider/model 适配。
@@ -73,7 +53,7 @@ Infrastructure 各节仍开放）。**状态：** partial。
 - **验收：** app 仅用 `@miao/client` 类型渲染与变更；app 状态中无 legacy 类型。
 
 ### 1.3 非会话旧路由
-**来源：** `specs/v2/p7-non-session-routes.md`。**状态：** partial（大多数端点已加）。
+**状态：** partial（大多数端点已加）。
 - [ ] 移除 `packages/miao` 的 `app-runtime` V1 层及剩余非会话旧路由；把发布服务端切到
       V2-only 组装。
 - [ ] 确认 V2 端点覆盖了此前在 V2 下被静默禁用的 app 行为（全局配置读取、项目重命名、
@@ -84,10 +64,9 @@ Infrastructure 各节仍开放）。**状态：** partial。
 
 ## 2. V2 架构缺口
 
-**来源：** `specs/v2/todo.md`、`specs/v2/remaining-work-checklist.md` §7、
-`specs/v2/remaining-work-handoff.md` Workstream E。**状态：** 逐项 open / partial。
+**状态：** 逐项 open / partial。
 
-### 2.1 原生 runner 切片（`specs/v2/todo.md`）
+### 2.1 原生 runner 切片
 - [ ] 保留结构化的本地工具**急切结算**：持久化记录每次完整调用，立即启动子执行，在
       provider turn 关闭后等待所有结算，然后只重载一次投影历史。
 - [ ] 在扩大暴露前，重新审视每轮工具调用上限、输出截断与运行背压。
@@ -146,15 +125,14 @@ Infrastructure 各节仍开放）。**状态：** partial。
 - **验收：** 沙箱内的变更型工具无法写到允许路径之外；配置时拒绝网络。
 
 ### 2.9 durable 续跑恢复
-**来源：** `specs/v2/todo.md`（Deferred durable continuation recovery）。**状态：**
-blocked，等待显式设计。
+**状态：** blocked，等待显式设计。
 - [ ] 把崩溃后续跑恢复设计为一个显式切片：已提升输入与投影历史状态、排队输入提升与
       转向分配、provider-attempt 准备与派发歧义、跨进程丢失所必需的 turn 后续、显式
       `retry`/`abandon`、仅在幂等安全时的有界自动重试、重试预算/退避/可见状态、启动
       发现、未来集群化 ownership fencing。
 - **验收：** 有具体消费方的成文策略；不从 advisory wake 推断重试。
 
-### 2.10 延迟的硬化清理（`specs/v2/todo.md`）
+### 2.10 延迟的硬化清理
 保持可见，除非出现具体故障，否则不阻塞功能切片。
 - [ ] 跨进程串行化数据库迁移申领（当前仅进程内信号量；两进程仍可能竞争）。
 - [ ] 用 Effect `RcMap` 与每个活跃聚合一个共享 `PubSub.sliding<void>(1)` 简化进程内
@@ -170,7 +148,7 @@ blocked，等待显式设计。
       descriptor-relative mutation）。
 
 ### 2.11 SendMessage 剩余
-**来源：** `specs/v2/session-messaging.md`、checklist §5。**状态：** partial。
+**状态：** partial。
 - [ ] 接收方 drain 的循环防护成本核算。
 - [ ] 回复回送到发送方；重启后无重复投递；会话之间隔离。
 - **验收：** A 发给 B；B 收到；回复回送；重启不产生重复。
@@ -179,13 +157,10 @@ blocked，等待显式设计。
 
 ## 3. Config、插件、service
 
-**来源：** `specs/v2/todo.md`、`CONTEXT.md` follow-up、
-`specs/v2/catalog-config-plugin-lifecycle.md`。**状态：** open。
+**状态：** open。
 - [ ] 重构 config 为更干净的形态，并自动转换旧配置。
-- [ ] 在作用域化 registry seam 上实现插件定义的 context 注册与热重载生命周期
-      （`CONTEXT.md` follow-up）。
-- [ ] 成功读取后的嵌套项目指令发现，在下一个 Safe Provider-Turn Boundary 处 durable 准入
-      （`CONTEXT.md` follow-up）。
+- [ ] 在作用域化 registry seam 上实现插件定义的 context 注册与热重载生命周期。
+- [ ] 成功读取后的嵌套项目指令发现，在下一个 Safe Provider-Turn Boundary 处 durable 准入。
 - [ ] 设计服务端插件 API 与 hooks（immer 草稿、全局实例、工具注册）。
 - [ ] 通过细粒度事件让每个 service 可热重载，而非拆除重建。
 - [ ] 决定 provider/model 作为插件注册、喂给模型数据库。
@@ -194,8 +169,7 @@ blocked，等待显式设计。
 
 ## 4. 存储运维
 
-**来源：** `specs/storage/session-storage-hardening.md`、checklist §6、
-`docs/storage-acceptance-2026-10-04.md`。**状态：** partial。
+**状态：** partial。
 - [ ] 压缩 `miao-main.db`（preview channel；2026-10-04 为 **2.34 GB**，未压缩）。
 - [ ] 对照 <200 MB 验收核对 `miao.db`（2026-10-04 为 **876 MB**）。
 - [x] 删除 `~/.local/share/miao` 下旧的 `miao*.db.bak-*` / `*.compacted-*` 副本及
@@ -212,10 +186,9 @@ blocked，等待显式设计。
 
 ## 5. 性能分析与报告
 
-**来源：** `docs/handoff-2026-10-04.md`、`docs/input-latency-monitoring.{en,zh}.md`。
 **状态：** partial（测量已完成，分析与报告未完成）。
-- [ ] 用下载的 0.1.0 产物（`/tmp/miao-input-baseline-artifact/miao-darwin-arm64.zip`）在
-      同一夹具上运行，做受控的前后对比。
+- [ ] 用下载的 0.1.0 产物在同一夹具上运行，做受控的前后对比；产物路径记录在 2026-10-04
+      交接文档中，不要在此硬编码临时路径。
 - [ ] 审计批量按键的输入计时关联；当前收据逻辑可能覆盖 pre-update 收据，因此结果不能
       称作 per-key 延迟。
 - [ ] 分析 RSS/原生分配与对象归属；补充 Session 切换/创建/关闭生命周期场景。
@@ -226,7 +199,7 @@ blocked，等待显式设计。
 
 ## 6. 发布二进制验收
 
-**来源：** `docs/handoff-2026-10-04.md`。**状态：** open。
+**状态：** open。
 - [ ] 验收已发布的 **Windows 0.1.4** 产物并从 0.1.2 升级；确认该产物中的 provider 报错
       与 inbox 恢复。
 - [ ] 在已发布二进制中验收出站消息卡片与跨进程收发行为。
@@ -239,7 +212,7 @@ blocked，等待显式设计。
 
 ## 7. 文档
 
-**来源：** `docs/handoff-2026-10-04.md`。**状态：** open。
+**状态：** open。
 - [ ] 更新仍描述已移除 SDK 或已被取代架构的现行指南。
 - [ ] 保留历史发布/研究记录与上游许可声明。
 - [ ] 将 OpenCode 厂商 provider ID（`opencode`、`opencode-go`）保留为真实 provider 身份。
