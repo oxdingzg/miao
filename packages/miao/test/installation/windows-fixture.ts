@@ -3,12 +3,16 @@ import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { windowsCommand, windowsUpgrade } from "../../src/installation/windows"
+import { isDirectInstall } from "../../src/installation/method"
 
-export async function verifyWindowsUpgrade() {
+export async function verifyWindowsUpgrade(filename = "miao.exe") {
   const directory = await mkdtemp(path.join(tmpdir(), "miao-upgrade-"))
-  const installation = path.join(directory, "安装 with spaces")
-  await mkdir(installation)
-  const executable = path.join(installation, "miao.exe")
+  const installation = path.join(directory, "安装 with spaces", "Programs", "Miao")
+  await mkdir(installation, { recursive: true })
+  const executable = path.join(installation, filename)
+  assert.equal(isDirectInstall(executable), true)
+  const launcher = filename === "miao-bin.exe" ? path.join(installation, "miao.exe") : undefined
+  if (launcher) await Bun.write(launcher, "installer launcher")
   const archive = path.join(directory, "release.zip")
   const fixture = await Bun.spawn(
     windowsCommand(String.raw`
@@ -61,7 +65,8 @@ Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
     assert.deepEqual(await upgrade("1.2.3"), { code: 0, stderr: "" })
     assert.equal(old.exitCode, null, "the original process must still be running")
     const current = await Bun.file(executable).arrayBuffer()
-    assert.equal((await readdir(installation)).filter((name) => name.startsWith("miao.exe.bak-")).length, 1)
+    assert.equal((await readdir(installation)).filter((name) => name.startsWith(`${filename}.bak-`)).length, 1)
+    if (launcher) assert.equal(await Bun.file(launcher).text(), "installer launcher")
 
     const mismatch = await upgrade("1.2.4")
     assert.equal(mismatch.code, 1)

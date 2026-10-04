@@ -26,8 +26,8 @@ export const UpgradeCommand = {
     UI.empty()
     prompts.intro("Upgrade")
     const detectedMethod = await Installation.method()
-    const method = (args.method as Installation.Method) ?? detectedMethod
-    if (method === "unknown") {
+    const requestedMethod = (args.method as Installation.Method) ?? detectedMethod
+    if (requestedMethod === "unknown") {
       prompts.log.error(`miao is installed to ${process.execPath} and may be managed by a package manager`)
       const install = await prompts.select({
         message: "Install anyways?",
@@ -37,11 +37,12 @@ export const UpgradeCommand = {
         ],
         initialValue: false,
       })
-      if (!install) {
+      if (prompts.isCancel(install) || !install) {
         prompts.outro("Done")
         return
       }
     }
+    const method = requestedMethod === "unknown" ? "curl" : requestedMethod
     prompts.log.info("Using method: " + method)
     const target = args.target ? args.target.replace(/^v/, "") : await Installation.latest(method)
 
