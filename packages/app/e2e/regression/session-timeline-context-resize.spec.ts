@@ -1,6 +1,17 @@
-import { expect, test, type Page } from "@playwright/test"
-import { LEGACY_V1_FIXTURE, mockOpenCodeServer } from "../utils/mock-server"
-import { expectAppVisible, expectSessionTitle } from "../utils/waits"
+import { expect, test } from "@playwright/test"
+import {
+  assistant,
+  directory,
+  event,
+  partID,
+  sessionID,
+  setup,
+  text,
+  tool,
+  user,
+  type Message,
+} from "../utils/session-v2"
+import { expectAppVisible } from "../utils/waits"
 import {
   analyzeVisualObservations,
   defineVisualRegions,
@@ -8,34 +19,31 @@ import {
   stopVisualProbe,
   visualPlan,
 } from "../utils/visual-stability"
+import type { Page } from "@playwright/test"
 
-const directory = "C:/OpenCode/ContextResizeRegression"
-const projectID = "proj_context_resize_regression"
-const sessionID = "ses_context_resize_regression"
-const title = "Context resize regression"
-const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
 const contextIDs = ["prt_0100_read", "prt_0101_glob", "prt_0102_grep", "prt_0103_list"]
-const followingTextID = "prt_0104_text"
-
-type Message = {
-  info: Record<string, unknown> & { id: string; role: "user" | "assistant" }
-  parts: Record<string, unknown>[]
-}
-
-const messages = [...Array.from({ length: 8 }, (_, index) => turn(index, false)).flat(), ...turn(10, true)]
+const followingTextID = partID("text", 0, "msg_assistant_0010")
+const inputs = [
+  { filePath: "src/recent-a.ts", offset: 0, limit: 120 },
+  { path: directory, pattern: "**/*.ts" },
+  { path: directory, pattern: "Explored", include: "*.ts" },
+  { path: "src" },
+]
+const names = ["read", "glob", "grep", "list"]
+const settings = { editToolPartsExpanded: true, shellToolPartsExpanded: true, showReasoningSummaries: true }
 
 test.describe("regression: session timeline context group resize", () => {
   test("remeasures a recent explored context group before the next paint", async ({ page }) => {
-    test.fixme(true, LEGACY_V1_FIXTURE)
     await page.setViewportSize({ width: 1400, height: 900 })
-    await mockServer(page)
-    await configurePage(page)
-
-    await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-    await expectSessionTitle(page, title)
-    await expectAppVisible(page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"]`).first())
-    await expectAppVisible(page.locator(`[data-timeline-part-id="${followingTextID}"]`).first())
-    await settle(page)
+    await setup(page, {
+      messages: [...Array.from({ length: 8 }, (_, index) => turn(index, false)).flat(), ...turn(10, true)],
+      settings,
+    })
+    await expectAppVisible(page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"]`))
+    await expectAppVisible(page.locator(`[data-timeline-part-id="${followingTextID}"]`))
+    await expect(
+      page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"] [data-slot="collapsible-trigger"]`),
+    ).toHaveAttribute("aria-expanded", "false")
 
     const samples = await sampleExpansion(page)
     const visibleOverlap = samples.filter((sample) => sample.frame >= 1 && sample.overlap > 0.5)
@@ -46,20 +54,14 @@ test.describe("regression: session timeline context group resize", () => {
   })
 
   test("paints a stable exploring to explored transition", async ({ page }) => {
-    test.fixme(true, LEGACY_V1_FIXTURE)
-    const events: { directory: string; payload: Record<string, unknown> }[] = []
     await page.setViewportSize({ width: 1400, height: 900 })
-    await mockServer(page, events, [
-      ...Array.from({ length: 8 }, (_, index) => turn(index, false)).flat(),
-      ...turn(10, true, "running"),
-    ])
-    await configurePage(page)
-
-    await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-    await expectSessionTitle(page, title)
+    const timeline = await setup(page, {
+      messages: [...Array.from({ length: 8 }, (_, index) => turn(index, false)).flat(), ...turn(10, true, "running")],
+      settings,
+    })
     const devtools = await page.context().newCDPSession(page)
     await devtools.send("Emulation.setCPUThrottlingRate", { rate: 4 })
-    const context = page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"]`).first()
+    const context = page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"]`)
     await expectAppVisible(context)
     await expect(context.locator('[data-component="tool-status-title"]')).toHaveAttribute("aria-label", "Exploring")
 
@@ -76,31 +78,31 @@ test.describe("regression: session timeline context group resize", () => {
       },
     })
     await startVisualProbe(page, regions)
-    for (const [index, delay] of [120, 350, 80, 500].entries()) {
-      events.push({
-        directory,
-        payload: {
-          type: "message.part.updated",
-          properties: {
-            part: contextTool(
-              contextIDs[index]!,
-              id("msg_assistant", 10),
-              ["read", "glob", "grep", "list"][index]!,
-              [
-                { filePath: "src/recent-a.ts" },
-                { path: directory, pattern: "**/*.ts" },
-                { path: directory, pattern: "Explored" },
-                { path: "src" },
-              ][index]!,
-            ),
-          },
-        },
-      })
-      await page.waitForTimeout(delay)
+    for (const index of contextIDs.keys()) {
+      await timeline.send(
+        event("session.next.tool.success", {
+          sessionID,
+          assistantMessageID: "msg_assistant_0010",
+          callID: contextIDs[index]!,
+          timestamp: 1700000102000 + index,
+          structured: {},
+          content: [{ type: "text", text: `Completed ${names[index]}.\n${"detail line\n".repeat(8)}` }],
+          provider: { executed: false },
+        }),
+      )
     }
 
     await expect(context.locator('[data-component="tool-status-title"]')).toHaveAttribute("aria-label", "Explored")
-    await page.waitForTimeout(700)
+    await expect(context.locator('[data-slot="tool-status-done"]')).toHaveCSS("opacity", "1")
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (
+            window as Window & { __visualStabilityProbe?: { samples: { regions: { status?: { label?: string } } }[] } }
+          ).__visualStabilityProbe?.samples.some((sample) => sample.regions.status?.label === "Explored"),
+        ),
+      )
+      .toBe(true)
     const trace = await stopVisualProbe<keyof typeof regions>(page)
     const labels = trace.samples
       .map((sample) => sample.regions.status?.label)
@@ -122,21 +124,6 @@ test.describe("regression: session timeline context group resize", () => {
     expect(issues, JSON.stringify(trace.samples, null, 2)).toEqual([])
   })
 })
-
-async function configurePage(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "settings.v3",
-      JSON.stringify({
-        general: {
-          editToolPartsExpanded: true,
-          shellToolPartsExpanded: true,
-          showReasoningSummaries: true,
-        },
-      }),
-    )
-  })
-}
 
 async function sampleExpansion(page: Page) {
   return page.evaluate(
@@ -214,163 +201,31 @@ async function sampleExpansion(page: Page) {
 }
 
 function turn(index: number, target: boolean, status: "running" | "completed" = "completed"): Message[] {
-  const userID = id("msg_user", index)
-  const assistantID = id("msg_assistant", index)
   return [
-    {
-      info: {
-        id: userID,
-        sessionID,
-        role: "user",
-        time: { created: 1700000000000 + index * 10_000 },
-        summary: { diffs: [] },
-        agent: "build",
-        model,
-      },
-      parts: [{ id: id("prt_user", index), sessionID, messageID: userID, type: "text", text: `User message ${index}` }],
-    },
-    {
-      info: {
-        id: assistantID,
-        sessionID,
-        role: "assistant",
-        time: { created: 1700000000000 + index * 10_000 + 1_000, completed: 1700000000000 + index * 10_000 + 2_000 },
-        parentID: userID,
-        modelID: model.modelID,
-        providerID: model.providerID,
-        mode: "build",
-        agent: "build",
-        path: { cwd: directory, root: directory },
-        cost: 0.01,
-        tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
-        variant: "max",
-        finish: "stop",
-      },
-      parts: target
+    user(`User message ${index}`, {
+      id: `msg_user_${String(index).padStart(4, "0")}`,
+      created: 1700000000000 + index * 10000,
+    }),
+    assistant(
+      target
         ? [
-            contextTool(
-              contextIDs[0]!,
-              assistantID,
-              "read",
-              { filePath: "src/recent-a.ts", offset: 0, limit: 120 },
-              status,
+            ...contextIDs.map((id, ordinal) =>
+              tool(
+                id,
+                names[ordinal]!,
+                status,
+                inputs[ordinal]!,
+                `Completed ${names[ordinal]}.\n${"detail line\n".repeat(8)}`,
+              ),
             ),
-            contextTool(contextIDs[1]!, assistantID, "glob", { path: directory, pattern: "**/*.ts" }, status),
-            contextTool(
-              contextIDs[2]!,
-              assistantID,
-              "grep",
-              { path: directory, pattern: "Explored", include: "*.ts" },
-              status,
-            ),
-            contextTool(contextIDs[3]!, assistantID, "list", { path: "src" }, status),
-            {
-              id: followingTextID,
-              sessionID,
-              messageID: assistantID,
-              type: "text",
-              text: "This assistant text is immediately after the explored context group.",
-            },
+            text("This assistant text is immediately after the explored context group."),
           ]
-        : [
-            {
-              id: id("prt_text", index),
-              sessionID,
-              messageID: assistantID,
-              type: "text",
-              text: `Assistant filler ${index}. ${"filler ".repeat(60)}`,
-            },
-          ],
-    },
-  ]
-}
-
-function contextTool(
-  partID: string,
-  messageID: string,
-  tool: string,
-  input: Record<string, unknown>,
-  status: "running" | "completed" = "completed",
-) {
-  return {
-    id: partID,
-    sessionID,
-    messageID,
-    type: "tool",
-    callID: `call_${partID}`,
-    tool,
-    state: {
-      status,
-      input,
-      output: `Completed ${tool}.\n${"detail line\n".repeat(8)}`,
-      title: input.filePath || input.path || input.pattern || "completed",
-      metadata: {},
-      time: { start: 1700000000000, end: 1700000000100 },
-    },
-  }
-}
-
-async function mockServer(
-  page: Page,
-  events: { directory: string; payload: Record<string, unknown> }[] = [],
-  fixtureMessages = messages,
-) {
-  await mockOpenCodeServer(page, {
-    directory,
-    project: project(),
-    provider: provider(),
-    sessions: [session()],
-    pageMessages: () => ({ items: fixtureMessages }),
-    events: () => events.splice(0, 1),
-    eventRetry: 50,
-  })
-}
-
-async function settle(page: Page) {
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-}
-
-function id(prefix: string, index: number) {
-  return `${prefix}_${String(index).padStart(4, "0")}`
-}
-
-function project() {
-  return {
-    id: projectID,
-    worktree: directory,
-    vcs: "git",
-    name: "context-resize-regression",
-    time: { created: 1700000000000, updated: 1700000000000 },
-    sandboxes: [],
-  }
-}
-
-function session() {
-  return {
-    id: sessionID,
-    slug: "context-resize-regression",
-    projectID,
-    directory,
-    title,
-    version: "dev",
-    time: { created: 1700000000000, updated: 1700000000000 },
-  }
-}
-
-function provider() {
-  return {
-    all: [
+        : [text(`Assistant filler ${index}. ${"filler ".repeat(60)}`)],
       {
-        id: "opencode",
-        name: "OpenCode",
-        models: { "claude-opus-4-6": { id: "claude-opus-4-6", name: "Claude Opus 4.6", limit: { context: 200_000 } } },
+        id: `msg_assistant_${String(index).padStart(4, "0")}`,
+        created: 1700000001000 + index * 10000,
+        completed: status === "completed",
       },
-    ],
-    connected: ["opencode"],
-    default: { providerID: "opencode", modelID: "claude-opus-4-6" },
-  }
-}
-
-function base64Encode(value: string) {
-  return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+    ),
+  ]
 }
