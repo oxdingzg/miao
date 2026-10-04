@@ -5,7 +5,7 @@ import { Option, Schema } from "effect"
 import type { ServerWebSocket } from "bun"
 
 const identifier = /^[A-Za-z0-9_-]{16,128}$/
-const ciphertext = /^[A-Za-z0-9+/]+={0,2}$/
+const ciphertext = /^[A-Za-z0-9+/_-]+={0,2}$/
 const Frame = Schema.Struct({
   type: Schema.Literal("frame"),
   connectionID: Schema.String.check(Schema.isPattern(identifier)),
