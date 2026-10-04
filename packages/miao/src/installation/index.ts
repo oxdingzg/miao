@@ -8,13 +8,13 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 import { errorMessage } from "@/util/error"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "@miao/core/process"
-import path from "path"
 import { makeRuntime } from "@miao/core/effect/runtime"
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@miao/core/installation/version"
 import { NpmConfig } from "@miao/core/npm-config"
 import { InstallationEvent } from "@miao/schema/installation-event"
 import { windowsCommand, windowsLatest, windowsUpgrade } from "./windows"
+import { isDirectInstall } from "./method"
 
 export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
@@ -197,8 +197,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
-        if (process.execPath.includes(path.join(".miao", "bin"))) return "curl" as Method
-        if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
+        if (isDirectInstall(process.execPath)) return "curl" as Method
         const exec = process.execPath.toLowerCase()
 
         const checks: Array<{ name: Method; command: () => Effect.Effect<string> }> = [
