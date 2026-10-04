@@ -259,18 +259,32 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 
 ## 6. 发布二进制验收
 
-**状态：** open。已构建并冒烟测试一个干净的 0.1.3 编译 preview（`--version` 通过、prompt 渲染
-成功）；两套隔离配置分别验证了可见的 unsupported-API 报错，以及真实 HTTP 429 下红色
-`API Error: 429` 行与 `Retrying · attempt #1`（重试预算约 1m 4s 后结束）。那是编译二进制的故障
-注入，不是真实付费 provider 账号。
-- [ ] 验收已发布的 **Windows 0.1.4** 产物并从 0.1.2 升级；确认该产物中的 provider 报错与 inbox
-      恢复。
-- [ ] 在已发布二进制中验收出站消息卡片与跨进程收发行为。
+**状态：** partial。2026-10-04 在三台真机上安装并演练了已发布的 **0.1.4** 二进制：macOS ARM64
+（macmini）、Linux x64（xx02）、Windows x64（192.168.3.96）。每台机器 `--version` 返回 `0.1.4`，
+初始化了全新数据库，`miao doctor` 报告 `findings: none`。在隔离 DB 上 `db stats`、
+`db compact --dry-run`、`db vacuum` 均干净运行。
+
+已在发布二进制上验证：
+- [x] 跨平台冒烟：同一个 0.1.4 产物在 macOS ARM64、Linux x64、Windows x64 上均可运行；
+      三台 `doctor` 均干净。
+- [x] 跨进程 inbox 恢复：一个进程准入一条 durable `queue` 输入
+      （`admitted_seq=1, promoted_seq=null`），另一个更晚的进程在无 live 会话事件的情况下通过
+      `GET /api/session/:id/inputs` 读回它，第三个进程将其提升（`promoted_seq=17`，投影
+      `session_message` `seq=17`）。在 xx02 上用隔离数据库演练。
+
+仍未完成或受阻：
+- [ ] 验收已发布的 **Windows 0.1.4** 产物从 0.1.2 的升级路径（目前只做了全新安装）。
+- [ ] 在已发布二进制中验收出站消息卡片与跨进程收发行为（受阻：验证机上无 provider 凭据）。
+- [ ] 在已发布二进制中针对真实 provider 观测 provider 报错可见性（受阻：无 provider 凭据；此前
+      编译二进制故障注入看到红色 `API Error: 429` 与 `Retrying · attempt #1`）。
 - [ ] 针对确认循环引导，演练真实的 Multi-Session 行为（live soak）。
 - [ ] 观测真实瞬时 TLS 故障的恢复（分类已在 0.1.2 发布并有单测）。
 - [ ] 确认 Go 付费请求成功（需在 OpenCode workspace Privacy 中开启 **Global**）。
 - [ ] 对照当前 `main` 重新评估较早的非阻塞 Windows 浏览器 E2E 失败。
 - [ ] 确认最新的完整跨平台 CI 套件，包括此前按非阻塞处理的 Windows 浏览器 E2E 失败。
+
+注：`MIAO_DATA_DIR` 不生效；数据库覆盖变量是 `MIAO_DB`（一个文件路径）。验证使用了一次性 `HOME`
+加 `MIAO_DB`，未触碰任何 owner 数据库。
 
 ---
 

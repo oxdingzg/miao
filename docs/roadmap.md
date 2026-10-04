@@ -298,14 +298,28 @@ was idle-plus-typing, not streaming or repeated Session lifecycle switching.
 
 ## 6. Released-binary acceptance
 
-**Status:** open. A clean compiled 0.1.3 preview was built and smoke-tested (`--version` passed,
-prompt rendered); two isolated configs exercised a visible unsupported-API error and a real HTTP
-429 with a red `API Error: 429` line and `Retrying · attempt #1` (retry budget ended after ~1m 4s).
-That was compiled-binary fault injection, not a real paid provider account.
-- [ ] Validate the released **Windows 0.1.4** artifact and upgrade from 0.1.2; confirm provider
-      errors and inbox recovery in that artifact.
+**Status:** partial. The released **0.1.4** binary was installed and exercised on three real
+machines on 2026-10-04: macOS ARM64 (macmini), Linux x64 (xx02), and Windows x64 (192.168.3.96).
+Each returned `0.1.4` from `--version`, initialized a fresh database, and reported `miao doctor`
+findings: none. `db stats`, `db compact --dry-run`, and `db vacuum` ran cleanly on an isolated DB.
+
+Verified on the released binary:
+- [x] Cross-platform smoke: the same 0.1.4 artifact runs on macOS ARM64, Linux x64, and Windows x64;
+      `doctor` is clean on all three.
+- [x] Cross-process inbox recovery: one process admitted a durable `queue` input
+      (`admitted_seq=1, promoted_seq=null`), a separate later process with no live in-session event
+      read it back via `GET /api/session/:id/inputs`, and a third process promoted it
+      (`promoted_seq=17`, projected `session_message` `seq=17`). Exercised on xx02 against an
+      isolated database.
+
+Still open or blocked:
+- [ ] Validate the released **Windows 0.1.4** artifact upgrade path from 0.1.2 (fresh install only
+      so far).
 - [ ] Validate outgoing message cards and cross-process sender/recipient behavior in a released
-      binary.
+      binary (blocked: no provider credential on the verification machines).
+- [ ] Observe provider-error visibility in a released binary against a real provider (blocked: no
+      provider credential; earlier compiled-binary fault injection saw a red `API Error: 429` and
+      `Retrying · attempt #1`).
 - [ ] Exercise real multi-Session behavior for acknowledgment-loop guidance (live soak).
 - [ ] Observe recovery from a real transient TLS incident (classification shipped and unit-tested
       in 0.1.2).
@@ -314,6 +328,9 @@ That was compiled-binary fault injection, not a real paid provider account.
 - [ ] Reassess older non-blocking Windows browser-E2E failures against current `main`.
 - [ ] Confirm the complete latest cross-platform CI suite, including the Windows browser-E2E
       failures previously treated as non-blocking.
+
+Note: `MIAO_DATA_DIR` is not honored; the database override is `MIAO_DB` (a file path). Verification
+used a throwaway `HOME` plus `MIAO_DB` so no owner database was touched.
 
 ---
 
