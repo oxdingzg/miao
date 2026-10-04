@@ -11,7 +11,13 @@ const Frame = Schema.Struct({
   connectionID: Schema.String.check(Schema.isPattern(identifier)),
   payload: Schema.String.check(Schema.isPattern(ciphertext)),
 })
-const decodeFrame = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Frame)))
+const Close = Schema.Struct({
+  type: Schema.Literal("close"),
+  connectionID: Schema.String.check(Schema.isPattern(identifier)),
+})
+const decodeFrame = Schema.decodeUnknownOption(
+  Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Schema.Union([Frame, Close]))),
+)
 
 type Socket = ServerWebSocket<Peer>
 type Host = { runtimeID: string; socket?: Socket; clients: Map<string, Client> }
@@ -129,6 +135,10 @@ export function listen(options: Options) {
         const frame = decodeFrame(message)
         if (Option.isNone(frame)) return socket.close(1008, "Invalid routing envelope")
         const client = peer.host.clients.get(frame.value.connectionID)
+        if (frame.value.type === "close") {
+          client?.socket?.close(1008, "Agent rejected connection")
+          return
+        }
         if (client) send(client.socket, frame.value.payload)
       },
       close(socket) {
