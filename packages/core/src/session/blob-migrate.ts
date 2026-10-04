@@ -66,14 +66,14 @@ const replaceIn = (blob: Blob.Interface, value: unknown) =>
     return { value: changed ? next : value, changed, bytes }
   })
 
-const messageData = (blob: Blob.Interface, data: Record<string, unknown>) =>
+const messageData = (blob: Blob.Interface, type: string, data: Record<string, unknown>) =>
   Effect.gen(function* () {
-    if (data.type === "user") {
+    if (type === "user") {
       const files = yield* replaceIn(blob, data.files)
       if (!files.changed) return { data, ...unchanged }
       return { data: { ...data, files: files.value }, changed: true, bytes: files.bytes }
     }
-    if (data.type !== "assistant" || !Array.isArray(data.content)) return { data, ...unchanged }
+    if (type !== "assistant" || !Array.isArray(data.content)) return { data, ...unchanged }
     const content: unknown[] = []
     let changed = false
     let bytes = 0
@@ -142,13 +142,13 @@ export const migrate = (blob: Blob.Interface, db: DatabaseService, options?: { r
       .pipe(Effect.orDie)
     for (const { id } of sessions) {
       const rows = yield* db
-        .select({ id: SessionMessageTable.id, data: SessionMessageTable.data })
+        .select({ id: SessionMessageTable.id, type: SessionMessageTable.type, data: SessionMessageTable.data })
         .from(SessionMessageTable)
         .where(eq(SessionMessageTable.session_id, id))
         .all()
         .pipe(Effect.orDie)
       for (const row of rows) {
-        const result = yield* messageData(blob, row.data as Record<string, unknown>)
+        const result = yield* messageData(blob, row.type, row.data as Record<string, unknown>)
         if (!result.changed) continue
         messages += 1
         bytes += result.bytes

@@ -71,7 +71,6 @@ const seed = (db: DatabaseService) =>
           seq: 0,
           time_created: 1,
           data: {
-            type: "user",
             time: { created: 1 },
             text: "hi",
             files: [{ uri: bigUri(), mime: "image/png", name: "big.png" }],
@@ -84,7 +83,6 @@ const seed = (db: DatabaseService) =>
           seq: 1,
           time_created: 2,
           data: {
-            type: "assistant",
             time: { created: 2 },
             content: [
               {
