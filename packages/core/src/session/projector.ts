@@ -180,6 +180,12 @@ function cacheFor(db: object): RunCache {
   return cache
 }
 
+// A removed Session can never be read again, so drop the mirror it left behind
+// instead of letting decoded assistant messages accumulate for the process life.
+export function forget(db: object) {
+  runCaches.delete(db)
+}
+
 function run(db: DatabaseService, event: SessionEvent.Event) {
   return Effect.gen(function* () {
     const cache = cacheFor(db)
@@ -400,7 +406,11 @@ const layer = Layer.effectDiscard(
         .pipe(Effect.orDie),
     )
     yield* events.project(SessionV1.Event.Deleted, (event) =>
-      db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie),
+      Effect.gen(function* () {
+        yield* db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie)
+        forget(db)
+        SessionHistory.invalidate(db)
+      }),
     )
     yield* events.project(SessionV1.Event.MessageUpdated, (event) =>
       Effect.gen(function* () {

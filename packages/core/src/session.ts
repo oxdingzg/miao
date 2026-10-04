@@ -14,6 +14,7 @@ import { PromptInput } from "@miao/schema/prompt-input"
 import { EventV2 } from "./event"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
+import { SessionHistory } from "./session/history"
 import { SessionMessageTable, SessionTable, TodoTable } from "./session/sql"
 import { ProjectTable } from "./project/sql"
 import { SessionSchema } from "./session/schema"
@@ -447,6 +448,8 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
         yield* events.remove(sessionID)
+        SessionProjector.forget(db)
+        SessionHistory.invalidate(db)
       }),
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
