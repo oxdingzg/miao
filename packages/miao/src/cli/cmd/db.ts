@@ -1,5 +1,8 @@
 import type { Argv } from "yargs"
 import { spawn } from "child_process"
+import { readdir, stat } from "node:fs/promises"
+import { dirname, join } from "path"
+import { Blob } from "@miao/core/blob"
 import { Database } from "@miao/core/database/database"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { SessionCompact } from "@miao/core/session/compact"
@@ -97,6 +100,30 @@ const StatsCommand = effectCmd({
     if (events.length > 0) {
       console.log("\nevent types:")
       for (const event of events) console.log(`  ${event.type}\t${event.n}\t${mb(event.bytes ?? 0)} MB`)
+    }
+
+    const inline = (table: string) =>
+      db
+        .get<{ n: number; bytes: number }>(
+          sql`SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM ${sql.identifier(table)} WHERE data LIKE ${'%"data:%'}`,
+        )
+        .pipe(Effect.orDie)
+    const blobDir = join(dirname(Database.path()), Blob.DIRECTORY)
+    const blobs = yield* Effect.promise(async () => {
+      const entries = await readdir(blobDir).catch(() => [] as string[])
+      let bytes = 0
+      for (const entry of entries) {
+        const info = await stat(join(blobDir, entry)).catch(() => undefined)
+        if (info?.isFile()) bytes += info.size
+      }
+      return { files: entries.length, bytes }
+    })
+    console.log("\nblobs:")
+    console.log(`  ${Blob.DIRECTORY}\t${blobs.files} file(s)\t${mb(blobs.bytes)} MB`)
+    console.log("\ninline base64 (run db externalize-blobs to move these):")
+    for (const table of ["session_message", "event"]) {
+      const row = yield* inline(table)
+      console.log(`  ${table}\t${row?.n ?? 0} row(s)\t${mb(Number(row?.bytes ?? 0))} MB`)
     }
   }),
 })
