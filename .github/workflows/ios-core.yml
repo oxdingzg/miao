@@ -1,0 +1,28 @@
+name: ios-core
+on:
+  pull_request:
+    paths:
+      - apps/ios/**
+      - packages/remote-control/src/secure-channel.ts
+      - .github/workflows/ios-core.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  crypto-interop:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --ignore-scripts --frozen-lockfile
+      - name: Swift core tests
+        run: swift test --package-path apps/ios/MiaoCore
+      - name: WebCrypto and CryptoKit interoperability
+        env:
+          MIAO_SWIFT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/InteropProbe"]'
+        run: bun apps/ios/scripts/check-interop.ts
