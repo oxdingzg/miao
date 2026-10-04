@@ -128,10 +128,12 @@ export class TransportReason extends Schema.Class<TransportReason>("LLM.Error.Tr
 }) {
   // A response body that breaks off mid-read is a dropped connection, not a
   // bad request; the Session runner only replays it while nothing from the
-  // attempt has been published. A generic TLS handshake failure is also
-  // retryable, before any provider application data could be exchanged.
+  // attempt has been published. Transient request failures also use the
+  // bounded request retry policy.
   get retryable() {
-    return this.kind === "stream-read" || this.kind === "tls-handshake"
+    return ["stream-read", "tls-handshake", "connection-closed", "connection-failed", "Timeout"].includes(
+      this.kind ?? "",
+    )
   }
 }
 

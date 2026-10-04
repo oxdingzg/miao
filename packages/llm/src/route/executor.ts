@@ -47,7 +47,7 @@ const BASE_DELAY_MS = 500
 const MAX_DELAY_MS = 10_000
 const MIN_RETRY_AFTER_MS = 250
 
-const retryableStatus = (status: number) => status === 429 || status === 503 || status === 504 || status === 529
+const retryableStatus = (status: number) => status === 408 || status === 409 || status >= 500
 
 const retryAfterMs = (headers: Record<string, string>) => {
   const millis = Number(headers["retry-after-ms"])
@@ -155,20 +155,14 @@ const statusReason = (input: {
       http: input.http,
     })
   }
-  if (
-    input.status === 400 ||
-    input.status === 404 ||
-    input.status === 409 ||
-    input.status === 413 ||
-    input.status === 422
-  ) {
+  if (input.status === 400 || input.status === 404 || input.status === 413 || input.status === 422) {
     return new InvalidRequestReason({
       message: input.message,
       classification: isContextOverflow(body) ? "context-overflow" : undefined,
       http: input.http,
     })
   }
-  if (input.status >= 500 || retryableStatus(input.status)) {
+  if (retryableStatus(input.status)) {
     return new ProviderInternalReason({
       message: input.message,
       status: input.status,
@@ -276,6 +270,49 @@ export const causeDetail = (cause: unknown): string | undefined => {
   return detail.length > 0 ? detail : undefined
 }
 
+function transientTransportKind(cause: unknown, depth = 0): string | undefined {
+  if (depth > 8 || typeof cause !== "object" || cause === null) return undefined
+  // Match structured runtime errors, never text from a provider or bad URL.
+  if (cause instanceof Error && cause.name === "AbortError") return undefined
+  if (Cause.isTimeoutError(cause) || (cause instanceof Error && cause.name === "TimeoutError")) return "Timeout"
+  if ("code" in cause && typeof cause.code === "string") {
+    if (["ECONNRESET", "EPIPE", "UND_ERR_SOCKET", "ConnectionClosed"].includes(cause.code)) return "connection-closed"
+    if (cause.code === "UNKNOWN_CERTIFICATE_VERIFICATION_ERROR") return "tls-handshake"
+    if (
+      [
+        "ETIMEDOUT",
+        "ESOCKETTIMEDOUT",
+        "UND_ERR_CONNECT_TIMEOUT",
+        "UND_ERR_HEADERS_TIMEOUT",
+        "UND_ERR_BODY_TIMEOUT",
+        "Timeout",
+      ].includes(cause.code)
+    )
+      return "Timeout"
+    if (
+      [
+        "EAI_AGAIN",
+        "ECONNREFUSED",
+        "ECONNABORTED",
+        "ENETUNREACH",
+        "EHOSTUNREACH",
+        "ConnectionRefused",
+        "FailedToOpenSocket",
+      ].includes(cause.code)
+    )
+      return "connection-failed"
+    // A definitive outer error must not inherit a retryable inner cause.
+    return undefined
+  }
+  if (cause instanceof AggregateError) {
+    return cause.errors.length > 0 && cause.errors.every((error) => transientTransportKind(error, depth + 1))
+      ? "connection-failed"
+      : undefined
+  }
+  // Bun exposes errno directly; Node fetch wraps it in one or more causes.
+  return "cause" in cause ? transientTransportKind(cause.cause, depth + 1) : undefined
+}
+
 const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: unknown) => {
   const transportError = (input: {
     readonly message: string
@@ -297,7 +334,10 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
     return transportError({ message: error.message, kind: "Timeout" })
   }
   if (!HttpClientError.isHttpClientError(error)) {
-    return transportError({ message: `HTTP transport failed: ${causeDetail(error) ?? "unknown error"}` })
+    return transportError({
+      message: `HTTP transport failed: ${causeDetail(error) ?? "unknown error"}`,
+      kind: transientTransportKind(error),
+    })
   }
   const request = "request" in error ? error.request : undefined
   if (error.reason._tag === "TransportError") {
@@ -311,7 +351,7 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
       // The generic verification result can recur between successful turns.
       // Retry a normally verified handshake; definitive trust failures keep
       // their non-retryable TransportError classification.
-      kind: detail.includes("UNKNOWN_CERTIFICATE_VERIFICATION_ERROR") ? "tls-handshake" : error.reason._tag,
+      kind: transientTransportKind(error.reason.cause) ?? error.reason._tag,
       request,
     })
   }
