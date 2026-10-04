@@ -10,6 +10,7 @@ import { SkillHandler } from "./handlers/skill"
 import { EventHandler } from "./handlers/event"
 import { AgentHandler } from "./handlers/agent"
 import { HealthHandler } from "./handlers/health"
+import { RuntimeHandler } from "./handlers/runtime"
 import { CapabilitiesHandler } from "./handlers/capabilities"
 import { FormatterHandler } from "./handlers/formatter"
 import { ConfigHandler } from "./handlers/config"
@@ -31,6 +32,7 @@ import { WorktreeHandler } from "./handlers/worktree"
 
 export const handlers = Layer.mergeAll(
   HealthHandler,
+  RuntimeHandler,
   CapabilitiesHandler,
   FormatterHandler,
   ConfigHandler,

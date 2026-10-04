@@ -1254,6 +1254,13 @@ const adaptGroup28 = (raw: RawClient["server.remote"]) => ({
   test: Endpoint28_7(raw),
 })
 
+type Endpoint29_0Request = Parameters<RawClient["server.runtime"]["runtime.identity"]>[0]
+type Endpoint29_0Input = { readonly challenge: Endpoint29_0Request["query"]["challenge"] }
+const Endpoint29_0 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_0Input) =>
+  raw["runtime.identity"]({ query: { challenge: input["challenge"] } }).pipe(Effect.mapError(mapClientError))
+
+const adaptGroup29 = (raw: RawClient["server.runtime"]) => ({ identity: Endpoint29_0(raw) })
+
 const adaptClient = (raw: RawClient) => ({
   health: adaptGroup0(raw["server.health"]),
   capabilities: adaptGroup1(raw["server.capabilities"]),
@@ -1284,6 +1291,7 @@ const adaptClient = (raw: RawClient) => ({
   worktrees: adaptGroup26(raw["server.worktree"]),
   controlPlane: adaptGroup27(raw["server.controlPlane"]),
   remote: adaptGroup28(raw["server.remote"]),
+  "server.runtime": adaptGroup29(raw["server.runtime"]),
 })
 
 export const make = (options?: { readonly baseUrl?: URL | string }) =>

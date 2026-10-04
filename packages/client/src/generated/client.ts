@@ -229,6 +229,8 @@ import type {
   RemotePairOutput,
   RemoteTestInput,
   RemoteTestOutput,
+  ServerRuntimeIdentityInput,
+  ServerRuntimeIdentityOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -1834,6 +1836,20 @@ export function make(options: ClientOptions) {
             path: `/api/remote/account/${encodeURIComponent(input.connector)}/${encodeURIComponent(input.account)}/test`,
             successStatus: 200,
             declaredStatuses: [404, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.runtime": {
+      identity: (input: ServerRuntimeIdentityInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeIdentityOutput>(
+          {
+            method: "GET",
+            path: `/api/runtime/identity`,
+            query: { challenge: input["challenge"] },
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
             empty: false,
           },
           requestOptions,

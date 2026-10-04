@@ -13,6 +13,7 @@ import { EventGroup, makeEventGroup } from "./groups/event"
 import type { Definition } from "@miao/schema/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
+import { RuntimeGroup } from "./groups/runtime"
 import { CapabilitiesGroup } from "./groups/capabilities"
 import { FormatterGroup } from "./groups/formatter"
 import { ConfigGroup } from "./groups/config"
@@ -75,6 +76,7 @@ const makeApiFromGroup = <
     .add(WorktreeGroup.middleware(locationMiddleware))
     .add(ControlPlaneGroup.middleware(locationMiddleware))
     .add(RemoteGroup)
+    .add(RuntimeGroup)
     .annotateMerge(
       OpenApi.annotations({
         title: "opencode HttpApi",
