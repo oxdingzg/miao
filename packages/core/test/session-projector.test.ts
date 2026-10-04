@@ -565,6 +565,69 @@ describe("SessionProjector", () => {
     }),
   )
 
+  it.effect("does not rewrite an assistant row for a no-op durable event", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(ProjectTable)
+        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+        .run()
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: Project.ID.global,
+          slug: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const service = yield* EventV2.Service
+      const assistantID = SessionMessage.ID.make("msg_noop_assistant")
+      yield* service.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: assistantID,
+        timestamp: DateTime.makeUnsafe(1),
+        agent: "build",
+        model,
+      })
+      yield* service.publish(SessionEvent.Text.Started, {
+        sessionID,
+        assistantMessageID: assistantID,
+        timestamp: DateTime.makeUnsafe(2),
+        textID: "text",
+      })
+      yield* service.publish(SessionEvent.Text.Ended, {
+        sessionID,
+        assistantMessageID: assistantID,
+        timestamp: DateTime.makeUnsafe(3),
+        textID: "text",
+        text: "OK",
+      })
+      const readUpdated = () =>
+        db
+          .select({ time_updated: SessionMessageTable.time_updated })
+          .from(SessionMessageTable)
+          .where(eq(SessionMessageTable.id, assistantID))
+          .get()
+          .pipe(Effect.orDie)
+      const first = yield* readUpdated()
+      yield* Effect.promise(() => Bun.sleep(5))
+      // Assigning the identical text makes immer return the same reference, so
+      // the projector must not rewrite the whole JSON row.
+      yield* service.publish(SessionEvent.Text.Ended, {
+        sessionID,
+        assistantMessageID: assistantID,
+        timestamp: DateTime.makeUnsafe(4),
+        textID: "text",
+        text: "OK",
+      })
+      expect((yield* readUpdated())?.time_updated).toBe(first?.time_updated)
+    }),
+  )
+
   it.effect("aggregates step usage into the session and rolls it back on revert", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
