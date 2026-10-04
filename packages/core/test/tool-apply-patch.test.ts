@@ -2,6 +2,7 @@ import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { systemError } from "effect/PlatformError"
 import { Config } from "@miao/core/config"
 import { ConfigLSP } from "@miao/core/config/lsp"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -25,6 +26,9 @@ const sessionID = SessionV2.ID.make("ses_apply_patch_tool_test")
 const assertions: PermissionV2.AssertInput[] = []
 let denyAction: string | undefined
 let failRemoveTarget: string | undefined
+let failMoveRemoveTarget: string | undefined
+let moveWriteTarget: string | undefined
+let afterMoveWrite: Effect.Effect<void> = Effect.void
 let readsBeforeExternalApproval = 0
 let externalApproved = false
 let blockRemoveTarget: string | undefined
@@ -57,6 +61,9 @@ const reset = () => {
   assertions.length = 0
   denyAction = undefined
   failRemoveTarget = undefined
+  failMoveRemoveTarget = undefined
+  moveWriteTarget = undefined
+  afterMoveWrite = Effect.void
   readsBeforeExternalApproval = 0
   externalApproved = false
   blockRemoveTarget = undefined
@@ -71,11 +78,37 @@ const filesystem = Layer.effect(
     const fs = yield* FSUtil.Service
     return FSUtil.Service.of({
       ...fs,
+      writeFile: (target, content, options) =>
+        fs
+          .writeFile(target, content, options)
+          .pipe(
+            Effect.andThen(
+              Effect.suspend(() => (path.basename(target) === moveWriteTarget ? afterMoveWrite : Effect.void)),
+            ),
+          ),
+      writeFileString: (target, content, options) =>
+        fs
+          .writeFileString(target, content, options)
+          .pipe(
+            Effect.andThen(
+              Effect.suspend(() => (path.basename(target) === moveWriteTarget ? afterMoveWrite : Effect.void)),
+            ),
+          ),
       readFile: (target) =>
         Effect.sync(() => {
           if (!externalApproved) readsBeforeExternalApproval++
         }).pipe(Effect.andThen(fs.readFile(target))),
       remove: (target, options) => {
+        if (failMoveRemoveTarget && path.basename(target) === failMoveRemoveTarget)
+          return Effect.fail(
+            systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "remove",
+              pathOrDescriptor: target,
+              cause: new Error("forced move removal failure"),
+            }),
+          )
         if (failRemoveTarget && path.basename(target) === failRemoveTarget) return Effect.die("forced remove failure")
         if (blockRemoveTarget && path.basename(target) === blockRemoveTarget && removeStarted && releaseRemove)
           return Deferred.succeed(removeStarted, undefined).pipe(
@@ -272,12 +305,124 @@ describe("ApplyPatchTool", () => {
     ),
   )
 
-  it.live("rejects moves before applying any hunk", () =>
+  it.live("moves and edits a file after approving both endpoints", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
         const source = path.join(tmp.path, "old.txt")
+        const target = path.join(tmp.path, "nested/moved.txt")
+        return Effect.promise(() => fs.writeFile(source, "\ufeffbefore\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                if (process.platform !== "win32") yield* Effect.promise(() => fs.chmod(source, 0o755))
+                const settled = yield* settleTool(
+                  registry,
+                  call(
+                    "*** Begin Patch\n*** Add File: created.txt\n+created\n*** Update File: old.txt\n*** Move to: nested/moved.txt\n@@\n-before\n+after\n*** End Patch",
+                  ),
+                )
+                expect(settled.result).toEqual({
+                  type: "text",
+                  value: "Applied patch sequentially:\nA created.txt\nA nested/moved.txt\nD old.txt",
+                })
+                expect(yield* exists(source)).toBe(false)
+                expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("\ufeffafter\n")
+                if (process.platform !== "win32")
+                  expect((yield* Effect.promise(() => fs.stat(target))).mode & 0o777).toBe(0o755)
+                expect(assertions[0]?.resources).toEqual(["created.txt", "old.txt", "nested/moved.txt"])
+                expect(settled.output?.structured).toMatchObject({
+                  files: [
+                    { file: "created.txt", status: "added" },
+                    { file: "old.txt", status: "deleted" },
+                    { file: "nested/moved.txt", status: "added" },
+                  ],
+                })
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+  ;[Buffer.from("\ufefffirst\r\nlast"), Buffer.from([0, 255, 254, 10, 13])].forEach((bytes, index) => {
+    it.live(`preserves every byte for a pure move ${index}`, () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => {
+          reset()
+          const source = path.join(tmp.path, "old.bin")
+          const target = path.join(tmp.path, "new.bin")
+          return Effect.promise(() => fs.writeFile(source, bytes)).pipe(
+            Effect.andThen(
+              withTool(tmp.path, (registry) =>
+                Effect.gen(function* () {
+                  expect(
+                    yield* executeTool(
+                      registry,
+                      call("*** Begin Patch\n*** Update File: old.bin\n*** Move to: new.bin\n*** End Patch"),
+                    ),
+                  ).toEqual({ type: "text", value: "Applied patch sequentially:\nA new.bin\nD old.bin" })
+                  expect(yield* exists(source)).toBe(false)
+                  expect(yield* Effect.promise(() => fs.readFile(target))).toEqual(bytes)
+                }),
+              ),
+            ),
+          )
+        },
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    )
+  })
+
+  it.live("does not overwrite an existing move destination or apply earlier hunks", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() =>
+          Promise.all([
+            fs.writeFile(path.join(tmp.path, "old.txt"), "source\n"),
+            fs.writeFile(path.join(tmp.path, "new.txt"), "winner\n"),
+          ]),
+        ).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                const result = yield* executeTool(
+                  registry,
+                  call(
+                    "*** Begin Patch\n*** Add File: created.txt\n+created\n*** Update File: old.txt\n*** Move to: new.txt\n*** End Patch",
+                  ),
+                )
+                expect(result).toMatchObject({
+                  type: "error",
+                  value: expect.stringContaining("destination already exists"),
+                })
+                expect(yield* exists(path.join(tmp.path, "created.txt"))).toBe(false)
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "old.txt"), "utf8"))).toBe(
+                  "source\n",
+                )
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "new.txt"), "utf8"))).toBe(
+                  "winner\n",
+                )
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("same-path moves update contents without deleting the file", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const source = path.join(tmp.path, "same.txt")
         return Effect.promise(() => fs.writeFile(source, "before\n")).pipe(
           Effect.andThen(
             withTool(tmp.path, (registry) =>
@@ -286,12 +431,197 @@ describe("ApplyPatchTool", () => {
                   yield* executeTool(
                     registry,
                     call(
-                      "*** Begin Patch\n*** Add File: created.txt\n+created\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-before\n+after\n*** End Patch",
+                      "*** Begin Patch\n*** Update File: same.txt\n*** Move to: ./same.txt\n@@\n-before\n+after\n*** End Patch",
                     ),
                   ),
-                ).toEqual({ type: "error", value: "apply_patch moves are not supported yet" })
-                expect(yield* exists(path.join(tmp.path, "created.txt"))).toBe(false)
-                expect(assertions).toEqual([])
+                ).toEqual({ type: "text", value: "Applied patch sequentially:\nM same.txt" })
+                expect(yield* Effect.promise(() => fs.readFile(source, "utf8"))).toBe("after\n")
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("checks a moved source again after edit approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const source = path.join(tmp.path, "old.txt")
+        afterEditApproval = () => Effect.promise(() => fs.writeFile(source, "manual edit\n"))
+        return Effect.promise(() => fs.writeFile(source, "before\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(
+                    registry,
+                    call("*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n*** End Patch"),
+                  ),
+                ).toEqual({ type: "error", value: "Unable to apply patch at old.txt" })
+                expect(yield* Effect.promise(() => fs.readFile(source, "utf8"))).toBe("manual edit\n")
+                expect(yield* exists(path.join(tmp.path, "new.txt"))).toBe(false)
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("reports a destination created before source removal failed", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const source = path.join(tmp.path, "old.txt")
+        failMoveRemoveTarget = "old.txt"
+        return Effect.promise(() => fs.writeFile(source, "before\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(
+                    registry,
+                    call("*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n*** End Patch"),
+                  ),
+                ).toMatchObject({ type: "error", value: expect.stringContaining("Destination was created") })
+                expect(yield* Effect.promise(() => fs.readFile(source, "utf8"))).toBe("before\n")
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "new.txt"), "utf8"))).toBe(
+                  "before\n",
+                )
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("approves an external move destination before reading even an internal source", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
+      ([active, outside]) => {
+        reset()
+        const source = path.join(active.path, "old.txt")
+        const target = path.join(outside.path, "new.txt")
+        return Effect.promise(() => fs.writeFile(source, "before\n")).pipe(
+          Effect.andThen(
+            withTool(active.path, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(
+                    registry,
+                    call(`*** Begin Patch\n*** Update File: old.txt\n*** Move to: ${target}\n*** End Patch`),
+                  ),
+                ).toMatchObject({ type: "text" })
+                expect(readsBeforeExternalApproval).toBe(0)
+                expect(assertions.map((item) => item.action)).toEqual(["external_directory", "edit"])
+                expect(assertions[1]?.resources).toEqual(["old.txt", target.replaceAll("\\", "/")])
+                expect(yield* exists(source)).toBe(false)
+              }),
+            ),
+          ),
+        )
+      },
+      ([active, outside]) =>
+        Effect.promise(() => Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()])),
+    ),
+  )
+
+  it.live("refuses source deletion after an external edit during destination creation", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const source = path.join(tmp.path, "old.txt")
+        moveWriteTarget = "new.txt"
+        afterMoveWrite = Effect.promise(() => fs.writeFile(source, "external edit\n"))
+        return Effect.promise(() => fs.writeFile(source, "before\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(
+                    registry,
+                    call("*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n*** End Patch"),
+                  ),
+                ).toMatchObject({ type: "error", value: expect.stringContaining("Destination was created") })
+                expect(yield* Effect.promise(() => fs.readFile(source, "utf8"))).toBe("external edit\n")
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "new.txt"), "utf8"))).toBe(
+                  "before\n",
+                )
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("does not read or mutate when the external move permission is denied", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
+      ([active, outside]) => {
+        reset()
+        denyAction = "external_directory"
+        const source = path.join(active.path, "old.txt")
+        const target = path.join(outside.path, "new.txt")
+        return Effect.promise(() => fs.writeFile(source, "before\n")).pipe(
+          Effect.andThen(
+            withTool(active.path, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(
+                    registry,
+                    call(`*** Begin Patch\n*** Update File: old.txt\n*** Move to: ${target}\n*** End Patch`),
+                  ),
+                ).toMatchObject({ type: "error" })
+                expect(readsBeforeExternalApproval).toBe(0)
+                expect(assertions.map((item) => item.action)).toEqual(["external_directory"])
+                expect(yield* Effect.promise(() => fs.readFile(source, "utf8"))).toBe("before\n")
+                expect(yield* exists(target)).toBe(false)
+              }),
+            ),
+          ),
+        )
+      },
+      ([active, outside]) =>
+        Effect.promise(() => Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()])),
+    ),
+  )
+
+  it.live("rejects conflicting move endpoints before committing the batch", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() =>
+          Promise.all([
+            fs.writeFile(path.join(tmp.path, "a.txt"), "a\n"),
+            fs.writeFile(path.join(tmp.path, "b.txt"), "b\n"),
+          ]),
+        ).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(
+                    registry,
+                    call(
+                      "*** Begin Patch\n*** Update File: a.txt\n*** Move to: new.txt\n*** Update File: b.txt\n*** Move to: new.txt\n*** End Patch",
+                    ),
+                  ),
+                ).toMatchObject({ type: "error" })
+                expect(yield* exists(path.join(tmp.path, "new.txt"))).toBe(false)
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "a.txt"), "utf8"))).toBe("a\n")
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "b.txt"), "utf8"))).toBe("b\n")
               }),
             ),
           ),
