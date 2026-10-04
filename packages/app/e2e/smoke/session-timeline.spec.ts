@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test"
 import { base64Encode } from "@miao/core/util/encode"
 import { fixture, pageMessages } from "./session-timeline.fixture"
 import { trackPageErrors, expectNoSmokeErrors } from "../utils/errors"
-import { LEGACY_V1_FIXTURE, mockOpenCodeServer } from "../utils/mock-server"
+import { mockOpenCodeServer } from "../utils/mock-server"
+import { assistant, text, tool, user } from "../utils/session-v2"
 import { APP_READY_TIMEOUT, expectAppVisible, expectSessionTitle } from "../utils/waits"
 
 const forbiddenText = ["Load details", "Show earlier steps"]
@@ -336,27 +337,48 @@ test.describe("smoke: session timeline", () => {
   })
 
   test("renders seeded timeline in order while paging through history", async ({ page }) => {
-    test.fixme(true, LEGACY_V1_FIXTURE)
+    const shellID = "call_native_expanded_shell"
+    const native = Array.from({ length: 165 }, (_, index) => [
+      user(`Native user turn ${index}`, {
+        id: `msg_native_${String(index).padStart(4, "0")}_user`,
+        created: 1700000000000 + index * 10000,
+      }),
+      assistant(
+        [
+          text(`Native assistant response ${index}. ${"Fixed history content. ".repeat(6)}`),
+          ...(index === 164
+            ? [tool(shellID, "bash", "completed", { command: "bun typecheck" }, "Typecheck passed")]
+            : []),
+        ],
+        { id: `msg_native_${String(index).padStart(4, "0")}_assistant`, created: 1700000001000 + index * 10000 },
+      ),
+    ]).flat()
+    const expectedMessageIDs = native.filter((message) => message.type === "user").map((message) => message.id)
+    const expectedPartIDs = native.flatMap((message) => [
+      `${message.id}:text:0`,
+      ...(message.type === "assistant" && message.content.some((part) => part.type === "tool") ? [shellID] : []),
+    ])
+    const source = [user("Source session"), assistant([text("Source response")])]
     const errors = trackPageErrors(page)
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,
       provider: fixture.provider,
       directory: fixture.directory,
       project: fixture.project,
-      pageMessages,
+      pageMessages: (sessionID, limit, before) => {
+        const messages = sessionID === fixture.targetID ? native : source
+        const end = before ? messages.findIndex((message) => message.id === before) : messages.length
+        const start = Math.max(0, end - limit)
+        return { items: messages.slice(start, end), cursor: start > 0 ? messages[start]!.id : undefined }
+      },
     })
     await configureSmokePage(page, fixture.directory)
-
     await selectHomeProject(page, fixture.project.name)
     await navigateToSession(page, fixture.directory, fixture.sourceID, fixture.expected.sourceTitle)
     await expectSessionReady(page)
     await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
-    const expectedPartIDs = fixture.expected.targetPartIDs
-    const expectedMessageIDs = fixture.expected.targetMessageIDs
     await expectSessionTimelineReady(page, expectedPartIDs, expectedMessageIDs, errors)
-    await expectCanScrollToStart(page, expectedPartIDs, expectedMessageIDs, errors)
-
-    const shell = page.locator(`[data-timeline-part-id="${fixture.expected.expandedShellPartID}"]`)
+    const shell = page.locator(`[data-timeline-part-id="${shellID}"]`)
     const shellTrigger = shell.locator('[data-slot="collapsible-trigger"]')
     const shellSubtitle = shell.locator('[data-slot="basic-tool-tool-subtitle"]')
     await expect(shellSubtitle).toHaveCount(0)
@@ -367,6 +389,7 @@ test.describe("smoke: session timeline", () => {
     await shellTrigger.click()
     await expect(shellTrigger).toHaveAttribute("aria-expanded", "true")
     await expect(shellSubtitle).toHaveCount(0)
+    await expectCanScrollToStart(page, expectedPartIDs, expectedMessageIDs, errors)
   })
 })
 
