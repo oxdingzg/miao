@@ -285,6 +285,10 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
       },
       updateAssistant(assistant) {
         return Effect.gen(function* () {
+          // immer returns the same object reference when a recipe changed
+          // nothing (a durable event whose target is gone, or a replayed no-op),
+          // so it does not need to rewrite the whole JSON row.
+          if (cache.assistantByID.get(assistant.id) === assistant) return
           yield* updateMessage(assistant)
           cache.assistantByID.set(assistant.id, assistant)
           if (!cache.latestAssistant.has(sessionID) || cache.latestAssistant.get(sessionID)?.id === assistant.id)
