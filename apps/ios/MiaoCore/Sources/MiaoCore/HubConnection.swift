@@ -31,17 +31,9 @@ public actor HubConnection: ClientConnection {
     public static func open(host: ApprovedHost, identity: P256.Signing.PrivateKey,
                             session: URLSession = .shared, allowLoopbackHTTP: Bool = false,
                             reconcile: @escaping Reconcile) async throws -> HubConnection {
-        guard var url = URLComponents(url: host.hubURL, resolvingAgainstBaseURL: false),
-              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
-              !(url.host ?? "").isEmpty,
-              url.path.isEmpty || url.path == "/", host.grantVersion > 0 else { throw RemoteRPCError.invalidEndpoint }
-        let local = allowLoopbackHTTP && url.scheme == "http" && ["127.0.0.1", "::1", "[::1]"].contains(url.host ?? "")
-        guard url.scheme == "https" || local else { throw RemoteRPCError.invalidEndpoint }
-        url.scheme = local ? "ws" : "wss"
-        url.path = "/v1/client"
-        url.queryItems = [URLQueryItem(name: "hostID", value: host.target.hostID)]
-        guard let endpoint = url.url else { throw RemoteRPCError.invalidEndpoint }
-        let socket = session.webSocketTask(with: endpoint)
+        guard host.grantVersion > 0 else { throw RemoteRPCError.invalidEndpoint }
+        let socket = try session.webSocketTask(with: endpoint(hubURL: host.hubURL, hostID: host.target.hostID,
+                                                        allowLoopbackHTTP: allowLoopbackHTTP))
         socket.maximumMessageSize = 256 * 1024
         socket.resume()
         let deadline = Task {
@@ -164,5 +156,87 @@ public actor HubConnection: ClientConnection {
         guard let request = pending.removeValue(forKey: id) else { return }
         request.timeout.cancel()
         request.continuation.resume(throwing: error)
+    }
+}
+
+extension HubConnection {
+    static func endpoint(hubURL: URL?, hostID: String, allowLoopbackHTTP: Bool) throws -> URL {
+        guard let hubURL, var url = URLComponents(url: hubURL, resolvingAgainstBaseURL: false),
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+              !(url.host ?? "").isEmpty, url.path.isEmpty || url.path == "/" else {
+            throw RemoteRPCError.invalidEndpoint
+        }
+        let local = allowLoopbackHTTP && url.scheme == "http" && ["127.0.0.1", "::1", "[::1]"].contains(url.host ?? "")
+        guard url.scheme == "https" || local else { throw RemoteRPCError.invalidEndpoint }
+        url.scheme = local ? "ws" : "wss"
+        url.path = "/v1/client"
+        url.queryItems = [URLQueryItem(name: "hostID", value: hostID)]
+        guard let endpoint = url.url else { throw RemoteRPCError.invalidEndpoint }
+        return endpoint
+    }
+
+    /// No RPC reader starts until local owner approval is verified and the caller durably saves it.
+    /// A lost approval is uncertain, never an excuse to assume a grant or repeat a business operation.
+    public static func pair(invitation: PairingInvitation, identity: P256.Signing.PrivateKey, label: String,
+                            session: URLSession = .shared, allowLoopbackHTTP: Bool = false,
+                            pending: @escaping @Sendable (String) async -> Void,
+                            persist: @escaping @Sendable (ApprovedHost, DeviceGrant) async throws -> Void,
+                            reconcile: @escaping Reconcile) async throws -> PairedConnection {
+        try invitation.validate(allowLoopbackHTTP: allowLoopbackHTTP)
+        let socket = try session.webSocketTask(with: endpoint(hubURL: URL(string: invitation.hubURL), hostID: invitation.hostID,
+                                                        allowLoopbackHTTP: allowLoopbackHTTP))
+        socket.maximumMessageSize = 256 * 1024
+        socket.resume()
+        let seconds = min(180, max(0, Double(invitation.expiresAt) / 1000 - Date().timeIntervalSince1970))
+        let deadline = Task {
+            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+            socket.cancel(with: .goingAway, reason: nil)
+        }
+        defer { deadline.cancel() }
+        var provisional = false
+        do {
+            return try await withTaskCancellationHandler {
+                let handshake = try ClientHandshake(identity: identity, target: invitation.target)
+                let hello = handshake.hello
+                try await socket.send(.string(try invitation.claim(label: label, hello: hello).base64URL))
+                let message = try await socket.receive()
+                guard case .string(let value) = message, value.utf8.count <= 8192 else { throw RemoteRPCError.malformed }
+                let reply = try JSONDecoder().decode(ServerHello.self, from: decodeBase64URL(value))
+                let channel = try await handshake.finish(reply, trustedHostKey: invitation.hostPublicKey)
+                var assembler = ResponseAssembler(allowedTypes: ["pairing"])
+                while true {
+                    try Task.checkCancellation()
+                    let message = try await socket.receive()
+                    guard case .string(let packet) = message else { throw RemoteRPCError.malformed }
+                    guard let plaintext = try assembler.append(await channel.open(packet)) else { continue }
+                    let notice = try JSONDecoder().decode(PairingNotification.self, from: plaintext)
+                    guard notice.version == 1, notice.type == "pairing" else { throw RemoteRPCError.malformed }
+                    if !provisional {
+                        guard notice.status == "pending", notice.pairingID == invitation.pairingID, notice.grant == nil else {
+                            throw RemoteRPCError.malformed
+                        }
+                        provisional = true
+                        await pending(DeviceFingerprint.of(identity.publicKey))
+                        continue
+                    }
+                    guard notice.status == "approved", let grant = notice.grant else { throw RemoteRPCError.malformed }
+                    try grant.validate(deviceKey: identity.publicKey.x963Representation.base64URL)
+                    let host = ApprovedHost(label: invitation.hostID, hubURL: URL(string: invitation.hubURL)!,
+                                            target: invitation.target, publicKey: invitation.hostPublicKey,
+                                            grantID: grant.id, grantVersion: grant.version)
+                    try await persist(host, grant)
+                    try Task.checkCancellation()
+                    let connected = HubConnection(host: host, socket: socket, channel: channel, reconcile: reconcile)
+                    await connected.startReader()
+                    return PairedConnection(host: host, grant: grant, connection: connected)
+                }
+            } onCancel: { socket.cancel(with: .goingAway, reason: nil) }
+        } catch {
+            socket.cancel(with: .goingAway, reason: nil)
+            if Task.isCancelled { throw CancellationError() }
+            if error is ChannelError { throw RemoteConnectionError.authorizationBlocked }
+            if provisional { throw PairingError.approvalUncertain }
+            throw error
+        }
     }
 }

@@ -94,6 +94,7 @@ struct RemoteResponse: Decodable {
 
 /// Only complete, ordered transfers are returned to the state reducer.
 struct ResponseAssembler {
+    private let allowedTypes: Set<String>
     private struct Chunk: Decodable {
         let version: Int
         let type: String
@@ -108,12 +109,14 @@ struct ResponseAssembler {
     private var next = 0
     private var bytes = Data()
 
+    init(allowedTypes: Set<String> = ["result", "error"]) { self.allowedTypes = allowedTypes }
+
     mutating func append(_ packet: Data) throws -> Data? {
         guard packet.count <= 128 * 1024 else { throw RemoteRPCError.malformed }
         let header = try JSONDecoder().decode(Header.self, from: packet)
         guard header.version == 1 else { throw RemoteRPCError.malformed }
         if header.type != "chunk" {
-            guard transferID == nil, header.type == "result" || header.type == "error" else {
+            guard transferID == nil, allowedTypes.contains(header.type) else {
                 throw RemoteRPCError.malformed
             }
             return packet
@@ -136,7 +139,7 @@ struct ResponseAssembler {
         next += 1
         guard next == total else { return nil }
         let result = bytes
-        self = ResponseAssembler()
+        self = ResponseAssembler(allowedTypes: allowedTypes)
         return result
     }
 }

@@ -36,3 +36,7 @@ jobs:
         env:
           MIAO_SWIFT_TRANSPORT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/TransportProbe"]'
         run: bun apps/ios/scripts/check-transport.ts
+      - name: Native device pairing integration
+        env:
+          MIAO_SWIFT_PAIRING_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/PairingProbe"]'
+        run: bun apps/ios/scripts/check-pairing.ts
