@@ -72,10 +72,35 @@ const layer = Layer.effect(
 
     const has: Interface["has"] = (hash) => fs.existsSafe(pathFor(hash))
 
+    // Blobs are content-addressed and immutable, so their base64 is stable. The
+    // model reads the whole transcript every turn; without this, every historical
+    // attachment is re-read from disk and re-encoded every turn. Bounded by the
+    // encoded length so a long-lived process cannot retain unbounded media.
+    const BASE64_CACHE_MAX_BYTES = 64 * 1024 * 1024
+    const base64Cache = new Map<string, string>()
+    let base64CacheBytes = 0
+
     const getBase64: Interface["getBase64"] = (hash) =>
       Effect.gen(function* () {
+        const cached = base64Cache.get(hash)
+        if (cached !== undefined) {
+          base64Cache.delete(hash)
+          base64Cache.set(hash, cached)
+          return cached
+        }
         const bytes = yield* get(hash)
-        return bytes === undefined ? undefined : Buffer.from(bytes).toString("base64")
+        if (bytes === undefined) return undefined
+        const base64 = Buffer.from(bytes).toString("base64")
+        if (base64.length > BASE64_CACHE_MAX_BYTES) return base64
+        base64Cache.set(hash, base64)
+        base64CacheBytes += base64.length
+        while (base64CacheBytes > BASE64_CACHE_MAX_BYTES) {
+          const oldest = base64Cache.keys().next().value
+          if (oldest === undefined) break
+          base64CacheBytes -= base64Cache.get(oldest)!.length
+          base64Cache.delete(oldest)
+        }
+        return base64
       })
 
     const get: Interface["get"] = Effect.fn("Blob.get")(function* (hash) {
@@ -113,6 +138,11 @@ const layer = Layer.effect(
       const target = pathFor(hash)
       if (!(yield* fs.existsSafe(target))) return false
       yield* fs.remove(target).pipe(Effect.mapError((cause) => new StorageError({ operation: "remove", hash, cause })))
+      const cached = base64Cache.get(hash)
+      if (cached !== undefined) {
+        base64CacheBytes -= cached.length
+        base64Cache.delete(hash)
+      }
       return true
     })
 
