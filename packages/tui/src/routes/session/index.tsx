@@ -1710,6 +1710,7 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
 
   // Hide tool if showDetails is false and tool completed successfully
   const shouldHide = createMemo(() => {
+    if (props.part.tool === "send_message") return false
     if (ctx.showDetails()) return false
     if (props.part.state.status !== "completed") return false
     return true
@@ -1736,6 +1737,9 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   return (
     <Show when={!shouldHide()}>
       <Switch>
+        <Match when={props.part.tool === "send_message" && props.part.state.status === "completed"}>
+          <SentSessionMessage {...toolprops} />
+        </Match>
         <Match when={display() === "bash"}>
           <Shell {...toolprops} />
         </Match>
@@ -1793,6 +1797,27 @@ type ToolProps = {
   output?: string
   part: ToolPart
 }
+
+function SentSessionMessage(props: ToolProps) {
+  const ctx = use()
+  const sync = useSync()
+  const [expanded, setExpanded] = createSignal(false)
+  const target = createMemo(() => typeof props.metadata.sessionID === "string" ? props.metadata.sessionID : String(props.input.to ?? ""))
+  const title = createMemo(() => sync.data.session.find((session) => session.id === target())?.title)
+  return (
+    <box onMouseUp={() => setExpanded((value) => !value)}>
+      <SessionMessageContent
+        sessionID={target()}
+        title={title()}
+        body={typeof props.input.message === "string" ? props.input.message : ""}
+        conceal={true}
+        compact={!ctx.showDetails() && !expanded()}
+        direction="sent"
+      />
+    </box>
+  )
+}
+
 function GenericTool(props: ToolProps) {
   const { theme } = useTheme()
   const ctx = use()

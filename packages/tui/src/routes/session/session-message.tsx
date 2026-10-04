@@ -15,12 +15,14 @@ export function SessionMessageContent(props: {
   title?: string
   conceal: boolean
   compact?: boolean
+  direction?: "sent"
 }) {
   const theme = useTheme()
   const source = createMemo(() =>
     props.sessionID.length > 22 ? `${props.sessionID.slice(0, 12)}…${props.sessionID.slice(-6)}` : props.sessionID,
   )
-  const origin = createMemo(() => `From: ${props.title ? `${props.title} · ` : ""}${source()}`)
+  const origin = createMemo(() => `${props.direction === "sent" ? "To" : "From"}: ${props.title ? `${props.title} · ` : ""}${source()}`)
+  const heading = createMemo(() => props.direction === "sent" ? "↳ Sent session message" : "↳ Session message")
   const preview = createMemo(() => {
     const line =
       props.body
@@ -37,7 +39,7 @@ export function SessionMessageContent(props: {
       fallback={
         <box>
           <text fg={theme.theme.secondary}>
-            <b>↳ Session message</b>
+            <b>{heading()}</b>
             <span style={{ fg: theme.theme.textMuted }}> {origin()}</span>
           </text>
           <Show when={preview()} fallback={<text fg={theme.theme.textMuted}>(empty message)</text>}>
@@ -49,7 +51,7 @@ export function SessionMessageContent(props: {
       <box gap={1} minWidth={0}>
         <box>
           <text fg={theme.theme.secondary}>
-            <b>↳ Session message</b>
+            <b>{heading()}</b>
           </text>
           <text fg={theme.theme.textMuted}>{origin()}</text>
         </box>

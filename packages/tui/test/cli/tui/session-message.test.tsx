@@ -14,7 +14,7 @@ const parsed = parseSessionMessage(`<message from session="${id}">\n${body}\n</m
 if (!parsed?.sessionID || !parsed.body) throw new Error("Expected session envelope")
 const message = { sessionID: parsed.sessionID, body: parsed.body }
 
-async function render(width: number, compact?: boolean) {
+async function render(width: number, compact?: boolean, direction?: "sent") {
   const tmp = await tmpdir()
   const state = path.join(tmp.path, "state")
   await mkdir(state, { recursive: true })
@@ -31,7 +31,7 @@ async function render(width: number, compact?: boolean) {
         <TuiConfigProvider config={createTuiResolvedConfig()}>
           <KVProvider>
             <ThemeProvider mode="dark">
-              <SessionMessageContent {...message} title="性能排查" conceal={true} compact={compact} />
+              <SessionMessageContent {...message} title="性能排查" conceal={true} compact={compact} direction={direction} />
             </ThemeProvider>
           </KVProvider>
         </TuiConfigProvider>
@@ -91,3 +91,13 @@ for (const width of [100, 55]) {
     expect(frame).not.toContain("运行回归测试")
   })
 }
+
+test("outgoing inter-session content identifies its recipient", async () => {
+  await using rendered = await render(100, true, "sent")
+  const frame = await settle(rendered.app, "调查结论")
+  expect(frame).toContain("Sent session message")
+  expect(frame).toContain("To: 性能排查")
+  expect(frame).not.toContain("From:")
+  expect(frame).toContain("ses_f0eaecb6…o74Ohs")
+  expect(frame).toContain("调查结论")
+})
