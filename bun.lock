@@ -41,7 +41,7 @@
     },
     "packages/app": {
       "name": "@miao/app",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@corvu/drawer": "catalog:",
         "@dnd-kit/abstract": "0.5.0",
@@ -108,7 +108,7 @@
     },
     "packages/cli": {
       "name": "@miao/cli",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "miao": "./bin/miao.cjs",
       },
@@ -156,7 +156,7 @@
     },
     "packages/codemode": {
       "name": "@miao/codemode",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "acorn": "8.15.0",
         "effect": "catalog:",
@@ -170,7 +170,7 @@
     },
     "packages/core": {
       "name": "@miao/core",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "opencode": "./bin/opencode",
       },
@@ -272,7 +272,7 @@
     },
     "packages/desktop": {
       "name": "@miao/desktop",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@zip.js/zip.js": "2.7.62",
         "drizzle-orm": "catalog:",
@@ -326,7 +326,7 @@
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@miao/effect-drizzle-sqlite",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -340,7 +340,7 @@
     },
     "packages/effect-sqlite-node": {
       "name": "@miao/effect-sqlite-node",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -352,7 +352,7 @@
     },
     "packages/http-recorder": {
       "name": "@miao/http-recorder",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@effect/platform-node": "4.0.0-beta.83",
         "@effect/platform-node-shared": "4.0.0-beta.83",
@@ -383,7 +383,7 @@
     },
     "packages/llm": {
       "name": "@miao/llm",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@miao/schema": "workspace:*",
         "@smithy/eventstream-codec": "4.2.14",
@@ -402,7 +402,7 @@
     },
     "packages/miao": {
       "name": "miao",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "miao": "./bin/miao",
       },
@@ -537,11 +537,11 @@
     },
     "packages/native": {
       "name": "@miao/native",
-      "version": "0.1.1",
+      "version": "0.1.2",
     },
     "packages/plugin": {
       "name": "@miao/plugin",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@ai-sdk/provider": "3.0.8",
         "@miao/client": "workspace:*",
@@ -616,7 +616,7 @@
     },
     "packages/sdk": {
       "name": "@miao/sdk",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@miao/client": "workspace:*",
         "@miao/core": "workspace:*",
@@ -631,7 +631,7 @@
     },
     "packages/server": {
       "name": "@miao/server",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@miao/core": "workspace:*",
         "@miao/protocol": "workspace:*",
@@ -647,7 +647,7 @@
     },
     "packages/session-ui": {
       "name": "@miao/session-ui",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@miao/core": "workspace:*",
@@ -710,7 +710,7 @@
     },
     "packages/tui": {
       "name": "@miao/tui",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@miao/client": "workspace:*",
         "@miao/core": "workspace:*",
@@ -739,7 +739,7 @@
     },
     "packages/ui": {
       "name": "@miao/ui",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@pierre/diffs": "catalog:",
