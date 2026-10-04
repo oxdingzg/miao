@@ -79,6 +79,40 @@ describe("ToolCallLeak.detect", () => {
   })
 })
 
+describe("ToolCallLeak.isLeakedAssistant", () => {
+  const assistant = (over: Partial<{ finish: string; content: Array<{ type: string; text?: string }> }> = {}) => ({
+    type: "assistant",
+    finish: over.finish ?? "stop",
+    content: over.content ?? [{ type: "text", text: "</parameter>\n</invoke>\n".repeat(5) }],
+  })
+
+  test("flags a stop turn whose text ends in a leaked block", () => {
+    expect(ToolCallLeak.isLeakedAssistant(assistant())).toBe(true)
+  })
+
+  test("ignores a turn that is not finished", () => {
+    expect(ToolCallLeak.isLeakedAssistant(assistant({ finish: "tool-calls" }))).toBe(false)
+  })
+
+  test("ignores a turn that recorded a tool part", () => {
+    const message = assistant({
+      content: [
+        { type: "tool" },
+        { type: "text", text: "</parameter>\n</invoke>\n".repeat(5) },
+      ],
+    })
+    expect(ToolCallLeak.isLeakedAssistant(message)).toBe(false)
+  })
+
+  test("ignores non-assistant messages", () => {
+    expect(ToolCallLeak.isLeakedAssistant({ type: "user", content: [] })).toBe(false)
+  })
+
+  test("ignores clean prose", () => {
+    expect(ToolCallLeak.isLeakedAssistant(assistant({ content: [{ type: "text", text: "All done." }] }))).toBe(false)
+  })
+})
+
 const nudge = (text = ToolCallLeak.NUDGE) => ({
   type: "synthetic",
   text,

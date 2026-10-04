@@ -302,10 +302,7 @@ const layer = Layer.effect(
       const context = yield* getContext(sessionID)
       const assistant = context.findLast((message) => message.type === "assistant")
       if (!assistant) return undefined
-      if (assistant.finish !== "stop") return undefined
-      if (assistant.content.some((item) => item.type === "tool")) return undefined
-      const text = assistant.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("")
-      if (!ToolCallLeak.detect(text)) return undefined
+      if (!ToolCallLeak.isLeakedAssistant(assistant)) return undefined
       return { messageID: assistant.id, attempts: ToolCallLeak.countAttempts(context) }
     })
 
@@ -427,6 +424,20 @@ const layer = Layer.effect(
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const historyMs = Date.now() - historyStartedAt
       const context = entries.map((entry) => entry.message)
+      // A leaked tool call the model wrote as text stays in the durable row (the
+      // user can still see it), but it must not reach the provider verbatim: the
+      // model imitates its own prior output, so each later turn reseeds the same
+      // malformed block. Neutralize the body in the provider-facing copy only.
+      const providerContext = context.map((message) => {
+        if (message.type !== "assistant") return message
+        if (!ToolCallLeak.isLeakedAssistant(message)) return message
+        return {
+          ...message,
+          content: message.content.map((item) =>
+            item.type === "text" ? { ...item, text: ToolCallLeak.NEUTRALIZED } : item,
+          ),
+        }
+      })
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const settings = yield* readSettings()
       const toolsStartedAt = Date.now()
@@ -464,7 +475,7 @@ const layer = Layer.effect(
       const warm = prior !== undefined && Date.now() - prior.at < WARM_WINDOW_MS
       turns.set(session.id, { at: Date.now(), afterCompaction: false })
       const requestBuildStartedAt = Date.now()
-      const materialized = yield* materializeBlobRefs(blob, context).pipe(
+      const materialized = yield* materializeBlobRefs(blob, providerContext).pipe(
         Effect.flatMap((messages) => inlineTextFiles(fs, messages)),
       )
       const messages = [
