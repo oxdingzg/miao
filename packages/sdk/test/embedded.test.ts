@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { Flag } from "@miao/core/flag/flag"
 import { Deferred, Effect, Latch, Option, Schema, Stream } from "effect"
 import type { OpenCodeEvent } from "../src"
+import { fileURLToPath } from "node:url"
 
 const originalModelsPath = Flag.MIAO_MODELS_PATH
 const modelsDirectory = await mkdtemp(join(tmpdir(), "miao-sdk-models-"))
@@ -16,6 +17,75 @@ afterAll(async () => {
   Flag.MIAO_MODELS_PATH = originalModelsPath
   await rm(modelsDirectory, { recursive: true, force: true })
 })
+
+test("pending input reads recover another process's admission without a live event", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "miao-cross-process-input-"))
+  const database = Flag.MIAO_DB
+  Flag.MIAO_DB = join(directory, "miao.sqlite")
+  const { AbsolutePath, Location, OpenCode, Session } = await import("../src")
+  const sessionID = Session.ID.make(`ses_pending_${crypto.randomUUID()}`)
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* OpenCode.create()
+          yield* host.sessions.create({
+            id: sessionID,
+            location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
+          })
+          expect((yield* host.sessions.inputs({ sessionID, limit: 100 })).data).toEqual([])
+          const admissions: string[] = []
+          const ready = yield* Latch.make(false)
+          yield* host.events.subscribe().pipe(
+            Stream.runForEach((event) => {
+              if (event.type === "server.connected") return ready.open
+              if (event.type === "session.next.prompt.admitted") admissions.push(event.data.messageID)
+              return Effect.void
+            }),
+            Effect.forkScoped,
+          )
+          yield* ready.await
+          yield* Effect.promise(async () => {
+            const writer = Bun.spawn(
+              [
+                process.execPath,
+                fileURLToPath(new URL("./fixture/pending-input-writer.ts", import.meta.url)),
+                sessionID,
+              ],
+              {
+                env: {
+                  ...process.env,
+                  MIAO_DB: Flag.MIAO_DB,
+                  MIAO_MODELS_PATH: join(modelsDirectory, "models.json"),
+                  MIAO_DISABLE_MODELS_FETCH: "1",
+                },
+                stdout: "ignore",
+                stderr: "pipe",
+              },
+            )
+            const [exit, stderr] = await Promise.all([writer.exited, new Response(writer.stderr).text()])
+            expect(stderr).not.toContain("Error:")
+            expect(exit).toBe(0)
+          })
+          const page = yield* host.sessions.inputs({ sessionID, limit: 100 })
+          expect(page.hasMore).toBe(false)
+          expect(page.data).toHaveLength(1)
+          expect(page.data[0]).toMatchObject({
+            sessionID,
+            delivery: "queue",
+            prompt: { text: "Message from another process" },
+          })
+          expect(page.data[0].promotedSeq).toBeUndefined()
+          expect(admissions).toEqual([])
+          expect(yield* host.sessions.active()).toEqual({})
+        }),
+      ),
+    )
+  } finally {
+    Flag.MIAO_DB = database
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 15_000)
 
 test("embedded client uses the real router and handlers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-"))

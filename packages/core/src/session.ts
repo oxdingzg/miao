@@ -45,7 +45,7 @@ import { Revert } from "@miao/schema/revert"
 import { FSUtil } from "./fs-util"
 import { Blob } from "./blob"
 import { SessionBlobStorage } from "./session/blob-storage"
-import { materializeBlobRefs, materializeEvent } from "./session/runner/materialize-files"
+import { materializeBlobRefs, materializeEvent, materializePrompt } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
 import { EventSequenceTable, EventTable } from "./event/sql"
 
@@ -170,6 +170,11 @@ export interface Interface {
   readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
   readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
+  readonly inputs: (input: {
+    sessionID: SessionSchema.ID
+    after?: number
+    limit: number
+  }) => Effect.Effect<{ inputs: ReadonlyArray<SessionInput.Admitted>; hasMore: boolean }, NotFoundError>
   /** Files changed since the Session's first snapshot, or within one user turn when `messageID` names it. */
   readonly diff: (
     sessionID: SessionSchema.ID,
@@ -634,12 +639,10 @@ const layer = Layer.effect(
               // One cache per subscription: a replayed stream repeats the same
               // attachment across events, and each distinct blob is read once.
               const cache = new Map<string, string | undefined>()
-              return events
-                .durable({ aggregateID: input.sessionID, after: input.after })
-                .pipe(
-                  Stream.filter((event): event is SessionEvent.DurableEvent => isDurableSessionEvent(event)),
-                  Stream.mapEffect((event) => materializeEvent(blob, cache, event)),
-                )
+              return events.durable({ aggregateID: input.sessionID, after: input.after }).pipe(
+                Stream.filter((event): event is SessionEvent.DurableEvent => isDurableSessionEvent(event)),
+                Stream.mapEffect((event) => materializeEvent(blob, cache, event)),
+              )
             }),
           ),
         ),
@@ -651,7 +654,21 @@ const layer = Layer.effect(
           manifest: SessionDurable,
         })
         // Same boundary as `events`: a replayed page carries the same payloads.
-        return { ...page, events: yield* Effect.forEach(page.events, (event) => materializeEvent(blob, new Map(), event)) }
+        return {
+          ...page,
+          events: yield* Effect.forEach(page.events, (event) => materializeEvent(blob, new Map(), event)),
+        }
+      }),
+      inputs: Effect.fn("V2Session.inputs")(function* (input) {
+        yield* result.get(input.sessionID)
+        const page = yield* SessionInput.pending(db, input)
+        const cache = new Map<string, string | undefined>()
+        return {
+          ...page,
+          inputs: yield* Effect.forEach(page.inputs, (entry) =>
+            materializePrompt(blob, cache, entry.prompt).pipe(Effect.map((prompt) => ({ ...entry, prompt }))),
+          ),
+        }
       }),
       prompt: Effect.fn("V2Session.prompt")((input) =>
         Effect.uninterruptible(

@@ -7,7 +7,7 @@ export const CapabilitiesHandler = HttpApiBuilder.group(Api, "server.capabilitie
   handlers.handle(
     "capabilities.get",
     Effect.fn(function* () {
-      return yield* response(Effect.succeed({ backgroundSubagents: false }))
+      return yield* response(Effect.succeed({ backgroundSubagents: false, pendingSessionInputs: true }))
     }),
   ),
 )

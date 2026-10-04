@@ -75,6 +75,8 @@ import type {
   SessionsForkOutput,
   SessionsDiffInput,
   SessionsDiffOutput,
+  SessionsInputsInput,
+  SessionsInputsOutput,
   SessionsStatusInput,
   SessionsStatusOutput,
   SessionsChildrenInput,
@@ -851,6 +853,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      inputs: (input: SessionsInputsInput, requestOptions?: RequestOptions) =>
+        request<SessionsInputsOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/inputs`,
+            query: { limit: input["limit"], after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
       status: (input: SessionsStatusInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsStatusOutput }>(
           {
