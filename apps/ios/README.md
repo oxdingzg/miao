@@ -18,4 +18,8 @@ Set `MIAO_SWIFT_PROBE_COMMAND` privately to a JSON argv array that runs the remo
 bun apps/ios/scripts/check-interop.ts
 ```
 
-CI runs native core tests and this interoperability exchange on a macOS runner. The SwiftUI app, pairing UI, protected identity/cache storage, scene lifecycle and speech input are subsequent implementation steps; this initial package is the native protocol foundation.
+The client core also provides device-only, unlock-protected Keychain identity storage and an actor-owned, authorization-scoped checkpoint store. On iOS checkpoint files use complete file protection and are excluded from backup. An operation is persisted before transmission; prepared and unconfirmed entries are returned for authoritative result queries after restart, never automatically retransmitted. Session state and its replay cursor are written together. Cache keys include the device, grant and host; session addresses also include Runtime identity.
+
+`ConnectionCoordinator` shares one connection among a Hub identity's scenes. An inactive scene retains its connection, while the last scene entering background closes transport resources without interrupting host execution. Cancelled connection epochs cannot make a background scene ready. Authorization failures stop retries until explicit restoration. Production transport supplies authorization validation and ledger reconciliation through `ClientConnection.synchronize()`.
+
+CI runs native core tests, the iOS platform source check and the interoperability exchange on a macOS runner. The SwiftUI app, pairing UI, production transport and speech input remain subsequent implementation steps.
