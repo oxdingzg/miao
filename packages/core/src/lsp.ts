@@ -34,15 +34,20 @@ export interface Interface {
   readonly touchFile: (file: string, mode?: "document" | "full") => Effect.Effect<void>
   /** Whether any configured server advertises the file's extension. */
   readonly hasClients: (file: string) => Effect.Effect<boolean>
-  readonly definition: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly references: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly hover: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly documentSymbol: (file: string) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly workspaceSymbol: (query: string) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly implementation: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly prepareCallHierarchy: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly incomingCalls: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
-  readonly outgoingCalls: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>>
+  readonly definition: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly references: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly hover: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly documentSymbol: (file: string) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly workspaceSymbol: (
+    file: string,
+    query: string,
+  ) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly implementation: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly prepareCallHierarchy: (
+    input: LocationInput,
+  ) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly incomingCalls: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
+  readonly outgoingCalls: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/LSP") {}
@@ -57,6 +62,21 @@ export class ServerUnavailableError extends Schema.TaggedErrorClass<ServerUnavai
   "LSP.ServerUnavailableError",
   { server: Schema.String, message: Schema.String },
 ) {}
+
+/**
+ * Every server that matched a navigation request was unavailable, exited, or
+ * timed out. Distinguishing this from a legitimate empty result lets a caller
+ * report "no language server answered" instead of the misleading "no results".
+ */
+export class RequestUnavailableError extends Schema.TaggedErrorClass<RequestUnavailableError>()(
+  "LSP.RequestUnavailableError",
+  { operation: Schema.String, servers: Schema.Array(Schema.String) },
+) {
+  override get message() {
+    const tried = this.servers.length > 0 ? this.servers.join(", ") : "no matching server"
+    return `No language server answered ${this.operation} (tried ${tried}).`
+  }
+}
 
 type Resolved = {
   readonly id: string
@@ -231,40 +251,61 @@ const layer = Layer.effect(
       return uri
     })
 
-    /** Every matching, live connection for a file with its document opened. */
+    /** Every matching connection for a file with its document opened, plus ids that failed to start. */
     const connectionsFor = Effect.fnUntraced(function* (file: string) {
       const extension = path.extname(file)
-      const result: Array<{ readonly connection: LSPClient.Connection; readonly uri: string }> = []
+      const live: Array<{
+        readonly serverID: string
+        readonly connection: LSPClient.Connection
+        readonly uri: string
+      }> = []
+      const failed: string[] = []
       for (const server of servers.values()) {
         if (!server.extensions.includes(extension)) continue
         const connection = yield* ensure(server)
-        if (!connection) continue
-        result.push({ connection, uri: yield* openDocument(server, connection, file) })
+        if (!connection) {
+          failed.push(server.id)
+          continue
+        }
+        live.push({ serverID: server.id, connection, uri: yield* openDocument(server, connection, file) })
       }
-      return result
+      return { live, failed }
     })
 
-    // A failed, exited, or hung server must not fail the tool: its rejection is
-    // absorbed into `None` and the caller reports no results for that server.
+    // A server rejection or timeout is absorbed into `None` here; the caller
+    // decides whether the aggregate is a partial success or a surfaced failure.
     const requestValue = (connection: LSPClient.Connection, method: string, params: unknown) =>
       Effect.tryPromise({
         try: () => connection.request(method, params, { timeoutMs: REQUEST_TIMEOUT_MS }),
         catch: (cause) => cause,
       }).pipe(Effect.option)
 
-    const requestOn = Effect.fnUntraced(function* (file: string, method: string, params: (uri: string) => unknown) {
-      const connections = yield* connectionsFor(file)
+    /**
+     * Runs one request across every matching server. A server that answers —
+     * even with an empty list — counts as success; only when nothing answers
+     * does the aggregate fail, so a partial success still returns its results.
+     */
+    const runOnFile = Effect.fnUntraced(function* (file: string, method: string, params: (uri: string) => unknown) {
+      const { live, failed } = yield* connectionsFor(file)
+      const failures = [...failed]
       const results: unknown[] = []
-      for (const item of connections) {
+      let answered = 0
+      for (const item of live) {
         const value = yield* requestValue(item.connection, method, params(item.uri))
-        if (Option.isSome(value)) results.push(value.value)
+        if (Option.isNone(value)) {
+          failures.push(item.serverID)
+          continue
+        }
+        answered++
+        results.push(value.value)
       }
+      if (answered === 0) return yield* new RequestUnavailableError({ operation: method, servers: failures })
       return flatten(results)
     })
 
     const locationRequest = (method: string) =>
       Effect.fn(`LSP.${method}`)(function* (input: LocationInput) {
-        return yield* requestOn(input.file, method, (uri) => ({
+        return yield* runOnFile(input.file, method, (uri) => ({
           textDocument: { uri },
           position: { line: input.line, character: input.character },
         }))
@@ -293,20 +334,35 @@ const layer = Layer.effect(
     const prepareCallHierarchy = locationRequest("textDocument/prepareCallHierarchy")
 
     const callHierarchy = Effect.fnUntraced(function* (input: LocationInput, direction: string) {
-      const connections = yield* connectionsFor(input.file)
+      const { live, failed } = yield* connectionsFor(input.file)
+      const failures = [...failed]
       const results: unknown[] = []
-      for (const item of connections) {
+      let answered = 0
+      for (const item of live) {
         const prepared = yield* requestValue(item.connection, "textDocument/prepareCallHierarchy", {
           textDocument: { uri: item.uri },
           position: { line: input.line, character: input.character },
         })
-        if (Option.isNone(prepared)) continue
+        if (Option.isNone(prepared)) {
+          failures.push(item.serverID)
+          continue
+        }
         const items: ReadonlyArray<unknown> = Array.isArray(prepared.value) ? prepared.value : []
         const first = items.find((entry) => entry !== null && entry !== undefined)
-        if (first === undefined) continue
+        // An empty prepare result is a legitimate "no call hierarchy" answer.
+        if (first === undefined) {
+          answered++
+          continue
+        }
         const calls = yield* requestValue(item.connection, direction, { item: first })
-        if (Option.isSome(calls)) results.push(calls.value)
+        if (Option.isNone(calls)) {
+          failures.push(item.serverID)
+          continue
+        }
+        answered++
+        results.push(calls.value)
       }
+      if (answered === 0) return yield* new RequestUnavailableError({ operation: direction, servers: failures })
       return flatten(results)
     })
 
@@ -329,16 +385,30 @@ const layer = Layer.effect(
       references,
       hover,
       documentSymbol: Effect.fn("LSP.documentSymbol")(function* (file: string) {
-        return yield* requestOn(file, "textDocument/documentSymbol", (uri) => ({ textDocument: { uri } }))
+        return yield* runOnFile(file, "textDocument/documentSymbol", (uri) => ({ textDocument: { uri } }))
       }),
-      workspaceSymbol: Effect.fn("LSP.workspaceSymbol")(function* (query: string) {
+      workspaceSymbol: Effect.fn("LSP.workspaceSymbol")(function* (file: string, query: string) {
+        // Mirror V1: start the file's matching server, then query every
+        // connected server so symbols from other open projects still surface.
+        const { live, failed } = yield* connectionsFor(file)
+        const target = new Map<string, LSPClient.Connection>()
+        for (const item of live) target.set(item.serverID, item.connection)
+        for (const [id, connection] of clients) if (!target.has(id)) target.set(id, connection)
+        const failures = [...failed]
         const results: unknown[] = []
-        for (const connection of clients.values()) {
+        let answered = 0
+        for (const [id, connection] of target) {
           const value = yield* requestValue(connection, "workspace/symbol", { query })
-          if (Option.isNone(value)) continue
+          if (Option.isNone(value)) {
+            failures.push(id)
+            continue
+          }
+          answered++
           const symbols: ReadonlyArray<unknown> = Array.isArray(value.value) ? value.value : []
           results.push(...symbols.filter(isWorkspaceSymbol).slice(0, WORKSPACE_SYMBOL_LIMIT))
         }
+        if (answered === 0)
+          return yield* new RequestUnavailableError({ operation: "workspace/symbol", servers: failures })
         return results
       }),
       implementation,

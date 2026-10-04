@@ -65,24 +65,29 @@ const filesystem = Layer.effect(
 const mockServer = (flags: ReadonlyArray<string> = []) =>
   new ConfigLSP.Server({
     command: ["bun", path.resolve(import.meta.dir, "fixture/mock-lsp.ts"), ...flags],
-    extensions: [".ts"],
+    extensions: [".mockts"],
   })
 
-const config = (lsp: ConfigLSP.Server) =>
+const config = (lsp: ConfigLSP.Server | Readonly<Record<string, ConfigLSP.Server>>) =>
   Layer.succeed(
     Config.Service,
     Config.Service.of({
       entries: () =>
-        Effect.succeed([new Config.Document({ type: "document", info: new Config.Info({ lsp: { mock: lsp } }) })]),
+        Effect.succeed([
+          new Config.Document({
+            type: "document",
+            info: new Config.Info({ lsp: lsp instanceof ConfigLSP.Server ? { mock: lsp } : lsp }),
+          }),
+        ]),
     }),
   )
 
-// `lsp` wires one language server into the Location; without it the LSP service
-// has no configured server and `hasClients` is false.
+// `lsp` wires one or more language servers into the Location; without it the LSP
+// service has no configured server and `hasClients` is false.
 const withTool = <A, E, R>(
   directory: string,
   body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
-  lsp?: ConfigLSP.Server,
+  lsp?: ConfigLSP.Server | Readonly<Record<string, ConfigLSP.Server>>,
 ) => {
   const activeLocation = Layer.succeed(
     Location.Service,
@@ -148,13 +153,13 @@ describe("LspTool", () => {
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
               tmp.path,
               (registry) =>
                 Effect.gen(function* () {
-                  const cursor = { filePath: "code.ts", line: 3, character: 7 }
+                  const cursor = { filePath: "code.mockts", line: 3, character: 7 }
                   const operations = [
                     { input: { operation: "goToDefinition" as const, ...cursor }, marker: "MOCK_DEFINITION" },
                     { input: { operation: "findReferences" as const, ...cursor }, marker: "MOCK_REFERENCE" },
@@ -194,16 +199,16 @@ describe("LspTool", () => {
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
               tmp.path,
               (registry) =>
                 Effect.gen(function* () {
-                  yield* run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 1, character: 1 })
+                  yield* run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 })
                   const result = yield* run(registry, {
                     operation: "workspaceSymbol",
-                    filePath: "code.ts",
+                    filePath: "code.mockts",
                     line: 1,
                     character: 1,
                     query: "Widget",
@@ -225,22 +230,22 @@ describe("LspTool", () => {
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
               tmp.path,
               (registry) =>
                 Effect.gen(function* () {
-                  yield* run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 3, character: 7 })
-                  yield* run(registry, { operation: "documentSymbol", filePath: "code.ts", line: 3, character: 7 })
+                  yield* run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 3, character: 7 })
+                  yield* run(registry, { operation: "documentSymbol", filePath: "code.mockts", line: 3, character: 7 })
                   yield* run(registry, {
                     operation: "workspaceSymbol",
-                    filePath: "code.ts",
+                    filePath: "code.mockts",
                     line: 3,
                     character: 7,
                     query: "X",
                   })
-                  const canonical = path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "code.ts")
+                  const canonical = path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "code.mockts")
                   expect(assertions.map((item) => item.action)).toEqual(["lsp", "lsp", "lsp"])
                   expect(assertions[0]).toMatchObject({ resources: ["*"], save: ["*"] })
                   expect(assertions[0]?.metadata).toEqual({
@@ -266,10 +271,10 @@ describe("LspTool", () => {
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(tmp.path, (registry) =>
-              run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 1, character: 1 }),
+              run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
             ),
           ),
           Effect.tap((result) =>
@@ -291,12 +296,13 @@ describe("LspTool", () => {
         reset()
         return withTool(
           tmp.path,
-          (registry) => run(registry, { operation: "goToDefinition", filePath: "missing.ts", line: 1, character: 1 }),
+          (registry) =>
+            run(registry, { operation: "goToDefinition", filePath: "missing.mockts", line: 1, character: 1 }),
           mockServer(),
         ).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              expect(result).toEqual({ type: "error", value: "File not found: missing.ts" })
+              expect(result).toEqual({ type: "error", value: "File not found: missing.mockts" })
               expect(assertions.map((item) => item.action)).toEqual(["lsp"])
               expect(reads).toBe(0)
             }),
@@ -307,22 +313,26 @@ describe("LspTool", () => {
     ),
   )
 
-  it.live("returns no results when the server exits before initialize", () =>
+  it.live("surfaces a failure when the server exits before initialize", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
               tmp.path,
-              (registry) => run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 1, character: 1 }),
+              (registry) =>
+                run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
               mockServer(["--exit-before-initialize"]),
             ),
           ),
           Effect.tap((result) =>
             Effect.sync(() => {
-              expect(result).toEqual({ type: "text", value: "No results found for goToDefinition" })
+              expect(result).toEqual({
+                type: "error",
+                value: "No language server answered goToDefinition (tried mock).",
+              })
               expect(reads).toBe(0)
             }),
           ),
@@ -332,17 +342,81 @@ describe("LspTool", () => {
     ),
   )
 
-  it.live("returns no results when the server exits while answering a request", () =>
+  it.live("surfaces a failure when the server exits while answering a request", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
               tmp.path,
-              (registry) => run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 1, character: 1 }),
+              (registry) =>
+                run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
               mockServer(["--exit-on-request"]),
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result).toEqual({
+                type: "error",
+                value: "No language server answered goToDefinition (tried mock).",
+              })
+              expect(reads).toBeGreaterThan(0)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  // A server that never answers is bounded by the client request timeout, and
+  // the resulting failure is surfaced instead of looking like an empty result.
+  it.live(
+    "surfaces a failure when the server hangs past the request timeout",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => {
+          reset()
+          return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
+            Effect.andThen(
+              withTool(
+                tmp.path,
+                (registry) =>
+                  run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
+                mockServer(["--hang-navigation"]),
+              ),
+            ),
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                expect(result).toEqual({
+                  type: "error",
+                  value: "No language server answered goToDefinition (tried mock).",
+                })
+                expect(reads).toBeGreaterThan(0)
+              }),
+            ),
+          )
+        },
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    15_000,
+  )
+
+  it.live("keeps a legitimate empty result distinct from an unavailable server", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
+          Effect.andThen(
+            withTool(
+              tmp.path,
+              (registry) =>
+                run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
+              mockServer(["--empty"]),
             ),
           ),
           Effect.tap((result) =>
@@ -357,12 +431,75 @@ describe("LspTool", () => {
     ),
   )
 
+  it.live("surfaces a failure when the only matching server cannot start", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
+          Effect.andThen(
+            withTool(
+              tmp.path,
+              (registry) =>
+                run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
+              new ConfigLSP.Server({
+                command: ["miao-missing-lsp-binary-xyz"],
+                extensions: [".mockts"],
+              }),
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result).toEqual({
+                type: "error",
+                value: "No language server answered goToDefinition (tried mock).",
+              })
+              expect(reads).toBe(0)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("keeps partial results when one of two matching servers answers", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
+          Effect.andThen(
+            withTool(
+              tmp.path,
+              (registry) =>
+                run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
+              {
+                mock: mockServer(),
+                broken: new ConfigLSP.Server({
+                  command: ["miao-missing-lsp-binary-xyz"],
+                  extensions: [".mockts"],
+                }),
+              },
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(textOf(result)).toContain("MOCK_DEFINITION")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("approves an explicit external path before reading it or requesting", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       ([active, outside]) => {
         reset()
-        const target = path.join(outside.path, "code.ts")
+        const target = path.join(outside.path, "code.mockts")
         return Effect.promise(() => fs.writeFile(target, "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
@@ -393,7 +530,7 @@ describe("LspTool", () => {
       ([active, outside]) => {
         reset()
         denyAction = "external_directory"
-        const target = path.join(outside.path, "code.ts")
+        const target = path.join(outside.path, "code.mockts")
         return Effect.promise(() => fs.writeFile(target, "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
@@ -424,17 +561,18 @@ describe("LspTool", () => {
       (tmp) => {
         reset()
         denyAction = "lsp"
-        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.ts"), "export const x = 1\n")).pipe(
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "code.mockts"), "export const x = 1\n")).pipe(
           Effect.andThen(
             withTool(
               tmp.path,
-              (registry) => run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 1, character: 1 }),
+              (registry) =>
+                run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 1, character: 1 }),
               mockServer(),
             ),
           ),
           Effect.tap((result) =>
             Effect.sync(() => {
-              expect(result).toEqual({ type: "error", value: "Unable to perform goToDefinition on code.ts" })
+              expect(result).toEqual({ type: "error", value: "Unable to perform goToDefinition on code.mockts" })
               expect(assertions.map((item) => item.action)).toEqual(["lsp"])
               expect(reads).toBe(0)
             }),
@@ -451,7 +589,7 @@ describe("LspTool", () => {
       (tmp) => {
         reset()
         return withTool(tmp.path, (registry) =>
-          run(registry, { operation: "goToDefinition", filePath: "code.ts", line: 0, character: 1 }),
+          run(registry, { operation: "goToDefinition", filePath: "code.mockts", line: 0, character: 1 }),
         ).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {

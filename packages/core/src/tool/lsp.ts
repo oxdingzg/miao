@@ -155,7 +155,7 @@ const layer = Layer.effectDiscard(
               if (!available) return yield* new ToolFailure({ message: "No LSP server available for this file type." })
 
               const position = { file: target.canonical, line: input.line - 1, character: input.character - 1 }
-              const result = yield* ((): Effect.Effect<ReadonlyArray<unknown>> => {
+              const result = yield* ((): Effect.Effect<ReadonlyArray<unknown>, LSP.RequestUnavailableError> => {
                 switch (input.operation) {
                   case "goToDefinition":
                     return lsp.definition(position)
@@ -166,7 +166,7 @@ const layer = Layer.effectDiscard(
                   case "documentSymbol":
                     return lsp.documentSymbol(target.canonical)
                   case "workspaceSymbol":
-                    return lsp.workspaceSymbol(input.query ?? "")
+                    return lsp.workspaceSymbol(target.canonical, input.query ?? "")
                   case "goToImplementation":
                     return lsp.implementation(position)
                   case "prepareCallHierarchy":
@@ -178,7 +178,16 @@ const layer = Layer.effectDiscard(
                   default:
                     return Effect.die(new Error("Unsupported LSP operation"))
                 }
-              })()
+              })().pipe(
+                Effect.mapError(
+                  (error) =>
+                    new ToolFailure({
+                      message: `No language server answered ${input.operation}${
+                        error.servers.length > 0 ? ` (tried ${[...new Set(error.servers)].join(", ")})` : ""
+                      }.`,
+                    }),
+                ),
+              )
 
               return {
                 operation: input.operation,

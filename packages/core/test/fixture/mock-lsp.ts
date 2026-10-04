@@ -5,6 +5,12 @@
 const flags = process.argv.slice(2)
 if (flags.includes("--exit-before-initialize")) process.exit(1)
 const exitOnRequest = flags.includes("--exit-on-request")
+// Survives the handshake but never answers a navigation request, modelling a
+// hung server so the client-side request timeout can be exercised for real.
+const hangNavigation = flags.includes("--hang-navigation")
+// Answers every navigation request with no result, modelling a legitimate
+// empty result that must stay distinct from an unavailable server.
+const emptyResults = flags.includes("--empty")
 
 type Message = {
   readonly id?: number
@@ -104,8 +110,9 @@ process.stdin.on("data", (chunk: Buffer) => {
         },
       })
     } else if (message.id !== undefined) {
+      if (hangNavigation) return
       if (exitOnRequest) process.exit(1)
-      send({ jsonrpc: "2.0", id: message.id, result: handle(message) ?? null })
+      send({ jsonrpc: "2.0", id: message.id, result: emptyResults ? null : (handle(message) ?? null) })
     }
   }
 })
