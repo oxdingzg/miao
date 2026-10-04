@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
+import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { EventV2 } from "@miao/core/event"
@@ -44,6 +45,12 @@ const GapEvent = EventV2.define({
   schema: { sessionID: SessionV2.ID, value: Schema.String },
 })
 
+const historyDecodedRows = () => {
+  const sample = DiagnosticMetrics.snapshot().find((entry) => entry.name === "core.history")
+  if (typeof sample?.value !== "object" || sample.value === null || !("decodedRows" in sample.value)) return -1
+  return typeof sample.value.decodedRows === "number" ? sample.value.decodedRows : -1
+}
+
 describe("SessionV2.history", () => {
   it.effect("reloads cached partial assistant rows when their durable revision changes", () =>
     Effect.gen(function* () {
@@ -70,6 +77,65 @@ describe("SessionV2.history", () => {
         finish: "stop",
         content: [{ type: "text", text: "OK" }],
       })
+    }),
+  )
+
+  it.effect("decodes only rows whose fingerprint changed when a streaming update keeps its sequence", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const created = yield* session.create({ location })
+      const answer = (assistantMessageID: SessionMessage.ID, text: string) => {
+        const base = { sessionID: created.id, assistantMessageID, timestamp: DateTime.makeUnsafe(0) }
+        return Effect.gen(function* () {
+          yield* events.publish(SessionEvent.Step.Started, {
+            ...base,
+            agent: "build",
+            model: { id: ModelV2.ID.make("gpt-6.1-sol"), providerID: ProviderV2.ID.openai },
+          })
+          yield* events.publish(SessionEvent.Text.Started, { ...base, textID: "text" })
+          yield* events.publish(SessionEvent.Text.Ended, { ...base, textID: "text", text })
+          yield* events.publish(SessionEvent.Step.Ended, {
+            ...base,
+            finish: "stop",
+            cost: 0,
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+        })
+      }
+      const stableID = SessionMessage.ID.create()
+      const streamingID = SessionMessage.ID.create()
+      const base = { sessionID: created.id, assistantMessageID: streamingID, timestamp: DateTime.makeUnsafe(0) }
+      yield* answer(stableID, "stable")
+      yield* events.publish(SessionEvent.Step.Started, {
+        ...base,
+        agent: "build",
+        model: { id: ModelV2.ID.make("gpt-6.1-sol"), providerID: ProviderV2.ID.openai },
+      })
+      yield* events.publish(SessionEvent.Text.Started, { ...base, textID: "text" })
+
+      // First load decodes every row.
+      const first = yield* session.context(created.id)
+      expect(first.map((message) => message.id)).toEqual([stableID, streamingID])
+      expect(first.at(-1)).toMatchObject({ id: streamingID, content: [{ type: "text", text: "" }] })
+
+      // An in-place update lands in a later millisecond and must reuse the unchanged row.
+      yield* Effect.promise(() => Bun.sleep(5))
+      const beforeUpdate = historyDecodedRows()
+      yield* events.publish(SessionEvent.Text.Ended, { ...base, textID: "text", text: "OK" })
+      const updated = yield* session.context(created.id)
+      expect(updated.map((message) => message.id)).toEqual([stableID, streamingID])
+      expect(updated.at(-1)).toMatchObject({ id: streamingID, content: [{ type: "text", text: "OK" }] })
+      expect(historyDecodedRows() - beforeUpdate).toBe(1)
+
+      // Appending a row still surfaces it, decoding only the new row.
+      const beforeAppend = historyDecodedRows()
+      yield* session.switchAgent({ sessionID: created.id, agent: "review" })
+      const appended = yield* session.context(created.id)
+      expect(appended.slice(0, 2).map((message) => message.id)).toEqual([stableID, streamingID])
+      expect(appended).toHaveLength(3)
+      expect(appended.at(-1)?.type).toBe("agent-switched")
+      expect(historyDecodedRows() - beforeAppend).toBe(1)
     }),
   )
 
