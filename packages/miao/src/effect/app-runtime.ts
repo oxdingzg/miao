@@ -2,6 +2,7 @@ import { Layer, ManagedRuntime } from "effect"
 import { attach } from "./run-service"
 import * as Observability from "@miao/core/observability"
 
+import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
 import { Database } from "@miao/core/database/database"
 import { Auth } from "@/auth"
@@ -46,6 +47,7 @@ export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
     Npm.node,
     FSUtil.node,
+    Blob.node,
     Database.node,
     Auth.node,
     Config.node,

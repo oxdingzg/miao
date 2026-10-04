@@ -463,14 +463,18 @@ miao db
 database tools
 
 Commands:
-  miao db [query]     open an interactive sqlite3 shell or run a query                     [default]
-  miao db path        print the database path
-  miao db stats       report database size and per-table / per-event-type usage
-  miao db vacuum      checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free space
-  miao db backfill    convert legacy V1 session messages into the V2 projection (idempotent)
-  miao db compact     retire legacy V1 storage once its history is projected (deletes events, drops
-                      tables, vacuums)
-  miao db restore     merge sessions from another database into this one (to roll back a compaction)
+  miao db [query]            open an interactive sqlite3 shell or run a query              [default]
+  miao db path               print the database path
+  miao db stats              report database size and per-table / per-event-type usage
+  miao db vacuum             checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free
+                             space
+  miao db backfill           convert legacy V1 session messages into the V2 projection (idempotent)
+  miao db compact            retire legacy V1 storage once its history is projected (deletes events,
+                             drops tables, vacuums)
+  miao db restore            merge sessions from another database into this one (to roll back a
+                             compaction)
+  miao db externalize-blobs  move existing inline attachments and tool files into the
+                             content-addressed blob store
 
 Positionals:
   query  SQL query to execute                                                               [string]
