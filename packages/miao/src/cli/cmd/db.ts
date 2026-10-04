@@ -4,8 +4,8 @@ import { readdir, stat } from "node:fs/promises"
 import { dirname, join } from "path"
 import { Blob } from "@miao/core/blob"
 import { Database } from "@miao/core/database/database"
-import { Blob } from "@miao/core/blob"
 import { SessionBackfill } from "@miao/core/session/backfill"
+import { SessionBlobGc } from "@miao/core/session/blob-gc"
 import { SessionBlobMigrate } from "@miao/core/session/blob-migrate"
 import { SessionCompact } from "@miao/core/session/compact"
 import { SessionRestore } from "@miao/core/session/restore"
@@ -293,6 +293,39 @@ const ExternalizeBlobsCommand = effectCmd({
   }),
 })
 
+const GcBlobsCommand = effectCmd({
+  command: "gc-blobs",
+  describe: "delete content-addressed blobs that no session row references",
+  instance: false,
+  builder: (yargs: Argv) =>
+    yargs
+      .option("yes", {
+        type: "boolean",
+        default: false,
+        describe: "required to delete; without it this only reports",
+      })
+      .option("grace-hours", {
+        type: "number",
+        default: 24,
+        describe: "only delete blobs last modified longer ago than this",
+      }),
+  handler: Effect.fn("Cli.db.gcBlobs")(function* (args: { yes: boolean; "grace-hours": number }) {
+    const { db } = yield* Database.Service
+    const blob = yield* Blob.Service
+    const directory = join(dirname(Database.path()), Blob.DIRECTORY)
+    const result = yield* SessionBlobGc.sweep({
+      blob,
+      db,
+      directory,
+      dryRun: !args.yes,
+      graceMs: args["grace-hours"] * 3_600_000,
+    })
+    console.log(`blobs: ${result.referenced} referenced, ${result.orphans} unreferenced (${mb(result.bytes)} MB)`)
+    if (args.yes) console.log(`deleted ${result.deleted} blob(s)`)
+    else if (result.orphans > 0) console.log("re-run with --yes to delete")
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
@@ -307,6 +340,7 @@ export const DbCommand = effectCmd({
       .command(CompactCommand)
       .command(RestoreCommand)
       .command(ExternalizeBlobsCommand)
+      .command(GcBlobsCommand)
       .demandCommand()
   },
   handler: Effect.fn("Cli.db")(function* () {}),

@@ -475,6 +475,7 @@ Commands:
                              compaction)
   miao db externalize-blobs  move existing inline attachments and tool files into the
                              content-addressed blob store
+  miao db gc-blobs           delete content-addressed blobs that no session row references
 
 Positionals:
   query  SQL query to execute                                                               [string]
