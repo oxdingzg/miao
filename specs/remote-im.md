@@ -1,5 +1,9 @@
 # miao remote：用 IM 遥控会话（设计稿）
 
+> 演进方案：见 [统一 Remote Control 技术方案](remote-control.md)。本文保留现有 IM 连接器、
+> Router 和 `/remote` 的设计及实现记录；多主机 Hub/Agent、当前 Session 分享、持续接入和 Web/App
+> 接入按新方案实施。新方案为待实现设计，不表示本文的现有能力已经升级。
+
 状态：已定稿，2026-10-02。依据：`specs/architecture.md`（Phase 4 的 IM 客户端提前做最小版）、
 微信 ClawBot / iLink 协议调研（`@tencent-weixin/openclaw-weixin@2.4.9` 源码与官方
 `docs/protocol_zh_CN.md`）。
