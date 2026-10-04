@@ -139,9 +139,9 @@ attachments and oversized tool output.
    drop `message` / `part` and compact the legacy event range.
 5. **Retention + GC:** snapshot-then-truncate the event log; mark-and-sweep blobs per project.
 
-### Status (2026-09-30)
+### Status (2026-10-04)
 
-Steps 1, 2 and 4 are implemented; 3 and 5 are open.
+Steps 1–4 are implemented; 5 is open.
 
 - Step 2 + 4: `miao db backfill` projects the V1 history through the fidelity mapping in
   `session/v1-read.ts` (`db backfill --verify` maps and encodes every row without writing), and
@@ -149,9 +149,17 @@ Steps 1, 2 and 4 are implemented; 3 and 5 are open.
   `part`, resets only the `event_sequence` rows it emptied, then vacuum. Measured locally:
   `miao-local.db` 816 MB → 48.8 MB; `miao.db` 2500.6 MB → 334.7 MB; `miao-main.db` 2153 MB →
   176.7 MB, with sampled transcripts byte-identical to their pre-compact baselines.
+- Step 3: prompt attachments are externalized on write
+  (`SessionBlobStorage.externalizePromptAttachments`), tool-result files are externalized at the
+  single tool-result settle boundary (`SessionBlobStorage.externalizeToolContent`), and reads
+  materialize `blob://` refs back to data URIs (`materializeBlobRefs` / `materializeToolContent`).
+  `miao db externalize-blobs` rewrites the inline payloads already stored in
+  `session_message.data` / `event.data`, and `miao db stats` reports the blob store and any
+  remaining inline base64.
 - The `<200 MB` acceptance is not met for `miao.db` yet: 297 MB of the remainder is
   `session_message`, which is now the single copy of the history (V1 held it twice, in `part` and
-  `message`). Reaching the target needs steps 3 and 5.
+  `message`). Reaching the target needs step 5 plus running the step-3 migration over the existing
+  rows.
 
 **Ordering precondition.** Compacting a database is only safe once every build that opens it
 carries the "legacy tables are retired" fallback (`SessionLegacyTables.present`). A build from
