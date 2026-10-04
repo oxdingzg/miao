@@ -65,4 +65,23 @@ describe("LSPClient.Connection", () => {
     await expect(pending).rejects.toThrow()
     void stdout
   })
+
+  test("rejects a request that exceeds its timeout and keeps the connection usable", async () => {
+    const { transport, stdin, stdout } = makeTransport()
+    const connection = new LSPClient.Connection(transport)
+
+    const firstWritten = new Promise<Buffer>((resolve) => stdin.once("data", (chunk: Buffer) => resolve(chunk)))
+    const timedOut = connection.request("textDocument/hover", {}, { timeoutMs: 20 })
+    const first = parse(await firstWritten)
+    await expect(timedOut).rejects.toThrow("LSP request timed out after 20ms: textDocument/hover")
+
+    // A response that arrives after the timeout is dropped rather than reviving
+    // the settled request, and the next request still correlates normally.
+    stdout.write(frame({ jsonrpc: "2.0", id: first.id, result: { contents: "late" } }))
+    const secondWritten = new Promise<Buffer>((resolve) => stdin.once("data", (chunk: Buffer) => resolve(chunk)))
+    const next = connection.request("textDocument/hover", {}, { timeoutMs: 200 })
+    const second = parse(await secondWritten)
+    stdout.write(frame({ jsonrpc: "2.0", id: second.id, result: { contents: "on time" } }))
+    expect(await next).toEqual({ contents: "on time" })
+  })
 })
