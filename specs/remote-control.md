@@ -67,12 +67,43 @@ flowchart TB
 
 Runtime、Agent、Hub 和 IM 网关优先采用现有 TypeScript/Bun 技术栈；Runtime 复用 Core/Server，Agent
 在宿主组合层调用明确的会话服务接口。Hub 是独立部署服务，只依赖 Schema/Protocol 及网络、认证、元数据存储，
-不依赖 Core。网页/App 复用现有 Client 与会话 UI；mtty 的入口和展示保持 Rust，只调用公开协议。
+不依赖 Core。网页复用现有 TS Client 与会话 UI；移动端优先原生 iOS App，Swift/SwiftUI 同时适配 iPhone/iPad，
+共享公开协议而非直接引用 TS Client。mtty 的入口和展示保持 Rust，只调用公开协议。
 加密实现单独选型，可使用成熟库或必要的原生/WASM 模块，不自行实现密码算法。
 
 远程会话客户端不强行模拟完整 HTTP Server：先抽出 UI/Router 所需的会话操作与流订阅接口，再分别实现直连与
 Hub 适配。现有 UI 的全局事件、项目文件、配置与集成查询依赖须列成明确白名单；无法安全支持的功能先隐藏。
 不能为了复用完整 SDK 而开放凭证、任意文件或管理路由。
+
+### 3.2 首个移动客户端：原生 iOS
+
+首版实现一个同时支持 iPhone 和 iPad 的 Universal App，使用 Swift、SwiftUI、Swift Concurrency；
+最低系统版本建议 iOS/iPadOS 17，实施前按测试设备确认。网页随后接入同一协议，Android 暂不列入首版。
+客户端负责连接与展示，模型、工具与文件操作仍在原执行主机上，不在手机运行 miao 内核。
+
+客户端模块包括 Swift 协议类型、认证/配对、Hub WebSocket 传输、E2EE 会话、事件 reducer、范围隔离缓存和
+SwiftUI 界面。网络使用 URLSession/URLSessionWebSocketTask；并发状态通过 actor 等串行机制管理。
+私钥与长期凭证存 Keychain；加密优先成熟实现，并验证 Swift 与 TS/Bun 的互操作，不默认两端算法和编码兼容。
+
+公开 wire schema 需支持 Swift Codable 类型生成或受校验的手工映射：固定时间、ID、整数序列、可空字段、
+联合类型 discriminator 和未知事件处理规则。使用共享 JSON 测试向量验证 Swift/TS 编解码、状态恢复及错误语义；
+公开 Protocol 的 TS Client 生成流程照常运行，另维护 Swift 契约验证，不把 TS 运行时嵌入 App。
+
+首版界面与能力：
+
+- 添加自己的 Hub、扫码/手动配对、设备撤销、在线状态和兼容性说明。
+- 主机 → 项目 → Session 列表，展示会话、工具活动、Markdown/代码和只读 diff。
+- 发送 prompt、steer/queue、审批、问答及有目标的中断；发送状态区分未提交、已接纳与结果不明。
+- iPhone 使用单列导航；iPad 使用自适应多列，支持窗口缩放、分屏、横竖屏、外接键盘和 Dynamic Type。
+- 每台设备独立配对；首版不通过 iCloud 自动复制设备身份，退出/撤销时清理范围缓存。
+
+iOS 切后台后不承诺 WebSocket 持续运行；回到前台重新认证、恢复目录与 Session 游标，不重发已接纳操作。
+本机任务继续运行。需要锁屏通知时采用 APNs，作为独立交付项：由 Agent 产生最小化通知信号，经 Hub 推送，
+默认只包含通用提示与不透明定位标识，不含 prompt、代码、审批正文或密钥；收到通知后打开 App 查询真实状态。
+设备 token 更新、推送凭证保管及通知绑定撤销单独管理，不把推送送达视为审批/操作确认。
+
+开发和发布需要支持所选 SDK 的 macOS/Xcode 构建环境；模拟器覆盖两种设备，真机验证扫码、弱网、后台恢复与
+Keychain。签名与 TestFlight/App Store 分发需要相应 Apple 开发者配置；证书、团队配置及 APNs 凭证放私有配置。
 
 ## 4. 执行归属与生命周期
 
@@ -246,7 +277,9 @@ WebSocket 心跳与代理超时需配套；Cloudflare 更新、Hub 重启等连�
 | A：执行归属 | 常驻 Runtime、服务发现与排他所有权、本地 attach；兼容 remote CLI | 第二进程不能重复执行；关闭 UI 任务继续；旧会话不能被误接管 |
 | B：统一入口 | `/remote-control` 与 `/remote` 别名、IM 向导、当前托管 Session 绑定 | 无额外命令完成微信/QQ 登录、服务启动及当前会话操作；取消/失败不显示成功 |
 | C：恢复与多端 | 会话访问接口、快照水位、目录恢复、幂等、审批恢复、背压 | 本地多客户端先验证；换网无持久化事件空洞；旧中断不停止新执行 |
-| D：Hub/Agent | 主机注册、设备授权、E2EE、远程传输、网页/App 主机列表 | 依赖 C；两主机与多 Runtime 可区分；权限在 Agent 校验；版本不匹配可诊断 |
+| D1：Hub/Agent | 主机注册、设备授权、E2EE、远程传输、Swift/TS 互操作契约 | 依赖 C；两主机与多 Runtime 可区分；权限在 Agent 校验；版本不匹配可诊断 |
+| D2：iOS App | Swift/SwiftUI Universal App、配对、列表、会话操作、后台恢复 | 依赖 D1；iPhone/iPad 真机接入同一 Session；共享协议向量通过 |
+| D3：其他客户端 | 网页复用现有 UI，APNs 通知独立交付 | 复用已验证协议；通知不泄露正文、不视为操作确认 |
 | E：IM 多主机 | 独立网关、跨主机 Router、身份绑定与通知 | 一个账号切换两主机；重启投递不重复；审批不串主机 |
 | F：现有会话分享 | 当前独立执行进程注册、临时分享 | 保持原所有者；TTL/撤销阻断后续操作；热交接另行设计 |
 
@@ -265,6 +298,7 @@ C/D 完成之前不宣称公网同步可用；D 的公网写入上线以前必�
 - 中断响应丢失后启动下一任务，旧操作重试不影响新执行；审批冲突和永久允许越权均被拒绝。
 - 网关在保存入站、发送请求、收到接纳、推进游标各阶段崩溃；重投保持目标及操作 ID，不因切换会话误投。
 - 微信/QQ 真机扫码、凭证失效、平台回复限制、审批冲突和待取结果；App/网页配对与撤销。
+- iPhone/iPad：分屏与尺寸变化、键盘和辅助功能；锁屏/后台/网络切换后补读不重发；Swift/TS 编解码及 E2EE 互操作。
 
 变更公开 Protocol/HttpApi 后按仓库规则重新生成 Client；在相关包运行 typecheck 和针对性测试。
 原生/Rust 编译和测试只在批准的远程构建主机执行。本文文档变更只进行链接、差异和隐私检查，不进行编译。
