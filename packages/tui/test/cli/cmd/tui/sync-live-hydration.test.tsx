@@ -189,6 +189,132 @@ test("orphan live deltas do not suppress hydrated parts", async () => {
   }
 })
 
+test("an observed stream survives a behind hydration before its part is projected", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  let resolveHistory!: (response: Response) => void
+  const history = new Promise<Response>((resolve) => {
+    resolveHistory = resolve
+  })
+  let requested = false
+  const { app, emit, sync } = await mount(
+    routes({
+      context: () => [assistant(messageID, 1, "你", partID)],
+      history: () => {
+        requested = true
+        return history
+      },
+    }),
+    tmp.path,
+  )
+  try {
+    const hydrate = sync.session.sync(sessionID)
+    await wait(() => requested)
+    emit(
+      global({
+        id: "evt_unprojected_start",
+        type: "session.next.text.started",
+        properties: { timestamp: 2, sessionID, assistantMessageID: messageID, textID: partID },
+      }),
+    )
+    for (const [index, delta] of ["你", "好", "🙂"].entries())
+      emit(
+        global({
+          id: `evt_unprojected_delta_${index}`,
+          type: "session.next.text.delta",
+          properties: { timestamp: index + 3, sessionID, assistantMessageID: messageID, textID: partID, delta },
+        }),
+      )
+    emit(
+      global({
+        id: "evt_unprojected_status",
+        type: "session.next.status",
+        properties: { timestamp: 6, sessionID, status: { type: "busy" } },
+      }),
+    )
+    await wait(() => sync.data.session_status[sessionID]?.type === "busy")
+    resolveHistory(json({ data: [], cursor: {} }))
+    await hydrate
+    expect(sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "你好🙂" })
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("a text end during hydration replaces a stale snapshot before its part is projected", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  let resolveHistory!: (response: Response) => void
+  const history = new Promise<Response>((resolve) => {
+    resolveHistory = resolve
+  })
+  let requested = false
+  let snapshot = "你"
+  const { app, emit, sync } = await mount(
+    routes({
+      context: () => [assistant(messageID, 1, snapshot, partID)],
+      history: () => {
+        requested = true
+        return history
+      },
+    }),
+    tmp.path,
+  )
+  try {
+    const hydrate = sync.session.sync(sessionID)
+    await wait(() => requested)
+    emit(
+      global({
+        id: "evt_settling_start",
+        type: "session.next.text.started",
+        properties: { timestamp: 2, sessionID, assistantMessageID: messageID, textID: partID },
+      }),
+    )
+    emit(
+      global({
+        id: "evt_settling_delta",
+        type: "session.next.text.delta",
+        properties: { timestamp: 3, sessionID, assistantMessageID: messageID, textID: partID, delta: "你好🙂" },
+      }),
+    )
+    emit(
+      global({
+        id: "evt_settling_end",
+        type: "session.next.text.ended",
+        properties: { timestamp: 4, sessionID, assistantMessageID: messageID, textID: partID, text: "你好" },
+      }),
+    )
+    emit(
+      global({
+        id: "evt_settling_step_end",
+        type: "session.next.step.ended",
+        properties: {
+          timestamp: 5,
+          sessionID,
+          assistantMessageID: messageID,
+          finish: "stop",
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      }),
+    )
+    emit(
+      global({
+        id: "evt_settling_status",
+        type: "session.next.status",
+        properties: { timestamp: 6, sessionID, status: { type: "idle" } },
+      }),
+    )
+    await wait(() => sync.data.session_status[sessionID]?.type === "idle")
+    snapshot = "你好"
+    resolveHistory(json({ data: [], cursor: {} }))
+    await hydrate
+    expect(sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "你好" })
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("hydration does not clear text streamed before it starts", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")

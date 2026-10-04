@@ -46,6 +46,7 @@ import { sessionInfo } from "./session-v2-read"
 import { toAgent, toCommand, toProviderCatalog, toProviderList, type ProviderCatalog } from "./v2-adapters"
 import { createSessionRefreshScheduler } from "./session-refresh"
 import { createTuiV2SessionReducer } from "./session-v2-reducer"
+import { createStreamText } from "./stream-text"
 import { createPendingPrompts } from "./pending-prompts"
 import { promptInputFromParts } from "./session-v2-write"
 import { SessionMessage } from "@miao/core/session/message"
@@ -308,13 +309,22 @@ export const {
     // touched ids back into the store's `message`/`part` shape.
     const sessionMessages = new Map<string, V2TranscriptMessage[]>()
     const v2Reducer = createTuiV2SessionReducer()
+    const streamText = createStreamText()
 
     // Text and reasoning fragments append in place. `touchPart` keeps an
     // in-flight re-hydration from clobbering the locally streamed value; the
     // durable `ended` event later replaces it with the authoritative text.
     const appendV2StreamText = (sessionID: string, messageID: string, partID: string, delta: string) => {
       const parts = store.part[messageID]
-      if (!parts?.some((part) => part.id === partID)) {
+      const part = parts?.find((part) => part.id === partID && (part.type === "text" || part.type === "reasoning"))
+      const text = streamText.append(
+        sessionID,
+        messageID,
+        partID,
+        delta,
+        part?.type === "text" || part?.type === "reasoning" ? part.text : undefined,
+      )
+      if (!part || text === undefined) {
         // The message or part has not been projected yet (for example the first
         // delta beats the `*.started` re-hydration, or the session is still
         // doing its initial sync). Ask for a refresh so the accumulated value
@@ -328,7 +338,7 @@ export const {
         messageID,
         produce((draft) => {
           const target = draft.find((part) => part.id === partID)
-          if (target?.type === "text" || target?.type === "reasoning") target.text += delta
+          if (target?.type === "text" || target?.type === "reasoning") target.text = text
         }),
       )
       // Keep the shadow in step with the streamed value as well, so a later
@@ -336,22 +346,51 @@ export const {
       const message = sessionMessages.get(sessionID)?.find((item) => item.id === messageID)
       if (message?.type !== "assistant") return
       const content = message.content.find((item) => item.id === partID)
-      if (content?.type === "text" || content?.type === "reasoning") content.text += delta
+      if (content?.type === "text" || content?.type === "reasoning") content.text = text
+    }
+
+    const endV2StreamText = (sessionID: string, messageID: string, partID: string, text: string, timestamp: number) => {
+      streamText.end(sessionID, messageID, partID, text, timestamp)
+      const part = store.part[messageID]?.find((part) => part.id === partID)
+      if (!part || (part.type !== "text" && part.type !== "reasoning")) return
+      touchPart(sessionID, partID)
+      setStore(
+        "part",
+        messageID,
+        produce((draft) => {
+          const target = draft.find((part) => part.id === partID)
+          if (target?.type !== "text" && target?.type !== "reasoning") return
+          target.text = text
+          if (target.type === "reasoning") target.time.end = timestamp
+        }),
+      )
+      const message = sessionMessages.get(sessionID)?.find((item) => item.id === messageID)
+      if (message?.type !== "assistant") return
+      const content = message.content.find((item) => item.id === partID)
+      if (content?.type !== "text" && content?.type !== "reasoning") return
+      content.text = text
+      if (content.type === "reasoning")
+        content.time = { created: content.time?.created ?? message.time.created, completed: timestamp }
     }
 
     // A locally streamed part can be longer than the server snapshot a full sync
     // just returned, because the sync started after the stream. Carry the longer
     // local value into the freshly seeded shadow so an incremental projection
     // does not roll it back before the authoritative `*.ended` arrives.
-    const mergeStreamedTextIntoShadow = (source: V2TranscriptMessage[]) => {
+    const mergeStreamedTextIntoShadow = (sessionID: string, source: V2TranscriptMessage[]) => {
       for (const message of source) {
         if (message.type !== "assistant") continue
         const parts = store.part[message.id]
         if (!parts) continue
         for (const content of message.content) {
           if (content.type !== "text" && content.type !== "reasoning") continue
+          content.text = streamText.reconcile(sessionID, message.id, content.id, content.text)
+          const completed = streamText.completed(sessionID, message.id, content.id)
+          if (content.type === "reasoning" && completed !== undefined)
+            content.time = { created: content.time?.created ?? message.time.created, completed }
           const part = parts.find((item) => item.id === content.id)
-          if (part?.type === content.type && part.text.length > content.text.length) content.text = part.text
+          if (completed === undefined && part?.type === content.type && part.text.length > content.text.length)
+            content.text = part.text
         }
       }
     }
@@ -475,7 +514,13 @@ export const {
           const index = current.findIndex((item) => item.id === message.info.id)
           if (index >= 0) setStore("message", sessionID, index, reconcile(message.info))
           else setStore("message", sessionID, (messages = []) => [...messages, message.info].toSorted(compareMessage))
-          setStore("part", message.info.id, reconcile(mergeProjectedParts(message.info.id, message.parts)))
+          const ended =
+            event.type === "session.next.text.ended"
+              ? event.properties.textID
+              : event.type === "session.next.reasoning.ended"
+                ? event.properties.reasoningID
+                : undefined
+          setStore("part", message.info.id, reconcile(mergeProjectedParts(message.info.id, message.parts, ended)))
         }
       })
       return true
@@ -483,12 +528,15 @@ export const {
 
     // A durable boundary can project slightly behind a fragment that already
     // reached the store; keep the local text rather than rolling it back.
-    function mergeProjectedParts(messageID: string, parts: Part[]): Part[] {
+    function mergeProjectedParts(messageID: string, parts: Part[], ended?: string): Part[] {
       const current = store.part[messageID]
       if (!current) return parts
       const byID = new Map(current.map((part) => [part.id, part]))
       return parts.map((part) => {
         const existing = byID.get(part.id)
+        // A settled part replaces optimistic text even when that local value
+        // is longer and happens to start with the authoritative final text.
+        if (part.id === ended) return part
         if (!existing) return part
         if (
           (part.type === "text" || part.type === "reasoning") &&
@@ -556,11 +604,16 @@ export const {
         }
         case "session.next.failed": {
           const input = event.properties
+          streamText.endMessage(input.sessionID)
+          if (!hydratingSessions.has(input.sessionID)) streamText.releaseEnded(input.sessionID)
           setStore("session_error", input.sessionID, input.error.message)
           setStore("session_status", input.sessionID, { type: "idle" })
           break
         }
         case "session.next.step.failed": {
+          streamText.endMessage(event.properties.sessionID, event.properties.assistantMessageID)
+          if (!hydratingSessions.has(event.properties.sessionID))
+            streamText.releaseEnded(event.properties.sessionID, event.properties.assistantMessageID)
           setStore("session_status", event.properties.sessionID, { type: "idle" })
           break
         }
@@ -754,6 +807,7 @@ export const {
           olderHistory.delete(id)
           loadingOlder.delete(id)
           v2Reducer.clear(id)
+          streamText.clear(id)
           pendingPrompts.clear(id)
           setStore(
             "session_error",
@@ -778,6 +832,44 @@ export const {
           break
         }
 
+        case "session.next.text.started": {
+          streamText.start(event.properties.sessionID, event.properties.assistantMessageID, event.properties.textID)
+          break
+        }
+        case "session.next.reasoning.started": {
+          streamText.start(
+            event.properties.sessionID,
+            event.properties.assistantMessageID,
+            event.properties.reasoningID,
+          )
+          break
+        }
+        case "session.next.text.ended": {
+          endV2StreamText(
+            event.properties.sessionID,
+            event.properties.assistantMessageID,
+            event.properties.textID,
+            event.properties.text,
+            event.properties.timestamp,
+          )
+          break
+        }
+        case "session.next.reasoning.ended": {
+          endV2StreamText(
+            event.properties.sessionID,
+            event.properties.assistantMessageID,
+            event.properties.reasoningID,
+            event.properties.text,
+            event.properties.timestamp,
+          )
+          break
+        }
+        case "session.next.step.ended": {
+          streamText.endMessage(event.properties.sessionID, event.properties.assistantMessageID)
+          if (!hydratingSessions.has(event.properties.sessionID))
+            streamText.releaseEnded(event.properties.sessionID, event.properties.assistantMessageID)
+          break
+        }
         case "session.next.text.delta": {
           appendV2StreamText(
             event.properties.sessionID,
@@ -1230,7 +1322,20 @@ export const {
                 }
                 const currentParts = store.part[message.info.id] ?? []
                 const currentByID = new Map(currentParts.map((part) => [part.id, part]))
-                const parts = message.parts.flatMap((part) => {
+                const parts = message.parts.flatMap((raw) => {
+                  const part =
+                    raw.type === "text"
+                      ? { ...raw, text: streamText.reconcile(sessionID, message.info.id, raw.id, raw.text) }
+                      : raw.type === "reasoning"
+                        ? {
+                            ...raw,
+                            text: streamText.reconcile(sessionID, message.info.id, raw.id, raw.text),
+                            time: {
+                              ...raw.time,
+                              end: streamText.completed(sessionID, message.info.id, raw.id) ?? raw.time.end,
+                            },
+                          }
+                        : raw
                   const current = currentByID.get(part.id)
                   if (tracker.parts.has(part.id)) return current ? [current] : []
                   if (
@@ -1263,8 +1368,9 @@ export const {
             // projected, then carry over text that streamed while this sync ran.
             sessionMessages.set(sessionID, messages.source)
             v2Reducer.clear(sessionID)
-            mergeStreamedTextIntoShadow(messages.source)
+            mergeStreamedTextIntoShadow(sessionID, messages.source)
             fullSyncedSessions.add(sessionID)
+            streamText.releaseEnded(sessionID)
           })().finally(() => {
             hydration.lastMs = performance.now() - started
             hydration.totalMs += hydration.lastMs
