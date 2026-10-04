@@ -32,9 +32,15 @@ Windows binaries are currently unsigned. The `publish` step records this status 
   - Preview a range: `bun script/changelog.ts --from <previous> --to HEAD --version <x.y.z> --print`
   - Write into `CHANGELOG.md`: add `--write`
   - At release time `script/version.ts` calls it with `--to <sha>` to produce `UPCOMING_CHANGELOG.md`, which becomes the release notes.
+- Release notes are **English and always link to a Simplified Chinese mirror**:
+  `docs/releases/<tag>.zh.md`, linked as `[简体中文](…)` under the first
+  heading. Write the mirror before dispatching a release — `script/release-notes.ts`
+  fails the publish job when it is missing. The same rule applies to every miao
+  project, including `miao-term`.
 
 ## Pre-release checklist
 
+- [ ] `docs/releases/<x.y.z>.zh.md` exists: the Simplified Chinese mirror the release body links to.
 - [ ] Windows real-machine VT verification: PowerShell 5.1 legacy console / Windows Terminal / pwsh 7 (the logic is only verified on macOS so far).
 - [ ] `curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash` installs that release.
 - [ ] `miao upgrade` and the startup update check point at `oxdingzg/miao` and detect the new version.

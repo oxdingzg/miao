@@ -82,14 +82,18 @@ jobs:
       - cli
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: Publish the draft release
         run: |
           set -euo pipefail
           release="v${{ needs.version.outputs.version }}"
           repo="${{ needs.version.outputs.repo }}"
           notes=$(gh release view "$release" --repo "$repo" --json body -q .body)
-          footer='Windows binaries are currently unsigned.'
-          { printf '%s\n\n---\n\n' "$notes"; printf '%s\n' "$footer"; } > body.md
+          # Release bodies are English, with a 简体中文 link to the mirror at
+          # docs/releases/<tag>.zh.md. The helper fails if the mirror is missing.
+          printf '%s' "$notes" | GH_REPO="$repo" bun script/release-notes.ts "$release" > body.md
+          printf '\n---\n\n%s\n' 'Windows binaries are currently unsigned.' >> body.md
           gh release edit "$release" --repo "$repo" --draft=false --notes-file body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
