@@ -947,9 +947,24 @@ const layer = Layer.effect(
       const selection = yield* agents.select(request.agent)
       if (!selection.info) return yield* new ToolFailure({ message: `Unknown agent type: ${request.agent}` })
       const resumed = request.taskId ? yield* store.get(SessionSchema.ID.make(request.taskId)) : undefined
-      const child =
-        resumed ??
-        (yield* creation.create({ parentID: parentSessionID, agent: selection.id, location: parent.location }))
+      const parentContext = yield* store.context(parentSessionID)
+      const parentAssistant = parentContext.findLast((message) => message.type === "assistant")
+      // Inherit the active turn, including a sampled model that changed after resolution.
+      const model = selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : parent.model)
+      const child = resumed ?? (yield* creation.create({
+        parentID: parentSessionID,
+        agent: selection.id,
+        location: parent.location,
+        model,
+      }))
+      // Older children were created without a model and fell back to the Location default.
+      if (resumed && !resumed.model && model)
+        yield* events.publish(SessionEvent.ModelSwitched, {
+          sessionID: child.id,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(Date.now()),
+          model,
+        })
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: child.id,

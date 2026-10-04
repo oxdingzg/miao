@@ -1995,61 +1995,99 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("runs a subagent through the session-scoped task tool", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (build) => {
-          build.mode = "primary"
-        }),
-      )
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate this" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({
-            id: "call-task",
-            name: "task",
-            input: { description: "child", prompt: "Say sub", subagent_type: "build" },
+  ;[
+    { name: "inherits the parent turn model instead of the global default for subagents", override: false, resume: false },
+    { name: "honors an explicit subagent model instead of the parent model", override: true, resume: false },
+    { name: "repairs an unconfigured resumed subagent model", override: false, resume: true },
+  ].forEach((test) =>
+    it.effect(test.name, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const agent = yield* AgentV2.Service
+        yield* agent.transform((editor) =>
+          editor.update(AgentV2.ID.make("build"), (build) => {
+            build.mode = "primary"
+            if (test.override)
+              build.model = { id: ModelV2.ID.make("fake-model"), providerID: ProviderV2.ID.make("fake") }
           }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-sub" }),
-          LLMEvent.textDelta({ id: "text-sub", text: "Sub result" }),
-          LLMEvent.textEnd({ id: "text-sub" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-final" }),
-          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
-          LLMEvent.textEnd({ id: "text-final" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
+        )
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate this" }), resume: false })
 
-      yield* session.resume(sessionID)
+        const events = yield* EventV2.Service
+        yield* events.publish(SessionEvent.ModelSwitched, {
+          sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(1),
+          model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("fake") },
+        })
 
-      const context = yield* (yield* SessionStore.Service).context(sessionID)
-      const tool = context
-        .flatMap((message) => (message.type === "assistant" ? message.content : []))
-        .find((item) => item.type === "tool" && item.name === "task")
-      expect(tool).toMatchObject({
-        type: "tool",
-        name: "task",
-        state: { status: "completed", structured: { text: "Sub result" } },
-      })
-      expect(requests).toHaveLength(3)
-    }),
+        const resumed = test.resume ? yield* session.create({
+          parentID: sessionID,
+          agent: AgentV2.ID.make("build"),
+          location: { directory: AbsolutePath.make("/project") },
+        }) : undefined
+
+        requests.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-task",
+              name: "task",
+              input: { description: "child", prompt: "Say sub", subagent_type: "build", task_id: resumed?.id },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-sub" }),
+            LLMEvent.textDelta({ id: "text-sub", text: "Sub result" }),
+            LLMEvent.textEnd({ id: "text-sub" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-final" }),
+            LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+            LLMEvent.textEnd({ id: "text-final" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+
+        yield* session.resume(sessionID)
+
+        const context = yield* (yield* SessionStore.Service).context(sessionID)
+        const tool = context
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((item) => item.type === "tool" && item.name === "task")
+        expect(tool).toMatchObject({
+          type: "tool",
+          name: "task",
+          state: { status: "completed", structured: { text: "Sub result" } },
+        })
+        expect(requests.map((request) => request.model)).toEqual([
+          replacementModel,
+          test.override ? model : replacementModel,
+          replacementModel,
+        ])
+        const store = yield* SessionStore.Service
+        const database = yield* Database.Service
+        const child = yield* database.db
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(eq(SessionTable.parent_id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        expect((yield* store.get(child!.id))?.model).toMatchObject({
+          id: test.override ? "fake-model" : "replacement",
+          providerID: "fake",
+        })
+      }),
+    ),
   )
 
   it.effect("reports a failed subagent as an error instead of empty output", () =>
