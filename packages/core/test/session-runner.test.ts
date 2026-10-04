@@ -453,7 +453,10 @@ const insertSession = (id: SessionV2.ID) =>
       .pipe(Effect.orDie)
   })
 
+let todoBaseline = ""
 const setup = Effect.gen(function* () {
+  const todos = yield* SessionTodo.Service
+  todoBaseline = (yield* SystemContext.initialize(SessionTodo.context(todos, sessionID))).baseline
   const { db } = yield* Database.Service
   response = []
   systemBaseline = "Initial context"
@@ -927,6 +930,61 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("observes current todos across resumes and compaction without auto-completing work", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      const events = yield* EventV2.Service
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "release acceptance", status: "in_progress", priority: "high" }],
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
+      requests.length = 0
+      response = []
+      yield* session.resume(sessionID)
+      expect(requests[0]?.system.map((part) => part.text).join("\n")).toContain("release acceptance")
+      expect((yield* todos.get(sessionID))[0]?.status).toBe("in_progress")
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "release acceptance", status: "completed", priority: "high" }],
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(requests.flatMap(systemTexts)).toContainEqual(expect.stringContaining('"status": "completed"'))
+      const compactionID = SessionMessage.ID.create()
+      yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID,
+        messageID: compactionID,
+        timestamp: DateTime.makeUnsafe(1),
+        reason: "manual",
+      })
+      yield* events.publish(SessionEvent.Compaction.Ended, {
+        sessionID,
+        messageID: compactionID,
+        timestamp: DateTime.makeUnsafe(2),
+        reason: "manual",
+        text: "summary",
+        recent: "",
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Resume after compacting" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(
+        requests
+          .at(-1)
+          ?.system.map((part) => part.text)
+          .join("\n"),
+      ).toContain('"status": "completed"')
+      expect(
+        requests
+          .at(-1)
+          ?.system.map((part) => part.text)
+          .join("\n"),
+      ).not.toContain('"status": "in_progress"')
+    }),
+  )
+
   it.effect("reuses one durable baseline after the context producer changes", () =>
     Effect.gen(function* () {
       yield* setup
@@ -941,8 +999,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context"],
-        [persona, "Initial context"],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Initial context\n\n${todoBaseline}`],
       ])
       expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
       expect(requests[1]?.messages.at(-1)?.content).toEqual([{ type: "text", text: "Changed context" }])
@@ -978,7 +1036,7 @@ describe("SessionRunnerLLM", () => {
       response = fragmentFixture("text", "text-build", ["Done"]).completeEvents
       yield* session.resume(sessionID)
 
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Build agent instructions", "Initial context"])
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Build agent instructions", `Initial context\n\n${todoBaseline}`])
     }),
   )
 
@@ -1004,7 +1062,7 @@ describe("SessionRunnerLLM", () => {
       response = fragmentFixture("text", "text-reviewer", ["Done"]).completeEvents
       yield* session.resume(sessionID)
 
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Reviewer instructions", "Initial context"])
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Reviewer instructions", `Initial context\n\n${todoBaseline}`])
       expect((yield* session.messages({ sessionID }))[0]).toMatchObject({ type: "assistant", agent: "reviewer" })
     }),
   )
@@ -1033,7 +1091,7 @@ describe("SessionRunnerLLM", () => {
       response = fragmentFixture("text", "text-selected", ["Done"]).completeEvents
       yield* session.resume(sessionID)
 
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Reviewer instructions", "Initial context"])
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Reviewer instructions", `Initial context\n\n${todoBaseline}`])
       expect((yield* session.messages({ sessionID }))[0]).toMatchObject({ type: "assistant", agent: "reviewer" })
     }),
   )
@@ -1060,8 +1118,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context\n\nBuild skills"],
-        [persona, "Initial context\n\nBuild skills"],
+        [persona, `Initial context\n\nBuild skills\n\n${todoBaseline}`],
+        [persona, `Initial context\n\nBuild skills\n\n${todoBaseline}`],
       ])
       expect(systemTexts(requests[1]!)).toContainEqual(expect.stringContaining("Reviewer skills"))
     }),
@@ -1094,7 +1152,7 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context\n\nBuild skills"],
+        [persona, `Initial context\n\nBuild skills\n\n${todoBaseline}`],
       ])
     }),
   )
@@ -1123,7 +1181,7 @@ describe("SessionRunnerLLM", () => {
       response = []
       yield* session.resume(sessionID)
       expect(requests.map((request) => request.model)).toEqual([model])
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([[persona, "Initial context"]])
+      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([[persona, `Initial context\n\n${todoBaseline}`]])
     }),
   )
 
@@ -1140,7 +1198,7 @@ describe("SessionRunnerLLM", () => {
 
       // A role-free agent inherits the family persona, which leads the request
       // ahead of the durable context baseline.
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual([persona, "Initial context"])
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual([persona, `Initial context\n\n${todoBaseline}`])
       expect((yield* agents.get(AgentV2.defaultID))?.system).toBeUndefined()
     }),
   )
@@ -1190,9 +1248,9 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context"],
-        [persona, "Initial context"],
-        [persona, "Initial context"],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Initial context\n\n${todoBaseline}`],
       ])
       expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
       expect(requests[2]?.messages.filter((message) => message.role === "system")).toHaveLength(2)
@@ -1236,9 +1294,9 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context"],
-        [persona, "Initial context"],
-        [persona, "Initial context"],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Initial context\n\n${todoBaseline}`],
       ])
     }),
   )
@@ -1273,8 +1331,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context"],
-        [persona, "Replacement context"],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Replacement context\n\n${todoBaseline}`],
       ])
       yield* replaySessionProjection(sessionID)
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
@@ -1634,7 +1692,7 @@ describe("SessionRunnerLLM", () => {
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
       yield* session.resume(sessionID)
 
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual([persona, "Initial context"])
+      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual([persona, `Initial context\n\n${todoBaseline}`])
       expect(systemTexts(requests.at(-1)!)).toContain("Changed context")
     }),
   )
@@ -2425,8 +2483,8 @@ describe("SessionRunnerLLM", () => {
 
       expect(requests.map((request) => request.model)).toEqual([model, replacementModel])
       expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        [persona, "Initial context"],
-        [persona, "Initial context"],
+        [persona, `Initial context\n\n${todoBaseline}`],
+        [persona, `Initial context\n\n${todoBaseline}`],
       ])
       expect(systemTexts(requests[1]!)).toContain("Replacement context")
     }),

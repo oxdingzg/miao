@@ -10,6 +10,7 @@ import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionTable, TodoTable } from "@miao/core/session/sql"
+import { SystemContext } from "@miao/core/system-context"
 import { SessionTodo } from "@miao/core/session/todo"
 import { testEffect } from "./lib/effect"
 
@@ -38,6 +39,41 @@ const setup = Effect.gen(function* () {
 })
 
 describe("SessionTodo", () => {
+  it.effect("refreshes persisted task context, survives replacement and isolates sessions", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const todos = yield* SessionTodo.Service
+      const source = SessionTodo.context(todos, sessionID)
+      const empty = yield* SystemContext.initialize(source)
+      expect(empty.baseline).toContain("Update it before a final response or handoff")
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "verify release", status: "in_progress", priority: "high" }],
+      })
+      const resumed = yield* SystemContext.initialize(source)
+      expect(resumed.baseline).toContain('"content": "verify release"')
+      expect(resumed.baseline).toContain('"status": "in_progress"')
+      expect(yield* SystemContext.reconcile(source, resumed.snapshot)).toEqual({ _tag: "Unchanged" })
+      yield* todos.update({ sessionID, todos: [{ content: "verify release", status: "completed", priority: "high" }] })
+      const updated = yield* SystemContext.reconcile(source, resumed.snapshot)
+      expect(updated._tag).toBe("Updated")
+      if (updated._tag !== "Updated") throw new Error("expected todo context update")
+      expect(updated.text).toContain('"status": "completed"')
+      const compacted = yield* SystemContext.replace(source, updated.snapshot)
+      expect(compacted._tag).toBe("ReplacementReady")
+      if (compacted._tag !== "ReplacementReady") throw new Error("expected replacement")
+      expect(compacted.generation.baseline).toContain('"status": "completed"')
+      const other = yield* SystemContext.initialize(SessionTodo.context(todos, SessionV2.ID.make("ses_other")))
+      expect(other.baseline).not.toContain("verify release")
+      yield* todos.update({ sessionID, todos: [] })
+      const cleared = yield* SystemContext.reconcile(source, updated.snapshot)
+      expect(cleared._tag).toBe("Updated")
+      if (cleared._tag !== "Updated") throw new Error("expected cleared context")
+      expect(cleared.text).not.toContain("verify release")
+      expect(cleared.text).toContain("[]")
+    }),
+  )
+
   it.effect("replaces persisted todos in order and publishes updates", () =>
     Effect.gen(function* () {
       yield* setup
