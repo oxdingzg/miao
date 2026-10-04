@@ -240,6 +240,69 @@ describe("server session", () => {
     expect(store.data.todo.child?.[0]?.content).toBe("after")
   })
 
+  test("a reconnect during the first todo fetch still refreshes after it settles", async () => {
+    const stale = [{ content: "stale", status: "pending", priority: "low" }]
+    const fresh = [{ content: "fresh", status: "completed", priority: "high" }]
+    const first = Promise.withResolvers<typeof stale>()
+    let calls = 0
+    const client = {
+      sessions: {
+        todo: () => {
+          calls += 1
+          return calls === 1 ? first.promise : Promise.resolve(fresh)
+        },
+      },
+    } as unknown as SessionReadClient
+    const store = createServerSession(client)
+
+    const loading = store.todo("child")
+    // Reconnect while the pre-disconnect snapshot is still in flight.
+    store.apply({ type: "server.connected" })
+    first.resolve(stale)
+    await loading
+
+    const deadline = Date.now() + 500
+    while (store.data.todo.child?.[0]?.content !== "fresh" && Date.now() < deadline) await Bun.sleep(5)
+    expect(calls).toBe(2)
+    expect(store.data.todo.child?.[0]?.content).toBe("fresh")
+  })
+
+  test("a reconnect does not apply a stale in-flight snapshot over cached todos", async () => {
+    const cached = [{ content: "cached", status: "pending", priority: "low" }]
+    const stale = [{ content: "stale", status: "pending", priority: "low" }]
+    const fresh = [{ content: "fresh", status: "completed", priority: "high" }]
+    const inFlight = Promise.withResolvers<typeof cached>()
+    const afterReconnect = Promise.withResolvers<typeof cached>()
+    let calls = 0
+    const client = {
+      sessions: {
+        todo: () => {
+          calls += 1
+          if (calls === 1) return Promise.resolve(cached)
+          if (calls === 2) return inFlight.promise
+          return afterReconnect.promise
+        },
+      },
+    } as unknown as SessionReadClient
+    const store = createServerSession(client)
+
+    await store.todo("child")
+    expect(store.data.todo.child?.[0]?.content).toBe("cached")
+
+    const refresh = store.todo("child", { force: true })
+    store.apply({ type: "server.connected" })
+    inFlight.resolve(stale)
+    await refresh
+    // The pre-reconnect snapshot must not replace the cached list.
+    expect(store.data.todo.child?.[0]?.content).toBe("cached")
+
+    afterReconnect.resolve(fresh)
+    const deadline = Date.now() + 500
+    while (store.data.todo.child?.[0]?.content !== "fresh" && Date.now() < deadline) await Bun.sleep(5)
+    expect(calls).toBe(3)
+    expect(store.data.todo.child?.[0]?.content).toBe("fresh")
+  })
+
   test("projects V2 session events into current and legacy message state", () => {
     const ctx = setup({ child: session("child") })
     ctx.store.remember(session("child"))

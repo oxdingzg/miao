@@ -1044,12 +1044,16 @@ export function createServerSession(
         return
       }
       case "server.connected": {
-        // A reconnect can miss todo updates, so refetch every cached list rather
-        // than trust the value from before the stream dropped. The stale value
-        // stays visible until the fresh snapshot resolves.
-        for (const sessionID of Object.keys(data.todo)) {
-          if (data.todo[sessionID] === undefined) continue
-          void loadTodo(sessionID, { force: true }).catch(() => {})
+        // A reconnect can miss todo updates, and a snapshot started before the
+        // drop may still be in flight. Bump its revision so the stale result
+        // cannot apply, then fetch fresh once it settles: `runInflight` would
+        // otherwise join the in-flight request and never refresh.
+        for (const sessionID of new Set([...Object.keys(data.todo), ...inflightTodo.keys()])) {
+          todoRevisions.set(sessionID, (todoRevisions.get(sessionID) ?? 0) + 1)
+          void (async () => {
+            await inflightTodo.get(sessionID)
+            await loadTodo(sessionID, { force: true })
+          })().catch(() => {})
         }
         return
       }
