@@ -1,4 +1,4 @@
-import type { Event as SDKEvent } from "@miao/sdk/v2/types"
+import type { Event as SDKEvent } from "@miao/schema/event-view"
 import type { Stream } from "effect"
 
 export type EventMap = {

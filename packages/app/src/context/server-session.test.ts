@@ -3,7 +3,7 @@ import type { SessionApi } from "@/utils/server"
 import type { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type { Message, Part, Session } from "@miao/schema/view-models"
-import type { MiaoClient } from "@miao/sdk/v2"
+import type { SessionReadClient } from "./server-session"
 import { createServerSession } from "./server-session"
 import type { ServerApi } from "@/utils/server"
 
@@ -87,7 +87,7 @@ function messageClient(...responses: Array<MessageResponse | Promise<MessageResp
         return responses[index++]
       },
     },
-  } as unknown as MiaoClient
+  } as unknown as SessionReadClient
   return Object.assign(client, {
     requests,
     requested(count: number) {
@@ -120,7 +120,7 @@ function rootMessageClient(
         return roots[rootIndex++]
       },
     },
-  } as unknown as MiaoClient
+  } as unknown as SessionReadClient
   return Object.assign(client, {
     requests,
     rootRequests,
@@ -159,7 +159,7 @@ function setup(sessions: Record<string, Session>) {
       diff: async () => ({ data: [] }),
       todo: async () => ({ data: [] }),
     },
-  } as unknown as MiaoClient
+  } as unknown as SessionReadClient
   return { get, messages, store: createServerSession(client) }
 }
 
@@ -171,15 +171,13 @@ describe("server session", () => {
     ]
     const requests: unknown[] = []
     const client = {
-      v2: {
-        session: {
-          todo: async (input: unknown) => {
-            requests.push(input)
-            return { data: { data: todos } }
-          },
+      sessions: {
+        todo: async (input: unknown) => {
+          requests.push(input)
+          return todos
         },
       },
-    } as unknown as MiaoClient
+    } as unknown as SessionReadClient
     // A fresh store models the page after a refresh: nothing is cached and no todo.updated event replays.
     const store = createServerSession(client)
 
@@ -289,7 +287,7 @@ describe("server session", () => {
           throw new Error("legacy message endpoint called")
         },
       },
-    } as unknown as MiaoClient
+    } as unknown as SessionReadClient
     const messageApi = {
       list: async (input: unknown) => {
         requests.push(input)
@@ -332,7 +330,7 @@ describe("server session", () => {
         return pages.shift()!
       },
     } as unknown as MessageApi
-    const store = createServerSession({} as MiaoClient, {} as SessionApi, messageApi)
+    const store = createServerSession({} as SessionReadClient, {} as SessionApi, messageApi)
     store.remember(session("root"))
 
     await store.sync("root")

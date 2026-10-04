@@ -512,9 +512,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (match) {
       continued = true
       if (args.fork) {
-        void sdk.client.v2.session
+        void sdk.api.sessions
           .fork({ sessionID: match })
-          .then((forked) => ({ data: forked.data?.data }))
+          .then((forked) => ({ data: forked }))
           .then((result) => {
             if (result.data?.id) {
               route.navigate({ type: "session", sessionID: result.data.id })
@@ -535,9 +535,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   createEffect(() => {
     if (forked || sync.status !== "complete" || !args.sessionID || !args.fork) return
     forked = true
-    void sdk.client.v2.session
+    void sdk.api.sessions
       .fork({ sessionID: args.sessionID })
-      .then((forked) => ({ data: forked.data?.data }))
+      .then((forked) => ({ data: forked }))
       .then((result) => {
         if (result.data?.id) {
           route.navigate({ type: "session", sessionID: result.data.id })
@@ -1070,7 +1070,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (route.data.type !== "plugin") return
     const render = pluginRuntime.routes.get(route.data.id)
     if (!render) return <PluginRouteMissing id={route.data.id} onHome={() => route.navigate({ type: "home" })} />
-    return render({ params: route.data.data })
+    return render({ params: route.data })
   })
 
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { QuestionRequest } from "@miao/sdk/v2"
+import type { QuestionRequest } from "@miao/schema/view-models"
 import {
   createQuestionBodyState,
   questionConfirm,

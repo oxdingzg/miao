@@ -2,7 +2,7 @@ import { Duration, Effect, Schema, Semaphore, Stream } from "effect"
 import type { Scope } from "effect"
 import type { IntegrationOAuthMethodRegistration } from "@miao/plugin/v2/effect/integration"
 import { define } from "@miao/plugin/v2/effect/plugin"
-import type { CredentialValue } from "@miao/sdk/v2/types"
+import type { CredentialValue } from "@miao/schema/view-models"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { EventV2 } from "../../event"
 import { Credential } from "../../credential"
@@ -16,6 +16,7 @@ import { ConfigV1 } from "../../v1/config/config"
 const defaultServer = "https://opencode.ai/console"
 const methodID = Integration.MethodID.make("device")
 const RemoteResponse = Schema.Struct({ config: ConfigV1.Info })
+const decodeRequestBody = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))
 const Device = Schema.Struct({
   device_code: Schema.String,
   user_code: Schema.String,
@@ -99,13 +100,14 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
         ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
         : undefined
       connected = connection !== undefined
-      providers = credential && consoleServer
-        ? yield* fetchProviders(http, credential).pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("failed to load OpenCode provider config", { cause }).pipe(Effect.as(undefined)),
-            ),
-          )
-        : undefined
+      providers =
+        credential && consoleServer
+          ? yield* fetchProviders(http, credential).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("failed to load OpenCode provider config", { cause }).pipe(Effect.as(undefined)),
+              ),
+            )
+          : undefined
     })
 
     yield* ctx.integration.transform((draft) => {
@@ -156,7 +158,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
               model.variants = Object.entries(config.variants).map(([id, options]) => ({
                 id: ModelV2.VariantID.make(id),
                 headers: { ...(options.headers ?? {}) },
-                body: lowerer.request(withoutCredentials(options)),
+                body: decodeRequestBody(lowerer.request(withoutCredentials(options))),
               }))
             }
             if (config.release_date !== undefined) {
@@ -175,7 +177,9 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
 
       const item = catalog.provider.get(ProviderV2.ID.opencode)
       if (!item) return
-      const hasKey = Boolean(process.env.OPENCODE_API_KEY || process.env.MIAO_API_KEY || connected || item.provider.request.body.apiKey)
+      const hasKey = Boolean(
+        process.env.OPENCODE_API_KEY || process.env.MIAO_API_KEY || connected || item.provider.request.body.apiKey,
+      )
       // OpenCode's free tier serves only the official OpenCode client and answers
       // miao with a FreeTierError, so free models are never offered; paid models
       // need a key.
@@ -246,7 +250,13 @@ function remoteCost(input: NonNullable<(typeof ConfigProviderV1.Model.Type)["cos
   ]
 }
 
-function poll(http: HttpClient.HttpClient, server: string, deviceCode: string, interval: Duration.Duration, clientID: string) {
+function poll(
+  http: HttpClient.HttpClient,
+  server: string,
+  deviceCode: string,
+  interval: Duration.Duration,
+  clientID: string,
+) {
   const loop = (wait: Duration.Duration): Effect.Effect<Credential.OAuth, unknown> =>
     Effect.gen(function* () {
       yield* Effect.sleep(wait)

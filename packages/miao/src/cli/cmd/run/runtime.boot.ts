@@ -97,17 +97,17 @@ const layer = Layer.effect(
       model: RunInput["model"],
     ) {
       const connected = yield* Effect.promise(() =>
-        sdk.v2.config
+        sdk.config
           .providers({ location: { directory } })
-          .then((item) => (item.data ? toProviderList(item.data.data).providers : undefined))
+          .then((item) => (item.data ? toProviderList(item.data).providers : undefined))
           .catch(() => undefined),
       )
       const providers = yield* Effect.promise(() =>
         connected
           ? Promise.resolve(connected)
-          : sdk.v2.config
+          : sdk.config
               .catalog({ location: { directory } })
-              .then((item) => (item.data ? toProviderCatalog(item.data.data).all : []))
+              .then((item) => (item.data ? toProviderCatalog(item.data).all : []))
               .catch(() => []),
       )
       const limits = Object.fromEntries(

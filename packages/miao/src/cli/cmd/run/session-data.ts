@@ -26,13 +26,13 @@
 //   event arrives, the queue entry is removed and the footer falls back
 //   to the next pending request or to the prompt view.
 import type {
-  Event,
   Part,
   PermissionRequest,
   QuestionRequest,
   SessionMessageAssistantTool,
   ToolPart,
-} from "@miao/sdk/v2"
+} from "@miao/schema/view-models"
+import type { Event } from "@miao/schema/event-view"
 import * as Locale from "@/util/locale"
 import { INTERRUPTED_STEP, liveToolPart, partKey, permissionRequest, questionRequest } from "./session-v2"
 import { toolView } from "./tool"

@@ -233,13 +233,13 @@ export function PermissionPrompt(props: {
             if (option === "cancel") return
             settle(
               () =>
-                sdk.client.v2.session.permission.reply(
+                sdk.api.permissions.reply(
                   {
                     sessionID: props.request.sessionID,
                     requestID: props.request.id,
                     reply: "always",
                   },
-                  { throwOnError: true },
+                  {},
                 ),
               props.request,
             )
@@ -251,14 +251,14 @@ export function PermissionPrompt(props: {
           onConfirm={(message) => {
             settle(
               () =>
-                sdk.client.v2.session.permission.reply(
+                sdk.api.permissions.reply(
                   {
                     sessionID: props.request.sessionID,
                     requestID: props.request.id,
                     reply: "reject",
                     message: message || undefined,
                   },
-                  { throwOnError: true },
+                  {},
                 ),
               props.request,
             )
@@ -529,13 +529,13 @@ export function PermissionPrompt(props: {
                   }
                   settle(
                     () =>
-                      sdk.client.v2.session.permission.reply(
+                      sdk.api.permissions.reply(
                         {
                           sessionID: props.request.sessionID,
                           requestID: props.request.id,
                           reply: "reject",
                         },
-                        { throwOnError: true },
+                        {},
                       ),
                     props.request,
                   )
@@ -543,13 +543,13 @@ export function PermissionPrompt(props: {
                 }
                 settle(
                   () =>
-                    sdk.client.v2.session.permission.reply(
+                    sdk.api.permissions.reply(
                       {
                         sessionID: props.request.sessionID,
                         requestID: props.request.id,
                         reply: "once",
                       },
-                      { throwOnError: true },
+                      {},
                     ),
                   props.request,
                 )

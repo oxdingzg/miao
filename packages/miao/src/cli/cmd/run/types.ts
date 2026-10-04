@@ -15,14 +15,14 @@ import type {
   Agent,
   Command,
   McpResource,
-  MiaoClient,
   Part,
   PermissionRequest,
   Provider,
   QuestionRequest,
   QuestionV2Answer,
   ToolPart,
-} from "@miao/sdk/v2"
+} from "@miao/schema/view-models"
+import { type Client } from "@/client"
 import type { TuiConfig } from "@miao/tui/config"
 
 export type RunFilePart = {
@@ -66,7 +66,7 @@ export type RunAgent = Agent
 export type RunResource = McpResource
 
 export type RunInput = {
-  sdk: MiaoClient
+  sdk: Client
   directory: string
   sessionID: string
   sessionTitle?: string
@@ -292,7 +292,7 @@ export type FooterEvent =
 
 // Replies go to the V2 routes, which address a request through the session
 // that owns it (a subagent's child session for its blockers).
-export type PermissionReply = Parameters<MiaoClient["v2"]["session"]["permission"]["reply"]>[0]
+export type PermissionReply = Parameters<Client["permissions"]["reply"]>[0]
 
 export type QuestionReply = {
   sessionID: string
@@ -300,7 +300,7 @@ export type QuestionReply = {
   answers: QuestionV2Answer[]
 }
 
-export type QuestionReject = Parameters<MiaoClient["v2"]["session"]["question"]["reject"]>[0]
+export type QuestionReject = Parameters<Client["questions"]["reject"]>[0]
 
 export type RunTuiConfig = Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout" | "diff_style">
 

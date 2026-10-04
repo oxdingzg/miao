@@ -1,5 +1,5 @@
 import { define } from "./internal"
-import type { ModelV2Info } from "@miao/sdk/v2/types"
+import type { ModelV2Info } from "@miao/schema/view-models"
 import { Effect, Stream } from "effect"
 import { EventV2 } from "../event"
 import { ModelsDev } from "../models-dev"

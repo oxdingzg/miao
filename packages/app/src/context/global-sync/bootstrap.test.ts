@@ -4,7 +4,6 @@ import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Project } from "@miao/schema/view-models"
 import type { Config } from "@miao/schema/view-models"
-import type { MiaoClient } from "@miao/sdk/v2"
 import type { NormalizedProviderListResponse } from "@miao/session-ui/context"
 import {
   bootstrapDirectory,
@@ -94,13 +93,6 @@ describe("bootstrapDirectory", () => {
         project: [{ id: "project", worktree: "/project" } as Project],
         provider,
       },
-      sdk: {
-        config: {
-          get: async () => {
-            throw new Error("legacy directory config should not be called")
-          },
-        },
-      } as unknown as MiaoClient,
       api: {
         ...api,
         vcs: { get: async () => ({ location: {}, data: { branch: "feature", default_branch: "dev" } }) },
@@ -142,9 +134,8 @@ describe("config queries", () => {
     expect(result).toMatchObject({
       shell: "/bin/zsh",
       model: "openai/gpt-5",
-      disabled_providers: ["openai"],
-      provider: { custom: { name: "Custom" } },
-      plugin: ["plain", ["with-options", { level: 1 }]],
+      providers: { openai: { disabled: true }, custom: { name: "Custom" } },
+      plugins: ["plain", { package: "with-options", options: { level: 1 } }],
     })
   })
 })

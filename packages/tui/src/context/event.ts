@@ -1,4 +1,4 @@
-import type { Event } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
 import { useSDK } from "./sdk"
 
 type EventMetadata = {

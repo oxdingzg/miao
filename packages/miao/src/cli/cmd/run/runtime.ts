@@ -12,7 +12,7 @@
 //   3. starts the stream transport (SDK event subscription), lazily for fresh
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
-import { createMiaoClient } from "@miao/sdk/v2"
+import { createClient } from "@/client"
 import { toAgent, toCommand } from "@miao/tui/context/v2-adapters"
 import { Flag } from "@miao/core/flag/flag"
 import { SessionMessage } from "@miao/core/session/message"
@@ -165,11 +165,11 @@ async function resolveExitTitle(
     return undefined
   }
 
-  return ctx.sdk.v2.session
+  return ctx.sdk.sessions
     .get({
       sessionID: state.sessionID,
     })
-    .then((x) => x.data?.data.title)
+    .then((x) => x.title)
     .catch(() => undefined)
 }
 
@@ -229,9 +229,9 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   const shell = await (deps.createRuntimeLifecycle ?? createRuntimeLifecycle)({
     directory: ctx.directory,
     findFiles: (query) =>
-      ctx.sdk.v2.fs
+      ctx.sdk.files
         .find({ location: { directory: ctx.directory }, query, type: "file" })
-        .then((x) => (x.data?.data ?? []).map((entry) => entry.path))
+        .then((x) => (x.data ?? []).map((entry) => entry.path))
         .catch(() => []),
     agents: [],
     resources: [],
@@ -253,17 +253,17 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       log?.write("send.permission.reply", next)
-      await ctx.sdk.v2.session.permission.reply(next)
+      await ctx.sdk.permissions.reply(next)
     },
     onQuestionReply: async (next) => {
       if (state.demo?.questionReply(next)) {
         return
       }
 
-      await ctx.sdk.v2.session.question.reply({
+      await ctx.sdk.questions.reply({
         sessionID: next.sessionID,
         requestID: next.requestID,
-        questionV2Reply: { answers: next.answers },
+        answers: next.answers,
       })
     },
     onQuestionReject: async (next) => {
@@ -271,7 +271,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         return
       }
 
-      await ctx.sdk.v2.session.question.reject(next)
+      await ctx.sdk.questions.reject(next)
     },
     onCycleVariant: () => {
       if (!state.model || state.variants.length === 0) {
@@ -350,7 +350,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       state.aborting = true
-      void ctx.sdk.v2.session
+      void ctx.sdk.sessions
         .interrupt({
           sessionID: state.sessionID,
         })
@@ -377,17 +377,17 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     }
 
     const [agents, resources, commands] = await Promise.all([
-      ctx.sdk.v2.agent
+      ctx.sdk.agents
         .list({ location: { directory: ctx.directory } })
-        .then((x) => (x.data?.data ?? []).map(toAgent))
+        .then((x) => (x.data ?? []).map(toAgent))
         .catch(() => []),
-      ctx.sdk.v2.mcp
+      ctx.sdk.mcp
         .resources({ location: { directory: ctx.directory } })
-        .then((x) => Object.values(x.data?.data ?? {}))
+        .then((x) => Object.values(x.data ?? {}))
         .catch(() => []),
-      ctx.sdk.v2.command
+      ctx.sdk.commands
         .list({ location: { directory: ctx.directory } })
-        .then((x) => (x.data?.data ?? []).map(toCommand))
+        .then((x) => (x.data ?? []).map(toCommand))
         .catch(() => []),
     ])
     if (footer.isClosed) {
@@ -736,7 +736,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
 // Local in-process mode. Creates an SDK client backed by a direct fetch to
 // the in-process server, so no external HTTP server is needed.
 export async function runInteractiveLocalMode(input: RunLocalInput): Promise<void> {
-  const sdk = createMiaoClient({
+  const sdk = createClient({
     baseUrl: "http://opencode.internal",
     fetch: input.fetch,
     directory: input.directory,

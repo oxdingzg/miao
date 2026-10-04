@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { createMiaoClient, type SessionMessage, type ToolPart } from "@miao/sdk/v2"
+import type { SessionMessage, ToolPart } from "@miao/schema/view-models"
+import { createClient } from "@/client"
 import { runHeadless } from "../../../src/cli/cmd/run/headless"
 
 const sessionID = "ses_headless"
@@ -88,14 +89,14 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
         push({ type: "session.next.step.ended", data: { sessionID } })
         idle()
       }
-      return json(true)
+      return new Response(null, { status: 204 })
     }
     return json({ name: "NotFound", data: { message: url.pathname } }, 404)
   }
   return {
     calls,
     replies,
-    client: createMiaoClient({
+    client: createClient({
       baseUrl: "http://headless.test",
       fetch: Object.assign(fetch, { preconnect: globalThis.fetch.preconnect }),
     }),

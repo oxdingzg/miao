@@ -9,7 +9,9 @@ import { Link } from "../ui/link"
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
 import type { ProviderAuthMethod } from "@miao/schema/view-models"
-import type { IntegrationAttempt } from "@miao/sdk/v2"
+import type { IntegrationsConnectOauthOutput } from "@miao/client"
+
+type IntegrationAttempt = IntegrationsConnectOauthOutput["data"]
 import { DialogModel } from "./dialog-model"
 import { useToast } from "../ui/toast"
 import { useConnected } from "./use-connected"
@@ -174,21 +176,20 @@ export function createDialogProviderOptions() {
                 inputs = value
               }
 
-              const result = await sdk.client.v2.integration.connect.oauth({
-                integrationID: providerID,
-                location: { directory: sdk.directory },
-                ...(method.id ? { methodID: method.id } : {}),
-                inputs: inputs ?? {},
-              })
-              if (result.error) {
-                toast.show({
-                  variant: "error",
-                  message: JSON.stringify(result.error),
+              if (!method.id) return
+              const result = await sdk.api.integrations
+                .connectOauth({
+                  integrationID: providerID,
+                  location: { directory: sdk.directory },
+                  methodID: method.id,
+                  inputs: inputs ?? {},
                 })
-                dialog.clear()
-                return
-              }
-              const attempt = result.data?.data
+                .catch((error: unknown) => {
+                  toast.error(error)
+                  dialog.clear()
+                })
+              if (!result) return
+              const attempt = result.data
               if (!attempt) {
                 toast.show({
                   variant: "error",
@@ -270,20 +271,18 @@ function AutoMethod(props: OAuthMethodProps) {
 
   onMount(() => {
     const poll = async (): Promise<void> => {
-      const result = await sdk.client.v2.integration.attempt.status({
-        attemptID: props.attempt.attemptID,
-        location: { directory: sdk.directory },
-      })
-      if (!alive.value) return
-      if (result.error) {
-        toast.show({
-          variant: "error",
-          message: JSON.stringify(result.error),
+      const result = await sdk.api.integrations
+        .attemptStatus({
+          attemptID: props.attempt.attemptID,
+          location: { directory: sdk.directory },
         })
-        dialog.clear()
-        return
-      }
-      const status = result.data?.data
+        .catch((error: unknown) => {
+          if (!alive.value) return
+          toast.error(error)
+          dialog.clear()
+        })
+      if (!result || !alive.value) return
+      const status = result.data
       if (!status) {
         toast.show({
           variant: "error",
@@ -344,14 +343,14 @@ function CodeMethod(props: OAuthMethodProps) {
       title={props.title}
       placeholder="Authorization code"
       onConfirm={async (value) => {
-        const ok = await sdk.client.v2.integration.attempt
-          .complete(
+        const ok = await sdk.api.integrations
+          .attemptComplete(
             {
               attemptID: props.attempt.attemptID,
               location: { directory: sdk.directory },
               code: value,
             },
-            { throwOnError: true },
+            {},
           )
           .then(() => true)
           .catch(() => false)
@@ -409,13 +408,13 @@ function ApiMethod(props: ApiMethodProps) {
       }
       onConfirm={async (value) => {
         if (!value) return
-        await sdk.client.v2.integration.connect.key(
+        await sdk.api.integrations.connectKey(
           {
             integrationID: props.providerID,
             location: { directory: sdk.directory },
             key: value,
           },
-          { throwOnError: true },
+          {},
         )
         await sync.bootstrap()
         if (props.custom) await sync.loadProviderCatalog()

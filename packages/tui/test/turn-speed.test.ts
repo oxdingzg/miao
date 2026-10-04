@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/sdk/v2"
+import type { AssistantMessage } from "@miao/schema/view-models"
 import { turnSpeed } from "../src/util/turn-speed"
 
 function turn(output: number, created: number, completed?: number): AssistantMessage {

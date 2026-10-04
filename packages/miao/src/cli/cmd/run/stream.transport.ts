@@ -16,7 +16,8 @@
 // The tick counter prevents stale idle events from resolving the wrong turn.
 // We also re-check live session status before resolving an idle event so a
 // delayed idle from an older turn cannot complete a newer busy turn.
-import type { MiaoClient } from "@miao/sdk/v2"
+import { type Client } from "@/client"
+import { mutableResponse } from "@miao/tui/util/mutable-response"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
 import { makeRuntime } from "@/effect/run-service"
@@ -78,7 +79,7 @@ type Trace = {
 const StreamClosed = undefined as never
 
 type StreamInput = {
-  sdk: MiaoClient
+  sdk: Client
   directory?: string
   sessionID: string
   thinking: boolean
@@ -411,19 +412,21 @@ function createLayer(input: StreamInput) {
 
         const events = yield* Scope.provide(scope)(
           Effect.acquireRelease(
-            Effect.promise(() =>
-              input.sdk.v2.event.subscribe({
-                signal: abort.signal,
-              }),
+            Effect.sync(() =>
+              input.sdk.events
+                .subscribe({
+                  signal: abort.signal,
+                })
+                [Symbol.asyncIterator](),
             ),
             (events) =>
               Effect.sync(() => {
-                void events.stream.return(StreamClosed).catch(() => {})
+                void events.return?.(StreamClosed).catch(() => {})
               }),
           ),
         )
         closeStream = () => {
-          void events.stream.return(StreamClosed).catch(() => {})
+          void events.return?.(StreamClosed).catch(() => {})
         }
         input.trace?.write("recv.subscribe", {
           sessionID: input.sessionID,
@@ -564,14 +567,10 @@ function createLayer(input: StreamInput) {
         })
 
         const listPermissions = (sessionID: string) =>
-          input.sdk.v2.session.permission
-            .list({ sessionID }, { throwOnError: true })
-            .then((item) => item.data.data.map(permissionRequest))
+          input.sdk.permissions.list({ sessionID }, {}).then((items) => mutableResponse(items).map(permissionRequest))
 
         const listQuestions = (sessionID: string) =>
-          input.sdk.v2.session.question
-            .list({ sessionID }, { throwOnError: true })
-            .then((item) => item.data.data.map(questionRequest))
+          input.sdk.questions.list({ sessionID }, {}).then((items) => mutableResponse(items).map(questionRequest))
 
         const entries = (sessionID: string, limit?: number) =>
           Effect.tryPromise({ try: () => loadTranscript(input.sdk, sessionID, limit), catch: (error) => error }).pipe(
@@ -657,16 +656,13 @@ function createLayer(input: StreamInput) {
               ).pipe(Effect.orElseSucceed((): TranscriptEntry[] => [])),
               Effect.tryPromise({
                 try: () =>
-                  input.sdk.v2.session
-                    .children({ sessionID: input.sessionID }, { throwOnError: true })
-                    .then((item) => item.data.data.map((child) => ({ id: child.id, title: child.title }))),
+                  input.sdk.sessions
+                    .children({ sessionID: input.sessionID }, {})
+                    .then((item) => item.map((child) => ({ id: child.id, title: child.title }))),
                 catch: (error) => error,
               }).pipe(Effect.orElseSucceed((): Array<{ id: string; title?: string }> => [])),
               Effect.tryPromise({
-                try: () =>
-                  input.sdk.v2.session
-                    .get({ sessionID: input.sessionID }, { throwOnError: true })
-                    .then((item) => item.data.data),
+                try: () => input.sdk.sessions.get({ sessionID: input.sessionID }, {}).then((item) => item),
                 catch: (error) => error,
               }).pipe(Effect.orElseSucceed(() => undefined)),
             ],
@@ -795,10 +791,7 @@ function createLayer(input: StreamInput) {
 
         const idle = Effect.fn("RunStreamTransport.idle")((fallback: boolean) =>
           Effect.tryPromise({
-            try: () =>
-              input.sdk.v2.session
-                .status({ sessionID: input.sessionID }, { throwOnError: true })
-                .then((out) => out.data.data.type === "idle"),
+            try: () => input.sdk.sessions.status({ sessionID: input.sessionID }, {}).then((out) => out.type === "idle"),
             catch: (error) => error,
           }).pipe(Effect.orElseSucceed(() => fallback)),
         )
@@ -1129,7 +1122,7 @@ function createLayer(input: StreamInput) {
         })
 
         const watch = Effect.fn("RunStreamTransport.watch")(() =>
-          Stream.fromAsyncIterable(events.stream, (error) =>
+          Stream.fromAsyncIterable({ [Symbol.asyncIterator]: () => events }, (error) =>
             error instanceof Error ? error : new Error(String(error)),
           ).pipe(
             Stream.takeUntil(() => input.footer.isClosed || abort.signal.aborted),
@@ -1192,8 +1185,7 @@ function createLayer(input: StreamInput) {
           if (next.agent && next.agent !== current.agent) {
             const agent = next.agent
             yield* Effect.tryPromise({
-              try: () =>
-                input.sdk.v2.session.switchAgent({ sessionID: input.sessionID, agent }, { signal, throwOnError: true }),
+              try: () => input.sdk.sessions.switchAgent({ sessionID: input.sessionID, agent }, { signal }),
               catch: (error) => error,
             })
             state.selection = { ...state.selection, agent }
@@ -1211,12 +1203,12 @@ function createLayer(input: StreamInput) {
 
           yield* Effect.tryPromise({
             try: () =>
-              input.sdk.v2.session.switchModel(
+              input.sdk.sessions.switchModel(
                 {
                   sessionID: input.sessionID,
                   model: { providerID: model.providerID, id: model.modelID, variant: next.variant },
                 },
-                { signal, throwOnError: true },
+                { signal },
               ),
             catch: (error) => error,
           })
@@ -1293,9 +1285,9 @@ function createLayer(input: StreamInput) {
                   Effect.andThen(
                     Effect.tryPromise({
                       try: () =>
-                        input.sdk.v2.session.shell(
+                        input.sdk.sessions.shell(
                           { sessionID: input.sessionID, command: next.prompt.text, resume: false },
-                          { signal: turn.signal, throwOnError: true },
+                          { signal: turn.signal },
                         ),
                       catch: (error) => error,
                     }).pipe(
@@ -1323,9 +1315,9 @@ function createLayer(input: StreamInput) {
                     Effect.andThen(
                       Effect.tryPromise({
                         try: () =>
-                          input.sdk.v2.session.command(
+                          input.sdk.sessions.command(
                             { sessionID: input.sessionID, command: command.name, arguments: command.arguments },
-                            { signal: turn.signal, throwOnError: true },
+                            { signal: turn.signal },
                           ),
                         catch: (error) => error,
                       }),
@@ -1348,13 +1340,13 @@ function createLayer(input: StreamInput) {
                     Effect.andThen(
                       Effect.tryPromise({
                         try: () =>
-                          input.sdk.v2.session.prompt(
+                          input.sdk.sessions.prompt(
                             {
                               sessionID: input.sessionID,
                               ...(next.prompt.messageID ? { id: next.prompt.messageID } : {}),
                               prompt: agents.length > 0 ? { ...prompt, agents } : prompt,
                             },
-                            { signal: turn.signal, throwOnError: true },
+                            { signal: turn.signal },
                           ),
                         catch: (error) => error,
                       }),

@@ -3,7 +3,7 @@
 // A V2 `task` call learns its child session only when the call settles, so a
 // running call is linked to the child whose `session.next.created` names the
 // root as parent, in call order.
-import type { Message, Part, PermissionRequest, QuestionRequest, ToolPart } from "@miao/sdk/v2"
+import type { Message, Part, PermissionRequest, QuestionRequest, ToolPart } from "@miao/schema/view-models"
 import * as Locale from "@/util/locale"
 import {
   bootstrapSessionData,

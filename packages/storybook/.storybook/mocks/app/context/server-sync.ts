@@ -1,4 +1,4 @@
-import type { ProviderAuthMethod } from "@miao/sdk/v2/client"
+import type { ProviderAuthMethod } from "@miao/schema/view-models"
 
 const data = {
   provider: {

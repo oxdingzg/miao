@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/sdk/v2"
+import type { AssistantMessage } from "@miao/schema/view-models"
 import type { ProviderLike } from "../src/util/currency"
 import { cacheEconomy } from "../src/util/cache-economy"
 

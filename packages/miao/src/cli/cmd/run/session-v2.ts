@@ -12,7 +12,6 @@
 // and for live events.
 import type {
   LlmToolContent,
-  MiaoClient,
   Part,
   PermissionRequest,
   PermissionV2Request,
@@ -21,7 +20,9 @@ import type {
   SessionMessage,
   SessionMessageAssistantTool,
   ToolPart,
-} from "@miao/sdk/v2"
+} from "@miao/schema/view-models"
+import { type Client } from "@/client"
+import { mutableResponse } from "@miao/tui/util/mutable-response"
 import { mergeTranscript, sessionContextToMessages, toolPart } from "@miao/tui/context/session-v2"
 import type { SessionMessages } from "./session.shared"
 
@@ -48,25 +49,25 @@ export function partKey(messageID: string, id: string) {
  * a limit the whole timeline is read; with one, only enough newest pages to
  * cover it.
  */
-export async function loadTranscript(sdk: MiaoClient, sessionID: string, limit?: number) {
+export async function loadTranscript(sdk: Client, sessionID: string, limit?: number) {
   const [context, history] = await Promise.all([
-    sdk.v2.session.context({ sessionID }, { throwOnError: true }).then((result) => result.data.data),
+    sdk.sessions.context({ sessionID }).then(mutableResponse),
     timeline(sdk, sessionID, limit),
   ])
   return mergeTranscript(context, history)
 }
 
-async function timeline(sdk: MiaoClient, sessionID: string, limit: number | undefined) {
+async function timeline(sdk: Client, sessionID: string, limit: number | undefined) {
   const pages: SessionMessage[] = []
   const read = async (cursor: string | undefined): Promise<SessionMessage[]> => {
     // A cursor carries its page order; the route refuses it alongside `order`.
-    const page = await sdk.v2.session.messages(
+    const page = await sdk.messages.list(
       cursor ? { sessionID, limit: PAGE_LIMIT, cursor } : { sessionID, order: "desc", limit: PAGE_LIMIT },
-      { throwOnError: true },
+      {},
     )
-    pages.push(...page.data.data)
-    const next = page.data.cursor.next
-    if (!next || page.data.data.length === 0) return pages
+    pages.push(...mutableResponse(page.data))
+    const next = page.cursor.next
+    if (!next || page.data.length === 0) return pages
     if (limit !== undefined && pages.length >= limit) return pages
     return read(next)
   }

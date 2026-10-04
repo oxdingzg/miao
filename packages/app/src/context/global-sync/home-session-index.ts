@@ -1,5 +1,6 @@
-import type { Session, SessionV2Info } from "@miao/schema/view-models"
-import type { Event, V2SessionListResponse } from "@miao/sdk/v2"
+import type { Session } from "@miao/schema/view-models"
+import type { Event } from "@miao/schema/event-view"
+import type { SessionsListOutput } from "@miao/client"
 import type { QueryClient } from "@tanstack/solid-query"
 import { trimSessions } from "./session-trim"
 import { pathKey } from "@/utils/path-key"
@@ -22,7 +23,8 @@ export type HomeSessionIndex = {
 export const homeSessionIndexKey = (server: string) => ["home", "session-index", server] as const
 export const homeSessionEventsKey = (server: string) => ["home", "session-events", server] as const
 
-type HomeSessionPage = { data?: V2SessionListResponse }
+type HomeSessionPage = SessionsListOutput
+type HomeSessionInfo = Omit<SessionsListOutput["data"][number], "revert">
 
 export async function loadHomeSessionIndex(
   list: (
@@ -32,7 +34,7 @@ export async function loadHomeSessionIndex(
   eventSequence = 0,
   signal?: AbortSignal,
 ) {
-  const data: SessionV2Info[] = []
+  const data: HomeSessionInfo[] = []
   let cursor: string | undefined
 
   for (;;) {
@@ -44,7 +46,7 @@ export async function loadHomeSessionIndex(
       },
       { signal },
     )
-    const page = response.data!
+    const page = response
     data.push(...page.data)
     if (page.data.length < HOME_V2_SESSION_PAGE_LIMIT || !page.cursor.next)
       return { sessions: parseHomeSessionIndex(data), eventSequence }
@@ -143,7 +145,7 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
 // multiple directories. A bounded page could omit an old session updated today.
 // Once released, use client.v2.project.list() and client.v2.session.list({
 // parentID: null, order: "desc" }), then remove this adapter and its V1 fields.
-export function parseHomeSessionIndex(sessions: SessionV2Info[]): Session[] {
+export function parseHomeSessionIndex(sessions: readonly HomeSessionInfo[]): Session[] {
   return sessions.flatMap((item) => {
     if (item.parentID || typeof item.time.archived === "number") return []
     return [toLegacySummary(item)]
@@ -167,7 +169,7 @@ export function applyHomeSessionEvent(sessions: Session[], event: HomeSessionEve
   return sessions.with(index, info)
 }
 
-function toLegacySummary(session: SessionV2Info): Session {
+function toLegacySummary(session: HomeSessionInfo): Session {
   return {
     id: session.id,
     slug: session.id,

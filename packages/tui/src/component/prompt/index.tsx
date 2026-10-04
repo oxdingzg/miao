@@ -451,7 +451,7 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
-          void sdk.client.v2.session.interrupt({ sessionID: props.sessionID })
+          void sdk.api.sessions.interrupt({ sessionID: props.sessionID })
           dialog.clear()
         },
       },
@@ -1037,14 +1037,14 @@ export function Prompt(props: PromptProps) {
       if (move.pending() && !directory) return false
       finishMoveProgress = Boolean(move.progress())
 
-      const res = await sdk.client.v2.session
+      const res = await sdk.api.sessions
         .create(
           {
             agent: agent.name,
             model: { id: selectedModel.modelID, providerID: selectedModel.providerID, variant },
             location: directory === undefined ? undefined : { directory, workspaceID },
           },
-          { throwOnError: true },
+          {},
         )
         .catch((error) => {
           if (finishMoveProgress) move.finishSubmit()
@@ -1052,7 +1052,7 @@ export function Prompt(props: PromptProps) {
           return undefined
         })
       if (!res) return true
-      sessionID = res.data.data.id
+      sessionID = res.id
     }
 
     const inputText = expandTrackedPastedText(
@@ -1090,7 +1090,7 @@ export function Prompt(props: PromptProps) {
 
     if (store.mode === "shell") {
       move.startSubmit()
-      void sdk.client.v2.session.shell({ sessionID, command: inputText })
+      void sdk.api.sessions.shell({ sessionID, command: inputText })
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1104,7 +1104,7 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void sdk.client.v2.session.command({ sessionID, command: command.slice(1), arguments: args })
+      void sdk.api.sessions.command({ sessionID, command: command.slice(1), arguments: args })
     } else {
       move.startSubmit()
       const parts = [

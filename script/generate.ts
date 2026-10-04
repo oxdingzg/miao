@@ -2,8 +2,4 @@
 
 import { $ } from "bun"
 
-await $`bun ./packages/sdk/js/script/build.ts`
-
-await $`bun dev generate > ../sdk/openapi.json`.cwd("packages/miao")
-
-await $`./script/format.ts`
+await $`bun run generate`.cwd("packages/client")

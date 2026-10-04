@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import Notifications from "../../../../src/feature-plugins/system/notifications"
-import type { Event, PermissionRequest, QuestionRequest, Session } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
+import type { PermissionRequest, QuestionRequest, Session } from "@miao/schema/view-models"
 import type { TuiAttentionNotifyInput } from "@miao/plugin/tui"
 import { createTuiPluginApi } from "../../../fixture/tui-plugin"
 

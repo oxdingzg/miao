@@ -1,5 +1,5 @@
 import type { Hooks, PluginInput } from "@miao/plugin"
-import type { Model } from "@miao/sdk/v2"
+import type { Model } from "@miao/schema/view-models"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { iife } from "@/util/iife"
 import { setTimeout as sleep } from "node:timers/promises"

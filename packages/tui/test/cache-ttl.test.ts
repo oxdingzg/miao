@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/sdk/v2"
+import type { AssistantMessage } from "@miao/schema/view-models"
 import { cacheTtl } from "../src/util/cache-ttl"
 
 const MINUTE = 60_000
@@ -43,13 +43,19 @@ describe("cacheTtl", () => {
   })
 
   test("ignores a turn that left the cache alone", () => {
-    const ttl = cacheTtl([turn("anthropic", { read: 10, startedAt: 0 }), turn("anthropic", { startedAt: 4 * MINUTE })], 4 * MINUTE)
+    const ttl = cacheTtl(
+      [turn("anthropic", { read: 10, startedAt: 0 }), turn("anthropic", { startedAt: 4 * MINUTE })],
+      4 * MINUTE,
+    )
     expect(ttl?.startedAt).toBe(0)
   })
 
   test("ignores a summary, which reports on earlier turns without a request of its own", () => {
     const ttl = cacheTtl(
-      [turn("anthropic", { read: 10, startedAt: 0 }), turn("anthropic", { read: 10, startedAt: 9 * MINUTE, summary: true })],
+      [
+        turn("anthropic", { read: 10, startedAt: 0 }),
+        turn("anthropic", { read: 10, startedAt: 9 * MINUTE, summary: true }),
+      ],
       9 * MINUTE,
     )
     expect(ttl?.startedAt).toBe(0)

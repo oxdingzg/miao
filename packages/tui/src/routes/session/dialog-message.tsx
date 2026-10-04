@@ -30,7 +30,7 @@ export function DialogMessage(props: {
             const msg = message()
             if (!msg) return
 
-            void sdk.client.v2.session.revert.stage({ sessionID: props.sessionID, messageID: msg.id })
+            void sdk.api.sessions.stage({ sessionID: props.sessionID, messageID: msg.id })
 
             if (props.setPrompt) {
               const parts = sync.data.part[msg.id]
@@ -75,9 +75,9 @@ export function DialogMessage(props: {
           value: "session.fork",
           description: "create a new session",
           onSelect: async (dialog) => {
-            const result = await sdk.client.v2.session
+            const result = await sdk.api.sessions
               .fork({ sessionID: props.sessionID, messageID: props.messageID })
-              .then((r) => ({ data: r.data?.data }))
+              .then((r) => ({ data: r }))
             const msg = message()
             const prompt = msg
               ? sync.data.part[msg.id].reduce(

@@ -1,7 +1,8 @@
 export * as AgentV2 from "./agent"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Array, Context, Effect, Layer, Types } from "effect"
+import { Array, Context, Effect, Layer } from "effect"
+import type { DeepMutable } from "./schema"
 import { Agent } from "@miao/schema/agent"
 import { State } from "./state"
 
@@ -20,7 +21,7 @@ export interface Selection {
 }
 
 type Data = {
-  agents: Map<ID, Types.DeepMutable<Info>>
+  agents: Map<ID, DeepMutable<Info>>
   default?: ID
 }
 
@@ -28,7 +29,7 @@ export type Draft = {
   list: () => readonly Info[]
   get: (id: ID) => Info | undefined
   default: (id: ID | undefined) => void
-  update: (id: ID, fn: (agent: Types.DeepMutable<Info>) => void) => void
+  update: (id: ID, fn: (agent: DeepMutable<Info>) => void) => void
   remove: (id: ID) => void
 }
 
@@ -54,7 +55,7 @@ const layer = Layer.effect(
           draft.default = id
         },
         update: (id, fn) => {
-          const current = draft.agents.get(id) ?? (Info.empty(id) as Types.DeepMutable<Info>)
+          const current = draft.agents.get(id) ?? (Info.empty(id) as DeepMutable<Info>)
           if (!draft.agents.has(id)) draft.agents.set(id, current)
           fn(current)
           current.id = id

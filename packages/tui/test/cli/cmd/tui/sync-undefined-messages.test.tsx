@@ -3,11 +3,12 @@
  * Reproducer for #26560 — TUI crashes with
  *   `TypeError: undefined is not an object (evaluating 'f.data.map')`
  * when entering a session whose messages endpoint returns a non-2xx.
- * The V2 read path calls the messages endpoint with `throwOnError`, so the
- * failure must surface as the SDK's `Error` instead of a `TypeError` from
+ * The Promise client rejects declared failures as tagged wire values, so the
+ * failure must retain its identity instead of becoming a `TypeError` from
  * reading a property off `undefined`.
  */
 import { describe, expect, test } from "bun:test"
+import { isSessionNotFoundError } from "@miao/client"
 import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount } from "./sync-fixture"
 
@@ -31,7 +32,8 @@ describe("tui sync (#26560)", () => {
     const { app, sync } = await mount((url) => {
       if (url.pathname === `/api/session/${sessionID}`) return json({ data: sessionPayload })
       if (url.pathname === `/api/session/${sessionID}/context`) return json({ data: [] })
-      if (url.pathname === `/api/session/${sessionID}/message`) return json({}, { status: 500 })
+      if (url.pathname === `/api/session/${sessionID}/message`)
+        return json({ _tag: "SessionNotFoundError", sessionID, message: "Session not found" }, { status: 404 })
       if (url.pathname === `/api/session/${sessionID}/todo`) return json({ data: [] })
       if (url.pathname === `/api/session/${sessionID}/diff`) return json({ data: [] })
       return undefined
@@ -44,7 +46,7 @@ describe("tui sync (#26560)", () => {
       )
       // The endpoint failure must not be an unguarded property read on missing
       // data; it surfaces as a normal error the route caller can report.
-      expect(error).toBeInstanceOf(Error)
+      expect(isSessionNotFoundError(error)).toBe(true)
       expect(error).not.toBeInstanceOf(TypeError)
     } finally {
       app.renderer.destroy()

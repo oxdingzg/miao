@@ -162,9 +162,8 @@ export function errorMessage(error: unknown): string {
  * the user is trapped behind a modal that can never be confirmed.
  */
 export function isNotFoundError(error: unknown): boolean {
-  if (!(error instanceof Error) || !isRecord(error.cause)) return false
-  if (error.cause.status === 404) return true
-  const body = error.cause.body
+  if (error instanceof Error && isRecord(error.cause) && error.cause.status === 404) return true
+  const body = error instanceof Error && isRecord(error.cause) ? error.cause.body : error
   if (!isRecord(body)) return false
   const name = typeof body.name === "string" ? body.name : typeof body._tag === "string" ? body._tag : undefined
   return typeof name === "string" && name.endsWith("NotFoundError")

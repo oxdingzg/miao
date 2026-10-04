@@ -1,10 +1,10 @@
 import { base64Encode } from "@miao/core/util/encode"
 import { Event } from "@miao/schema/event"
+import type { EventView } from "@miao/schema/event-view"
 import { SessionStatusEvent } from "@miao/schema/session-status-event"
 import { SessionV1 } from "@miao/schema/session-v1"
 import type {
   AssistantMessage,
-  GlobalEvent,
   Message,
   Part,
   Session,
@@ -12,7 +12,7 @@ import type {
   ToolPart,
   ToolState,
   UserMessage,
-} from "@miao/sdk/v2/client"
+} from "@miao/schema/view-models"
 import { expect, type Page } from "@playwright/test"
 import { Schema } from "effect"
 import { mockOpenCodeServer } from "../../utils/mock-server"
@@ -26,6 +26,8 @@ export const userID = "msg_1000_timeline_user"
 export const assistantID = "msg_1001_timeline_assistant"
 export const title = "Timeline visual stability"
 export const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
+
+type GlobalEvent = { directory: string; payload: EventView.Event }
 
 type TimelinePayload = Extract<
   GlobalEvent["payload"],

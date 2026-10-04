@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { MiaoClient } from "@miao/sdk/v2"
+import { createClient } from "@/client"
 import { runInteractiveMode } from "@/cli/cmd/run/runtime"
 import type { FooterApi, RunProvider } from "@/cli/cmd/run/types"
-
-type SessionMessage = NonNullable<
-  Awaited<ReturnType<MiaoClient["v2"]["session"]["context"]>>["data"]
->["data"][number]
+import type { SessionMessage } from "@miao/schema/view-models"
 
 const provider: RunProvider = {
   id: "openai",
@@ -79,13 +76,8 @@ function located<T>(data: T) {
   return { location: { directory: "/tmp", project: { id: "project-1", directory: "/tmp" } }, data }
 }
 
-function ok<T>(data: T) {
-  return Promise.resolve({
-    data,
-    error: undefined,
-    request: new Request("https://opencode.test"),
-    response: new Response(),
-  })
+function ok<const T>(data: T) {
+  return Promise.resolve(data)
 }
 
 function footer(): FooterApi {
@@ -147,29 +139,27 @@ describe("run interactive runtime", () => {
     const providersStarted = defer<void>()
     const providers = defer<void>()
 
-    const sdk = new MiaoClient()
-    spyOn(sdk.v2.config, "providers").mockImplementation(async () => {
+    const sdk = createClient({ baseUrl: "http://localhost:4096" })
+    spyOn(sdk.config, "providers").mockImplementation(async () => {
       providersStarted.resolve()
       await providers.promise
       return ok(located({ providers: [provider], default: {} }))
     })
-    spyOn(sdk.v2.session, "context").mockImplementation(() =>
-      ok({
-        data: [
-          {
-            id: "msg-user-1",
-            type: "user",
-            text: "hello",
-            time: { created: 1 },
-          } satisfies SessionMessage,
-        ],
-      }),
+    spyOn(sdk.sessions, "context").mockImplementation(() =>
+      ok([
+        {
+          id: "msg-user-1",
+          type: "user",
+          text: "hello",
+          time: { created: 1 },
+        } satisfies SessionMessage,
+      ]),
     )
-    spyOn(sdk.v2.session, "messages").mockImplementation(() => ok({ data: [], cursor: {} }))
-    spyOn(sdk.v2.session, "get").mockRejectedValue(new Error("not needed"))
-    spyOn(sdk.v2.agent, "list").mockImplementation(() => ok(located([])))
-    spyOn(sdk.v2.mcp, "resources").mockImplementation(() => ok(located({})))
-    spyOn(sdk.v2.command, "list").mockImplementation(() => ok(located([])))
+    spyOn(sdk.messages, "list").mockImplementation(() => ok({ data: [], cursor: {} }))
+    spyOn(sdk.sessions, "get").mockRejectedValue(new Error("not needed"))
+    spyOn(sdk.agents, "list").mockImplementation(() => ok(located([])))
+    spyOn(sdk.mcp, "resources").mockImplementation(() => ok(located({})))
+    spyOn(sdk.commands, "list").mockImplementation(() => ok(located([])))
 
     const task = runInteractiveMode(
       {

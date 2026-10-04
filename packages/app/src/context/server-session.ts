@@ -4,7 +4,6 @@ import { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type { Message, Part, Session, SessionStatus, Todo } from "@miao/schema/view-models"
 import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
-import type { MiaoClient } from "@miao/sdk/v2"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
@@ -180,7 +179,7 @@ type ServerSessionOptions = { retry?: typeof retry }
 
 // The cache still accepts projected rendering records in unit tests. Production
 // supplies the V2 Session and Message APIs below; the SDK has no V1 session routes.
-type SessionReadClient = {
+export type SessionReadClient = {
   session: {
     get: (input: { sessionID: string }) => Promise<{ data?: Session }>
     messages: (input: { sessionID: string; limit: number; before?: string }) => Promise<{
@@ -194,7 +193,7 @@ type SessionReadClient = {
 }
 
 export function createServerSession(
-  client: MiaoClient | SessionReadClient,
+  client: Pick<ServerApi, "sessions"> | SessionReadClient,
   sessionApiOrOptions?: SessionApi | ServerSessionOptions,
   messageApi?: MessageApi,
   currentOptions?: ServerSessionOptions,
@@ -1382,12 +1381,12 @@ export function createServerSession(
     async todo(sessionID: string, request?: { force?: boolean }) {
       touch(sessionID)
       if (data.todo[sessionID] !== undefined && !request?.force) return
-      if (!("v2" in client)) throw new Error("V2 Session API is required")
+      if (!("sessions" in client)) throw new Error("V2 Session API is required")
       return runInflight(inflightTodo, sessionID, () => {
         const active = generation(sessionID)
-        return (options?.retry ?? retry)(() => client.v2.session.todo({ sessionID })).then((result) => {
+        return (options?.retry ?? retry)(() => client.sessions.todo({ sessionID })).then((result) => {
           if (generations.get(sessionID) !== active) return
-          setData("todo", sessionID, reconcile(result.data?.data ?? [], { key: "id" }))
+          setData("todo", sessionID, reconcile([...result], { key: "id" }))
         })
       })
     },

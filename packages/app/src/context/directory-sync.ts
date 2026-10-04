@@ -26,7 +26,6 @@ export const createDirSyncContext = (
   serverSync: ReturnType<typeof createServerSyncContextInner>,
   serverSDK: ReturnType<typeof createServerSdkContext>,
 ) => {
-  const client = serverSDK.createClient({ directory, throwOnError: true })
   const current = createMemo(() => serverSync.child(directory, { mcp: true }))
   const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
   const data = new Proxy({} as State, {
@@ -134,7 +133,7 @@ export const createDirSyncContext = (
       },
       more: createMemo(() => current()[0].session.length >= current()[0].limit),
       archive: async (sessionID: string) => {
-        await serverSDK.client.v2.session.archive({ sessionID, archived: true })
+        await serverSDK.api.sessions.archive({ sessionID, archived: true })
         current()[1](
           "session",
           produce((draft) => {

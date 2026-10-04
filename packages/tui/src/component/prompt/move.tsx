@@ -34,21 +34,21 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
     setProgress("Creating copy")
     try {
       // Without a name the server picks a slug for the copy.
-      const result = await sdk.client.v2.projectCopy.create(
+      const result = await sdk.api.projectCopies.create(
         {
           projectID,
           location: { directory: sdk.directory },
           strategy: "git_worktree",
           directory: path.join(paths.worktree, projectID.slice(0, 6)),
         },
-        { throwOnError: true },
+        {},
       )
-      const directory = result.data?.directory
+      const directory = result.directory
       if (!directory) throw new Error("No project copy directory returned")
 
       // Call a location-based route to make sure it's bootstrapped
       // before moving on
-      await sdk.client.v2.location.get({ location: { directory } }, { throwOnError: true })
+      await sdk.api.location.get({ location: { directory } }, {})
 
       setProgress("Creating session")
       return directory
@@ -99,10 +99,8 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
 
   async function moveExistingSession(sessionID: string, selection: MoveSessionSelection) {
     const session = sync.session.get(sessionID)
-    const status = await sdk.client.v2.vcs
-      .status({ location: { directory: session?.directory } }, { throwOnError: true })
-      .catch(() => undefined)
-    const files = status?.data?.data ?? []
+    const status = await sdk.api.vcs.status({ location: { directory: session?.directory } }, {}).catch(() => undefined)
+    const files = [...(status?.data ?? [])]
     const choice = files.length ? await DialogWorkspaceFileChanges.show(dialog, files) : "no"
     if (!choice) return
     dialog.clear()
@@ -114,16 +112,16 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
     }
     setProgress("Moving session")
     try {
-      await sdk.client.v2.controlPlane.moveSession(
+      await sdk.api.controlPlane.moveSession(
         {
           sessionID,
           destination: { directory },
           moveChanges: choice === "yes",
         },
-        { throwOnError: true },
+        {},
       )
       // Admit the reminder without running a turn: the model reads it with the next prompt.
-      await sdk.client.v2.session
+      await sdk.api.sessions
         .prompt({ sessionID, prompt: { text: moveReminderText(directory) }, resume: false })
         .catch(() => undefined)
       dialog.clear()

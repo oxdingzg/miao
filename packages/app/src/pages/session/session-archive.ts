@@ -48,7 +48,7 @@ export function useSessionArchive() {
     const nextSession = index === -1 ? undefined : (sessions[index + 1] ?? sessions[index - 1])
 
     await sdk()
-      .client.v2.session.archive({ sessionID, archived: true })
+      .api.sessions.archive({ sessionID, archived: true })
       .then(() => {
         sync().set(
           produce((draft) => {

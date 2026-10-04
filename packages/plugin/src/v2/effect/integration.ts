@@ -8,7 +8,7 @@ import type {
   IntegrationMethod,
   IntegrationOAuthMethod,
   IntegrationRef,
-} from "@miao/sdk/v2/types"
+} from "@miao/schema/view-models"
 import type { Effect, Scope } from "effect"
 import type { Hooks } from "./registration.js"
 

@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import {
-  MiaoClient,
-  type PermissionV2Request,
-  type QuestionV2Request,
-  type SessionMessage,
-} from "@miao/sdk/v2"
+import type { PermissionV2Request, QuestionV2Request, SessionMessage } from "@miao/schema/view-models"
+import { createClient } from "@/client"
 import { createSessionTransport } from "@/cli/cmd/run/stream.transport"
 import type { FooterApi, FooterEvent, LocalReplayRow, RunFilePart, StreamCommit } from "@/cli/cmd/run/types"
 
@@ -222,13 +218,8 @@ function streamEvent(event: Event): StreamEvent {
   return { type: event.type, data: event.properties }
 }
 
-function ok<T>(data: T) {
-  return Promise.resolve({
-    data,
-    error: undefined,
-    request: new Request("https://opencode.test"),
-    response: new Response(),
-  })
+function ok<const T>(data: T) {
+  return Promise.resolve(data)
 }
 
 function footer(fn?: (commit: StreamCommit) => void) {
@@ -299,26 +290,29 @@ function sdk(
     shell?: (params: unknown) => Promise<unknown>
   } = {},
 ) {
-  const client = new MiaoClient()
+  const client = createClient({ baseUrl: "http://localhost:4096" })
   const calls: Calls = { prompt: [], command: [], shell: [], agent: [], model: [] }
-  const session = client.v2.session
+  const session = client.sessions
   const stub = (target: object, name: string, impl: (...args: never[]) => unknown) => {
     spyOn(target as Record<string, (...args: never[]) => unknown>, name).mockImplementation(impl)
   }
 
-  stub(
-    client.v2.event,
-    "subscribe",
-    input.subscribe ??
-      (() => Promise.resolve({ stream: input.stream ?? (async function* (): AsyncGenerator<StreamEvent> {})() })),
-  )
+  stub(client.events, "subscribe", () => ({
+    async *[Symbol.asyncIterator]() {
+      const subscribed = await (input.subscribe?.() ??
+        Promise.resolve({
+          stream: input.stream ?? (async function* (): AsyncGenerator<StreamEvent> {})(),
+        }))
+      yield* subscribed.stream
+    },
+  }))
   stub(session, "context", async (params: { sessionID: string }) =>
-    ok({ data: await (input.transcript?.(params.sessionID) ?? []) }),
+    ok(await (input.transcript?.(params.sessionID) ?? [])),
   )
-  stub(session, "messages", () => ok({ data: [], cursor: {} }))
+  stub(client.messages, "list", () => ok({ data: [], cursor: {} }))
   stub(session, "children", (params: { sessionID: string }) =>
-    ok({
-      data: (input.children?.(params.sessionID) ?? []).map((child) => ({
+    ok(
+      (input.children?.(params.sessionID) ?? []).map((child) => ({
         id: child.id,
         parentID: params.sessionID,
         projectID: "project-1",
@@ -328,23 +322,17 @@ function sdk(
         title: child.id,
         location: { directory: "/tmp" },
       })),
-    }),
+    ),
   )
-  stub(session, "get", () =>
-    ok({
-      data: { id: "session-1", title: "t", location: { directory: "/tmp" }, ...input.session },
-    }),
-  )
-  stub(session, "status", async () => ok({ data: { type: (await input.status?.()) ?? "idle" } }))
-  stub(session.permission, "list", (params: { sessionID: string }) =>
-    ok({ data: input.permissions?.(params.sessionID) ?? [] }),
-  )
-  stub(session.question, "list", async (params: { sessionID: string }) =>
-    ok({ data: await (input.questions?.(params.sessionID) ?? []) }),
+  stub(session, "get", () => ok({ id: "session-1", title: "t", location: { directory: "/tmp" }, ...input.session }))
+  stub(session, "status", async () => ok({ type: (await input.status?.()) ?? "idle" }))
+  stub(client.permissions, "list", (params: { sessionID: string }) => ok(input.permissions?.(params.sessionID) ?? []))
+  stub(client.questions, "list", async (params: { sessionID: string }) =>
+    ok(await (input.questions?.(params.sessionID) ?? [])),
   )
   stub(session, "prompt", (params: unknown, options?: { signal?: AbortSignal }) => {
     calls.prompt.push(params)
-    return (input.prompt?.(params, options) ?? Promise.resolve()).then(() => ok({ data: { admittedSeq: 1 } }))
+    return (input.prompt?.(params, options) ?? Promise.resolve()).then(() => ok({ admittedSeq: 1 }))
   })
   stub(session, "command", (params: unknown) => {
     calls.command.push(params)

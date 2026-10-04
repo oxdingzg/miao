@@ -1,6 +1,26 @@
+import { mutableResponse } from "../util/mutable-response"
 import type { ReferenceInfo, SkillV2Info } from "@miao/schema/view-models"
-import type { IntegrationInfo, LocationRef, PermissionSavedInfo, PermissionV2Request, QuestionV2Request, SessionMessage, SessionMessageAssistant, SessionMessageAssistantReasoning, SessionMessageAssistantText, SessionMessageAssistantTool, SessionV2Info } from "@miao/schema/view-models"
-import type { AgentV2Info, CommandV2Info, ModelV2Info, ProviderV2Info, V2Event } from "@miao/sdk/v2"
+import type {
+  IntegrationInfo,
+  LocationRef,
+  PermissionSavedInfo,
+  PermissionV2Request,
+  QuestionV2Request,
+  SessionMessage,
+  SessionMessageAssistant,
+  SessionMessageAssistantReasoning,
+  SessionMessageAssistantText,
+  SessionMessageAssistantTool,
+  SessionV2Info,
+} from "@miao/schema/view-models"
+import type { V2Event } from "@miao/schema/event-view"
+import type {
+  AgentsListOutput,
+  CommandsListOutput,
+  ModelsListOutput,
+  ProvidersListOutput,
+  IntegrationsListOutput,
+} from "@miao/client"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
@@ -8,11 +28,11 @@ import { useEvent } from "./event"
 import { createSignal, onCleanup, onMount } from "solid-js"
 
 type LocationData = {
-  agent?: AgentV2Info[]
-  command?: CommandV2Info[]
-  integration?: IntegrationInfo[]
-  model?: ModelV2Info[]
-  provider?: ProviderV2Info[]
+  agent?: AgentsListOutput["data"]
+  command?: CommandsListOutput["data"]
+  integration?: IntegrationsListOutput["data"]
+  model?: ModelsListOutput["data"]
+  provider?: ProvidersListOutput["data"]
   reference?: ReferenceInfo[]
   skill?: SkillV2Info[]
 }
@@ -403,16 +423,16 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           return store.session.info[sessionID]
         },
         async refresh(sessionID: string) {
-          const result = await sdk.client.v2.session.get({ sessionID }, { throwOnError: true })
-          setStore("session", "info", sessionID, result.data.data)
+          const result = await sdk.api.sessions.get({ sessionID }, {})
+          setStore("session", "info", sessionID, mutableResponse(result))
         },
         message: {
           list(sessionID: string) {
             return store.session.message[sessionID]
           },
           async refresh(sessionID: string) {
-            const result = await sdk.client.v2.session.messages({ sessionID }, { throwOnError: true })
-            setStore("session", "message", sessionID, result.data.data)
+            const result = await sdk.api.messages.list({ sessionID }, {})
+            setStore("session", "message", sessionID, mutableResponse(result.data))
           },
         },
         permission: {
@@ -420,8 +440,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.session.permission[sessionID]
           },
           async refresh(sessionID: string) {
-            const result = await sdk.client.v2.session.permission.list({ sessionID }, { throwOnError: true })
-            setStore("session", "permission", sessionID, result.data.data)
+            const result = await sdk.api.permissions.list({ sessionID }, {})
+            setStore("session", "permission", sessionID, mutableResponse(result))
           },
         },
         question: {
@@ -429,8 +449,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.session.question[sessionID]
           },
           async refresh(sessionID: string) {
-            const result = await sdk.client.v2.session.question.list({ sessionID }, { throwOnError: true })
-            setStore("session", "question", sessionID, result.data.data)
+            const result = await sdk.api.questions.list({ sessionID }, {})
+            setStore("session", "question", sessionID, mutableResponse(result))
           },
         },
       },
@@ -440,8 +460,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.project.permission[projectID]
           },
           async refresh(projectID: string) {
-            const result = await sdk.client.v2.permission.saved.list({ projectID }, { throwOnError: true })
-            setStore("project", "permission", projectID, result.data.data)
+            const result = await sdk.api.permissions.listSaved({ projectID }, {})
+            setStore("project", "permission", projectID, mutableResponse(result))
           },
         },
       },
@@ -450,8 +470,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           return defaultLocation()
         },
         async refresh(ref?: LocationRef) {
-          const response = await sdk.client.v2.location.get({ location: locationQuery(ref) }, { throwOnError: true })
-          const location = response.data
+          const response = await sdk.api.location.get({ location: locationQuery(ref) }, {})
+          const location = response
           const key = locationKey(location)
           if (!store.location[key]) setStore("location", key, {})
           if (!ref) setDefaultLocation({ directory: location.directory, workspaceID: location.workspaceID })
@@ -461,9 +481,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.agent
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.agent.list({ location: locationQuery(ref) }, { throwOnError: true })
-            const key = locationKey(result.data.location)
-            setStore("location", key, "agent", result.data.data)
+            const result = await sdk.api.agents.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "agent", result.data)
           },
         },
         command: {
@@ -471,9 +491,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.command
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.command.list({ location: locationQuery(ref) }, { throwOnError: true })
-            const key = locationKey(result.data.location)
-            setStore("location", key, "command", result.data.data)
+            const result = await sdk.api.commands.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "command", result.data)
           },
         },
         integration: {
@@ -481,12 +501,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.integration
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.integration.list(
-              { location: locationQuery(ref) },
-              { throwOnError: true },
-            )
-            const key = locationKey(result.data.location)
-            setStore("location", key, "integration", result.data.data)
+            const result = await sdk.api.integrations.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "integration", result.data)
           },
         },
         model: {
@@ -494,9 +511,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.model
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.model.list({ location: locationQuery(ref) }, { throwOnError: true })
-            const key = locationKey(result.data.location)
-            setStore("location", key, "model", result.data.data)
+            const result = await sdk.api.models.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "model", result.data)
           },
         },
         provider: {
@@ -504,9 +521,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.provider
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.provider.list({ location: locationQuery(ref) }, { throwOnError: true })
-            const key = locationKey(result.data.location)
-            setStore("location", key, "provider", result.data.data)
+            const result = await sdk.api.providers.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "provider", result.data)
           },
         },
         reference: {
@@ -514,9 +531,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.reference
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.reference.list({ location: locationQuery(ref) }, { throwOnError: true })
-            const key = locationKey(result.data.location)
-            setStore("location", key, "reference", result.data.data)
+            const result = await sdk.api.references.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "reference", result.data)
           },
         },
         skill: {
@@ -524,9 +541,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
             return store.location[locationKey(location ?? defaultLocation())]?.skill
           },
           async refresh(ref?: LocationRef) {
-            const result = await sdk.client.v2.skill.list({ location: locationQuery(ref) }, { throwOnError: true })
-            const key = locationKey(result.data.location)
-            setStore("location", key, "skill", result.data.data)
+            const result = await sdk.api.skills.list({ location: locationQuery(ref) }, {})
+            const key = locationKey(result.location)
+            setStore("location", key, "skill", result.data)
           },
         },
       },

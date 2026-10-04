@@ -21,7 +21,8 @@ import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
-import { createMiaoClient, type MiaoClient, type ToolPart } from "@miao/sdk/v2"
+import type { ToolPart } from "@miao/schema/view-models"
+import { createClient, type Client } from "@/client"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
 
 type ModelInput = { providerID: string; modelID: string }
@@ -339,7 +340,7 @@ export const RunCommand = effectCmd({
         ? ServerAuth.headers({ password: args.password, username: args.username })
         : undefined
       const attachSDK = (dir?: string) => {
-        return createMiaoClient({
+        return createClient({
           baseUrl: args.attach!,
           directory: dir,
           headers: attachHeaders,
@@ -427,20 +428,20 @@ export const RunCommand = effectCmd({
 
       // Session routes use V2; the V1 routes write the retired V1 tables, which
       // fail once a database has been compacted.
-      async function sessionV2(sdk: MiaoClient): Promise<SessionInfo | undefined> {
+      async function sessionV2(sdk: Client): Promise<SessionInfo | undefined> {
         const where = directory ?? root
         const pick = async (id: string) => {
           if (!args.fork) {
-            const found = await sdk.v2.session.get({ sessionID: id }).then((result) => result.data?.data)
+            const found = await sdk.sessions.get({ sessionID: id }).then((result) => result)
             return found && { id: found.id, title: found.title, directory: found.location.directory }
           }
-          const forked = await sdk.v2.session.fork({ sessionID: id }).then((result) => result.data?.data)
+          const forked = await sdk.sessions.fork({ sessionID: id }).then((result) => result)
           return forked && { id: forked.id, title: forked.title, directory: forked.location.directory }
         }
         if (args.session) {
-          const found = await sdk.v2.session
+          const found = await sdk.sessions
             .get({ sessionID: args.session })
-            .then((result) => result.data?.data)
+            .then((result) => result)
             .catch(() => undefined)
           if (!found) {
             UI.error("Session not found")
@@ -449,52 +450,50 @@ export const RunCommand = effectCmd({
           return pick(found.id)
         }
         const base = args.continue
-          ? await sdk.v2.session
+          ? await sdk.sessions
               .list({ order: "desc", limit: 50, directory: where })
-              .then((result) => result.data?.data.find((item) => !item.parentID))
+              .then((result) => result.data.find((item) => !item.parentID))
           : undefined
         if (base) return pick(base.id)
-        const created = await sdk.v2.session
-          .create({ location: { directory: where } })
-          .then((result) => result.data?.data)
+        const created = await sdk.sessions.create({ location: { directory: where } }).then((result) => result)
         if (!created) return
         const name = title()
-        if (name) await sdk.v2.session.rename({ sessionID: created.id, title: name })
+        if (name) await sdk.sessions.rename({ sessionID: created.id, title: name })
         return { id: created.id, title: name ?? created.title, directory: created.location.directory }
       }
 
       // Sharing was removed; the interactive runtime still takes this hook.
-      async function share(_sdk: MiaoClient, _sessionID: string) {}
+      async function share(_sdk: Client, _sessionID: string) {}
 
       // The selected agent and model are switched on the new session, which is
       // what a V2 prompt then runs with.
       async function createFreshSessionV2(
-        sdk: MiaoClient,
+        sdk: Client,
         input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
       ): Promise<SessionInfo> {
-        const created = await sdk.v2.session
-          .create({ location: { directory: directory ?? root } }, { throwOnError: true })
-          .then((result) => result.data.data)
-        if (input.agent) await sdk.v2.session.switchAgent({ sessionID: created.id, agent: input.agent })
+        const created = await sdk.sessions
+          .create({ location: { directory: directory ?? root } }, {})
+          .then((result) => result)
+        if (input.agent) await sdk.sessions.switchAgent({ sessionID: created.id, agent: input.agent })
         if (input.model)
-          await sdk.v2.session.switchModel({
+          await sdk.sessions.switchModel({
             sessionID: created.id,
             model: { providerID: input.model.providerID, id: input.model.modelID, variant: input.variant },
           })
         const name = args.title !== undefined && args.title !== "" ? args.title : undefined
-        if (name) await sdk.v2.session.rename({ sessionID: created.id, title: name })
+        if (name) await sdk.sessions.rename({ sessionID: created.id, title: name })
         void share(sdk, created.id).catch(() => {})
         return { id: created.id, title: name ?? created.title }
       }
 
-      async function current(sdk: MiaoClient): Promise<string> {
+      async function current(sdk: Client): Promise<string> {
         if (!args.attach) {
           return directory ?? root
         }
 
-        const next = await sdk.v2.location
+        const next = await sdk.location
           .path()
-          .then((x) => x.data?.directory)
+          .then((x) => x.directory)
           .catch(() => undefined)
         if (next) {
           return next
@@ -530,13 +529,13 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function attachAgent(sdk: MiaoClient) {
+      async function attachAgent(sdk: Client) {
         if (!args.agent) return undefined
         const name = args.agent
 
-        const modes = await sdk.v2.agent
-          .list(undefined, { throwOnError: true })
-          .then((x) => x.data.data)
+        const modes = await sdk.agents
+          .list(undefined, {})
+          .then((x) => x.data)
           .catch(() => undefined)
 
         if (!modes) {
@@ -570,7 +569,7 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function pickAgent(sdk: MiaoClient) {
+      async function pickAgent(sdk: Client) {
         if (!args.agent) return undefined
         if (args.attach) {
           return attachAgent(sdk)
@@ -579,7 +578,7 @@ export const RunCommand = effectCmd({
         return localAgent()
       }
 
-      async function execute(sdk: MiaoClient) {
+      async function execute(sdk: Client) {
         const sess = await sessionV2(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
@@ -733,7 +732,7 @@ export const RunCommand = effectCmd({
         if (auth) headers.set("Authorization", auth)
         return Server.Default().app.fetch(new Request(request, { headers }))
       }) as typeof globalThis.fetch
-      const sdk = createMiaoClient({
+      const sdk = createClient({
         baseUrl: "http://opencode.internal",
         fetch: fetchFn,
         directory,

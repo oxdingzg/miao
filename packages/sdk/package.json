@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@miao/sdk-next",
+  "name": "@miao/sdk",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -21,5 +21,6 @@
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:"
-  }
+  },
+  "version": "0.1.1"
 }

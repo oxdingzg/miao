@@ -9,7 +9,9 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { base64Encode } from "@miao/core/util/encode"
 import { decode64 } from "@/utils/base64"
-import { EventSessionError } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
+
+type EventSessionError = Extract<Event, { type: "session.error" }>
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
 import { useGlobal } from "./global"

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { Event } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
 import { createMiaottyStateTracker, terminalTarget } from "@/plugin/miaotty"
 
 const event = (value: object) => value as unknown as Event
@@ -7,9 +7,9 @@ const event = (value: object) => value as unknown as Event
 test("maps session activity to processing and idle", () => {
   const tracker = createMiaottyStateTracker()
   expect(tracker.current).toBe("idle")
-  expect(tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } }))).toBe(
-    "processing",
-  )
+  expect(
+    tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } })),
+  ).toBe("processing")
   expect(
     tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } })),
   ).toBeUndefined()

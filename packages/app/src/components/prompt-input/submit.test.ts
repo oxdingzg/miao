@@ -5,7 +5,6 @@ import type { ModelSelection } from "@/context/local"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 
-const createdClients: string[] = []
 const createdSessions: string[] = []
 const sessionCreateInputs: Array<{
   agent?: string
@@ -77,7 +76,6 @@ const prompt = {
 }
 
 const clientFor = (directory: string) => {
-  createdClients.push(directory)
   return {
     api: {
       sessions: {
@@ -135,13 +133,6 @@ beforeAll(async () => {
     useParams: () => params,
     useLocation: () => ({}),
     useSearchParams: () => [search, () => undefined],
-  }))
-
-  mock.module("@miao/sdk/v2/client", () => ({
-    createMiaoClient: (input: { directory: string }) => {
-      createdClients.push(input.directory)
-      return clientFor(input.directory)
-    },
   }))
 
   mock.module("@miao/ui/toast", () => ({
@@ -209,12 +200,8 @@ beforeAll(async () => {
       const sdk = {
         scope: "local",
         directory: "/repo/main",
-        client: rootClient,
         api: rootClient.api,
         url: "http://localhost:4096",
-        createClient(opts: any) {
-          return clientFor(opts.directory)
-        },
       }
       return () => sdk
     },
@@ -292,7 +279,6 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
-  createdClients.length = 0
   createdSessions.length = 0
   sessionCreateInputs.length = 0
   enabledAutoAccept.length = 0
@@ -346,7 +332,6 @@ describe("prompt submit worktree selection", () => {
     selected = "/repo/worktree-b"
     await submit.handleSubmit(event)
 
-    expect(createdClients).toEqual(["/repo/worktree-a", "/repo/worktree-b"])
     expect(createdSessions).toEqual(["/repo/worktree-a", "/repo/worktree-b"])
     expect(sessionCreateInputs).toEqual([
       {

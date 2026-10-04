@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ToolPart } from "@miao/sdk/v2"
+import type { ToolPart } from "@miao/schema/view-models"
 import { entryBody, entryCanStream, entryDone } from "@/cli/cmd/run/entry.body"
 import type { StreamCommit, ToolSnapshot } from "@/cli/cmd/run/types"
 

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
-import type { Event } from "@miao/sdk/v2"
+import type { Event } from "@miao/schema/event-view"
 import type { GlobalEvent } from "../../../src/context/sdk"
 import { onMount } from "solid-js"
 import { ProjectProvider, useProject } from "../../../src/context/project"
