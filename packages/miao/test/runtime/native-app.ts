@@ -1,0 +1,247 @@
+import { Schema } from "effect"
+import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { createHash } from "node:crypto"
+import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { RuntimeOwnership } from "@miao/core/runtime/ownership"
+import { InstallationVersion } from "@miao/core/installation/version"
+import { ControlHub } from "@miao/remote-control/hub"
+import { DeviceGrants } from "@miao/remote-control/grants"
+
+export async function run() {
+  const root = path.resolve(import.meta.dir, "../../../..")
+  const directory = await mkdtemp(path.join(tmpdir(), "miao-app-runtime-"))
+  const database = path.join(directory, "sessions.db")
+  const project = path.join(directory, "project")
+  const runID = crypto.randomUUID()
+  const sessionID = "ses_native_ui_" + runID.replaceAll("-", "")
+  const title = "Native runtime session"
+  const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
+  const token = crypto.randomUUID() + crypto.randomUUID()
+  const hub = ControlHub.listen({ port: 0, hosts: new Map([[grants.hostID, token]]) })
+  const configuration = path.join(directory, "control.json")
+  const fixture = path.join(directory, "ui-fixture.json")
+  const environment = {
+    ...process.env,
+    MIAO_DB: database,
+    MIAO_REMOTE_CONTROL_CONFIG: configuration,
+    MIAO_PURE: "1",
+    MIAO_CONFIG_CONTENT: JSON.stringify({
+      model: "fixture/missing",
+      formatter: false,
+      lsp: false,
+      remote: { projects: {} },
+    }),
+    MIAO_TEST_HOME: path.join(directory, "home"),
+    MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
+    XDG_CONFIG_HOME: path.join(directory, "config"),
+    XDG_CACHE_HOME: path.join(directory, "cache"),
+    XDG_DATA_HOME: path.join(directory, "data"),
+    XDG_STATE_HOME: path.join(directory, "state"),
+  }
+  const state: { runtime?: ReturnType<typeof Bun.spawn>; ui?: ReturnType<typeof Bun.spawn>; approvalError?: unknown } =
+    {}
+  const runtimeOutput: { stdout?: Promise<string>; stderr?: Promise<string> } = {}
+  const Session = Schema.Struct({
+    data: Schema.Struct({ id: Schema.String, projectID: Schema.String, title: Schema.String }),
+  })
+  const Candidates = Schema.Array(
+    Schema.Struct({ pairingID: Schema.String, candidate: Schema.Struct({ publicKey: Schema.String }) }),
+  )
+  const Invitation = Schema.Struct({
+    version: Schema.Literal(1),
+    pairingID: Schema.String,
+    secret: Schema.String,
+    hubURL: Schema.String,
+    hostID: Schema.String,
+    runtimeID: Schema.String,
+    hostPublicKey: Schema.String,
+    expiresAt: Schema.Number,
+  })
+  let stopApproval = false
+  let approvalTask: Promise<void> | undefined
+
+  try {
+    await mkdir(project)
+    if ((await Bun.spawn(["git", "init", "--quiet", project]).exited) !== 0)
+      throw new Error("Fixture project initialization failed")
+    if (
+      (await Bun.spawn([
+        "git",
+        "-C",
+        project,
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "fixture",
+      ]).exited) !== 0
+    )
+      throw new Error("Fixture project commit failed")
+    await Bun.write(
+      configuration,
+      JSON.stringify({
+        hubURL: `http://127.0.0.1:${hub.port}`,
+        hostToken: token,
+        grantFile: "devices.json",
+        allowLoopbackHTTP: true,
+      }),
+    )
+    await chmod(configuration, 0o600)
+    await grants.close()
+    const runtimeProcess = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
+      cwd: path.join(root, "packages/miao"),
+      env: environment,
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    state.runtime = runtimeProcess
+    runtimeOutput.stdout = new Response(runtimeProcess.stdout).text()
+    runtimeOutput.stderr = new Response(runtimeProcess.stderr).text()
+    const storageID = createHash("sha256")
+      .update(await RuntimeOwnership.canonicalStorage(database))
+      .digest("hex")
+    const deadline = Date.now() + 30_000
+    let record: RuntimeDiscovery.Record | undefined
+    while (Date.now() < deadline) {
+      if (state.runtime.exitCode !== null) throw new Error("Fixture Runtime exited before readiness")
+      const candidate = await RuntimeDiscovery.read(database)
+      if (candidate)
+        record = await RuntimeDiscovery.attest(candidate, { version: InstallationVersion, storageID }).catch(
+          () => undefined,
+        )
+      if (record) break
+      await Bun.sleep(100)
+    }
+    if (!record) throw new Error("Fixture Runtime readiness timed out")
+    const runtime = record
+    const headers = {
+      authorization: `Basic ${Buffer.from(`miao:${runtime.credential}`).toString("base64")}`,
+      "content-type": "application/json",
+    }
+    const request = async (route: string, body?: unknown) => {
+      const response = await fetch(new URL(route, runtime.url), {
+        method: body === undefined ? "GET" : "POST",
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      })
+      if (!response.ok) throw new Error(`Fixture API ${route} rejected with ${response.status}`)
+      const value = await response.text()
+      return value.length ? Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(value) : undefined
+    }
+    await request("/api/session", { id: sessionID, location: { directory: project } })
+    await request(`/api/session/${sessionID}/rename`, { title })
+    const session = Schema.decodeUnknownSync(Session)(await request(`/api/session/${sessionID}`)).data
+    if (session.title !== title) throw new Error("Fixture session did not receive its title")
+    const invitation = Schema.decodeUnknownSync(Invitation)(
+      await request("/api/runtime/control/invitation", {
+        permissions: ["read", "prompt", "session.rename"],
+        sessionIDs: [sessionID],
+        projectIDs: [],
+        expiresAt: Date.now() + 180_000,
+      }),
+    )
+    await Bun.write(
+      fixture,
+      JSON.stringify({
+        runID,
+        title,
+        invitation: `miao://pair#${Buffer.from(JSON.stringify(invitation)).toString("base64url")}`,
+      }),
+    )
+    await chmod(fixture, 0o600)
+    approvalTask = (async () => {
+      while (!stopApproval) {
+        const candidates = Schema.decodeUnknownSync(Candidates)(await request("/api/runtime/control/pairing"))
+        const candidate = candidates.find((value) => value.pairingID === invitation.pairingID)
+        if (candidate) {
+          await request(`/api/runtime/control/pairing/${invitation.pairingID}/approve`, {
+            publicKey: candidate.candidate.publicKey,
+          })
+          return
+        }
+        await Bun.sleep(100)
+      }
+    })().catch((error: unknown) => {
+      state.approvalError = error
+      state.ui?.kill()
+    })
+    // Only a public test-fixture path reaches xcodebuild arguments. Secrets remain in the protected file.
+    const ui = Bun.spawn(
+      [
+        "sh",
+        "apps/ios/scripts/test-app.sh",
+        process.env.MIAO_UI_TEST_FAMILY ?? "iphone",
+        "-only-testing:MiaoUITests/PairingUITests/testRealRuntimeRenameAndDraftRecovery",
+        `MIAO_UI_TEST_FIXTURE=${fixture}`,
+        "-derivedDataPath",
+        path.join(directory, "derived"),
+        "-resultBundlePath",
+        path.join(directory, "result"),
+      ],
+      {
+        cwd: root,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
+    state.ui = ui
+    const output = new Response(ui.stdout).text()
+    const errors = new Response(ui.stderr).text()
+    const timeout = setTimeout(() => state.ui?.kill(), 240_000)
+    try {
+      if ((await state.ui.exited) !== 0) {
+        await Bun.write(path.join(directory, "ui.log"), (await output) + "\n" + (await errors))
+        throw new Error("Native live Runtime UI test failed")
+      }
+      await Bun.write(path.join(directory, "ui.log"), (await output) + "\n" + (await errors))
+      if (state.approvalError !== undefined) throw new Error("Fixture owner approval failed")
+      const renamed = Schema.decodeUnknownSync(Session)(await request(`/api/session/${sessionID}`)).data
+      if (renamed.title !== "Native phone rename") throw new Error("UI did not mutate the real Runtime session")
+      const history = Schema.decodeUnknownSync(
+        Schema.Struct({ data: Schema.Array(Schema.Struct({ type: Schema.String, data: Schema.Unknown })) }),
+      )(await request(`/api/session/${sessionID}/history`))
+      const admissions = history.data
+        .filter((event) => event.type === "session.next.prompt.admitted")
+        .map((event) =>
+          Schema.decodeUnknownSync(
+            Schema.Struct({
+              sessionID: Schema.String,
+              prompt: Schema.Struct({ text: Schema.String }),
+              delivery: Schema.Literal("queue"),
+            }),
+          )(event.data),
+        )
+      if (
+        admissions.length !== 1 ||
+        admissions[0].sessionID !== sessionID ||
+        admissions[0].prompt.text !== "retained phone draft"
+      )
+        throw new Error("The phone must admit exactly one queued input in the real Runtime")
+      console.log(
+        "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery and process restart passed",
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
+  } finally {
+    stopApproval = true
+    state.ui?.kill()
+    state.runtime?.kill()
+    await approvalTask
+    await state.runtime?.exited
+    await runtimeOutput.stdout
+    await runtimeOutput.stderr
+    await hub.stop()
+    // Retain failure evidence privately when requested; never publish invitations or device identity.
+    if (process.env.MIAO_UI_TEST_KEEP_RESULTS !== "1") await rm(directory, { recursive: true, force: true })
+  }
+}
+
+export * as NativeAppTest from "./native-app"

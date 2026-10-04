@@ -27,12 +27,14 @@ public actor HostRegistry {
     }
     private let file: URL
     private let deviceKey: String
+    private let allowLoopbackHTTP: Bool
     private var state: State?
 
-    public init(directory: URL, deviceKey: String) throws {
+    public init(directory: URL, deviceKey: String, allowLoopbackHTTP: Bool = false) throws {
         guard directory.isFileURL else { throw ClientStateError.invalidStorage }
         file = directory.appendingPathComponent("hosts-v1.json")
         self.deviceKey = deviceKey
+        self.allowLoopbackHTTP = allowLoopbackHTTP
     }
     public func hosts() throws -> [AuthorizedHost] { try load().hosts }
     public func attempts() throws -> [PairingAttempt] { try load().attempts }
@@ -42,7 +44,7 @@ public actor HostRegistry {
     }
 
     /// Persist the trust anchor before transmitting a claim, so uncertain approval can be reconciled later.
-    public func begin(_ invitation: PairingInvitation, allowLoopbackHTTP: Bool = false) throws {
+    public func begin(_ invitation: PairingInvitation) throws {
         try invitation.validate(allowLoopbackHTTP: allowLoopbackHTTP)
         var next = try load()
         next.attempts.removeAll { $0.id == invitation.pairingID }
@@ -103,7 +105,7 @@ public actor HostRegistry {
             }
             try record.host.target.validate()
             _ = try P256.Signing.PublicKey(x963Representation: decodeBase64URL(record.host.publicKey))
-            _ = try HubConnection.endpoint(hubURL: record.host.hubURL, hostID: record.host.target.hostID, allowLoopbackHTTP: false)
+            _ = try HubConnection.endpoint(hubURL: record.host.hubURL, hostID: record.host.target.hostID, allowLoopbackHTTP: allowLoopbackHTTP)
         }
         for attempt in next.attempts {
             guard attempt.id.range(of: "^[A-Za-z0-9_-]{16,128}$", options: .regularExpression) != nil else {
@@ -111,7 +113,7 @@ public actor HostRegistry {
             }
             try attempt.target.validate()
             _ = try P256.Signing.PublicKey(x963Representation: decodeBase64URL(attempt.hostPublicKey))
-            _ = try HubConnection.endpoint(hubURL: URL(string: attempt.hubURL), hostID: attempt.target.hostID, allowLoopbackHTTP: false)
+            _ = try HubConnection.endpoint(hubURL: URL(string: attempt.hubURL), hostID: attempt.target.hostID, allowLoopbackHTTP: allowLoopbackHTTP)
         }
     }
 

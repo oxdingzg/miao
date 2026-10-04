@@ -6,8 +6,9 @@ import MiaoCore
 
 @MainActor @Observable
 final class AppModel {
-    let identity = DeviceIdentity()
-    let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MiaoRemote")
+    let identity = DeviceIdentity(service: AppTestConfiguration.runID.map { "miao.remote.ui-test." + $0 } ?? "miao.remote.device")
+    let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent(AppTestConfiguration.runID.map { "MiaoRemoteUITest-" + $0 } ?? "MiaoRemote")
     var hosts: [AuthorizedHost] = []
     var attempts: [PairingAttempt] = []
     var clients: [UUID: HostClient] = [:]
@@ -22,7 +23,7 @@ final class AppModel {
     func load() async {
         do {
             let key = try await identity.loadOrCreate()
-            if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key)) }
+            if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             try await reload()
         } catch { self.error = userMessage(error) }
     }
@@ -45,10 +46,11 @@ final class AppModel {
         error = nil; fingerprint = nil; pairing = "正在连接电脑…"
         pairTask = Task {
             do {
-                let invitation = try PairingInvitation.parse(uri)
+                let invitation = try PairingInvitation.parse(uri, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
                 try await registry.begin(invitation)
                 let paired = try await HubConnection.pair(invitation: invitation, identity: identity.loadOrCreate(),
                     label: label,
+                    allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP,
                     pending: { [weak self] value in await self?.pending(value) },
                     persist: { host, grant in try await registry.approve(host: host, grant: grant, pairingID: invitation.pairingID) },
                     reconcile: { _ in throw RemoteRPCError.disconnected })
@@ -140,7 +142,7 @@ final class HostClient {
 
     private func connect() async throws -> HubConnection {
         guard !record.expired, !closed else { throw RemoteConnectionError.authorizationBlocked }
-        let opened = try await HubConnection.open(host: record.host, identity: identity.loadOrCreate()) { [weak self] connection in
+        let opened = try await HubConnection.open(host: record.host, identity: identity.loadOrCreate(), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) { [weak self] connection in
             guard let self else { throw RemoteRPCError.disconnected }
             try await self.synchronize(connection)
         }

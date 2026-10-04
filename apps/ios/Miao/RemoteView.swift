@@ -57,6 +57,7 @@ struct RemoteView: View {
         }
         .task {
             await model.load()
+            if let value = AppTestConfiguration.invitation { invitation = value; pairing = true }
             if hostID == nil { hostID = model.hosts.first?.id }
             await attach()
         }
@@ -74,7 +75,7 @@ struct RemoteView: View {
             Task { if let previous { await model.clients[previous]?.removeScene(sceneID) } }
         }
         .onOpenURL { url in invitation = url.absoluteString; pairing = true }
-        .sheet(isPresented: $pairing, onDismiss: { invitation = "" }) { PairingView(model: model, initialURI: invitation) }
+        .sheet(isPresented: $pairing, onDismiss: { invitation = "" }) { PairingView(model: model, initialURI: $invitation) }
     }
 
     @MainActor private func attach() async {
@@ -93,7 +94,7 @@ struct RemoteView: View {
 @MainActor
 private struct PairingView: View {
     @Bindable var model: AppModel
-    let initialURI: String
+    @Binding var initialURI: String
     @Environment(\.dismiss) private var dismiss
     @State private var uri = ""
     @State private var label = UIDevice.current.userInterfaceIdiom == .pad ? "我的 iPad" : "我的 iPhone"
@@ -279,7 +280,7 @@ private struct SessionView: View {
                 if client.record.grant.permissions.contains(.sessionRename) {
                     Button("重命名", systemImage: "pencil") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
                 }
-            } label: { Image(systemName: "ellipsis.circle") }.disabled(!client.ready)
+            } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单").disabled(!client.ready)
         }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }
@@ -312,7 +313,7 @@ private struct SessionView: View {
                         } } }
                     }.disabled(speech.requesting)
                     Spacer()
-                    Toggle("排队", isOn: $queue).toggleStyle(.button).font(.caption)
+                    Toggle("排队", isOn: $queue).toggleStyle(.button).font(.caption).accessibilityIdentifier("queueInput")
                     Button("发送", systemImage: "arrow.up") { speech.stop(); Task { await session.send(queue: queue) } }
                         .buttonStyle(.borderedProminent)
                         .disabled(!client.ready || client.sending(session.summary.id) || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.draft.utf16.count > 65_536)
@@ -374,7 +375,7 @@ private struct PendingView: View {
                     }
                 }
             }
-            ForEach(Array((session.pending["permissions"]?["data"]?.array ?? []).enumerated()), id: \.offset) { _, request in
+            ForEach(Array((session.pending["permissions"]?.array ?? []).enumerated()), id: \.offset) { _, request in
                 if let id = request["id"]?.string {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(request["action"]?.string ?? "权限请求").font(.headline)
@@ -386,12 +387,12 @@ private struct PendingView: View {
                     }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
-            ForEach(Array((session.pending["questions"]?["data"]?.array ?? []).enumerated()), id: \.offset) { _, request in
+            ForEach(Array((session.pending["questions"]?.array ?? []).enumerated()), id: \.offset) { _, request in
                 if let id = request["id"]?.string { QuestionView(client: client, session: session, request: request).id(id) }
             }
             if let data = session.pending["inputs"]?["data"]?.array, !data.isEmpty {
                 DisclosureGroup("待处理输入（\(data.count)）") {
-                    ForEach(Array(data.enumerated()), id: \.offset) { _, input in Text(input["text"]?.string ?? input.formatted).font(.footnote) }
+                    ForEach(Array(data.enumerated()), id: \.offset) { _, input in Text(input["prompt"]?["text"]?.string ?? input.formatted).font(.footnote) }
                 }
             }
         }
