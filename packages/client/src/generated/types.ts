@@ -2822,18 +2822,18 @@ export type IntegrationsConnectOauthInput = {
   }["location"]
   readonly methodID: {
     readonly methodID: string
-    readonly inputs: { readonly [x: string]: string }
-    readonly label?: string | undefined
+    readonly inputs?: { readonly [x: string]: string }
+    readonly label?: string | null
   }["methodID"]
   readonly inputs: {
     readonly methodID: string
-    readonly inputs: { readonly [x: string]: string }
-    readonly label?: string | undefined
+    readonly inputs?: { readonly [x: string]: string }
+    readonly label?: string | null
   }["inputs"]
   readonly label?: {
     readonly methodID: string
-    readonly inputs: { readonly [x: string]: string }
-    readonly label?: string | undefined
+    readonly inputs?: { readonly [x: string]: string }
+    readonly label?: string | null
   }["label"]
 }
 
