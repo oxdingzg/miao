@@ -6,6 +6,7 @@ import { Context, Effect, Layer } from "effect"
 import { DatabaseMigration } from "./migration"
 import { DatabaseFile } from "./file"
 import { makeGlobalNode } from "../effect/app-node"
+import { RuntimeOwnership } from "../runtime/ownership"
 
 const makeDatabase = EffectDrizzleSqlite.makeWithDefaults()
 type DatabaseShape = Effect.Success<typeof makeDatabase>
@@ -34,7 +35,17 @@ const layer = Layer.effect(
 )
 
 export function layerFromPath(filename: string) {
-  return layer.pipe(Layer.provide(sqliteLayer({ filename })))
+  const ownership =
+    filename === ":memory:"
+      ? Layer.empty
+      : Layer.effectDiscard(
+          Effect.acquireRelease(
+            Effect.promise(() => RuntimeOwnership.acquireShared(filename)),
+            (owner) => Effect.sync(owner.release),
+          ),
+        )
+  // Ownership must build beneath the native layer, before opening or migrating.
+  return layer.pipe(Layer.provide(sqliteLayer({ filename }).pipe(Layer.provide(ownership))))
 }
 
 export const path = DatabaseFile.path

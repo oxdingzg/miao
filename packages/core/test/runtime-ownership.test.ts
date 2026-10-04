@@ -22,6 +22,41 @@ async function acquire(filename: string) {
 }
 
 describe("Runtime ownership", () => {
+  test("database initialization cannot bypass another process's owner", async () => {
+    const filename = await storage()
+    await acquire(filename)
+    const database = path.resolve(import.meta.dir, "../src/database/database.ts")
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `import { Database } from ${JSON.stringify(database)};
+       import { Effect } from "effect";
+       await Effect.runPromise(Database.Service.pipe(Effect.provide(Database.layerFromPath(${JSON.stringify(filename)}))));`,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    )
+    expect(await child.exited).not.toBe(0)
+    expect(await new Response(child.stderr).text()).toContain("already has a running Runtime")
+  })
+
+  test("shares ownership across in-process scopes until the last scope closes", async () => {
+    const filename = await storage()
+    const references = await Promise.all([
+      RuntimeOwnership.acquireShared(filename),
+      RuntimeOwnership.acquireShared(filename),
+      RuntimeOwnership.acquireShared(filename),
+    ])
+    owners.push(...references)
+    await expect(RuntimeOwnership.acquire(filename)).rejects.toBeInstanceOf(RuntimeOwnership.BusyError)
+    references[0].release()
+    references[0].release()
+    references[1].release()
+    await expect(RuntimeOwnership.acquire(filename)).rejects.toBeInstanceOf(RuntimeOwnership.BusyError)
+    references[2].release()
+    expect((await acquire(filename)).storage).toBe(filename)
+  })
+
   test("rejects a second connection and releases idempotently", async () => {
     const filename = await storage()
     const owner = await acquire(filename)

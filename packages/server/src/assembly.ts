@@ -127,7 +127,7 @@ export function createRoutes(
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = buildLocationServiceMap()
 
-  return Layer.mergeAll(
+  const http = Layer.mergeAll(
     apiRoutes(options.remote, options.auth, options.runtime),
     options.extensions ?? Layer.empty,
   ).pipe(
@@ -136,13 +136,17 @@ export function createRoutes(
       compressionLayer,
       corsVaryFix,
       cors(options.cors),
-      AppNodeBuilder.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]]),
       HttpServer.layerServices,
     ]),
     Layer.provide(Layer.succeed(CorsConfig)(options.cors)),
     Layer.provide(sessionLocationLayer),
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
+  )
+  // Routers, authentication, middleware, and controls belong to a listener.
+  // Core execution and storage services below share the process MemoMap.
+  return Layer.fresh(http).pipe(
+    Layer.provide(AppNodeBuilder.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]])),
     Layer.provide(
       AppNodeBuilder.build(SessionV2.node, [
         [LocationServiceMap.node, locationServiceMapV2],

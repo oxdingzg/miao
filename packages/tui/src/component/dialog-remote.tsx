@@ -1,13 +1,9 @@
-// /remote: manage the `miao remote` daemon's IM connectors from the TUI. The
-// dialog talks to the daemon's control routes on 127.0.0.1:<remote.port>, which
-// may be a different server than the one this TUI is attached to. It renders
-// login steps (QR codes as half-block characters, inputs, pairing codes). When
-// no daemon answers, logins run in this process (the host injects RemoteLocal)
-// and the daemon starts or stops only after the user confirms the shown commands.
+// Manage the attached Runtime's IM connectors with its authenticated SDK.
+// Login steps include QR codes, inputs, and pairing codes. Older hosts without
+// IM controls can use the injected local connector host as a fallback.
 import { RGBA, TextAttributes } from "@opentui/core"
 import { OpenCode } from "@miao/client"
 import type { Config } from "@miao/schema/view-models"
-import { Flag } from "@miao/core/flag/flag"
 import { createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js"
 import { renderUnicodeCompact } from "uqr"
 import { useTheme } from "../context/theme"
@@ -150,8 +146,10 @@ export function createRemoteApi(input: {
   url: string
   headers?: Record<string, string>
   fetch?: typeof fetch
+  client?: ReturnType<typeof OpenCode.make>["remote"]
 }): RemoteApi {
-  const client = OpenCode.make({ baseUrl: input.url, headers: input.headers, fetch: input.fetch }).remote
+  const client =
+    input.client ?? OpenCode.make({ baseUrl: input.url, headers: input.headers, fetch: input.fetch }).remote
   return {
     status: () => client.get({ signal: AbortSignal.timeout(2000) }).catch(() => undefined),
     login: (connector) => client.login({ connector }).then((result) => result.flow),
@@ -170,18 +168,12 @@ export function DialogRemote() {
   const sdk = useSDK()
   const route = useRoute()
   const factory = useContext(RemoteLocalContext)
-  const port = sync.data.config.remote?.port ?? DefaultPort
-  const url = `http://127.0.0.1:${port}`
-  const password = Flag.MIAO_SERVER_PASSWORD
-  const headers = password
-    ? {
-        Authorization: `Basic ${Buffer.from(`${Flag.MIAO_SERVER_USERNAME ?? "miao"}:${password}`).toString("base64")}`,
-      }
-    : undefined
+  const url = sdk.url
+  const port = Number(new URL(url).port) || DefaultPort
   return (
     <DialogRemoteView
       environment={{
-        api: createRemoteApi({ url, headers }),
+        api: createRemoteApi({ url, client: sdk.api.remote }),
         port,
         attached: sameServer(sdk.url, url),
         sessionID: route.data.type === "session" ? route.data.sessionID : undefined,

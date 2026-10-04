@@ -1259,7 +1259,10 @@ type Endpoint29_0Input = { readonly challenge: Endpoint29_0Request["query"]["cha
 const Endpoint29_0 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_0Input) =>
   raw["runtime.identity"]({ query: { challenge: input["challenge"] } }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup29 = (raw: RawClient["server.runtime"]) => ({ identity: Endpoint29_0(raw) })
+const Endpoint29_1 = (raw: RawClient["server.runtime"]) => () =>
+  raw["runtime.stop"]({}).pipe(Effect.mapError(mapClientError))
+
+const adaptGroup29 = (raw: RawClient["server.runtime"]) => ({ identity: Endpoint29_0(raw), stop: Endpoint29_1(raw) })
 
 const adaptClient = (raw: RawClient) => ({
   health: adaptGroup0(raw["server.health"]),

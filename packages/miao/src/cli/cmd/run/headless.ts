@@ -68,34 +68,59 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     if (!abort.signal.aborted) report(errorText(error), error)
   })
 
-  const error = await applySelection(input)
-    .then(async () => {
-      if (input.command) {
-        await client.sessions.command({ sessionID, command: input.command, arguments: input.message })
-        return
-      }
-      await client.sessions.prompt({
-        sessionID,
-        prompt: promptInputFromParts([...input.files, { type: "text", text: input.message }]),
+  const interrupt = () => {
+    void client.sessions
+      .execution({ sessionID }, { signal: AbortSignal.timeout(3000) })
+      .then((execution) =>
+        execution.type === "running"
+          ? client.sessions.interruptIf(
+              { sessionID, executionID: execution.executionID },
+              { signal: AbortSignal.timeout(3000) },
+            )
+          : undefined,
+      )
+      .catch(() => undefined)
+      .finally(() => {
+        process.exitCode = 130
+        errors.push("Interrupted")
+        abort.abort()
       })
-    })
-    .then(
-      () => undefined,
-      (error: unknown) => error,
-    )
-  if (error) {
+  }
+  process.once("SIGINT", interrupt)
+  try {
+    const error = await applySelection(input)
+      .then(async () => {
+        if (input.command) {
+          await client.sessions.command({ sessionID, command: input.command, arguments: input.message })
+          return
+        }
+        await client.sessions.prompt({
+          sessionID,
+          prompt: promptInputFromParts([...input.files, { type: "text", text: input.message }]),
+        })
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+    if (error) {
+      abort.abort()
+      await watching
+      return report(errorText(error), error)
+    }
+
+    await waitIdle()
     abort.abort()
     await watching
-    return report(errorText(error), error)
+    // The session is idle: whatever text it produced is final even when the
+    // stream never marked its message complete (an unknown finish does that).
+    await mirror(true)
+    return errors.length > 0 ? errors.join("\n") : undefined
+  } finally {
+    process.off("SIGINT", interrupt)
+    abort.abort()
+    await watching
   }
-
-  await waitIdle()
-  abort.abort()
-  await watching
-  // The session is idle: whatever text it produced is final even when the
-  // stream never marked its message complete (an unknown finish does that).
-  await mirror(true)
-  return errors.length > 0 ? errors.join("\n") : undefined
 
   async function watch() {
     const iterator = events[Symbol.asyncIterator]()
@@ -221,11 +246,12 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
   // session.wait returns once the agent loop is idle; it is a long request, so
   // retry it if the connection drops before the session settles.
   async function waitIdle(): Promise<void> {
-    const error = await client.sessions.wait({ sessionID }).then(
+    if (abort.signal.aborted) return
+    const error = await client.sessions.wait({ sessionID }, { signal: abort.signal }).then(
       () => undefined,
       (error: unknown) => error,
     )
-    if (error === undefined) return
+    if (error === undefined || abort.signal.aborted) return
     await Bun.sleep(500)
     return waitIdle()
   }
