@@ -131,30 +131,35 @@ attachments and oversized tool output.
 `event` grows without bound per session; it is deleted only when the whole session is removed. This
 section scopes bounding it. It is **not yet implemented**.
 
-**Consumer audit.** Only one in-tree reader replays event payloads:
+**Consumer audit.** Several in-tree readers read event payloads, not just `latestSequence`:
 
-- **Session fork** (`V2Session.fork`) reads every `event` row for the parent aggregate and replays
-  it into the child (`events.replay(..., { publish: true })`). Pruning events must not break it.
-- `SessionHistory` reads only `EventV2.latestSequence` (a number), never event payloads.
-- The durable stream (`EventV2.durable`) serves live and resuming subscribers over `/api/event`;
-  an attached client can resume from a cursor, and no event before the resume window is replayed.
+- **Session fork** (`V2Session.fork`): **migrated** — it now reconstructs from the projection
+  (see step 1), so pruning no longer loses forked history.
+- **Diff** (`V2Session.diff`): reads `EventV2.readAggregate` and derives snapshot bounds with
+  `SessionDiff.baselineSnapshot` / `turnSnapshots`. Pruning its events would break historical
+  diffs. `session_message.data.snapshot` holds the same bounds and is the projection-side source.
+- **Event stream** (`V2Session.events`): replays `EventV2.durable` for a subscriber from a cursor.
+- **History** (`V2Session.history`): reads `EventV2.readAggregate`.
+- `SessionHistory` (read path) reads only `EventV2.latestSequence`, never payloads.
 
 **Policy (snapshot-then-truncate).** The latest `compaction` message in `session_message` is the
 baseline. Keep every event at or after that baseline plus a small trailing window; prune the rest
 per session.
 
-**Prerequisite (must land first).** Make `V2Session.fork` reconstruct the parent from its
-`session_message` projection (remapping ids) instead of replaying events, so pruning cannot lose
-forkable history. Cover a fully-inline session, a backfilled one, and a compacted one.
+**Prerequisites.** Fork-from-projection (step 1) is done. Before deletion, `diff`, `events`, and
+`history` must read the projection (`session_message`, which carries the snapshot bounds) instead
+of the event log. Until then, retention is **report-only**.
 
 **Steps.**
 
-1. Fork from the projection. Behavior-preserving; no retention yet.
-2. `miao db retention --dry-run` reports prunable rows per session (events before the kept window,
-   never below the baseline seq).
-3. `miao db retention --yes` deletes the planned rows in primary-key batches (reuse the `compact`
+1. Fork from the projection. **Done** (`refactor(core): reconstruct a forked session from the
+   projection`); a forked session no longer depends on the parent's event log.
+2. `miao db retention` reports prunable rows (events before each session's compaction baseline).
+   **Done** — report-only.
+3. Move `diff`, `events`, and `history` off the event log onto the projection.
+4. `miao db retention --yes` deletes the planned rows in primary-key batches (reuse the `compact`
    delete path) and resets only the `event_sequence` rows it empties.
-4. Document the contract: a subscriber resuming below the retained window full-syncs
+5. Document the contract: a subscriber resuming below the retained window full-syncs
    (`session.context`) instead of replaying.
 
 **Non-goals.** Pruning `session_message` (the projection is the record) and cross-session dedup.
