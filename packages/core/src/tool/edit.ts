@@ -13,7 +13,7 @@ import { Effect, Layer, Option, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
-import { EditFuzzy } from "./edit-fuzzy"
+import { EditMatch } from "./edit-match"
 import { LSP } from "../lsp"
 import { LSPClient } from "../lsp/client"
 import { Diagnostic } from "../lsp/diagnostic"
@@ -58,17 +58,6 @@ const decodeUtf8 = (content: Uint8Array) => {
   return { bom, content, text: new TextDecoder().decode(bom ? content.slice(3) : content) }
 }
 
-const countOccurrences = (content: string, search: string) => {
-  if (search === "") return content.length + 1
-  let count = 0
-  let offset = 0
-  while ((offset = content.indexOf(search, offset)) !== -1) {
-    count++
-    offset += search.length
-  }
-  return count
-}
-
 const previewLines = (value: string, prefix: "+" | "-") => {
   const lines = normalizeLineEndings(value).split("\n")
   const shown = lines.slice(0, 6).map((line) => `${prefix}${line.length > 240 ? `${line.slice(0, 240)}...` : line}`)
@@ -89,7 +78,7 @@ export const toModelOutput = (output: Output, oldString: string, newString: stri
     .join("\n")
 
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
-// TODO: Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.
+// TODO: Review block-anchor similarity thresholds as more real edits are observed.
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
 
@@ -239,20 +228,26 @@ export const node = makeLocationNode({
 function plan(text: string, input: typeof Input.Type) {
   const ending = detectLineEnding(text)
   const newString = convertToLineEnding(input.newString, ending)
-  const exact = convertToLineEnding(input.oldString, ending)
-  const oldString = countOccurrences(text, exact) === 0 ? (EditFuzzy.matchFuzzy(text, exact) ?? exact) : exact
-  const replacements = countOccurrences(text, oldString)
-  if (replacements === 0)
+  const oldString = convertToLineEnding(input.oldString, ending)
+  const replaceAll = input.replaceAll === true
+  const matched = EditMatch.match(text, oldString, replaceAll)
+  if (matched._tag === "none")
     return new ToolFailure({
       message: "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
     })
-  if (replacements > 1 && input.replaceAll !== true)
+  if (matched._tag === "ambiguous")
+    return new ToolFailure({
+      message: "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
+    })
+  if (matched._tag === "disproportionate")
     return new ToolFailure({
       message:
-        "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
+        "Refusing replacement because the matched span is much larger than oldString. Re-read the file and provide the full exact oldString for the intended replacement.",
     })
-  const replaced = input.replaceAll === true ? text.replaceAll(oldString, newString) : text.replace(oldString, newString)
-  return { replaced, replacements }
+  return {
+    replaced: replaceAll ? text.replaceAll(matched.find, newString) : text.replace(matched.find, newString),
+    replacements: matched.count,
+  }
 }
 
 /**

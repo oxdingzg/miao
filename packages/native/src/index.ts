@@ -28,6 +28,11 @@ export interface NativeModule {
     newString: string,
     replaceAll?: boolean,
   ): { content: string; additions: number; deletions: number }
+  matchEdit(
+    content: string,
+    oldString: string,
+    replaceAll?: boolean,
+  ): { kind: string; find?: string | null; count?: number | null }
   diffStats(before: string, after: string): { additions: number; deletions: number }
   unifiedPatch(before: string, after: string, filePath: string): string
   deriveNewContents(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
