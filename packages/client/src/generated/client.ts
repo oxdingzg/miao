@@ -312,6 +312,11 @@ export function make(options: ClientOptions) {
       }
       if (response.body === null) throw new ClientError("MalformedResponse")
       const reader = response.body.getReader()
+      const abort = () => {
+        void reader.cancel().catch(() => {})
+      }
+      requestOptions?.signal?.addEventListener("abort", abort, { once: true })
+      if (requestOptions?.signal?.aborted) abort()
       const decoder = new TextDecoder()
       let buffer = ""
       try {
@@ -322,6 +327,8 @@ export function make(options: ClientOptions) {
           } catch (cause) {
             throw new ClientError("Transport", { cause })
           }
+          if (requestOptions?.signal?.aborted)
+            throw new ClientError("Transport", { cause: requestOptions.signal.reason })
           buffer += decoder.decode(next.value, { stream: !next.done })
           if (buffer.length > 1_048_576) throw new ClientError("MalformedResponse")
           const trailingCarriageReturn = !next.done && buffer.endsWith("\r")
@@ -352,6 +359,7 @@ export function make(options: ClientOptions) {
         try {
           await reader.cancel()
         } catch {}
+        requestOptions?.signal?.removeEventListener("abort", abort)
         reader.releaseLock()
       }
     },

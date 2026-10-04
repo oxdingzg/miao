@@ -6,6 +6,11 @@ test("exposes every standard HTTP API group", () => {
 
   expect(Object.keys(client)).toEqual([
     "health",
+    "capabilities",
+    "formatters",
+    "config",
+    "lsp",
+    "mcp",
     "location",
     "agents",
     "sessions",
@@ -24,6 +29,10 @@ test("exposes every standard HTTP API group", () => {
     "references",
     "projectCopies",
     "projects",
+    "vcs",
+    "workspace",
+    "worktrees",
+    "controlPlane",
     "remote",
   ])
   expect(Object.keys(client.messages)).toEqual(["list"])
