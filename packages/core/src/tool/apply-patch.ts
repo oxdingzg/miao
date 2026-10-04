@@ -3,7 +3,8 @@ export * as ApplyPatchTool from "./apply-patch"
 import { ToolFailure } from "@miao/llm"
 import { FileDiff } from "@miao/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
-import { Effect, Layer, Result, Schema } from "effect"
+import path from "path"
+import { Effect, Layer, Option, Result, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
@@ -58,8 +59,10 @@ type Prepared =
     })
   | (Extract<Patch.Hunk, { readonly type: "update" }> & {
       readonly target: LocationMutation.Target
+      readonly destination?: LocationMutation.Target
       readonly source: Uint8Array
-      readonly content: string
+      readonly content: string | Uint8Array
+      readonly binary?: boolean
       readonly before: string
       readonly after: string
     })
@@ -79,7 +82,7 @@ const layer = Layer.effectDiscard(
         [name]: Tool.withPermission(
           Tool.make({
             description:
-              "Apply one patch containing add, update, and delete file operations. All targets are resolved and external directories approved before target contents are read; the whole patch is then approved, with its diff, before any file changes. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.",
+              "Apply one patch containing add, update, and delete file operations. All targets are resolved and external directories approved before target contents are read; the whole patch is then approved, with its diff, before any file changes. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. File moves preserve the source on destination conflicts; moves and batches are not atomically rolled back.",
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -104,16 +107,25 @@ const layer = Layer.effectDiscard(
                   catch: (cause) => new ToolFailure({ message: `apply_patch verification failed: ${String(cause)}` }),
                 })
                 if (hunks.length === 0) return yield* new ToolFailure({ message: "patch rejected: empty patch" })
-                const move = hunks.find((hunk) => hunk.type === "update" && hunk.movePath !== undefined)
-                if (move) return yield* new ToolFailure({ message: "apply_patch moves are not supported yet" })
-
-                const targets: Array<{ readonly hunk: Patch.Hunk; readonly target: LocationMutation.Target }> = []
+                const targets: Array<{
+                  readonly hunk: Patch.Hunk
+                  readonly target: LocationMutation.Target
+                  readonly destination?: LocationMutation.Target
+                }> = []
                 for (const hunk of hunks)
-                  targets.push({ hunk, target: yield* mutation.resolve({ path: hunk.path, kind: "file" }) })
+                  targets.push({
+                    hunk,
+                    target: yield* mutation.resolve({ path: hunk.path, kind: "file" }),
+                    ...(hunk.type === "update" && hunk.movePath !== undefined
+                      ? { destination: yield* mutation.resolve({ path: hunk.movePath, kind: "file" }) }
+                      : {}),
+                  })
                 const externalDirectories = new Map<string, LocationMutation.ExternalDirectoryAuthorization>()
-                for (const { target } of targets) {
-                  const external = target.externalDirectory
-                  if (external) externalDirectories.set(external.resource, external)
+                for (const item of targets) {
+                  for (const target of [item.target, ...(item.destination ? [item.destination] : [])]) {
+                    const external = target.externalDirectory
+                    if (external) externalDirectories.set(external.resource, external)
+                  }
                 }
                 for (const external of externalDirectories.values()) {
                   yield* permission.assert({
@@ -127,8 +139,37 @@ const layer = Layer.effectDiscard(
                 // edit approval, so the prompt can show the diff. A preparation
                 // failure is reported only after edit approval, so a caller
                 // without edit permission cannot probe file contents.
-                const preparation = yield* Effect.forEach(targets, ({ hunk, target }) =>
+                const preparation = yield* Effect.forEach(targets, (item) =>
                   Effect.gen(function* () {
+                    const hunk = item.hunk
+                    const target = item.target
+                    const same = item.destination?.canonical === target.canonical
+                    if (
+                      same &&
+                      hunk.type === "update" &&
+                      path.normalize(hunk.movePath ?? hunk.path) !== path.normalize(hunk.path)
+                    )
+                      return yield* new ToolFailure({
+                        message:
+                          "Move endpoints resolve to the same file through different spellings or aliases; no rename was applied.",
+                      })
+                    const destination = same ? undefined : item.destination
+                    if (destination) {
+                      const endpoints = new Set([target.canonical, destination.canonical])
+                      if (
+                        targets.some(
+                          (other) =>
+                            other !== item &&
+                            (endpoints.has(other.target.canonical) ||
+                              (other.destination && endpoints.has(other.destination.canonical))),
+                        )
+                      )
+                        return yield* fail(hunk.path)
+                      if (yield* fs.exists(destination.canonical))
+                        return yield* new ToolFailure({
+                          message: `Cannot move ${hunk.path}: destination already exists. Read both paths before changing the patch.`,
+                        })
+                    }
                     if (hunk.type === "add")
                       return {
                         ...hunk,
@@ -139,9 +180,30 @@ const layer = Layer.effectDiscard(
                       } satisfies Prepared
                     if ((yield* fs.stat(target.canonical)).type !== "File") return yield* fail(hunk.path)
                     const source = yield* fs.readFile(target.canonical)
+                    if (hunk.type === "delete") {
+                      const before = new TextDecoder("utf-8").decode(source)
+                      return { ...hunk, target, before, after: "" } satisfies Prepared
+                    }
+                    if (hunk.chunks.length === 0) {
+                      const decoded = yield* Effect.try({
+                        try: () => new TextDecoder("utf-8", { fatal: true }).decode(source),
+                        catch: () => new Error("Invalid UTF-8"),
+                      }).pipe(Effect.option)
+                      const binary = source.includes(0) || Option.isNone(decoded)
+                      const before = !binary && Option.isSome(decoded) ? decoded.value : ""
+                      return {
+                        ...hunk,
+                        target,
+                        destination,
+                        source,
+                        content: source,
+                        binary,
+                        before,
+                        after: before,
+                      } satisfies Prepared
+                    }
                     const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(source)
                     const before = original.replace(/^\uFEFF/, "")
-                    if (hunk.type === "delete") return { ...hunk, target, before, after: "" } satisfies Prepared
                     // derive throws when the context lines do not match; that must
                     // stay a failure so it is reported only after edit approval.
                     const update = yield* Effect.try({
@@ -151,15 +213,23 @@ const layer = Layer.effectDiscard(
                     return {
                       ...hunk,
                       target,
+                      destination,
                       source,
                       content: Patch.joinBom(update.content, update.bom),
                       before,
                       after: update.content,
                     } satisfies Prepared
-                  }).pipe(Effect.mapError(() => fail(hunk.path))),
+                  }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(item.hunk.path)))),
                 ).pipe(Effect.result)
-                const patchFiles = Result.isSuccess(preparation) ? preparation.success.map(patchFile) : []
-                const resources = [...new Set(targets.map(({ target }) => target.resource))]
+                const patchFiles = Result.isSuccess(preparation) ? preparation.success.flatMap(filesForChange) : []
+                const resources = [
+                  ...new Set(
+                    targets.flatMap((item) => [
+                      item.target.resource,
+                      ...(item.destination ? [item.destination.resource] : []),
+                    ]),
+                  ),
+                ]
                 yield* permission.assert({
                   action: "edit",
                   resources,
@@ -168,18 +238,7 @@ const layer = Layer.effectDiscard(
                     filepath: resources.join(", "),
                     ...(Result.isSuccess(preparation)
                       ? {
-                          diff: preparation.success
-                            .map((change) =>
-                              trimDiff(
-                                createTwoFilesPatch(
-                                  change.target.canonical,
-                                  change.target.canonical,
-                                  change.before,
-                                  change.after,
-                                ),
-                              ),
-                            )
-                            .join("\n"),
+                          diff: patchFiles.map((file) => trimDiff(file.patch ?? "")).join("\n"),
                           files: patchFiles,
                         }
                       : {}),
@@ -211,19 +270,53 @@ const layer = Layer.effectDiscard(
                         applied.push({ type: change.type, resource: result.resource, target: result.target })
                         return
                       }
+                      if (change.destination) {
+                        const destination = change.destination
+                        const result = yield* files
+                          .move({
+                            source: change.target,
+                            target: destination,
+                            expected: change.source,
+                            content: change.content,
+                          })
+                          .pipe(
+                            Effect.catchTag("FileMutation.PartialMoveError", () => {
+                              applied.push({
+                                type: "add",
+                                resource: destination.resource,
+                                target: destination.canonical,
+                              })
+                              return new ToolFailure({
+                                message: `${fail(change.path).message}. Destination was created; inspect both endpoints before retrying.`,
+                              })
+                            }),
+                          )
+                        applied.push({ type: "add", resource: result.resource, target: result.target })
+                        applied.push({
+                          type: "delete",
+                          resource: change.target.resource,
+                          target: change.target.canonical,
+                        })
+                        if (change.chunks.length > 0) yield* format.file(result.target).pipe(Effect.ignore)
+                        return
+                      }
                       const result = yield* files.writeIfUnchanged({
                         target: change.target,
                         expected: change.source,
                         content: change.content,
                       })
                       applied.push({ type: change.type, resource: result.resource, target: result.target })
-                      yield* format.file(change.target.canonical).pipe(Effect.ignore)
-                    }).pipe(Effect.mapError(() => fail(change.path))),
+                      if (change.chunks.length > 0) yield* format.file(change.target.canonical).pipe(Effect.ignore)
+                    }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(change.path)))),
                   { discard: true },
                 )
                 // Like write and edit, report the errors language servers see in the
                 // files the patch left behind.
-                const changed = prepared.filter((change) => change.type !== "delete")
+                const changed = prepared
+                  .filter((change) => change.type !== "delete")
+                  .map((change) =>
+                    change.type === "update" && change.destination ? { ...change, target: change.destination } : change,
+                  )
                 yield* Effect.forEach(
                   changed,
                   (change) => lsp.touchFile(change.target.canonical, "document").pipe(Effect.ignore),
@@ -253,10 +346,18 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/apply-patch",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
+  deps: [
+    ToolRegistry.node,
+    LocationMutation.node,
+    FileMutation.node,
+    FSUtil.node,
+    PermissionV2.node,
+    Format.node,
+    LSP.node,
+  ],
 })
 
-function patchFile(change: Prepared): typeof FileDiff.Info.Type {
+function patchFile(change: Pick<Prepared, "type" | "target" | "before" | "after">): typeof FileDiff.Info.Type {
   const counts = diffLines(change.before, change.after).reduce(
     (result, item) => ({
       additions: result.additions + (item.added ? (item.count ?? 0) : 0),
@@ -270,4 +371,19 @@ function patchFile(change: Prepared): typeof FileDiff.Info.Type {
     status: change.type === "add" ? "added" : change.type === "delete" ? "deleted" : "modified",
     ...counts,
   }
+}
+
+function filesForChange(change: Prepared): Array<typeof FileDiff.Info.Type> {
+  if (change.type !== "update" || !change.destination) return [patchFile(change)]
+  if (change.binary) {
+    const patch = `Binary file moved: ${change.target.resource} -> ${change.destination.resource}`
+    return [
+      { file: change.target.resource, status: "deleted", additions: 0, deletions: 0, patch },
+      { file: change.destination.resource, status: "added", additions: 0, deletions: 0, patch },
+    ]
+  }
+  return [
+    patchFile({ type: "delete", target: change.target, before: change.before, after: "" }),
+    patchFile({ type: "add", target: change.destination, before: "", after: change.after }),
+  ]
 }

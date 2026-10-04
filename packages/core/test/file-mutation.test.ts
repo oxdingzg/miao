@@ -34,6 +34,21 @@ function withTmp<A, E, R>(f: (directory: string) => Effect.Effect<A, E, R>) {
 }
 
 describe("FileMutation", () => {
+  it.live("a same-target conditional move cannot deadlock or delete the file", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        const file = path.join(directory, "same.txt")
+        yield* Effect.promise(() => fs.writeFile(file, "before"))
+        const mutation = yield* LocationMutation.Service
+        const files = yield* FileMutation.Service
+        const target = yield* mutation.resolve({ path: "same.txt" })
+        const expected = yield* Effect.promise(() => fs.readFile(file))
+        yield* files.move({ source: target, target, expected, content: "after" }).pipe(Effect.timeout("2 seconds"))
+        expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe("after")
+      }).pipe(provide(directory)),
+    ),
+  )
+
   it.live("writes an existing internal file and returns a stable result", () =>
     withTmp((directory) =>
       Effect.gen(function* () {

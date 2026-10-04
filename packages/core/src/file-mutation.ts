@@ -25,6 +25,16 @@ export interface ConditionalWriteInput extends WriteInput {
   readonly expected: Uint8Array
 }
 
+export interface MoveInput extends ConditionalWriteInput {
+  readonly source: Target
+}
+
+export class PartialMoveError extends Schema.TaggedErrorClass<PartialMoveError>()("FileMutation.PartialMoveError", {
+  source: Schema.String,
+  target: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
 export interface RemoveInput {
   readonly target: Target
 }
@@ -63,6 +73,10 @@ export interface Interface {
   readonly writeIfUnchanged: (
     input: ConditionalWriteInput,
   ) => Effect.Effect<WriteResult, StaleContentError | FSUtil.Error>
+  /** Create the destination exclusively, then remove the unchanged source under ordered locks. */
+  readonly move: (
+    input: MoveInput,
+  ) => Effect.Effect<WriteResult, PartialMoveError | StaleContentError | TargetExistsError | FSUtil.Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<RemoveResult, FSUtil.Error>
 }
 
@@ -126,25 +140,64 @@ const layer = Layer.effect(
       ),
     )
 
+    const createFile = Effect.fnUntraced(function* (input: WriteInput) {
+      const write =
+        typeof input.content === "string"
+          ? fs.writeFileString(input.target.canonical, input.content, { flag: "wx" })
+          : fs.writeFile(input.target.canonical, input.content, { flag: "wx" })
+      yield* write.pipe(
+        Effect.catchReason("PlatformError", "NotFound", () =>
+          fs.ensureDir(dirname(input.target.canonical)).pipe(Effect.andThen(write)),
+        ),
+        Effect.catchReason("PlatformError", "AlreadyExists", () =>
+          Effect.fail(new TargetExistsError({ path: input.target.canonical })),
+        ),
+      )
+      return writeResult(input.target, false)
+    })
+
     const create = Effect.fn("FileMutation.create")((input: WriteInput) =>
-      withTargetLock(input.target)(
-        Effect.gen(function* () {
-          const write =
-            typeof input.content === "string"
-              ? fs.writeFileString(input.target.canonical, input.content, { flag: "wx" })
-              : fs.writeFile(input.target.canonical, input.content, { flag: "wx" })
-          yield* write.pipe(
-            Effect.catchReason("PlatformError", "NotFound", () =>
-              fs.ensureDir(dirname(input.target.canonical)).pipe(Effect.andThen(write)),
-            ),
-            Effect.catchReason("PlatformError", "AlreadyExists", () =>
-              Effect.fail(new TargetExistsError({ path: input.target.canonical })),
-            ),
-          )
-          return writeResult(input.target, false)
-        }),
-      ),
+      withTargetLock(input.target)(createFile(input)),
     )
+
+    const move = Effect.fn("FileMutation.move")((input: MoveInput) => {
+      if (input.source.canonical === input.target.canonical) return writeIfUnchanged(input)
+      const [first, second] =
+        input.source.canonical < input.target.canonical
+          ? [input.source.canonical, input.target.canonical]
+          : [input.target.canonical, input.source.canonical]
+      return locks.withLock(first)(
+        locks.withLock(second)(
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              const current = yield* fs.readFile(input.source.canonical)
+              if (!sameBytes(current, input.expected))
+                return yield* new StaleContentError({ path: input.source.canonical })
+              const info = yield* fs.stat(input.source.canonical)
+              const result = yield* createFile(input)
+              // Never remove a source edited by an external process while the destination was created.
+              yield* Effect.gen(function* () {
+                yield* fs.chmod(input.target.canonical, info.mode)
+                const source = yield* fs.readFile(input.source.canonical)
+                if (!sameBytes(source, input.expected))
+                  return yield* new StaleContentError({ path: input.source.canonical })
+                yield* fs.remove(input.source.canonical)
+              }).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new PartialMoveError({
+                      source: input.source.canonical,
+                      target: input.target.canonical,
+                      cause,
+                    }),
+                ),
+              )
+              return result
+            }),
+          ),
+        ),
+      )
+    })
 
     const writeIfUnchanged = Effect.fn("FileMutation.writeIfUnchanged")((input: ConditionalWriteInput) =>
       withTargetLock(input.target)(
@@ -173,7 +226,7 @@ const layer = Layer.effect(
       ),
     )
 
-    return Service.of({ create, write, writeTextPreservingBom, writeIfUnchanged, remove })
+    return Service.of({ create, write, writeTextPreservingBom, writeIfUnchanged, move, remove })
   }),
 )
 

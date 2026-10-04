@@ -58,7 +58,8 @@ export function parse(patchText: string): ReadonlyArray<Hunk> {
         next++
       }
       const parsed = parseUpdate(lines, next)
-      if (parsed.chunks.length === 0) throw new Error(`Invalid update hunk for ${path}: expected at least one @@ chunk`)
+      if (parsed.chunks.length === 0 && movePath === undefined)
+        throw new Error(`Invalid update hunk for ${path}: expected at least one @@ chunk`)
       hunks.push({ type: "update", path, movePath, chunks: parsed.chunks })
       index = parsed.next
       continue
