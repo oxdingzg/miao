@@ -66,10 +66,14 @@ app 的网络调用已迁移，但其内部状态仍经过 V1 形状的适配与
 ### 1.3 非会话旧路由与服务端拆除
 大多数 V2 端点已存在（`pty.shells`、`project.update`、`vcs.diff`、`fs.content`、`config.update`、
 经 `/api/worktree` 的 `workspace.reset`、`project.initGit`、项目持久化）。剩余：
-- [ ] 把项目持久化完全下沉 core：`ProjectTable` 行目前只由 V1 `Project.fromDirectory` 路径维护
-      （项目 ID 迁移、sandboxes、`time_initialized`）；V2 只在建会话与改名时 insert-or-ignore。
-      此项必须在删除 V1 project 代码前落地（`ProjectV2.commit` 过渡桥；V1 `project.ts` 的
-      `fromRow` 与 core `ProjectMetadata.fromRow` 重复）。
+- [x] 把项目持久化下沉 core。ID 迁移、sandbox 维护、目录注册与 `project.updated` 事件本就在 core
+      `ProjectRegistry` 中；`ProjectMetadata` 现在也负责 `setInitialized`、`sandboxes`、`addSandbox`、
+      `removeSandbox`。`packages/miao` 的 `Project` 服务委托 core，不再直接写 `ProjectTable`
+      （#35、#36）。服务端 handler 已只用 core。
+- [ ] 删除现已很薄的 `packages/miao` `Project` facade。它只剩 `fromDirectory`（resolve +
+      `ProjectRegistry.register`）、`/init` 订阅，以及 `discover`（`ProjectRegistry.discoverIcon`）；
+      其测试仍在跑 `discover`。把 `instance-store`、`bootstrap`、`worktree`、`control-plane/workspace`、
+      `stats`、`scrap` 改指 core，然后把 `/init` 订阅移到一个小的 miao 自有服务。
 - [ ] 移除 `packages/miao` 的 `app-runtime` V1 层及剩余非会话旧路由；把发布服务端切到 V2-only
       组装。
 - [ ] 确认 V2 端点覆盖了此前在 V2 下被静默禁用的 app 行为（全局配置读取、项目重命名、目录

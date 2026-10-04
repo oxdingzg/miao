@@ -70,11 +70,16 @@ adapters and types, and V1 event compatibility layers remain.
 ### 1.3 Non-session legacy routes and server teardown
 Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content`, `config.update`,
 `workspace.reset` via `/api/worktree`, `project.initGit`, `project` persistence). Remaining:
-- [ ] Move project persistence fully into core: `ProjectTable` rows are currently maintained only
-      by the V1 `Project.fromDirectory` path (project ID migration, sandboxes, `time_initialized`);
-      V2 only insert-or-ignores on session-create and rename. This must land before the V1 project
-      code can be deleted (`ProjectV2.commit` transitional bridge; V1 `project.ts` `fromRow`
-      duplicates core `ProjectMetadata.fromRow`).
+- [x] Move project persistence into core. The ID migration, sandbox maintenance, directory
+      registration, and `project.updated` event already lived in core `ProjectRegistry`;
+      `ProjectMetadata` now also owns `setInitialized`, `sandboxes`, `addSandbox`, and
+      `removeSandbox`. The `packages/miao` `Project` service delegates to core and no longer writes
+      `ProjectTable` directly (#35, #36). The server handlers already use core only.
+- [ ] Delete the now-thin `packages/miao` `Project` facade. It retains only `fromDirectory`
+      (resolve + `ProjectRegistry.register`), the `/init` subscription, and `discover`
+      (`ProjectRegistry.discoverIcon`); its tests still exercise `discover`. Repoint
+      `instance-store`, `bootstrap`, `worktree`, `control-plane/workspace`, `stats`, and `scrap` at
+      core, then move the `/init` subscription to a small miao-owned service.
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy routes;
       switch the release server to the V2-only assembly.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
