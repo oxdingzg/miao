@@ -300,11 +300,11 @@ export const ProvidersLoginCommand = effectCmd({
   command: "login [url]",
   describe: "log in to a provider",
   // URL login skips instance bootstrap, which would load remote config with the stale token and crash before re-auth.
-  instance: (args) => !args.url,
+  instance: (args) => !loginTarget(args.url).url,
   builder: (yargs: Argv) =>
     yargs
       .positional("url", {
-        describe: "miao auth provider",
+        describe: "provider id/name or an HTTP(S) auth-provider URL",
         type: "string",
       })
       .option("provider", {
@@ -322,8 +322,9 @@ export const ProvidersLoginCommand = effectCmd({
 
     UI.empty()
     yield* Prompt.intro("Add credential")
-    if (args.url) {
-      const url = args.url.replace(/\/+$/, "")
+    const target = loginTarget(args.url)
+    if (target.url) {
+      const url = target.url
       const wellknown = (yield* cliTry(`Failed to load auth provider metadata from ${url}: `, () =>
         fetch(`${url}/.well-known/opencode`).then((x) => x.json()),
       )) as {
@@ -409,8 +410,9 @@ export const ProvidersLoginCommand = effectCmd({
     ]
 
     let provider: string
-    if (args.provider) {
-      const input = args.provider
+    const requestedProvider = args.provider ?? target.provider
+    if (requestedProvider) {
+      const input = requestedProvider
       const byID = options.find((x) => x.value === input)
       const byName = options.find((x) => x.label.toLowerCase() === input.toLowerCase())
       const match = byID ?? byName
@@ -463,7 +465,7 @@ export const ProvidersLoginCommand = effectCmd({
       )
     }
 
-    if (provider === "opencode") {
+    if (provider === "opencode" || provider === "opencode-go") {
       yield* Prompt.log.info("Create an api key at https://opencode.ai/auth")
     }
 
@@ -487,6 +489,11 @@ export const ProvidersLoginCommand = effectCmd({
     yield* Prompt.outro("Done")
   }),
 })
+
+export function loginTarget(input?: string) {
+  if (input && /^https?:\/\//i.test(input)) return { url: input.replace(/\/+$/, ""), provider: undefined }
+  return { url: undefined, provider: input }
+}
 
 export const ProvidersLogoutCommand = effectCmd({
   command: "logout [provider]",
