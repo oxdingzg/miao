@@ -19,6 +19,7 @@ import { monitorEventLoopDelay } from "perf_hooks"
 import { isMainThread, threadId } from "node:worker_threads"
 import { DatabaseFile } from "@miao/core/database/file"
 import { DiagnosticFiles } from "@miao/core/diagnostic-files"
+import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { Global } from "@miao/core/global"
 import { InstallationChannel, InstallationVersion } from "@miao/core/installation/version"
 
@@ -178,6 +179,7 @@ async function sample() {
     ...latency,
     probeMs: Math.round(performance.now() - started),
     skippedSamples: skipped,
+    runtime: DiagnosticMetrics.snapshot(),
     load1: os.loadavg()[0],
     freeMem: os.freemem(),
     totalMem: os.totalmem(),

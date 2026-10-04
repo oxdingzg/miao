@@ -4,10 +4,11 @@ import type { TuiTranscriptMessage } from "@miao/plugin/tui"
 
 /**
  * A V2 durable session event that changes the transcript and therefore needs a
- * re-hydration. Location moves (`session.next.moved`) do not change messages.
+ * re-hydration. Location moves and status heartbeats do not change messages;
+ * the sync owner handles idle transitions separately.
  */
 export function isLiveSessionV2Event(type: string): boolean {
-  return type.startsWith("session.next.") && type !== "session.next.moved"
+  return type.startsWith("session.next.") && type !== "session.next.moved" && type !== "session.next.status"
 }
 
 /**

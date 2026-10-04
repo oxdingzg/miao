@@ -6,6 +6,7 @@ import { MessageDecodeError } from "./error"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionContextEpochTable, SessionMessageTable } from "./sql"
+import { DiagnosticMetrics } from "../diagnostic-metrics"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -33,12 +34,32 @@ type CachedEntries = {
 // Streaming updates existing assistant rows without changing their message sequence.
 // The durable event revision prevents cached partial messages from hiding their final text and finish state.
 const caches = new WeakMap<object, Map<string, CachedEntries>>()
+const maps = new Set<WeakRef<Map<string, CachedEntries>>>()
+const reads = { hits: 0, reloads: 0, decodedRows: 0 }
+DiagnosticMetrics.register("core.history", () => {
+  const current = [...maps].flatMap((reference) => {
+    const map = reference.deref()
+    if (map) return [map]
+    maps.delete(reference)
+    return []
+  })
+  return {
+    ...reads,
+    databases: current.length,
+    sessions: current.reduce((count, map) => count + map.size, 0),
+    entries: current.reduce(
+      (count, map) => count + [...map.values()].reduce((sum, cache) => sum + cache.entries.length, 0),
+      0,
+    ),
+  }
+})
 
 function cacheFor(db: object) {
   let map = caches.get(db)
   if (!map) {
     map = new Map()
     caches.set(db, map)
+    maps.add(new WeakRef(map))
   }
   return map
 }
@@ -91,8 +112,10 @@ const decodeMessageRow = (row: typeof SessionMessageTable.$inferSelect) =>
     ),
   )
 
-const decodeRows = (rows: ReadonlyArray<typeof SessionMessageTable.$inferSelect>) =>
-  Effect.forEach(rows, (row) => decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))))
+const decodeRows = (rows: ReadonlyArray<typeof SessionMessageTable.$inferSelect>) => {
+  reads.decodedRows += rows.length
+  return Effect.forEach(rows, (row) => decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))))
+}
 
 const loadEntries = Effect.fnUntraced(function* (
   db: DatabaseService,
@@ -110,6 +133,7 @@ const loadEntries = Effect.fnUntraced(function* (
     cached.baselineSeq === baselineSeq &&
     cached.compactionSeq === compactionSeq
   ) {
+    reads.hits += 1
     const rows = yield* messageRows(db, sessionID, compaction, baselineSeq, cached.maxSeq)
     if (rows.length === 0) return cached.entries
     const entries = [...cached.entries, ...(yield* decodeRows(rows))]
@@ -122,6 +146,7 @@ const loadEntries = Effect.fnUntraced(function* (
     })
     return entries
   }
+  reads.reloads += 1
   const rows = yield* messageRows(db, sessionID, compaction, baselineSeq)
   const entries = yield* decodeRows(rows)
   map.set(sessionID, {

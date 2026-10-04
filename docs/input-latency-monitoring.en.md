@@ -26,6 +26,18 @@ Reproduce the calibration in a disposable process:
 bun packages/miao/script/monitor-calibration.ts
 ```
 
+## Input and history instrumentation
+
+Monitor records now include isolate-local `runtime` metrics:
+
+- `tui.input`: monotonic handler-receipt, completed state-update, and next rendered-frame timestamps, plus windowed handler-to-state/output histograms. The renderer's frame event follows native output submission. Coalesced edits use the oldest edited receipt in that frame. Counters are cumulative; histograms reset on sampling. These measurements exclude OS input queueing and terminal presentation time, and do not retain input text.
+- `tui.sync`: hydration count and elapsed time (including requests), current render-node count, in-flight hydrations, and per-session message/part/UTF-16 text-unit/older-message counts. These describe retained application data, not heap allocation ownership or exact bytes.
+- `core.history`: cache reuse/reload and decoded-row counters, with live database/session/entry counts. Weak references allow the metrics registry to observe caches without keeping database caches alive.
+
+Repeated busy status events now update status without scheduling history hydration. A busy-to-idle transition still schedules a settlement refresh. Text and other transcript events retain their existing refresh behavior.
+
+Verification: Core, TUI, and miao typechecks passed. Input timing, transcript conversion, prompt receipt and status-heartbeat regressions: **19 pass / 73 assertions**. Diagnostic reader lifetime/failure isolation: **2 pass**. History projection: **8 pass**. Monitor responsiveness: **1 pass**. The mounted status test verifies ten busy heartbeats produce no extra context request, then an idle transition produces one settlement refresh.
+
 ## Still required
 
-Input receipt/state/output timestamps, allocation attribution, fixed-workload long-session comparisons, and 30–60 minute lifecycle/memory observations remain pending. No P95/P99 input-echo improvement, leak fix, or GPU attribution is claimed. Original captures and their manifest remain unchanged.
+Real input/state/output correlation under controlled workloads, allocation attribution, fixed-workload long-session comparisons, and 30–60 minute lifecycle/memory observations remain pending. No P95/P99 input-echo improvement, leak fix, or GPU attribution is claimed. Original captures and their manifest remain unchanged.
