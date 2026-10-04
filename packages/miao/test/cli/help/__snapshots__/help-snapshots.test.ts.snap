@@ -622,7 +622,7 @@ miao providers login [url]
 log in to a provider
 
 Positionals:
-  url  miao auth provider                                                                   [string]
+  url  provider id/name or an HTTP(S) auth-provider URL                                     [string]
 
 Options:
   -h, --help        show help                                                              [boolean]
