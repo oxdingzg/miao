@@ -1050,10 +1050,16 @@ export function createServerSession(
         // otherwise join the in-flight request and never refresh.
         for (const sessionID of new Set([...Object.keys(data.todo), ...inflightTodo.keys()])) {
           todoRevisions.set(sessionID, (todoRevisions.get(sessionID) ?? 0) + 1)
+          const active = generation(sessionID)
+          const pending = inflightTodo.get(sessionID)
           void (async () => {
-            await inflightTodo.get(sessionID)
-            await loadTodo(sessionID, { force: true })
-          })().catch(() => {})
+            // Wait out the pre-reconnect request even if it rejected, so the
+            // fresh read is not skipped by the coalescing inflight map.
+            await pending?.catch(() => {})
+            // A session deleted while waiting must not have its cache resurrected.
+            if (generations.get(sessionID) !== active) return
+            await loadTodo(sessionID, { force: true }).catch(() => {})
+          })()
         }
         return
       }
