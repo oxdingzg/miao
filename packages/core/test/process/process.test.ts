@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import { realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -364,5 +364,36 @@ describe("AppProcess", () => {
         }),
       ),
     )
+  })
+})
+
+describe("AppProcess.decodeBytes", () => {
+  // Bytes captured from a Chinese Windows host (`96`, codepage 936) running
+  // `cmd /c "dir C:\winenc /b"` for a file named `测试文件.txt`. UTF-8 decoding
+  // produced the replacement-character mojibake the user reported.
+  const gbkBytes = Buffer.from([0xb2, 0xe2, 0xca, 0xd4, 0xce, 0xc4, 0xbc, 0xfe, 0x2e, 0x74, 0x78, 0x74])
+
+  test("decodes GBK shell output on the Windows branch", () => {
+    expect(AppProcess.decodeBytes(gbkBytes, { windows: true })).toBe("测试文件.txt")
+  })
+
+  test("keeps already-UTF-8 output untouched on the Windows branch", () => {
+    const utf8 = Buffer.from("测试文件.txt", "utf8")
+    expect(AppProcess.decodeBytes(utf8, { windows: true })).toBe("测试文件.txt")
+  })
+
+  test("does not apply the code page off Windows", () => {
+    expect(AppProcess.decodeBytes(gbkBytes, { windows: false })).not.toBe("测试文件.txt")
+  })
+
+  test("honors MIAO_WINDOWS_CODEPAGE", () => {
+    const previous = process.env["MIAO_WINDOWS_CODEPAGE"]
+    process.env["MIAO_WINDOWS_CODEPAGE"] = "gb18030"
+    try {
+      expect(AppProcess.decodeBytes(gbkBytes, { windows: true })).toBe("测试文件.txt")
+    } finally {
+      if (previous === undefined) delete process.env["MIAO_WINDOWS_CODEPAGE"]
+      else process.env["MIAO_WINDOWS_CODEPAGE"] = previous
+    }
   })
 })
