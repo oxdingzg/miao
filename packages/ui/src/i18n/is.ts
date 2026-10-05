@@ -87,6 +87,8 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.thinkingWithTopic": "Hugsun - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Að safna saman hugsunum",
   "ui.sessionTurn.status.consideringNextSteps": "Íhugar næstu skref",
+  "ui.sessionTurn.status.preparingRequest": "Undirbý beiðni",
+  "ui.sessionTurn.status.waitingForModel": "Bíð eftir svari frá líkaninu",
   "ui.messagePart.diagnostic.error": "Villa",
   "ui.messagePart.title.edit": "Breyta",
   "ui.messagePart.title.write": "Skrifaðu",

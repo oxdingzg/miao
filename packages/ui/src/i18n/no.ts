@@ -71,6 +71,8 @@ export const dict: Record<Keys, string> = {
   "ui.sessionTurn.status.thinkingWithTopic": "Tenker - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Samler tanker",
   "ui.sessionTurn.status.consideringNextSteps": "Vurderer neste trinn",
+  "ui.sessionTurn.status.preparingRequest": "Forbereder forespørsel",
+  "ui.sessionTurn.status.waitingForModel": "Venter på modellsvar",
 
   "ui.messagePart.questions.dismissed": "Spørsmål avvist",
   "ui.messagePart.compaction": "Sesjon komprimert",
