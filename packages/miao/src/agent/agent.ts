@@ -132,7 +132,6 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 question: "allow",
-                plan_enter: "allow",
               }),
               user,
             ),

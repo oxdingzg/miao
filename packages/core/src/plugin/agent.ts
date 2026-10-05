@@ -124,10 +124,7 @@ export const Plugin = define({
         // no system prompt of its own.
         item.mode = "primary"
         item.permissions.push(
-          ...PermissionV2.merge(defaults, [
-            { action: "question", resource: "*", effect: "allow" },
-            { action: "plan_enter", resource: "*", effect: "allow" },
-          ]),
+          ...PermissionV2.merge(defaults, [{ action: "question", resource: "*", effect: "allow" }]),
         )
       })
 
