@@ -139,16 +139,6 @@ export const TuiThreadCommand = cmd({
         hidden: true,
       }),
   handler: async (args) => {
-    if (process.platform === "win32") {
-      const { vtSupported } = await import("@miao/tui/terminal-win32")
-      if (!vtSupported()) {
-        UI.error(
-          "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
-        )
-        process.exitCode = 1
-        return
-      }
-    }
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
       process.exitCode = 1
@@ -162,6 +152,14 @@ export const TuiThreadCommand = cmd({
       )
       if (network) {
         UI.error(`${network} cannot be used with --mini`)
+        process.exitCode = 1
+        return
+      }
+
+      if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+        UI.error(
+          "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
+        )
         process.exitCode = 1
         return
       }
@@ -189,6 +187,16 @@ export const TuiThreadCommand = cmd({
     ].find((entry) => entry[1])?.[0]
     if (unsupported) {
       UI.error(`${unsupported} requires --mini`)
+      process.exitCode = 1
+      return
+    }
+
+    // Argument validation above is terminal-independent, so a non-VT console
+    // still reports a usage error before the VT-capability refusal.
+    if (process.platform === "win32" && !(await import("@miao/tui/terminal-win32")).vtSupported()) {
+      UI.error(
+        "The interactive interface needs a VT-capable terminal. Use Windows Terminal or PowerShell 7, or run `miao run` for plain output.",
+      )
       process.exitCode = 1
       return
     }
