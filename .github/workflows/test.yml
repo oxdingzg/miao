@@ -150,6 +150,11 @@ jobs:
         working-directory: packages/app
         run: bunx playwright install chromium
 
+      - name: Check browser Remote Control storage
+        if: runner.os == 'Linux'
+        run: bun --cwd packages/remote-control check:browser
+        timeout-minutes: 3
+
       - name: Run app e2e tests
         run: bun --cwd packages/app test:e2e:local
         env:
