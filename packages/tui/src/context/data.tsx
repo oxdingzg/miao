@@ -158,6 +158,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
               id: event.data.messageID,
               type: "user",
               text: event.data.prompt.text,
+              command: event.data.prompt.command,
               files: event.data.prompt.files,
               agents: event.data.prompt.agents,
               time: { created: event.data.timestamp },
@@ -186,6 +187,26 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
               text: event.data.text,
               time: { created: event.data.timestamp },
             })
+          })
+          break
+        case "session.next.command.started":
+        case "session.next.command.completed":
+        case "session.next.command.failed":
+          message.update(event.data.sessionID, (draft) => {
+            const user = draft.find((item) => item.id === event.data.messageID)
+            if (user?.type !== "user") return
+            if (event.type === "session.next.command.started") user.commandState = "running"
+            if (event.type === "session.next.command.completed") {
+              user.commandState = "completed"
+              user.text = event.data.prompt.text
+              user.files = event.data.prompt.files
+              user.agents = event.data.prompt.agents
+            }
+            if (event.type === "session.next.command.failed") {
+              user.commandState = "failed"
+              user.commandError = event.data.error
+              user.text = event.data.text
+            }
           })
           break
         case "session.next.shell.started":

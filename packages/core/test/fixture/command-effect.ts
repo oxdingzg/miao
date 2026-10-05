@@ -1,0 +1,5 @@
+const count = await Bun.file("command-count.txt")
+  .text()
+  .catch(() => "0")
+await Bun.write("command-count.txt", String(Number(count) + 1))
+console.log("ready")

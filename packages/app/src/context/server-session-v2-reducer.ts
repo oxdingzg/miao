@@ -5,6 +5,7 @@ import type { JsonValue } from "@miao/client"
 import type { SessionMessageInfo } from "@/utils/server"
 
 type Assistant = Extract<SessionMessageInfo, { type: "assistant" }>
+type User = Extract<SessionMessageInfo, { type: "user" }>
 type Shell = Extract<SessionMessageInfo, { type: "shell" }>
 type ToolState = Extract<Assistant["content"][number], { type: "tool" }>["state"]
 type ToolContent = Extract<ToolState, { status: "completed" }>["content"]
@@ -58,10 +59,15 @@ export function createV2SessionReducer() {
           type: "user",
           metadata: wire(event.metadata),
           text: event.data.prompt.text,
+          command: wire(event.data.prompt.command),
           files: wire(event.data.prompt.files),
           agents: wire(event.data.prompt.agents),
           time: { created: event.data.timestamp },
         })
+      case "session.next.command.started":
+      case "session.next.command.completed":
+      case "session.next.command.failed":
+        return updateCommand(source, event)
       case "session.next.agent.switched":
         return append({
           id: event.data.messageID,
@@ -461,4 +467,16 @@ function insertOrdinal<T extends Assistant["content"][number]["type"]>(
   const matches = source.filter((content) => content.type === type)
   if (matches[ordinal]) return source
   return [...source, item]
+}
+
+function updateCommand(source: readonly SessionMessageInfo[], event: Extract<OpenCodeEventEncoded, {
+  type: "session.next.command.started" | "session.next.command.completed" | "session.next.command.failed"
+}>) {
+  return updateMessage<User>(source,
+    (item): item is User => item.type === "user" && item.id === event.data.messageID,
+    (item) => {
+      if (event.type === "session.next.command.started") return { ...item, commandState: "running" }
+      if (event.type === "session.next.command.failed") return { ...item, text: event.data.text, commandState: "failed", commandError: event.data.error }
+      return { ...item, text: event.data.prompt.text, files: wire(event.data.prompt.files), agents: wire(event.data.prompt.agents), commandState: "completed" }
+    }, event.data.sessionID)
 }

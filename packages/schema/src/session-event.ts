@@ -122,6 +122,24 @@ export const Synthetic = Event.define({
 })
 export type Synthetic = typeof Synthetic.Type
 
+export namespace Command {
+  export const Started = Event.define({
+    type: "session.next.command.started",
+    ...options,
+    schema: { ...Base, messageID: SessionMessage.ID },
+  })
+  export const Completed = Event.define({
+    type: "session.next.command.completed",
+    ...options,
+    schema: { ...Base, messageID: SessionMessage.ID, prompt: Prompt },
+  })
+  export const Failed = Event.define({
+    type: "session.next.command.failed",
+    ...options,
+    schema: { ...Base, messageID: SessionMessage.ID, error: Schema.String, text: Schema.String },
+  })
+}
+
 export namespace Shell {
   export const Started = Event.define({
     type: "session.next.shell.started",
@@ -519,6 +537,9 @@ export const DurableDefinitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  Command.Started,
+  Command.Completed,
+  Command.Failed,
   Shell.Started,
   Shell.Ended,
   Step.Started,
@@ -552,6 +573,9 @@ export const Definitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  Command.Started,
+  Command.Completed,
+  Command.Failed,
   Shell.Started,
   Shell.Ended,
   Step.Started,

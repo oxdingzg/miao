@@ -3,7 +3,7 @@ export * as BashTool from "./bash"
 import { existsSync } from "fs"
 import path from "path"
 import { ToolFailure } from "@miao/llm"
-import { Duration, Effect, Layer, Option, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
 import { makeLocationNode } from "../effect/app-node"
@@ -76,13 +76,13 @@ export const StructuredOutput = Schema.Struct({
   jobID: Schema.String.pipe(Schema.optional),
 })
 
-const Output = Schema.Struct({
+export const Output = Schema.Struct({
   ...StructuredOutput.fields,
   output: Schema.String,
   warnings: Schema.Array(Schema.String).pipe(Schema.optional),
 })
 
-type Output = typeof Output.Type
+export type Output = typeof Output.Type
 
 const defaultShell = () => (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh")
 
@@ -321,9 +321,22 @@ const syntaxErrorMessage = (shell: string, stderr: string) =>
     "If the command nests quotes or heredocs for another interpreter or a remote host, pass that script through the `stdin` parameter instead (for example command `ssh host 'bash -s'` with the script in stdin).",
   ].join("\n\n")
 
-const layer = Layer.effectDiscard(
+export interface ExecutionContext {
+  readonly sessionID: PermissionV2.AssertInput["sessionID"]
+  readonly agent: PermissionV2.AssertInput["agent"]
+  readonly callID: string
+  readonly source: PermissionV2.Source
+}
+
+export interface ExecutionInterface {
+  readonly execute: (input: typeof Input.Type, context: ExecutionContext) => Effect.Effect<Output, ToolFailure>
+}
+
+export class Execution extends Context.Service<Execution, ExecutionInterface>()("@miao/ShellExecution") {}
+
+const executionLayer = Layer.effect(
+  Execution,
   Effect.gen(function* () {
-    const tools = yield* Tools.Service
     const mutation = yield* LocationMutation.Service
     const fs = yield* FSUtil.Service
     const appProcess = yield* AppProcess.Service
@@ -463,9 +476,12 @@ const layer = Layer.effectDiscard(
         const directories = [...new Set(blocked)].filter(
           (directory) => !current.writable.some((root) => FSUtil.contains(root, directory)),
         )
-        const unmapped = SandboxPolicy.unmappedDenials(current.result.output ? AppProcess.decodeOutput(current.result.output) : "", {
-          network: input.network,
-        })
+        const unmapped = SandboxPolicy.unmappedDenials(
+          current.result.output ? AppProcess.decodeOutput(current.result.output) : "",
+          {
+            network: input.network,
+          },
+        )
         // Nothing the sandbox could have caused: an ordinary failing command.
         if (directories.length === 0 && unmapped.length === 0) return done
 
@@ -525,30 +541,10 @@ const layer = Layer.effectDiscard(
       }
     })
 
-    yield* tools
-      .register({
-        [name]: Tool.make({
-          description: description(yield* sandbox.status()),
-          input: Input,
-          output: Output,
-          structured: StructuredOutput,
-          toStructuredOutput: ({ output }) => ({
-            truncated: output.truncated,
-            ...(output.exit === undefined ? {} : { exit: output.exit }),
-            ...(output.timeout === undefined ? {} : { timeout: output.timeout }),
-            ...(output.sandbox === undefined ? {} : { sandbox: output.sandbox }),
-          }),
-          toModelOutput: ({ output }) => [
-            { type: "text", text: output.output },
-            { type: "text", text: modelOutput(output) },
-          ],
-          execute: (input, context) =>
+    return Execution.of({
+      execute: (input: typeof Input.Type, context: ExecutionContext) =>
             Effect.gen(function* () {
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
+              const source = context.source
               if (input.stdin !== undefined && Buffer.byteLength(input.stdin, "utf8") > MAX_STDIN_BYTES)
                 return yield* new ToolFailure({
                   message: `stdin is ${Buffer.byteLength(input.stdin, "utf8")} bytes, over the ${MAX_STDIN_BYTES}-byte limit. The command was not run.`,
@@ -602,7 +598,7 @@ const layer = Layer.effectDiscard(
                 directory: location.directory,
                 cwd: target.canonical,
                 sessionID: context.sessionID,
-                callID: context.toolCallID,
+                callID: context.callID,
               })
               const options = {
                 cwd: target.canonical,
@@ -694,17 +690,51 @@ const layer = Layer.effectDiscard(
                   : new ToolFailure({ message: `Unable to execute command: ${input.command}` }),
               ),
             ),
+
+    })
+  }),
+)
+
+const layer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const tools = yield* Tools.Service
+    const execution = yield* Execution
+    const sandbox = yield* Sandbox.Service
+    yield* tools
+      .register({
+        [name]: Tool.make({
+          description: description(yield* sandbox.status()),
+          input: Input,
+          output: Output,
+          structured: StructuredOutput,
+          toStructuredOutput: ({ output }) => ({
+            truncated: output.truncated,
+            ...(output.exit === undefined ? {} : { exit: output.exit }),
+            ...(output.timeout === undefined ? {} : { timeout: output.timeout }),
+            ...(output.jobID === undefined ? {} : { jobID: output.jobID }),
+            ...(output.sandbox === undefined ? {} : { sandbox: output.sandbox }),
+          }),
+          toModelOutput: ({ output }) => [
+            { type: "text", text: output.output },
+            { type: "text", text: modelOutput(output) },
+          ],
+          execute: (input, context) =>
+            execution.execute(input, {
+              sessionID: context.sessionID,
+              agent: context.agent,
+              callID: context.toolCallID,
+              source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+            }),
         }),
       })
       .pipe(Effect.orDie)
   }),
 )
 
-export const node = makeLocationNode({
-  name: "tool/bash",
-  layer,
+export const executionNode = makeLocationNode({
+  service: Execution,
+  layer: executionLayer,
   deps: [
-    ToolRegistry.node,
     LocationMutation.node,
     FSUtil.node,
     AppProcess.node,
@@ -714,4 +744,10 @@ export const node = makeLocationNode({
     ShellEnvironment.node,
     Location.node,
   ],
+})
+
+export const node = makeLocationNode({
+  name: "tool/bash",
+  layer,
+  deps: [ToolRegistry.node, executionNode, Sandbox.node],
 })

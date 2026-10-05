@@ -467,6 +467,9 @@ export const {
       "session.next.tool.called",
       "session.next.tool.success",
       "session.next.tool.failed",
+      "session.next.command.started",
+      "session.next.command.completed",
+      "session.next.command.failed",
       "session.next.shell.started",
       "session.next.shell.ended",
     ])

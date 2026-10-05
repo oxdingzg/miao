@@ -194,6 +194,7 @@ function toLLMMessage(message: SessionMessage.Message, model: Model, images: boo
     case "system":
       return [Message.system(message.text)]
     case "shell":
+      if (message.metadata?.commandInvocation) return []
       return [
         Message.make({
           id: message.id,

@@ -12,8 +12,8 @@ import {
   type ProviderErrorEvent,
   type ToolOutput,
 } from "@miao/llm"
-import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
-import { and, desc, eq, isNull, ne } from "drizzle-orm"
+import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
+import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Database } from "../../database/database"
@@ -31,6 +31,9 @@ import { Flag } from "../../flag/flag"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
+import { BashTool } from "../../tool/bash"
+import { LocationMutation } from "../../location-mutation"
+import { SessionCommandPrepare } from "../command-prepare"
 import { TaskTool } from "../../tool/task"
 import { GoalTool } from "../../tool/goal"
 import { RecallTool } from "../../tool/recall"
@@ -51,7 +54,7 @@ import { SessionInput } from "../input"
 import { ToolCallLeak } from "../tool-call-leak"
 import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
-import { SessionTable } from "../sql"
+import { SessionTable, SessionMessageTable } from "../sql"
 import { SessionStore } from "../store"
 import { SessionImageNormalize } from "../image-normalize"
 import { SessionBlobStorage } from "../blob-storage"
@@ -182,6 +185,8 @@ const layer = Layer.effect(
     const events = yield* EventV2.Service
     const llm = yield* LLMClient.Service
     const agents = yield* AgentV2.Service
+    const shell = yield* BashTool.Execution
+    const mutation = yield* LocationMutation.Service
     const tools = yield* ToolRegistry.Service
     const models = yield* SessionRunnerModel.Service
     const store = yield* SessionStore.Service
@@ -374,6 +379,50 @@ const layer = Layer.effect(
         concurrency: "unbounded",
       }).pipe(Effect.map((contexts) => SystemContext.combine([...contexts, SessionTodo.context(todos, sessionID)])))
 
+    const prepareCommands = Effect.fn("SessionRunner.prepareCommands")(function* (sessionID: SessionSchema.ID) {
+      const rows = yield* db.select().from(SessionMessageTable).where(and(
+        eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "user"),
+        sql`json_extract(${SessionMessageTable.data}, '$.command') IS NOT NULL`,
+        sql`(json_extract(${SessionMessageTable.data}, '$.commandState') IS NULL OR json_extract(${SessionMessageTable.data}, '$.commandState') = 'running')`,
+      )).orderBy(asc(SessionMessageTable.seq)).all().pipe(Effect.orDie)
+      for (const row of rows) {
+        const user = yield* Schema.decodeUnknownEffect(SessionMessage.User)({ ...row.data, id: row.id, type: "user" }).pipe(Effect.orDie)
+        const failed = (error: string) => events.publish(SessionEvent.Command.Failed, { sessionID, messageID: user.id, timestamp: DateTime.makeUnsafe(Date.now()), error, text: `Slash command failed: ${error}\nDo not retry its side effects automatically; reconcile with the user before retrying.` })
+        if (user.commandState === "running") {
+          yield* failed("Command preparation was interrupted or its outcome is unknown. It was not replayed.")
+          continue
+        }
+        yield* events.publish(SessionEvent.Command.Started, { sessionID, messageID: user.id, timestamp: yield* DateTime.now })
+        yield* Effect.gen(function* () {
+          const session = yield* getSession(sessionID)
+          if (user.command?.subtask && session.parentID) return yield* new ToolFailure({ message: "Nested command subtasks are not supported." })
+          if (user.command?.subtask) yield* permission.assert({
+            action: "task", resources: [user.command.agent ?? session.agent ?? "build"], save: ["*"], sessionID, agent: session.agent,
+            source: { type: "command", messageID: user.id, name: user.command.name, callID: `${user.id}/subtask` },
+          })
+          const prompt = yield* SessionCommandPrepare.prepare(user, session, { agents, fs, mutation, permission, shell, events })
+          if (user.command?.subtask) {
+            const result = yield* runSubagent(sessionID, {
+              agent: user.command.agent ?? session.agent ?? "build", prompt: prompt.text, description: user.command.name,
+              model: user.command.model, files: prompt.files, agents: prompt.agents,
+            })
+            yield* events.publish(SessionEvent.Command.Completed, { sessionID, messageID: user.id, timestamp: yield* DateTime.now,
+              prompt: Prompt.make({ text: `Command /${user.command.name} completed in child Session ${result.sessionID}:\n${result.text}` }),
+            })
+            return
+          }
+          if (user.command?.agent) yield* events.publish(SessionEvent.AgentSwitched, { sessionID, messageID: SessionMessage.ID.create(), timestamp: yield* DateTime.now, agent: user.command.agent })
+          if (user.command?.model) yield* events.publish(SessionEvent.ModelSwitched, { sessionID, messageID: SessionMessage.ID.create(), timestamp: yield* DateTime.now, model: user.command.model })
+          yield* events.publish(SessionEvent.Command.Completed, { sessionID, messageID: user.id, timestamp: yield* DateTime.now, prompt: yield* SessionBlobStorage.externalizePromptAttachments(blob, prompt) })
+        }).pipe(
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: String(error) })),
+          Effect.catchTag("LLM.ToolFailure", (error) => failed(error.message)),
+          Effect.onInterrupt(() => failed("Command preparation was interrupted; its side effects were not replayed.")),
+        )
+      }
+      return rows.length > 0
+    })
+
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
       promotion: SessionInput.Delivery | undefined,
@@ -381,31 +430,34 @@ const layer = Layer.effect(
       recoverOverflow?: typeof compaction.compactAfterOverflow,
     ) {
       const attemptStartedAt = Date.now()
-      const session = yield* getSession(sessionID)
-      if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
+      const initialSession = yield* getSession(sessionID)
+      if (initialSession.location.directory !== location.directory || initialSession.location.workspaceID !== location.workspaceID)
         return yield* Effect.interrupt
       const sessionMs = Date.now() - attemptStartedAt
       const agentStartedAt = Date.now()
-      const agent = yield* agents.select(session.agent)
+      const initialAgent = yield* agents.select(initialSession.agent)
       const agentMs = Date.now() - agentStartedAt
       const epochStartedAt = Date.now()
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)
+      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(initialAgent, initialSession.id), initialSession.id)
       const epochMs = Date.now() - epochStartedAt
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       let currentStep = step
       if (promotion) {
-        const cutoff = yield* EventV2.latestSequence(db, session.id)
+        const cutoff = yield* EventV2.latestSequence(db, initialSession.id)
         let promoted = 0
-        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
         if (promotion === "queue") {
-          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, session.id))
-          promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, initialSession.id))
+          promoted += yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
         }
         if (promoted > 0) currentStep = 1
       }
+      const commandChanged = yield* prepareCommands(sessionID)
+      const session = commandChanged ? yield* getSession(sessionID) : initialSession
+      const agent = commandChanged ? yield* agents.select(session.agent) : initialAgent
       const system =
-        initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id))
+        (commandChanged ? undefined : initialized) ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id))
       const resolveStartedAt = Date.now()
       const catalogRetry = { attempt: 0, error: undefined as SessionRunnerModel.Error | undefined }
       const resolved = yield* Effect.suspend(() => {
@@ -962,6 +1014,9 @@ const layer = Layer.effect(
         readonly agent: string
         readonly prompt: string
         readonly description: string
+        readonly model?: ModelV2.Ref
+        readonly files?: typeof Prompt.Type.files
+        readonly agents?: typeof Prompt.Type.agents
         readonly taskId?: string
       },
     ) {
@@ -974,7 +1029,8 @@ const layer = Layer.effect(
       const parentContext = yield* store.context(parentSessionID)
       const parentAssistant = parentContext.findLast((message) => message.type === "assistant")
       // Inherit the active turn, including a sampled model that changed after resolution.
-      const model = selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : parent.model)
+      const parentAgent = yield* agents.select(parent.agent)
+      const model = request.model ?? selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : parent.model ?? parentAgent.info?.model)
       const child = resumed ?? (yield* creation.create({
         parentID: parentSessionID,
         agent: selection.id,
@@ -992,7 +1048,7 @@ const layer = Layer.effect(
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: child.id,
-        prompt: Prompt.make({ text: request.prompt }),
+        prompt: Prompt.make({ text: request.prompt, files: request.files, agents: request.agents }),
         delivery: "steer",
       })
       // A failed drain is observed through the child's projected history
@@ -1338,6 +1394,8 @@ export const node = makeLocationNode({
     llmClient,
     AgentV2.node,
     ToolRegistry.node,
+    BashTool.executionNode,
+    LocationMutation.node,
     SessionRunnerModel.node,
     SessionStore.node,
     Location.node,

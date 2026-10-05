@@ -15,6 +15,12 @@ export type ID = typeof ID.Type
 
 export const Source = Schema.Union([
   Schema.Struct({
+    type: Schema.Literal("command"),
+    messageID: Schema.String,
+    name: Schema.String,
+    callID: Schema.String,
+  }),
+  Schema.Struct({
     type: Schema.Literal("tool"),
     messageID: Schema.String,
     callID: Schema.String,

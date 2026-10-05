@@ -81,7 +81,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
-    const locationRoot = yield* fs.realPath(location.directory)
+    const root = yield* Effect.cached(fs.realPath(location.directory))
 
     function notFound<A>(effect: Effect.Effect<A, FSUtil.Error>) {
       return effect.pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
@@ -118,6 +118,7 @@ const layer = Layer.effect(
     })
 
     const resolve = Effect.fn("LocationMutation.resolve")(function* (input: ResolveInput) {
+      const locationRoot = yield* root
       const relative = !path.isAbsolute(input.path)
       const absolute = path.resolve(location.directory, input.path)
       const lexicallyInternal = FSUtil.contains(location.directory, absolute)
