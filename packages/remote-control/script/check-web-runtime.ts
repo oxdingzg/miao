@@ -110,6 +110,22 @@ try {
       MIAO_PURE: "1",
       MIAO_CONFIG_CONTENT: JSON.stringify({
         model: "fixture/missing",
+        providers: {
+          fixture: {
+            name: "Fixture",
+            api: {
+              type: "aisdk",
+              package: "@ai-sdk/openai",
+              settings: { apiKey: "fixture", baseURL: "http://127.0.0.1:1" },
+            },
+            models: {
+              selection: {
+                name: "Remote selection fixture",
+                variants: [{ id: "reasoning", body: { reasoningEffort: "high" } }],
+              },
+            },
+          },
+        },
         formatter: false,
         lsp: false,
         remote: { projects: {} },
@@ -269,6 +285,22 @@ try {
   const selected = await request(`/api/session/${sessionID}`)
   if (!object(selected) || !object(selected.data) || selected.data.agent !== "plan")
     throw new Error("Runtime agent selection not persisted")
+  stage = "model-selection"
+  await page.getByRole("button", { name: "Agent / 模型", exact: true }).click()
+  await page.getByLabel("模型", { exact: true }).selectOption({ label: "fixture / Remote selection fixture" })
+  await page.getByLabel("变体", { exact: true }).selectOption("reasoning")
+  await page.getByRole("button", { name: "保存模型", exact: true }).click()
+  await page.getByText("模型已更新，下次模型调用起生效。", { exact: true }).waitFor()
+  const modelSelected = await request(`/api/session/${sessionID}`)
+  if (
+    !object(modelSelected) ||
+    !object(modelSelected.data) ||
+    !object(modelSelected.data.model) ||
+    modelSelected.data.model.id !== "selection" ||
+    modelSelected.data.model.providerID !== "fixture" ||
+    modelSelected.data.model.variant !== "reasoning"
+  )
+    throw new Error("Runtime model selection not persisted")
   const before = await request(`/api/session/${sessionID}/history?after=0&limit=100`)
   stage = "recovery"
   await page.reload()
