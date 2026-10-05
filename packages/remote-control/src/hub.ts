@@ -22,7 +22,7 @@ const decodeFrame = Schema.decodeUnknownOption(
 type Socket = ServerWebSocket<Peer>
 type Host = { runtimeID: string; accountID?: string; socket?: Socket; clients: Map<string, Client> }
 type Client = { connectionID: string; socket?: Socket }
-export type Authorization = { accountID: string; valid: () => boolean }
+export type Authorization = { accountID: string; valid: () => boolean; runtimeID?: string; protocol?: string }
 type Peer =
   | { role: "host"; hostID: string; host: Host; authorization?: Authorization }
   | { role: "client"; hostID: string; host: Host; client: Client; authorization?: Authorization }
@@ -118,10 +118,18 @@ export function listen(options: Options) {
       const host = hosts.get(hostID)
       if (options.access && host && host.accountID !== authorization?.accountID)
         return new Response("Unauthorized", { status: 401 })
-      if (!host?.socket) return new Response("Host unavailable", { status: 503 })
+      if (!host?.socket || (host.socket.data.authorization && !host.socket.data.authorization.valid()))
+        return new Response("Host unavailable", { status: 503 })
+      if (authorization?.runtimeID && authorization.runtimeID !== host.runtimeID)
+        return new Response("Runtime changed", { status: 409 })
       if (host.clients.size >= limits.clients) return new Response("Host connection limit", { status: 429 })
       const client: Client = { connectionID: crypto.randomUUID() }
-      if (!server.upgrade(request, { data: { role: "client", hostID, host, client, authorization } }))
+      if (
+        !server.upgrade(request, {
+          data: { role: "client", hostID, host, client, authorization },
+          ...(authorization?.protocol ? { headers: { "sec-websocket-protocol": authorization.protocol } } : {}),
+        })
+      )
         return new Response("WebSocket required", { status: 426 })
       host.clients.set(client.connectionID, client)
     },
@@ -143,6 +151,8 @@ export function listen(options: Options) {
           socket.close(1012, "Runtime disconnected")
           return
         }
+        if (peer.host.socket.data.authorization && !peer.host.socket.data.authorization.valid())
+          return socket.close(1008, "Hub host authorization expired")
         peer.client.socket = socket
         send(peer.host.socket, JSON.stringify({ type: "connected", connectionID: peer.client.connectionID }))
       },
@@ -170,6 +180,8 @@ export function listen(options: Options) {
           client?.socket?.close(1008, "Agent rejected connection")
           return
         }
+        if (client?.socket?.data.authorization && !client.socket.data.authorization.valid())
+          return client.socket.close(1008, "Hub authorization expired")
         if (client) send(client.socket, frame.value.payload)
       },
       close(socket) {
@@ -198,7 +210,11 @@ export function listen(options: Options) {
   expiration?.unref()
   return {
     connectedHosts: () =>
-      [...hosts].map(([hostID, host]) => ({ hostID, runtimeID: host.runtimeID, accountID: host.accountID })),
+      [...hosts]
+        .filter(
+          ([, host]) => host.socket && (!host.socket.data.authorization || host.socket.data.authorization.valid()),
+        )
+        .map(([hostID, host]) => ({ hostID, runtimeID: host.runtimeID, accountID: host.accountID })),
     hostname: server.hostname,
     port: server.port,
     stop: async () => {
