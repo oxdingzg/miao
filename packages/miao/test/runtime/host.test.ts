@@ -480,7 +480,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       if (child.exitCode === null) child.kill("SIGTERM")
     })
     await Promise.all(children.map((child) => child.exited))
-    hub.stop()
-    await rm(directory, { recursive: true, force: true })
+    await hub.stop()
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 60_000)

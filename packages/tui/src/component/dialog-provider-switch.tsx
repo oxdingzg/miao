@@ -1,7 +1,8 @@
-import { createMemo } from "solid-js"
+import { createMemo, onMount } from "solid-js"
 import { map, pipe, sortBy } from "remeda"
 import { useLocal } from "../context/local"
 import { useSync } from "../context/sync"
+import { useToast } from "../ui/toast"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 import { DialogModel } from "./dialog-model"
@@ -11,9 +12,31 @@ export function DialogProviderSwitch() {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
+  const toast = useToast()
 
-  const options = createMemo(() =>
-    pipe(
+  // The catalog carries every known provider, including ones with no stored
+  // credential. Load it so a provider the user has not connected yet is still
+  // discoverable here, not only in the separate Connect dialog.
+  onMount(() => {
+    sync.loadProviderCatalog().catch(toast.error)
+  })
+
+  const options = createMemo(() => {
+    const connected = new Set(sync.data.provider.map((provider) => provider.id))
+    const connectable = pipe(
+      sync.data.provider_next.all,
+      sortBy((provider) => provider.name),
+      map((provider) => ({
+        title: provider.name,
+        value: `connect:${provider.id}`,
+        description: "Connect",
+        category: "Not connected",
+        onSelect() {
+          dialog.replace(() => <DialogProvider />)
+        },
+      })),
+    ).filter((option) => !connected.has(option.value.slice("connect:".length)))
+    const connectedOptions = pipe(
       sync.data.provider,
       sortBy((provider) => provider.name),
       map((provider) => ({
@@ -24,8 +47,9 @@ export function DialogProviderSwitch() {
           dialog.replace(() => <DialogModel providerID={provider.id} />)
         },
       })),
-    ),
-  )
+    )
+    return [...connectedOptions, ...connectable]
+  })
 
   return (
     <DialogSelect
