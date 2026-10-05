@@ -233,8 +233,11 @@ export const {
     const syncingSessions = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
     // Older timeline pages stay out of the store until a reader asks for them, so
-    // opening a long session never pays for its whole history up front.
+    // opening a long session never pays for its whole history up front. The first
+    // hydration of a session still seeds one page behind the loaded window, but
+    // later re-hydrations reuse it instead of refetching the same 200 rows.
     const olderHistory = new Map<string, OlderHistory>()
+    const olderLoaded = new Set<string>()
     const loadingOlder = new Set<string>()
     // A full sync's todo snapshot can resolve after a newer live `todo.updated`
     // and would otherwise revert it. Record when a live update lands so a sync
@@ -814,6 +817,7 @@ export const {
           todoLiveAt.delete(id)
           sessionMessages.delete(id)
           olderHistory.delete(id)
+          olderLoaded.delete(id)
           loadingOlder.delete(id)
           v2Reducer.clear(id)
           streamText.clear(id)
@@ -1257,12 +1261,18 @@ export const {
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
             const sessionPromise = sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
+            // `context` stops at the last compaction, so the first hydration also
+            // reads a page of the projected timeline to keep older history
+            // reachable. Later re-hydrations reuse the page already held: reading
+            // 200 rows on every compaction or idle-recovery re-hydration was pure
+            // waste, and the result was usually thrown away.
+            const seedOlder = !olderLoaded.has(sessionID)
             const messagesPromise = sessionPromise.then((session) =>
               Promise.all([
                 sdk.api.sessions.context({ sessionID }, {}),
-                // `context` stops at the last compaction, so also read a page
-                // of the projected timeline to keep older history reachable.
-                sdk.api.messages.list({ sessionID, limit: 200, order: "desc" }, {}),
+                seedOlder
+                  ? sdk.api.messages.list({ sessionID, limit: 200, order: "desc" }, {})
+                  : Promise.resolve({ data: [], cursor: {} as { next?: string } }),
               ]).then(([context, history]) => {
                 // Seed the older-history walk once. Later re-hydrations must
                 // not reset it to the newest page, or every scroll to the
@@ -1270,6 +1280,7 @@ export const {
                 const seeded = olderHistory.get(sessionID)
                 const older = seeded ?? { messages: [], cursor: history.cursor.next ?? undefined }
                 if (!seeded) olderHistory.set(sessionID, older)
+                if (seedOlder) olderLoaded.add(sessionID)
                 const source = mergeTranscript(mutableResponse(context), [
                   ...older.messages,
                   ...mutableResponse(history.data),
