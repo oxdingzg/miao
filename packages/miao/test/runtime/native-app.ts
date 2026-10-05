@@ -271,6 +271,9 @@ export async function run() {
               /Native menu recovery enabled=(true|false) hittable=(true|false) state=(ready|connecting|syncing|authorizationBlocked|protocolBlocked|offline|draining|quiescent|expired|unknown)/
                 .exec(log)
                 ?.slice(1),
+            menuGeometry: /Native menu geometry x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+) keyboard=(\d+) bars=(\d+)/
+              .exec(log)
+              ?.slice(1),
             fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
             missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
             buildFailure: log.includes("BUILD FAILED"),

@@ -265,13 +265,15 @@ private struct SessionView: View {
         .navigationTitle(session.timeline.title.isEmpty ? session.summary.title : session.timeline.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            Menu {
-                Button("查看文件变化", systemImage: "doc.text.magnifyingglass") { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
-                if client.record.grant.permissions.contains(.sessionRename) {
-                    Button("重命名", systemImage: "pencil") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
-                }
-            } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
-                .accessibilityIdentifier("sessionMenu").accessibilityValue(client.connectionDescription).disabled(!client.ready)
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("查看文件变化", systemImage: "doc.text.magnifyingglass") { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
+                    if client.record.grant.permissions.contains(.sessionRename) {
+                        Button("重命名", systemImage: "pencil") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
+                    .accessibilityIdentifier("sessionMenu").accessibilityValue(client.connectionDescription).disabled(!client.ready)
+            }
         }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }

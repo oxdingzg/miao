@@ -55,6 +55,8 @@ final class PairingUITests: XCTestCase {
                 "授权已过期，请在电脑上重新配对": "expired"]
             let state = states[menu.value as? String ?? ""] ?? "unknown"
             print("Native menu recovery enabled=\(menu.isEnabled) hittable=\(menu.isHittable) state=\(state)")
+            let frame = menu.frame
+            print("Native menu geometry x=\(Int(frame.minX)) y=\(Int(frame.minY)) width=\(Int(frame.width)) height=\(Int(frame.height)) keyboard=\(app.keyboards.count) bars=\(app.navigationBars.count)")
             return
         }
         menu.tap()
