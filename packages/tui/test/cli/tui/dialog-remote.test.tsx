@@ -105,9 +105,13 @@ test("relay setup masks the password and opens device pairing after configuring 
   const control = deviceControl(false)
   let received = ""
   const local: RemoteLocal = {
+    providers: async () => ({ providers: [] }),
     setup: async (input) => {
       received = input.password
       return input.runtime.configure({ hubURL: input.hubURL, hostToken: "a".repeat(43) })
+    },
+    setupOAuth: async () => {
+      throw new Error("unused")
     },
   }
   const view = await mount(
@@ -122,9 +126,9 @@ test("relay setup masks the password and opens device pairing after configuring 
     }),
   )
   try {
-    await view.until((frame) => frame.includes("配置自建中继"))
+    await view.until((frame) => frame.includes("登录中继并接入"))
     await view.select(0)
-    await view.until((frame) => frame.includes("自建中继地址"))
+    await view.until((frame) => frame.includes("中继地址"))
     await view.app.mockInput.typeText("https://relay.example.invalid")
     await view.app.mockInput.pressEnter()
     await view.until((frame) => frame.includes("中继账号邮箱"))
@@ -144,6 +148,49 @@ test("relay setup masks the password and opens device pairing after configuring 
     view.cleanup()
   }
 })
+
+test("relay setup uses browser login when the hub only offers a social provider", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  let oauthProvider = ""
+  const local: RemoteLocal = {
+    providers: async () => ({ providers: ["github"] }),
+    setup: async () => {
+      throw new Error("unused")
+    },
+    setupOAuth: async (input) => {
+      oauthProvider = input.provider
+      return input.runtime.configure({ hubURL: input.hubURL, hostToken: "b".repeat(43) })
+    },
+  }
+  const view = await mount(
+    tmp.path,
+    environment({
+      local,
+      devices: control.api,
+      configure: async () => {
+        control.state.status = { enabled: true, connected: true }
+        return control.state.status
+      },
+    }),
+  )
+  try {
+    await view.until((frame) => frame.includes("登录中继并接入"))
+    await view.select(0)
+    await view.until((frame) => frame.includes("中继地址"))
+    await view.app.mockInput.typeText("https://hub.example.invalid")
+    await view.app.mockInput.pressEnter()
+    // A single social provider skips the picker and asks for the computer name.
+    await view.until((frame) => frame.includes("这台电脑的名称"))
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("分享当前会话（只读）"))
+    expect(oauthProvider).toBe("github")
+    expect(control.state.status.enabled).toBe(true)
+  } finally {
+    view.cleanup()
+  }
+})
+
 function deviceControl(enabled = true) {
   const publicKey = `B${"A".repeat(86)}`
   const issued: RemoteAccess.Invitation = {

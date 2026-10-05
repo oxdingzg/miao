@@ -13,16 +13,24 @@ import { DialogSecret } from "../ui/dialog-secret"
 import type { RemoteAccess } from "@miao/schema/remote-access"
 import { DialogDevices, type DeviceApi } from "./dialog-devices"
 
+export type RemoteRuntime = {
+  readonly get: () => Promise<RemoteAccess.Status>
+  readonly configure: (value: RemoteAccess.Configuration) => Promise<RemoteAccess.Status>
+}
 export type RemoteLocal = {
+  readonly providers: (input: { hubURL: string }) => Promise<{ providers: ReadonlyArray<string> }>
   readonly setup: (input: {
     hubURL: string
     email: string
     password: string
     name: string
-    runtime: {
-      get(): Promise<RemoteAccess.Status>
-      configure(value: RemoteAccess.Configuration): Promise<RemoteAccess.Status>
-    }
+    runtime: RemoteRuntime
+  }) => Promise<RemoteAccess.Status>
+  readonly setupOAuth: (input: {
+    hubURL: string
+    provider: string
+    name: string
+    runtime: RemoteRuntime
   }) => Promise<RemoteAccess.Status>
 }
 export type RemoteLocalFactory = () => Promise<RemoteLocal>
@@ -36,6 +44,9 @@ export type RemoteEnvironment = {
   readonly projectID?: string
   readonly local?: RemoteLocal
 }
+
+const providerTitle = (provider: string) =>
+  provider === "github" ? "GitHub" : provider === "google" ? "Google" : provider
 
 export function DialogRemote() {
   const sync = useSync()
@@ -51,7 +62,13 @@ export function DialogRemote() {
         configure: sdk.api["server.runtime"].configure,
         sessionID,
         projectID: sync.data.session.find((session) => session.id === sessionID)?.projectID ?? project.data.project.id,
-        local: factory ? { setup: async (input) => (await factory()).setup(input) } : undefined,
+        local: factory
+          ? {
+              providers: async (input) => (await factory()).providers(input),
+              setup: async (input) => (await factory()).setup(input),
+              setupOAuth: async (input) => (await factory()).setupOAuth(input),
+            }
+          : undefined,
       }}
     />
   )
@@ -62,76 +79,100 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
   const local = environment.local
   const dialog = useDialog()
   const reopen = () => dialog.replace(() => <DialogRemoteView environment={environment} />)
+  const runtime: RemoteRuntime | undefined =
+    environment.devices && environment.configure
+      ? { get: () => environment.devices!.get(), configure: environment.configure! }
+      : undefined
+
+  // Runs the login work behind a blocking status alert, then lands on the device
+  // list. The error message is already sanitized by the relay client, except the
+  // headless "open this link" case which the user needs to read.
+  const connect = async (connecting: Promise<RemoteAccess.Status>) => {
+    let dismissed = false
+    dialog.replace(
+      () => <DialogAlert title="连接中继" message="正在登录并在中继上登记这台电脑…" />,
+      () => {
+        dismissed = true
+      },
+    )
+    try {
+      await connecting
+      if (dismissed) return
+      dialog.replace(() => (
+        <DialogDevices
+          api={environment.devices!}
+          sessionID={environment.sessionID}
+          projectID={environment.projectID}
+        />
+      ))
+    } catch (error) {
+      if (dismissed) return
+      await DialogAlert.show(
+        dialog,
+        "配置未确认",
+        error instanceof Error
+          ? error.message
+          : "请检查 Runtime 状态和中继设备目录，再重试。账号凭据不会保存到电脑配置中。",
+      )
+      reopen()
+    }
+  }
+
+  const setupOAuth = async (hubURL: string, provider: string, runtime: RemoteRuntime) => {
+    const name = await DialogPrompt.show(dialog, "这台电脑的名称", { value: "我的电脑" })
+    if (!name) return reopen()
+    await connect(local!.setupOAuth({ hubURL, provider, name, runtime }))
+  }
+
   return (
     <DialogSelect
       title="远程遥控"
       options={[
-        ...(local?.setup && environment.devices && environment.configure
+        ...(local?.setup && runtime
           ? [
               {
                 value: "relay-setup",
-                title: "配置自建中继",
+                title: "登录中继并接入",
                 category: "设备接入",
-                description: "登录中继并登记这台电脑，无需重启会话",
+                description: "登录中继账号并登记这台电脑，无需重启会话",
                 onSelect: () =>
                   void (async () => {
-                    const hubURL = await DialogPrompt.show(dialog, "自建中继地址", {
-                      placeholder: "https://relay.example.com",
+                    const hubURL = await DialogPrompt.show(dialog, "中继地址", {
+                      placeholder: "https://hub.example.com",
                       value: process.env.MIAO_HUB_URL ?? "",
                     })
-                    if (!hubURL) {
-                      reopen()
+                    if (!hubURL) return reopen()
+                    const discovered = await local.providers({ hubURL }).catch(() => ({ providers: [] as string[] }))
+                    const social = discovered.providers.filter(
+                      (provider) => provider === "github" || provider === "google",
+                    )
+                    if (social.length > 1) {
+                      dialog.replace(() => (
+                        <DialogSelect
+                          title="选择登录方式"
+                          options={social.map((provider) => ({
+                            value: provider,
+                            title: providerTitle(provider),
+                            description: "在浏览器中登录中继账号",
+                            onSelect: () => void setupOAuth(hubURL, provider, runtime),
+                          }))}
+                        />
+                      ))
+                      return
+                    }
+                    if (social.length === 1) {
+                      await setupOAuth(hubURL, social[0]!, runtime)
                       return
                     }
                     const email = await DialogPrompt.show(dialog, "中继账号邮箱")
-                    if (!email) {
-                      reopen()
-                      return
-                    }
+                    if (!email) return reopen()
                     const name = await DialogPrompt.show(dialog, "这台电脑的名称", { value: "我的电脑" })
-                    if (!name) {
-                      reopen()
-                      return
-                    }
+                    if (!name) return reopen()
                     let password = await DialogSecret.show(dialog, "中继账号密码")
-                    if (password === null) {
-                      reopen()
-                      return
-                    }
-                    const connecting = local.setup!({
-                      hubURL,
-                      email,
-                      password,
-                      name,
-                      runtime: { get: () => environment.devices!.get(), configure: environment.configure! },
-                    })
+                    if (password === null) return reopen()
+                    const connecting = local.setup({ hubURL, email, password, name, runtime })
                     password = null
-                    let dismissed = false
-                    dialog.replace(
-                      () => <DialogAlert title="连接中继" message="正在登录和登记电脑…" />,
-                      () => {
-                        dismissed = true
-                      },
-                    )
-                    try {
-                      await connecting
-                      if (dismissed) return
-                      dialog.replace(() => (
-                        <DialogDevices
-                          api={environment.devices!}
-                          sessionID={environment.sessionID}
-                          projectID={environment.projectID}
-                        />
-                      ))
-                    } catch {
-                      if (dismissed) return
-                      await DialogAlert.show(
-                        dialog,
-                        "配置未确认",
-                        "请检查 Runtime 状态和中继设备目录，再重试。账号凭据不会保存到电脑配置中。",
-                      )
-                      reopen()
-                    }
+                    await connect(connecting)
                   })(),
               },
             ]
