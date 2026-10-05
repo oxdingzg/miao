@@ -48,12 +48,14 @@ function routes(input: {
   context?: () => unknown[]
   history?: () => Response | Promise<Response>
   session?: () => unknown
+  diff?: () => Response | Promise<Response>
 }) {
   return (url: URL) => {
     if (url.pathname === `/api/session/${sessionID}`) return json({ data: input.session?.() ?? session })
     if (url.pathname === `/api/session/${sessionID}/context`) return json({ data: input.context?.() ?? [] })
     if (url.pathname === `/api/session/${sessionID}/message`)
       return input.history ? input.history() : json({ data: [], cursor: {} })
+    if (url.pathname === `/api/session/${sessionID}/diff` && input.diff) return input.diff()
     if (url.pathname === `/api/session/${sessionID}/todo` || url.pathname === `/api/session/${sessionID}/diff`)
       return json({ data: [] })
     if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "idle" } })
@@ -484,5 +486,56 @@ test("hydration updates keyed transcript objects without remounting unchanged UI
     expect(text).toMatchObject({ text: "after" })
   } finally {
     app.renderer.destroy()
+  }
+})
+
+test("session hydration completes while its diff is still pending", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const pending = Promise.withResolvers<Response>()
+  const mounted = await mount(
+    routes({
+      context: () => [assistant(messageID, 1, "ready")],
+      diff: () => pending.promise,
+    }),
+    tmp.path,
+  )
+  try {
+    await mounted.sync.session.sync(sessionID)
+    expect(mounted.sync.data.message[sessionID][0].id).toBe(messageID)
+    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ text: "ready" })
+    expect(mounted.sync.data.session_diff[sessionID]).toBeUndefined()
+    pending.resolve(
+      json({ data: [{ path: "ready.ts", patch: "patch", status: "modified", additions: 1, deletions: 0 }] }),
+    )
+    await wait(() => mounted.sync.data.session_diff[sessionID]?.[0]?.file === "ready.ts")
+  } finally {
+    mounted.app.renderer.destroy()
+    pending.resolve(json({ data: [] }))
+  }
+})
+
+test("a pending diff cannot overwrite newer live file changes", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const pending = Promise.withResolvers<Response>()
+  const mounted = await mount(routes({ diff: () => pending.promise }), tmp.path)
+  try {
+    await mounted.sync.session.sync(sessionID)
+    mounted.emit(
+      global({
+        type: "session.diff",
+        properties: { sessionID, diff: [{ file: "live.ts", patch: "live", additions: 2, deletions: 0 }] },
+      }),
+    )
+    await wait(() => mounted.sync.data.session_diff[sessionID]?.[0]?.file === "live.ts")
+    pending.resolve(
+      json({ data: [{ path: "stale.ts", patch: "stale", status: "modified", additions: 1, deletions: 0 }] }),
+    )
+    await Bun.sleep(30)
+    expect(mounted.sync.data.session_diff[sessionID][0].file).toBe("live.ts")
+  } finally {
+    mounted.app.renderer.destroy()
+    pending.resolve(json({ data: [] }))
   }
 })
