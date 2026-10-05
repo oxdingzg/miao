@@ -687,10 +687,19 @@ export const {
       switch (event.type) {
         case "session.next.status": {
           const input = event.properties
-          const previous = store.session_status[input.sessionID]?.type
-          if (previous !== input.status.type && !(previous === "retry" && input.status.type === "busy"))
-            setStore("session_status", input.sessionID, { type: input.status.type })
-          if (input.status.type === "busy" && previous === "idle" && store.session_error[input.sessionID])
+          const previous = store.session_status[input.sessionID]
+          // Read the primitive fields before writing: `previous` is a live store
+          // proxy and would otherwise reflect the value we just stored.
+          const previousType = previous?.type
+          const previousPhase = previousType === "busy" ? previous.phase : undefined
+          const nextPhase = input.status.type === "busy" ? input.status.phase : undefined
+          // A busy -> busy report with the same phase is a heartbeat and must
+          // not repaint; a phase change is real and still updates the store. A
+          // retry notice stays until provider output resumes.
+          const changed = previousType !== input.status.type || previousPhase !== nextPhase
+          if (changed && !(previousType === "retry" && input.status.type === "busy"))
+            setStore("session_status", input.sessionID, input.status)
+          if (input.status.type === "busy" && previousType === "idle" && store.session_error[input.sessionID])
             setStore(
               "session_error",
               produce((errors) => {
@@ -702,7 +711,7 @@ export const {
           // the live event stream; an unopened session must not be hydrated.
           if (
             input.status.type === "idle" &&
-            (previous === "busy" || previous === "retry") &&
+            (previousType === "busy" || previousType === "retry") &&
             watchedSessions.has(input.sessionID)
           )
             v2Refresh.schedule(input.sessionID)
@@ -1315,19 +1324,28 @@ export const {
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
           const response = await sdk.api.sessions.status({ sessionID }, { signal })
-          const status = response.type
-          if (signal?.aborted) return status
-          const previous = store.session_status[sessionID]?.type
+          const busy = response.type !== "idle"
+          if (signal?.aborted) return busy ? "busy" : "idle"
+          const previous = store.session_status[sessionID]
+          const previousType = previous?.type
+          const previousPhase = previousType === "busy" ? previous.phase : undefined
           // Every store write notifies subscribers, and one tick repaints the
-          // whole screen (see sidebar/context.tsx), so an unchanged idle status
-          // must not be written back once a second.
-          if (previous !== status && !(previous === "retry" && status === "busy"))
-            setStore("session_status", sessionID, { type: status })
+          // whole screen (see sidebar/context.tsx), so an unchanged status must
+          // not be written back once a second. A busy -> busy phase change is a
+          // real change and still updates the store.
+          const changed =
+            previousType !== response.type ||
+            (response.type === "busy" && previousType === "busy" && previousPhase !== response.phase)
+          // A retry notice stays until provider output resumes, so a busy poll
+          // must not clear it.
+          if (changed && !(previousType === "retry" && response.type === "busy"))
+            setStore("session_status", sessionID, response)
           // An idle transition is also a recovery path for a missed terminal
           // event: fetch the final transcript instead of leaving stale output.
-          if ((previous === "busy" || previous === "retry") && status === "idle") v2Refresh.schedule(sessionID)
+          if ((previousType === "busy" || previousType === "retry") && response.type === "idle")
+            v2Refresh.schedule(sessionID)
           await result.session.syncInputs(sessionID, signal)
-          return status
+          return busy ? "busy" : "idle"
         },
         async syncInputs(sessionID: string, signal?: AbortSignal) {
           if (!store.capabilities.pendingSessionInputs) return
