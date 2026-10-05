@@ -212,6 +212,8 @@ const layer = Layer.effect(
       SessionImageNormalize.toolContent(image, content).pipe(
         Effect.flatMap((normalized) => SessionBlobStorage.externalizeToolContent(blob, normalized)),
       )
+    const normalizeToolStructured = (structured: Record<string, unknown>) =>
+      SessionBlobStorage.externalizeToolStructured(blob, structured)
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -711,6 +713,7 @@ const layer = Layer.effect(
         cost: resolved.info.cost,
         snapshot: startSnapshot,
         normalizeContent: normalizeToolContent,
+        normalizeStructured: normalizeToolStructured,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
