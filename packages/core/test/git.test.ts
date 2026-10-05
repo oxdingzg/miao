@@ -163,6 +163,66 @@ describe("Git trees", () => {
   )
 })
 
+describe("Git batched diffs", () => {
+  it.live("preserves patches and summaries for unusual names, binary files, and deletions", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      const names = [
+        "space name.txt",
+        "tab\tname.txt",
+        "line\nname.txt",
+        'quote"name.txt',
+        "中文.txt",
+        "[literal].txt",
+        ...Array.from({ length: 24 }, (_, index) => `file-${index}.txt`),
+      ]
+      yield* Effect.promise(async () => {
+        await initRepo(root.path)
+        await Promise.all(names.map((file) => Bun.write(path.join(root.path, file), "before\n")))
+        await Bun.write(path.join(root.path, "binary.bin"), new Uint8Array([0, 1, 2]))
+        await Bun.write(path.join(root.path, "deleted.txt"), "deleted\n")
+        await $`git add .`.cwd(root.path).quiet()
+        await $`git commit -m before`.cwd(root.path).quiet()
+      })
+      const git = yield* Git.Service
+      const repository = yield* git.repo.discover(AbsolutePath.make(root.path))
+      if (!repository) throw new Error("Repository not found")
+      const before = yield* git.tree.write(repository)
+      yield* Effect.promise(async () => {
+        await Promise.all(names.map((file) => Bun.write(path.join(root.path, file), "after\nsecond\n")))
+        await Bun.write(path.join(root.path, "binary.bin"), new Uint8Array([0, 3, 4]))
+        await Bun.write(path.join(root.path, "added.txt"), "added\n")
+        await fs.rm(path.join(root.path, "deleted.txt"))
+        await $`git add -A`.cwd(root.path).quiet()
+      })
+      const after = yield* git.tree.write(repository)
+      const full = yield* git.tree.diff({ repository, from: before, to: after })
+      const summary = yield* git.tree.diff({ repository, from: before, to: after, patch: false })
+      expect(full).toHaveLength(names.length + 3)
+      expect(summary).toEqual(full.map((file) => ({ ...file, patch: "" })))
+      expect(full.find((file) => file.path === "binary.bin")).toMatchObject({ patch: "", additions: 0, deletions: 0 })
+      expect(full.find((file) => file.path === "deleted.txt")).toMatchObject({ status: "deleted", deletions: 1 })
+      yield* Effect.promise(async () => {
+        for (const file of full.filter((file) => file.path !== "binary.bin")) {
+          const expected =
+            await $`git --literal-pathspecs diff --no-ext-diff --no-textconv --no-renames --unified=3 ${before} ${after} -- ${file.path}`
+              .cwd(root.path)
+              .quiet()
+              .text()
+          expect(file.patch).toBe(expected)
+        }
+      })
+      expect(
+        yield* git.tree.diff({ repository, from: before, to: after, paths: [RelativePath.make("[literal].txt")] }),
+      ).toEqual(full.filter((file) => file.path === "[literal].txt"))
+      expect(yield* git.tree.diff({ repository, from: before, to: after, paths: [] })).toEqual([])
+    }),
+  )
+})
+
 describe("Git status", () => {
   it.live("reports structured working tree entries", () =>
     Effect.gen(function* () {

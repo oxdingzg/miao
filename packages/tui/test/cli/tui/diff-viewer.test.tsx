@@ -98,7 +98,12 @@ test("brackets navigate diff hunks", async () => {
   }
 })
 
-async function renderDiffViewer(vcsDiff: unknown[], height = 20, initialRoute?: TuiRouteCurrent) {
+async function renderDiffViewer(
+  vcsDiff: unknown[],
+  height = 20,
+  initialRoute?: TuiRouteCurrent,
+  sessionDiff?: TuiPluginApi["client"]["sessions"]["diff"],
+) {
   const commands = new Map<
     string,
     NonNullable<Parameters<TuiPluginApi["keymap"]["registerLayer"]>[0]["commands"]>[number]
@@ -126,9 +131,9 @@ async function renderDiffViewer(vcsDiff: unknown[], height = 20, initialRoute?: 
           },
         },
         sessions: {
-          diff: async (input: unknown) => {
+          diff: async (input: Parameters<TuiPluginApi["client"]["sessions"]["diff"]>[0]) => {
             sessionDiffInput = input
-            return []
+            return sessionDiff ? sessionDiff(input, {}) : []
           },
         },
       } as unknown as TuiPluginApi["client"],
@@ -235,7 +240,7 @@ test("last-turn diff source requests session diff", async () => {
       name: "diff",
       params: { mode: "last-turn", sessionID: "session-1", messageID: "message-1", returnRoute: startRoute },
     })
-    expect(viewer.sessionDiffInput()).toEqual({ sessionID: "session-1" })
+    expect(viewer.sessionDiffInput()).toEqual({ sessionID: "session-1", messageID: "message-1", patch: false })
     expect(viewer.vcsDiffInput()).toBeUndefined()
   } finally {
     viewer.app.renderer.destroy()
@@ -266,3 +271,35 @@ const pluginMeta = {
   fingerprint: "test",
   state: "same",
 } satisfies TuiPluginMeta
+
+test("session diff loads file statistics before fetching the displayed patch", async () => {
+  const requests: Parameters<TuiPluginApi["client"]["sessions"]["diff"]>[0][] = []
+  const file = {
+    path: "selected.ts",
+    status: "modified" as const,
+    additions: 1,
+    deletions: 1,
+    patch: "--- a/selected.ts\n+++ b/selected.ts\n@@ -1 +1 @@\n-before\n+after\n",
+  }
+  const viewer = await renderDiffViewer(
+    [],
+    20,
+    {
+      name: "diff",
+      params: { mode: "last-turn", sessionID: "session-1", messageID: "message-1", returnRoute: startRoute },
+    },
+    async (input) => {
+      requests.push(input)
+      return input.patch === false ? [{ ...file, patch: "" }] : [file]
+    },
+  )
+  try {
+    await viewer.app.waitForFrame((frame) => frame.includes("after"))
+    expect(requests).toEqual([
+      { sessionID: "session-1", messageID: "message-1", patch: false },
+      { sessionID: "session-1", messageID: "message-1", path: "selected.ts" },
+    ])
+  } finally {
+    viewer.app.renderer.destroy()
+  }
+})

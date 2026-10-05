@@ -371,9 +371,14 @@ type Endpoint8_21Request = Parameters<RawClient["server.session"]["session.diff"
 type Endpoint8_21Input = {
   readonly sessionID: Endpoint8_21Request["params"]["sessionID"]
   readonly messageID?: Endpoint8_21Request["query"]["messageID"]
+  readonly path?: Endpoint8_21Request["query"]["path"]
+  readonly patch?: Endpoint8_21Request["query"]["patch"]
 }
 const Endpoint8_21 = (raw: RawClient["server.session"]) => (input: Endpoint8_21Input) =>
-  raw["session.diff"]({ params: { sessionID: input["sessionID"] }, query: { messageID: input["messageID"] } }).pipe(
+  raw["session.diff"]({
+    params: { sessionID: input["sessionID"] },
+    query: { messageID: input["messageID"], path: input["path"], patch: input["patch"] },
+  }).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),
   )

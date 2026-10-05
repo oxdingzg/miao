@@ -116,8 +116,8 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     if (input.mode === "last-turn") {
       const sessionID = input.sessionID
       if (!sessionID) return []
-      // V2 has no message-scoped diff; show the session diff instead.
-      const result = await props.api.client.sessions.diff({ sessionID }, {})
+      // Populate the file tree first; patches are fetched when displayed.
+      const result = await props.api.client.sessions.diff({ sessionID, messageID: input.messageID, patch: false }, {})
       return normalizeDiffs(
         result.map((file) => ({
           file: file.path,
@@ -146,7 +146,9 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     props.api.kv.get<boolean>(KV_SHOW_FILE_TREE, true) !== false,
   )
   const showFileTree = createMemo(() => showDiffViewerFileTree(fileTreeEnabled(), files().length))
-  const [singlePatch, setSinglePatch] = createSignal(props.api.kv.get<boolean>(KV_SINGLE_PATCH, false) === true)
+  const [singlePatch, setSinglePatch] = createSignal(
+    props.api.kv.get<boolean>(KV_SINGLE_PATCH, mode() === "last-turn") === true,
+  )
   const patchPaneWidth = createMemo(() => dimensions().width - (showFileTree() ? 33 : 0) - 4)
   const patchLeftBorder = createMemo<BorderSides[]>(() => (showFileTree() ? ["left"] : []))
   const splitAvailable = createMemo(() => patchPaneWidth() >= MIN_SPLIT_WIDTH)
@@ -343,6 +345,33 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     )
     const file = fileIndex === undefined ? undefined : files()[fileIndex]
     return file && fileIndex !== undefined ? [{ file, fileIndex }] : []
+  })
+
+  const patchInput = createMemo(
+    () => {
+      const input = diffInput()
+      if (input.mode !== "last-turn" || !input.sessionID || files().length === 0) return undefined
+      const file = singlePatch() ? visiblePatchFiles()[0]?.file.file : undefined
+      if (singlePatch() && !file) return undefined
+      return { sessionID: input.sessionID, messageID: input.messageID, path: file }
+    },
+    undefined,
+    { equals: (a, b) => a?.sessionID === b?.sessionID && a?.messageID === b?.messageID && a?.path === b?.path },
+  )
+  const [patches] = createResource(patchInput, async (input) => ({
+    input,
+    data: await props.api.client.sessions.diff(input, {}),
+  }))
+  const renderedPatchFiles = createMemo(() => {
+    const loaded = patches()
+    if (mode() !== "last-turn") return visiblePatchFiles()
+    const byPath = new Map(
+      loaded && loaded.input === patchInput() ? loaded.data.map((file) => [file.path, file.patch]) : [],
+    )
+    return visiblePatchFiles().map((entry) => ({
+      ...entry,
+      file: { ...entry.file, patch: byPath.get(entry.file.file) },
+    }))
   })
 
   const ensureHighlightedPatchFile = () => {
@@ -821,7 +850,13 @@ function DiffViewer(props: { api: TuiPluginApi }) {
                     verticalScrollbarOptions={{ visible: false }}
                     horizontalScrollbarOptions={{ visible: false }}
                   >
-                    <For each={visiblePatchFiles()}>
+                    <Show when={patches.loading}>
+                      <text fg={theme().textMuted}>Loading patch…</text>
+                    </Show>
+                    <Show when={patches.error}>
+                      <text fg={theme().error}>Failed to load patch</text>
+                    </Show>
+                    <For each={renderedPatchFiles()}>
                       {(entry, index) => {
                         const reviewed = () => reviewedFileNames().has(entry.file.file)
                         return (

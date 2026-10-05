@@ -1398,7 +1398,7 @@ export const {
             const diffRequest = new AbortController()
             diffRequests.set(sessionID, diffRequest)
             void sdk.api.sessions
-              .diff({ sessionID }, { signal: diffRequest.signal })
+              .diff({ sessionID, patch: false }, { signal: diffRequest.signal })
               .then((files) => {
                 if (diffRequests.get(sessionID) !== diffRequest || diffRequest.signal.aborted) return
                 if ((diffLiveAt.get(sessionID) ?? 0) >= started) return
