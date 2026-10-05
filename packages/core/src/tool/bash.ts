@@ -18,6 +18,7 @@ import { ShellEnvironment } from "../shell/environment"
 import { SandboxPolicy } from "../sandbox/policy"
 import { PositiveInt } from "../schema"
 import { Hash } from "../util/hash"
+import { which } from "../util/which"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -78,6 +79,40 @@ const Output = Schema.Struct({
 type Output = typeof Output.Type
 
 const defaultShell = () => (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh")
+
+/**
+ * PowerShell and PowerShell 7 need `-Command`; the runtime's generic `shell`
+ * option only promises `/bin/sh`-style `-c` handling. Match by file name so a
+ * resolved path such as `C:\...\powershell.exe` is detected too.
+ */
+const isPowerShell = (shell: string) => {
+  const base = path.basename(shell).toLowerCase()
+  return base === "powershell" || base === "powershell.exe" || base === "pwsh" || base === "pwsh.exe"
+}
+
+/**
+ * Resolve a configured bare shell name on Windows to its executable path.
+ * Without this, the spawner sees a non-executable command name and wraps the
+ * call in `cmd.exe /d /s /c`, re-parsing the script the way cmd.exe does
+ * rather than the way the configured shell does.
+ */
+const resolveShell = (shell: string) => {
+  if (process.platform !== "win32") return shell
+  if (path.isAbsolute(shell)) return shell
+  return which(shell) ?? shell
+}
+
+/**
+ * Build the command that runs `command` under `shell`. On Windows a
+ * PowerShell is invoked profile-free with `-NoProfile -Command`, so a host
+ * profile can neither change parsing nor prepend output. cmd.exe and every
+ * other shell keep the runtime's `shell` handling, which on Windows already
+ * applies the correct `/d /s /c` quoting.
+ */
+const shellCommand = (shell: string, command: string, options: ChildProcess.CommandOptions): ChildProcess.Command =>
+  process.platform === "win32" && isPowerShell(shell)
+    ? ChildProcess.make(shell, ["-NoProfile", "-Command", command], options)
+    : ChildProcess.make(command, [], { ...options, shell })
 
 const modelOutput = (output: Output) => {
   const warnings = output.warnings?.length
@@ -369,7 +404,7 @@ const layer = Layer.effectDiscard(
       readonly options: ChildProcess.CommandOptions
       readonly request: Pick<PermissionV2.AssertInput, "sessionID" | "agent" | "source">
     }) {
-      const plain = ChildProcess.make(input.command, [], { ...input.options, shell: input.shell })
+      const plain = shellCommand(input.shell, input.command, input.options)
       const approved: string[] = []
       const run = (attempt: number) =>
         Effect.gen(function* () {
@@ -552,8 +587,10 @@ const layer = Layer.effectDiscard(
 
               const entries = yield* config.entries()
               const shell =
-                Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])))
-                  .shell ?? defaultShell()
+                resolveShell(
+                  Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))).shell ??
+                    defaultShell(),
+                )
               // Plugin `shell.env` variables, layered over the inherited environment as in V1.
               const env = yield* shellEnvironment.get({
                 directory: location.directory,
@@ -590,11 +627,7 @@ const layer = Layer.effectDiscard(
                       request: { sessionID: context.sessionID, agent: context.agent, source },
                     })
                   : {
-                      result: yield* exec(
-                        ChildProcess.make(input.command, [], { ...options, shell }),
-                        timeout,
-                        input.stdin,
-                      ),
+                      result: yield* exec(shellCommand(shell, input.command, options), timeout, input.stdin),
                       warnings: status.enabled ? [UNAVAILABLE_WARNING] : [],
                     }
               const allWarnings = [...warnings, ...outcome.warnings]
