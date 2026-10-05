@@ -72,7 +72,12 @@ async function launch(storage: string) {
     const child = spawn(program[0], program.slice(1), {
       detached: true,
       stdio: ["ignore", log.fd, log.fd],
-      env: { ...process.env, MIAO_DB: storage },
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => !["MTTY_PANE_ID", "MIAOTTY_PANE_ID"].includes(key)),
+        ),
+        MIAO_DB: storage,
+      },
       windowsHide: true,
     })
     await new Promise<void>((resolve, reject) => {

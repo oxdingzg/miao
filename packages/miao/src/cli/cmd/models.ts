@@ -1,6 +1,6 @@
 import { EOL } from "os"
 import { Effect } from "effect"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import { ProviderV2 } from "@miao/core/provider"
@@ -20,13 +20,13 @@ export const ModelsCommand = effectCmd({
         type: "boolean",
       })
       .option("refresh", {
-        describe: "refresh the models cache from models.dev",
+        describe: "refresh the models cache from the catalog",
         type: "boolean",
       }),
   handler: Effect.fn("Cli.models")(function* (args) {
     const { Provider } = yield* Effect.promise(() => import("@/provider/provider"))
     if (args.refresh) {
-      yield* ModelsDev.Service.use((s) => s.refresh(true))
+      yield* ModelsCatalog.Service.use((s) => s.refresh(true))
       UI.println(UI.Style.TEXT_SUCCESS_BOLD + "Models cache refreshed" + UI.Style.TEXT_NORMAL)
     }
 

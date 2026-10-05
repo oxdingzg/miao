@@ -238,6 +238,7 @@ export const TuiThreadCommand = cmd({
         await Effect.runPromise(
           run({
             url: runtime.url,
+            runtimeTarget: { runtimeID: runtime.runtimeID, storage: DatabaseFile.path() },
             config: await TuiConfig.get(),
             pluginHost: createLegacyTuiPluginHost(),
             directory: cwd,

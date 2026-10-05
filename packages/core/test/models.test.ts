@@ -6,7 +6,7 @@ import { LayerNodePlatform } from "@miao/core/effect/app-node-platform"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Flag } from "@miao/core/flag/flag"
 import { Global } from "@miao/core/global"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { it } from "./lib/effect"
 import { readFile, rm, writeFile, utimes, mkdir } from "fs/promises"
 import path from "path"
@@ -30,12 +30,12 @@ afterAll(() => {
   Flag.MIAO_DISABLE_MODELS_FETCH = ORIGINAL_DISABLE_FETCH
 })
 
-const cacheFile = path.join(Global.Path.cache, "models-dev.json")
+const cacheFile = path.join(Global.Path.cache, "models.json")
 // Conditional-request validators live beside the cache file; they must be
 // cleared per test so a leftover `checkedAt` does not suppress a needed fetch.
 const validatorFile = `${cacheFile}.validator.json`
 
-const fixture: Record<string, ModelsDev.Provider> = {
+const fixture: Record<string, ModelsCatalog.Provider> = {
   acme: {
     id: "acme",
     name: "Acme",
@@ -55,7 +55,7 @@ const fixture: Record<string, ModelsDev.Provider> = {
   },
 }
 
-const fixture2: Record<string, ModelsDev.Provider> = {
+const fixture2: Record<string, ModelsCatalog.Provider> = {
   beta: {
     id: "beta",
     name: "Beta",
@@ -78,7 +78,7 @@ const fixture2: Record<string, ModelsDev.Provider> = {
 import { ModelsOverlay } from "@miao/core/models-overlay"
 
 // The self-maintained overlay is part of every catalog the service returns.
-const withOverlay = <T extends Record<string, ModelsDev.Provider>>(catalog: T) => ModelsOverlay.merge(catalog)
+const withOverlay = <T extends Record<string, ModelsCatalog.Provider>>(catalog: T) => ModelsOverlay.merge(catalog)
 
 interface MockState {
   body: string
@@ -107,11 +107,11 @@ const makeMockClient = (state: Ref.Ref<MockState>) =>
   )
 
 const buildLayer = (state: Ref.Ref<MockState>) =>
-  // Layer.fresh is required because the ModelsDev implementation is a module-level Layer constant,
+  // Layer.fresh is required because the ModelsCatalog implementation is a module-level Layer constant,
   // and Effect.provide uses a process-global MemoMap by default — without fresh,
   // every test would reuse the cachedInvalidateWithTTL state from the first run.
   Layer.fresh(
-    AppNodeBuilder.build(ModelsDev.node, [
+    AppNodeBuilder.build(ModelsCatalog.node, [
       [LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, makeMockClient(state))],
     ]),
   )
@@ -128,7 +128,7 @@ const writeCacheText = (text: string, mtimeMs?: number) =>
 
 const writeCache = (data: object, mtimeMs?: number) => writeCacheText(JSON.stringify(data), mtimeMs)
 
-const provided = <A, E>(state: Ref.Ref<MockState>, eff: Effect.Effect<A, E, ModelsDev.Service>) =>
+const provided = <A, E>(state: Ref.Ref<MockState>, eff: Effect.Effect<A, E, ModelsCatalog.Service>) =>
   eff.pipe(Effect.provide(buildLayer(state)))
 
 beforeEach(async () => {
@@ -147,14 +147,14 @@ const initialState: MockState = {
   calls: [],
 }
 
-describe("ModelsDev Service", () => {
+describe("ModelsCatalog Service", () => {
   it.live("get() returns providers from disk when cache file exists", () =>
     Effect.gen(function* () {
       yield* writeCache(fixture)
       const state = yield* Ref.make(initialState)
       const result = yield* provided(
         state,
-        ModelsDev.Service.use((s) => s.get()),
+        ModelsCatalog.Service.use((s) => s.get()),
       )
       expect(result).toEqual(withOverlay(fixture))
       const final = yield* Ref.get(state)
@@ -167,7 +167,7 @@ describe("ModelsDev Service", () => {
       const state = yield* Ref.make(initialState)
       const result = yield* provided(
         state,
-        ModelsDev.Service.use((s) => s.get()),
+        ModelsCatalog.Service.use((s) => s.get()),
       )
       expect(result).toEqual(withOverlay({}))
       const final = yield* Ref.get(state)
@@ -184,7 +184,7 @@ describe("ModelsDev Service", () => {
         Effect.sync(() => {
           Flag.MIAO_DISABLE_MODELS_FETCH = false
         }),
-        () => ModelsDev.Service.use((s) => s.get()).pipe(Effect.provide(context)),
+        () => ModelsCatalog.Service.use((s) => s.get()).pipe(Effect.provide(context)),
         () =>
           Effect.sync(() => {
             Flag.MIAO_DISABLE_MODELS_FETCH = true
@@ -204,7 +204,7 @@ describe("ModelsDev Service", () => {
       const results = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           return yield* Effect.all([svc.get(), svc.get(), svc.get(), svc.get(), svc.get()], {
             concurrency: "unbounded",
           })
@@ -221,7 +221,7 @@ describe("ModelsDev Service", () => {
       const first = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           const a = yield* svc.get()
           // mutate disk between calls — cache should mask the change
           yield* writeCache(fixture2)
@@ -241,7 +241,7 @@ describe("ModelsDev Service", () => {
       const result = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           const before = yield* svc.get()
           yield* svc.refresh(true)
           const after = yield* svc.get()
@@ -264,7 +264,7 @@ describe("ModelsDev Service", () => {
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
       yield* provided(
         state,
-        ModelsDev.Service.use((s) => s.refresh(false)),
+        ModelsCatalog.Service.use((s) => s.refresh(false)),
       )
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
@@ -281,7 +281,7 @@ describe("ModelsDev Service", () => {
       const result = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           const before = yield* svc.get()
           yield* writeCache(fixture2, now)
           yield* svc.refresh(false)
@@ -305,7 +305,7 @@ describe("ModelsDev Service", () => {
       const after = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           yield* svc.refresh(false)
           return yield* svc.get()
         }),
@@ -323,7 +323,7 @@ describe("ModelsDev Service", () => {
       const result = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           yield* svc.refresh(true)
           return yield* svc.get()
         }),
@@ -349,7 +349,7 @@ describe("ModelsDev Service", () => {
       const result = yield* provided(
         state,
         Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
+          const svc = yield* ModelsCatalog.Service
           yield* svc.refresh(false)
           return yield* svc.get()
         }),

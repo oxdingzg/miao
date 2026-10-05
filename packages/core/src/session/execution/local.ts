@@ -8,6 +8,8 @@ import { SessionRunner } from "../runner"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
+import { Database } from "../../database/database"
+import { SessionDelegation } from "../delegation"
 
 /** Current-process routing for implicit-local Locations. Future remote placement belongs here. */
 const layer = Layer.effect(
@@ -16,9 +18,11 @@ const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
     const events = yield* EventV2.Service
+    const db = (yield* Database.Service).db
     // Declared before the coordinator so the drain closure can wake peer Sessions
     // without a circular type reference.
     let wake: (sessionID: SessionSchema.ID) => Effect.Effect<void> = () => Effect.void
+    let delegation: SessionDelegation.API | undefined
     // A high default bounds runaway fan-out without constraining normal use.
     // `MIAO_MAX_CONCURRENT_DRAINS=0` (or a non-positive value) removes the cap.
     const configured = Number(process.env.MIAO_MAX_CONCURRENT_DRAINS ?? 8)
@@ -28,7 +32,7 @@ const layer = Layer.effect(
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
-        return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force, wake })).pipe(
+        return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force, wake, delegation })).pipe(
           Effect.provide(locations.get(session.location)),
           Effect.tapCause((cause) =>
             Cause.hasInterruptsOnly(cause)
@@ -50,6 +54,17 @@ const layer = Layer.effect(
       ),
     })
     wake = coordinator.wake
+    const backgroundLimit = Number(process.env.MIAO_MAX_BACKGROUND_SUBAGENTS ?? 4)
+    delegation = yield* SessionDelegation.make({
+      db,
+      events,
+      store,
+      wake: coordinator.wake,
+      wait: coordinator.awaitIdle,
+      executions: coordinator.executions,
+      interruptIf: coordinator.interruptIf,
+      maximum: Number.isFinite(backgroundLimit) && backgroundLimit > 0 ? Math.max(1, Math.floor(backgroundLimit)) : 4,
+    })
 
     return SessionExecution.Service.of({
       active: coordinator.active,
@@ -66,7 +81,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: SessionExecution.Service,
   layer,
-  deps: [SessionStore.node, LocationServiceMap.node, EventV2.node],
+  deps: [SessionStore.node, LocationServiceMap.node, EventV2.node, Database.node],
 })
 
 export * as SessionExecutionLocal from "./local"
