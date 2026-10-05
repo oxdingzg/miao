@@ -4,6 +4,7 @@ import Observation
 import CryptoKit
 import MiaoCore
 import UIKit
+import AuthenticationServices
 import UserNotifications
 
 @MainActor @Observable
@@ -18,6 +19,9 @@ final class AppModel {
     var pairing: String?
     var fingerprint: String?
     var accountURL = ""
+    /// Build-time default relay origin (`MIAO_HUB_ORIGIN`), so a preconfigured
+    /// build lands on its own Hub without asking the user to type it.
+    var defaultAccountURL: String { (Bundle.main.object(forInfoDictionaryKey: "MiaoHubOrigin") as? String) ?? "" }
     var accountSignedIn = false
     var accountBusy = false
     var revocationPending = false
@@ -307,6 +311,64 @@ final class AppModel {
                 try? await reload()
                 connectionEpoch += 1
             }
+        }
+    }
+
+    /// Sign in through the hub's OAuth provider (mhub has no password). The
+    /// browser returns to the app's own scheme with a one-time code.
+    func signInWithOAuth(provider: String) async {
+        guard !accountBusy else { return }
+        accountBusy = true; accountError = nil
+        accountEpoch += 1
+        let generation = accountEpoch
+        defer { if generation == accountEpoch { accountBusy = false } }
+        do {
+            let raw = (accountURL.isEmpty ? defaultAccountURL : accountURL).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: raw) else { throw HubAccountError.invalidEndpoint }
+            let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            accountSignedIn = false; discoveredHosts = []
+            let pendingPair = pairTask
+            pendingPair?.cancel(); await pendingPair?.value
+            for client in clients.values { await client.close() }
+            clients.removeAll()
+            if let account { try await account.signOut(); await account.close() }
+            if try await next.restore() { try await next.signOut() }
+            let authorize = try await next.oauthAuthorizeURL(provider: provider, callbackURL: "miao://auth")
+            let code = try await Self.presentOAuth(url: authorize, scheme: "miao")
+            try await next.signInWithOAuth(code: code)
+            guard generation == accountEpoch else { try? await next.signOut(); await next.close(); return }
+            let canonical = await next.origin
+            account = next; accountOrigin = canonical
+            accountURL = canonical.absoluteString
+            accountSignedIn = true; revocationPending = false
+            UserDefaults.standard.set(accountURL, forKey: accountPreference)
+            try await reload()
+            connectionEpoch += 1
+            await refreshDirectory()
+            await restoreNotifications()
+        } catch {
+            if generation == accountEpoch {
+                accountError = accountMessage(error)
+                try? await reload()
+                connectionEpoch += 1
+            }
+        }
+    }
+
+    private static func presentOAuth(url: URL, scheme: String) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callback, error in
+                if let error { continuation.resume(throwing: error); return }
+                guard let callback,
+                      let components = URLComponents(url: callback, resolvingAgainstBaseURL: false),
+                      let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
+                    continuation.resume(throwing: HubAccountError.malformed); return
+                }
+                continuation.resume(returning: code)
+            }
+            session.presentationContextProvider = OAuthPresentationAnchor.shared
+            session.prefersEphemeralWebBrowserSession = false
+            if !session.start() { continuation.resume(throwing: HubAccountError.authenticationRequired) }
         }
     }
 
@@ -728,4 +790,12 @@ func userMessage(_ error: Error) -> String {
         return code == "uncertain" ? "操作结果待核对，不会自动重新发送" : "状态或授权已更新，请刷新后再试"
     }
     return "连接暂时不可用，已保留输入，请重新连接后核对结果"
+}
+
+private final class OAuthPresentationAnchor: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = OAuthPresentationAnchor()
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap { $0.windows }.first { $0.isKeyWindow } ?? ASPresentationAnchor()
+    }
 }

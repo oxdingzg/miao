@@ -44,7 +44,7 @@ for config in ['Debug', 'Release']:
         common += ' DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_OPTIMIZATION_LEVEL = "-O";'
     add('project:' + config, f'isa = XCBuildConfiguration; buildSettings = {{ {common} }}; name = {config};')
     target = '''ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO;
-        INFOPLIST_FILE = Miao/Info.plist; MARKETING_VERSION = "$(MIAO_VERSION)"; MIAO_PUSH_ENVIRONMENT = disabled;
+        INFOPLIST_FILE = Miao/Info.plist; MARKETING_VERSION = "$(MIAO_VERSION)"; MIAO_PUSH_ENVIRONMENT = disabled; MIAO_HUB_ORIGIN = "";
         PRODUCT_BUNDLE_IDENTIFIER = dev.miao.remote; PRODUCT_NAME = Miao;
         SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0;
         SWIFT_STRICT_CONCURRENCY = complete; TARGETED_DEVICE_FAMILY = "1,2";

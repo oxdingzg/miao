@@ -33,6 +33,9 @@ struct HubAccountView: View {
                             Task { await model.signIn(origin: origin, email: email, password: secret) }
                         }.disabled(model.accountBusy || origin.isEmpty || email.isEmpty || password.isEmpty)
                             .accessibilityIdentifier("hubSignIn")
+                        Button("用 GitHub 登录") { Task { await model.signInWithOAuth(provider: "github") } }
+                            .disabled(model.accountBusy)
+                            .accessibilityIdentifier("hubOAuthGithub")
                         if model.accountBusy { ProgressView("正在登录…") }
                         Text("填写电脑配置的中继地址和账号。登录后仍需扫码，并在电脑上批准这台设备。")
                             .font(.footnote).foregroundStyle(.secondary)
@@ -85,7 +88,7 @@ struct HubAccountView: View {
             }
             .navigationTitle("中继账号")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { password = ""; dismiss() } } }
-            .onAppear { origin = model.accountURL }
+            .onAppear { origin = model.accountURL.isEmpty ? model.defaultAccountURL : model.accountURL }
             .onDisappear { password = "" }
         }
     }
