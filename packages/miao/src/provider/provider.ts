@@ -11,7 +11,7 @@ import { Plugin } from "../plugin"
 import { TencentTokenPlan } from "@miao/core/tencent-token-plan"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { EventV2 } from "@miao/core/event"
 import { Auth } from "../auth"
 import { Env } from "../env"
@@ -176,7 +176,7 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
   return sdk.responses?.(modelID) ?? sdk.languageModel(modelID)
 }
 
-// Tencent documents these Token Plan model IDs, but models.dev currently lists
+// Tencent documents these Token Plan model IDs, but the catalog currently lists
 // only Hy3 and Hy4. Keep catalog/user-defined entries authoritative when they
 // catch up. A plan key is scoped to the models its plan includes, so an entry is
 // only seeded when the gateway's own model list confirms the key can call it.
@@ -206,7 +206,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         const http = yield* HttpClient.HttpClient
         return yield* TencentTokenPlan.authorizedModels({ baseURL, key: auth.key, http })
       }).pipe(Effect.provide(FetchHttpClient.layer))
-      // models.dev lists plan models the key may not be scoped for (Hy3 answers
+      // the catalog lists plan models the key may not be scoped for (Hy3 answers
       // 403 on this gateway), so drop every catalog model the gateway does not list.
       if (authorized !== undefined) {
         for (const id of Object.keys(input.models)) {
@@ -470,7 +470,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           if (model?.api.npm === "@ai-sdk/amazon-bedrock/mantle") return selectBedrockMantleLanguageModel(sdk, modelID)
 
           // Skip region prefixing if model already has a cross-region inference profile prefix
-          // Models from models.dev may already include prefixes like us., eu., global., etc.
+          // Models from the catalog may already include prefixes like us., eu., global., etc.
           if (modelID.startsWith("arn:")) {
             return sdk.languageModel(modelID)
           }
@@ -603,7 +603,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       }),
     "google-vertex": Effect.fnUntraced(function* (provider: Info) {
       const env = yield* dep.env()
-      // models.dev advertises GOOGLE_VERTEX_PROJECT for Vertex; keep the wider
+      // the catalog advertises GOOGLE_VERTEX_PROJECT for Vertex; keep the wider
       // Google Cloud project env names as fallbacks for existing ADC setups.
       const project =
         provider.options?.project ??
@@ -945,7 +945,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           // The passthrough wrappers inject a CF_TEMP_TOKEN sentinel that the gateway strips before
           // dispatch, so upstream billing stays on the gateway (Unified Billing / stored BYOK).
           if (modelID.startsWith("openai/")) return aigateway(createOpenAI()(modelID.slice("openai/".length)))
-          // models.dev lists Anthropic ids with dotted versions (claude-haiku-4.5); Anthropic's
+          // the catalog lists Anthropic ids with dotted versions (claude-haiku-4.5); Anthropic's
           // Messages API expects dashed native slugs (claude-haiku-4-5), so translate before passing.
           // No native Anthropic slug contains a dot, so the blanket replacement is lossless here -
           // unlike OpenAI above, whose native ids (e.g. gpt-4.1) keep their dots and must not be touched.
@@ -966,7 +966,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           // them with "Invalid provider" (the gateway's compat endpoint doesn't front those upstreams),
           // so point an OpenAI-compatible client at the REST endpoint and bind it to the gateway with
           // cf-aig-gateway-id — that keeps requests gateway-routed (analytics/caching/BYOK), not a
-          // bypass. models.dev ids (provider/model, dotted) pass through unchanged.
+          // bypass. the catalog ids (provider/model, dotted) pass through unchanged.
           return createOpenAICompatible({
             name: "cloudflare-ai-gateway",
             baseURL: `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`,
@@ -1216,7 +1216,7 @@ export class Service extends Context.Service<Service, Interface>()("@miao/Provid
 
 export const use = serviceUse(Service)
 
-function cost(c: ModelsDev.Model["cost"]): Model["cost"] {
+function cost(c: ModelsCatalog.Model["cost"]): Model["cost"] {
   const result: Model["cost"] = {
     input: c?.input ?? 0,
     output: c?.output ?? 0,
@@ -1260,7 +1260,7 @@ function cloudflareGatewayNpm(providerID: string, modelID: string) {
   return undefined
 }
 
-function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+function fromModelsCatalogModel(provider: ModelsCatalog.Provider, model: ModelsCatalog.Model): Model {
   const base: Model = {
     id: ModelV2.ID.make(model.id),
     providerID: ProviderV2.ID.make(provider.id),
@@ -1317,13 +1317,13 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
   }
 }
 
-export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
+export function fromModelsCatalogProvider(provider: ModelsCatalog.Provider): Info {
   const models: Record<string, Model> = {}
   for (const [key, model] of Object.entries(provider.models)) {
-    models[key] = fromModelsDevModel(provider, model)
+    models[key] = fromModelsCatalogModel(provider, model)
     for (const [mode, opts] of Object.entries(model.experimental?.modes ?? {})) {
       const id = `${model.id}-${mode}`
-      const base = fromModelsDevModel(provider, model)
+      const base = fromModelsCatalogModel(provider, model)
       models[id] = {
         ...base,
         id: ModelV2.ID.make(id),
@@ -1392,7 +1392,7 @@ const layer = Layer.effect(
     const auth = yield* Auth.Service
     const env = yield* Env.Service
     const plugin = yield* Plugin.Service
-    const modelsDevSvc = yield* ModelsDev.Service
+    const modelsCatalogSvc = yield* ModelsCatalog.Service
     const runtimeFlags = yield* RuntimeFlags.Service
     const events = yield* EventV2.Service
 
@@ -1400,8 +1400,8 @@ const layer = Layer.effect(
       Effect.gen(function* () {
         const bridge = yield* EffectBridge.make()
         const cfg = yield* config.get()
-        const modelsDev = yield* modelsDevSvc.get()
-        const catalog = mapValues(modelsDev, fromModelsDevProvider)
+        const modelsCatalog = yield* modelsCatalogSvc.get()
+        const catalog = mapValues(modelsCatalog, fromModelsCatalogProvider)
         const database = mapValues(catalog, toPublicInfo)
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
@@ -1496,10 +1496,10 @@ const layer = Layer.effect(
               model.provider?.npm ??
               provider.npm ??
               existingModel?.api.npm ??
-              // Config-defined gateway models bypass fromModelsDevModel, so resolve the
+              // Config-defined gateway models bypass fromModelsCatalogModel, so resolve the
               // native passthrough npm here before falling back to the catalog default.
               cloudflareGatewayNpm(providerID, apiID) ??
-              modelsDev[providerID]?.npm ??
+              modelsCatalog[providerID]?.npm ??
               "@ai-sdk/openai-compatible"
             const name = iife(() => {
               if (model.name) return model.name
@@ -1511,7 +1511,7 @@ const layer = Layer.effect(
               api: {
                 id: apiID,
                 npm: apiNpm,
-                url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api ?? "",
+                url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsCatalog[providerID]?.api ?? "",
               },
               status: model.status ?? existingModel?.status ?? "active",
               name,
@@ -2039,9 +2039,9 @@ const layer = Layer.effect(
       }
     })
 
-    // A refreshed models.dev catalog must invalidate the per-directory provider
+    // A refreshed catalog must invalidate the per-directory provider
     // state, so newly published models appear without a restart.
-    yield* events.subscribe(ModelsDev.Event.Refreshed).pipe(
+    yield* events.subscribe(ModelsCatalog.Event.Refreshed).pipe(
       Stream.runForEach(() => InstanceState.invalidateAll(state)),
       Effect.forkScoped({ startImmediately: true }),
     )
@@ -2072,7 +2072,7 @@ export function parseModel(model: string) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, ModelsDev.node, EventV2.node, RuntimeFlags.node],
+  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, ModelsCatalog.node, EventV2.node, RuntimeFlags.node],
 })
 
 export * as Provider from "./provider"

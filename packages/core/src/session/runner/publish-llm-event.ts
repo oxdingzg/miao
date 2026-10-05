@@ -17,9 +17,13 @@ type Input = {
    * Applied to a settled tool result before it becomes durable. Every tool
    * reaches this one point, so the bound lives here rather than in each tool.
    */
-  readonly normalizeContent?: (
-    content: ToolOutput["content"],
-  ) => Effect.Effect<ToolOutput["content"]>
+  readonly normalizeContent?: (content: ToolOutput["content"]) => Effect.Effect<ToolOutput["content"]>
+  /**
+   * Applied to a settled tool result's raw structured output before it becomes
+   * durable. Tools whose structured output carries the same bytes as their
+   * model-facing content externalize them here so the durable event stays small.
+   */
+  readonly normalizeStructured?: (structured: Record<string, unknown>) => Effect.Effect<Record<string, unknown>>
 }
 
 const safe = (value: number | undefined) => Math.max(0, Number.isFinite(value) ? (value ?? 0) : 0)
@@ -408,12 +412,16 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
           provider.executed || input.normalizeContent === undefined
             ? result.content
             : yield* input.normalizeContent(result.content)
+        const structured =
+          provider.executed || input.normalizeStructured === undefined
+            ? result.structured
+            : yield* input.normalizeStructured(result.structured)
         yield* events.publish(SessionEvent.Tool.Success, {
           sessionID: input.sessionID,
           timestamp: yield* timestamp,
           assistantMessageID: tool.assistantMessageID,
           callID: event.id,
-          structured: result.structured,
+          structured,
           content,
           outputPaths,
           ...(provider.executed ? { result: event.result } : {}),

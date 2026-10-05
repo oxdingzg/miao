@@ -7,6 +7,7 @@ import type { ContextSnapshotDecodeError, LegacyNotMigratedError, MessageDecodeE
 import { SessionRunnerModel } from "./model"
 import type { SystemContext } from "../../system-context/index"
 import type { ToolOutputStore } from "../../tool-output-store"
+import type { SessionDelegation } from "../delegation"
 
 export type RunError =
   | LLMError
@@ -29,6 +30,8 @@ export interface Interface {
      * target's next drain.
      */
     readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+    /** Runtime-owned background execution capability, injected without a tag cycle. */
+    readonly delegation?: SessionDelegation.API
   }) => Effect.Effect<void, RunError>
 }
 

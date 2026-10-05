@@ -14,7 +14,7 @@ import { SecureChannel } from "@miao/remote-control/secure-channel"
 import { ControlHub } from "@miao/remote-control/hub"
 import { ControlPairing } from "@miao/remote-control/pairing"
 
-test("Runtime owns storage, hosts IM controls, authenticates clients, and persists sessions across restart", async () => {
+test("Runtime owns storage, hosts Remote Control, authenticates clients, and persists sessions across restart", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-host-test-"))
   const database = path.join(directory, "sessions.db")
   const project = path.join(directory, "project")
@@ -50,7 +50,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     MIAO_DB: database,
     MIAO_REMOTE_CONTROL_CONFIG: configuration,
     MIAO_PURE: "1",
-    MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false, remote: { projects: {} } }),
+    MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false }),
     MIAO_TEST_HOME: path.join(directory, "home"),
     MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
     XDG_CONFIG_HOME: path.join(directory, "config"),
@@ -69,6 +69,20 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     })
     children.push(child)
     return child
+  }
+  const access = async (input: Record<string, unknown> | string) => {
+    const child = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime", "access"], {
+      cwd: path.resolve(import.meta.dir, "../.."),
+      env: environment,
+      stdin: new Blob([typeof input === "string" ? input : JSON.stringify({ version: 1, ...input })]),
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    children.push(child)
+    const output = await new Response(child.stdout).text()
+    expect(await child.exited).toBe(0)
+    expect(output).not.toContain(hostToken)
+    return JSON.parse(output)
   }
   const ready = async (child: ReturnType<typeof start>) => {
     const deadline = Date.now() + 20_000
@@ -168,19 +182,38 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     return call
   }
   try {
+    expect(await access({ method: "status" })).toMatchObject({ ok: false, error: "noRuntime" })
+    expect(await RuntimeDiscovery.read(database)).toBeUndefined()
+    expect(await access({ method: "status", password: "secret-extra-field" })).toMatchObject({
+      ok: false,
+      error: "invalidRequest",
+    })
+    expect(await access("{invalid")).toMatchObject({ ok: false, error: "invalidRequest" })
+    expect(await access(" ".repeat(65_537))).toMatchObject({ ok: false, error: "invalidRequest" })
     const first = start()
     const record = await ready(first)
-    const status = Bun.spawn([process.execPath, "run", "src/index.ts", "remote", "status"], {
-      cwd: path.resolve(import.meta.dir, "../.."),
-      env: environment,
-      stdout: "pipe",
-      stderr: "pipe",
+    expect(await access({ method: "status" })).toMatchObject({
+      version: 1,
+      ok: true,
+      runtimeID: record.runtimeID,
+      data: { enabled: true, hostID: grants.hostID },
     })
-    expect(await status.exited).toBe(0)
-    expect(await new Response(status.stdout).text()).toContain(record.url)
+    expect(
+      await access({
+        method: "invite",
+        runtimeID: "wrong-runtime-identity",
+        policy: {
+          permissions: ["read"],
+          sessionIDs: [sessionID],
+          projectIDs: [],
+          expiresAt: Date.now() + 60_000,
+        },
+      }),
+    ).toMatchObject({ ok: false, error: "runtimeChanged" })
+    expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({ ok: true, data: [] })
     const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
     expect((await fetch(new URL("/api/health", record.url))).status).toBe(401)
-    expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(200)
+    expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(404)
     const created = await fetch(new URL("/api/session", record.url), {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
@@ -214,37 +247,47 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     expect(configured).toMatchObject({ enabled: true, hostID: grants.hostID, runtimeID: record.runtimeID })
     expect((await RuntimeDiscovery.read(database))?.runtimeID).toBe(record.runtimeID)
     expect(await sdk.sessions.get({ sessionID })).toMatchObject({ id: sessionID, projectID: session.projectID })
-    const invitationResponse = await fetch(new URL("/api/runtime/control/invitation", record.url), {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({
+    expect(await access({ method: "session", runtimeID: record.runtimeID, sessionID })).toMatchObject({
+      ok: true,
+      data: { sessionID, projectID: session.projectID },
+    })
+    const invited = await access({
+      method: "invite",
+      runtimeID: record.runtimeID,
+      policy: {
         permissions: ["read"],
         sessionIDs: [sessionID],
         projectIDs: [],
-        expiresAt: Date.now() + 60000,
-      }),
+        expiresAt: Date.now() + 60_000,
+      },
     })
-    expect(invitationResponse.status).toBe(200)
-    const invitation = (await invitationResponse.json()) as ControlPairing.Invitation
+    expect(invited.ok).toBe(true)
+    const invitation = invited.data as ControlPairing.Invitation
     const newDevice = await SecureChannel.createIdentity()
     const provisional = await connection(record, newDevice, invitation)
     expect(
       JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
     ).toMatchObject({ type: "pairing", status: "pending" })
-    const candidates = await fetch(new URL("/api/runtime/control/pairing", record.url), { headers })
-    expect(await candidates.json()).toMatchObject([
-      { pairingID: invitation.pairingID, candidate: { publicKey: newDevice.publicKey } },
-    ])
-    const approvedResponse = await fetch(
-      new URL(`/api/runtime/control/pairing/${invitation.pairingID}/approve`, record.url),
-      {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ publicKey: newDevice.publicKey }),
-      },
-    )
-    expect(approvedResponse.status).toBe(200)
-    const newGrant = (await approvedResponse.json()) as DeviceGrants.Grant
+    expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({
+      ok: true,
+      data: [{ pairingID: invitation.pairingID, candidate: { publicKey: newDevice.publicKey } }],
+    })
+    expect(
+      await access({
+        method: "approve",
+        runtimeID: record.runtimeID,
+        pairingID: invitation.pairingID,
+        publicKey: device.publicKey,
+      }),
+    ).toMatchObject({ ok: false, error: "unconfirmed" })
+    const approved = await access({
+      method: "approve",
+      runtimeID: record.runtimeID,
+      pairingID: invitation.pairingID,
+      publicKey: newDevice.publicKey,
+    })
+    expect(approved.ok).toBe(true)
+    const newGrant = approved.data as DeviceGrants.Grant
     expect(
       JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
     ).toMatchObject({ type: "pairing", status: "approved", grant: { id: newGrant.id } })
@@ -268,16 +311,32 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     expect(
       JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
     ).toMatchObject({ type: "result", data: { id: sessionID } })
-    const revoked = await fetch(new URL(`/api/runtime/control/device/${newGrant.id}/revoke`, record.url), {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ version: newGrant.version }),
+    expect(
+      await access({
+        method: "revoke",
+        runtimeID: record.runtimeID,
+        grantID: newGrant.id,
+        grantVersion: newGrant.version + 1,
+      }),
+    ).toMatchObject({ ok: false, error: "unconfirmed" })
+    expect(
+      await access({
+        method: "revoke",
+        runtimeID: record.runtimeID,
+        grantID: newGrant.id,
+        grantVersion: newGrant.version,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        id: newGrant.id,
+        version: newGrant.version + 1,
+        revokedAt: expect.any(Number),
+      },
     })
-    expect(revoked.status).toBe(200)
-    expect(await revoked.json()).toMatchObject({
-      id: newGrant.id,
-      version: newGrant.version + 1,
-      revokedAt: expect.any(Number),
+    expect(await access({ method: "devices", runtimeID: record.runtimeID })).toMatchObject({
+      ok: true,
+      data: expect.arrayContaining([expect.objectContaining({ id: newGrant.id, revokedAt: expect.any(Number) })]),
     })
     const call = await connectRemote(record, grant)
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { id: sessionID } })
@@ -427,6 +486,11 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     const next = await ready(start())
     expect(next.runtimeID).not.toBe(record.runtimeID)
     expect(next.credential).not.toBe(record.credential)
+    expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({
+      ok: false,
+      error: "runtimeChanged",
+      runtimeID: next.runtimeID,
+    })
     const resumed = await fetch(new URL(`/api/session/${session.id}`, next.url), {
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
     })
@@ -480,7 +544,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
       if (child.exitCode === null) child.kill("SIGTERM")
     })
     await Promise.all(children.map((child) => child.exited))
-    hub.stop()
-    await rm(directory, { recursive: true, force: true })
+    await hub.stop()
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 60_000)
+}, 120_000)

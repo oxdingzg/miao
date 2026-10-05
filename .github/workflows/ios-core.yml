@@ -16,7 +16,8 @@ concurrency:
 jobs:
   crypto-interop:
     runs-on: macos-14
-    timeout-minutes: 25
+    # Both invitation and account UI scenarios have bounded multi-launch validation.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: ./.github/actions/setup-bun

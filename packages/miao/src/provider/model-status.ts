@@ -1,5 +1,5 @@
 
-export { CatalogModelStatus } from "@miao/core/models-dev"
+export { CatalogModelStatus } from "@miao/core/models-catalog"
 
 export { ModelStatus } from "@miao/schema/provider-view"
 

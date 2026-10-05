@@ -2,10 +2,10 @@ import type { ModelMessage, ToolResultPart } from "ai"
 import { mergeDeep, unique } from "remeda"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
-import type * as ModelsDev from "@miao/core/models-dev"
+import type * as ModelsCatalog from "@miao/core/models-catalog"
 import { iife } from "@/util/iife"
 
-type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
+type Modality = NonNullable<ModelsCatalog.Model["modalities"]>["input"][number]
 
 function mimeToModality(mime: string): Modality | undefined {
   if (mime.startsWith("image/")) return "image"
@@ -1738,7 +1738,7 @@ function applySchema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 {
   return schema
 }
 
-export function reasoningVariants(model: ModelsDev.Model, target: Provider.Model): Provider.Model["variants"] {
+export function reasoningVariants(model: ModelsCatalog.Model, target: Provider.Model): Provider.Model["variants"] {
   const options = model.reasoning_options
   if (options === undefined) return
   if (options.length === 0) return {}

@@ -5,7 +5,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 
 /**
  * The Token Plan gateway publishes the model IDs one API key may call at
- * `{api}/models`. models.dev describes the plan from the outside, so its
+ * `{api}/models`. the catalog describes the plan from the outside, so its
  * entries can name models the key is not scoped for — Hy3 answers 403002
  * "not authorized" — and only this per-key list tells the two apart.
  */
