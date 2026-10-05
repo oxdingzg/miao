@@ -387,6 +387,10 @@ export async function createRemoteLocal(remote: RemoteSettings | undefined) {
     return found
   }
   return {
+    setup: async (input: Parameters<typeof import("@miao/remote-control/hub-setup").connect>[0]) => {
+      const { HubSetup } = await import("@miao/remote-control/hub-setup")
+      return HubSetup.connect(input)
+    },
     status: () => host().then((item) => item.status()),
     login: async (connector: string) => {
       const local = await createLocalHost(settings, log)
