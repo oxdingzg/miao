@@ -350,11 +350,16 @@ export const {
     // blanks a mounted transcript; reopening an evicted session re-hydrates it.
     const lastViewed = new Map<string, number>()
     const pinnedSessions = new Set<string>()
-    const MAX_RETAINED_SESSIONS = 12
+    const MAX_RETAINED_SESSIONS = 3
+    const MAX_RETAINED_TEXT_UNITS = 2_000_000
 
     const releaseSession = (sessionID: string) => {
       for (const message of store.message[sessionID] ?? []) setStore("part", message.id, undefined!)
       setStore("message", sessionID, undefined!)
+      setStore("session_diff", sessionID, undefined!)
+      setStore("todo", sessionID, undefined!)
+      streamText.clear(sessionID)
+      v2Reducer.clear(sessionID)
       sessionMessages.delete(sessionID)
       fullSyncedSessions.delete(sessionID)
       watchedSessions.delete(sessionID)
@@ -371,12 +376,40 @@ export const {
     }
 
     const evictExcessSessions = () => {
-      if (sessionMessages.size <= MAX_RETAINED_SESSIONS) return
+      const sizes = new Map(
+        [...sessionMessages.keys()].map((id) => [
+          id,
+          (store.message[id] ?? []).reduce(
+            (count, message) =>
+              count +
+              (store.part[message.id] ?? []).reduce(
+                (sum, part) =>
+                  sum +
+                  (part.type === "text" || part.type === "reasoning"
+                    ? part.text.length
+                    : part.type === "tool" && part.state.status === "completed"
+                      ? part.state.output.length
+                      : 0),
+                0,
+              ),
+            0,
+          ),
+        ]),
+      )
+      let textUnits = [...sizes.values()].reduce((sum, size) => sum + size, 0)
+      if (sessionMessages.size <= MAX_RETAINED_SESSIONS && textUnits <= MAX_RETAINED_TEXT_UNITS) return
       const candidates = [...sessionMessages.keys()]
-        .filter((id) => !pinnedSessions.has(id))
+        .filter((id) => !pinnedSessions.has(id) && !syncingSessions.has(id))
+        .filter((id) => !store.session_status[id] || store.session_status[id].type === "idle")
         .filter((id) => !Object.values(pendingPrompts.data).some((prompt) => prompt.info.sessionID === id))
         .sort((a, b) => (lastViewed.get(a) ?? 0) - (lastViewed.get(b) ?? 0))
-      while (sessionMessages.size > MAX_RETAINED_SESSIONS && candidates.length > 0) releaseSession(candidates.shift()!)
+      batch(() => {
+        for (const id of candidates) {
+          if (sessionMessages.size <= MAX_RETAINED_SESSIONS && textUnits <= MAX_RETAINED_TEXT_UNITS) break
+          textUnits -= sizes.get(id) ?? 0
+          releaseSession(id)
+        }
+      })
     }
 
     // Text and reasoning fragments append in place. `touchPart` keeps an
@@ -888,6 +921,11 @@ export const {
               }),
             )
           })
+          diffRequests.get(id)?.abort()
+          diffRequests.delete(id)
+          diffLiveAt.delete(id)
+          lastViewed.delete(id)
+          pinnedSessions.delete(id)
           fullSyncedSessions.delete(id)
           watchedSessions.delete(id)
           syncingSessions.delete(id)
