@@ -8,6 +8,8 @@ export type MemoryState = {
 }
 
 export interface Adapter {
+  readonly getUser: (id: SessionMessage.ID) => Effect.Effect<SessionMessage.User | undefined>
+  readonly updateUser: (user: SessionMessage.User) => Effect.Effect<void>
   readonly getCurrentAssistant: () => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getAssistant: (messageID: SessionMessage.ID) => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getCurrentShell: (callID: string) => Effect.Effect<SessionMessage.Shell | undefined>
@@ -25,6 +27,18 @@ export function memory(state: MemoryState): Adapter {
     state.messages.findLastIndex((message) => message.type === "shell" && message.callID === callID)
 
   return {
+    getUser(id) {
+      return Effect.sync(() => {
+        const message = state.messages.find((message) => message.id === id)
+        return message?.type === "user" ? message : undefined
+      })
+    },
+    updateUser(user) {
+      return Effect.sync(() => {
+        const index = state.messages.findIndex((message) => message.id === user.id && message.type === "user")
+        if (index >= 0) state.messages[index] = user
+      })
+    },
     getCurrentAssistant() {
       return Effect.sync(() => {
         const index = latestAssistantIndex()
@@ -130,12 +144,25 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
             type: "user",
             metadata: event.metadata,
             text: event.data.prompt.text,
+            command: event.data.prompt.command,
             files: event.data.prompt.files,
             agents: event.data.prompt.agents,
             time: { created: event.data.timestamp },
           }),
         )
       },
+      "session.next.command.started": (event) => Effect.gen(function* () {
+        const user = yield* adapter.getUser(event.data.messageID)
+        if (user) yield* adapter.updateUser({ ...user, commandState: "running" })
+      }),
+      "session.next.command.completed": (event) => Effect.gen(function* () {
+        const user = yield* adapter.getUser(event.data.messageID)
+        if (user) yield* adapter.updateUser({ ...user, text: event.data.prompt.text, files: event.data.prompt.files, agents: event.data.prompt.agents, commandState: "completed" })
+      }),
+      "session.next.command.failed": (event) => Effect.gen(function* () {
+        const user = yield* adapter.getUser(event.data.messageID)
+        if (user) yield* adapter.updateUser({ ...user, text: event.data.text, commandState: "failed", commandError: event.data.error })
+      }),
       "session.next.prompt.admitted": () => Effect.void,
       "session.next.context.updated": (event) =>
         adapter.appendMessage(

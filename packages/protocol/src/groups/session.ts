@@ -400,12 +400,13 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       HttpApiEndpoint.post("session.command", "/api/session/:sessionID/command", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
+          id: SessionMessage.ID.pipe(Schema.optional),
           command: Schema.String,
           arguments: Schema.String,
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, UnknownError, ServiceUnavailableError],
+        error: [ConflictError, SessionNotFoundError, UnknownError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

@@ -210,6 +210,15 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
     }
     const appendMessageDb = (message: SessionMessage.Message) => insertMessage(db, event, message)
     const adapter: SessionMessageUpdater.Adapter = {
+      getUser(messageID) {
+        return Effect.gen(function* () {
+          const row = yield* db.select().from(SessionMessageTable).where(and(eq(SessionMessageTable.id, messageID), eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "user"))).get().pipe(Effect.orDie)
+          if (!row) return
+          const message = decodeRow(row)
+          return message.type === "user" ? message : undefined
+        })
+      },
+      updateUser: updateMessage,
       getCurrentAssistant() {
         return Effect.gen(function* () {
           // A newer turn supersedes stale incomplete rows; never resume an older assistant projection.
@@ -512,6 +521,9 @@ const layer = Layer.effectDiscard(
         yield* run(db, event)
       }),
     )
+    yield* events.project(SessionEvent.Command.Started, (event) => run(db, event))
+    yield* events.project(SessionEvent.Command.Completed, (event) => run(db, event))
+    yield* events.project(SessionEvent.Command.Failed, (event) => run(db, event))
     yield* events.project(SessionEvent.Prompted, (event) =>
       Effect.gen(function* () {
         if (event.durable === undefined) return yield* Effect.die("Durable Session event is missing aggregate sequence")

@@ -52,6 +52,7 @@ import { ToolRegistry } from "@miao/core/tool/registry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { SendMessageTool } from "@miao/core/tool/send-message"
 import { AgentV2 } from "@miao/core/agent"
+import { CommandV2 } from "@miao/core/command"
 import { Config } from "@miao/core/config"
 import { ConfigCompaction } from "@miao/core/config/compaction"
 import { ConfigLoop } from "@miao/core/config/loop"
@@ -71,6 +72,7 @@ import { SystemContextRegistry } from "@miao/core/system-context/registry"
 import { SkillGuidance } from "@miao/core/skill/guidance"
 import { ReferenceGuidance } from "@miao/core/reference/guidance"
 import { ModelV2 } from "@miao/core/model"
+import { LocationServiceMap } from "@miao/core/location-service-map"
 import { Location } from "@miao/core/location"
 import { ProviderV2 } from "@miao/core/provider"
 import { Cause, DateTime, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
@@ -139,6 +141,7 @@ const recoveryModel = Model.make({
 const authorizations: Tool.Context[] = []
 const executions: string[] = []
 const permissionAsserts: Array<{ action: string; resources: readonly string[] }> = []
+let commandDeniedAction: string | undefined
 const permission = Layer.succeed(
   PermissionV2.Service,
   PermissionV2.Service.of({
@@ -147,7 +150,8 @@ const permission = Layer.succeed(
       // The built-in bash tool asserts "bash" for the command and
       // "external_directory" for a workdir outside the bound Location; the test
       // only cares that the OS process it spawns is cleaned up.
-      return input.action === "message" || input.action === "bash" || input.action === "external_directory"
+      if (input.action === commandDeniedAction) return Effect.fail(new PermissionV2.BlockedError({ rules: [] }))
+      return input.action === "task" || input.action === "read" || input.action === "message" || input.action === "bash" || input.action === "external_directory"
         ? Effect.void
         : Effect.die("unused")
     },
@@ -402,6 +406,8 @@ const appNodes = [
   SkillGuidance.node,
   ReferenceGuidance.node,
   Config.node,
+  CommandV2.node,
+  LocationServiceMap.node,
   Snapshot.node,
   SessionRunnerLLM.node,
   SessionExecution.node,
@@ -459,6 +465,7 @@ const setup = Effect.gen(function* () {
   todoBaseline = (yield* SystemContext.initialize(SessionTodo.context(todos, sessionID))).baseline
   const { db } = yield* Database.Service
   response = []
+  commandDeniedAction = undefined
   systemBaseline = "Initial context"
   systemRemoved = false
   systemUnavailable = false
@@ -983,6 +990,147 @@ describe("SessionRunnerLLM", () => {
           .join("\n"),
       ).not.toContain('"status": "in_progress"')
     }),
+  )
+
+  itWithBash.live("admits commands before side effects and prepares shell/files exactly once across retries", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const database = yield* Database.Service
+      yield* database.db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      const session = yield* SessionV2.Service
+      const locations = yield* LocationServiceMap.Service
+      yield* Effect.gen(function* () {
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.mode = "primary" }))
+      const commands = yield* CommandV2.Service
+      yield* commands.transform((editor) => editor.update("daily", (command) => {
+        command.template = `Inspect !\`"${process.execPath}" "${join(import.meta.dir, "fixture/command-effect.ts")}"\` @command-file.txt`
+      }))
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(bashLocation) }))))
+      yield* Effect.promise(() => fs.writeFile(join(bashLocation, "command-count.txt"), "0"))
+      yield* Effect.promise(() => fs.writeFile(join(bashLocation, "command-file.txt"), "attached file content"))
+      const id = SessionMessage.ID.create()
+      requests.length = 0
+      yield* session.command({ id, sessionID, command: "daily", arguments: "", resume: false })
+      expect(yield* Effect.promise(() => fs.readFile(join(bashLocation, "command-count.txt"), "utf8"))).toBe("0")
+      expect((yield* session.inputs({ sessionID, limit: 10 })).inputs).toHaveLength(1)
+      yield* session.resume(sessionID)
+      expect(yield* Effect.promise(() => fs.readFile(join(bashLocation, "command-count.txt"), "utf8"))).toBe("1")
+      const user = (yield* session.context(sessionID)).find((message) => message.id === id)
+      expect(user).toMatchObject({ type: "user", text: expect.stringContaining("ready"), commandState: "completed" })
+      expect(user?.type === "user" ? user.files?.[0]?.name : undefined).toBe("command-file.txt")
+      expect(JSON.stringify(requests.at(-1)?.messages)).toContain("attached file content")
+      expect(permissionAsserts.map((input) => input.action)).toEqual(expect.arrayContaining(["bash", "read"]))
+      yield* session.command({ id, sessionID, command: "daily", arguments: "", resume: false })
+      yield* session.resume(sessionID)
+      expect(yield* Effect.promise(() => fs.readFile(join(bashLocation, "command-count.txt"), "utf8"))).toBe("1")
+      expect(Exit.isFailure(yield* session.command({ id, sessionID, command: "daily", arguments: "different", resume: false }).pipe(Effect.exit))).toBe(true)
+    }),
+  )
+
+  itWithBash.live("refuses denied command shell effects and settles its durable receipt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const database = yield* Database.Service
+      yield* database.db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      const locations = yield* LocationServiceMap.Service
+      yield* Effect.gen(function* () {
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.mode = "primary" }))
+      const commands = yield* CommandV2.Service
+      yield* commands.transform((editor) => editor.update("denied", (command) => {
+        command.template = `!\`"${process.execPath}" "${join(import.meta.dir, "fixture/command-effect.ts")}"\``
+      }))
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(bashLocation) }))))
+      const session = yield* SessionV2.Service
+      commandDeniedAction = "bash"
+      yield* Effect.promise(() => fs.writeFile(join(bashLocation, "command-count.txt"), "0"))
+      yield* session.command({ sessionID, command: "denied", arguments: "", resume: false })
+      yield* session.resume(sessionID)
+      expect(yield* Effect.promise(() => fs.readFile(join(bashLocation, "command-count.txt"), "utf8"))).toBe("0")
+      expect((yield* session.context(sessionID)).filter((message) => message.type === "user")).toEqual(expect.arrayContaining([expect.objectContaining({ commandState: "failed" })]))
+    }),
+  )
+
+  itWithBash.live("does not replay a command whose preparation was dispatched but has no durable result", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const database = yield* Database.Service
+      yield* database.db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const id = SessionMessage.ID.create()
+      yield* Effect.promise(() => fs.writeFile(join(bashLocation, "command-count.txt"), "0"))
+      yield* SessionInput.admit(database.db, events, { id, sessionID, delivery: "steer", prompt: Prompt.make({
+        text: `!\`"${process.execPath}" "${join(import.meta.dir, "fixture/command-effect.ts")}"\``,
+        command: { name: "unknown", arguments: "", subtask: false },
+      }) })
+      yield* SessionInput.promoteSteers(database.db, events, sessionID, yield* EventV2.latestSequence(database.db, sessionID))
+      yield* events.publish(SessionEvent.Command.Started, { sessionID, messageID: id, timestamp: yield* DateTime.now })
+      yield* session.resume(sessionID)
+      expect(yield* Effect.promise(() => fs.readFile(join(bashLocation, "command-count.txt"), "utf8"))).toBe("0")
+      expect((yield* session.context(sessionID)).find((message) => message.id === id)).toMatchObject({ commandState: "failed", commandError: expect.stringContaining("unknown") })
+    }),
+  )
+
+  itWithBash.live("dispatches an explicit command subtask without changing the parent agent or model", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const database = yield* Database.Service
+      yield* database.db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      const session = yield* SessionV2.Service
+      const parent = yield* session.get(sessionID)
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("reviewer"), (agent) => { agent.mode = "subagent" }))
+      const locations = yield* LocationServiceMap.Service
+      yield* Effect.gen(function* () {
+        const agents = yield* AgentV2.Service
+        yield* agents.transform((editor) => editor.update(AgentV2.ID.make("reviewer"), (agent) => { agent.mode = "subagent" }))
+        const commands = yield* CommandV2.Service
+        yield* commands.transform((editor) => editor.update("review", (command) => {
+          command.template = "Review this scope"
+          command.agent = "reviewer"
+          command.model = ModelV2.Ref.make({ id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("fake") })
+        }))
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(bashLocation) }))))
+      const id = SessionMessage.ID.create()
+      yield* session.command({ id, sessionID, command: "review", arguments: "", resume: false })
+      responses = [fragmentFixture("text", "command-child", ["Child review complete"]).completeEvents, fragmentFixture("text", "command-parent", ["Review summary"]).completeEvents]
+      requests.length = 0
+      yield* session.resume(sessionID)
+      const children = yield* database.db.select().from(SessionTable).where(eq(SessionTable.parent_id, sessionID)).all().pipe(Effect.orDie)
+      expect(children).toHaveLength(1)
+      expect(children[0]?.agent).toBe("reviewer")
+      expect(children[0]?.model?.id).toBe("replacement")
+      expect(requests[0]?.model).toBe(replacementModel)
+      expect(yield* session.get(sessionID)).toMatchObject({ agent: parent.agent, model: parent.model })
+      expect((yield* session.context(sessionID)).find((message) => message.id === id)).toMatchObject({ commandState: "completed", text: expect.stringContaining("Child review complete") })
+      expect(requests).toHaveLength(2)
+    }),
+  )
+
+  itWithBash.live("asks external-directory permission before reading a command file and can refuse it", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => fs.mkdtemp(join(os.tmpdir(), "miao-command-external-"))),
+      (outside) => Effect.gen(function* () {
+        yield* setup
+        const database = yield* Database.Service
+        yield* database.db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+        const session = yield* SessionV2.Service
+        const events = yield* EventV2.Service
+        const target = join(outside, "secret.txt")
+        yield* Effect.promise(() => fs.writeFile(target, "external secret"))
+        commandDeniedAction = "external_directory"
+        const id = SessionMessage.ID.create()
+        yield* SessionInput.admit(database.db, events, { id, sessionID, delivery: "steer", prompt: Prompt.make({ text: `Inspect @${target}`, command: { name: "external", arguments: "", subtask: false } }) })
+        requests.length = 0
+        yield* session.resume(sessionID)
+        expect(permissionAsserts.map((input) => input.action)).toEqual(["external_directory"])
+        expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("external secret")
+        expect((yield* session.context(sessionID)).find((message) => message.id === id)).toMatchObject({ commandState: "failed" })
+      }),
+      (outside) => Effect.promise(() => fs.rm(outside, { recursive: true, force: true })),
+    ),
   )
 
   it.effect("reuses one durable baseline after the context producer changes", () =>

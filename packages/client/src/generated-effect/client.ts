@@ -345,6 +345,7 @@ const Endpoint8_18 = (raw: RawClient["server.session"]) => (input: Endpoint8_18I
 type Endpoint8_19Request = Parameters<RawClient["server.session"]["session.command"]>[0]
 type Endpoint8_19Input = {
   readonly sessionID: Endpoint8_19Request["params"]["sessionID"]
+  readonly id?: Endpoint8_19Request["payload"]["id"]
   readonly command: Endpoint8_19Request["payload"]["command"]
   readonly arguments: Endpoint8_19Request["payload"]["arguments"]
   readonly resume?: Endpoint8_19Request["payload"]["resume"]
@@ -352,7 +353,7 @@ type Endpoint8_19Input = {
 const Endpoint8_19 = (raw: RawClient["server.session"]) => (input: Endpoint8_19Input) =>
   raw["session.command"]({
     params: { sessionID: input["sessionID"] },
-    payload: { command: input["command"], arguments: input["arguments"], resume: input["resume"] },
+    payload: { id: input["id"], command: input["command"], arguments: input["arguments"], resume: input["resume"] },
   }).pipe(Effect.mapError(mapClientError))
 
 type Endpoint8_20Request = Parameters<RawClient["server.session"]["session.fork"]>[0]

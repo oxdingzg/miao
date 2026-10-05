@@ -3,8 +3,6 @@ export * from "./session/schema"
 
 import { DateTime, Effect, Layer, Option, Schema, Context, Stream } from "effect"
 import path from "path"
-import os from "os"
-import { pathToFileURL } from "url"
 import { ListAnchor } from "@miao/schema/session"
 import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
@@ -12,7 +10,7 @@ import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
 import { Location } from "./location"
 import { SessionMessage } from "./session/message"
-import { AgentAttachment, Prompt } from "./session/prompt"
+import { Prompt } from "./session/prompt"
 import { PromptInput } from "@miao/schema/prompt-input"
 import { EventV2 } from "./event"
 import { Database } from "./database/database"
@@ -46,8 +44,6 @@ import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { Revert } from "@miao/schema/revert"
 import { FSUtil } from "./fs-util"
-import { LocationMutation } from "./location-mutation"
-import { PermissionV2 } from "./permission"
 import { Blob } from "./blob"
 import { SessionBlobStorage } from "./session/blob-storage"
 import { materializeBlobRefs, materializeEvent, materializePrompt } from "./session/runner/materialize-files"
@@ -191,10 +187,11 @@ export interface Interface {
   }) => Effect.Effect<SessionSchema.Info, NotFoundError | LegacyNotMigratedError>
   readonly command: (input: {
     sessionID: SessionSchema.ID
+    id?: SessionMessage.ID
     command: string
     arguments: string
     resume?: boolean
-  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
+  }) => Effect.Effect<void, NotFoundError | PromptConflictError | LegacyNotMigratedError>
   readonly rename: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly archive: (input: { sessionID: SessionSchema.ID; archived: boolean }) => Effect.Effect<void, NotFoundError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
@@ -271,7 +268,6 @@ const layer = Layer.effect(
     const appProcess = yield* AppProcess.Service
     const locations = yield* LocationServiceMap.Service
     const blob = yield* Blob.Service
-    const fs = yield* FSUtil.Service
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = (row: typeof SessionMessageTable.$inferSelect) =>
@@ -461,65 +457,39 @@ const layer = Layer.effect(
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
-        const resolved = yield* Effect.gen(function* () {
+        if (input.id) {
+          const existing = yield* SessionInput.find(db, input.id)
+          if (existing) {
+            if (existing.sessionID !== session.id || existing.prompt.command?.name !== input.command || existing.prompt.command.arguments !== input.arguments || existing.delivery !== "steer")
+              return yield* new PromptConflictError({ sessionID: input.sessionID, messageID: input.id })
+            if (input.resume !== false) yield* execution.wake(session.id)
+            return
+          }
+        }
+        const definition = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
           const command = yield* commands.get(input.command)
-          if (command === undefined) return undefined
-          const text = SessionCommand.renderTemplate(command.template, input.arguments)
-          const files = yield* resolveCommandFiles(
-            {
-              directory: session.location.directory,
-              text,
-              sessionID: session.id,
-              agent: session.agent,
-            },
-            fs,
-          )
-          const fileNames = new Set(files.map((file) => file.name))
-          const agents = yield* Effect.gen(function* () {
-            const agents = yield* AgentV2.Service
-            const names = new Set<string>()
-            for (const match of SessionCommand.files(text)) {
-              const name = match[1]
-              if (name !== undefined && name.length > 0 && !fileNames.has(name)) names.add(name)
-            }
-            const mentions: AgentAttachment[] = []
-            for (const name of names) {
-              const agent = yield* agents.get(AgentV2.ID.make(name))
-              if (agent !== undefined) mentions.push(AgentAttachment.make({ name }))
-            }
-            return mentions
-          })
-          return { command, text, files, agents }
-        }).pipe(
-          Effect.provide(locations.get(session.location)),
-          Effect.orElseSucceed(() => undefined),
-        )
-        if (resolved === undefined) return yield* new NotFoundError({ sessionID: input.sessionID })
-        if (resolved.command.agent !== undefined)
-          yield* events.publish(SessionEvent.AgentSwitched, {
-            sessionID: session.id,
-            messageID: SessionMessage.ID.create(),
-            timestamp: yield* DateTime.now,
-            agent: resolved.command.agent,
-          })
-        if (resolved.command.model !== undefined)
-          yield* events.publish(SessionEvent.ModelSwitched, {
-            sessionID: session.id,
-            messageID: SessionMessage.ID.create(),
-            timestamp: yield* DateTime.now,
-            model: resolved.command.model,
-          })
-        yield* SessionInput.admit(db, events, {
-          id: SessionMessage.ID.create(),
+          if (!command) return
+          const agents = yield* AgentV2.Service
+          const agent = yield* agents.select(command.agent ?? session.agent)
+          if (!agent.info) return
+          return { command, subtask: command.subtask ?? agent.info.mode === "subagent" }
+        }).pipe(Effect.provide(locations.get(session.location)))
+        if (!definition) return yield* new NotFoundError({ sessionID: input.sessionID })
+        const messageID = input.id ?? SessionMessage.ID.create()
+        const admitted = yield* SessionInput.admit(db, events, {
+          id: messageID,
           sessionID: session.id,
           prompt: Prompt.make({
-            text: resolved.text,
-            ...(resolved.files.length === 0 ? {} : { files: resolved.files }),
-            ...(resolved.agents.length === 0 ? {} : { agents: resolved.agents }),
+            text: SessionCommand.renderTemplate(definition.command.template, input.arguments),
+            command: { name: input.command, arguments: input.arguments, agent: definition.command.agent, model: definition.command.model, subtask: definition.subtask },
           }),
           delivery: "steer",
-        })
+        }).pipe(Effect.catchDefect((defect) => defect instanceof SessionInput.LifecycleConflict
+          ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+          : Effect.die(defect)))
+        if (admitted.sessionID !== session.id || admitted.prompt.command?.name !== input.command || admitted.prompt.command.arguments !== input.arguments || admitted.delivery !== "steer")
+          return yield* new PromptConflictError({ sessionID: input.sessionID, messageID: admitted.id })
         // `/init` writes the project's AGENTS.md; record when the project was set up.
         if (input.command === "init")
           yield* db
@@ -804,52 +774,6 @@ const layer = Layer.effect(
   }),
 )
 
-const resolveCommandFiles = Effect.fnUntraced(function* (
-  input: {
-    directory: string
-    text: string
-    sessionID: SessionSchema.ID
-    agent: AgentV2.ID | undefined
-  },
-  fs: FSUtil.Interface,
-) {
-  const mutation = yield* LocationMutation.Service
-  const permission = yield* PermissionV2.Service
-  const files: Array<{ uri: string; mime: string; name: string; path: string }> = []
-  const seen = new Set<string>()
-  for (const match of SessionCommand.files(input.text)) {
-    const name = match[1]
-    if (name === undefined || name.length === 0 || seen.has(name)) continue
-    seen.add(name)
-    const filepath = name.startsWith("~/")
-      ? path.join(os.homedir(), name.slice(2))
-      : path.resolve(input.directory, name)
-    const target = yield* mutation.resolve({ path: filepath, kind: "directory" }).pipe(Effect.option)
-    if (Option.isNone(target)) continue
-    if (target.value.externalDirectory !== undefined)
-      yield* permission.assert({
-        ...LocationMutation.externalDirectoryPermission(target.value.externalDirectory),
-        sessionID: input.sessionID,
-        agent: input.agent,
-      })
-    yield* permission.assert({
-      action: "read",
-      resources: [target.value.resource],
-      save: ["*"],
-      sessionID: input.sessionID,
-      agent: input.agent,
-    })
-    const isDirectory = yield* fs.isDir(target.value.canonical)
-    files.push({
-      uri: pathToFileURL(target.value.canonical).href,
-      mime: isDirectory ? "application/x-directory" : FSUtil.mimeType(target.value.canonical),
-      name,
-      path: target.value.canonical,
-    })
-  }
-  return files
-})
-
 const resolvePrompt = (input: PromptInput.Prompt) =>
   Prompt.make({
     text: input.text,
@@ -878,6 +802,5 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     SessionProjector.node,
     Blob.node,
-    FSUtil.node,
   ],
 })
