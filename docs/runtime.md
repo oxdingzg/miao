@@ -32,9 +32,23 @@ private permissions. Clients verify a challenge response bound to the process,
 storage, version, and listener address before authenticating. Logs are written
 to the adjacent `.runtime.log` file. Never publish these files.
 
-Startup configuration remains owned by the Runtime. Changing the miao version
-or `MIAO_CONFIG_CONTENT` requires stopping that Runtime first; a new client
-cannot silently replace another session's configuration. A graceful stop
+Software releases and the Runtime wire protocol have separate versions. Clients
+can share an authenticated Runtime from another software release when its wire
+protocol is supported. Upgrading replaces the installed program; it does not
+stop the Runtime, disconnect other windows, or interrupt their tasks. Existing
+windows keep their loaded build, and newly opened windows use the installed
+build while connecting to the same compatible Runtime.
+
+The shared Runtime keeps its loaded execution code until it is restarted. This
+is independent of the client version; `miao runtime status` displays the Runtime
+release and protocol. To apply Runtime changes, finish active tasks, run
+`miao runtime stop`, and open miao again. The stop command works across software
+versions, verifies the owner's identity, and waits for storage ownership to be
+released. Automatic upgrades never restart a running owner.
+
+Startup configuration remains owned by the Runtime. Changing
+`MIAO_CONFIG_CONTENT` requires stopping that Runtime first; a new client cannot
+silently replace another session's configuration. A graceful stop
 interrupts active execution, closes Agent channels and service scopes, removes
 discovery information, then releases storage ownership. Restarting preserves
 session history but does not automatically repeat interrupted provider or tool

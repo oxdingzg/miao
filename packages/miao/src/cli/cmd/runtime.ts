@@ -4,7 +4,8 @@ import { DatabaseFile } from "@miao/core/database/file"
 export const RuntimeCommand = cmd({
   command: "runtime [action]",
   describe: "run the persistent local session Runtime",
-  builder: (yargs) => yargs.positional("action", { choices: ["start", "status", "stop", "access"] as const, default: "start" }),
+  builder: (yargs) =>
+    yargs.positional("action", { choices: ["start", "status", "stop", "access"] as const, default: "start" }),
   async handler(args) {
     if (args.action === "access") {
       const { RuntimeAccessCLI } = await import("./runtime-access")
@@ -19,17 +20,11 @@ export const RuntimeCommand = cmd({
         return
       }
       if (args.action === "status") {
-        console.log(`miao Runtime ready at ${record.url}`)
+        console.log(`miao Runtime ${record.version} (protocol ${record.protocol}) ready at ${record.url}`)
         return
       }
-      const response = await fetch(new URL("/api/runtime/stop", record.url), {
-        method: "POST",
-        redirect: "error",
-        headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
-        signal: AbortSignal.timeout(3000),
-      })
-      if (!response.ok) throw new Error("The Runtime rejected shutdown")
-      console.log("Runtime shutdown requested")
+      await RuntimeConnect.stop(DatabaseFile.path(), record)
+      console.log("Runtime stopped")
       return
     }
     const { RuntimeHost } = await import("@/runtime/host")
