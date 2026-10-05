@@ -237,6 +237,11 @@ describe("BashTool", () => {
             expect(settled.timedOut).toBe(false)
             expect(settled.info?.status).toBe("completed")
             expect(settled.info?.output).toContain("Command exited with code 0")
+            const outputPath = job.metadata?.outputPath
+            if (typeof outputPath !== "string") throw new Error("Background output path was not recorded")
+            expect(runs[0]?.options?.outputFile).toBe(outputPath)
+            expect(runs[0]?.options?.outputFileMaxBytes).toBe(BashTool.MAX_STREAM_BYTES)
+            expect(settled.info?.output).toContain(`Captured output: ${outputPath}`)
           }),
         )
       },

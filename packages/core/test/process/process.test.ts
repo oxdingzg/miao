@@ -496,3 +496,126 @@ describe("AppProcess.decodeBytes", () => {
     }
   })
 })
+
+describe("AppProcess.run outputFile", () => {
+  const script = (chunks: number, size: number) =>
+    `(async()=>{for(let i=0;i<${chunks};i++){process.stdout.write("A".repeat(${size}));await new Promise((r)=>setTimeout(r,1))}})()`
+
+  it.effect("streams the full output to a file while the in-memory preview stays bounded", () =>
+    Effect.gen(function* () {
+      const svc = yield* AppProcess.Service
+      const dir = yield* Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "appproc-")))
+      const file = path.join(dir, "out.log")
+
+      const result = yield* svc.run(cmd("-e", script(50, 100)), {
+        combineOutput: true,
+        maxOutputBytes: 256,
+        outputFile: file,
+        outputFileMaxBytes: 1_000_000,
+      })
+
+      expect(result.outputTruncated).toBe(true)
+      expect(result.output?.length).toBe(256)
+      expect(result.outputPath).toBe(file)
+      expect(result.outputBytes).toBe(5_000)
+      expect(result.outputFileTruncated).toBe(false)
+      const written = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+      expect(written.length).toBe(5_000)
+    }),
+  )
+
+  it.effect("stops appending once the file cap is reached", () =>
+    Effect.gen(function* () {
+      const svc = yield* AppProcess.Service
+      const dir = yield* Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "appproc-")))
+      const file = path.join(dir, "capped.log")
+
+      const result = yield* svc.run(cmd("-e", script(50, 100)), {
+        combineOutput: true,
+        maxOutputBytes: 256,
+        outputFile: file,
+        outputFileMaxBytes: 1_000,
+      })
+
+      expect(result.outputFileTruncated).toBe(true)
+      expect(result.outputBytes).toBe(5_000)
+      const written = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+      expect(written.length).toBe(1_000)
+    }),
+  )
+
+  it.effect("keeps the file cap exact even when one chunk exceeds it", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "appproc-"))),
+      (directory) =>
+        Effect.gen(function* () {
+          const svc = yield* AppProcess.Service
+          const file = path.join(directory, "single-chunk.log")
+          const result = yield* svc.run(cmd("-e", 'process.stdout.write("A".repeat(5000))'), {
+            combineOutput: true,
+            maxOutputBytes: 256,
+            outputFile: file,
+            outputFileMaxBytes: 999,
+          })
+          expect(result.outputFileTruncated).toBe(true)
+          expect((yield* Effect.promise(() => fs.readFile(file))).length).toBe(999)
+          const retry = yield* svc.run(cmd("-e", 'process.stdout.write("more")'), {
+            combineOutput: true,
+            outputFile: file,
+            outputFileMaxBytes: 999,
+          })
+          expect(retry.outputFileTruncated).toBe(true)
+          expect((yield* Effect.promise(() => fs.readFile(file))).length).toBe(999)
+        }),
+      (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+    ),
+  )
+
+  it.effect("writes output before the process exits", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "appproc-"))),
+      (directory) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const svc = yield* AppProcess.Service
+            const file = path.join(directory, "live.log")
+            const release = path.join(directory, "release")
+            const script =
+              'process.stdout.write("started"); const timer=setInterval(()=>{if(require("fs").existsSync(process.argv[1])){clearInterval(timer);process.stdout.write(" finished")}},10)'
+            const child = yield* svc
+              .run(cmd("-e", script, release), {
+                combineOutput: true,
+                maxOutputBytes: 4,
+                outputFile: file,
+                timeout: "5 seconds",
+              })
+              .pipe(Effect.forkScoped)
+            expect(yield* waitForFile(file).pipe(Effect.timeout("3 seconds"))).toBe("started")
+            yield* Effect.promise(() => fs.writeFile(release, ""))
+            const result = yield* Fiber.join(child)
+            expect(result.output?.toString()).toBe("star")
+            expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe("started finished")
+          }),
+        ),
+      (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+    ),
+  )
+
+  it.effect("reports failed file capture without failing the command", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "appproc-"))),
+      (directory) =>
+        Effect.gen(function* () {
+          const svc = yield* AppProcess.Service
+          const result = yield* svc.run(cmd("-e", 'process.stdout.write("ok")'), {
+            combineOutput: true,
+            outputFile: path.join(directory, "missing", "out.log"),
+          })
+          expect(result.exitCode).toBe(0)
+          expect(result.output?.toString()).toBe("ok")
+          expect(result.outputFileTruncated).toBe(true)
+        }),
+      (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+    ),
+  )
+})
