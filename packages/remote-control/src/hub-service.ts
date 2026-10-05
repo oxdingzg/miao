@@ -5,12 +5,14 @@ import { HubDirectory } from "./hub-directory"
 import { ControlHub } from "./hub"
 import { HubTickets } from "./hub-tickets"
 import { Option, Schema } from "effect"
+import path from "node:path"
 
 export type Options = HubAuth.Options & {
   bootstrap?: HubAuth.Bootstrap
   hostname?: string
   port?: number
   maxClientsPerAccount?: number
+  webDirectory?: string
 }
 const Registration = Schema.Struct({ hostID: Schema.String, name: Schema.String, publicKey: Schema.String })
 const decodeRegistration = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Registration)))
@@ -19,6 +21,18 @@ const decodeTicket = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pip
 
 /** Authenticated directory/control plane and opaque relay share one origin and listener. */
 export async function listen(options: Options) {
+  const assets = new Map<string, { content: ArrayBuffer; type: string }>()
+  if (options.webDirectory) {
+    for (const asset of [
+      { route: "/", file: "index.html", type: "text/html; charset=utf-8" },
+      { route: "/control.js", file: "control.js", type: "text/javascript; charset=utf-8" },
+      { route: "/control.css", file: "control.css", type: "text/css; charset=utf-8" },
+    ]) {
+      const file = Bun.file(path.join(options.webDirectory, asset.file))
+      if (!(await file.exists()) || file.size > 8 * 1024 * 1024) throw new Error("Remote web assets unavailable")
+      assets.set(asset.route, { content: await file.arrayBuffer(), type: asset.type })
+    }
+  }
   if (options.migrate) HubDirectory.migrate(options.database)
   const directory = HubDirectory.open(options.database)
   const identity = await HubAuth.create({ ...options, migrate: options.migrate === true })
@@ -43,6 +57,18 @@ export async function listen(options: Options) {
     access: {
       fetch: async (request, peerIP) => {
         const url = new URL(request.url)
+        const asset = assets.get(url.pathname)
+        if (asset && request.method === "GET")
+          return new Response(asset.content, {
+            headers: {
+              "content-type": asset.type,
+              "cache-control": "no-store",
+              "x-content-type-options": "nosniff",
+              "referrer-policy": "no-referrer",
+              "content-security-policy":
+                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            },
+          })
         if (!url.pathname.startsWith("/api/")) return undefined
         const origin = request.headers.get("origin")
         if (origin && origin !== new URL(options.baseURL).origin) return error("origin_denied", 403)
