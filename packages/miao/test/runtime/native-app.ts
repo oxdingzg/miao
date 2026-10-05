@@ -35,6 +35,22 @@ export async function run() {
     MIAO_PURE: "1",
     MIAO_CONFIG_CONTENT: JSON.stringify({
       model: "fixture/missing",
+      providers: {
+        fixture: {
+          name: "Fixture",
+          api: {
+            type: "aisdk",
+            package: "@ai-sdk/openai",
+            settings: { apiKey: "fixture", baseURL: "http://127.0.0.1:1" },
+          },
+          models: {
+            selection: {
+              name: "Remote selection fixture",
+              variants: [{ id: "reasoning", body: { reasoningEffort: "high" } }],
+            },
+          },
+        },
+      },
       formatter: false,
       lsp: false,
       remote: { projects: {} },
@@ -311,9 +327,33 @@ export async function run() {
         Schema.Struct({ data: Schema.Array(Schema.Struct({ type: Schema.String, data: Schema.Unknown })) }),
       )(await request(`/api/session/${sessionID}/history`))
       const selected = await request(`/api/session/${sessionID}`)
-      if (typeof selected !== "object" || !selected || !("data" in selected) ||
-          typeof selected.data !== "object" || !selected.data || !("agent" in selected.data) || selected.data.agent !== "plan")
+      if (
+        typeof selected !== "object" ||
+        !selected ||
+        !("data" in selected) ||
+        typeof selected.data !== "object" ||
+        !selected.data ||
+        !("agent" in selected.data) ||
+        selected.data.agent !== "plan"
+      )
         throw new Error("The phone must persist its agent selection in the real Runtime")
+      const modelSelected = Schema.decodeUnknownSync(
+        Schema.Struct({
+          data: Schema.Struct({
+            model: Schema.Struct({
+              id: Schema.String,
+              providerID: Schema.String,
+              variant: Schema.String,
+            }),
+          }),
+        }),
+      )(selected)
+      if (
+        modelSelected.data.model.id !== "selection" ||
+        modelSelected.data.model.providerID !== "fixture" ||
+        modelSelected.data.model.variant !== "reasoning"
+      )
+        throw new Error("The phone must persist its model and variant selection in the real Runtime")
       const admissions = history.data
         .filter((event) => event.type === "session.next.prompt.admitted")
         .map((event) =>

@@ -96,6 +96,18 @@ final class PairingUITests: XCTestCase {
         app.buttons["plan"].tap()
         app.buttons["保存 Agent"].tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
+        menu.tap()
+        app.buttons["Agent / 模型"].tap()
+        let modelPicker = app.descendants(matching: .any).matching(identifier: "modelChoice").firstMatch
+        XCTAssertTrue(modelPicker.waitForExistence(timeout: 15))
+        modelPicker.tap()
+        app.buttons["fixture / Remote selection fixture"].tap()
+        let variantPicker = app.descendants(matching: .any).matching(identifier: "variantChoice").firstMatch
+        XCTAssertTrue(variantPicker.waitForExistence(timeout: 10))
+        variantPicker.tap()
+        app.buttons["reasoning"].tap()
+        app.buttons["保存模型"].tap()
+        XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "MIAO_UI_TEST_INVITATION")
         app.launch()
