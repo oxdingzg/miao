@@ -68,7 +68,8 @@ admission and storage coordination while versioned execution workers acquire
 one serialized ownership chain per Session. It cannot be implemented by
 launching two existing Runtimes, using a lock per release, or copying databases.
 That architecture is not required for compatible client windows to coexist and
-is not claimed by this change.
+is not claimed by this change. `specs/v2/execution-workers.md` designs that
+change.
 
 ## Regression coverage
 
