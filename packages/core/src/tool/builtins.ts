@@ -8,6 +8,7 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { LspTool } from "./lsp"
+import { PlanExitTool } from "./plan-exit"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { SkillTool } from "./skill"
@@ -25,7 +26,7 @@ import { WriteTool } from "./write"
  * services once to this merged set.
  *
  * TODO: Port the remaining launch-follow-up leaves deliberately: edit fuzzy
- * parity, task, repo_clone, repo_overview, plan_exit, and Rune/code mode. Keep
+ * parity, task, repo_clone, repo_overview, and Rune/code mode. Keep
  * MCP and plugin transforms separate from this static built-in list.
  */
 export const node = makeLocationNode({
@@ -38,6 +39,7 @@ export const node = makeLocationNode({
     GlobTool.node,
     GrepTool.node,
     LspTool.node,
+    PlanExitTool.node,
     QuestionTool.node,
     ReadTool.node,
     SkillTool.node,
