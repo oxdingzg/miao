@@ -18,6 +18,10 @@ test("Push context is confidential, host-pinned and bound to every routing field
   const encoded = await PushContext.seal(host, binding, payload)
   expect(Buffer.from(encoded, "base64url").toString("utf8")).not.toContain(payload.sessionID)
   expect(await PushContext.open(device, host.publicKey, binding, encoded)).toEqual(payload)
+  const extended = { ...payload, ignored: "x".repeat(8192) }
+  const bounded = await PushContext.seal(host, binding, extended)
+  expect(bounded.length).toBeLessThan(4096)
+  expect(await PushContext.open(device, host.publicKey, binding, bounded)).toEqual(payload)
   const another = await PushContext.seal(host, binding, payload)
   expect(another).not.toBe(encoded)
   await expect(PushContext.open(device, other.publicKey, binding, encoded)).rejects.toThrow("Untrusted")

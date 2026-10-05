@@ -19,7 +19,9 @@ const domain = new TextEncoder().encode("miao.push.context.v1\u0000")
 export async function seal(host: SecureChannel.Identity, binding: Binding, payload: Payload) {
   const associated = routing(binding)
   validatePayload(payload)
-  const plaintext = new TextEncoder().encode(JSON.stringify(payload))
+  const plaintext = new TextEncoder().encode(
+    JSON.stringify({ sessionID: payload.sessionID, projectID: payload.projectID, expiresAt: payload.expiresAt }),
+  )
   const peer = await crypto.subtle.importKey(
     "raw",
     decode(binding.deviceID, 65),
