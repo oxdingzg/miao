@@ -85,7 +85,7 @@ struct HubAccountView: View {
             }
             .navigationTitle("中继账号")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { password = ""; dismiss() } } }
-            .onAppear { origin = model.accountURL }
+            .onAppear { origin = model.accountURL.isEmpty ? model.defaultAccountURL : model.accountURL }
             .onDisappear { password = "" }
         }
     }

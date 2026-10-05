@@ -18,6 +18,9 @@ final class AppModel {
     var pairing: String?
     var fingerprint: String?
     var accountURL = ""
+    /// Build-time default relay origin (`MIAO_HUB_ORIGIN`), so a preconfigured
+    /// build lands on its own Hub without asking the user to type it.
+    var defaultAccountURL: String { (Bundle.main.object(forInfoDictionaryKey: "MiaoHubOrigin") as? String) ?? "" }
     var accountSignedIn = false
     var accountBusy = false
     var revocationPending = false
