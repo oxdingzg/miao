@@ -48,8 +48,19 @@ export async function connect(input: {
     const registered = await request("/api/hub/hosts", access.token, {
       hostID: host.hostID, publicKey: host.hostPublicKey, name: input.name,
     })
-    if (!registered.ok) throw new Error("Host registration failed; check the relay host directory")
-    const registration: unknown = await registered.json()
+    let registration: unknown
+    if (registered.status === 409) {
+      const directory = await request("/api/hub/hosts", access.token)
+      if (!directory.ok) throw new Error("Host directory unavailable")
+      const listed: unknown = await directory.json()
+      if (!hasMatchingHost(listed, host.hostID, host.hostPublicKey)) throw new Error("Host identity mismatch")
+      const rotated = await request(`/api/hub/hosts/${host.hostID}/rotate`, access.token, {})
+      if (!rotated.ok) throw new Error("Host credential rotation failed")
+      registration = await rotated.json()
+    } else {
+      if (!registered.ok) throw new Error("Host registration failed; check the relay host directory")
+      registration = await registered.json()
+    }
     if (!isToken(registration) || !/^[A-Za-z0-9_-]{32,256}$/.test(registration.token))
       throw new Error("Invalid host registration response")
     return await input.runtime.configure({ hubURL: origin, hostToken: registration.token })
@@ -63,4 +74,11 @@ export async function connect(input: {
 
 function isToken(value: unknown): value is { token: string } {
   return typeof value === "object" && value !== null && "token" in value && typeof value.token === "string"
+}
+
+function hasMatchingHost(value: unknown, hostID: string, publicKey: string): boolean {
+  if (typeof value !== "object" || value === null || !("data" in value) || !Array.isArray(value.data)) return false
+  return value.data.some((host: unknown) => typeof host === "object" && host !== null &&
+    "hostID" in host && host.hostID === hostID && "publicKey" in host && host.publicKey === publicKey &&
+    "revokedAt" in host && host.revokedAt === null)
 }

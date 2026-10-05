@@ -24,6 +24,13 @@ test("owner setup registers the Runtime key and sends only the host credential t
       "/api/auth/sign-in/email", "/api/auth/token", "/api/hub/hosts", "/api/auth/sign-out",
     ])
     expect(database.query('SELECT count(*) AS count FROM "session"').get()).toEqual({ count: 0 })
+    const previousToken = configuration!.hostToken
+    await HubSetup.connect({ hubURL: `http://127.0.0.1:${server.port}`, allowLoopbackHTTP: true,
+      email: "owner@example.invalid", password: "fixture-password-0001", name: "Workstation",
+      runtime: { get: async () => status, configure: async (value) => { configuration = value; return { ...status, enabled: true } } } })
+    expect(configuration!.hostToken).not.toBe(previousToken)
+    expect(database.query("SELECT count(*) AS count FROM hub_host").get()).toEqual({ count: 1 })
+    expect(database.query('SELECT count(*) AS count FROM "session"').get()).toEqual({ count: 0 })
   } finally { server.stop(); database.close() }
 })
 
