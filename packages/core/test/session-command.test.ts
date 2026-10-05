@@ -16,3 +16,18 @@ describe("SessionCommand.renderTemplate", () => {
     expect(SessionCommand.renderTemplate("Explain this.", "  ")).toBe("Explain this.")
   })
 })
+
+describe("SessionCommand.files", () => {
+  test("extracts @file and @agent mentions but ignores emails and code spans", () => {
+    const names = SessionCommand.files("Read @src/a.ts and @agent, mail a@b.com, skip `@nope`").map((match) => match[1])
+    expect(names).toEqual(["src/a.ts", "agent"])
+  })
+})
+
+describe("SessionCommand.shell", () => {
+  test("extracts !`...` shell substitutions", () => {
+    expect(SessionCommand.shell("Run !`git status --short` then stop").map((match) => match[1])).toEqual([
+      "git status --short",
+    ])
+  })
+})
