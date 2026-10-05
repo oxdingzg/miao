@@ -26,7 +26,7 @@ public struct AuthorizationScope: Codable, Hashable, Sendable {
 }
 
 public enum OperationKind: String, Codable, Sendable {
-    case prompt, sessionCreate, permissionReply, questionReply, interrupt, sessionRename
+    case prompt, sessionCreate, permissionReply, questionReply, interrupt, sessionRename, sessionSwitchAgent, sessionSwitchModel
 }
 
 public enum OperationStatus: String, Codable, Sendable {

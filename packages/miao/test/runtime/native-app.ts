@@ -201,7 +201,7 @@ export async function run() {
     if (session.title !== title) throw new Error("Fixture session did not receive its title")
     const invitation = Schema.decodeUnknownSync(Invitation)(
       await request("/api/runtime/control/invitation", {
-        permissions: ["read", "prompt", "session.rename"],
+        permissions: ["read", "prompt", "session.rename", "session.selection"],
         sessionIDs: [sessionID],
         projectIDs: [],
         // Keep the approved grant valid throughout a slow UI run. The separate
@@ -310,6 +310,10 @@ export async function run() {
       const history = Schema.decodeUnknownSync(
         Schema.Struct({ data: Schema.Array(Schema.Struct({ type: Schema.String, data: Schema.Unknown })) }),
       )(await request(`/api/session/${sessionID}/history`))
+      const selected = await request(`/api/session/${sessionID}`)
+      if (typeof selected !== "object" || !selected || !("data" in selected) ||
+          typeof selected.data !== "object" || !selected.data || !("agent" in selected.data) || selected.data.agent !== "plan")
+        throw new Error("The phone must persist its agent selection in the real Runtime")
       const admissions = history.data
         .filter((event) => event.type === "session.next.prompt.admitted")
         .map((event) =>

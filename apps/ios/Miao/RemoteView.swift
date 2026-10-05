@@ -263,6 +263,7 @@ private struct SessionView: View {
     @State private var speech = SpeechInput()
     @State private var diffPresented = false
     @State private var renamePresented = false
+    @State private var selectionPresented = false
     @State private var menuPresented = false
     @State private var selectedAction: String?
     @State private var title = ""
@@ -305,10 +306,14 @@ private struct SessionView: View {
                 title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title
                 renamePresented = true
             }
+            if action == "selection" { selectionPresented = true }
             if action == "diff" { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
         }) {
             NavigationStack {
                 Form {
+                    if client.record.grant.permissions.contains(.sessionSelection) {
+                        Button("Agent / 模型") { selectedAction = "selection"; menuPresented = false }
+                    }
                     Button("查看文件变化") { selectedAction = "diff"; menuPresented = false }
                     if client.record.grant.permissions.contains(.sessionRename) {
                         Button("重命名") { selectedAction = "rename"; menuPresented = false }
@@ -325,6 +330,9 @@ private struct SessionView: View {
         .sheet(isPresented: $diffPresented) {
             NavigationStack { ScrollView { Text(session.diff?.formatted ?? "").font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding() }
                 .navigationTitle("文件变化").toolbar { Button("关闭") { diffPresented = false } } }
+        }
+        .sheet(isPresented: $selectionPresented) {
+            SessionSelectionView(client: client, session: session)
         }
         .sheet(isPresented: $renamePresented) {
             RenameSessionView(initialTitle: title) { value in
@@ -518,5 +526,101 @@ private struct RenameSessionView: View {
                 }
             }
         }.presentationDetents([.medium])
+    }
+}
+
+@MainActor
+private struct SessionSelectionView: View {
+    let client: HostClient
+    let session: RemoteSession
+    @Environment(\.dismiss) private var dismiss
+    @State private var choices: Choices?
+    @State private var agent = ""
+    @State private var modelIndex = -1
+    @State private var variant = ""
+    @State private var busy = false
+    @State private var failure: String?
+
+    private struct Choices: Decodable {
+        struct Agent: Decodable { let id: String }
+        struct Model: Decodable {
+            struct Variant: Decodable { let id: String }
+            let id: String
+            let providerID: String
+            let name: String
+            let variants: [Variant]
+        }
+        let agents: [Agent]
+        let models: [Model]
+    }
+
+    private var model: Choices.Model? {
+        guard let choices, choices.models.indices.contains(modelIndex) else { return nil }
+        return choices.models[modelIndex]
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text("保存后从下一次模型调用起生效。")
+                if let failure { Text(failure).foregroundStyle(.red) }
+                if let choices {
+                    Section("Agent") {
+                        Picker("Agent", selection: $agent) {
+                            Text("请选择").tag("")
+                            ForEach(choices.agents, id: \.id) { Text($0.id).tag($0.id) }
+                        }.accessibilityIdentifier("agentChoice")
+                        Button("保存 Agent") {
+                            let value = agent
+                            busy = true
+                            Task {
+                                let applied = await session.command(.sessionSwitchAgent, kind: .sessionSwitchAgent, payload: .object(["agent": .string(value)]))
+                                busy = false
+                                if applied { dismiss() } else { failure = session.error }
+                            }
+                        }.disabled(agent.isEmpty || busy || !client.ready)
+                    }
+                    Section("模型") {
+                        Picker("模型", selection: $modelIndex) {
+                            Text("请选择").tag(-1)
+                            ForEach(choices.models.indices, id: \.self) { index in
+                                Text(choices.models[index].providerID + " / " + choices.models[index].name).tag(index)
+                            }
+                        }.accessibilityIdentifier("modelChoice")
+                        if let model {
+                            Picker("变体", selection: $variant) {
+                                Text("默认").tag("")
+                                ForEach(model.variants, id: \.id) { Text($0.id).tag($0.id) }
+                            }.accessibilityIdentifier("variantChoice")
+                        }
+                        Button("保存模型") {
+                            guard let model else { return }
+                            let fields: [String: JSONValue] = ["id": .string(model.id), "providerID": .string(model.providerID)]
+                                .merging(variant.isEmpty ? [:] : ["variant": .string(variant)]) { _, new in new }
+                            busy = true
+                            Task {
+                                let applied = await session.command(.sessionSwitchModel, kind: .sessionSwitchModel, payload: .object(["model": .object(fields)]))
+                                busy = false
+                                if applied { dismiss() } else { failure = session.error }
+                            }
+                        }.disabled(model == nil || busy || !client.ready)
+                    }
+                } else if failure == nil { ProgressView("正在读取会话设置…") }
+            }
+            .disabled(busy)
+            .navigationTitle("会话设置")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
+        }
+        .onChange(of: modelIndex) { _, _ in variant = "" }
+        .task {
+            do {
+                let value = try await client.request(.selectionList, sessionID: session.summary.id)
+                try Task.checkCancellation()
+                let decoded = try JSONDecoder().decode(Choices.self, from: JSONEncoder().encode(value))
+                guard decoded.agents.count <= 256, decoded.models.count <= 4096,
+                      decoded.models.allSatisfy({ $0.variants.count <= 256 }) else { throw RemoteRPCError.malformed }
+                choices = decoded
+            } catch is CancellationError {} catch { failure = userMessage(error) }
+        }
     }
 }
