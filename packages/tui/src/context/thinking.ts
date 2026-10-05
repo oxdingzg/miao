@@ -18,29 +18,6 @@ export function reasoningSummary(text: string) {
   return { title: match[1].trim(), body: content.slice(match[0].length).trimEnd() }
 }
 
-const HEADLINE_LENGTH = 80
-
-// One-line label for collapsed thinking. Providers without summary titles
-// (DeepSeek, GLM, Qwen) stream plain prose, so fall back to its first sentence.
-export function reasoningHeadline(text: string) {
-  const summary = reasoningSummary(text)
-  if (summary.title) return summary.title
-  const sentence = summary.body
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .replace(/^[#>*\-\s]+/, "")
-        .replace(/[*`_]/g, "")
-        .trim(),
-    )
-    .find((line) => line.length > 0)
-    ?.match(/^.*?(?:[.!?](?=\s|$)|[。！？]|$)/)?.[0]
-    .trim()
-  if (!sentence) return null
-  if (sentence.length <= HEADLINE_LENGTH) return sentence
-  return sentence.slice(0, HEADLINE_LENGTH - 1).trimEnd() + "…"
-}
-
 // Reasoning is finalized when the server sets `time.end` (see processor.ts),
 // which usually happens before the parent message completes. A part can also
 // never get one: V2 history written before reasoning carried timestamps, or a
