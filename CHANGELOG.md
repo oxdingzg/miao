@@ -18,6 +18,7 @@ to add a section here.
 
 ### Fixed
 
+- **ios**: Return to the workbench after a successful sign-in while keeping account management available.
 - **runtime**: Allow clients from different software releases to share a verified Runtime with a supported wire protocol. Installing an update no longer prevents newly opened clients from joining the existing Runtime (#195).
 - **runtime**: Allow cross-release status and graceful stop; show the running service release and protocol and wait for storage ownership to be released (#195).
 
