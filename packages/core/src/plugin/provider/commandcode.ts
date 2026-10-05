@@ -2,13 +2,32 @@ import { Effect, Stream } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { CommandCode } from "../../commandcode"
 import { EventV2 } from "../../event"
+import { Flag } from "../../flag/flag"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
+import { ModelsDev } from "../../models-dev"
 import { ProviderV2 } from "../../provider"
 import { define } from "../define"
 
 const PROVIDER_ID = ProviderV2.ID.make("commandcode")
 const INTEGRATION_ID = Integration.ID.make("commandcode")
+
+// The plan tiers that gate models (cheapest first), matching the `plans` the
+// catalog carries for Command Code. A configured plan outside this set (for
+// example `provider` or `team`) is treated as unknown and hides nothing.
+const PLAN_TIERS = new Set(["go", "goat", "pro", "max"])
+
+// Command Code's plan is not readable headlessly (the vendor says to ask the
+// user), so it comes from `MIAO_COMMANDCODE_PLAN`. An unknown plan, or a model
+// with no plan info, stays visible: hiding a model the account can call is
+// worse than showing one it cannot.
+const available = (plan: string | undefined, plans: readonly string[] | undefined) =>
+  plan === undefined ||
+  plan === "" ||
+  !PLAN_TIERS.has(plan) ||
+  plans === undefined ||
+  plans.length === 0 ||
+  plans.includes(plan)
 
 /**
  * Command Code subscription support.
@@ -18,11 +37,12 @@ const INTEGRATION_ID = Integration.ID.make("commandcode")
  * `/provider/v1/models` once a key is connected, so new models appear without a
  * release. Models are routed through `CommandCode.route` by the session runner.
  */
-export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service>({
+export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service | ModelsDev.Service>({
   id: "commandcode",
   effect: Effect.fn(function* (ctx) {
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2.Service
+    const modelsDev = yield* ModelsDev.Service
 
     yield* ctx.integration.transform((draft) => {
       draft.update("commandcode", (integration) => {
@@ -56,6 +76,8 @@ export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service>
           provider.integrationID = INTEGRATION_ID
         })
         const models = yield* load()
+        const entries = (yield* modelsDev.get())["commandcode"]?.models
+        const plan = Flag.MIAO_COMMANDCODE_PLAN?.trim().toLowerCase()
         for (const model of models) {
           catalog.model.update(PROVIDER_ID, ModelV2.ID.make(model.id), (draft) => {
             draft.name = model.name ?? model.id
@@ -64,7 +86,9 @@ export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service>
             draft.capabilities = { tools: true, input: ["text"], output: ["text"] }
             draft.limit = { context: model.contextLength ?? 128_000, output: 32_768 }
             draft.cost = [{ input: 0, output: 0, cache: { read: 0, write: 0 } }]
-            draft.enabled = true
+            // The catalog records the plan tiers that include each model; hide a
+            // model the connected account's plan cannot call.
+            draft.enabled = available(plan, entries?.[model.id]?.plans)
           })
         }
       }),
