@@ -24,4 +24,7 @@ export interface Framing<Frame> {
 /** Server-Sent Events framing. Used by every JSON-streaming HTTP provider. */
 export const sse: Framing<string> = { id: "sse", frame: ProviderShared.sseFraming }
 
+/** Newline-delimited JSON framing. One JSON document per line. */
+export const ndjson: Framing<string> = { id: "ndjson", frame: ProviderShared.ndjsonFraming }
+
 export * as Framing from "./framing"

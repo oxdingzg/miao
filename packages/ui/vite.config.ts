@@ -45,7 +45,7 @@ function providerIconsPlugin() {
 }
 
 async function fetchProviderIcons() {
-  const url = process.env.MIAO_MODELS_URL || "https://models.miao.dtee.top"
+  const url = process.env.MIAO_MODELS_URL || "https://mtty.dev/models"
   const providers = await fetch(`${url}/api.json`)
     .then((res) => res.json())
     .then((json) => Object.keys(json))
