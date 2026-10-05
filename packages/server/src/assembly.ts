@@ -23,6 +23,7 @@ import { PermissionSaved } from "@miao/core/permission/saved"
 import { ProjectV2 } from "@miao/core/project"
 import { ProjectCopy } from "@miao/core/project/copy"
 import { PtyTicket } from "@miao/core/pty/ticket"
+import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
@@ -113,6 +114,10 @@ const app = LayerNode.group([
   ProjectV2.node,
   ProjectCopy.node,
   PtyTicket.node,
+  // Retention for managed tool output. The tool's Location layer writes the
+  // files; this global node runs the hourly prune. Without it here, tool-output
+  // files accumulate past their 7-day retention for the life of the runtime.
+  ToolOutputStore.cleanupNode,
 ])
 
 export function createRoutes(
