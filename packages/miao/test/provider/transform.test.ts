@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { ProviderTransform } from "@/provider/transform"
 import { ProviderV2 } from "@miao/core/provider"
 import { ModelV2 } from "@miao/core/model"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { generateText, jsonSchema, type ModelMessage } from "ai"
 import { createAmazonBedrock, type AmazonBedrockLanguageModelOptions } from "@ai-sdk/amazon-bedrock"
 import { createAnthropic } from "@ai-sdk/anthropic"
@@ -3850,7 +3850,7 @@ describe("ProviderTransform sampling defaults - DeepSeek", () => {
 })
 
 describe("ProviderTransform.reasoningVariants", () => {
-  const model = (reasoning_options: ModelsDev.Model["reasoning_options"]) => ({ reasoning_options }) as ModelsDev.Model
+  const model = (reasoning_options: ModelsCatalog.Model["reasoning_options"]) => ({ reasoning_options }) as ModelsCatalog.Model
   const target = (npm: string, id = "test-model", family = "") =>
     ({
       id,

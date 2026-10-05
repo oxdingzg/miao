@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 final class PairingUITests: XCTestCase {
     func testFreshLaunchAndInvalidInvitationLeaveHostDirectoryEmpty() throws {
@@ -19,18 +20,25 @@ final class PairingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["连接电脑"].firstMatch.exists)
         XCTAssertFalse(app.staticTexts["已配对"].exists)
     }
+    private func stage(_ name: String) {
+        print("NativeUIStage:\(name)")
+        fflush(stdout)
+    }
+
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
         struct Account: Decodable { let origin: String; let email: String; let password: String }
         struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        stage("launch")
         let app = XCUIApplication()
         app.launchEnvironment["MIAO_UI_TEST_RUN"] = fixture.runID
         app.launchEnvironment["MIAO_UI_TEST_INVITATION"] = fixture.invitation
         if fixture.account != nil { app.launchEnvironment["MIAO_UI_TEST_HUB_ACCOUNT"] = "1" }
         app.launch()
         if let account = fixture.account {
+            stage("account")
             XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
             app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)
@@ -44,6 +52,7 @@ final class PairingUITests: XCTestCase {
         }
         XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["开始配对"].isEnabled)
+        stage("pairing")
         app.buttons["开始配对"].tap()
         XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons[fixture.title].waitForExistence(timeout: 10))
@@ -51,6 +60,7 @@ final class PairingUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[fixture.title].waitForExistence(timeout: 10))
         let draft = app.textFields["messageDraft"].exists ? app.textFields["messageDraft"] : app.textViews["messageDraft"]
         XCTAssertTrue(draft.waitForExistence(timeout: 10))
+        stage("draft")
         draft.tap(); draft.typeText("retained phone draft")
         XCUIDevice.shared.press(.home)
         app.activate()
@@ -77,6 +87,7 @@ final class PairingUITests: XCTestCase {
             print("Native menu geometry x=\(Int(frame.minX)) y=\(Int(frame.minY)) width=\(Int(frame.width)) height=\(Int(frame.height)) keyboard=\(app.keyboards.count) bars=\(app.navigationBars.count)")
             return
         }
+        stage("rename")
         menu.tap()
         app.buttons["重命名"].tap()
         let title = app.textFields["renameTitle"]
@@ -93,6 +104,7 @@ final class PairingUITests: XCTestCase {
         XCTAssertEqual(draft.value as? String, "retained phone draft")
         menu.tap()
         app.buttons["Agent / 模型"].tap()
+        stage("agent")
         let agentPicker = app.descendants(matching: .any).matching(identifier: "agentChoice").firstMatch
         XCTAssertTrue(agentPicker.waitForExistence(timeout: 15))
         agentPicker.tap()
@@ -101,6 +113,7 @@ final class PairingUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         menu.tap()
         app.buttons["Agent / 模型"].tap()
+        stage("model")
         let modelPicker = app.descendants(matching: .any).matching(identifier: "modelChoice").firstMatch
         XCTAssertTrue(modelPicker.waitForExistence(timeout: 15))
         modelPicker.tap()
@@ -111,6 +124,7 @@ final class PairingUITests: XCTestCase {
         app.buttons["reasoning"].tap()
         app.buttons["保存模型"].tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
+        stage("relaunch")
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "MIAO_UI_TEST_INVITATION")
         app.launch()
@@ -118,19 +132,23 @@ final class PairingUITests: XCTestCase {
         app.buttons["Native phone rename"].tap()
         XCTAssertTrue(draft.waitForExistence(timeout: 10))
         XCTAssertEqual(draft.value as? String, "retained phone draft")
+        stage("prompt")
         app.descendants(matching: .any).matching(identifier: "queueInput").firstMatch.tap()
         app.buttons["sendMessage"].tap()
         let cleared = NSPredicate(format: "value != %@", "retained phone draft")
         expectation(for: cleared, evaluatedWith: draft)
         waitForExpectations(timeout: 15)
         if app.keyboards.count > 0 { app.buttons["dismissKeyboard"].tap() }
+        stage("live")
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Native live partial"].waitForExistence(timeout: 30))
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(app.staticTexts["Native live partial"].waitForExistence(timeout: 30))
+        stage("settlement")
         _ = try Data(contentsOf: URL(string: fixture.finishURL)!)
         XCTAssertTrue(app.staticTexts["Native live partial completed"].waitForExistence(timeout: 30))
+        stage("restart")
         app.terminate()
         app.launch()
         XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
@@ -138,6 +156,7 @@ final class PairingUITests: XCTestCase {
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Native live partial completed"].waitForExistence(timeout: 30))
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Native live partial completed")).count, 1)
+        stage("done")
     }
 
 }

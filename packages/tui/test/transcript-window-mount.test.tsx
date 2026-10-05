@@ -13,6 +13,20 @@ const WORLD_HEIGHT = 20
 
 const data = Array.from({ length: COUNT }, (_, index) => ({ id: `message-${index}`, text: `message ${index}` }))
 
+test("default options mount a bounded window and shift by a small step", () => {
+  const data = Array.from({ length: 500 }, (_, index) => ({ id: `message-${index}` }))
+  const window = createTranscriptWindow(() => data)
+
+  // At the bottom the window is the newest `windowSize` messages.
+  expect(window.messages().length).toBe(32)
+
+  // One shift near the top of the mounted window moves by `step`, not by half
+  // the window.
+  const before = window.start()
+  window.follow({ scrollTop: window.top() + 0.5, viewportHeight: 20, mountedHeight: 32 * 6 })
+  expect(before - window.start()).toBe(8)
+})
+
 test("a long session mounts only a bounded window while preserving scroll height and top", async () => {
   let window!: ReturnType<typeof createTranscriptWindow<(typeof data)[number]>>
   let scroll!: ScrollBoxRenderable

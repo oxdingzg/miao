@@ -4,7 +4,6 @@ import { Schema } from "effect"
 import { NonNegativeInt, PositiveInt, type DeepMutable } from "../../schema"
 import { ConfigExperimental } from "../../config/experimental"
 import { ConfigReference } from "../../config/reference"
-import { ConfigRemote } from "../../config/remote"
 import { ConfigSandbox } from "../../config/sandbox"
 import { ConfigAgentV1 } from "./agent"
 import { ConfigAttachmentV1 } from "./attachment"
@@ -41,7 +40,8 @@ export const Info = Schema.Struct({
     description: "Server configuration for opencode serve and web commands",
   }),
   command: Schema.optional(Schema.Record(Schema.String, ConfigCommandV1.Info)).annotate({
-    description: "Command configuration, see https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/commands.mdx",
+    description:
+      "Command configuration, see https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/commands.mdx",
   }),
   skills: Schema.optional(ConfigSkillsV1.Info).annotate({ description: "Additional skill folder paths" }),
   references: Schema.optional(ConfigReference.Info).annotate({
@@ -107,7 +107,10 @@ export const Info = Schema.Struct({
       }),
       [Schema.Record(Schema.String, ConfigAgentV1.Info)],
     ),
-  ).annotate({ description: "Agent configuration, see https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/agents.mdx" }),
+  ).annotate({
+    description:
+      "Agent configuration, see https://github.com/oxdingzg/miao/blob/main/packages/web/src/content/docs/agents.mdx",
+  }),
   provider: Schema.optional(Schema.Record(Schema.String, ConfigProviderV1.Info)).annotate({
     description: "Custom provider configurations and model overrides",
   }),
@@ -148,9 +151,6 @@ export const Info = Schema.Struct({
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
   }),
   sandbox: Schema.optional(ConfigSandbox.Info).annotate({ description: "OS sandbox for bash commands" }),
-  remote: Schema.optional(ConfigRemote.Info).annotate({
-    description: "Driving sessions from IM apps with `miao remote`",
-  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({

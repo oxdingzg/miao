@@ -6,6 +6,7 @@ import { Blob } from "../blob"
 import type { Database } from "../database/database"
 import { EventTable } from "../event/sql"
 import { SessionMessageTable } from "./sql"
+import { externalizeToolStructured } from "./blob-storage"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -86,7 +87,13 @@ const messageData = (blob: Blob.Interface, type: string, data: Record<string, un
       }
       const inner = yield* replaceIn(blob, state.content)
       const attachments = yield* replaceIn(blob, state.attachments)
-      if (!inner.changed && !attachments.changed) {
+      const structuredStats = { changed: false }
+      const structured = yield* externalizeToolStructured(
+        blob,
+        (state.structured ?? {}) as Record<string, unknown>,
+        structuredStats,
+      )
+      if (!inner.changed && !attachments.changed && !structuredStats.changed) {
         content.push(raw)
         continue
       }
@@ -96,6 +103,7 @@ const messageData = (blob: Blob.Interface, type: string, data: Record<string, un
           ...state,
           ...(inner.changed ? { content: inner.value } : {}),
           ...(attachments.changed ? { attachments: attachments.value } : {}),
+          ...(structuredStats.changed ? { structured } : {}),
         },
       })
       changed = true
@@ -116,8 +124,22 @@ const eventData = (blob: Blob.Interface, type: string, data: Record<string, unkn
     }
     if (base === "session.next.tool.success" || base === "session.next.tool.progress") {
       const content = yield* replaceIn(blob, data.content)
-      if (!content.changed) return { data, ...unchanged }
-      return { data: { ...data, content: content.value }, changed: true, bytes: content.bytes }
+      const structuredStats = { changed: false }
+      const structured = yield* externalizeToolStructured(
+        blob,
+        (data.structured ?? {}) as Record<string, unknown>,
+        structuredStats,
+      )
+      if (!content.changed && !structuredStats.changed) return { data, ...unchanged }
+      return {
+        data: {
+          ...data,
+          ...(content.changed ? { content: content.value } : {}),
+          ...(structuredStats.changed ? { structured } : {}),
+        },
+        changed: true,
+        bytes: content.bytes,
+      }
     }
     return { data, ...unchanged }
   })

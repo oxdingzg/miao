@@ -20,7 +20,7 @@ await Bun.build({
   sourcemap: "linked",
   external: ["jsonc-parser", "@lydell/node-pty"],
   define: {
-    MIAO_MODELS_DEV: generated.modelsData,
+    MIAO_MODELS_SNAPSHOT: generated.modelsData,
     MIAO_VERSION: `'${Script.version}'`,
     MIAO_CHANNEL: `'${Script.channel}'`,
   },

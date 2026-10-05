@@ -11,13 +11,11 @@ export async function start(filename: string) {
   const owner = await RuntimeOwnership.acquireShared(filename)
   const credential = randomBytes(48).toString("hex")
   const identity = RuntimeIdentity.create(owner.storage, InstallationVersion, credential)
-  // The listener uses a fresh environment-backed auth layer. Router clients receive
-  // the explicit credential rather than relying on earlier Flag snapshots.
+  // The listener uses a fresh environment-backed authentication layer.
   process.env.MIAO_SERVER_PASSWORD = credential
   process.env.MIAO_SERVER_USERNAME = "miao"
   const state: {
     server?: Awaited<ReturnType<(typeof import("@/server/server"))["Server"]["listen"]>>
-    im?: Awaited<ReturnType<(typeof import("@/cli/cmd/remote"))["prepareRuntimeIM"]>>
     stopped: boolean
     agent?: { stop: () => Promise<void>; administration: RuntimeAdministration.Interface }
     execution?: { interruptAll: () => Promise<void>; dispose: () => Promise<void> }
@@ -33,7 +31,6 @@ export async function start(filename: string) {
     try {
       const actions = [
         () => state.agent?.stop(),
-        () => state.im?.stop(),
         () => (state.server ? state.execution?.interruptAll() : undefined),
         () => state.server?.stop(true),
         () => state.execution?.dispose(),
@@ -75,12 +72,10 @@ export async function start(filename: string) {
         ),
       dispose: () => execution.dispose(),
     }
-    const { prepareRuntimeIM } = await import("@/cli/cmd/remote")
-    state.im = await prepareRuntimeIM(credential)
     const { Server } = await import("@/server/server")
     state.server = await Server.listen({
       hostname: "127.0.0.1",
-      port: state.im.port,
+      port: 0,
       mdns: false,
       cors: [],
       runtime: {
@@ -92,7 +87,6 @@ export async function start(filename: string) {
           }, 100)
         },
       },
-      remote: state.im.control,
     })
     identity.bind(state.server.url.href)
     const { RuntimeControlAgent } = await import("./control-agent")
@@ -102,7 +96,6 @@ export async function start(filename: string) {
       runtimeID: identity.runtimeID,
       storage: owner.storage,
     })
-    await state.im.start(state.server.url)
     const record: RuntimeDiscovery.Record = {
       url: state.server.url.href,
       runtimeID: identity.runtimeID,

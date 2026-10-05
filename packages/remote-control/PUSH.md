@@ -148,6 +148,9 @@ The sender admits at most four event tasks, limits one event to 32 devices and
 network work on transport replacement or shutdown. Dropped or expired hints do
 not affect durable session state or execution. Device registration and OS
 notification permission remain opt-in on the receiving client.
+This module does not itself attest Runtime grants, produce the encrypted context,
+or expose HTTP routes. The host-authenticated integration must supply those
+checks and native context resolution before notification navigation is usable.
 
 ## Device-encrypted context
 

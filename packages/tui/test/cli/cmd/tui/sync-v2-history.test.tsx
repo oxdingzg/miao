@@ -74,7 +74,9 @@ test("V2 loadOlder walks the timeline behind the transcript and stops at the old
       if (url.pathname === "/api/session") return json({ data: [session] })
       if (url.pathname === `/api/session/${sessionID}`) return json({ data: session })
       if (url.pathname === `/api/session/${sessionID}/context`)
-        return json({ data: [message("msg_active", 30, "after compaction")] })
+        return json({
+          data: [message("msg_older", 10, "before compaction"), message("msg_active", 30, "after compaction")],
+        })
       if (url.pathname === `/api/session/${sessionID}/message`) {
         if (url.searchParams.get("cursor") === "older")
           return json({ data: [message("msg_oldest", 1, "oldest")], cursor: {} })

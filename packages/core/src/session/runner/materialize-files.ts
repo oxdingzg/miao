@@ -63,11 +63,13 @@ export const materializeEvent = (
       }
       case "session.next.tool.progress": {
         const content = yield* materializeToolContent(blob, cache, event.data.content)
-        return { ...event, data: { ...event.data, content } }
+        const structured = yield* materializeStructured(blob, event.data.structured)
+        return { ...event, data: { ...event.data, content, structured } }
       }
       case "session.next.tool.success": {
         const content = yield* materializeToolContent(blob, cache, event.data.content)
-        return { ...event, data: { ...event.data, content } }
+        const structured = yield* materializeStructured(blob, event.data.structured)
+        return { ...event, data: { ...event.data, content, structured } }
       }
       default:
         return event
@@ -146,8 +148,9 @@ const materializeTool = (
     // A pending call has no result yet, so there is nothing to resolve.
     if (state.status === "pending") return tool
     const content = yield* materializeToolContent(blob, cache, state.content)
+    const structured = yield* materializeStructured(blob, state.structured)
     if (state.status !== "completed" || state.attachments === undefined || state.attachments.length === 0)
-      return { ...tool, state: { ...state, content } }
+      return { ...tool, state: { ...state, content, structured } }
     const resolved = yield* resolveAttachments(blob, cache, state.attachments)
     return {
       ...tool,
@@ -157,9 +160,47 @@ const materializeTool = (
           resolved.notes.length === 0
             ? content
             : [...content, ...resolved.notes.map((text) => ({ type: "text" as const, text }))],
+        structured,
         attachments: resolved.files.length === 0 ? undefined : resolved.files,
       },
     }
+  })
+
+/**
+ * Restores `content` fields a tool's raw structured output stored as blob
+ * references (`externalizeToolStructured` on the write side), so the model,
+ * the API, and the TUI keep seeing bytes.
+ */
+const materializeStructured = (
+  blob: Blob.Interface,
+  structured: Record<string, unknown>,
+): Effect.Effect<Record<string, unknown>> =>
+  walkStructuredContent(blob, structured).pipe(Effect.map((value) => value as Record<string, unknown>))
+
+const walkStructuredContent = (blob: Blob.Interface, value: unknown): Effect.Effect<unknown> => {
+  if (Array.isArray(value)) return Effect.forEach(value, (item) => walkStructuredContent(blob, item))
+  if (typeof value !== "object" || value === null) return Effect.succeed(value)
+  const record = value as Record<string, unknown>
+  return Effect.gen(function* () {
+    const entries = yield* Effect.forEach(Object.entries(record), ([key, item]) =>
+      walkStructuredContent(blob, item).pipe(Effect.map((next) => [key, next] as const)),
+    )
+    const next = Object.fromEntries(entries)
+    if (next.contentRef !== true || typeof next.content !== "string") return next
+    const restored = yield* restoreStructuredContent(blob, next.content, next.encoding === "base64")
+    const { contentRef: _drop, ...rest } = next
+    return { ...rest, content: restored ?? "" }
+  })
+}
+
+/** The bytes behind a structured-output reference, re-encoded as the field held it. */
+const restoreStructuredContent = (blob: Blob.Interface, uri: string, base64: boolean) =>
+  Effect.gen(function* () {
+    const hash = Blob.hashOf(uri)
+    if (hash === undefined) return undefined
+    const bytes = yield* blob.get(hash).pipe(Effect.orElseSucceed(() => undefined))
+    if (bytes === undefined) return undefined
+    return Buffer.from(bytes).toString(base64 ? "base64" : "utf8")
   })
 
 const materializeToolContent = (

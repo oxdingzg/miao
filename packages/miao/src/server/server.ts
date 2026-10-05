@@ -12,7 +12,6 @@ import { HttpApiApp } from "./routes/instance/httpapi/server"
 import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
 import { PublicApi } from "./routes/instance/httpapi/public"
 import type { CorsOptions } from "@miao/server/cors"
-import type { RemoteControl } from "@miao/server/remote-control"
 import type { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { lazy } from "@/util/lazy"
 
@@ -36,8 +35,6 @@ type ListenOptions = CorsOptions & {
   hostname: string
   mdns?: boolean
   mdnsDomain?: string
-  /** Serves the /api/remote control routes; only `miao remote` passes it. */
-  remote?: RemoteControl.Interface
   runtime?: RuntimeIdentity.Interface
 }
 type ListenerState = {
@@ -101,11 +98,13 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
 )
 
 function listenerLayer(opts: ListenOptions, port: number) {
-  return Layer.unwrap(Effect.gen(function* () {
-    const router = yield* HttpRouter.HttpRouter
-    return HttpServer.serve(router.asHttpEffect())
-  })).pipe(
-    Layer.provideMerge(HttpApiApp.createRoutes(opts, opts.remote, opts.runtime)),
+  return Layer.unwrap(
+    Effect.gen(function* () {
+      const router = yield* HttpRouter.HttpRouter
+      return HttpServer.serve(router.asHttpEffect())
+    }),
+  ).pipe(
+    Layer.provideMerge(HttpApiApp.createRoutes(opts, opts.runtime)),
     Layer.provide(Layer.fresh(HttpRouter.layer)),
     Layer.provideMerge(Layer.fresh(AppNodeBuilder.build(WebSocketTracker.node))),
     Layer.provideMerge(serverLayer({ port, hostname: opts.hostname })),

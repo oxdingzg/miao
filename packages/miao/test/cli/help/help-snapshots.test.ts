@@ -54,7 +54,6 @@ const TOP_LEVEL = [
   "uninstall",
   "serve",
   "runtime",
-  "remote",
   "web",
   "models",
   "stats",
@@ -108,6 +107,7 @@ describe("miao CLI help-text snapshots", () => {
         expect(topLevel.stderr).not.toContain("--thinking")
         expect(topLevel.stderr).not.toContain("--variant")
         expect(topLevel.stderr).not.toContain("--demo")
+        expect(topLevel.stderr).not.toMatch(/miao remote(?:\s|$)/)
 
         const argvs: Array<readonly string[]> = [...TOP_LEVEL.map((c) => [c] as const), ...SUBCOMMANDS]
 

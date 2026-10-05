@@ -233,7 +233,7 @@ describe("Config", () => {
     ),
   )
 
-  it.live("loads remote settings from V2 and migrated V1 documents", () =>
+  it.live("ignores removed IM settings in V2 and migrated V1 documents", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -256,7 +256,8 @@ describe("Config", () => {
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
             const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
-            expect(documents.map((document) => document.info.remote)).toEqual([{ port: 5000 }, remote])
+            expect(documents).toHaveLength(2)
+            expect(documents.every((document) => !("remote" in document.info))).toBe(true)
           }).pipe(Effect.provide(testLayer(tmp.path)))
         }),
       ),
