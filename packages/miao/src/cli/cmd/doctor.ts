@@ -70,8 +70,8 @@ interface Sample {
 
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
 
-/** Reads one named `DiagnosticMetrics` reader's numeric field out of a sample. */
-function metric(sample: Sample, name: string, read: (value: Record<string, unknown>) => number | undefined) {
+/** Reads one named `DiagnosticMetrics` reader's field out of a sample. */
+function metric<T>(sample: Sample, name: string, read: (value: Record<string, unknown>) => T | undefined): T | undefined {
   const value = sample.runtime?.find((entry) => entry.name === name)?.value
   if (typeof value !== "object" || value === null) return undefined
   return read(value as Record<string, unknown>)
@@ -91,11 +91,31 @@ function retainedTextUnits(sample: Sample) {
 
 /** Rendered OpenTUI nodes, the direct driver of layout and paint cost. */
 const renderNodes = (sample: Sample) => metric(sample, "tui.sync", (value) => number(value.renderNodes))
-
 const renderFrames = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.frames))
 const renderFps = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.fps))
 const renderCellsPerFrame = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.cellsPerFrame))
 const renderFrameTimeMs = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.frameTimeMs))
+
+/** Retained transcript text split by producer, from a single sample. */
+function retainedSplit(sample: Sample) {
+  return metric(sample, "tui.sync", (value) => {
+    if (!Array.isArray(value.sessions)) return undefined
+    let total = 0
+    let reasoning = 0
+    let tool = 0
+    let attributed = false
+    for (const session of value.sessions as Record<string, unknown>[]) {
+      total += number(session.textUnits) ?? 0
+      reasoning += number(session.reasoningUnits) ?? 0
+      tool += number(session.toolUnits) ?? 0
+      // Older samples predate the per-producer fields; do not report them as
+      // all-prose.
+      if (session.reasoningUnits !== undefined || session.toolUnits !== undefined) attributed = true
+    }
+    if (!attributed) return undefined
+    return { total, reasoning, tool }
+  })
+}
 
 /** A process killed mid-write leaves a partial final line; skip it, keep the rest. */
 function parse(line: string): Sample | undefined {
@@ -360,6 +380,7 @@ const ReportCommand = cmd({
       loopP99Ms: trend(samples, (sample) => sample.loopP99Ms),
       renderNodes: trend(samples, renderNodes),
       retainedText: trend(samples, retainedTextUnits),
+      retainedMix: retainedSplit(samples.at(-1)!),
       renderFps: trend(samples, renderFps),
       cellsPerFrame: trend(samples, renderCellsPerFrame),
       renderFrames: trend(samples, renderFrames),
@@ -392,6 +413,13 @@ const ReportCommand = cmd({
         if (report.renderNodes) line("render nodes", `${report.renderNodes.first} → ${report.renderNodes.last}`)
         if (report.retainedText) {
           line("retained text", `${compact(report.retainedText.first)} → ${compact(report.retainedText.last)} chars`)
+        }
+        if (report.retainedMix) {
+          line(
+            "retained mix",
+            `prose ${compact(report.retainedMix.total - report.retainedMix.reasoning - report.retainedMix.tool)} · ` +
+              `reasoning ${compact(report.retainedMix.reasoning)} · tool ${compact(report.retainedMix.tool)}`,
+          )
         }
         if (report.renderFrames) line("frames/sample", `${report.renderFrames.first} → ${report.renderFrames.last}`)
         if (report.renderFps) line("render fps", report.renderFps.last.toFixed(1))
