@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "bun test",
-    "check:browser": "bun script/check-browser.ts",
+    "check:browser": "bun script/check-browser.ts && bun script/check-browser-account.ts",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",
     "hub": "bun src/hub-main.ts"
   },
