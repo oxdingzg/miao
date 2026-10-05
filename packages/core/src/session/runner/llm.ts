@@ -25,6 +25,7 @@ import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
 import { Image } from "../../image"
 import { SystemContext } from "../../system-context/index"
+import { OutputLanguage } from "../../system-context/output-language"
 import { Persona } from "../../system-context/persona"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { Flag } from "../../flag/flag"
@@ -643,6 +644,7 @@ const layer = Layer.effect(
               apiID: resolved.info.api.id,
             }),
           system.baseline,
+          OutputLanguage.instruction,
         ]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
