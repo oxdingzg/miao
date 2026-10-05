@@ -3,5 +3,5 @@
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": { "lib": ["ESNext"] },
   "include": ["src", "test"],
-  "exclude": ["src/browser-identity.ts", "src/browser-channel.ts"]
+  "exclude": ["src/browser-identity.ts", "src/browser-channel.ts", "src/browser-checkpoint.ts"]
 }
