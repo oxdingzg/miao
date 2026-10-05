@@ -5,6 +5,8 @@ import { HubDirectory } from "./hub-directory"
 import { ControlHub } from "./hub"
 import { HubTickets } from "./hub-tickets"
 import { PushRegistry } from "./push-registry"
+import { PushProvider } from "./push-provider"
+import { PushDispatch } from "./push-dispatch"
 import { Option, Schema } from "effect"
 import path from "node:path"
 
@@ -15,6 +17,7 @@ export type Options = HubAuth.Options & {
   maxClientsPerAccount?: number
   webDirectory?: string
   pushRegistrations?: boolean
+  pushProvider?: PushProvider.Options
 }
 const Registration = Schema.Struct({ hostID: Schema.String, name: Schema.String, publicKey: Schema.String })
 const decodeRegistration = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Registration)))
@@ -29,9 +32,25 @@ const decodePush = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(
 const decodePushRevocation = Schema.decodeUnknownOption(
   Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Schema.Struct({ deviceID: Schema.String }))),
 )
+const PushNotice = Schema.Struct({
+  deviceID: Schema.String,
+  signalID: Schema.String,
+  runtimeID: Schema.String,
+  grantID: Schema.String,
+  grantVersion: Schema.Number,
+  kind: Schema.Literals(["attention", "completed"]),
+  context: Schema.String,
+})
+const decodeNotice = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(PushNotice)))
+const decodeGrant = Schema.decodeUnknownOption(
+  Schema.UnknownFromJsonString.pipe(
+    Schema.decodeTo(Schema.Struct({ grantID: Schema.String, grantVersion: Schema.Number })),
+  ),
+)
 
 /** Authenticated directory/control plane and opaque relay share one origin and listener. */
 export async function listen(options: Options) {
+  if (options.pushProvider && !options.pushRegistrations) throw new Error("Push delivery requires registration storage")
   const assets = new Map<string, { content: ArrayBuffer; type: string }>()
   if (options.webDirectory) {
     for (const asset of [
@@ -49,6 +68,44 @@ export async function listen(options: Options) {
   const identity = await HubAuth.create({ ...options, migrate: options.migrate === true })
   if (options.pushRegistrations && options.migrate) PushRegistry.migrate(options.database)
   const push = options.pushRegistrations ? PushRegistry.open(options.database) : undefined
+  if (options.pushProvider && options.migrate)
+    options.database.exec(`CREATE TABLE IF NOT EXISTS hub_push_revocation (
+      host_id TEXT NOT NULL, grant_id TEXT NOT NULL, version INTEGER NOT NULL,
+      PRIMARY KEY (host_id, grant_id)
+    )`)
+  const revoked = options.pushProvider
+    ? options.database.query<{ version: number }, [string, string]>(
+        "SELECT version FROM hub_push_revocation WHERE host_id = ? AND grant_id = ?",
+      )
+    : undefined
+  const provider = options.pushProvider ? await PushProvider.create(options.pushProvider) : undefined
+  // Never expose host credentials in the ciphertext lookup response.
+  const admissions = new Map<string, { token: string; until: number }>()
+  const dispatch =
+    provider && push && options.pushProvider
+      ? PushDispatch.make({
+          registry: push,
+          provider,
+          environment: options.pushProvider.environment,
+          authorized: (notice) => {
+            const admission = admissions.get(notice.signalID)
+            return (
+              !!admission &&
+              admission.until > Date.now() &&
+              directory.authenticate(notice.hostID, admission.token) === notice.accountID &&
+              (revoked!.get(notice.hostID, notice.grantID)?.version ?? 0) < notice.grantVersion &&
+              server
+                .connectedHosts()
+                .some(
+                  (host) =>
+                    host.hostID === notice.hostID &&
+                    host.accountID === notice.accountID &&
+                    host.runtimeID === notice.runtimeID,
+                )
+            )
+          },
+        })
+      : undefined
   if (
     options.bootstrap &&
     options.database.query<{ count: number }, []>('SELECT count(*) AS count FROM "user"').get()!.count === 0
@@ -102,6 +159,53 @@ export async function listen(options: Options) {
           response.headers.set("cache-control", "no-store")
           return response
         }
+        const sender = /^\/api\/hub\/hosts\/([A-Za-z0-9_-]{16,128})\/push\/(send|revoke)$/.exec(url.pathname)
+        if (sender && dispatch && request.method === "POST") {
+          const authorization = request.headers.get("authorization") ?? ""
+          const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : ""
+          const accountID = directory.authenticate(sender[1]!, token)
+          if (!accountID) return error("unauthorized", 401)
+          const text = await boundedPushBody(request, 8192)
+          if (text === undefined) return error("invalid_push_request", 400)
+          if (directory.authenticate(sender[1]!, token) !== accountID) return error("unauthorized", 401)
+          if (sender[2] === "revoke") {
+            const body = decodeGrant(text)
+            if (
+              Option.isNone(body) ||
+              !/^[A-Za-z0-9_-]{16,128}$/.test(body.value.grantID) ||
+              !Number.isSafeInteger(body.value.grantVersion) ||
+              body.value.grantVersion < 1
+            )
+              return error("invalid_push_request", 400)
+            if (
+              !revoked!.get(sender[1]!, body.value.grantID) &&
+              options.database
+                .query<
+                  { count: number },
+                  [string]
+                >("SELECT count(*) AS count FROM hub_push_revocation WHERE host_id = ?")
+                .get(sender[1]!)!.count >= 1024
+            )
+              return error("push_revocation_limit", 429)
+            options.database
+              .query(
+                `INSERT INTO hub_push_revocation (host_id, grant_id, version) VALUES (?, ?, ?)
+              ON CONFLICT (host_id, grant_id) DO UPDATE SET version = max(version, excluded.version)`,
+              )
+              .run(sender[1]!, body.value.grantID, body.value.grantVersion)
+            dispatch.revoke(sender[1]!, body.value.grantID)
+            return Response.json({ revoked: true }, noStore)
+          }
+          const body = decodeNotice(text)
+          if (Option.isNone(body)) return error("invalid_push_request", 400)
+          for (const [id, admission] of admissions) if (admission.until <= Date.now()) admissions.delete(id)
+          const existing = admissions.get(body.value.signalID)
+          if (existing && existing.token !== token) return error("push_conflict", 409)
+          if (!existing && admissions.size >= 1024) return error("push_limit", 429)
+          if (!existing) admissions.set(body.value.signalID, { token, until: Date.now() + 10 * 60_000 })
+          const result = await dispatch.send({ ...body.value, hostID: sender[1]!, accountID }).catch(() => undefined)
+          return result ? Response.json(result, noStore) : error("invalid_push_request", 400)
+        }
         const authenticated = await principal(request)
         if (!authenticated || !identity.active(authenticated)) return error("unauthorized", 401)
         if (url.pathname === "/api/hub/version" && request.method === "GET")
@@ -114,6 +218,7 @@ export async function listen(options: Options) {
                 "opaque-relay",
                 "browser-tickets",
                 ...(push ? ["push-registration"] : []),
+                ...(dispatch ? ["push-delivery"] : []),
               ],
             },
             noStore,
@@ -138,6 +243,14 @@ export async function listen(options: Options) {
           if (!identity.active(authenticated)) return error("unauthorized", 401)
           push.revoke(authenticated, body.value.deviceID)
           return Response.json({ revoked: true }, noStore)
+        }
+        if (dispatch && url.pathname === "/api/hub/push/context" && request.method === "GET") {
+          const notice = dispatch.get(
+            authenticated.accountID,
+            url.searchParams.get("deviceID") ?? "",
+            url.searchParams.get("signalID") ?? "",
+          )
+          return notice ? Response.json(notice, noStore) : error("push_unavailable", 404)
         }
         if (url.pathname === "/api/hub/tickets" && request.method === "POST") {
           const body = decodeTicket(await request.text())
@@ -240,6 +353,9 @@ export async function listen(options: Options) {
     ...server,
     stop: async () => {
       tickets.clear()
+      dispatch?.stop()
+      admissions.clear()
+      provider?.stop()
       await server.stop()
     },
   }
@@ -250,7 +366,7 @@ function error(code: string, status: number) {
   return Response.json({ code }, { ...noStore, status })
 }
 
-async function boundedPushBody(request: Request) {
+async function boundedPushBody(request: Request, limit = 4096) {
   const reader = request.body?.getReader()
   if (!reader) return undefined
   const chunks: Uint8Array[] = []
@@ -264,7 +380,7 @@ async function boundedPushBody(request: Request) {
       const chunk = await reader.read()
       if (chunk.done) break
       size.value += chunk.value.byteLength
-      if (size.value > 4096) {
+      if (size.value > limit) {
         await reader.cancel()
         return undefined
       }
