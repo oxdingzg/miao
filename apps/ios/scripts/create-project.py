@@ -15,8 +15,12 @@ files = sorted(path.name for path in (root / 'Miao').glob('*.swift'))
 for name in files:
     add('file:' + name, f'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "{name}"; sourceTree = "<group>";')
     add('build:' + name, f'isa = PBXBuildFile; fileRef = {ident("file:" + name)};')
+add('assets-file', 'isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>";')
+add('assets-build', f'isa = PBXBuildFile; fileRef = {ident("assets-file")};')
+add('icon-license-file', 'isa = PBXFileReference; lastKnownFileType = text; path = "Icon-LICENSE.txt"; sourceTree = "<group>";')
+add('icon-license-build', f'isa = PBXBuildFile; fileRef = {ident("icon-license-file")};')
 add('app', 'isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Miao.app; sourceTree = BUILT_PRODUCTS_DIR;')
-add('source-group', f'isa = PBXGroup; children = {refs(["file:" + name for name in files])}; path = Miao; sourceTree = "<group>";')
+add('source-group', f'isa = PBXGroup; children = {refs(["file:" + name for name in files] + ["assets-file", "icon-license-file"])}; path = Miao; sourceTree = "<group>";')
 add('products', f'isa = PBXGroup; children = {refs(["app", "ui-product"])}; name = Products; sourceTree = "<group>";')
 add('ui-file', 'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingUITests.swift; sourceTree = "<group>";')
 add('ui-build', f'isa = PBXBuildFile; fileRef = {ident("ui-file")};')
@@ -31,7 +35,7 @@ add('product', f'isa = XCSwiftPackageProductDependency; package = {ident("packag
 add('framework-build', f'isa = PBXBuildFile; productRef = {ident("product")};')
 add('sources', f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["build:" + name for name in files])}; runOnlyForDeploymentPostprocessing = 0;')
 add('frameworks', f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {refs(["framework-build"])}; runOnlyForDeploymentPostprocessing = 0;')
-add('resources', 'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
+add('resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["assets-build", "icon-license-build"])}; runOnlyForDeploymentPostprocessing = 0;')
 for config in ['Debug', 'Release']:
     common = 'CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos;'
     if config == 'Debug':
@@ -39,7 +43,7 @@ for config in ['Debug', 'Release']:
     else:
         common += ' DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_OPTIMIZATION_LEVEL = "-O";'
     add('project:' + config, f'isa = XCBuildConfiguration; buildSettings = {{ {common} }}; name = {config};')
-    target = '''CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO;
+    target = '''ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO;
         INFOPLIST_FILE = Miao/Info.plist; MARKETING_VERSION = "$(MIAO_VERSION)";
         PRODUCT_BUNDLE_IDENTIFIER = dev.miao.remote; PRODUCT_NAME = Miao;
         SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0;
