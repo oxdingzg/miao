@@ -2,7 +2,7 @@
 // Root package.json owns the version; workspace manifests are synchronized copies.
 // bun script/set-version.ts X.Y.Z updates the root and all workspace versions.
 // bun script/set-version.ts synchronizes workspaces with the existing root version.
-import { Glob } from "bun"
+import { $, Glob } from "bun"
 import semver from "semver"
 import path from "node:path"
 
@@ -23,4 +23,8 @@ for (const file of files) {
   await Bun.write(target, next)
   console.log(file)
 }
+// Mirror the workspace versions into bun.lock. Without this, CI's `bun install`
+// rewrites the lockfile's workspace entries, and the generate job (which can
+// only fail on a protected branch) reports drift nobody committed.
+await $`bun install --lockfile-only`.cwd(root)
 console.log(`workspace versions synchronized to ${version}`)
