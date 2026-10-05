@@ -3,6 +3,7 @@ export * as BrowserChannel from "./browser-channel"
 import type { RemoteAccess } from "@miao/schema/remote-access"
 import { PairingProof } from "./pairing-proof"
 import { SecureChannel } from "./secure-channel"
+import { ResponseAssembler } from "./response-assembler"
 
 /** A one-use account ticket routes the socket; the pinned Agent key authenticates its encrypted contents. */
 export async function connect(input: {
@@ -34,7 +35,8 @@ export async function connect(input: {
   let bytes = 0
   let closed = false
   let wake: (() => void) | undefined
-  const close = () => { closed = true; frames.length = 0; bytes = 0; wake?.(); socket.close() }
+  const assembler = ResponseAssembler.make()
+  const close = () => { closed = true; frames.length = 0; bytes = 0; assembler.reset(); wake?.(); socket.close() }
   socket.addEventListener("close", close)
   socket.addEventListener("error", close)
   socket.addEventListener("message", (event) => {
@@ -82,7 +84,14 @@ export async function connect(input: {
         if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483647) throw new Error("Invalid receive timeout")
         receiving = true
         try {
-          return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await authenticated.channel.open(await next(timeout))))
+          const deadline = Date.now() + timeout
+          for (;;) {
+            const remaining = deadline - Date.now()
+            if (remaining <= 0) throw new Error("Response timed out")
+            const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await authenticated.channel.open(await next(remaining))))
+            const result = assembler.accept(value)
+            if (result !== undefined) return result
+          }
         } catch { close(); throw new Error("Encrypted relay stream could not be read") }
         finally { receiving = false }
       },
