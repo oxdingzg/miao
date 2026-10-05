@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   createPromptHistory,
+  isClearCommand,
   isExitCommand,
-  isNewCommand,
   movePromptHistory,
   pushPromptHistory,
 } from "@/cli/cmd/run/prompt.shared"
@@ -93,9 +93,9 @@ describe("run prompt shared", () => {
     expect(isExitCommand("/quit now")).toBe(false)
   })
 
-  test("recognizes the new-session command", () => {
-    expect(isNewCommand("/new")).toBe(true)
-    expect(isNewCommand(" /NEW ")).toBe(true)
-    expect(isNewCommand("/new now")).toBe(false)
+  test("recognizes the clear command", () => {
+    expect(isClearCommand("/clear")).toBe(true)
+    expect(isClearCommand(" /CLEAR ")).toBe(true)
+    expect(isClearCommand("/clear now")).toBe(false)
   })
 })

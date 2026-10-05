@@ -4,14 +4,14 @@
 // here. The queue drains one turn at a time; ordinary prompts waiting behind
 // an active ordinary turn are exposed for edit/removal until they begin.
 //
-// The queue also handles /exit, /quit, and /new commands, empty-prompt rejection,
+// The queue also handles /exit, /quit, and /clear commands, empty-prompt rejection,
 // and tracks per-turn wall-clock duration for the footer status line.
 //
 // Resolves when the footer closes and all in-flight work finishes.
 import * as Locale from "@/util/locale"
 import { SessionMessage } from "@miao/core/session/message"
 import { Identifier } from "@miao/core/util/identifier"
-import { isExitCommand, isNewCommand } from "./prompt.shared"
+import { isClearCommand, isExitCommand } from "./prompt.shared"
 import type { FooterApi, FooterEvent, FooterQueuedPrompt, RunPrompt } from "./types"
 
 type Trace = {
@@ -127,7 +127,7 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
           const queued = state.queued.find((item) => item.prompt === prompt)
           if (queued) removeLocalQueued(queued)
 
-          if (prompt.mode !== "shell" && isNewCommand(prompt.text)) {
+          if (prompt.mode !== "shell" && isClearCommand(prompt.text)) {
             syncQueue()
             if (!input.onNewSession) {
               emit(
@@ -283,7 +283,7 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
       !active.command &&
       prompt.mode !== "shell" &&
       !prompt.command &&
-      !isNewCommand(prompt.text)
+      !isClearCommand(prompt.text)
     ) {
       const queued: FooterQueuedPrompt = {
         messageID: SessionMessage.ID.create(),
@@ -298,7 +298,7 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
 
     state.queue.push(prompt)
     syncQueue()
-    if (prompt.mode !== "shell" && isNewCommand(prompt.text)) {
+    if (prompt.mode !== "shell" && isClearCommand(prompt.text)) {
       drain()
       return
     }

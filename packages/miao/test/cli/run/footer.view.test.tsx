@@ -807,16 +807,16 @@ test("direct footer submits slash autocomplete selections without dispatching sh
     app.mockInput.pressEnter()
     await app.renderOnce()
 
-    "/nx".split("").forEach((key) => app.mockInput.pressKey(key))
+    "/cx".split("").forEach((key) => app.mockInput.pressKey(key))
     app.mockInput.pressKey("ARROW_LEFT")
-    app.mockInput.pressKey("e")
+    app.mockInput.pressKey("l")
     await app.renderOnce()
     app.mockInput.pressEnter()
     await app.renderOnce()
 
-    "/n scratch".split("").forEach((key) => app.mockInput.pressKey(key))
+    "/c scratch".split("").forEach((key) => app.mockInput.pressKey(key))
     Array.from({ length: 8 }).forEach(() => app.mockInput.pressKey("ARROW_LEFT"))
-    app.mockInput.pressKey("e")
+    app.mockInput.pressKey("l")
     await app.renderOnce()
     app.mockInput.pressEnter()
     await app.renderOnce()
@@ -831,8 +831,8 @@ test("direct footer submits slash autocomplete selections without dispatching sh
       { text: "/review ", parts: [], command: { name: "review", arguments: "" } },
       { text: "/review ", parts: [], command: { name: "review", arguments: "" } },
       { text: "/review branch", parts: [], command: { name: "review", arguments: "branch" } },
-      { text: "/new ", parts: [] },
-      { text: "/new ", parts: [] },
+      { text: "/clear ", parts: [] },
+      { text: "/clear ", parts: [] },
     ])
     expect(app.captureCharFrame()).toContain("/review")
   } finally {
