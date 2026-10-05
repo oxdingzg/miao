@@ -6,6 +6,9 @@ import { ControlAgent } from "../../../packages/remote-control/src/agent"
 import { DeviceGrants } from "../../../packages/remote-control/src/grants"
 import { HubService } from "../../../packages/remote-control/src/hub-service"
 import { SecureChannel } from "../../../packages/remote-control/src/secure-channel"
+import { PushContext } from "../../../packages/remote-control/src/push-context"
+import { createServer } from "node:http2"
+import { generateKeyPairSync } from "node:crypto"
 
 const directory = await mkdtemp(path.join(tmpdir(), "miao-native-account-"))
 const database = new Database(":memory:")
@@ -18,8 +21,30 @@ const state: {
   child?: ReturnType<typeof Bun.spawn>
   agent?: ReturnType<typeof ControlAgent.connect>
   grants?: Awaited<ReturnType<typeof DeviceGrants.load>>
+  notification?: ReturnType<typeof Bun.serve>
 } = {}
+const apple = createServer()
+const delivered: string[] = []
+apple.on("session", (session) => session.on("error", () => {}))
+apple.on("stream", (stream) => {
+  const chunks: Buffer[] = []
+  stream.on("error", () => {})
+  stream.on("data", (chunk: Buffer) => chunks.push(chunk))
+  stream.on("end", () => {
+    delivered.push(Buffer.concat(chunks).toString("utf8"))
+    stream.respond({ ":status": 200 })
+    stream.end()
+  })
+})
 try {
+  await new Promise<void>((resolve) => apple.listen(0, "127.0.0.1", resolve))
+  const address = apple.address()
+  if (!address || typeof address === "string") throw new Error("Missing notification fixture address")
+  const keys = generateKeyPairSync("ec", {
+    namedCurve: "prime256v1",
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  })
   state.hub = await HubService.listen({
     database,
     baseURL: `http://127.0.0.1:${port}`,
@@ -27,6 +52,14 @@ try {
     allowLoopbackHTTP: true,
     migrate: true,
     pushRegistrations: true,
+    pushProvider: {
+      teamID: "ABCDEFGHIJ",
+      keyID: "KLMNOPQRST",
+      topic: "dev.miao.remote",
+      privateKey: keys.privateKey,
+      environment: "sandbox",
+      testEndpoint: `http://127.0.0.1:${address.port}`,
+    },
     bootstrap: owner,
     hostname: "127.0.0.1",
     port,
@@ -92,6 +125,57 @@ try {
   const deadline = Date.now() + 5000
   while (!state.agent.connected() && Date.now() < deadline) await Bun.sleep(10)
   if (!state.agent.connected()) throw new Error("Private account fixture Agent did not connect")
+  const signalID = crypto.randomUUID()
+  const fixtureToken = crypto.randomUUID()
+  const binding = {
+    hostID: host.hostID,
+    runtimeID,
+    grantID: grant.id,
+    grantVersion: grant.version,
+    deviceID: device.publicKey,
+    signalID,
+  }
+  const context = await PushContext.seal(grants.identity, binding, {
+    sessionID: "session-one",
+    projectID: "project-one",
+    expiresAt: Date.now() + 300_000,
+  })
+  state.notification = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const route = new URL(request.url).pathname
+      if (
+        request.method !== "POST" ||
+        request.headers.get("authorization") !== `Bearer ${fixtureToken}` ||
+        !["/emit", "/revoke"].includes(route)
+      )
+        return new Response(null, { status: 404 })
+      const response = await fetch(
+        origin + `/api/hub/hosts/${host.hostID}/push/` + (route === "/emit" ? "send" : "revoke"),
+        {
+          method: "POST",
+          redirect: "error",
+          headers: { authorization: `Bearer ${registered.token}`, "content-type": "application/json" },
+          body: JSON.stringify(
+            route === "/emit"
+              ? { ...binding, context, kind: "attention" }
+              : { grantID: grant.id, grantVersion: grant.version },
+          ),
+          signal: AbortSignal.timeout(5000),
+        },
+      )
+      const result: unknown = await response.json()
+      if (
+        !response.ok ||
+        !result ||
+        typeof result !== "object" ||
+        (route === "/emit" && (!("status" in result) || result.status !== "accepted"))
+      )
+        return new Response(null, { status: 500 })
+      return Response.json({ signalID })
+    },
+  })
   const fixture = path.join(directory, "fixture.json")
   await Bun.write(
     fixture,
@@ -112,6 +196,9 @@ try {
         grantVersion: grant.version,
       },
       devicePrivateKey: privateKey.d,
+      grant,
+      notificationURL: state.notification.url.origin,
+      notificationToken: fixtureToken,
     }),
   )
   await chmod(fixture, 0o600)
@@ -127,7 +214,7 @@ try {
     if (code !== 0 || !log.split("\n").some((line) => line.trim() === '{"nativeAccount":true}')) {
       const stages = [
         ...log.matchAll(
-          /^NativeAccountStage:(fixture|login|directory|keychain|pushRegistration|denyDevice|refreshRuntime|rpc|secondConnection|logout|disconnect|cleared)\s*$/gm,
+          /^NativeAccountStage:(fixture|login|directory|keychain|pushRegistration|pushContext|pushRevocation|denyDevice|refreshRuntime|rpc|secondConnection|logout|disconnect|cleared)\s*$/gm,
         ),
       ]
       console.log(
@@ -147,14 +234,18 @@ try {
   }
   if (database.query<{ count: number }, []>("SELECT count(*) AS count FROM hub_push_device").get()?.count !== 0)
     throw new Error("Native account logout retained push routing metadata")
+  if (delivered.length !== 1 || delivered[0]!.includes(context) || delivered[0]!.includes("session-one"))
+    throw new Error("Native push fixture violated generic notification delivery")
   console.log(
-    "Native Hub account, push registration, Keychain, authenticated encrypted relay and logout invalidation passed",
+    "Native Hub account, encrypted push lookup/resolution/revocation, Keychain, authenticated relay and logout passed",
   )
 } finally {
   state.child?.kill()
   await state.child?.exited
   state.agent?.stop()
+  await state.notification?.stop(true)
   await state.hub?.stop()
+  await new Promise<void>((resolve) => apple.close(() => resolve()))
   await state.grants?.close()
   database.close()
   await rm(directory, { recursive: true, force: true })

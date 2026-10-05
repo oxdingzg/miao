@@ -53,6 +53,16 @@ UI smoke tests run with `sh apps/ios/scripts/test-app.sh iphone` or `ipad` on th
 
 CI runs native core tests, the iOS platform source check, an unsigned universal app build, iPhone/iPad UI smoke tests, crypto interoperability, native transport and pairing integration on a macOS runner. Physical camera, speech and device installation checks require a real device. APNs registration/delivery and the complete cross-channel integration are still separate work; the current app does not claim those capabilities.
 
+`bun apps/ios/scripts/check-account.ts` runs the native iOS account probe against
+a real authenticated Hub and encrypted Agent. It also exercises device push
+registration, host-authenticated notification admission through a loopback HTTP/2
+provider, account/device-bound context lookup, native signature/decryption and
+scope resolution, token renewal, and grant revocation. The fixture checks that
+the provider receives only the generic alert, with no encrypted context or session
+identity. This proves the application-level notification protocol; physical Apple
+delivery, entitlement provisioning and notification-click navigation require
+separate acceptance checks.
+
 ## Hub accounts
 
 Open **登录中继** and enter the computer's configured HTTPS Hub address and account. The account screen lists registered computers and their online status. Session access still requires scanning an invitation and approving this device on the computer; directory discovery cannot replace that approval or a pinned computer key. A pending invitation resumes after account login.

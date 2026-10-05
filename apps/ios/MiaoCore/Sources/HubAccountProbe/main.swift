@@ -10,6 +10,7 @@ private enum AccountProbe {
         let origin: URL; let email: String; let password: String
         let hostID: String; let hostName: String; let hostPublicKey: String
         let host: ApprovedHost; let devicePrivateKey: String
+        let grant: DeviceGrant; let notificationURL: URL; let notificationToken: String
     }
     static func run(_ url: URL) async throws {
         print("NativeAccountStage:fixture")
@@ -35,7 +36,7 @@ private enum AccountProbe {
                 throw HubAccountError.malformed
             }
             print("NativeAccountStage:pushRegistration")
-            guard try await account.pushRegistrationAvailable() else { throw HubAccountError.malformed }
+            guard try await account.pushRegistrationAvailable(requireDelivery: true) else { throw HubAccountError.malformed }
             let deviceID = try P256.Signing.PrivateKey(rawRepresentation: bytes).publicKey.x963Representation.base64EncodedString()
                 .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
             let push = try PushDeviceRegistration(deviceID: deviceID, token: Data(repeating: 0xab, count: 32), environment: .sandbox)
@@ -45,6 +46,31 @@ private enum AccountProbe {
                   replacementPush.registeredAt > firstPush.registeredAt else { throw HubAccountError.malformed }
             try await account.revokePush(deviceID: deviceID)
             _ = try await account.registerPush(push)
+            print("NativeAccountStage:pushContext")
+            func notification(_ route: String) async throws -> String {
+                var request = URLRequest(url: fixture.notificationURL.appendingPathComponent(route))
+                request.httpMethod = "POST"
+                request.setValue("Bearer " + fixture.notificationToken, forHTTPHeaderField: "Authorization")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 1024 else {
+                    throw HubAccountError.malformed
+                }
+                struct Emitted: Decodable { let signalID: String }
+                return try JSONDecoder().decode(Emitted.self, from: data).signalID
+            }
+            let signalID = try await notification("emit")
+            let notice = try await account.pushContext(deviceID: deviceID, signalID: signalID)
+            let payload = try notice.resolve(device: P256.Signing.PrivateKey(rawRepresentation: bytes),
+                host: AuthorizedHost(host: fixture.host, grant: fixture.grant))
+            guard payload.sessionID == "session-one", payload.projectID == "project-one" else { throw HubAccountError.malformed }
+            _ = try await account.registerPush(push)
+            _ = try await account.pushContext(deviceID: deviceID, signalID: signalID)
+            let otherDevice = P256.Signing.PrivateKey().publicKey.x963Representation.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+            do {
+                _ = try await account.pushContext(deviceID: otherDevice, signalID: signalID)
+                throw HubAccountError.malformed
+            } catch HubAccountError.rejected(404) {}
             do {
                 print("NativeAccountStage:denyDevice")
                 let denied = try await HubConnection.open(host: fixture.host, identity: P256.Signing.PrivateKey(),
@@ -68,6 +94,12 @@ private enum AccountProbe {
             print("NativeAccountStage:secondConnection")
             let remoteConnection = try await HubConnection.open(host: fixture.host,
                 identity: P256.Signing.PrivateKey(rawRepresentation: bytes), allowLoopbackHTTP: true, account: restored) { _ in }
+            print("NativeAccountStage:pushRevocation")
+            _ = try await notification("revoke")
+            do {
+                _ = try await account.pushContext(deviceID: deviceID, signalID: signalID)
+                throw HubAccountError.malformed
+            } catch HubAccountError.rejected(404) {}
             print("NativeAccountStage:logout")
             try await account.signOut()
             do {
