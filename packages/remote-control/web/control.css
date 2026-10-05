@@ -268,3 +268,57 @@ footer {
     }
   }
 }
+.session-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#pending {
+  max-height: 35vh;
+  overflow: auto;
+}
+.decision {
+  border: 1px solid var(--line);
+  background: #edf2e4;
+  padding: 16px;
+  margin: 12px 0;
+}
+.decision h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.decision pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 13px/1.5 monospace;
+}
+.decision button {
+  margin-right: 8px;
+}
+.decision fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 14px;
+}
+.decision input[type="radio"],
+.decision input[type="checkbox"] {
+  width: auto;
+  margin-right: 9px;
+}
+dialog {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 24px;
+  width: min(440px, 90vw);
+}
+dialog::backdrop {
+  background: #20392f66;
+}
+@media (max-width: 700px) {
+  header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

@@ -5,6 +5,9 @@ import { BrowserIdentity } from "../src/browser-identity"
 import { BrowserChannel } from "../src/browser-channel"
 import { BrowserCheckpoint } from "../src/browser-checkpoint"
 import { RemoteRPC } from "../src/remote-rpc"
+import { Permission } from "@miao/schema/permission"
+import { Question } from "@miao/schema/question"
+import type { ControlAgent } from "../src/agent"
 
 const get = <T extends HTMLElement>(id: string, kind: { new (): T }): T => {
   const value = document.getElementById(id)
@@ -17,6 +20,14 @@ const send = get("send", HTMLButtonElement)
 const timeline = get("timeline", HTMLDivElement)
 const title = get("session-title", HTMLHeadingElement)
 const badge = get("connection", HTMLSpanElement)
+const rename = get("rename", HTMLButtonElement)
+const interrupt = get("interrupt", HTMLButtonElement)
+const pending = get("pending", HTMLElement)
+const renameDialog = get("rename-dialog", HTMLDialogElement)
+let renameScope: BrowserCheckpoint.Scope | undefined
+let observedExecutionID: string | undefined
+let pendingSignature = ""
+const pendingNodes = new Map<string, { node: HTMLElement; fingerprint: string }>()
 const login = get("login", HTMLElement)
 const directory = get("directory", HTMLElement)
 const hosts = get("hosts", HTMLDivElement)
@@ -64,6 +75,13 @@ function disconnect() {
   send.disabled = true
   draft.disabled = true
   badge.textContent = "未连接"
+  rename.disabled = true
+  interrupt.disabled = true
+  observedExecutionID = undefined
+  pending.replaceChildren()
+  pendingSignature = ""
+  pendingNodes.clear()
+  renameDialog.close()
 }
 function report(message: string) {
   notice.textContent = message
@@ -169,6 +187,7 @@ async function connect(host: Host) {
     const button = document.createElement("button")
     button.className = "item"
     button.textContent = label
+    button.dataset.sessionId = id
     button.onclick = () => run(() => openSession(id, label))
     sessions.append(button)
   }
@@ -285,6 +304,13 @@ async function openSession(sessionID: string, label: string) {
     sessionID,
   }
   scope = partition
+  renameDialog.close()
+  pendingSignature = ""
+  pending.replaceChildren()
+  pendingNodes.clear()
+  observedExecutionID = undefined
+  interrupt.disabled = true
+  rename.disabled = !approved.permissions.includes("session.rename")
   draft.disabled = true
   send.disabled = true
   title.textContent = label
@@ -324,6 +350,9 @@ async function openSession(sessionID: string, label: string) {
     } else report("有一条输入尚未确认。请在电脑查看，避免重复发送。")
   }
   while (current === generation && !connection.stopped()) {
+    const decisions = await connection.request("session.pending", { sessionID })
+    if (current !== generation) return
+    showPending(decisions, partition)
     const page = await connection.request("session.events", {
       sessionID,
       payload: { after: cursor, limit: 100, waitMs: 1000 },
@@ -340,6 +369,7 @@ async function openSession(sessionID: string, label: string) {
     if (!page.data.length) continue
     let next = cursor
     const projected = [...messages]
+    let updatedTitle: string | undefined
     for (const event of page.data) {
       if (
         !record(event) ||
@@ -352,6 +382,8 @@ async function openSession(sessionID: string, label: string) {
       )
         throw new Error("Invalid session event")
       next = event.durable.seq
+      if (event.type === "session.next.info.updated" && typeof event.data.title === "string")
+        updatedTitle = event.data.title
       const text =
         event.type === "session.next.prompted" && record(event.data.prompt) ? event.data.prompt.text : event.data.text
       if (
@@ -372,7 +404,195 @@ async function openSession(sessionID: string, label: string) {
     revision = committed.revision
     cursor = next
     messages = bounded
+    if (updatedTitle !== undefined) updateTitle(partition.sessionID, updatedTitle)
     paint(messages)
+  }
+}
+function updateTitle(sessionID: string, label: string) {
+  title.textContent = label
+  sessions.querySelectorAll("button").forEach((button) => {
+    if (button.dataset.sessionId === sessionID) button.textContent = label
+  })
+}
+async function perform(method: ControlAgent.Method, payload: unknown, expected: BrowserCheckpoint.Scope | undefined) {
+  const connection = rpc
+  const current = generation
+  if (!connection || !expected || expected !== scope || !RemoteRPC.isWrite(method)) throw new Error("Session changed")
+  const prepared = await cache.prepareOperation(expected, {
+    id: crypto.randomUUID(),
+    method,
+    payload: JSON.stringify(payload),
+  })
+  const claimed = await cache.transitionOperation(expected, prepared.id, prepared.revision, "awaitingConfirmation")
+  if (current !== generation || expected !== scope) {
+    await cache.transitionOperation(expected, prepared.id, claimed.revision, "rejected")
+    throw new Error("Session changed")
+  }
+  const result = await connection
+    .request(method, { sessionID: expected.sessionID, operationID: prepared.id, payload })
+    .catch((error: unknown) => error)
+  const rejected =
+    result instanceof RemoteRPC.RequestError &&
+    ["forbidden", "invalid_request", "conflict", "not_found", "expired"].includes(result.code)
+  const status =
+    rejected || (record(result) && result.status === "rejected")
+      ? "rejected"
+      : record(result) && result.status === "completed"
+        ? "completed"
+        : "outcomeUnknown"
+  await cache.transitionOperation(
+    expected,
+    prepared.id,
+    claimed.revision,
+    status,
+    result instanceof Error ? undefined : JSON.stringify(result),
+  )
+  if (status !== "completed") {
+    if (current === generation)
+      report(
+        status === "rejected"
+          ? "操作未执行，任务或授权可能已变化。请刷新后重新选择。"
+          : "操作结果尚未确认。重连时只查询状态，不会自动重试。",
+      )
+    return false
+  }
+  if (current !== generation) return false
+  pendingSignature = ""
+  return true
+}
+function showPending(value: unknown, partition: BrowserCheckpoint.Scope) {
+  if (
+    !record(value) ||
+    !Array.isArray(value.permissions) ||
+    !Array.isArray(value.questions) ||
+    value.permissions.length > 128 ||
+    value.questions.length > 32 ||
+    !record(value.execution)
+  )
+    throw new Error("Invalid pending decisions")
+  const permissions = Schema.decodeUnknownSync(Schema.Array(Permission.Request))(value.permissions)
+  const questions = Schema.decodeUnknownSync(Schema.Array(Question.Request))(value.questions)
+  observedExecutionID =
+    value.execution.type === "running" && typeof value.execution.executionID === "string"
+      ? value.execution.executionID
+      : undefined
+  interrupt.disabled = !observedExecutionID || !grant?.permissions.includes("interrupt")
+  const signature = JSON.stringify([permissions, questions])
+  if (signature === pendingSignature) return
+  pendingSignature = signature
+  const keys = new Set([
+    ...permissions.map((request) => "permission:" + request.id),
+    ...questions.map((request) => "question:" + request.id),
+  ])
+  for (const [key, item] of pendingNodes) {
+    if (keys.has(key)) continue
+    item.node.remove()
+    pendingNodes.delete(key)
+  }
+  for (const request of permissions) {
+    if (request.sessionID !== partition.sessionID) throw new Error("Decision session mismatch")
+    const key = "permission:" + request.id
+    const fingerprint = JSON.stringify(request)
+    const existing = pendingNodes.get(key)
+    if (existing?.fingerprint === fingerprint && existing.node.isConnected) continue
+    existing?.node.remove()
+    const card = document.createElement("article")
+    card.className = "decision"
+    const heading = document.createElement("h3")
+    heading.textContent = "需要你的授权"
+    const description = document.createElement("pre")
+    description.textContent = request.action + "\n" + request.resources.join("\n")
+    card.append(heading, description)
+    for (const action of [
+      { text: "允许这一次", reply: "once" },
+      { text: "拒绝", reply: "reject" },
+    ]) {
+      const button = document.createElement("button")
+      button.textContent = action.text
+      button.disabled = !grant?.permissions.includes("permission.reply")
+      button.onclick = () =>
+        run(async () => {
+          card.querySelectorAll("button").forEach((button) => {
+            button.disabled = true
+          })
+          const completed = await perform("permission.reply", { requestID: request.id, reply: action.reply }, partition)
+          if (completed) card.remove()
+        })
+      card.append(button)
+    }
+    pending.append(card)
+    pendingNodes.set(key, { node: card, fingerprint })
+  }
+  for (const request of questions) {
+    if (request.sessionID !== partition.sessionID) throw new Error("Decision session mismatch")
+    const key = "question:" + request.id
+    const fingerprint = JSON.stringify(request)
+    const existing = pendingNodes.get(key)
+    if (existing?.fingerprint === fingerprint && existing.node.isConnected) continue
+    existing?.node.remove()
+    const form = document.createElement("form")
+    form.className = "decision"
+    const groups = request.questions.map((question) => {
+      const field = document.createElement("fieldset")
+      const legend = document.createElement("legend")
+      legend.textContent = question.question
+      field.append(legend)
+      const name = crypto.randomUUID()
+      const options = question.options.map((option) => {
+        const label = document.createElement("label")
+        const input = document.createElement("input")
+        input.type = question.multiSelect ? "checkbox" : "radio"
+        input.name = name
+        input.value = option.label
+        label.append(input, document.createTextNode(option.label + " · " + option.description))
+        field.append(label)
+        return input
+      })
+      const custom = document.createElement("input")
+      custom.type = "text"
+      custom.maxLength = 16384
+      if (question.custom !== false) {
+        const label = document.createElement("label")
+        label.textContent = "自己的回答"
+        label.append(custom)
+        field.append(label)
+      }
+      field.disabled = !grant?.permissions.includes("question.reply")
+      form.append(field)
+      return { options, custom, multiple: question.multiSelect === true }
+    })
+    const answer = document.createElement("button")
+    answer.textContent = "提交回答"
+    answer.type = "submit"
+    const reject = document.createElement("button")
+    reject.textContent = "跳过问题"
+    reject.type = "button"
+    reject.className = "quiet"
+    answer.disabled = reject.disabled = !grant?.permissions.includes("question.reply")
+    form.append(answer, reject)
+    form.onsubmit = (event) => {
+      event.preventDefault()
+      run(async () => {
+        const answers = groups.map((group) => {
+          const selected = group.options.filter((input) => input.checked).map((input) => input.value)
+          const text = group.custom.value.trim()
+          return text ? (group.multiple ? [...selected, text] : [text]) : selected
+        })
+        if (answers.some((answer) => !answer.length)) {
+          report("请回答每一个问题，再提交。")
+          return
+        }
+        answer.disabled = reject.disabled = true
+        if (await perform("question.reply", { requestID: request.id, answers }, partition)) form.remove()
+      })
+    }
+    reject.onclick = () =>
+      run(async () => {
+        answer.disabled = reject.disabled = true
+        if (await perform("question.reply", { requestID: request.id, reject: true }, partition)) form.remove()
+      })
+    pending.append(form)
+    pendingNodes.set(key, { node: form, fingerprint })
   }
 }
 function decodeMessages(value: unknown): Message[] {
@@ -463,6 +683,32 @@ draft.oninput = () => {
   void saveDraft().catch(() => undefined)
 }
 get("refresh", HTMLButtonElement).onclick = () => run(refresh)
+rename.onclick = () => {
+  renameScope = scope
+  get("rename-title", HTMLInputElement).value = title.textContent ?? ""
+  renameDialog.showModal()
+}
+get("rename-cancel", HTMLButtonElement).onclick = () => renameDialog.close()
+get("rename-form", HTMLFormElement).onsubmit = (event) => {
+  event.preventDefault()
+  run(async () => {
+    const label = get("rename-title", HTMLInputElement).value.trim()
+    if (!label) return
+    renameDialog.close()
+    if (await perform("session.rename", { title: label }, renameScope)) {
+      if (renameScope) updateTitle(renameScope.sessionID, label)
+      report("会话名称已更新。")
+    }
+  })
+}
+interrupt.onclick = () =>
+  run(async () => {
+    const partition = scope
+    const executionID = observedExecutionID
+    if (!executionID || interrupt.disabled) return
+    interrupt.disabled = true
+    if (await perform("session.interrupt", { executionID }, partition)) report("已请求停止当前任务。")
+  })
 get("logout", HTMLButtonElement).onclick = () =>
   run(async () => {
     disconnect()

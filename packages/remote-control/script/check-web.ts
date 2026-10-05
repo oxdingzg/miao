@@ -39,6 +39,11 @@ let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
 let approveTimer: ReturnType<typeof setInterval> | undefined
 let approvals = Promise.resolve()
 let prompted = 0
+let permissionReplied = false
+let questionReplied = false
+let interrupted = false
+let sessionTitle = "Remote workspace"
+let stage = "setup"
 try {
   const login = await request("/api/auth/sign-in/email", {
     email: "web@example.invalid",
@@ -63,12 +68,12 @@ try {
   }[] = [
     {
       type: "session.next.prompted",
-      data: { sessionID: "session_fixture", prompt: { text: "请整理今天的变更。" } },
+      data: { sessionID: "ses_fixture", prompt: { text: "请整理今天的变更。" } },
       durable: { seq: 1 },
     },
     {
       type: "session.next.text.ended",
-      data: { sessionID: "session_fixture", text: "已整理变更，等待你的下一步。" },
+      data: { sessionID: "ses_fixture", text: "已整理变更，等待你的下一步。" },
       durable: { seq: 2 },
     },
   ]
@@ -82,7 +87,7 @@ try {
     projectForSession: async () => "project_fixture",
     methods: {
       "session.list": async () => ({
-        data: [{ id: "session_fixture", title: "Remote workspace", projectID: "project_fixture" }],
+        data: [{ id: "ses_fixture", title: sessionTitle, projectID: "project_fixture" }],
         cursor: { next: null },
       }),
       "session.events": async (request) => {
@@ -108,15 +113,93 @@ try {
         prompted++
         events.push({
           type: "session.next.prompted",
-          data: { sessionID: "session_fixture", prompt: { text: request.payload.text } },
+          data: { sessionID: "ses_fixture", prompt: { text: request.payload.text } },
           durable: { seq: events.length + 1 },
         })
         return {
           status: "accepted",
           messageID: "message_fixture",
-          sessionID: "session_fixture",
+          sessionID: "ses_fixture",
           admittedSeq: events.length,
         }
+      },
+      "session.pending": async () => ({
+        permissions: permissionReplied
+          ? []
+          : [{ id: "per_fixture", sessionID: "ses_fixture", action: "修改文件", resources: ["src/**"] }],
+        questions: questionReplied
+          ? []
+          : [
+              {
+                id: "que_fixture",
+                sessionID: "ses_fixture",
+                questions: [
+                  {
+                    header: "入口",
+                    question: "选择接入入口",
+                    options: [
+                      { label: "使用网页", description: "浏览器操作" },
+                      { label: "使用终端", description: "电脑操作" },
+                    ],
+                  },
+                  {
+                    header: "设备",
+                    question: "选择设备",
+                    multiSelect: true,
+                    custom: false,
+                    options: [
+                      { label: "iPhone", description: "手机" },
+                      { label: "iPad", description: "平板" },
+                    ],
+                  },
+                ],
+              },
+            ],
+        execution: interrupted ? { type: "idle" } : { type: "running", executionID: "execution_fixture" },
+      }),
+      "permission.reply": async (request) => {
+        if (
+          typeof request.payload !== "object" ||
+          !request.payload ||
+          !("reply" in request.payload) ||
+          request.payload.reply !== "once"
+        )
+          throw new Error("Wrong permission choice")
+        permissionReplied = true
+        return { status: "completed" }
+      },
+      "question.reply": async (request) => {
+        if (
+          typeof request.payload !== "object" ||
+          !request.payload ||
+          !("answers" in request.payload) ||
+          JSON.stringify(request.payload.answers) !== JSON.stringify([["使用网页"], ["iPhone", "iPad"]])
+        )
+          throw new Error("Wrong question answers")
+        questionReplied = true
+        return { status: "completed" }
+      },
+      "session.rename": async (request) => {
+        if (
+          typeof request.payload !== "object" ||
+          !request.payload ||
+          !("title" in request.payload) ||
+          typeof request.payload.title !== "string"
+        )
+          throw new Error("Invalid rename")
+        sessionTitle = request.payload.title
+        return { status: "completed" }
+      },
+      "session.interrupt": async (request) => {
+        if (
+          typeof request.payload !== "object" ||
+          !request.payload ||
+          !("executionID" in request.payload) ||
+          request.payload.executionID !== "execution_fixture"
+        )
+          throw new Error("Interrupt was not fenced")
+        interrupted = true
+        return { status: "completed" }
       },
       "operation.get": async () => ({ status: "accepted", result: {} }),
     },
@@ -125,7 +208,7 @@ try {
   while (!agent.connected() && Date.now() < deadline) await Bun.sleep(20)
   if (!agent.connected()) throw new Error("Agent did not connect")
   const invitation = pairing.issue({
-    permissions: ["read", "prompt"],
+    permissions: ["read", "prompt", "session.rename", "interrupt", "permission.reply", "question.reply"],
     projectIDs: ["project_fixture"],
     sessionIDs: [],
     expiresAt: Date.now() + 120000,
@@ -141,18 +224,47 @@ try {
   const page = await context.newPage()
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.name))
+  stage = "login"
   await page.goto(origin)
   await page.getByLabel("邮箱").fill("web@example.invalid")
   await page.getByLabel("密码").fill("web-ui-fixture-password-0001")
   await page.getByRole("button", { name: "登录 →" }).click()
   await page.getByRole("button", { name: "Studio computer" }).waitFor()
+  stage = "pairing"
   await page.getByText("配对新设备", { exact: true }).click()
   await page.getByLabel("配对邀请", { exact: true }).fill(JSON.stringify(invitation))
   await page.getByRole("button", { name: "请求配对" }).click()
   await page.getByText("设备已授权。选择电脑继续。", { exact: true }).waitFor()
   await page.getByRole("button", { name: "Studio computer" }).click()
+  stage = "history"
   await page.getByRole("button", { name: "Remote workspace", exact: true }).click()
   await page.getByText("已整理变更，等待你的下一步。", { exact: false }).waitFor()
+  stage = "permission"
+  await page.getByLabel("使用网页 · 浏览器操作", { exact: true }).check()
+  await page.getByLabel("iPhone · 手机", { exact: true }).check()
+  await page.getByRole("button", { name: "允许这一次", exact: true }).click()
+  await page.getByRole("button", { name: "允许这一次", exact: true }).waitFor({ state: "hidden" })
+  if (
+    !(await page.getByLabel("使用网页 · 浏览器操作", { exact: true }).isChecked()) ||
+    !(await page.getByLabel("iPhone · 手机", { exact: true }).isChecked())
+  )
+    throw new Error("Decision refresh discarded question choices")
+  stage = "question"
+  await page.getByLabel("使用网页 · 浏览器操作", { exact: true }).check()
+  await page.getByLabel("iPhone · 手机", { exact: true }).check()
+  await page.getByLabel("iPad · 平板", { exact: true }).check()
+  await page.getByRole("button", { name: "提交回答", exact: true }).click()
+  stage = "interrupt"
+  await page.getByRole("button", { name: "停止任务", exact: true }).click()
+  await page.getByText("已请求停止当前任务。", { exact: true }).waitFor()
+  stage = "rename"
+  await page.getByRole("button", { name: "重命名", exact: true }).click()
+  await page.getByLabel("新名称", { exact: true }).fill("Renamed browser workspace")
+  await page.getByRole("button", { name: "保存名称", exact: true }).click()
+  await page.getByText("会话名称已更新。", { exact: true }).waitFor()
+  if (!permissionReplied || !questionReplied || !interrupted || sessionTitle !== "Renamed browser workspace")
+    throw new Error("Session actions failed")
+  stage = "prompt"
   await page.getByLabel("发送到会话").fill("继续检查远程功能。")
   await page.getByRole("button", { name: "发送 ↑" }).click()
   await page.getByText("输入已接收。", { exact: true }).waitFor()
@@ -160,20 +272,31 @@ try {
     throw new Error("Prompt admission UI failed")
   await page.getByLabel("发送到会话").fill("尚未发送的草稿")
   await page.waitForTimeout(200)
+  stage = "recovery"
   await page.reload()
   await page.getByRole("button", { name: "Studio computer" }).click()
-  await page.getByRole("button", { name: "Remote workspace", exact: true }).click()
+  await page.getByRole("button", { name: "Renamed browser workspace", exact: true }).click()
   await page.waitForFunction(() => (document.getElementById("draft") as HTMLTextAreaElement).value === "尚未发送的草稿")
   if (prompted !== 1) throw new Error("Reconnect replayed a prompt")
   if (process.env.MIAO_WEB_SCREENSHOT) await page.screenshot({ path: process.env.MIAO_WEB_SCREENSHOT, fullPage: true })
+  stage = "logout"
   await page.getByRole("button", { name: "退出账号", exact: true }).click()
   await page.getByRole("button", { name: "登录 →" }).waitFor()
   if ((await page.locator("#timeline").textContent()) !== "" || errors.length)
     throw new Error("Logout or browser execution failed")
   console.log(
-    "Web UI: real Hub/Agent login, pairing, sessions, scoped encrypted prompt, draft restoration and no replay passed",
+    "Web UI: real Hub/Agent login, pairing, rename, fenced interrupt, permission/question choices, preserved form state, prompt and draft recovery passed",
   )
-} catch {
+} catch (error) {
+  console.error(
+    JSON.stringify({
+      stage,
+      errorName: error instanceof Error ? error.name : "unknown",
+      permissionReplied,
+      questionReplied,
+      interrupted,
+    }),
+  )
   throw new Error("Web interface verification failed")
 } finally {
   if (approveTimer) clearInterval(approveTimer)

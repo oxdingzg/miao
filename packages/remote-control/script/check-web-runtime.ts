@@ -160,7 +160,7 @@ try {
   await request("/api/session", { id: sessionID, location: { directory: project } })
   await request(`/api/session/${sessionID}/rename`, { title: "Live Runtime workspace" })
   const invitation = await request("/api/runtime/control/invitation", {
-    permissions: ["read", "prompt"],
+    permissions: ["read", "prompt", "session.rename"],
     sessionIDs: [sessionID],
     projectIDs: [],
     expiresAt: Date.now() + 600000,
@@ -208,11 +208,19 @@ try {
   await page.locator("#timeline").getByText("持久化网页输入", { exact: false }).waitFor()
   await page.getByLabel("发送到会话").fill("真实 Runtime 草稿")
   await page.waitForTimeout(200)
+  stage = "rename"
+  await page.getByRole("button", { name: "重命名", exact: true }).click()
+  await page.getByLabel("新名称", { exact: true }).fill("Renamed Runtime workspace")
+  await page.getByRole("button", { name: "保存名称", exact: true }).click()
+  await page.getByText("会话名称已更新。", { exact: true }).waitFor()
+  const renamed = await request(`/api/session/${sessionID}`)
+  if (!object(renamed) || !object(renamed.data) || renamed.data.title !== "Renamed Runtime workspace")
+    throw new Error("Runtime rename not persisted")
   const before = await request(`/api/session/${sessionID}/history?after=0&limit=100`)
   stage = "recovery"
   await page.reload()
   await page.getByRole("button", { name: "Runtime computer" }).click()
-  await page.getByRole("button", { name: "Live Runtime workspace", exact: true }).click()
+  await page.getByRole("button", { name: "Renamed Runtime workspace", exact: true }).click()
   await page.waitForFunction(
     () => (document.getElementById("draft") as HTMLTextAreaElement).value === "真实 Runtime 草稿",
   )
@@ -222,7 +230,9 @@ try {
       ? value.data.filter((event: unknown) => object(event) && event.type === "session.next.prompt.admitted").length
       : -1
   if (admissions(before) !== 1 || admissions(after) !== 1) throw new Error("Runtime admission was missing or replayed")
-  console.log("Web real Runtime: account pairing, durable input/history, restored draft and no admission replay passed")
+  console.log(
+    "Web real Runtime: account pairing, durable rename/input/history, restored draft and no admission replay passed",
+  )
 } catch {
   throw new Error("Web Runtime verification failed at " + stage)
 } finally {

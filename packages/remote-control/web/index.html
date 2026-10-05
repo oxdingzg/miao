@@ -47,8 +47,13 @@
             <h2 id="session-title">选择一个会话</h2>
           </div>
           <span id="connection" class="badge">未连接</span>
+          <div class="session-actions">
+            <button id="rename" class="quiet" disabled>重命名</button>
+            <button id="interrupt" class="quiet" disabled>停止任务</button>
+          </div>
         </header>
         <div id="notice" role="status" aria-live="polite"></div>
+        <section id="pending" aria-label="等待你的决定"></section>
         <div id="timeline" aria-label="会话记录">
           <div class="welcome">
             <span class="orbit">✳</span>
@@ -69,5 +74,13 @@
         <footer>miao remote · 你的电脑负责执行</footer>
       </main>
     </div>
+    <dialog id="rename-dialog">
+      <form id="rename-form">
+        <h2>重命名会话</h2>
+        <label>新名称<input id="rename-title" maxlength="256" required /></label>
+        <button type="button" id="rename-cancel" class="quiet">取消</button>
+        <button type="submit">保存名称</button>
+      </form>
+    </dialog>
   </body>
 </html>
