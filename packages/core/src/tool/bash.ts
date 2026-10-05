@@ -11,6 +11,7 @@ import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { AppProcess } from "../process"
+import { BackgroundJob } from "../background-job"
 import { PermissionV2 } from "../permission"
 import { Sandbox } from "../sandbox"
 import { ShellApproval } from "../shell/approval"
@@ -50,6 +51,10 @@ export const Input = Schema.Struct({
     description:
       "Text written verbatim to the command's standard input, never parsed by the shell. Use it to hand a script to another interpreter instead of nesting quotes or heredocs, for example `ssh host 'bash -s'`, `docker exec -i <container> sh`, `kubectl exec -i <pod> -- sh`, `python3 -`, or `psql`. At most 1 MiB. Omit it and standard input is closed.",
   }),
+  run_in_background: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Run the command as a managed background job and return immediately with its id instead of waiting. Observe it with job_list, job_wait, and job_cancel.",
+  }),
 })
 
 const SandboxInfo = Schema.Struct({
@@ -68,6 +73,7 @@ export const StructuredOutput = Schema.Struct({
   truncated: Schema.Boolean,
   timeout: Schema.Boolean.pipe(Schema.optional),
   sandbox: SandboxInfo.pipe(Schema.optional),
+  jobID: Schema.String.pipe(Schema.optional),
 })
 
 const Output = Schema.Struct({
@@ -614,46 +620,73 @@ const layer = Layer.effectDiscard(
                 })
               const invalid = yield* syntaxError(shell, input.command, options)
               if (invalid !== undefined) return yield* new ToolFailure({ message: syntaxErrorMessage(shell, invalid) })
-              const outcome: Outcome =
-                status.enabled && status.available
-                  ? yield* confined({
-                      command: input.command,
-                      stdin: input.stdin,
-                      shell,
-                      cwd: target.canonical,
-                      timeout,
-                      network: status.network,
-                      options,
-                      request: { sessionID: context.sessionID, agent: context.agent, source },
-                    })
-                  : {
-                      result: yield* exec(shellCommand(shell, input.command, options), timeout, input.stdin),
-                      warnings: status.enabled ? [UNAVAILABLE_WARNING] : [],
-                    }
-              const allWarnings = [...warnings, ...outcome.warnings]
-              const extra = {
-                ...(allWarnings.length ? { warnings: allWarnings } : {}),
-                ...(outcome.sandbox ? { sandbox: outcome.sandbox } : {}),
-              }
-              if (!outcome.result) {
+              // Everything above is permission, syntax, and sandbox setup and
+              // runs before a background job starts; only the command itself is
+              // deferred, so a background command keeps the same authorization
+              // and confinement as a foreground one.
+              const run = Effect.gen(function* () {
+                const outcome: Outcome =
+                  status.enabled && status.available
+                    ? yield* confined({
+                        command: input.command,
+                        stdin: input.stdin,
+                        shell,
+                        cwd: target.canonical,
+                        timeout,
+                        network: status.network,
+                        options,
+                        request: { sessionID: context.sessionID, agent: context.agent, source },
+                      })
+                    : {
+                        result: yield* exec(shellCommand(shell, input.command, options), timeout, input.stdin),
+                        warnings: status.enabled ? [UNAVAILABLE_WARNING] : [],
+                      }
+                const allWarnings = [...warnings, ...outcome.warnings]
+                const extra = {
+                  ...(allWarnings.length ? { warnings: allWarnings } : {}),
+                  ...(outcome.sandbox ? { sandbox: outcome.sandbox } : {}),
+                }
+                if (!outcome.result) {
+                  return {
+                    output: `Command exceeded timeout of ${timeout} ms. Retry with a larger timeout if the command is expected to take longer.`,
+                    truncated: false,
+                    timeout: true,
+                    ...extra,
+                  }
+                }
+
+                const output =
+                  (outcome.result.output ? AppProcess.decodeOutput(outcome.result.output) : "") || "(no output)"
+                const notice = outcome.result.outputTruncated
+                  ? "[output capture truncated at the in-memory safety limit]"
+                  : undefined
                 return {
-                  output: `Command exceeded timeout of ${timeout} ms. Retry with a larger timeout if the command is expected to take longer.`,
-                  truncated: false,
-                  timeout: true,
+                  exit: outcome.result.exitCode,
+                  output: notice ? `${output}\n\n${notice}` : output,
+                  truncated: outcome.result.outputTruncated === true,
                   ...extra,
                 }
+              })
+              if (input.run_in_background === true) {
+                const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
+                if (Option.isNone(jobs))
+                  return yield* new ToolFailure({ message: "Background jobs are not available in this runtime." })
+                const job = yield* jobs.value.start({
+                  type: "bash",
+                  title: input.command,
+                  metadata: { sessionID: context.sessionID },
+                  run: run.pipe(
+                    Effect.map((result) => modelOutput(result)),
+                    Effect.catchCause((cause) => Effect.succeed(`Background command failed: ${cause}`)),
+                  ),
+                })
+                return {
+                  output: `Command started in the background as job ${job.id}.`,
+                  truncated: false,
+                  jobID: job.id,
+                }
               }
-
-              const output = (outcome.result.output ? AppProcess.decodeOutput(outcome.result.output) : "") || "(no output)"
-              const notice = outcome.result.outputTruncated
-                ? "[output capture truncated at the in-memory safety limit]"
-                : undefined
-              return {
-                exit: outcome.result.exitCode,
-                output: notice ? `${output}\n\n${notice}` : output,
-                truncated: outcome.result.outputTruncated === true,
-                ...extra,
-              }
+              return yield* run
             }).pipe(
               Effect.mapError((error) =>
                 error instanceof ToolFailure

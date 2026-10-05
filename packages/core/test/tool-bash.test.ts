@@ -13,6 +13,7 @@ import { Location } from "@miao/core/location"
 import { LocationMutation } from "@miao/core/location-mutation"
 import { PermissionV2 } from "@miao/core/permission"
 import { AppProcess } from "@miao/core/process"
+import { BackgroundJob } from "@miao/core/background-job"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { ShellEnvironment } from "@miao/core/shell/environment"
@@ -159,7 +160,7 @@ const withTool = <A, E, R>(
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(
-        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node]),
+        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node, BackgroundJob.node]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
@@ -183,6 +184,30 @@ const it = testEffect(Layer.empty)
 const liveIf = (condition: boolean) => (condition ? it.live : it.live.skip)
 
 describe("BashTool", () => {
+  it.live("starts a bash command as a background job owned by the session", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            yield* settleTool(registry, call({ command: "echo hi", run_in_background: true }, "call-background"))
+            const jobs = yield* BackgroundJob.Service
+            const listed = yield* jobs.list()
+            expect(listed).toHaveLength(1)
+            const job = listed[0]!
+            expect(job.type).toBe("bash")
+            expect(job.metadata?.sessionID).toBe(sessionID)
+            const settled = yield* jobs.wait({ id: job.id, timeout: 5_000 })
+            expect(settled.timedOut).toBe(false)
+            expect(settled.info?.status).toBe("completed")
+            expect(settled.info?.output).toContain("Command exited with code 0")
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
   it.live("registers and returns structured successful output from the active Location", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

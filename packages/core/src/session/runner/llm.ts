@@ -33,6 +33,8 @@ import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
 import { GoalTool } from "../../tool/goal"
+import { BackgroundJob } from "../../background-job"
+import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
 import { ToolOutputStore } from "../../tool-output-store"
@@ -1117,9 +1119,35 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           const drainSession = yield* store.get(input.sessionID)
           const drainAgent = drainSession ? yield* agents.select(drainSession.agent) : undefined
+          // Model-facing observation/control for background jobs owned by this
+          // session, when the process provides the registry. It does not launch
+          // jobs; a sandbox/parity launcher and durable restart recovery need a
+          // separate slice.
+          const jobsOption = yield* Effect.serviceOption(BackgroundJob.Service)
+          const jobTools = Option.isSome(jobsOption)
+            ? BackgroundJobTool.make({
+                list: () =>
+                  jobsOption.value
+                    .list()
+                    .pipe(Effect.map((jobs) => jobs.filter((job) => job.metadata?.sessionID === input.sessionID))),
+                wait: (id, timeoutMs) =>
+                  Effect.gen(function* () {
+                    const job = yield* jobsOption.value.get(id)
+                    if (!job || job.metadata?.sessionID !== input.sessionID) return { timedOut: false as const }
+                    return yield* jobsOption.value.wait({ id, timeout: timeoutMs })
+                  }),
+                cancel: (id) =>
+                  Effect.gen(function* () {
+                    const job = yield* jobsOption.value.get(id)
+                    if (!job || job.metadata?.sessionID !== input.sessionID) return undefined
+                    return yield* jobsOption.value.cancel(id)
+                  }),
+              })
+            : {}
           if (drainAgent?.info !== undefined)
             yield* tools
               .registerSession(input.sessionID, {
+                ...jobTools,
                 task: TaskTool.make((request) =>
                   runSubagent(input.sessionID, request).pipe(
                     Effect.mapError((error) =>
