@@ -11,7 +11,7 @@ import { Integration } from "./integration"
 import { LegacyEvent } from "./legacy-event"
 import { LspEvent } from "./lsp-event"
 import { McpEvent } from "./mcp-event"
-import { ModelsDev } from "./models-dev"
+import { ModelsCatalog } from "./models-catalog"
 import { Permission } from "./permission"
 import { PermissionV1 } from "./permission-v1"
 import { Plugin } from "./plugin"
@@ -38,7 +38,7 @@ const sessionV1LiveDefinitions = SessionV1.Event.Definitions.filter((definition)
 const coreDefinitions = Event.inventory(...sessionV1DurableDefinitions, ...SessionEvent.Definitions)
 
 const foundationDefinitions = Event.inventory(
-  ...ModelsDev.Event.Definitions,
+  ...ModelsCatalog.Event.Definitions,
   ...Integration.Event.Definitions,
   ...Catalog.Event.Definitions,
   ...coreDefinitions,

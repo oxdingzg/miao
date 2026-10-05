@@ -49,3 +49,47 @@ as recent as registration. A delayed response cannot erase a replacement token
 or a renewed registration of the same token. Device revocation is account scoped.
 Runtime subscription approval remains a separate authority check: storing a
 push token alone must never subscribe a device to a host or session.
+
+## Hub registration API
+
+Enable `pushRegistrations: true` in private account-mode Hub configuration and
+run the explicit migration before serving the upgraded database. The authenticated
+version endpoint then advertises `push-registration`. Disabled instances expose
+no registration routes and do not require the push schema.
+
+`POST /api/hub/push/register` accepts `{deviceID, token, environment}` and returns
+`{registeredAt, registrationID}`. `POST /api/hub/push/revoke` accepts `{deviceID}`
+and idempotently revokes that account's device registration. Both require a live
+Hub access bearer, accept at most 4 KiB of JSON within five seconds, reject
+foreign browser origins and return `Cache-Control: no-store`. Successful account
+sign-out prunes registrations whose login was deleted; registrations belonging
+to other still-active logins remain usable.
+
+This capability advertises registration storage only. It does not indicate that
+Apple delivery credentials are configured or that Runtime subscriptions have
+been approved. Those checks precede actual notification dispatch.
+
+## Dispatch lifecycle
+
+`PushDispatch` admits bounded ephemeral notices, selects a current registration
+in the configured APNs environment, and sends only the generic alert and signal
+ID. The separately stored context is opaque ciphertext intended for that device;
+it never enters the Apple payload. The routing caller supplies the current
+Runtime/grant authorization check. Transport invokes that check again after JWT
+creation and immediately before HTTP/2 submission, together with registration
+and dispatch-generation checks. Revocation can cancel an admitted request that
+has not yet reached transport submission.
+
+The dispatcher deduplicates admitted signal IDs, preserves uncertain outcomes
+without replay, limits concurrent dispatches to 16, and retains at most 1024
+notices for ten minutes. Context lookup requires the matching account and device,
+a live login-bound registration, and still-current Runtime/grant authorization.
+Renewing a token on foreground return preserves lookup of an already accepted
+notice within that login; ending the login blocks it.
+Revocation and shutdown discard contexts. An APNs unregistered response removes
+only the registration used by that attempt. Delivery already accepted by Apple
+cannot be recalled by these admission checks.
+
+This module does not itself attest Runtime grants, produce the encrypted context,
+or expose HTTP routes. The host-authenticated integration must supply those
+checks and native context resolution before notification navigation is usable.

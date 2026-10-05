@@ -4,6 +4,7 @@ import { HubAuth } from "./hub-auth"
 import { HubDirectory } from "./hub-directory"
 import { ControlHub } from "./hub"
 import { HubTickets } from "./hub-tickets"
+import { PushRegistry } from "./push-registry"
 import { Option, Schema } from "effect"
 import path from "node:path"
 
@@ -13,11 +14,21 @@ export type Options = HubAuth.Options & {
   port?: number
   maxClientsPerAccount?: number
   webDirectory?: string
+  pushRegistrations?: boolean
 }
 const Registration = Schema.Struct({ hostID: Schema.String, name: Schema.String, publicKey: Schema.String })
 const decodeRegistration = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Registration)))
 const TicketRequest = Schema.Struct({ hostID: Schema.String, runtimeID: Schema.String })
 const decodeTicket = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(TicketRequest)))
+const PushRegistration = Schema.Struct({
+  deviceID: Schema.String,
+  token: Schema.String,
+  environment: Schema.Literals(["sandbox", "production"]),
+})
+const decodePush = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(PushRegistration)))
+const decodePushRevocation = Schema.decodeUnknownOption(
+  Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Schema.Struct({ deviceID: Schema.String }))),
+)
 
 /** Authenticated directory/control plane and opaque relay share one origin and listener. */
 export async function listen(options: Options) {
@@ -36,6 +47,8 @@ export async function listen(options: Options) {
   if (options.migrate) HubDirectory.migrate(options.database)
   const directory = HubDirectory.open(options.database)
   const identity = await HubAuth.create({ ...options, migrate: options.migrate === true })
+  if (options.pushRegistrations && options.migrate) PushRegistry.migrate(options.database)
+  const push = options.pushRegistrations ? PushRegistry.open(options.database) : undefined
   if (
     options.bootstrap &&
     options.database.query<{ count: number }, []>('SELECT count(*) AS count FROM "user"').get()!.count === 0
@@ -85,6 +98,7 @@ export async function listen(options: Options) {
           headers.delete("x-miao-peer-ip")
           if (peerIP) headers.set("x-miao-peer-ip", peerIP)
           const response = await identity.auth.handler(new Request(request, { headers }))
+          if (url.pathname === "/api/auth/sign-out" && response.ok) push?.prune()
           response.headers.set("cache-control", "no-store")
           return response
         }
@@ -92,9 +106,39 @@ export async function listen(options: Options) {
         if (!authenticated || !identity.active(authenticated)) return error("unauthorized", 401)
         if (url.pathname === "/api/hub/version" && request.method === "GET")
           return Response.json(
-            { protocol: 1, capabilities: ["directory", "account-auth", "opaque-relay", "browser-tickets"] },
+            {
+              protocol: 1,
+              capabilities: [
+                "directory",
+                "account-auth",
+                "opaque-relay",
+                "browser-tickets",
+                ...(push ? ["push-registration"] : []),
+              ],
+            },
             noStore,
           )
+        if (push && url.pathname === "/api/hub/push/register" && request.method === "POST") {
+          const text = await boundedPushBody(request)
+          if (text === undefined) return error("invalid_push_registration", 400)
+          const body = decodePush(text)
+          if (Option.isNone(body)) return error("invalid_push_registration", 400)
+          if (!identity.active(authenticated)) return error("unauthorized", 401)
+          push.prune()
+          const registered = await push
+            .register(authenticated, body.value, () => identity.active(authenticated))
+            .catch(() => undefined)
+          return registered ? Response.json(registered, noStore) : error("push_registration_rejected", 409)
+        }
+        if (push && url.pathname === "/api/hub/push/revoke" && request.method === "POST") {
+          const text = await boundedPushBody(request)
+          if (text === undefined) return error("invalid_push_registration", 400)
+          const body = decodePushRevocation(text)
+          if (Option.isNone(body)) return error("invalid_push_registration", 400)
+          if (!identity.active(authenticated)) return error("unauthorized", 401)
+          push.revoke(authenticated, body.value.deviceID)
+          return Response.json({ revoked: true }, noStore)
+        }
         if (url.pathname === "/api/hub/tickets" && request.method === "POST") {
           const body = decodeTicket(await request.text())
           if (Option.isNone(body)) return error("invalid_ticket_request", 400)
@@ -204,4 +248,34 @@ export async function listen(options: Options) {
 const noStore = { headers: { "cache-control": "no-store" } }
 function error(code: string, status: number) {
   return Response.json({ code }, { ...noStore, status })
+}
+
+async function boundedPushBody(request: Request) {
+  const reader = request.body?.getReader()
+  if (!reader) return undefined
+  const chunks: Uint8Array[] = []
+  const size = { value: 0, expired: false }
+  const timer = setTimeout(() => {
+    size.expired = true
+    void reader.cancel().catch(() => undefined)
+  }, 5000)
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      size.value += chunk.value.byteLength
+      if (size.value > 4096) {
+        await reader.cancel()
+        return undefined
+      }
+      chunks.push(chunk.value)
+    }
+    if (size.expired) return undefined
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+    reader.releaseLock()
+  }
 }

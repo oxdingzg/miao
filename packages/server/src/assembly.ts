@@ -17,7 +17,7 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { httpClient } from "@miao/core/effect/app-node-platform"
 import { EventV2 } from "@miao/core/event"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { Npm } from "@miao/core/npm"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { ProjectV2 } from "@miao/core/project"
@@ -104,7 +104,7 @@ const app = LayerNode.group([
   // the cwd-based GitCli service above.
   Git.node,
   Ripgrep.node,
-  ModelsDev.node,
+  ModelsCatalog.node,
   PermissionSaved.node,
   SessionProjector.node,
   McpAuth.node,
@@ -151,7 +151,7 @@ export function createRoutes(
     ),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,
     // so Observability must come after every service graph. Otherwise eagerly forked
-    // fibers (e.g. the ModelsDev background refresh) capture Effect's default stdout
+    // fibers (e.g. the ModelsCatalog background refresh) capture Effect's default stdout
     // logger and corrupt the TUI (#34730).
     Layer.provideMerge(Observability.layer),
   ) as Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements>

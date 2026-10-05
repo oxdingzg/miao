@@ -9,8 +9,8 @@ import { EventV2 } from "@miao/core/event"
 import { Flag } from "@miao/core/flag/flag"
 import { Location } from "@miao/core/location"
 import { ModelV2 } from "@miao/core/model"
-import { ModelsDev } from "@miao/core/models-dev"
-import { ModelsDevPlugin } from "@miao/core/plugin/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
+import { ModelsCatalogPlugin } from "@miao/core/plugin/models-catalog"
 import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { location } from "../fixture/location"
@@ -26,12 +26,12 @@ const layer = AppNodeBuilder.build(LayerNode.group([Catalog.node, Integration.no
 ])
 const it = testEffect(layer)
 
-describe("ModelsDevPlugin", () => {
+describe("ModelsCatalogPlugin", () => {
   it.effect("projects models.dev modes as separate models instead of variants", () =>
     Effect.gen(function* () {
       const integrations = yield* Integration.Service
       const catalog = yield* Catalog.Service
-      const models = ModelsDev.Service.of({
+      const models = ModelsCatalog.Service.of({
         get: () =>
           Effect.succeed({
             acme: {
@@ -78,16 +78,16 @@ describe("ModelsDevPlugin", () => {
                 },
               },
             },
-          } satisfies Record<string, ModelsDev.Provider>),
+          } satisfies Record<string, ModelsCatalog.Provider>),
         refresh: () => Effect.void,
       })
 
-      yield* ModelsDevPlugin.effect(
+      yield* ModelsCatalogPlugin.effect(
         host({
           catalog: catalogHost(catalog),
           integration: integrationHost(integrations),
         }),
-      ).pipe(Effect.provideService(ModelsDev.Service, models))
+      ).pipe(Effect.provideService(ModelsCatalog.Service, models))
 
       const providerID = ProviderV2.ID.make("acme")
       const base = yield* catalog.model.get(providerID, ModelV2.ID.make("gpt-5.4"))
@@ -131,7 +131,7 @@ describe("ModelsDevPlugin", () => {
           path: Flag.MIAO_MODELS_PATH,
           disabled: Flag.MIAO_DISABLE_MODELS_FETCH,
         }
-        Flag.MIAO_MODELS_PATH = path.join(import.meta.dir, "fixtures", "models-dev.json")
+        Flag.MIAO_MODELS_PATH = path.join(import.meta.dir, "fixtures", "models.json")
         Flag.MIAO_DISABLE_MODELS_FETCH = true
         return previous
       }),
@@ -139,7 +139,7 @@ describe("ModelsDevPlugin", () => {
         Effect.gen(function* () {
           const integrations = yield* Integration.Service
           const catalog = yield* Catalog.Service
-          yield* ModelsDevPlugin.effect(
+          yield* ModelsCatalogPlugin.effect(
             host({
               catalog: catalogHost(catalog),
               integration: integrationHost(integrations),
@@ -159,7 +159,7 @@ describe("ModelsDevPlugin", () => {
               connections: [],
             }),
           ])
-        }).pipe(Effect.provide(AppNodeBuilder.build(ModelsDev.node))),
+        }).pipe(Effect.provide(AppNodeBuilder.build(ModelsCatalog.node))),
       (previous) =>
         Effect.sync(() => {
           Flag.MIAO_MODELS_PATH = previous.path
