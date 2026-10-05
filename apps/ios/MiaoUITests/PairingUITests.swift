@@ -95,7 +95,9 @@ final class PairingUITests: XCTestCase {
             selectionButton.tap()
         } else if selectionMenu.exists && selectionMenu.isHittable {
             print("Native rename selection action=menu")
-            selectionMenu.tap()
+            // iOS 17's editing menu can reject element tap synthesis even when
+            // its live snapshot is hittable. Send a touch at the menu item's center.
+            selectionMenu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         } else {
             print("Native rename selection action=caret")
             title.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
