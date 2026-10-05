@@ -9,6 +9,7 @@ import { Npm } from "@miao/core/npm"
 import { Hash } from "@miao/core/util/hash"
 import { Plugin } from "../plugin"
 import { TencentTokenPlan } from "@miao/core/tencent-token-plan"
+import { CommandCode } from "@miao/core/commandcode"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "@miao/core/models-dev"
@@ -250,6 +251,32 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           },
         },
       }),
+    commandcode: Effect.fnUntraced(function* (input: Info) {
+      // Prefer the documented Provider API shape. Dropping models is safer than
+      // seeding them: the Provider API needs a key with API access, and calling a
+      // model the plan does not cover fails at request time. Subscription-login
+      // traffic is served by the V2 catalog's own subscription route.
+      const auth = yield* dep.auth(input.id)
+      const apiKey = auth?.type === "api" ? auth.key : auth?.type === "oauth" ? auth.access : undefined
+      const baseURL = `${CommandCode.API}/provider/v1`
+      for (const [id, model] of Object.entries(input.models)) {
+        // Anthropic models only answer the Anthropic Messages route; the generic
+        // OpenAI-compatible base URL would get a 400. Drop them from V1 rather
+        // than route them wrong; V2 uses the subscription route for everything.
+        if (id.startsWith("claude-")) {
+          delete input.models[id]
+          continue
+        }
+        model.api = { ...model.api, npm: "@ai-sdk/openai-compatible", url: baseURL }
+      }
+      return {
+        autoload: Object.keys(input.models).length > 0,
+        options: {
+          baseURL,
+          ...(apiKey ? { apiKey } : {}),
+        },
+      }
+    }),
     opencode: Effect.fnUntraced(function* (input: Info) {
       const env = yield* dep.env()
       const hasKey = iife(() => {

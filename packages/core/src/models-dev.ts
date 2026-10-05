@@ -1,5 +1,5 @@
 import path from "path"
-import { Context, Duration, Effect, Layer, Option, Ref, Schedule, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Layer, Option, Ref, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ModelsDev } from "@miao/schema/models-dev"
 import { Global } from "./global"
@@ -11,6 +11,7 @@ import { InstallationChannel, InstallationVersion } from "./installation/version
 import { EventV2 } from "./event"
 import { makeGlobalNode } from "./effect/app-node"
 import { httpClient } from "./effect/app-node-platform"
+import { ModelsOverlay } from "./models-overlay"
 
 export const CatalogModelStatus = Schema.Literals(["alpha", "beta", "deprecated"])
 export type CatalogModelStatus = typeof CatalogModelStatus.Type
@@ -157,10 +158,18 @@ const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.MIAO_MODELS_URL || "https://models.dev"
+    // miao's own catalog is tried first, then the public models.dev catalog as
+    // a fallback, so a mtty.dev outage never leaves miao without models. Setting
+    // MIAO_MODELS_URL pins a single source.
+    const sources = Flag.MIAO_MODELS_URL
+      ? [Flag.MIAO_MODELS_URL]
+      : ["https://models.mtty.dev", "https://models.dev"]
+    const source = sources[0]!
     const filepath = path.join(
       Global.Path.cache,
-      source === "https://models.dev" ? "models-dev.json" : `models-${Hash.fast(source)}.json`,
+      Flag.MIAO_MODELS_URL === undefined || source === "https://models.dev"
+        ? "models-dev.json"
+        : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.hours(12)
     const lockKey = `models-dev:${filepath}`
@@ -178,12 +187,19 @@ const layer = Layer.effect(
     })
 
     const fetchApi = Effect.fn("ModelsDev.fetchApi")(function* () {
-      return yield* HttpClientRequest.get(`${source}/api.json`).pipe(
-        HttpClientRequest.setHeader("User-Agent", USER_AGENT),
-        http.execute,
-        Effect.flatMap((res) => res.text),
-        Effect.timeout("10 seconds"),
-      )
+      let failure: Cause.Cause<unknown> | undefined
+      for (const item of sources) {
+        const result = yield* HttpClientRequest.get(`${item}/api.json`).pipe(
+          HttpClientRequest.setHeader("User-Agent", USER_AGENT),
+          http.execute,
+          Effect.flatMap((res) => res.text),
+          Effect.timeout("10 seconds"),
+          Effect.exit,
+        )
+        if (Exit.isSuccess(result)) return result.value
+        failure = result.cause
+      }
+      return yield* Effect.failCause(failure ?? Cause.die(new Error("no models catalog source")))
     })
 
     const loadFromDisk = fs.readJson(Flag.MIAO_MODELS_PATH ?? filepath).pipe(
@@ -270,7 +286,10 @@ const layer = Layer.effect(
       Duration.infinity,
     )
 
-    const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
+    // MIAO_MODELS_PATH selects an exact catalog (tests, air-gapped users), so
+    // the self-maintained overlay does not apply there.
+    const get = (): Effect.Effect<Record<string, Provider>> =>
+      Flag.MIAO_MODELS_PATH === undefined ? cachedGet.pipe(Effect.map(ModelsOverlay.merge)) : cachedGet
 
     // Adopt a catalog another process wrote to disk. The disk file can still be
     // "fresh" (within the TTL) while its contents changed, so freshness alone

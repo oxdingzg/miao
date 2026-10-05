@@ -5,6 +5,7 @@ import { makeLocationNode } from "../../effect/app-node"
 import { type Model } from "@miao/llm"
 import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
 import * as BedrockConverse from "@miao/llm/protocols/bedrock-converse"
+import * as CommandCode from "@miao/llm/protocols/commandcode"
 import * as Gemini from "@miao/llm/protocols/gemini"
 import * as OpenAIChat from "@miao/llm/protocols/openai-chat"
 import * as OpenAICompatibleChat from "@miao/llm/protocols/openai-compatible-chat"
@@ -199,6 +200,9 @@ export const fromCatalogModel = (
     resolved.providerID === ProviderV2.ID.azure
       ? cloudKey(resolved, credential, ["AZURE_RESOURCE_NAME"], "AZURE_API_KEY")
       : apiKey(resolved, credential)
+  // Command Code's subscription login speaks the CLI's `/alpha/generate`
+  // endpoint, not an OpenAI/Anthropic-compatible API, so it has its own route.
+  if (resolved.providerID === ProviderV2.ID.make("commandcode")) return Effect.succeed(commandCode(resolved, credential))
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
@@ -300,6 +304,30 @@ const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
     ? GitHubCopilot.configure({ baseURL: base }).responses(model.api.id).route
     : OpenAIChat.route
   return withDefaults(model, route).with({ endpoint: { baseURL: base }, auth, headers }).model({ id: model.api.id })
+}
+
+/**
+ * The harness rejects requests that look like a proxy, so Command Code needs
+ * the same client-identifying headers the `command-code` CLI sends: a version,
+ * the environment, a project slug, and the taste-learning flag. Auth carries
+ * the subscription API key (from the OAuth login or `CMD_API_KEY`).
+ */
+const commandCode = (model: ModelV2.Info, credential?: Credential.Value) => {
+  const key = apiKey(model, credential)
+  const base = (process.cwd() || "").split(/[\\/]/).filter(Boolean).pop() ?? "miao"
+  const projectSlug = base.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40) || "miao"
+  return withDefaults(model, CommandCode.route)
+    .with({
+      auth: key === undefined ? Auth.none : Auth.bearer(key),
+      headers: {
+        "User-Agent": "cli",
+        "x-cli-environment": "production",
+        "x-command-code-version": CommandCode.CLI_VERSION,
+        "x-project-slug": projectSlug,
+        "x-taste-learning": "true",
+      },
+    })
+    .model({ id: model.id })
 }
 
 const AZURE_SETTINGS = ["resourceName", "apiVersion", "useCompletionUrls", "useDeploymentBasedUrls"]

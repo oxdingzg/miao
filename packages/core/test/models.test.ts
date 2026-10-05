@@ -72,6 +72,11 @@ const fixture2: Record<string, ModelsDev.Provider> = {
   },
 }
 
+import { ModelsOverlay } from "@miao/core/models-overlay"
+
+// The self-maintained overlay is part of every catalog the service returns.
+const withOverlay = <T extends Record<string, ModelsDev.Provider>>(catalog: T) => ModelsOverlay.merge(catalog)
+
 interface MockState {
   body: string
   status: number
@@ -138,20 +143,20 @@ describe("ModelsDev Service", () => {
         state,
         ModelsDev.Service.use((s) => s.get()),
       )
-      expect(result).toEqual(fixture)
+      expect(result).toEqual(withOverlay(fixture))
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
     }),
   )
 
-  it.live("get() returns empty catalog when disk empty, fetch disabled, and no bundled snapshot is injected", () =>
+  it.live("get() returns only the self-maintained catalog when disk is empty and fetch is disabled", () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(initialState)
       const result = yield* provided(
         state,
         ModelsDev.Service.use((s) => s.get()),
       )
-      expect(result).toEqual({})
+      expect(result).toEqual(withOverlay({}))
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
     }),
@@ -172,7 +177,7 @@ describe("ModelsDev Service", () => {
             Flag.MIAO_DISABLE_MODELS_FETCH = true
           }),
       )
-      expect(result).toEqual(fixture2)
+      expect(result).toEqual(withOverlay(fixture2))
       expect(yield* Effect.promise(() => readFile(cacheFile, "utf8"))).toBe(JSON.stringify(fixture2))
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
@@ -192,7 +197,7 @@ describe("ModelsDev Service", () => {
           })
         }),
       )
-      for (const result of results) expect(result).toEqual(fixture)
+      for (const result of results) expect(result).toEqual(withOverlay(fixture))
     }),
   )
 
@@ -211,8 +216,8 @@ describe("ModelsDev Service", () => {
           return { a, b }
         }),
       )
-      expect(first.a).toEqual(fixture)
-      expect(first.b).toEqual(fixture)
+      expect(first.a).toEqual(withOverlay(fixture))
+      expect(first.b).toEqual(withOverlay(fixture))
     }),
   )
 
@@ -230,8 +235,8 @@ describe("ModelsDev Service", () => {
           return { before, after }
         }),
       )
-      expect(result.before).toEqual(fixture)
-      expect(result.after).toEqual(fixture2)
+      expect(result.before).toEqual(withOverlay(fixture))
+      expect(result.after).toEqual(withOverlay(fixture2))
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
       expect(final.calls[0].url).toContain("/api.json")
@@ -271,8 +276,8 @@ describe("ModelsDev Service", () => {
           return { before, after }
         }),
       )
-      expect(result.before).toEqual(fixture)
-      expect(result.after).toEqual(fixture2)
+      expect(result.before).toEqual(withOverlay(fixture))
+      expect(result.after).toEqual(withOverlay(fixture2))
       // Adopting a local rewrite must not hit the network.
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
@@ -294,7 +299,7 @@ describe("ModelsDev Service", () => {
       )
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
-      expect(after).toEqual(fixture2)
+      expect(after).toEqual(withOverlay(fixture2))
     }),
   )
 
@@ -310,7 +315,7 @@ describe("ModelsDev Service", () => {
           return yield* svc.get()
         }),
       )
-      expect(result).toEqual(fixture)
+      expect(result).toEqual(withOverlay(fixture))
       // retryTransient retries 5xx, so calls may be > 1.
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBeGreaterThanOrEqual(1)
