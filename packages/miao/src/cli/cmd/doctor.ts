@@ -32,6 +32,15 @@ export const THRESHOLDS = {
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 const pct = (fraction: number) => `${(fraction * 100).toFixed(1)}%`
+/** Retained text and cell counts get large, so trends abbreviate like the sidebar. */
+const compact = (value: number) =>
+  value < 10_000
+    ? value.toLocaleString()
+    : value < 1_000_000
+      ? `${Math.round(value / 1000)}k`
+      : `${(value / 1_000_000).toFixed(1)}m`
+
+type RuntimeEntry = { name: string; value: unknown }
 
 interface Sample {
   type: "start" | "sample"
@@ -56,7 +65,37 @@ interface Sample {
   totalMem?: number
   dbFileBytes?: number | null
   dbWalBytes?: number | null
+  runtime?: RuntimeEntry[]
 }
+
+const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+
+/** Reads one named `DiagnosticMetrics` reader's numeric field out of a sample. */
+function metric(sample: Sample, name: string, read: (value: Record<string, unknown>) => number | undefined) {
+  const value = sample.runtime?.find((entry) => entry.name === name)?.value
+  if (typeof value !== "object" || value === null) return undefined
+  return read(value as Record<string, unknown>)
+}
+
+/** Total retained transcript text across resident sessions, from `tui.sync`. */
+function retainedTextUnits(sample: Sample) {
+  return metric(sample, "tui.sync", (value) => {
+    if (!Array.isArray(value.sessions)) return undefined
+    const total = (value.sessions as Record<string, unknown>[]).reduce(
+      (sum, session) => sum + (number(session.textUnits) ?? 0),
+      0,
+    )
+    return total
+  })
+}
+
+/** Rendered OpenTUI nodes, the direct driver of layout and paint cost. */
+const renderNodes = (sample: Sample) => metric(sample, "tui.sync", (value) => number(value.renderNodes))
+
+const renderFrames = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.frames))
+const renderFps = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.fps))
+const renderCellsPerFrame = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.cellsPerFrame))
+const renderFrameTimeMs = (sample: Sample) => metric(sample, "tui.render", (value) => number(value.frameTimeMs))
 
 /** A process killed mid-write leaves a partial final line; skip it, keep the rest. */
 function parse(line: string): Sample | undefined {
@@ -241,6 +280,11 @@ const SnapshotCommand = effectCmd({
         `  ${pid}\trss ${mb(last.rss ?? 0)}\theap ${mb(last.heapUsed ?? 0)}\tfds ${last.fds ?? "?"}\t` +
           `threads ${last.threads ?? "?"}\tup ${Math.round((last.uptime ?? 0) / 60)}m\t${samples.length} samples`,
       )
+      const nodes = renderNodes(last)
+      const text = retainedTextUnits(last)
+      if (nodes !== undefined || text !== undefined) {
+        console.log(`      ${nodes ?? "?"} render nodes\t${text === undefined ? "?" : compact(text)} retained chars`)
+      }
     }
     if (header?.version) console.log(`  sampled by miao ${header.version} (${header.channel})`)
 
@@ -314,6 +358,12 @@ const ReportCommand = cmd({
       db: trend(samples, (sample) => sample.dbFileBytes),
       swap: trend(samples, (sample) => sample.swapUsed),
       loopP99Ms: trend(samples, (sample) => sample.loopP99Ms),
+      renderNodes: trend(samples, renderNodes),
+      retainedText: trend(samples, retainedTextUnits),
+      renderFps: trend(samples, renderFps),
+      cellsPerFrame: trend(samples, renderCellsPerFrame),
+      renderFrames: trend(samples, renderFrames),
+      frameTimeMs: trend(samples, renderFrameTimeMs),
       findings: analyze(samples, pid),
     }))
 
@@ -326,7 +376,7 @@ const ReportCommand = cmd({
       console.log(`window: last ${args.since}`)
       for (const report of reports) {
         console.log(`\npid ${report.pid}${report.alive ? "" : " (exited)"} — ${report.samples} samples`)
-        const line = (label: string, value: string) => console.log(`  ${label.padEnd(12)}${value}`)
+        const line = (label: string, value: string) => console.log(`  ${label.padEnd(14)}${value}`)
         if (report.rss) {
           line(
             "rss",
@@ -339,6 +389,14 @@ const ReportCommand = cmd({
         if (report.db) line("database", `${mb(report.db.first)} → ${mb(report.db.last)}`)
         if (report.swap) line("swap used", `${mb(report.swap.first)} → ${mb(report.swap.last)}`)
         if (report.loopP99Ms) line("loop p99", `${report.loopP99Ms.last.toFixed(1)} ms`)
+        if (report.renderNodes) line("render nodes", `${report.renderNodes.first} → ${report.renderNodes.last}`)
+        if (report.retainedText) {
+          line("retained text", `${compact(report.retainedText.first)} → ${compact(report.retainedText.last)} chars`)
+        }
+        if (report.renderFrames) line("frames/sample", `${report.renderFrames.first} → ${report.renderFrames.last}`)
+        if (report.renderFps) line("render fps", report.renderFps.last.toFixed(1))
+        if (report.cellsPerFrame) line("cells/frame", `${Math.round(report.cellsPerFrame.last)}`)
+        if (report.frameTimeMs) line("frame time", `${report.frameTimeMs.last.toFixed(2)} ms`)
         for (const finding of report.findings) console.log(`  [${finding.severity}]  ${finding.message}`)
       }
     }

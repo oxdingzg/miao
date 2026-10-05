@@ -258,27 +258,38 @@ export const {
         hydration: { ...hydration },
         renderNodes: Renderable.renderablesByNumber.size,
         inFlight: syncingSessions.size,
-        sessions: Object.entries(store.message).map(([sessionID, messages]) => ({
-          sessionID,
-          messages: messages.length,
-          parts: messages.reduce((count, message) => count + (store.part[message.id]?.length ?? 0), 0),
-          textUnits: messages.reduce(
-            (count, message) =>
-              count +
-              (store.part[message.id] ?? []).reduce(
-                (sum, part) =>
-                  sum +
-                  (part.type === "text" || part.type === "reasoning"
-                    ? part.text.length
-                    : part.type === "tool" && part.state.status === "completed"
-                      ? part.state.output.length
-                      : 0),
-                0,
-              ),
-            0,
-          ),
-          olderMessages: olderHistory.get(sessionID)?.messages.length ?? 0,
-        })),
+        sessions: Object.entries(store.message).map(([sessionID, messages]) => {
+          // Split retained text by producer so a report can tell whether the
+          // footprint is reasoning, completed tool output, or visible prose.
+          let text = 0
+          let reasoning = 0
+          let tool = 0
+          let textUnits = 0
+          for (const message of messages) {
+            for (const part of store.part[message.id] ?? []) {
+              if (part.type === "text") {
+                text += 1
+                textUnits += part.text.length
+              } else if (part.type === "reasoning") {
+                reasoning += 1
+                textUnits += part.text.length
+              } else if (part.type === "tool" && part.state.status === "completed") {
+                tool += 1
+                textUnits += part.state.output.length
+              }
+            }
+          }
+          return {
+            sessionID,
+            messages: messages.length,
+            parts: text + reasoning + tool,
+            text,
+            reasoning,
+            tool,
+            textUnits,
+            olderMessages: olderHistory.get(sessionID)?.messages.length ?? 0,
+          }
+        }),
       })),
     )
     const touchMessage = (sessionID: string, messageID: string) => {

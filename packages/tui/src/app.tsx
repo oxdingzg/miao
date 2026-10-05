@@ -5,6 +5,7 @@ import { Deferred, Effect } from "effect"
 import { Global } from "@miao/core/global"
 import { Flag } from "@miao/core/flag/flag"
 import { InstallationVersion } from "@miao/core/installation/version"
+import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { ClipboardProvider, useClipboard } from "./context/clipboard"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
@@ -185,7 +186,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             createCliRenderer({
               externalOutputMode: "passthrough",
               targetFps: 30,
-              gatherStats: false,
+              gatherStats: true,
               exitOnCtrlC: false,
               useKittyKeyboard: {},
               autoFocus: false,
@@ -412,6 +413,33 @@ function App(props: {
     })
   })
   onCleanup(() => props.onSessionChange?.())
+
+  // Renderer frame stats, sampled by the monitor alongside `tui.sync`. `frames`
+  // is counted on the main thread between samples, so it measures real activity
+  // rather than the renderer's per-second `fps`. `cellsPerFrame` near the
+  // terminal's cell count means a full repaint; a few dozen means incremental.
+  let frames = 0
+  let sampledFrames = 0
+  const onFrame = () => {
+    frames += 1
+  }
+  renderer.on("frame", onFrame)
+  onCleanup(() => renderer.off("frame", onFrame))
+  onCleanup(
+    DiagnosticMetrics.register("tui.render", () => {
+      const stats = renderer.getStats()
+      const round = (value: number) => Math.round(value * 100) / 100
+      const delta = frames - sampledFrames
+      sampledFrames = frames
+      return {
+        frames: delta,
+        fps: round(stats.fps),
+        frameTimeMs: round(stats.averageFrameTime),
+        frameCallbackMs: round(stats.frameCallbackTime),
+        cellsPerFrame: stats.averageCellsUpdated,
+      }
+    }),
+  )
 
   const api = createTuiApi(
     createTuiApiAdapters({
