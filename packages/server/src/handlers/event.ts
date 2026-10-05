@@ -1,10 +1,11 @@
 import { EventV2 } from "@miao/core/event"
 import { OpenCodeEvent, type OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import { Effect, Option, Schema, Stream } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { Api } from "../api"
+import { inScope, subscriberScope } from "./event-scope"
 
 const subscriberCapacity = 256
 
@@ -27,6 +28,11 @@ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers)
     const events = yield* EventV2.Service
     return handlers.handleRaw("event.subscribe", () =>
       Effect.gen(function* () {
+        // Every runtime client receives the global event stream. Drop events
+        // that belong to a different location than the subscriber named, so a
+        // TUI opened in one project does not parse another project's events.
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const scope = subscriberScope({ url: request.url, headers: request.headers })
         const connected = {
           id: EventV2.ID.create(),
           type: "server.connected",
@@ -36,7 +42,9 @@ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers)
           Effect.gen(function* () {
             // Acquiring the bounded stream installs its listener before readiness is observable.
             const live = yield* EventV2.allBounded(events, subscriberCapacity)
-            return Stream.make(connected).pipe(Stream.concat(live))
+            return Stream.make(connected).pipe(
+              Stream.concat(live.pipe(Stream.filter((event) => inScope(event.location, scope)))),
+            )
           }),
         ).pipe(
           Stream.map((event) => encodeEvent(event)),
