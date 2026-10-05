@@ -163,7 +163,7 @@ const layer = Layer.effect(
     // MIAO_MODELS_URL pins a single source.
     const sources = Flag.MIAO_MODELS_URL
       ? [Flag.MIAO_MODELS_URL]
-      : ["https://models.mtty.dev", "https://models.dev"]
+      : ["https://mtty.dev/models", "https://models.dev"]
     const source = sources[0]!
     const filepath = path.join(
       Global.Path.cache,
