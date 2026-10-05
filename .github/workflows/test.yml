@@ -152,7 +152,9 @@ jobs:
 
       - name: Check browser Remote Control storage
         if: runner.os == 'Linux'
-        run: bun --cwd packages/remote-control check:browser
+        run: |
+          bun --cwd packages/remote-control check:browser
+          bun --cwd packages/remote-control check:web
         timeout-minutes: 3
 
       - name: Run app e2e tests

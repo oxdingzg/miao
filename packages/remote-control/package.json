@@ -11,7 +11,9 @@
     "test": "bun test",
     "check:browser": "bun script/check-browser.ts && bun script/check-browser-account.ts",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",
-    "hub": "bun src/hub-main.ts"
+    "hub": "bun src/hub-main.ts",
+    "build:web": "bun script/build-web.ts",
+    "check:web": "bun run build:web && bun script/check-web.ts"
   },
   "dependencies": {
     "effect": "catalog:",

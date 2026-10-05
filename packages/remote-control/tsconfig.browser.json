@@ -9,7 +9,9 @@
     "src/browser-checkpoint.ts",
     "src/browser-account.ts",
     "script/check-browser.ts",
-    "script/check-browser-account.ts"
+    "script/check-browser-account.ts",
+    "web/client.ts",
+    "script/check-web.ts"
   ],
   "exclude": []
 }
