@@ -34,6 +34,16 @@ export function isV2StreamFragmentEvent(type: string): boolean {
 }
 
 /**
+ * A live V2 event that changes the session list (a new session, or a renamed
+ * one) without changing any transcript. A TUI refreshes its list for these even
+ * when it has not opened the session, but must not hydrate a transcript from
+ * them.
+ */
+export function isSessionListV2Event(type: string): boolean {
+  return type === "session.next.created" || type === "session.next.info.updated"
+}
+
+/**
  * Maps the V2 session context transcript (`/api/session/:id/context`) into the
  * V1 `Message` + `Part` shape the TUI already renders. This is the read half of
  * the TUI V2 cutover (`specs/v2/tui-read-cutover.md`); writes stay on V1 for now.

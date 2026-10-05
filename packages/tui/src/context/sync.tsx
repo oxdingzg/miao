@@ -37,6 +37,7 @@ import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
 import {
   isLiveSessionV2Event,
+  isSessionListV2Event,
   isV2StreamFragmentEvent,
   mergeTranscript,
   sessionContextToMessages,
@@ -230,6 +231,11 @@ export const {
 
     const pendingPrompts = createPendingPrompts()
     const fullSyncedSessions = new Set<string>()
+    // Sessions this TUI has actually opened (route, inline subagent, or a prompt
+    // it sent). The global event stream carries every session of every attached
+    // client, so without this gate each TUI would hydrate and re-render the
+    // transcript of sessions it is not showing.
+    const watchedSessions = new Set<string>()
     const syncingSessions = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
     // Older timeline pages stay out of the store until a reader asks for them, so
@@ -307,6 +313,22 @@ export const {
     })
     onCleanup(() => v2Refresh.dispose())
 
+    // A session created or renamed by another attached client still belongs in
+    // this TUI's list. Refresh only the list for those, never the transcript.
+    let refreshList: (() => Promise<void>) | undefined
+    let listRefreshTimer: ReturnType<typeof setTimeout> | undefined
+    const scheduleListRefresh = () => {
+      if (listRefreshTimer) return
+      listRefreshTimer = setTimeout(() => {
+        listRefreshTimer = undefined
+        void refreshList?.().catch((error) => console.error("Failed to refresh session list", error))
+      }, 500)
+      listRefreshTimer.unref?.()
+    }
+    onCleanup(() => {
+      if (listRefreshTimer) clearTimeout(listRefreshTimer)
+    })
+
     // Full `session.sync()` writes the whole transcript; the shadow keeps the V2
     // messages a full sync projected so durable events can update a single
     // message instead of refetching. `sessionContextToMessages` projects only the
@@ -332,8 +354,9 @@ export const {
         // The message or part has not been projected yet (for example the first
         // delta beats the `*.started` re-hydration, or the session is still
         // doing its initial sync). Ask for a refresh so the accumulated value
-        // appears instead of silently dropping the fragment.
-        v2Refresh.schedule(sessionID)
+        // appears instead of silently dropping the fragment. A session this TUI
+        // has not opened is not fetched for a stray fragment.
+        if (watchedSessions.has(sessionID)) v2Refresh.schedule(sessionID)
         return
       }
       touchPart(sessionID, partID)
@@ -572,10 +595,19 @@ export const {
             }),
           )
       }
+      // The global event stream is unfiltered: every attached TUI sees every
+      // session's events. A full re-hydration is only worth it for a session
+      // this TUI has opened; for any other session the event is folded into the
+      // store by the switch below but never triggers a transcript fetch, so one
+      // client streaming a turn does not make every other client re-render it.
+      // A new or renamed session still refreshes the session list.
       if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = sessionIDOf(event)
-        if (sessionID && (FULL_SYNC_V2_EVENTS.has(event.type) || !applyV2DurableEvent(sessionID, event)))
+        if (sessionID && !watchedSessions.has(sessionID)) {
+          if (isSessionListV2Event(event.type)) scheduleListRefresh()
+        } else if (sessionID && (FULL_SYNC_V2_EVENTS.has(event.type) || !applyV2DurableEvent(sessionID, event))) {
           v2Refresh.schedule(sessionID)
+        }
       }
       switch (event.type) {
         case "session.next.status": {
@@ -590,9 +622,14 @@ export const {
                 delete errors[input.sessionID]
               }),
             )
-          // Status changes do not change history. Only an idle transition may
-          // recover a final settlement missed by the live event stream.
-          if (input.status.type === "idle" && (previous === "busy" || previous === "retry"))
+          // Status changes do not change history. Only an idle transition of a
+          // session this TUI is showing may recover a final settlement missed by
+          // the live event stream; an unopened session must not be hydrated.
+          if (
+            input.status.type === "idle" &&
+            (previous === "busy" || previous === "retry") &&
+            watchedSessions.has(input.sessionID)
+          )
             v2Refresh.schedule(input.sessionID)
           break
         }
@@ -809,6 +846,7 @@ export const {
             )
           })
           fullSyncedSessions.delete(id)
+          watchedSessions.delete(id)
           syncingSessions.delete(id)
           hydratingSessions.delete(id)
           todoLiveAt.delete(id)
@@ -1128,6 +1166,9 @@ export const {
           parts: PromptInfo["parts"]
         }) {
           const id = SessionMessage.ID.create()
+          // Sending a prompt is opening the session for live updates even if the
+          // route has not synced it yet.
+          watchedSessions.add(input.sessionID)
           pendingPrompts.add({
             info: {
               id,
@@ -1248,6 +1289,9 @@ export const {
           return last.time.completed ? "idle" : "working"
         },
         async sync(sessionID: string) {
+          // Opening a session marks it watched even if a sync is already in
+          // flight, so its live events are applied from here on.
+          watchedSessions.add(sessionID)
           if (fullSyncedSessions.has(sessionID)) return
           const syncing = syncingSessions.get(sessionID)
           if (syncing) return syncing
@@ -1458,6 +1502,7 @@ export const {
     refreshStatus = async (sessionID) => {
       await result.session.syncStatus(sessionID)
     }
+    refreshList = () => result.session.refresh()
     return result
   },
 })
