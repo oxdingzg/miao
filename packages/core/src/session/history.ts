@@ -338,4 +338,25 @@ export const entriesForRunner = Effect.fn("SessionHistory.entriesForRunner")(fun
   return yield* loadEntries(db, sessionID, yield* latestCompaction(db, sessionID), baselineSeq)
 })
 
+/**
+ * Every durable message for a Session, including the ones a compaction moved out
+ * of the provider-facing projection. Read-only: callers use it to look back at
+ * content the summary dropped, so it deliberately ignores the compaction
+ * boundary that `load`/`entriesForRunner` apply.
+ */
+export const all = Effect.fn("SessionHistory.all")(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
+  const rows = yield* db
+    .select({
+      ...messageColumns,
+      data: withoutLegacyMetadata,
+      bytes: sql<number>`length(${SessionMessageTable.data})`,
+    })
+    .from(SessionMessageTable)
+    .where(eq(SessionMessageTable.session_id, sessionID))
+    .orderBy(asc(SessionMessageTable.seq))
+    .all()
+    .pipe(Effect.orDie)
+  return yield* decodeRows(rows)
+})
+
 export * as SessionHistory from "./history"

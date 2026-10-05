@@ -19,7 +19,12 @@ const layer = Layer.effect(
     // Declared before the coordinator so the drain closure can wake peer Sessions
     // without a circular type reference.
     let wake: (sessionID: SessionSchema.ID) => Effect.Effect<void> = () => Effect.void
+    // A high default bounds runaway fan-out without constraining normal use.
+    // `MIAO_MAX_CONCURRENT_DRAINS=0` (or a non-positive value) removes the cap.
+    const configured = Number(process.env.MIAO_MAX_CONCURRENT_DRAINS ?? 8)
+    const maxConcurrent = Number.isFinite(configured) && configured > 0 ? configured : undefined
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
+      maxConcurrent,
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)

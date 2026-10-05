@@ -212,7 +212,7 @@ export const hasPending = Effect.fn("SessionInput.hasPending")(function* (
 export const countPending = Effect.fn("SessionInput.countPending")(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
-  delivery: Delivery,
+  delivery?: Delivery,
 ) {
   const row = yield* db
     .select({ value: count() })
@@ -221,7 +221,7 @@ export const countPending = Effect.fn("SessionInput.countPending")(function* (
       and(
         eq(SessionInputTable.session_id, sessionID),
         isNull(SessionInputTable.promoted_seq),
-        eq(SessionInputTable.delivery, delivery),
+        delivery === undefined ? undefined : eq(SessionInputTable.delivery, delivery),
       ),
     )
     .get()

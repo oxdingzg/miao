@@ -223,6 +223,8 @@ V2's `list_sessions` discovers project peers, and `send_message` accepts a sessi
 
 This optional project configuration combines continued todo work, a scheduling budget, old-output pruning, and a bound on each tool's model-visible output. A budget does not interrupt an in-flight turn and is not a billing cap. Output files are temporary; the bounded transcript is the durable record. Enable small-model summaries or hot-prefix compaction separately after checking that they suit your provider and workload.
 
+Content that a compaction removed from the model window stays durable on disk. The `recall` tool searches that history by keyword, so an agent can recover a dropped detail instead of re-reading files or repeating finished work.
+
 ## 6. Runtime status and ongoing work
 
 All shipped clients use the single V2 session runtime; the V1 session runtime and its `/session/*` routes have been removed.

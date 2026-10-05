@@ -246,3 +246,45 @@ test("compaction describes tool media without embedding base64", () => {
   expect(serialized).toBe("Image read successfully\n[Attached image/png: pixel.png]")
   expect(serialized).not.toContain(base64)
 })
+
+const recentHarness = () => {
+  const recents: string[] = []
+  const compaction = SessionCompaction.make({
+    events: {
+      publish: (_schema: unknown, data: { recent?: string }) => {
+        if (typeof data?.recent === "string") recents.push(data.recent)
+        return Effect.succeed(undefined)
+      },
+    } as never,
+    llm: { stream: () => summary("summary") as never },
+    config: [] as never,
+  })
+  return { compaction, recents }
+}
+
+test("compaction pins the latest goal into the retained context", async () => {
+  const main = model("main", 100_000)
+  const { compaction, recents } = recentHarness()
+  const goal = {
+    seq: 1,
+    message: {
+      type: "synthetic",
+      id: "msg_goal",
+      text: '<goal status="active">\nShip the release\n</goal>',
+      metadata: { goal: { objective: "Ship the release", status: "active" } },
+    },
+  }
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_goal_pin"),
+    entries: [goal, ...overflowEntries().map((entry, index) => ({ ...entry, seq: index + 2 }))],
+    model: main,
+    request: LLM.request({ model: main, messages: [] }),
+  } as never
+
+  expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(true)
+  expect(recents).toHaveLength(1)
+  // The goal sits above the retained tail, so the summary alone would be free to
+  // drop it; the pin keeps it verbatim in <recent-context>.
+  expect(recents[0]).toContain('<goal status="active">')
+  expect(recents[0]).toContain("Ship the release")
+})

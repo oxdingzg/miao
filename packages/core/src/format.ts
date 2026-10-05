@@ -1,13 +1,15 @@
 export * as Format from "./format"
 
 import path from "path"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "./process"
 import { Config } from "./config"
 import { Location } from "./location"
 import { makeLocationNode } from "./effect/app-node"
-import * as Formatter from "./format/registry"
+import { Formatter } from "./format/registry"
+import { FSUtil } from "./fs-util"
+import { FileMutation } from "./file-mutation"
 
 export interface Interface {
   /** Runs every configured formatter that matches the file's extension. Returns false when none apply. */
@@ -38,6 +40,8 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const appProcess = yield* AppProcess.Service
     const location = yield* Location.Service
+    const fs = yield* FSUtil.Service
+    const files = yield* FileMutation.Service
 
     const context: Formatter.Context = {
       directory: location.directory,
@@ -83,6 +87,7 @@ const layer = Layer.effect(
       const extension = path.extname(filepath)
       const matching = Object.values(resolved).filter((item) => item.extensions.includes(extension))
       if (matching.length === 0) return false
+      const before = yield* fs.readFile(filepath).pipe(Effect.option)
       for (const item of matching) {
         const command = item.command ?? (item.enabled ? yield* Effect.promise(() => item.enabled!(context)) : false)
         if (!command) continue
@@ -99,6 +104,23 @@ const layer = Layer.effect(
             }),
           )
           .pipe(Effect.ignore)
+      }
+      if (Option.isSome(before)) {
+        const after = yield* fs.readFile(filepath).pipe(Effect.option)
+        if (Option.isSome(after)) {
+          const preserved = yield* Effect.try({
+            try: () => preserveTextFormat(before.value, after.value),
+            catch: (cause) => cause,
+          }).pipe(Effect.option)
+          if (Option.isSome(preserved) && preserved.value !== undefined)
+            yield* files
+              .writeIfUnchanged({
+                target: { canonical: filepath, resource: filepath },
+                expected: after.value,
+                content: preserved.value,
+              })
+              .pipe(Effect.ignore)
+        }
       }
       return true
     })
@@ -119,5 +141,16 @@ const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Config.node, AppProcess.node, Location.node],
+  deps: [Config.node, AppProcess.node, Location.node, FSUtil.node, FileMutation.node],
 })
+
+function preserveTextFormat(before: Uint8Array, after: Uint8Array) {
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+  const original = decoder.decode(before)
+  const formatted = decoder.decode(after)
+  const ending = original.includes("\r\n") ? "\r\n" : "\n"
+  const bom = original.startsWith("\uFEFF") || formatted.startsWith("\uFEFF")
+  const body = formatted.replace(/^\uFEFF+/, "").replaceAll("\r\n", "\n")
+  const preserved = (bom ? "\uFEFF" : "") + (ending === "\r\n" ? body.replaceAll("\n", "\r\n") : body)
+  return preserved === formatted ? undefined : preserved
+}

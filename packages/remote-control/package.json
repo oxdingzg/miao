@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "effect": "catalog:",
-    "@miao/schema": "workspace:*"
+    "@miao/schema": "workspace:*",
+    "better-auth": "1.7.7",
+    "jose": "6.2.12"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
