@@ -55,6 +55,12 @@ export const Flag = {
     copy === undefined ? process.platform === "win32" : truthy("MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
   MIAO_MODELS_URL: process.env["MIAO_MODELS_URL"],
   MIAO_MODELS_PATH: process.env["MIAO_MODELS_PATH"],
+  // The connected Command Code account's plan (go | goat | pro | max), used to
+  // hide models the plan cannot call. Unset means the plan is unknown and every
+  // model stays visible. Read at access time so tests and relaunches can vary it.
+  get MIAO_COMMANDCODE_PLAN() {
+    return process.env["MIAO_COMMANDCODE_PLAN"]
+  },
   MIAO_DB: process.env["MIAO_DB"],
 
   MIAO_WORKSPACE_ID: process.env["MIAO_WORKSPACE_ID"],
