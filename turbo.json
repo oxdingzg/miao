@@ -17,6 +17,10 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@miao/tui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "@miao/app#test": {
       "dependsOn": ["^build"],
       "outputs": []
