@@ -28,8 +28,9 @@ const OPENING =
 
 // A complete block ends in a closing tag, which real leaks carry even when the
 // server ate the opening wrapper. A bare opener truncated mid-argument is a
-// "length" finish, not a parser miss, so it is intentionally not matched. The
-// tail itself may be cut mid-tag (`</parameter>`, `</para`) when the stream
+// "length" finish, not a parser miss; isLeakedAssistant only recovers "stop".
+// A stop turn can also end with a bare parameter opener (see DANGLING_OPEN_TAIL).
+// The tail itself may be cut mid-tag (`</parameter>`, `</para`) when the stream
 // ended, so a truncated closing-tag prefix at the very end also counts.
 const CLOSING_TAIL =
   /<\/(?:antml:)?(?:tool_calls?|function|parameter|invoke|tool|par|inv|fun|DSML)[a-z_]*>?$|<\/[^>]*DSML[^>]*>$/i
@@ -40,6 +41,13 @@ const CLOSING_TAIL =
 // in prose, so require a run of them before treating the tail as a leak.
 const STRAY_CLOSING = /<\/(?:invoke|parameter|tool_calls?|function)>/gi
 const STRAY_CLOSING_MIN = 3
+
+// Official DeepSeek API field sample: a stop turn ended with a standalone
+// `<parameter name="bash">` and no structured tool call. It is incomplete, but
+// treating it as a successful answer silently abandons the intended action.
+// Restrict this to a standalone terminal line, not inline/quoted tag mentions.
+const DANGLING_OPEN_TAIL =
+  /(?:^|\n)\s*<(?:antml:)?(?:parameter\s+name\s*=\s*["'][\w.-]+["']|tool_calls?|invoke\s+name\s*=\s*["'][\w.-]+["']|function[=_][\w.-]+)>\s*$/i
 
 /** Recovery attempts allowed per real user prompt. */
 export const MAX_ATTEMPTS = 2
@@ -65,6 +73,7 @@ export const NEUTRALIZED =
 /** Whether the assistant text ends with a leaked tool-call block. */
 export function detect(text: string): boolean {
   const trimmed = text.trimEnd()
+  if (DANGLING_OPEN_TAIL.test(trimmed)) return true
   const stray = trimmed.match(STRAY_CLOSING)?.length ?? 0
   // A tail that begins a closing tool-call tag (or a truncated prefix of one)
   // only counts when its openers are also present, or when it is the end of a
@@ -95,10 +104,7 @@ export function isLeakedAssistant(message: {
 }
 
 /** Whether a synthetic message is a leak-recovery nudge this module emitted. */
-export function isNudge(message: {
-  readonly type: string
-  readonly metadata?: Record<string, unknown>
-}): boolean {
+export function isNudge(message: { readonly type: string; readonly metadata?: Record<string, unknown> }): boolean {
   return (
     message.type === "synthetic" &&
     typeof message.metadata === "object" &&
@@ -119,8 +125,7 @@ export function countAttempts(
   let count = 0
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
-    if (message.type === "assistant" || message.type === "agent-switched" || message.type === "model-switched")
-      continue
+    if (message.type === "assistant" || message.type === "agent-switched" || message.type === "model-switched") continue
     if (message.type === "synthetic" && isNudge(message)) {
       count++
       continue

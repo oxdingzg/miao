@@ -13,7 +13,7 @@ half-switched state that double-writes or reads intermittently.
   and the legacy `/session/*`, `/permission/*`, `/question/*`, and `/sync/*` route groups and
   handlers are gone.
 - The V2 engine (`packages/core/src/session/runner/llm.ts`) writes `session_message`; every
-  shipped client — TUI, `--mini`, ACP, `miao run`, the web/desktop app, and `miao remote` — reads
+  shipped client — TUI, `--mini`, ACP, `miao run`, the web/desktop app, the native app — reads
   and writes through `/api/session/*`.
 - Compatibility that remains is data-only: `packages/core/src/session/{backfill,compact,v1-read,legacy-tables,restore}.ts`
   migrate and read databases written before V2, and `packages/core/src/v1/config` still reads
@@ -62,11 +62,8 @@ aggregate's events.
 Stage 2 is complete. Stages 3, 4, and 5 have landed: the runtime is V2-only. The remaining work is
 the legacy JS SDK (P5) and the non-session legacy routes (P7).
 
-
 The app already reaches these through `packages/app/src/utils/server-compat.ts` while they are
 missing, so the cutover (Stage 3–4) can proceed without them and they can be filled in behind it.
-
-
 
 **Stage 3 — old-session visibility (revised).** The original "dual-read shadow" is not viable:
 V2 reads only `session_message`, while existing sessions live in V1's `message` / `part`

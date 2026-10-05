@@ -6,10 +6,11 @@ does not terminate other clients or running sessions. Ctrl-C in a headless run
 interrupts the observed execution, using its identity so a delayed request
 cannot interrupt a successor.
 
-The Runtime hosts the session API and IM connectors together. `/remote` uses
-the current connection and credential; `miao remote login wechat` and
-`miao remote login qq` also use that Runtime. A completed login joins its IM
-router immediately.
+The Runtime hosts the session API and the outbound Remote Control Agent.
+`/remote-control` configures a self-hosted relay and authorizes App/Web devices
+against the attached Runtime. Legacy WeChat/QQ connectors, their local session
+Router, the IM daemon and the `miao remote` command have been removed. Existing
+IM account files are left on disk but are no longer loaded or used.
 
 ```sh
 miao runtime status
@@ -17,8 +18,6 @@ miao runtime stop
 miao runtime start  # foreground; useful for service supervisors
 ```
 
-`miao remote` is also a foreground Runtime entrypoint. Existing launchd plans
-therefore keep their foreground process instead of spawning competing owners.
 `miao attach <url>` continues to connect to an explicitly selected server.
 
 Each persistent database has one OS ownership lock. All normal database

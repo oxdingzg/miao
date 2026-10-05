@@ -12,6 +12,7 @@ import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionHistory } from "./history"
 import { SessionInput } from "./input"
+import { SessionDelegationStore } from "./delegation-store"
 import { SessionLegacyTables } from "./legacy-tables"
 import { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
@@ -552,7 +553,11 @@ const layer = Layer.effectDiscard(
       }),
     )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
-    yield* events.project(SessionEvent.Synthetic, (event) => run(db, event))
+    yield* events.project(SessionEvent.DelegationStarted, (event) => SessionDelegationStore.projectStarted(db, event))
+    yield* events.project(SessionEvent.DelegationEnded, (event) => SessionDelegationStore.projectEnded(db, event))
+    yield* events.project(SessionEvent.Synthetic, (event) =>
+      SessionDelegationStore.projectNotification(db, event).pipe(Effect.andThen(run(db, event))),
+    )
     yield* events.project(SessionEvent.Shell.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Shell.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Step.Started, (event) => run(db, event))
