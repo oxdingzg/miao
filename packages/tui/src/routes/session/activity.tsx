@@ -1,5 +1,5 @@
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
-import { Spinner } from "../../component/spinner"
+import { createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { Spinner, useSecond } from "../../component/spinner"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
 import { waitingForResponse, watchSessionStatus } from "../../context/session-status"
@@ -102,7 +102,7 @@ export function lastOutputAt(parts: ReadonlyArray<Part>, fallback: number | unde
 
 export function SessionActivity(props: { sessionID: string }) {
   const sync = useSync()
-  const [elapsed, setElapsed] = createSignal(0)
+  const seconds = useSecond()
   const busy = createMemo(() => sync.data.session_status[props.sessionID]?.type === "busy")
   const blocked = createMemo(
     () =>
@@ -132,6 +132,14 @@ export function SessionActivity(props: { sessionID: string }) {
   const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.role === "user")?.time.created)
   const lastOutput = createMemo(() => lastOutputAt(turnParts(), turnStartedAt()))
   const active = createMemo(() => busy() && !blocked())
+  // A start that is not epoch millis would print "NaNd NaNh"; show no timer
+  // rather than a broken one. The shared one-second clock drives the re-read.
+  const elapsed = createMemo(() => {
+    if (!active()) return 0
+    seconds()
+    const value = Date.now() - (lastOutput() ?? Number.NaN)
+    return Number.isFinite(value) ? Math.max(0, value) : 0
+  })
 
   createEffect(() => {
     const sessionID = props.sessionID
@@ -144,19 +152,6 @@ export function SessionActivity(props: { sessionID: string }) {
       stop()
       abort.abort()
     })
-  })
-
-  createEffect(() => {
-    if (!active()) return
-    const read = () => {
-      // A start that is not epoch millis would print "NaNd NaNh"; show no
-      // timer rather than a broken one.
-      const elapsed = Date.now() - (lastOutput() ?? Number.NaN)
-      return Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0
-    }
-    setElapsed(read())
-    const timer = setInterval(() => setElapsed(read()), 1000)
-    onCleanup(() => clearInterval(timer))
   })
 
   const error = createMemo(() => {

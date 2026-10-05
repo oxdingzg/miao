@@ -57,14 +57,14 @@ V1 仍挂 16 个组。清点生产调用方后分四类（逐条证据见下）�
 
 ### A. 有 V2 等价路由，只需改调用
 
-| 调用方 | V1 | V2 |
-|---|---|---|
-| `cli/cmd/run/runtime.boot.ts:99,107` | `GET /config/providers`、`GET /provider` | `/api/config/providers`、`/api/provider` |
-| `cli/cmd/run/runtime.ts:231,379,383,387` | `/find/file`、`/agent`、`/experimental/resource`、`/command` | `/api/fs/find`、`/api/agent`、`/api/mcp/resources`、`/api/command` |
-| `cli/cmd/run.ts:495,537`（`--attach`） | `/path`、`/agent` | `/api/path`、`/api/agent` |
-| `tui/src/feature-plugins/system/diff-viewer.tsx:132` | `/vcs/diff`（mode `git` → `working`） | `/api/vcs/diff` |
-| `app/src/context/server-sync.tsx:122` | `/lsp` | `/api/lsp` |
-| `app/src/utils/server-health.ts:107`、`desktop/src/main/server.ts:189` | `/global/health`（仅作 `/api/health` 失败后的回退） | 删除回退 |
+| 调用方                                                                 | V1                                                           | V2                                                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `cli/cmd/run/runtime.boot.ts:99,107`                                   | `GET /config/providers`、`GET /provider`                     | `/api/config/providers`、`/api/provider`                           |
+| `cli/cmd/run/runtime.ts:231,379,383,387`                               | `/find/file`、`/agent`、`/experimental/resource`、`/command` | `/api/fs/find`、`/api/agent`、`/api/mcp/resources`、`/api/command` |
+| `cli/cmd/run.ts:495,537`（`--attach`）                                 | `/path`、`/agent`                                            | `/api/path`、`/api/agent`                                          |
+| `tui/src/feature-plugins/system/diff-viewer.tsx:132`                   | `/vcs/diff`（mode `git` → `working`）                        | `/api/vcs/diff`                                                    |
+| `app/src/context/server-sync.tsx:122`                                  | `/lsp`                                                       | `/api/lsp`                                                         |
+| `app/src/utils/server-health.ts:107`、`desktop/src/main/server.ts:189` | `/global/health`（仅作 `/api/health` 失败后的回退）          | 删除回退                                                           |
 
 ### B. 事件流：V2 有 `/api/event`，但形状不同，需要真正迁移
 
@@ -128,5 +128,4 @@ V1 仍挂 16 个组。清点生产调用方后分四类（逐条证据见下）�
 1. 插件 `client` 的 V1 根命名空间随之删除，接受第三方插件的破坏性变更；插件改用 `client.v2.*`。
 2. `/tui/*`（上游 opencode 的 TUI 远程控制接口，给 IDE 扩展用，与微信/QQ 远程无关）直接删除。
 3. 控制面远程工作区同步（上游 opencode 实验性 workspaces 的跨服务器会话迁移与 diff 同步，`/sync/*` 已断）
-   删除；本地 worktree 工作区不受影响。微信/QQ 远程（`packages/remote`）已全走 `@miao/client` 与
-   `/api/remote`，不受本方案影响。
+   删除；本地 worktree 工作区不受影响。旧微信/QQ连接器、本机 Router 与 `/api/remote` 已在后续清理中移除。

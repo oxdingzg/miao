@@ -105,7 +105,7 @@ const progress = (content: SessionEvent.Tool.Progress["data"]["content"]) =>
     },
   })
 
-const success = (content: SessionEvent.Tool.Success["data"]["content"]) =>
+const success = (content: SessionEvent.Tool.Success["data"]["content"], structured: Record<string, unknown> = {}) =>
   SessionEvent.Tool.Success.make({
     id: EventV2.ID.create(),
     type: "session.next.tool.success",
@@ -114,11 +114,16 @@ const success = (content: SessionEvent.Tool.Success["data"]["content"]) =>
       sessionID,
       assistantMessageID,
       callID: "call_materialize",
-      structured: {},
+      structured,
       content,
       provider: { executed: true },
     },
   })
+
+const structuredOf = (event: SessionEvent.DurableEvent) =>
+  event.type === "session.next.tool.success" || event.type === "session.next.tool.progress"
+    ? event.data.structured
+    : undefined
 
 const prompted = (files: SessionEvent.Prompted["data"]["prompt"]["files"]) =>
   SessionEvent.Prompted.make({
@@ -193,9 +198,7 @@ describe("materializeBlobRefs", () => {
       Effect.gen(function* () {
         const [result] = yield* materializeBlobRefs(blob, [
           assistant([
-            tool(
-              completed([{ type: "file", uri: Blob.refUri("0".repeat(64)), mime: "image/png", name: "shot.png" }]),
-            ),
+            tool(completed([{ type: "file", uri: Blob.refUri("0".repeat(64)), mime: "image/png", name: "shot.png" }])),
           ]),
         ])
         const content = toolContent(result)
@@ -212,9 +215,10 @@ describe("materializeBlobRefs", () => {
         const [result] = yield* materializeBlobRefs(blob, [
           assistant([
             tool(
-              completed([{ type: "text", text: "ok" }], [
-                { uri: Blob.refUri(ref.hash), mime: "image/png", name: "shot.png" },
-              ]),
+              completed(
+                [{ type: "text", text: "ok" }],
+                [{ uri: Blob.refUri(ref.hash), mime: "image/png", name: "shot.png" }],
+              ),
             ),
           ]),
         ])
@@ -229,9 +233,10 @@ describe("materializeBlobRefs", () => {
         const [result] = yield* materializeBlobRefs(blob, [
           assistant([
             tool(
-              completed([{ type: "text", text: "ok" }], [
-                { uri: Blob.refUri("0".repeat(64)), mime: "image/png", name: "gone.png" },
-              ]),
+              completed(
+                [{ type: "text", text: "ok" }],
+                [{ uri: Blob.refUri("0".repeat(64)), mime: "image/png", name: "gone.png" }],
+              ),
             ),
           ]),
         ])
@@ -251,6 +256,31 @@ describe("materializeBlobRefs", () => {
         ])
         const part = toolContent(result)?.[0]
         expect(part?.type === "file" ? part.uri : undefined).toBe(uri)
+      }),
+    ),
+  )
+
+  it.live("restores a structured content reference inside a tool result", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const ref = yield* blob.put({ bytes: encoder.encode("hi"), mime: "image/png" })
+        const [result] = yield* materializeBlobRefs(blob, [
+          assistant([
+            tool(
+              SessionMessage.ToolStateCompleted.make({
+                status: "completed",
+                input: {},
+                structured: { encoding: "base64", mime: "image/png", content: Blob.refUri(ref.hash), contentRef: true },
+                content: [],
+              }),
+            ),
+          ]),
+        ])
+        const item = result?.type === "assistant" ? result.content[0] : undefined
+        const structured =
+          item?.type === "tool" && item.state.status === "completed" ? item.state.structured : undefined
+        expect(structured?.content).toBe("aGk=")
+        expect(structured !== undefined && "contentRef" in structured).toBe(false)
       }),
     ),
   )
@@ -333,6 +363,22 @@ describe("materializeEvent", () => {
           },
         })
         expect(yield* materializeEvent(blob, new Map(), event)).toBe(event)
+      }),
+    ),
+  )
+
+  it.live("restores a structured content reference in a tool result event", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const ref = yield* blob.put({ bytes: encoder.encode("hi"), mime: "image/png" })
+        const event = yield* materializeEvent(
+          blob,
+          new Map(),
+          success([], { encoding: "base64", mime: "image/png", content: Blob.refUri(ref.hash), contentRef: true }),
+        )
+        const structured = structuredOf(event)
+        expect(structured?.content).toBe("aGk=")
+        expect(structured !== undefined && "contentRef" in structured).toBe(false)
       }),
     ),
   )

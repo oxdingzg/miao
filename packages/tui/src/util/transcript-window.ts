@@ -27,8 +27,14 @@ export function createTranscriptWindow<T extends { id: string }>(
   messages: Accessor<readonly T[]>,
   options: TranscriptWindowOptions = {},
 ) {
-  const windowSize = Math.max(1, options.windowSize ?? 40)
-  const step = Math.max(1, Math.min(windowSize, options.step ?? Math.max(1, Math.floor(windowSize / 2))))
+  // Mounted-message budget. Every mounted message owns native text buffers and
+  // a yoga subtree, and the active render cost is layout + draw over that tree.
+  // 32 messages still covers a tall viewport (a message is rarely one row), and
+  // is closer to the viewport-sized windows other terminal agents use.
+  const windowSize = Math.max(1, options.windowSize ?? 32)
+  // Messages revealed/hidden per viewport shift. A quarter of the window keeps
+  // each remount batch small, so scrolling re-lays-out far fewer nodes at once.
+  const step = Math.max(1, Math.min(windowSize, options.step ?? Math.max(1, Math.floor(windowSize / 4))))
   const margin = options.margin ?? 2
   const [anchor, setAnchor] = createSignal<string>()
   const [estimate, setEstimate] = createSignal(Math.max(1, options.estimate ?? 6))

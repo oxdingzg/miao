@@ -168,7 +168,7 @@ const userAgent = () => `miao/${InstallationVersion} (${os.platform()} ${os.rele
 const apiName = (model: ModelV2.Info) =>
   model.api.type === "aisdk" ? `${model.api.type}:${model.api.package}` : model.api.type
 
-// Providers whose models.dev entry has no `api` URL but are OpenAI-compatible.
+// Providers whose catalog entry has no `api` URL but are OpenAI-compatible.
 const COMPATIBLE_BASE_URLS: Record<string, string> = {
   "@ai-sdk/xai": "https://api.x.ai/v1",
   "@ai-sdk/groq": "https://api.groq.com/openai/v1",
@@ -273,7 +273,7 @@ export const fromCatalogModel = (
  * GitHub Copilot serves three wire APIs behind one token: Anthropic Messages at
  * `{base}/v1` for Claude, Responses for GPT-5 class models, and Chat for the
  * rest. The account's `/models` answer (see `CopilotModels.apply`) names the
- * endpoint; models.dev entries fall back to the same model-ID rule V1 used.
+ * endpoint; catalog entries fall back to the same model-ID rule V1 used.
  */
 const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
   const enterpriseUrl = credential?.type === "oauth" ? credential.metadata?.enterpriseUrl : undefined
@@ -366,7 +366,7 @@ const azure = (model: ModelV2.Info, credential?: Credential.Value) => {
 }
 
 /**
- * The API key for a cloud provider whose models.dev entry lists configuration
+ * The API key for a cloud provider whose catalog entry lists configuration
  * env vars beside the key. Integration env connections cannot tell them apart,
  * so a "key" equal to one of `settings` (a resource name, a project) is
  * configuration, and the provider's own key variable is read instead.
@@ -393,7 +393,7 @@ const azureResource = (model: ModelV2.Info) => {
   return process.env.AZURE_RESOURCE_NAME
 }
 
-// models.dev lists Azure AI Foundry models (Claude, DeepSeek, Kimi) under the
+// the catalog lists Azure AI Foundry models (Claude, DeepSeek, Kimi) under the
 // Azure provider with a `${AZURE_RESOURCE_NAME}` URL template.
 const expandAzureTemplate = (model: ModelV2.Info) => {
   if (!model.api.url?.includes("${AZURE_RESOURCE_NAME}")) return model

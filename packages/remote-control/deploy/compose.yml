@@ -1,0 +1,59 @@
+services:
+  hub:
+    image: ${MIAO_HUB_IMAGE:-miao-control-hub:preview}
+    user: "${MIAO_HUB_UID:?Set the private data owner UID}:${MIAO_HUB_GID:?Set the private data owner GID}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+    mem_limit: 256m
+    volumes:
+      - type: bind
+        source: ${MIAO_HUB_CONFIG_FILE:?Set the private Hub configuration file}
+        target: /config/hub.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MIAO_HUB_DATA_DIRECTORY:?Set the private Hub data directory}
+        target: /data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:4600/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+  tunnel:
+    profiles: [cloudflare]
+    image: cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    user: "${MIAO_HUB_UID:?Set the private data owner UID}:${MIAO_HUB_GID:?Set the private data owner GID}"
+    command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel-token]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+    mem_limit: 256m
+    depends_on:
+      hub:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${MIAO_TUNNEL_TOKEN_FILE:?Set the private Cloudflare tunnel token file}
+        target: /run/secrets/tunnel-token
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

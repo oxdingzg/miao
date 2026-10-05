@@ -122,6 +122,35 @@ export const Synthetic = Event.define({
 })
 export type Synthetic = typeof Synthetic.Type
 
+/** Background delegation is durable work, separate from user prompt admission. */
+export const DelegationStarted = Event.define({
+  type: "session.next.delegation.started",
+  ...options,
+  schema: {
+    ...Base,
+    id: Schema.String,
+    childSessionID: SessionID,
+    promptMessageID: SessionMessage.ID,
+    agent: Schema.String,
+    prompt: Schema.String,
+    description: Schema.String,
+    owner: Schema.String,
+  },
+})
+export type DelegationStarted = typeof DelegationStarted.Type
+
+export const DelegationEnded = Event.define({
+  type: "session.next.delegation.ended",
+  ...options,
+  schema: {
+    ...Base,
+    id: Schema.String,
+    status: Schema.Literals(["completed", "failed", "interrupted", "cancelled"]),
+    text: Schema.String,
+  },
+})
+export type DelegationEnded = typeof DelegationEnded.Type
+
 export namespace Command {
   export const Started = Event.define({
     type: "session.next.command.started",
@@ -537,6 +566,8 @@ export const DurableDefinitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  DelegationStarted,
+  DelegationEnded,
   Command.Started,
   Command.Completed,
   Command.Failed,
@@ -573,6 +604,8 @@ export const Definitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  DelegationStarted,
+  DelegationEnded,
   Command.Started,
   Command.Completed,
   Command.Failed,

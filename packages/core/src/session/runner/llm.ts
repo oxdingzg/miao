@@ -35,6 +35,8 @@ import { BashTool } from "../../tool/bash"
 import { LocationMutation } from "../../location-mutation"
 import { SessionCommandPrepare } from "../command-prepare"
 import { TaskTool } from "../../tool/task"
+import { BackgroundTaskTool } from "../../tool/background-task"
+import type { Tool } from "../../tool/tool"
 import { GoalTool } from "../../tool/goal"
 import { RecallTool } from "../../tool/recall"
 import { BackgroundJob } from "../../background-job"
@@ -48,6 +50,8 @@ import { SessionCompaction } from "../compaction"
 import { SessionCompactRequest } from "../compact-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
+import { SessionDelegation } from "../delegation"
+import { SessionDelegationStore } from "../delegation-store"
 import { SessionBackgroundJobs } from "../background-jobs"
 import { SessionMessage } from "../message"
 import { SessionPrune } from "../prune"
@@ -132,6 +136,7 @@ import { llmClient } from "../../effect/app-node-platform"
 
 /** Cap on how many times one identical (name, input) tool call may execute in a drain. */
 const MAX_IDENTICAL_TOOL_CALLS = 5
+type Promotion = SessionInput.Delivery | "notification"
 
 /**
  * How many overflow compactions one drain may attempt before surfacing the
@@ -207,6 +212,8 @@ const layer = Layer.effect(
       SessionImageNormalize.toolContent(image, content).pipe(
         Effect.flatMap((normalized) => SessionBlobStorage.externalizeToolContent(blob, normalized)),
       )
+    const normalizeToolStructured = (structured: Record<string, unknown>) =>
+      SessionBlobStorage.externalizeToolStructured(blob, structured)
     const db = (yield* Database.Service).db
     // Per-session prompt-cache telemetry: when the last provider turn ran and
     // whether the next one is expected to rebuild the prefix (right after a
@@ -434,7 +441,7 @@ const layer = Layer.effect(
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
-      promotion: SessionInput.Delivery | undefined,
+      promotion: Promotion | undefined,
       step: number,
       recoverOverflow?: typeof compaction.compactAfterOverflow,
     ) {
@@ -459,6 +466,11 @@ const layer = Layer.effect(
         if (promotion === "queue") {
           promoted += Number(yield* SessionInput.promoteNextQueued(db, events, initialSession.id))
           promoted += yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
+        }
+        if (promotion === "notification") {
+          // A human steer wins even if it arrived after the drain was scheduled.
+          promoted += yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
+          if (promoted === 0) yield* SessionDelegationStore.promoteNext(db, events, initialSession.id)
         }
         if (promoted > 0) currentStep = 1
       }
@@ -701,6 +713,7 @@ const layer = Layer.effect(
         cost: resolved.info.cost,
         snapshot: startSnapshot,
         normalizeContent: normalizeToolContent,
+        normalizeStructured: normalizeToolStructured,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -969,7 +982,7 @@ const layer = Layer.effect(
     }, Effect.scoped)
     type RunTurn = (
       sessionID: SessionSchema.ID,
-      promotion: SessionInput.Delivery | undefined,
+      promotion: Promotion | undefined,
       step: number,
       remaining?: number,
     ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number }, RunError>
@@ -1045,7 +1058,10 @@ const layer = Layer.effect(
         readonly files?: typeof Prompt.Type.files
         readonly agents?: typeof Prompt.Type.agents
         readonly taskId?: string
+        readonly background?: boolean
+        readonly context?: Tool.Context
       },
+      delegation?: SessionDelegation.API,
     ) {
       const parent = yield* getSession(parentSessionID)
       if (parent.parentID !== undefined)
@@ -1057,7 +1073,46 @@ const layer = Layer.effect(
       const parentAssistant = parentContext.findLast((message) => message.type === "assistant")
       // Inherit the active turn, including a sampled model that changed after resolution.
       const parentAgent = yield* agents.select(parent.agent)
-      const model = request.model ?? selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : parent.model ?? parentAgent.info?.model)
+      const model = request.model ?? selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : (parent.model ?? parentAgent.info?.model))
+      if (request.background === true) {
+        if (!delegation || !request.context)
+          return yield* new ToolFailure({
+            message: "Background subagents are unavailable in this execution entry point.",
+          })
+        if (request.taskId && (!resumed || resumed.parentID !== parentSessionID))
+          return yield* new ToolFailure({ message: "Background task can only resume a child owned by this Session." })
+        yield* permission.assert({
+          action: "task",
+          resources: [selection.id],
+          save: [selection.id],
+          sessionID: parentSessionID,
+          agent: request.context.agent,
+          source: { type: "tool", messageID: request.context.assistantMessageID, callID: request.context.toolCallID },
+        })
+        const settings = yield* readSettings()
+        return yield* delegation.start({
+          id: SessionDelegation.invocationID(
+            parentSessionID,
+            request.context.assistantMessageID,
+            request.context.toolCallID,
+          ),
+          sessionID: parentSessionID,
+          agent: request.agent,
+          prompt: request.prompt,
+          description: request.description,
+          taskId: request.taskId,
+          budget: settings.budget,
+          createChild: () =>
+            resumed
+              ? Effect.succeed(resumed)
+              : creation.create({
+                  parentID: parentSessionID,
+                  agent: selection.id,
+                  location: parent.location,
+                  model,
+                }),
+        })
+      }
       const child = resumed ?? (yield* creation.create({
         parentID: parentSessionID,
         agent: selection.id,
@@ -1214,6 +1269,7 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
       readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+        readonly delegation?: SessionDelegation.API
     }) {
       return yield* Effect.scoped(
         Effect.gen(function* () {
@@ -1225,12 +1281,35 @@ const layer = Layer.effect(
             jobs: Option.getOrUndefined(jobsOption),
           })
           const jobTools = BackgroundJobTool.make(backgroundJobs)
+            const delegation = input.delegation
+            const taskTools = delegation
+              ? BackgroundTaskTool.make({
+                  list: () => delegation.list(input.sessionID),
+                  result: (id) => delegation.result(input.sessionID, id),
+                  cancel: (id, context) =>
+                    permission
+                      .assert({
+                        action: "task_cancel",
+                        resources: [id],
+                        sessionID: input.sessionID,
+                        agent: context.agent,
+                        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                      })
+                      .pipe(
+                        Effect.mapError(
+                          () => new ToolFailure({ message: "Background task cancellation was not permitted." }),
+                        ),
+                        Effect.andThen(delegation.cancel(input.sessionID, id)),
+                      ),
+                })
+              : {}
           if (drainAgent?.info !== undefined)
             yield* tools
               .registerSession(input.sessionID, {
                 ...jobTools,
+                  ...taskTools,
                 task: TaskTool.make((request) =>
-                  runSubagent(input.sessionID, request).pipe(
+                    runSubagent(input.sessionID, request, input.delegation).pipe(
                     Effect.mapError((error) =>
                       error instanceof ToolFailure ? error : new ToolFailure({ message: "Subagent task failed" }),
                     ),
@@ -1258,9 +1337,11 @@ const layer = Layer.effect(
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
           for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
+            if (delegation) yield* delegation.recover(input.sessionID)
           const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
           const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
-          if (!input.force && !hasSteer && !hasQueue) return
+            const hasNotification = yield* SessionDelegationStore.hasNotifications(db, input.sessionID)
+            if (!input.force && !hasSteer && !hasQueue && !hasNotification) return
           // Refuse to run a provider turn on a session whose history is still only
           // in the legacy V1 tables: the projected context would be empty and the
           // turn would silently drop everything recorded before the V2 runtime.
@@ -1284,8 +1365,16 @@ const layer = Layer.effect(
           }
           yield* backgroundJobs.recover()
           yield* failInterruptedTools(input.sessionID)
-          let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
-          let shouldRun = input.force || hasSteer || hasQueue
+            const recoveredNotification = yield* SessionDelegationStore.hasNotifications(db, input.sessionID)
+            let promotion: Promotion | undefined = hasSteer
+              ? "steer"
+              : hasQueue
+                ? "queue"
+                : recoveredNotification
+                  ? "notification"
+                  : undefined
+            let shouldRun = input.force || hasSteer || hasQueue || recoveredNotification
+            let step = 1
           while (shouldRun) {
             const current = yield* getSession(input.sessionID)
             if (exceeded(current)) {
@@ -1297,12 +1386,17 @@ const layer = Layer.effect(
               break
             }
             let needsContinuation = true
-            let step = 1
             while (needsContinuation) {
               const result = yield* runTurn(input.sessionID, promotion, step)
               needsContinuation = result.needsContinuation
               step = result.step + 1
               promotion = "steer"
+                if (
+                  needsContinuation &&
+                  !(yield* SessionInput.hasPending(db, input.sessionID, "steer")) &&
+                  (yield* SessionDelegationStore.hasNotifications(db, input.sessionID))
+                )
+                  promotion = "notification"
               if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
               // A model behind an OpenAI-compatible server can write its tool
               // call as plain text instead of emitting a structured call. The
@@ -1347,7 +1441,11 @@ const layer = Layer.effect(
                 }
               }
             }
-            shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+              const queuedNext = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+              const notificationNext = queuedNext
+                ? false
+                : yield* SessionDelegationStore.hasNotifications(db, input.sessionID)
+              shouldRun = queuedNext || notificationNext
             if (!shouldRun && settings.loop !== undefined) {
               const current = yield* getSession(input.sessionID)
               if (exceeded(current)) {
@@ -1382,7 +1480,7 @@ const layer = Layer.effect(
                 }
               }
             }
-            promotion = shouldRun ? "queue" : undefined
+            promotion = shouldRun ? (notificationNext ? "notification" : "queue") : undefined
           }
         }),
       )

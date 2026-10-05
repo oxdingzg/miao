@@ -366,6 +366,17 @@ describe("HttpApi UI fallback", () => {
     }),
   )
 
+  it.live("removed and unknown API routes never reach the UI proxy", () =>
+    Effect.gen(function* () {
+      const server = routeOrderingApp()
+      for (const route of ["/api/remote", "/api/remote/login/wechat", "/api/unknown", "/api"]) {
+        const response = yield* server.request(route)
+        expect(response.status).toBe(404)
+        expect(server.proxiedUrl()).toBeUndefined()
+      }
+    }),
+  )
+
   it.live("requires server password for the web UI", () =>
     Effect.gen(function* () {
       const response = yield* uiApp({

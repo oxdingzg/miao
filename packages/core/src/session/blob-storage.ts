@@ -38,6 +38,49 @@ export const externalizePromptAttachments = (blob: Blob.Interface, prompt: Promp
     return Prompt.make({ ...prompt, files })
   })
 
+/**
+ * Replaces oversized inline `content` fields in a tool's raw structured output
+ * with `blob://<hash>` references. A tool's raw output often duplicates bytes
+ * the model-facing content already carries (an image or PDF-page read is the
+ * common case), so leaving it inline doubles the durable payload; the event log
+ * grew to hundreds of megabytes of base64 this way. Reads materialize the
+ * reference back to bytes. Best-effort: a failed blob write keeps the value.
+ */
+export const externalizeToolStructured = (
+  blob: Blob.Interface,
+  structured: Record<string, unknown>,
+  /** Set when anything was externalized, so a migration can skip unchanged rows. */
+  stats?: { changed: boolean },
+): Effect.Effect<Record<string, unknown>> =>
+  walkStructured(blob, structured, stats).pipe(Effect.map((value) => value as Record<string, unknown>))
+
+const walkStructured = (blob: Blob.Interface, value: unknown, stats?: { changed: boolean }): Effect.Effect<unknown> => {
+  if (Array.isArray(value)) return Effect.forEach(value, (item) => walkStructured(blob, item, stats))
+  if (typeof value !== "object" || value === null) return Effect.succeed(value)
+  const record = value as Record<string, unknown>
+  return Effect.gen(function* () {
+    const entries = yield* Effect.forEach(Object.entries(record), ([key, item]) =>
+      walkStructured(blob, item, stats).pipe(Effect.map((next) => [key, next] as const)),
+    )
+    const next = Object.fromEntries(entries)
+    const bytes = oversizedStructuredBytes(next)
+    if (bytes === undefined) return next
+    const ref = yield* blob.put({ bytes, mime: next.mime as string }).pipe(Effect.orElseSucceed(() => undefined))
+    if (ref === undefined) return next
+    if (stats) stats.changed = true
+    return { ...next, content: Blob.refUri(ref.hash), contentRef: true }
+  })
+}
+
+/** The decoded bytes of an oversized inline `{ content, mime }` field, if any. */
+const oversizedStructuredBytes = (record: Record<string, unknown>): Buffer | undefined => {
+  if (record.contentRef === true) return undefined
+  if (typeof record.content !== "string" || typeof record.mime !== "string") return undefined
+  const bytes =
+    record.encoding === "base64" ? Buffer.from(record.content, "base64") : Buffer.from(record.content, "utf8")
+  return bytes.length > MAX_INLINE_ATTACHMENT_BYTES ? bytes : undefined
+}
+
 /** Replaces oversized inline tool-result files with `blob://<hash>` references. */
 export const externalizeToolContent = (blob: Blob.Interface, content: ToolOutput["content"]) =>
   Effect.forEach(
