@@ -14,6 +14,7 @@ import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
 import { AgentV2 } from "../agent"
 import type { Revert } from "@miao/schema/revert"
+import type { SessionEvent } from "./event"
 
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
 type V1MessageData = Omit<SessionV1.Info, "id" | "sessionID">
@@ -174,3 +175,42 @@ export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   snapshot: text({ mode: "json" }).notNull().$type<SystemContext.Snapshot>(),
   baseline_seq: integer().notNull(),
 })
+
+export const SessionDelegationTable = sqliteTable(
+  "session_delegation",
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    child_session_id: text().$type<SessionSchema.ID>().notNull(),
+    prompt_message_id: text().$type<SessionMessage.ID>().notNull(),
+    agent: text().notNull(),
+    prompt: text().notNull(),
+    description: text().notNull(),
+    owner: text().notNull(),
+    status: text().$type<"running" | SessionEvent.DelegationEnded["data"]["status"]>().notNull(),
+    result: text(),
+    ...Timestamps,
+  },
+  (table) => [index("session_delegation_owner_status_idx").on(table.session_id, table.status)],
+)
+
+/** Machine notifications do not consume or reset the user prompt allowance. */
+export const SessionNotificationTable = sqliteTable(
+  "session_notification",
+  {
+    id: text().$type<SessionMessage.ID>().primaryKey(),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    text: text().notNull(),
+    metadata: text({ mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    admitted_seq: integer().notNull(),
+    promoted_seq: integer(),
+    time_created: integer().notNull(),
+  },
+  (table) => [index("session_notification_pending_idx").on(table.session_id, table.promoted_seq, table.admitted_seq)],
+)

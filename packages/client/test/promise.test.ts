@@ -33,7 +33,6 @@ test("exposes every standard HTTP API group", () => {
     "workspace",
     "worktrees",
     "controlPlane",
-    "remote",
     "server.runtime",
   ])
   expect(Object.keys(client.messages)).toEqual(["list"])
@@ -48,16 +47,7 @@ test("exposes every standard HTTP API group", () => {
   ])
   expect(Object.keys(client.files)).toEqual(["content", "list", "find"])
   expect(Object.keys(client.ptys)).toEqual(["shells", "list", "create", "get", "update", "remove", "connectToken"])
-  expect(Object.keys(client.remote)).toEqual([
-    "get",
-    "login",
-    "loginEvents",
-    "loginInput",
-    "loginCancel",
-    "remove",
-    "pair",
-    "test",
-  ])
+  expect("remote" in client).toBe(false)
 })
 
 test("sessions.get returns the wire projection", async () => {
@@ -99,7 +89,11 @@ test("events.subscribe terminates on malformed Promise SSE data", async () => {
     fetch: async () => new Response("data: {not-json}\n\n", { headers: { "content-type": "text/event-stream" } }),
   })
 
-  const error = await client.events.subscribe()[Symbol.asyncIterator]().next().catch((cause) => cause)
+  const error = await client.events
+    .subscribe()
+    [Symbol.asyncIterator]()
+    .next()
+    .catch((cause) => cause)
 
   expect(error).toMatchObject({
     name: "ClientError",
