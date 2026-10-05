@@ -1,6 +1,6 @@
 # miao 路线图 — 剩余工作
 
-状态快照：**2026-10-04**，最新发布版本 **v0.1.4**。
+状态快照：**2026-10-05**，最新发布 tag **v0.1.4**（0.1.5–0.1.7 已准备；0.1.8 在 PR #151）。
 
 本文档是 V1→V2 重建中所有未完成项的**唯一权威清单**。它取代了此前分散的追踪文档
 （remaining-work checklist 与 handoff、V2 todo 列表、P7 路由盘点、app API 迁移清单，以及
@@ -11,7 +11,7 @@
 
 - **状态（Status）**：`open`（未开始）、`partial`（部分切片已落地）、`blocked`（受阻）。
 - **验收（Acceptance）** 是「切片完成」的可观察证据，而不只是「代码已合并」。
-- 大致按依赖与价值排序，非严格。
+- 顺序以文末的 **下一步（Next up）** 为准，其次按章节。
 - 适用于每个切片的通用规则集中列在文末。
 
 ## 已完成（背景，非剩余工作）
@@ -20,13 +20,54 @@
   已删除。服务端只挂载 `/api/*`、OpenAPI 文档与内嵌 UI。
 - V1 退役的 Stage 1–5 已全部落地。创建已是 V2 原生（`session.next.created.1`）；V1 投影器与
   `packages/core/v1` schema 仅为 legacy DB 读取、backfill、compact、restore 保留。
-- 所有已发布的客户端——TUI、`--mini`、ACP、`miao run`、web/desktop app、`miao remote`——
+- 所有已发布的客户端——TUI、`--mini`、ACP、`miao run`、web/desktop app——
   都通过 `/api/*` 读写。TUI 已**清零** legacy SDK 调用。
 - app 已从 vendored 上游客户端切到 `@miao/client`；`detectServerProtocol` 与
   `protocol === "v1"` 分支已删除。TUI 的 console/org 切换功能已删除。
 - SendMessage 首个切片、内容寻址 Blob 存储、durable 事件 tail，以及大部分 G2/G3/G9/G11/G13
   切片已完成。
 - 2026-10-04 快照的存储恢复验收已完成。
+
+## 2026-10-04 快照之后已落地
+
+- **V1 残留**：项目持久化下沉 core，退役 legacy `packages/miao` `Project` facade（#35 #36 #46）。
+  `PluginInput.client` 现暴露 V2 `@miao/client`，并已有 V2 插件入口
+  （`@miao/plugin/v2/promise` / `@miao/plugin/v2/effect`）；V1 `Hooks` 入口仅作为已弃用 shim
+  保留（§1.1）。
+- **V2 架构**：durable 后台任务及其生命周期、重启恢复、观测/控制工具（#111 #133 #105 #144），
+  以及 durable 后台子代理 handoff（#144）；`failInterruptedTools` 区分「未派发」与「结果未知」
+  （#101），停止轮次里悬挂的 tool-call opener 会被恢复（#139）；完整 shell 输出流式落受管存储
+  （#132）；ripgrep 已设界（默认超时 + `Stream.splitLines` + 行数上限）；AST 模糊编辑阶梯
+  （行裁剪、块锚点、相似度阈值）已实现（#76 #80 #103）；peer 消息在安全续跑边界投递并显示出站
+  回执（#112 #150）；供应商重复输出检测已覆盖多短语循环（#53 #127）。
+- **配置/存储/性能**：config V1 自动迁移（`packages/core/src/config.ts` 的 `ConfigMigrateV1`）；
+  `miao db {stats,backfill,vacuum,compact,restore,externalize-blobs,gc-blobs,retention}`
+  （#55 #56 #61 #63 #77）；durable log 读取分页（#52）；并发 drain 上限（#100）；独立 PTY 输入
+  延迟测试台（#141）与输入计时追踪。
+- **新主线（见 §8）**：Hub 认证/目录/中继（#98 #99 #109 #110）、远程控制通道/授权
+  （#67 #70 #71 #87 #90）、iOS app 与配对（#72 #85 #96 #125）、Command Code provider
+  （#129 #138 #149）。
+
+## 下一步（Next up，按序）
+
+1. **§1.3** 移除 `packages/miao` 的 `app-runtime` V1 层与剩余非会话路由；发布服务端切到
+   V2-only 组装。收尾 V1→V2 重置。
+2. **§1.2** 退役 app 的 legacy 类型、过渡会话/消息事件与路由 mock。
+3. **§2.1** 完成 runner 切片：合批流式 delta + 补覆盖性投影历史索引、移除 `@miao/llm` 工具
+   循环、暴露可重放 Session 事件游标。
+4. **§2.5** 剩余输出边界：非流式 JSON/image body 上限。
+5. **§2.3** 取消：级联取消作为单一路径、增量工具进度、历史降级前物化 remote/managed URI。
+6. **§2.4** 崩溃恢复幂等：幂等键 + 一次性消费 token。
+7. **§2.8** 把 core 沙箱扩展到其余变更型工具，再默认开启。
+8. **§2.7** MCP 渐进发现 / CIMD OAuth / 确定性 `tools/list`。
+9. **§2.2** ACP terminal 契约（`terminal/create`、`wait_for_exit`、`kill`、`release`）。
+10. **§3** 完成 config/插件/service 重构（嵌套指令、每 service 热重载、provider 作为插件）。
+11. **§4** 存储运维验收（压缩 `miao-main.db`、量测 `miao.db`、仅 delta 事件）。
+12. **§2.9** 设计 durable 续跑恢复（当前 blocked）。
+13. **§5** 产出双语性能报告。
+14. **§7** 刷新过时指南。
+15. **§6** 发布二进制验收（多为 owner/凭据受阻）。
+16. **§8** 落地远程控制 / Hub / iOS / push 主线。
 
 ---
 
@@ -37,10 +78,12 @@
 
 ### 1.1 legacy JS SDK（P5）
 旧 V1 SDK 已移除：没有任何包依赖 V1 SDK 表面，app 与 CLI 都走 `@miao/client`，`packages/sdk` 现在是
-**嵌入式 SDK 入口**（库用法 `OpenCode.create()`），不是 legacy 表面——保留它。剩余：
-- [ ] 把插件的 `Hooks` 接口与 `PluginInput.client` 从 V1 形状迁走
-      （`packages/plugin/src/index.ts`）。这是插件 API 设计工作（见第 3 节），不是清理。
-- **验收：** `PluginInput.client` 暴露 V2 客户端，V1 `Hooks` 接口被适配或退役。
+**嵌入式 SDK 入口**（库用法 `OpenCode.create()`），不是 legacy 表面——保留它。
+- [x] `PluginInput.client` 暴露 V2 `@miao/client`（`OpenCode.make`），并已有 V2 插件入口
+      （`define`，来自 `@miao/plugin/v2/promise` 或 `@miao/plugin/v2/effect`）。V1 `Hooks`
+      入口仅作为已弃用 shim 保留，在 V2 下会打印一次性警告。
+- **验收：** `PluginInput.client` 暴露 V2 客户端，V1 `Hooks` 接口被适配或退役。（已满足；
+  待无消费者使用后可删除该弃用 shim。）
 
 ### 1.2 app 旧类型与适配层
 app 的网络调用已迁移，恒等的 `server-compat` shim 已删除（#40）。注意：`src/utils/session.ts` 与
@@ -66,15 +109,10 @@ V1 形状的遗留：
 ### 1.3 非会话旧路由与服务端拆除
 大多数 V2 端点已存在（`pty.shells`、`project.update`、`vcs.diff`、`fs.content`、`config.update`、
 经 `/api/worktree` 的 `workspace.reset`、`project.initGit`、项目持久化）。剩余：
-- [x] 把项目持久化下沉 core。ID 迁移、sandbox 维护、目录注册与 `project.updated` 事件本就在 core
-      `ProjectRegistry` 中；`ProjectMetadata` 现在也负责 `setInitialized`、`sandboxes`、`addSandbox`、
-      `removeSandbox`。`packages/miao` 的 `Project` 服务委托 core，不再直接写 `ProjectTable`
-      （#35、#36）。服务端 handler 已只用 core。
-- [x] 删除 `packages/miao` 的旧 `Project` facade。实例启动直接调用 core 的完整项目注册；
-      `/init` 订阅并入实例 bootstrap，并随实例释放。工作树、CLI 与测试直接使用
-      `ProjectRegistry`、`ProjectMetadata` 和 Schema 类型；原有迁移、目录、图标与元数据测试保留。
+- [x] 把项目持久化下沉 core（#35、#36）。
+- [x] 删除 `packages/miao` 的旧 `Project` facade（#46）。
 - [ ] 移除 `packages/miao` 的 `app-runtime` V1 层及剩余非会话旧路由；把发布服务端切到 V2-only
-      组装。
+      组装。（`AppRuntime` 目前仍被 `packages/miao/src/runtime/*`、与 TUI worker 使用。）
 - [ ] 确认 V2 端点覆盖了此前在 V2 下被静默禁用的 app 行为（全局配置读取、项目重命名、目录
       选择器、自定义 provider）。
 - **验收：** `packages/miao` 只剩 CLI 外壳；服务端仅挂载 `/api/*`；无 V1 project 代码残留。
@@ -87,7 +125,7 @@ V1 形状的遗留：
 
 ### 2.1 原生 runner 切片
 首个 Effect 原生的本地 runner 已实现。接下来审定的切片：
-- [ ] 保留结构化的本地工具**急切结算**：持久化记录每次完整调用，立即启动子执行，在 provider
+- [x] 保留结构化的本地工具**急切结算**：持久化记录每次完整调用，立即启动子执行，在 provider
       turn 关闭后等待所有结算，然后只重载一次投影历史。
 - [ ] 在扩大暴露前，重新审视每轮工具调用上限、输出截断与运行背压。当前本地急切执行刻意
       不设上限，而 SQLite 发布保持串行。
@@ -97,14 +135,14 @@ V1 形状的遗留：
 - [ ] 在远端消费者需要处，通过 HTTP 与生成的 SDK 暴露可重放的 Session 事件游标。
 
 ### 2.2 后台 / 异步任务（G6）
-**入口：** `packages/core/src/background-job.ts`（已存在，**未接 V2**）、
-`packages/core/src/tool/bash.ts:72-74`。
+**入口：** `packages/core/src/session/background-jobs.ts`、`packages/core/src/tool/background-job.ts`、
+`packages/core/src/background-job.ts`、`packages/core/src/tool/bash.ts`。
 - [ ] 采用 ACP terminal 契约（`terminal/create` → `output`
       [output/truncated/exitStatus] / `wait_for_exit` / `kill` / `release`、`outputByteLimit`
       从头部按字符边界截断）。
-- [ ] 将 `BackgroundJob` 接入 V2 工具执行：durable status、有界预览、协作式取消、增量投递、
-      完成投递。
-- [ ] 在暴露远端观测前定义重启恢复与授权。
+- [x] 将 `BackgroundJob` 接入 V2 工具执行：durable status、有界预览、协作式取消、增量投递、
+      完成投递、观测/控制工具（#105 #111 #133）。
+- [x] 在暴露远端观测前定义重启恢复与授权（#133 #144）。
 - **验收：** 启动一个后台任务，重启 dev server，查询状态并取回退出码与截断输出。
 
 ### 2.3 取消结算与工具进度（G4）
@@ -121,26 +159,28 @@ V1 形状的遗留：
 
 ### 2.4 崩溃恢复幂等（G5）
 **入口：** `packages/core/src/session/runner/llm.ts`。
-进展：由前序进程遗留仍在运行的工具会以「结果未知」错误结算（`failInterruptedTools`）。
+进展：由前序进程遗留仍在运行的工具会以「结果未知」错误结算（`failInterruptedTools`），且
+未派发调用与「结果未知」调用已被区分（#101）。
 - [ ] 幂等键（`callID` + attempt）外加一次性消费 token。
 - [ ] 重启时把未结算调用标记为结果未知，并要求显式 retry/abandon。
 - **验收：** 工具执行中途 kill，恢复 → 无重复副作用；模型看到「结果未知」。
 
 ### 2.5 输出边界 / 超时 / 上限（G7）
-**入口：** `packages/core/src/tool/bash.ts`、`ripgrep.ts`、`tool/websearch.ts`、
-`tool/http-body.ts`、`tool-output-store.ts`。
-进展：ripgrep 强制默认 30s 超时（可覆盖），到期 kill 并使调用失败；webfetch/websearch 对响应体
-设界；MCP 图片结果上限 5 MB base64。
-- [ ] 把完整 shell 输出流式写入受管存储，仅在有界内存中保留预览。
-- [ ] 为 ripgrep 增加有界的按行分帧。
+**入口：** `packages/core/src/tool/bash.ts`、`packages/core/src/ripgrep.ts`、
+`packages/core/src/tool/{websearch,http-body}.ts`、`packages/core/src/tool-output-store.ts`。
+进展：ripgrep 强制默认 30s 超时（可覆盖），并用 `Stream.splitLines` + 行数上限为扫描设界；
+webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完整 shell 输出流式落受管存储，
+同时内存预览有界（#132）。
+- [x] 把完整 shell 输出流式写入受管存储，仅在有界内存中保留预览（#132）。
+- [x] 为 ripgrep 增加有界的按行分帧。
 - [ ] 对尚未设界的非流式 JSON/image body 加上限。
 - **验收：** `yes` / 超长行输出不会撑爆内存或挂起；长时间 grep 干净超时。
 
 ### 2.6 AST 编辑阶梯（G8 剩余）
-**入口：** `packages/core/src/tool/edit.ts`、`edit-fuzzy.ts`、`packages/core/src/snapshot.ts`。
-进展：基于快照的 undo/redo 已存在；会破坏文件的 mid-line 模糊匹配被拒绝。
-- [ ] 在精确编辑行为确立后，实现 AST 感知的编辑阶梯（刻意移植 V1 模糊修正策略：行裁剪匹配、
-      块锚点回退、缩进修正、相似度阈值复核）。
+**入口：** `packages/core/src/tool/edit.ts`、`edit-fuzzy.ts`、`edit-match.ts`、
+`packages/core/src/snapshot.ts`。
+- [x] 已按 V1 策略刻意移植 AST 感知编辑阶梯（行裁剪匹配、块锚点回退、缩进修正、相似度阈值
+      复核）（#76 #80 #103）。
 - **验收：** 会被 token 匹配破坏的编辑被结构化应用或被拒绝；undo 还原编辑前的字节。
 
 ### 2.7 MCP 渐进发现 / OAuth / CIMD（G9 剩余）
@@ -157,8 +197,8 @@ V1 形状的遗留：
 
 ### 2.8 bash 之外的沙箱覆盖（G12 剩余）
 **入口：** `packages/core/src/sandbox.ts`（`Sandbox.Service`）、
-`packages/core/src/sandbox/{runner,policy}.ts`。
-进展：V2 bash 在 core OS 沙箱下运行；catch-all allow 规则无法解除它。
+`packages/core/src/sandbox/{runner,policy}.ts`、`packages/core/src/config/sandbox.ts`。
+进展：V2 bash 与 code-mode 在 core OS 沙箱下运行；catch-all allow 规则无法解除它。
 - [ ] 把同一 core-owned 沙箱扩展到其他变更型工具（workdir、允许路径、网络），fail-closed、
       面向模型的拒绝提示。
 - [ ] 让沙箱对剩余工具默认开启。
@@ -181,7 +221,7 @@ V1 形状的遗留：
       竞争）。
 - [ ] 用 Effect `RcMap` 与每个活跃聚合一个共享 `PubSub.sliding<void>(1)` 简化进程内 durable-tail
       wake 生命周期，保持 SQLite 游标重放与 subscribe-before-history 语义不变。
-- [ ] 分页读取大规模 durable 聚合重放，而不是把陈旧游标后的所有行一次性载入数组。
+- [x] 分页读取大规模 durable 聚合重放，而不是把陈旧游标后的所有行一次性载入数组（#52）。
 - [ ] 决定已连接的 tail 是否需要针对跨进程 SQLite 写入者的周期性轮询兜底（当前 advisory wake
       刻意是进程内的）。
 - [ ] 在解析前对 websearch body 收集加流式上限。
@@ -198,16 +238,17 @@ V1 形状的遗留：
 进展：`send_message` 解析 Session ID 或 `@slug`，拒绝缺失与跨项目目标，拒绝撑爆目标入站队列
 （`MAX_INBOUND_QUEUE`），准入一条排队的 `<message from session="…">` 输入，并通过
 `SessionRunner.run` 上的 `wake` 回调唤醒目标。`list_sessions` 枚举同级 Session。投递按目标断言
-`message` permission 动作（默认 ask）。同项目内 A → B 投递已可用。
+`message` permission 动作（默认 ask）；peer 消息在安全续跑边界投递（#112），出站回执已显示。
+（#150）。同项目内 A → B 投递已可用。
 - [ ] 接收方 drain 的循环防护成本核算。
 - [ ] 回复回送到发送方；重启后无重复投递；与无关会话隔离。
 - **验收：** A 发给 B；B 收到；回复回送；重启不产生重复。
 
 ### 2.12 供应商重复输出保护
 - [x] 为文本/reasoning 检测提供按流隔离、有界的状态；高置信度短句循环会中止而不自动重试，
-      保留此前工具结算。
-- [x] 只在供应商上下文中隔离已识别的重复助手输出，保留持久化记录与已完成工具调用/结果。
-- [ ] 收集更多 wire 证据后，扩展短的换行自然语言之外的检测范围。
+      保留此前工具结算（#53）。
+- [x] 只在供应商上下文中隔离已识别的重复助手输出，保留持久化记录与已完成工具调用/结果（#53）。
+- [x] 把检测从短的换行自然语言扩展到多短语循环（#127）。
 - **证据：** [调查与边界](provider-output-repetition.zh.md)，含同模型并发正常会话对照。
   这是客户端保护，不是已证实修复了供应商根因。
 
@@ -215,12 +256,15 @@ V1 形状的遗留：
 
 ## 3. Config、插件、service
 
-**状态：** open。
-- [ ] 重构 config 为更干净的形态，并自动转换旧配置。旧配置应被自动转换。
-- [ ] 在作用域化 System Context registry seam 上实现插件定义的 context 注册与热重载生命周期。
-- [ ] 成功读取后的嵌套项目指令发现，在下一个 Safe Provider-Turn Boundary 处 durable 准入。
-- [ ] 设计服务端插件 API 与 hooks（immer 草稿以便丢弃坏变更、全局实例、工具注册如
-      `opencode.tool.register({...})`）。
+**状态：** partial —— 插件 API 与 config 迁移已落地；service 热重载与 provider-as-plugin 未完成。
+- [x] config V1 自动迁移（`ConfigMigrateV1`）；含任意 V1 key 的文档整体迁移
+      （`packages/core/src/config.ts`）。
+- [x] 已有作用于作用域化 context/registration seam 的 V2 插件表面
+      （`packages/plugin/src/v2/{promise,effect}`，含 `context.ts` 与 `registration.ts`，建在
+      `packages/core/src/system-context/registry.ts` 之上）。
+- [ ] 成功读取后的嵌套项目指令发现，在下一个 Safe Provider-Turn Boundary 处 durable 准入
+      （入口 `packages/core/src/instruction-context.ts`）。
+- [ ] 设计服务端插件 API 与 hooks（immer 草稿以便丢弃坏变更、全局实例、工具注册）。
 - [ ] 通过细粒度事件让每个 service 可热重载，而非拆除重建，使服务能对变化做出反应并自我
       重配（前端也能收到，如 `model.added`）；这也避免启动阻塞。
 - [ ] 把 provider 作为插件注册，按各自的逻辑/config 自动加载，并把模型注册进模型数据库；
@@ -230,20 +274,20 @@ V1 形状的遗留：
 
 ## 4. 存储运维
 
-**状态：** partial。
-- [ ] 压缩 `miao-main.db`（preview channel；2026-10-04 为 **2.34 GB**，未压缩）。沿用 V1 表退役
-      路径（`miao db compact`：批量删除 `message.*` 事件、drop `message`/`part`、只重置被清空的
-      `event_sequence` 行、checkpoint + vacuum）。
-- [ ] 对照 <200 MB 验收核对 `miao.db`（2026-10-04 为 **876 MB**；此前 2026-10-03 为 666 MB）。
-- [x] 删除 `~/.local/share/miao` 下旧的 `miao*.db.bak-*` / `*.compacted-*` 副本及
-      `retirement-20261003` 演练暂存。2026-10-04 经 owner 批准删除：21 GB → 5.8 GB（回收约
-      15 GB）。活跃数据库（`miao.db`、`miao-main.db`、`miao-local.db`）与已验收的
-      `backups/acceptance-*` 快照均保留。macmini 构建机上没有 miao 数据库文件，无需迁移。
+**状态：** partial —— 工具已落地；运维验收仍未完成。
+- [x] `miao db {stats,backfill,vacuum,compact,restore,externalize-blobs,gc-blobs,retention}`
+      均存在（#55 #56 #61 #63 #77）。`db stats` 报告 blob 存储与内联 base64；`db compact` 执行
+      V1 表退役（批量删除 `message.*` 事件、drop `message`/`part`、只重置被清空的
+      `event_sequence` 行、checkpoint + vacuum）；`db gc-blobs` 删除未引用 blob；`db retention`
+      报告可裁剪事件。
+- [ ] 压缩 `miao-main.db`（preview channel；2026-10-04 为 **2.34 GB**，未压缩）并记录结果。
+- [ ] 对照 <200 MB 验收核对 `miao.db`（2026-10-04 为 **876 MB**）。
+- [x] 删除 `~/.local/share/miao` 下旧的 `miao*.db.bak-*` / `*.compacted-*` 副本及退役演练暂存
+      （2026-10-04 经 owner 批准：21 GB → 5.8 GB，回收约 15 GB）。
 - [ ] 仅 delta 事件：退役 V1 的逐 delta sync 事件；每个完成片段/消息只保留一行 durable 记录。
-      不要把 V1 的 snapshot-per-delta 带过来。（V2 写路径已按片段持久化一条 durable
-      `text.started`/`text.ended`，无 durable delta。）
-- [ ] 事件日志保留/压缩（snapshot-then-truncate）。
-- [ ] 按项目 blob GC（引用计数或 mark-and-sweep）。
+      （V2 写路径已按片段持久化一条 durable `text.started`/`text.ended`，无 durable delta。）
+- [ ] 事件日志保留/压缩（snapshot-then-truncate），建在 `db retention` 之上。
+- [x] 按项目 blob GC（`db gc-blobs`，#61）。
 - [ ] 验证 `db stats` 无 `message.part.updated` 膨胀、无内联 base64，`event` 行数由片段/消息数
       界定，且 `db vacuum` 能回收体积。
 - **验收：** 事件行数有界、无内联 base64、文件体积被回收。
@@ -255,7 +299,8 @@ V1 形状的遗留：
 **状态：** partial（测量已完成，分析与报告未完成）。已编译 0.1.2 preview 上的 400 消息固定负载
 打字运行已完成：1800 s，119 输入 / 0 超时，PTY 写入到回显 P50 19.5 ms / P95 23.7 ms /
 P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在 35；hydration 计数 1。
-测量边界不含终端呈现，且这是「空闲 + 打字」，不是流式或反复的 Session 生命周期切换。
+测量边界不含终端呈现，且这是「空闲 + 打字」，不是流式或反复的 Session 生命周期切换。现已存在
+独立 PTY 输入延迟测试台（#141），并追踪输入计时（#146）。
 - [ ] 用下载的 0.1.0 产物在同一夹具上运行，做受控的前后对比，串行地配合后续运行。（产物路径
       记录在已归档的 2026-10-04 交接文档中；不要在此硬编码临时路径。）
 - [ ] 审计批量按键的输入计时关联；当前收据逻辑可能覆盖 pre-update 收据，因此结果不能称作
@@ -284,7 +329,8 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
       `session_message` `seq=17`）。在 xx02 上用隔离数据库演练。
 
 仍未完成或受阻：
-- [ ] 验收已发布的 **Windows 0.1.4** 产物从 0.1.2 的升级路径（目前只做了全新安装）。
+- [ ] 验收已发布的 Windows 产物从 0.1.2 的升级路径（目前只做了全新安装）；对照当前 release
+      （0.1.7 已准备 / 0.1.8 待合）重做。
 - [ ] 在已发布二进制中验收出站消息卡片与跨进程收发行为（受阻：验证机上无 provider 凭据）。
 - [ ] 在已发布二进制中针对真实 provider 观测 provider 报错可见性（受阻：无 provider 凭据；此前
       编译二进制故障注入看到红色 `API Error: 429` 与 `Retrying · attempt #1`）。
@@ -305,6 +351,20 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 - [ ] 更新仍描述已移除 SDK 或已被取代架构的现行指南。
 - [ ] 保留历史发布/研究记录与上游许可声明。
 - [ ] 将 OpenCode 厂商 provider ID（`opencode`、`opencode-go`）保留为真实 provider 身份。
+
+---
+
+## 8. 远程控制、Hub、iOS、push（快照后新增）
+
+**状态：** in progress。这条主线尚未进入既有的剩余工作清单；它存在于 open PR 与近期合并中。
+- [x] 认证加密的中继 hub、通道与 durable grants（#67 #70 #71 #87 #90）。
+- [x] Hub 账号认证、目录绑定与一次性 runtime ticket（#98 #99 #109 #110）。
+- [x] Android/iOS 原生远程控制应用与配对（#72 #85 #96 #125），以及无需重启会话的 runtime
+      控制（#121 #122 #134）。
+- [ ] 浏览器会话工作区、账号 cookie、checkpoint 与中继连接（#124 #126 #128 #130）。
+- [ ] push 投递：APNs 传输、registry、注册 API、iOS token 生命周期（#146 #147 #148 #150 #152）。
+- [ ] 私有 named-tunnel 部署（#145）与有界实时文本快照（#142）。
+- [ ] 统一会话远程控制设计文档（#64）。
 
 ---
 

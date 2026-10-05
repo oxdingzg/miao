@@ -115,6 +115,10 @@ export const Model = Schema.Struct({
     }),
   ),
   status: Schema.optional(CatalogModelStatus),
+  // The plan tiers that include this model, cheapest-first (e.g. ["pro", "max"]).
+  // Only catalog entries that gate models by subscription plan set it (currently
+  // Command Code); a missing value means "unknown, show it".
+  plans: Schema.optional(Schema.Array(Schema.String)),
   provider: Schema.optional(
     Schema.Struct({ npm: Schema.optional(Schema.String), api: Schema.optional(Schema.String) }),
   ),

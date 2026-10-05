@@ -58,7 +58,6 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     attachments: info.attachment,
     tool_output: info.tool_output,
     sandbox: info.sandbox,
-    remote: info.remote,
     mcp: mcp(info),
     compaction: info.compaction && {
       auto: info.compaction.auto,
