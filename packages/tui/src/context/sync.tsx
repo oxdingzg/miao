@@ -265,6 +265,8 @@ export const {
           let reasoning = 0
           let tool = 0
           let textUnits = 0
+          let reasoningUnits = 0
+          let toolUnits = 0
           for (const message of messages) {
             for (const part of store.part[message.id] ?? []) {
               if (part.type === "text") {
@@ -272,21 +274,28 @@ export const {
                 textUnits += part.text.length
               } else if (part.type === "reasoning") {
                 reasoning += 1
+                reasoningUnits += part.text.length
                 textUnits += part.text.length
               } else if (part.type === "tool" && part.state.status === "completed") {
                 tool += 1
+                toolUnits += part.state.output.length
                 textUnits += part.state.output.length
               }
             }
           }
           return {
             sessionID,
+            // Pinned sessions (the open route or an inline subagent) are exempt
+            // from LRU eviction, so they can exceed the retained-text cap.
+            pinned: pinnedSessions.has(sessionID),
             messages: messages.length,
             parts: text + reasoning + tool,
             text,
             reasoning,
             tool,
             textUnits,
+            reasoningUnits,
+            toolUnits,
             olderMessages: olderHistory.get(sessionID)?.messages.length ?? 0,
           }
         }),
