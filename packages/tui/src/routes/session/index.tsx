@@ -1114,8 +1114,14 @@ export function Session() {
   // while only the rows near the reader remain mounted.
   function followWindow() {
     if (!scroll || scroll.isDestroyed || loadingHistory) return
-    // Lifecycle passes run before layout; skip until the scrollbox has geometry.
-    if (scroll.scrollHeight <= 0) return
+    // Lifecycle passes run before layout, so the scrollbox may still report no
+    // geometry. That is only transient: retry on the next frame instead of
+    // giving up, or a transcript that mounted before its first layout would
+    // never follow the viewport and every message would stay mounted.
+    if (scroll.scrollHeight <= 0) {
+      requestAnimationFrame(followWindow)
+      return
+    }
     transcript.follow({
       scrollTop: scroll.scrollTop,
       viewportHeight: scroll.height,
