@@ -115,7 +115,7 @@ describe("run runtime queue", () => {
     expect(calls).toBe(0)
   })
 
-  test("treats /new as a local session command", async () => {
+  test("treats /clear as a local session command", async () => {
     const ui = footer()
     const seen: string[] = []
     let created = 0
@@ -131,7 +131,7 @@ describe("run runtime queue", () => {
       },
     })
 
-    ui.submit("/new")
+    ui.submit("/clear")
     ui.submit("hello")
     await task
 
@@ -167,7 +167,7 @@ describe("run runtime queue", () => {
     expect(ui.commits).toEqual([])
   })
 
-  test("shell mode submits /new instead of creating a session", async () => {
+  test("shell mode submits /clear instead of creating a session", async () => {
     const ui = footer()
     const seen: RunPrompt[] = []
     let created = 0
@@ -183,11 +183,11 @@ describe("run runtime queue", () => {
       },
     })
 
-    ui.submit("/new", "shell")
+    ui.submit("/clear", "shell")
     await task
 
     expect(created).toBe(0)
-    expect(seen).toEqual([{ text: "/new", parts: [], mode: "shell" }])
+    expect(seen).toEqual([{ text: "/clear", parts: [], mode: "shell" }])
     expect(ui.commits).toEqual([])
   })
 

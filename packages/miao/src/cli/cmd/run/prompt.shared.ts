@@ -48,8 +48,8 @@ export function isExitCommand(input: string): boolean {
   return text === "/exit" || text === "/quit" || text === ":q"
 }
 
-export function isNewCommand(input: string): boolean {
-  return input.trim().toLowerCase() === "/new"
+export function isClearCommand(input: string): boolean {
+  return input.trim().toLowerCase() === "/clear"
 }
 
 export function createPromptHistory(items?: RunPrompt[]): PromptHistoryState {

@@ -19,7 +19,7 @@ import {
   displaySlice,
   isExitCommand,
   mentionTriggerIndex,
-  isNewCommand,
+  isClearCommand,
   movePromptHistory,
   pushPromptHistory,
 } from "./prompt.shared"
@@ -416,7 +416,7 @@ export function createPromptState(input: PromptInput): PromptState {
         display: "/editor",
         description: "compose in your external editor",
       } satisfies SlashOption,
-      { kind: "slash", name: "new", display: "/new", description: "start a new session" } satisfies SlashOption,
+      { kind: "slash", name: "clear", display: "/clear", description: "start a new session" } satisfies SlashOption,
       { kind: "slash", name: "exit", display: "/exit", description: "close miao" } satisfies SlashOption,
     ]
     const hidden = new Set(builtins.map((item) => item.name))
@@ -861,7 +861,7 @@ export function createPromptState(input: PromptInput): PromptState {
 
       const cursor = area.cursorOffset
       const head = slashHead(area.plainText)
-      const local = !shell() && (next.name === "new" || next.name === "exit")
+      const local = !shell() && (next.name === "clear" || next.name === "exit")
       const separator = !shell() && !local && head && /\s/.test(area.plainText[head.end] ?? "") ? "" : " "
       const text = `/${next.name}${separator}`
 
@@ -1186,7 +1186,7 @@ export function createPromptState(input: PromptInput): PromptState {
     }
 
     const parsed =
-      command || next.mode === "shell" || isNewCommand(next.text)
+      command || next.mode === "shell" || isClearCommand(next.text)
         ? undefined
         : parseSlashCommand(next.text, input.commands())
     if (parsed?.type === "pending") {

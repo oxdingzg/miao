@@ -617,8 +617,7 @@ function App(props: {
         title: "New session",
         suggested: route.data.type === "session",
         category: "Session",
-        slashName: "new",
-        slashAliases: ["clear"],
+        slashName: "clear",
         run: () => {
           route.navigate({
             type: "home",
