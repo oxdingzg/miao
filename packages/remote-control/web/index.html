@@ -49,6 +49,7 @@
           <span id="connection" class="badge">未连接</span>
           <div class="session-actions">
             <button id="rename" class="quiet" disabled>重命名</button>
+            <button id="diff" class="quiet" disabled>文件变化</button>
             <button id="interrupt" class="quiet" disabled>停止任务</button>
           </div>
         </header>
@@ -81,6 +82,11 @@
         <button type="button" id="rename-cancel" class="quiet">取消</button>
         <button type="submit">保存名称</button>
       </form>
+    </dialog>
+    <dialog id="diff-dialog" aria-labelledby="diff-title">
+      <h2 id="diff-title">文件变化</h2>
+      <div id="diff-content"></div>
+      <button id="diff-close" class="quiet">关闭文件变化</button>
     </dialog>
   </body>
 </html>

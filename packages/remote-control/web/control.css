@@ -322,3 +322,18 @@ dialog::backdrop {
     gap: 12px;
   }
 }
+#diff-dialog {
+  width: min(960px, 94vw);
+  max-height: 85dvh;
+}
+#diff-content {
+  max-height: 65dvh;
+  overflow: auto;
+}
+#diff-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 13px/1.6 monospace;
+  padding: 12px;
+  border: 1px solid var(--line);
+}

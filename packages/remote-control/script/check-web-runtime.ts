@@ -195,6 +195,14 @@ try {
   void approval.catch(() => browser?.close())
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
+  page.on("console", (message) => {
+    if (
+      /^Remote action failed (forbidden|not_found|conflict|expired|outcome_unknown|invalid_request|unavailable|disconnected|timeout|busy|invalid_response)$/.test(
+        message.text(),
+      )
+    )
+      console.error(message.text())
+  })
   const openListed = async (label: string) => {
     const item = page.getByRole("button", { name: label, exact: true })
     await page.locator("#sessions .item").first().waitFor()
@@ -230,6 +238,14 @@ try {
     await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length === 100)
   }
   await openListed("Live Runtime workspace")
+  stage = "owner-diff"
+  const directDiff = await request(`/api/session/${sessionID}/diff`)
+  if (!object(directDiff) || !Array.isArray(directDiff.data) || directDiff.data.length)
+    throw new Error("Fixture diff shape unexpected")
+  stage = "diff"
+  await page.getByRole("button", { name: "文件变化", exact: true }).click()
+  await page.getByText("当前会话还没有文件变化。", { exact: true }).waitFor()
+  await page.getByRole("button", { name: "关闭文件变化", exact: true }).click()
   stage = "admission"
   await page.getByLabel("发送到会话").fill("持久化网页输入")
   await page.getByRole("button", { name: "发送 ↑" }).click()

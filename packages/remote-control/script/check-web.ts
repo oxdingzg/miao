@@ -139,6 +139,15 @@ try {
           admittedSeq: events.length,
         }
       },
+      "session.diff": async () => [
+        {
+          path: "src/remote.ts",
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          patch: "-old\n+<script>unsafe()</script>",
+        },
+      ],
       "session.pending": async () => ({
         permissions: permissionReplied
           ? []
@@ -260,6 +269,11 @@ try {
   await page.getByRole("button", { name: "下一页", exact: true }).click()
   await page.getByRole("button", { name: "Remote workspace", exact: true }).click()
   await page.getByText("已整理变更，等待你的下一步。", { exact: false }).waitFor()
+  stage = "diff"
+  await page.getByRole("button", { name: "文件变化", exact: true }).click()
+  await page.locator("#diff-content pre").getByText("+<script>unsafe()</script>", { exact: false }).waitFor()
+  if (await page.locator("#diff-content script").count()) throw new Error("Diff content became executable markup")
+  await page.getByRole("button", { name: "关闭文件变化", exact: true }).click()
   stage = "permission"
   await page.getByLabel("使用网页 · 浏览器操作", { exact: true }).check()
   await page.getByLabel("iPhone · 手机", { exact: true }).check()

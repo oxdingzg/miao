@@ -7,6 +7,7 @@ import { BrowserCheckpoint } from "../src/browser-checkpoint"
 import { RemoteRPC } from "../src/remote-rpc"
 import { Permission } from "@miao/schema/permission"
 import { Question } from "@miao/schema/question"
+import { Revert } from "@miao/schema/revert"
 import type { ControlAgent } from "../src/agent"
 
 const get = <T extends HTMLElement>(id: string, kind: { new (): T }): T => {
@@ -24,6 +25,9 @@ const rename = get("rename", HTMLButtonElement)
 const interrupt = get("interrupt", HTMLButtonElement)
 const pending = get("pending", HTMLElement)
 const renameDialog = get("rename-dialog", HTMLDialogElement)
+const diffButton = get("diff", HTMLButtonElement)
+const diffDialog = get("diff-dialog", HTMLDialogElement)
+const diffContent = get("diff-content", HTMLDivElement)
 let renameScope: BrowserCheckpoint.Scope | undefined
 let observedExecutionID: string | undefined
 let pendingSignature = ""
@@ -82,12 +86,19 @@ function disconnect() {
   pendingSignature = ""
   pendingNodes.clear()
   renameDialog.close()
+  diffButton.disabled = true
+  diffDialog.close()
+  diffContent.replaceChildren()
 }
 function report(message: string) {
   notice.textContent = message
 }
 function run(action: () => Promise<void>) {
-  void action().catch(() => report("操作未能确认。请检查连接后重试；已发送的输入不会自动重发。"))
+  void action().catch((error: unknown) => {
+    if (error instanceof RemoteRPC.RequestError && error.code === "disconnected") return
+    console.warn("Remote action failed", error instanceof RemoteRPC.RequestError ? error.code : "invalid_response")
+    report("操作未能确认。请检查连接后重试；已发送的输入不会自动重发。")
+  })
 }
 function stamp(hostID: string) {
   const session = account.session()
@@ -385,6 +396,9 @@ async function openSession(sessionID: string, label: string) {
     sessionID,
   }
   scope = partition
+  diffDialog.close()
+  diffContent.replaceChildren()
+  diffButton.disabled = !approved.permissions.includes("read")
   renameDialog.close()
   pendingSignature = ""
   pending.replaceChildren()
@@ -770,6 +784,35 @@ rename.onclick = () => {
   renameDialog.showModal()
 }
 get("rename-cancel", HTMLButtonElement).onclick = () => renameDialog.close()
+get("diff-close", HTMLButtonElement).onclick = () => diffDialog.close()
+diffButton.onclick = () =>
+  run(async () => {
+    const connection = rpc
+    const partition = scope
+    const current = generation
+    if (!connection || !partition || diffButton.disabled) return
+    diffButton.disabled = true
+    try {
+      const value = await connection.request("session.diff", { sessionID: partition.sessionID })
+      if (current !== generation || connection !== rpc || partition !== scope) return
+      if (!Array.isArray(value) || value.length > 2048) throw new Error("Invalid file changes")
+      const files = Schema.decodeUnknownSync(Schema.Array(Revert.FileDiff))(value)
+      const items = files.map((file) => {
+        const section = document.createElement("section")
+        const heading = document.createElement("h3")
+        heading.textContent = file.path + " · +" + file.additions + " −" + file.deletions
+        const patch = document.createElement("pre")
+        patch.textContent = file.patch
+        section.append(heading, patch)
+        return section
+      })
+      diffContent.replaceChildren(...items)
+      if (!items.length) diffContent.textContent = "当前会话还没有文件变化。"
+      diffDialog.showModal()
+    } finally {
+      if (current === generation) diffButton.disabled = false
+    }
+  })
 get("rename-form", HTMLFormElement).onsubmit = (event) => {
   event.preventDefault()
   run(async () => {
