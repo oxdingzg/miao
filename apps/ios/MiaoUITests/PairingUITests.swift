@@ -41,7 +41,14 @@ final class PairingUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertEqual(draft.value as? String, "retained phone draft")
-        app.buttons["会话菜单"].tap()
+        let menu = app.buttons["sessionMenu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 15))
+        expectation(for: NSPredicate { element, _ in
+            guard let button = element as? XCUIElement else { return false }
+            return button.isEnabled && button.isHittable
+        }, evaluatedWith: menu)
+        waitForExpectations(timeout: 30)
+        menu.tap()
         app.buttons["重命名"].tap()
         let title = app.alerts.textFields.firstMatch
         title.tap()

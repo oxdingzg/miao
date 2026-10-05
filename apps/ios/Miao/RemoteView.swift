@@ -280,7 +280,8 @@ private struct SessionView: View {
                 if client.record.grant.permissions.contains(.sessionRename) {
                     Button("重命名", systemImage: "pencil") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
                 }
-            } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单").disabled(!client.ready)
+            } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
+                .accessibilityIdentifier("sessionMenu").disabled(!client.ready)
         }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }

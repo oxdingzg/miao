@@ -262,6 +262,9 @@ export async function run() {
           JSON.stringify({
             testsStarted: log.includes("Test Case '-["),
             caughtError: log.includes("caught error"),
+            missingElement: log.includes("No matches found"),
+            ambiguousElement: log.includes("Multiple matching"),
+            notHittable: log.includes("not hittable") || log.includes("not visible"),
             fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
             missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
             buildFailure: log.includes("BUILD FAILED"),
