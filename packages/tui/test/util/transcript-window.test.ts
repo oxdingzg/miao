@@ -6,7 +6,7 @@ test("history is mounted in bounded pages without losing local messages or jump 
   createRoot((dispose) => {
     const all = Array.from({ length: 205 }, (_, i) => ({ id: `message-${i}` }))
     const [messages, setMessages] = createSignal(all)
-    const window = createTranscriptWindow(messages)
+    const window = createTranscriptWindow(messages, { windowSize: 40 })
     expect(window.messages()).toHaveLength(40)
     expect(window.start()).toBe(165)
     expect(messages()).toHaveLength(205)
@@ -43,7 +43,12 @@ test("spacers account for every message outside the window", () => {
 test("follow reveals local history above and hides it again below", () => {
   createRoot((dispose) => {
     const all = Array.from({ length: 300 }, (_, i) => ({ id: `${i}` }))
-    const window = createTranscriptWindow(createSignal(all)[0], { windowSize: 40, estimate: 3, margin: 2 })
+    const window = createTranscriptWindow(createSignal(all)[0], {
+      windowSize: 40,
+      step: 20,
+      estimate: 3,
+      margin: 2,
+    })
     const mounted = 40 * 3
     // Sitting at the bottom pins the newest window.
     window.follow({ scrollTop: 300 * 3 - 20, viewportHeight: 20, mountedHeight: mounted })
@@ -75,7 +80,7 @@ test("server-prepended pages preserve the anchor until explicitly revealed", () 
   createRoot((dispose) => {
     const all = Array.from({ length: 100 }, (_, i) => ({ id: `${i}` }))
     const [messages, setMessages] = createSignal(all)
-    const window = createTranscriptWindow(messages)
+    const window = createTranscriptWindow(messages, { windowSize: 40 })
     expect(window.start()).toBe(60)
     window.reveal("55")
     setMessages([{ id: "older-1" }, { id: "older-0" }, ...messages()])
