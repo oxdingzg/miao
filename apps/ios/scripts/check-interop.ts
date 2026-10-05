@@ -1,4 +1,5 @@
 import { SecureChannel } from "../../../packages/remote-control/src/secure-channel"
+import { PushContext } from "../../../packages/remote-control/src/push-context"
 import assert from "node:assert/strict"
 
 // JSON argv avoids shell expansion and keeps build-host details in private configuration.
@@ -41,9 +42,32 @@ try {
   const reply = JSON.parse(await line()) as { packet: string; plaintext: string }
   assert.equal(reply.plaintext, "TypeScript prompt")
   assert.equal(new TextDecoder().decode(await connected.channel.open(reply.packet)), "Swift result")
+  const sender = await SecureChannel.createIdentity()
+  const binding = {
+    hostID: client.hello.hostID,
+    runtimeID: client.hello.runtimeID,
+    grantID: crypto.randomUUID(),
+    grantVersion: 1,
+    deviceID: host.signingKey,
+    signalID: crypto.randomUUID(),
+  }
+  const payload = {
+    sessionID: "session_native_push",
+    projectID: "project_native_push",
+    expiresAt: Date.now() + 300_000,
+  }
+  await send(
+    JSON.stringify({
+      binding,
+      pinnedHostKey: sender.publicKey,
+      context: await PushContext.seal(sender, binding, payload),
+    }),
+  )
+  assert.deepEqual(JSON.parse(await line()), payload)
   child.stdin.end()
   assert.equal(await child.exited, 0)
   console.log("Bun/WebCrypto and Swift/CryptoKit signed handshake and bidirectional encryption passed")
+  console.log("Signed device-encrypted push context and native host/routing rejection passed")
 } finally {
   clearTimeout(timeout)
   child.kill()

@@ -29,3 +29,19 @@ guard let packet = readLine() else { throw ChannelError.malformed }
 let plaintext = try await accepted.session.open(packet)
 let reply = try await accepted.session.seal(Data("Swift result".utf8))
 try output(CipherReply(packet: reply, plaintext: String(decoding: plaintext, as: UTF8.self)))
+
+struct PushInterop: Decodable { let binding: PushContextBinding; let pinnedHostKey: String; let context: String }
+guard let pushLine = readLine(), let pushData = pushLine.data(using: .utf8) else { throw ChannelError.malformed }
+let push = try JSONDecoder().decode(PushInterop.self, from: pushData)
+let openedPush = try PushContext.open(push.context, device: identity, pinnedHostKey: push.pinnedHostKey, binding: push.binding)
+do {
+    _ = try PushContext.open(push.context, device: identity, pinnedHostKey: base64URL(identity.publicKey.x963Representation), binding: push.binding)
+    throw ChannelError.malformed
+} catch ChannelError.invalidSignature {}
+let wrongSignal = PushContextBinding(hostID: push.binding.hostID, runtimeID: push.binding.runtimeID,
+    grantID: push.binding.grantID, grantVersion: push.binding.grantVersion, deviceID: push.binding.deviceID, signalID: UUID().uuidString)
+do {
+    _ = try PushContext.open(push.context, device: identity, pinnedHostKey: push.pinnedHostKey, binding: wrongSignal)
+    throw ChannelError.malformed
+} catch ChannelError.invalidSignature {}
+try output(openedPush)

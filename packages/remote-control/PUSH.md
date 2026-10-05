@@ -93,3 +93,24 @@ cannot be recalled by these admission checks.
 This module does not itself attest Runtime grants, produce the encrypted context,
 or expose HTTP routes. The host-authenticated integration must supply those
 checks and native context resolution before notification navigation is usable.
+
+## Device-encrypted context
+
+`PushContext` seals session/project routing hints for the granted device. Each
+hint uses a fresh ephemeral P-256 ECDH key and a random 96-bit nonce. HKDF-SHA256
+derives a 256-bit AES-GCM key with the routing-binding digest as salt and the
+`miao.push.context.v1` domain as context. The ciphertext and header are signed
+with the locally pinned host's P-256 ECDSA key. The binding covers host, Runtime,
+grant ID/version, device key and signal ID, so substitution fails verification.
+
+The base64url packet contains a version byte, uncompressed ephemeral public key,
+nonce, authenticated ciphertext and a 64-byte signature. AES-GCM additional data
+and the signature include the domain and canonical routing tuple. The native
+client verifies the host signature before deriving a key or decrypting. Packets
+are bounded to 4 KiB encoded and routing payloads expire within ten minutes.
+Opening a hint only returns routing data; current Runtime grant/scope checks must
+still authorize the subsequent session read or action.
+
+The recipient's long-lived device key can decrypt retained hints if compromised;
+this format does not claim forward secrecy for background hints. Foreground
+interactive channels continue to use fresh two-peer agreement keys separately.
