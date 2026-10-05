@@ -16,6 +16,7 @@ const directory = await mkdtemp(path.join(os.tmpdir(), "miao-web-runtime-"))
 const databasePath = path.join(directory, "sessions.db")
 const project = path.join(directory, "project")
 const sessionID = "ses_web_" + crypto.randomUUID().replaceAll("-", "")
+const projectScope = process.argv.includes("--project-scope")
 const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
 const hostID = grants.hostID
 const hostKey = grants.identity.publicKey
@@ -157,12 +158,21 @@ try {
     const text = await response.text()
     return text ? JSON.parse(text) : undefined
   }
-  await request("/api/session", { id: sessionID, location: { directory: project } })
+  const created = await request("/api/session", { id: sessionID, location: { directory: project } })
+  if (!object(created) || !object(created.data) || typeof created.data.projectID !== "string")
+    throw new Error("Fixture project missing")
   await request(`/api/session/${sessionID}/rename`, { title: "Live Runtime workspace" })
+  if (projectScope) {
+    for (let index = 0; index < 100; index++)
+      await request("/api/session", {
+        id: "ses_page_" + crypto.randomUUID().replaceAll("-", ""),
+        location: { directory: project },
+      })
+  }
   const invitation = await request("/api/runtime/control/invitation", {
     permissions: ["read", "prompt", "session.rename"],
-    sessionIDs: [sessionID],
-    projectIDs: [],
+    sessionIDs: projectScope ? [] : [sessionID],
+    projectIDs: projectScope ? [created.data.projectID] : [],
     expiresAt: Date.now() + 600000,
   })
   if (!object(invitation) || typeof invitation.pairingID !== "string") throw new Error("Fixture invitation unavailable")
@@ -185,6 +195,18 @@ try {
   void approval.catch(() => browser?.close())
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
+  const openListed = async (label: string) => {
+    const item = page.getByRole("button", { name: label, exact: true })
+    await page.locator("#sessions .item").first().waitFor()
+    for (let index = 0; index < 3 && !(await item.count()); index++) {
+      const next = page.getByRole("button", { name: "下一页", exact: true })
+      if (!(await next.isEnabled())) break
+      const first = await page.locator("#sessions .item").first().textContent()
+      await next.click()
+      await page.waitForFunction((label) => document.querySelector("#sessions .item")?.textContent !== label, first)
+    }
+    await item.click()
+  }
   stage = "login"
   await page.goto(origin)
   await page.getByLabel("邮箱").fill("runtime@example.invalid")
@@ -200,7 +222,14 @@ try {
   await page.getByText("设备已授权。选择电脑继续。", { exact: true }).waitFor()
   stage = "session"
   await page.getByRole("button", { name: "Runtime computer" }).click()
-  await page.getByRole("button", { name: "Live Runtime workspace", exact: true }).click()
+  if (projectScope) {
+    await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length === 100)
+    await page.getByRole("button", { name: "下一页", exact: true }).click()
+    await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length === 1)
+    await page.getByRole("button", { name: "上一页", exact: true }).click()
+    await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length === 100)
+  }
+  await openListed("Live Runtime workspace")
   stage = "admission"
   await page.getByLabel("发送到会话").fill("持久化网页输入")
   await page.getByRole("button", { name: "发送 ↑" }).click()
@@ -220,7 +249,7 @@ try {
   stage = "recovery"
   await page.reload()
   await page.getByRole("button", { name: "Runtime computer" }).click()
-  await page.getByRole("button", { name: "Renamed Runtime workspace", exact: true }).click()
+  await openListed("Renamed Runtime workspace")
   await page.waitForFunction(
     () => (document.getElementById("draft") as HTMLTextAreaElement).value === "真实 Runtime 草稿",
   )
@@ -231,7 +260,9 @@ try {
       : -1
   if (admissions(before) !== 1 || admissions(after) !== 1) throw new Error("Runtime admission was missing or replayed")
   console.log(
-    "Web real Runtime: account pairing, durable rename/input/history, restored draft and no admission replay passed",
+    "Web real Runtime: " +
+      (projectScope ? "101 project-scoped sessions and bidirectional pagination" : "session-scoped access") +
+      ", durable rename/input/history and no admission replay passed",
   )
 } catch {
   throw new Error("Web Runtime verification failed at " + stage)

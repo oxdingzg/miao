@@ -143,6 +143,7 @@ async function refresh() {
 }
 async function connect(host: Host) {
   disconnect()
+  sessions.replaceChildren()
   selected = host
   selectedSession = undefined
   const current = generation
@@ -175,23 +176,103 @@ async function connect(host: Host) {
   })
   badge.textContent = "已加密连接"
   report("")
-  const value = await rpc.request("session.list", { payload: { limit: 100 } })
-  if (current !== generation) return
-  if (!record(value) || !Array.isArray(value.data)) throw new Error("Invalid sessions")
   sessions.replaceChildren()
-  for (const session of value.data) {
-    if (!record(session) || typeof session.id !== "string" || typeof session.title !== "string")
-      throw new Error("Invalid session")
-    const id = session.id
-    const label = session.title
-    const button = document.createElement("button")
-    button.className = "item"
-    button.textContent = label
-    button.dataset.sessionId = id
-    button.onclick = () => run(() => openSession(id, label))
-    sessions.append(button)
+  if (approved.sessionIDs.length) await sessionGroup(connected, "已授权的会话")
+  if (connected !== rpc) return
+  if (approved.projectIDs.length) {
+    const projects = await connected.request("project.list")
+    if (connected !== rpc) return
+    if (!record(projects) || !Array.isArray(projects.data) || projects.data.length > 128)
+      throw new Error("Invalid projects")
+    for (const project of projects.data) {
+      if (!record(project) || typeof project.id !== "string" || !approved.projectIDs.includes(project.id))
+        throw new Error("Invalid project")
+      await sessionGroup(
+        connected,
+        typeof project.name === "string" && project.name ? project.name : "项目会话",
+        project.id,
+      )
+      if (connected !== rpc) return
+    }
   }
   if (!sessions.childNodes.length) sessions.textContent = "没有已授权的会话。请在电脑调整设备授权。"
+}
+async function sessionGroup(connection: ReturnType<typeof RemoteRPC.make>, label: string, projectID?: string) {
+  const group = document.createElement("section")
+  const heading = document.createElement("h3")
+  heading.textContent = label
+  const entries = document.createElement("div")
+  const previous = document.createElement("button")
+  previous.textContent = "上一页"
+  previous.className = "quiet"
+  const next = document.createElement("button")
+  next.textContent = "下一页"
+  next.className = "quiet"
+  const cursors: (string | undefined)[] = [undefined]
+  let page = 0
+  let nextCursor: string | null = null
+  let busy = false
+  const load = async (cursor: string | undefined, index: number) => {
+    if (busy || connection !== rpc) return
+    busy = true
+    previous.disabled = next.disabled = true
+    try {
+      const value = await connection.request("session.list", {
+        projectID,
+        payload: { limit: 100, ...(cursor === undefined ? {} : { cursor }) },
+      })
+      if (connection !== rpc) return
+      if (
+        !record(value) ||
+        !Array.isArray(value.data) ||
+        value.data.length > 100 ||
+        !record(value.cursor) ||
+        (value.cursor.next !== null &&
+          (typeof value.cursor.next !== "string" ||
+            !value.cursor.next ||
+            value.cursor.next.length > 2048 ||
+            value.cursor.next === cursor))
+      )
+        throw new Error("Invalid sessions page")
+      const buttons = value.data.map((session) => {
+        if (
+          !record(session) ||
+          typeof session.id !== "string" ||
+          typeof session.title !== "string" ||
+          (projectID && session.projectID !== projectID)
+        )
+          throw new Error("Invalid session")
+        const id = session.id
+        const button = document.createElement("button")
+        button.className = "item"
+        button.textContent = session.title
+        button.dataset.sessionId = id
+        button.onclick = () =>
+          run(async () => {
+            if (connection === rpc) await openSession(id, button.textContent ?? "会话")
+          })
+        return button
+      })
+      entries.replaceChildren(...buttons)
+      if (!buttons.length) entries.textContent = "此页没有会话。"
+      page = index
+      nextCursor = value.cursor.next
+    } finally {
+      busy = false
+      previous.disabled = page === 0
+      next.disabled = nextCursor === null
+    }
+  }
+  previous.onclick = () => run(() => load(cursors[page - 1], page - 1))
+  next.onclick = () =>
+    run(async () => {
+      if (!nextCursor) return
+      cursors.splice(page + 1, cursors.length, nextCursor)
+      await load(nextCursor, page + 1)
+    })
+  group.append(heading, entries, previous, next)
+  sessions.append(group)
+  await load(undefined, 0)
 }
 async function pair() {
   const input = get("invitation", HTMLTextAreaElement)

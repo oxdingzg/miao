@@ -86,10 +86,26 @@ try {
     allowLoopbackHTTP: true,
     projectForSession: async () => "project_fixture",
     methods: {
-      "session.list": async () => ({
-        data: [{ id: "ses_fixture", title: sessionTitle, projectID: "project_fixture" }],
-        cursor: { next: null },
-      }),
+      "project.list": async () => ({ data: [{ id: "project_fixture", name: "Browser project", directories: [] }] }),
+      "session.list": async (request) => {
+        const cursor =
+          typeof request.payload === "object" && request.payload && "cursor" in request.payload
+            ? request.payload.cursor
+            : undefined
+        return cursor === "100"
+          ? {
+              data: [{ id: "ses_fixture", title: sessionTitle, projectID: "project_fixture" }],
+              cursor: { next: null },
+            }
+          : {
+              data: Array.from({ length: 100 }, (_, index) => ({
+                id: "ses_page_" + index,
+                title: "Paged session " + index,
+                projectID: "project_fixture",
+              })),
+              cursor: { next: "100" },
+            }
+      },
       "session.events": async (request) => {
         if (
           typeof request.payload !== "object" ||
@@ -237,6 +253,11 @@ try {
   await page.getByText("设备已授权。选择电脑继续。", { exact: true }).waitFor()
   await page.getByRole("button", { name: "Studio computer" }).click()
   stage = "history"
+  await page.getByRole("button", { name: "下一页", exact: true }).click()
+  await page.getByRole("button", { name: "Remote workspace", exact: true }).waitFor()
+  await page.getByRole("button", { name: "上一页", exact: true }).click()
+  await page.getByRole("button", { name: "Paged session 0", exact: true }).waitFor()
+  await page.getByRole("button", { name: "下一页", exact: true }).click()
   await page.getByRole("button", { name: "Remote workspace", exact: true }).click()
   await page.getByText("已整理变更，等待你的下一步。", { exact: false }).waitFor()
   stage = "permission"
@@ -275,6 +296,7 @@ try {
   stage = "recovery"
   await page.reload()
   await page.getByRole("button", { name: "Studio computer" }).click()
+  await page.getByRole("button", { name: "下一页", exact: true }).click()
   await page.getByRole("button", { name: "Renamed browser workspace", exact: true }).click()
   await page.waitForFunction(() => (document.getElementById("draft") as HTMLTextAreaElement).value === "尚未发送的草稿")
   if (prompted !== 1) throw new Error("Reconnect replayed a prompt")
