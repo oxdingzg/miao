@@ -180,6 +180,27 @@ const select = (
   }
 }
 
+/**
+ * The most recent goal the Session recorded, as the text to pin into the
+ * retained context. A goal is a durable directive, and a summary is free to drop
+ * it; keeping it verbatim is the difference between the agent still knowing what
+ * it is working toward and re-deriving it.
+ */
+const pinnedGoal = (entries: readonly Entry[]): string | undefined => {
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const message = entries[index].message
+    if (message.type === "synthetic" && message.metadata?.goal !== undefined) return message.text
+  }
+  return undefined
+}
+
+/** Retained recent context with the latest goal pinned, so compaction cannot drop it. */
+const retained = (entries: readonly Entry[], recent: string): string => {
+  const goal = pinnedGoal(entries)
+  if (goal === undefined || recent.includes(goal)) return recent
+  return recent.length === 0 ? goal : `${goal}\n\n${recent}`
+}
+
 export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) => {
   const conversation = `Here is the conversation so far:\n\n<conversation>\n${input.context.join("\n\n")}\n</conversation>`
   if (!input.previousSummary)
@@ -292,7 +313,7 @@ export const make = (dependencies: Dependencies) => {
       })
     return yield* runSummary({
       sessionID: input.sessionID,
-      recent: selected?.recent ?? "",
+      recent: retained(input.entries, selected?.recent ?? ""),
       request: requestFor(summarizeModel),
       fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model),
     })
@@ -338,7 +359,7 @@ export const make = (dependencies: Dependencies) => {
       })
     return yield* runSummary({
       sessionID: input.sessionID,
-      recent: selected?.recent ?? "",
+      recent: retained(input.entries, selected?.recent ?? ""),
       request: requestFor(summarizeModel),
       fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model),
     })
