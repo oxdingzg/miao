@@ -2,20 +2,55 @@ export * as RuntimeConnect from "./connect"
 
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
-import { InstallationVersion } from "@miao/core/installation/version"
 import { createHash } from "node:crypto"
 import { open } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { CliProgram } from "@/cli-program"
 
+// The protocol schema controls compatibility; the signed software version
+// identifies the owner without requiring clients to share its build.
 export async function current(filename: string): Promise<RuntimeDiscovery.Record | undefined> {
   const storage = await RuntimeOwnership.canonicalStorage(filename)
   const record = await RuntimeDiscovery.read(storage)
   if (!record) return undefined
   return RuntimeDiscovery.attest(record, {
-    version: InstallationVersion,
+    version: record.version,
     storageID: createHash("sha256").update(storage).digest("hex"),
   })
+}
+
+/** Stop only the verified owner and wait until it has released storage. */
+export async function stop(filename: string, record: RuntimeDiscovery.Record) {
+  const storage = await RuntimeOwnership.canonicalStorage(filename)
+  await RuntimeDiscovery.attest(record, {
+    version: record.version,
+    storageID: createHash("sha256").update(storage).digest("hex"),
+  })
+  const response = await fetch(new URL("/api/runtime/stop", record.url), {
+    method: "POST",
+    redirect: "error",
+    headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
+    signal: AbortSignal.timeout(3000),
+  })
+  if (!response.ok) throw new Error("The Runtime rejected shutdown")
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const current = await RuntimeDiscovery.read(storage)
+    if (current && current.runtimeID !== record.runtimeID)
+      throw new Error('Another Runtime started during shutdown; retry "miao runtime stop" if it should also stop')
+    if (!current) {
+      const owner = await RuntimeOwnership.acquire(storage).catch((error: unknown) => {
+        if (error instanceof RuntimeOwnership.BusyError) return undefined
+        throw error
+      })
+      if (owner) {
+        owner.release()
+        return
+      }
+    }
+    await Bun.sleep(100)
+  }
+  throw new Error("Runtime shutdown timed out; inspect its private runtime log")
 }
 
 /** Discover or start one persistent owner, never take over a live owner's storage. */
@@ -27,7 +62,7 @@ export async function ensure(filename: string): Promise<RuntimeDiscovery.Record>
   while (Date.now() < deadline) {
     const record = await RuntimeDiscovery.read(storage)
     if (record) {
-      const verified = await RuntimeDiscovery.attest(record, { version: InstallationVersion, storageID }).catch(
+      const verified = await RuntimeDiscovery.attest(record, { version: record.version, storageID }).catch(
         (error: unknown) => {
           state.lastError = error
           return undefined
@@ -53,8 +88,6 @@ export async function ensure(filename: string): Promise<RuntimeDiscovery.Record>
         owner.release()
         await launch(storage)
         state.launched = true
-      } else if (record && record.version !== InstallationVersion) {
-        throw new Error("The running Runtime uses another miao version; stop it before changing versions")
       }
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 200))
