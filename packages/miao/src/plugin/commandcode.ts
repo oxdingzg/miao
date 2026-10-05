@@ -1,7 +1,6 @@
 import type { AuthOAuthResult, Hooks } from "@miao/plugin"
 import { Effect, Exit, Scope } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
-import { AppRuntime } from "@/effect/app-runtime"
 import type { InternalPluginInput } from "./auth-store"
 
 /**
@@ -15,8 +14,11 @@ import type { InternalPluginInput } from "./auth-store"
  */
 export const CommandCodeAuthPlugin: (input: InternalPluginInput) => Promise<Hooks> = async () => {
   const { CommandCode } = await import("@miao/core/commandcode")
+  // The login server only needs an HTTP client, which `FetchHttpClient`
+  // supplies; pulling in the app runtime here would evaluate the whole service
+  // graph while plugins are still loading and trip a temporal-dead-zone error.
   const run = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
-    AppRuntime.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer)))
+    Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer)))
   return {
     auth: {
       provider: "commandcode",

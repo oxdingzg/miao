@@ -9,7 +9,6 @@ import { Npm } from "@miao/core/npm"
 import { Hash } from "@miao/core/util/hash"
 import { Plugin } from "../plugin"
 import { TencentTokenPlan } from "@miao/core/tencent-token-plan"
-import { CommandCode } from "@miao/core/commandcode"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "@miao/core/models-dev"
@@ -258,7 +257,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       // traffic is served by the V2 catalog's own subscription route.
       const auth = yield* dep.auth(input.id)
       const apiKey = auth?.type === "api" ? auth.key : auth?.type === "oauth" ? auth.access : undefined
-      const baseURL = `${CommandCode.API}/provider/v1`
+      const baseURL = "https://api.commandcode.ai/provider/v1"
       for (const [id, model] of Object.entries(input.models)) {
         // Anthropic models only answer the Anthropic Messages route; the generic
         // OpenAI-compatible base URL would get a 400. Drop them from V1 rather
