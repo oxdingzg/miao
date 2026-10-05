@@ -98,6 +98,7 @@ export async function run() {
       },
       formatter: false,
       lsp: false,
+      remote: { projects: {} },
     }),
     MIAO_TEST_HOME: path.join(directory, "home"),
     MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
