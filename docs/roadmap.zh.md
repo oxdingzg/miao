@@ -20,7 +20,7 @@
   已删除。服务端只挂载 `/api/*`、OpenAPI 文档与内嵌 UI。
 - V1 退役的 Stage 1–5 已全部落地。创建已是 V2 原生（`session.next.created.1`）；V1 投影器与
   `packages/core/v1` schema 仅为 legacy DB 读取、backfill、compact、restore 保留。
-- 所有已发布的客户端——TUI、`--mini`、ACP、`miao run`、web/desktop app、`miao remote`——
+- 所有已发布的客户端——TUI、`--mini`、ACP、`miao run`、web/desktop app——
   都通过 `/api/*` 读写。TUI 已**清零** legacy SDK 调用。
 - app 已从 vendored 上游客户端切到 `@miao/client`；`detectServerProtocol` 与
   `protocol === "v1"` 分支已删除。TUI 的 console/org 切换功能已删除。
@@ -112,7 +112,7 @@ V1 形状的遗留：
 - [x] 把项目持久化下沉 core（#35、#36）。
 - [x] 删除 `packages/miao` 的旧 `Project` facade（#46）。
 - [ ] 移除 `packages/miao` 的 `app-runtime` V1 层及剩余非会话旧路由；把发布服务端切到 V2-only
-      组装。（`AppRuntime` 目前仍被 `packages/miao/src/runtime/*`、remote 命令与 TUI worker 使用。）
+      组装。（`AppRuntime` 目前仍被 `packages/miao/src/runtime/*`、与 TUI worker 使用。）
 - [ ] 确认 V2 端点覆盖了此前在 V2 下被静默禁用的 app 行为（全局配置读取、项目重命名、目录
       选择器、自定义 provider）。
 - **验收：** `packages/miao` 只剩 CLI 外壳；服务端仅挂载 `/api/*`；无 V1 project 代码残留。

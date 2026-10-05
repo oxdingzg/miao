@@ -29,7 +29,6 @@ import { CredentialGroup } from "./groups/credential"
 import { ControlPlaneGroup } from "./groups/control-plane"
 import { ProjectCopyGroup } from "./groups/project-copy"
 import { ProjectGroup } from "./groups/project"
-import { RemoteGroup } from "./groups/remote"
 import { VcsGroup } from "./groups/vcs"
 import { WorkspaceGroup } from "./groups/workspace"
 import { WorktreeGroup } from "./groups/worktree"
@@ -75,7 +74,6 @@ const makeApiFromGroup = <
     .add(WorkspaceGroup.middleware(locationMiddleware))
     .add(WorktreeGroup.middleware(locationMiddleware))
     .add(ControlPlaneGroup.middleware(locationMiddleware))
-    .add(RemoteGroup)
     .add(RuntimeGroup)
     .annotateMerge(
       OpenApi.annotations({
