@@ -164,6 +164,7 @@ export interface Interface {
       from: TreeID
       to: TreeID
       context?: number
+      patch?: boolean
       paths?: readonly RelativePath[]
     }) => Effect.Effect<readonly File.Diff[], OperationError>
     readonly preview: (input: {
@@ -657,50 +658,50 @@ const layer = Layer.effect(
       from: TreeID
       to: TreeID
       context?: number
+      patch?: boolean
       paths?: readonly RelativePath[]
     }) {
-      const paths = input.paths ?? (yield* treeFiles(input))
-      return yield* Effect.forEach(paths, (file) =>
-        Effect.gen(function* () {
-          const statusText = (yield* repositoryOperation("diff", input.repository, [
-            "diff",
-            "--name-status",
-            "--no-renames",
-            input.from,
-            input.to,
-            "--",
-            file,
-          ])).text.trim()
-          const status = statusText.startsWith("A") ? "added" : statusText.startsWith("D") ? "deleted" : "modified"
-          const stats = (yield* repositoryOperation("diff", input.repository, [
-            "diff",
-            "--numstat",
-            "--no-renames",
-            input.from,
-            input.to,
-            "--",
-            file,
-          ])).text.split("\t")
-          const binary = stats[0] === "-" || stats[1] === "-"
-          const patch = binary
-            ? ""
-            : (yield* repositoryOperation("diff", input.repository, [
-                "diff",
-                `--unified=${input.context ?? 3}`,
-                "--no-renames",
-                input.from,
-                input.to,
-                "--",
-                file,
-              ])).text
-          return {
-            path: file,
-            status,
-            additions: binary ? 0 : Number(stats[0] ?? 0),
-            deletions: binary ? 0 : Number(stats[1] ?? 0),
-            patch,
-          } satisfies File.Diff
-        }),
+      if (input.paths?.length === 0) return []
+      const paths = input.paths?.map((file) => `:(literal)${file}`) ?? []
+      const flags = ["--no-ext-diff", "--no-textconv", "--no-renames", input.from, input.to, "--", ...paths]
+      const statuses = (yield* repositoryOperation("diff", input.repository, [
+        "diff",
+        "--name-status",
+        "-z",
+        ...flags,
+      ])).text.split("\0")
+      if (!statuses[0]) return []
+      const records = statuses.flatMap((status, index) =>
+        index % 2 === 0 && statuses[index + 1]
+          ? [
+              {
+                path: RelativePath.make(statuses[index + 1]),
+                status:
+                  status === "A" ? ("added" as const) : status === "D" ? ("deleted" as const) : ("modified" as const),
+              },
+            ]
+          : [],
+      )
+      // NUL-delimited stats preserve tabs/newlines in filenames. Git separates
+      // the complete stats block from patches with an additional NUL byte.
+      const output = (yield* repositoryOperation("diff", input.repository, [
+        "diff",
+        "--numstat",
+        "-z",
+        ...(input.patch === false ? [] : ["--patch", `--unified=${input.context ?? 3}`]),
+        ...flags,
+      ])).text
+      const boundary = output.indexOf("\0\0")
+      const stats = numstat(boundary < 0 ? output : output.slice(0, boundary))
+      const patches = boundary < 0 ? [] : output.slice(boundary + 2).split(/(?=^diff --git )/m)
+      return records.map(
+        (file, index) =>
+          ({
+            ...file,
+            additions: stats.get(file.path)?.additions ?? 0,
+            deletions: stats.get(file.path)?.deletions ?? 0,
+            patch: /^Binary files /m.test(patches[index] ?? "") ? "" : (patches[index] ?? ""),
+          }) satisfies File.Diff,
       )
     })
 

@@ -439,6 +439,16 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         query: {
           /** Limit the diff to the turn that answered this user message (per-turn DiffSummary). */
           messageID: SessionMessage.ID.pipe(Schema.optional),
+          path: RelativePath.pipe(Schema.optional),
+          patch: Schema.Literals(["true", "false"])
+            .pipe(
+              Schema.decodeTo(Schema.Boolean, {
+                decode: SchemaGetter.transform((value) => value === "true"),
+                encode: SchemaGetter.transform((value) => (value ? "true" : "false")),
+              }),
+              Schema.optional,
+            )
+            .annotate({ description: "Set false to return file statistics without generating patches." }),
         },
         success: Schema.Struct({ data: Schema.Array(Revert.FileDiff) }),
         error: [SessionNotFoundError, UnknownError],

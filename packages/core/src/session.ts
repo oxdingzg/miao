@@ -179,7 +179,7 @@ export interface Interface {
   /** Files changed since the Session's first snapshot, or within one user turn when `messageID` names it. */
   readonly diff: (
     sessionID: SessionSchema.ID,
-    options?: { readonly messageID?: SessionMessage.ID },
+    options?: { readonly messageID?: SessionMessage.ID; readonly patch?: boolean; readonly path?: RelativePath },
   ) => Effect.Effect<ReadonlyArray<typeof Revert.FileDiff.Type>, NotFoundError>
   readonly fork: (input: {
     sessionID: SessionSchema.ID
@@ -460,7 +460,12 @@ const layer = Layer.effect(
         if (input.id) {
           const existing = yield* SessionInput.find(db, input.id)
           if (existing) {
-            if (existing.sessionID !== session.id || existing.prompt.command?.name !== input.command || existing.prompt.command.arguments !== input.arguments || existing.delivery !== "steer")
+            if (
+              existing.sessionID !== session.id ||
+              existing.prompt.command?.name !== input.command ||
+              existing.prompt.command.arguments !== input.arguments ||
+              existing.delivery !== "steer"
+            )
               return yield* new PromptConflictError({ sessionID: input.sessionID, messageID: input.id })
             if (input.resume !== false) yield* execution.wake(session.id)
             return
@@ -482,13 +487,28 @@ const layer = Layer.effect(
           sessionID: session.id,
           prompt: Prompt.make({
             text: SessionCommand.renderTemplate(definition.command.template, input.arguments),
-            command: { name: input.command, arguments: input.arguments, agent: definition.command.agent, model: definition.command.model, subtask: definition.subtask },
+            command: {
+              name: input.command,
+              arguments: input.arguments,
+              agent: definition.command.agent,
+              model: definition.command.model,
+              subtask: definition.subtask,
+            },
           }),
           delivery: "steer",
-        }).pipe(Effect.catchDefect((defect) => defect instanceof SessionInput.LifecycleConflict
-          ? new PromptConflictError({ sessionID: input.sessionID, messageID })
-          : Effect.die(defect)))
-        if (admitted.sessionID !== session.id || admitted.prompt.command?.name !== input.command || admitted.prompt.command.arguments !== input.arguments || admitted.delivery !== "steer")
+        }).pipe(
+          Effect.catchDefect((defect) =>
+            defect instanceof SessionInput.LifecycleConflict
+              ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+              : Effect.die(defect),
+          ),
+        )
+        if (
+          admitted.sessionID !== session.id ||
+          admitted.prompt.command?.name !== input.command ||
+          admitted.prompt.command.arguments !== input.arguments ||
+          admitted.delivery !== "steer"
+        )
           return yield* new PromptConflictError({ sessionID: input.sessionID, messageID: admitted.id })
         // `/init` writes the project's AGENTS.md; record when the project was set up.
         if (input.command === "init")
@@ -549,7 +569,7 @@ const layer = Layer.effect(
       }),
       diff: Effect.fn("V2Session.diff")(function* (sessionID, options) {
         const session = yield* result.get(sessionID)
-        const cacheKey = options?.messageID ? `${sessionID}:${options.messageID}` : sessionID
+        const cacheKey = JSON.stringify([sessionID, options?.messageID, options?.patch !== false, options?.path])
         return yield* Effect.gen(function* () {
           const seq = yield* EventV2.latestSequence(db, sessionID)
           const cached = diffCache.get(cacheKey)
@@ -575,7 +595,12 @@ const layer = Layer.effect(
             diffCache.set(cacheKey, { seq, at: Date.now(), result: [] })
             return []
           }
-          const diff = yield* snapshots.diff({ from: Snapshot.ID.make(bounds.from), to: current })
+          const diff = yield* snapshots.diff({
+            from: Snapshot.ID.make(bounds.from),
+            to: current,
+            patch: options?.patch,
+            paths: options?.path ? [options.path] : undefined,
+          })
           if (diffCache.size > diffCacheLimit) {
             const oldest = diffCache.keys().next().value
             if (oldest !== undefined) diffCache.delete(oldest)

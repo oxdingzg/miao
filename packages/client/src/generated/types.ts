@@ -1105,7 +1105,21 @@ export type SessionsForkOutput = {
 
 export type SessionsDiffInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly messageID?: { readonly messageID?: string | undefined }["messageID"]
+  readonly messageID?: {
+    readonly messageID?: string | undefined
+    readonly path?: string | undefined
+    readonly patch?: boolean | undefined
+  }["messageID"]
+  readonly path?: {
+    readonly messageID?: string | undefined
+    readonly path?: string | undefined
+    readonly patch?: boolean | undefined
+  }["path"]
+  readonly patch?: {
+    readonly messageID?: string | undefined
+    readonly path?: string | undefined
+    readonly patch?: boolean | undefined
+  }["patch"]
 }
 
 export type SessionsDiffOutput = {

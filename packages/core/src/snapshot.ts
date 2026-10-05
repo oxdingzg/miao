@@ -27,6 +27,7 @@ export interface CompareInput {
 }
 
 export interface DiffInput extends CompareInput {
+  readonly patch?: boolean
   readonly context?: number
   readonly paths?: readonly RelativePath[]
 }
@@ -170,6 +171,7 @@ const layer = Layer.effect(
         .diff({
           ...comparison,
           context: input.context,
+          patch: input.patch,
           paths: (input.paths ?? files).filter((file) => !ignored.has(file)),
         })
         .pipe(Effect.mapError((cause) => failure("diff", cause)))

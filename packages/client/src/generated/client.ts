@@ -856,7 +856,7 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/diff`,
-            query: { messageID: input["messageID"] },
+            query: { messageID: input["messageID"], path: input["path"], patch: input["patch"] },
             successStatus: 200,
             declaredStatuses: [404, 500, 400, 401],
             empty: false,
