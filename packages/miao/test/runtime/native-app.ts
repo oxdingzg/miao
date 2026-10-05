@@ -40,8 +40,12 @@ export async function run() {
     XDG_DATA_HOME: path.join(directory, "data"),
     XDG_STATE_HOME: path.join(directory, "state"),
   }
-  const state: { runtime?: ReturnType<typeof Bun.spawn>; ui?: ReturnType<typeof Bun.spawn>; approvalError?: unknown } =
-    {}
+  const state: {
+    runtime?: ReturnType<typeof Bun.spawn>
+    ui?: ReturnType<typeof Bun.spawn>
+    simulator?: string
+    approvalError?: unknown
+  } = {}
   const runtimeOutput: { stdout?: Promise<string>; stderr?: Promise<string> } = {}
   const Session = Schema.Struct({
     data: Schema.Struct({ id: Schema.String, projectID: Schema.String, title: Schema.String }),
@@ -63,11 +67,46 @@ export async function run() {
   let approvalTask: Promise<void> | undefined
 
   try {
+    // Boot once before the Runtime or its short-lived invitation exists. Simulator
+    // migration must not contend with the owner API approval watcher on small CI hosts.
+    const prepare = Bun.spawn(["sh", "apps/ios/scripts/test-app.sh", process.env.MIAO_UI_TEST_FAMILY ?? "iphone"], {
+      cwd: root,
+      env: { ...process.env, MIAO_UI_TEST_ACTION: "prepare", MIAO_UI_TEST_DEVICE: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    state.ui = prepare
+    const preparation = new Response(prepare.stdout).text()
+    const preparationErrors = new Response(prepare.stderr).text()
+    const preparationTimeout = setTimeout(() => prepare.kill(), 180_000)
+    try {
+      if ((await prepare.exited) !== 0) throw new Error("Native fixture simulator preparation failed")
+      const output = await preparation
+      const simulator = output.trim().split("\n").at(-1)
+      if (!simulator || !/^[A-Fa-f0-9-]{36}$/.test(simulator))
+        throw new Error("Native fixture simulator identity missing")
+      state.simulator = simulator
+    } finally {
+      clearTimeout(preparationTimeout)
+      await Bun.write(path.join(directory, "simulator.log"), (await preparation) + "\n" + (await preparationErrors))
+    }
     // Complete native compilation before issuing a short-lived invitation or starting the Runtime.
-    const build = Bun.spawn([
-      "sh", "apps/ios/scripts/test-app.sh", process.env.MIAO_UI_TEST_FAMILY ?? "iphone",
-      `MIAO_UI_TEST_FIXTURE=${fixture}`, "-derivedDataPath", path.join(directory, "derived"),
-    ], { cwd: root, env: { ...process.env, MIAO_UI_TEST_ACTION: "build-for-testing" }, stdout: "pipe", stderr: "pipe" })
+    const build = Bun.spawn(
+      [
+        "sh",
+        "apps/ios/scripts/test-app.sh",
+        process.env.MIAO_UI_TEST_FAMILY ?? "iphone",
+        `MIAO_UI_TEST_FIXTURE=${fixture}`,
+        "-derivedDataPath",
+        path.join(directory, "derived"),
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, MIAO_UI_TEST_ACTION: "build-for-testing", MIAO_UI_TEST_DEVICE: state.simulator },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
     state.ui = build
     const buildOutput = new Response(build.stdout).text()
     const buildErrors = new Response(build.stderr).text()
@@ -181,7 +220,7 @@ export async function run() {
           })
           return
         }
-        await Bun.sleep(100)
+        await Bun.sleep(500)
       }
     })().catch((error: unknown) => {
       state.approvalError = error
@@ -202,7 +241,7 @@ export async function run() {
       ],
       {
         cwd: root,
-        env: { ...process.env, MIAO_UI_TEST_ACTION: "test-without-building" },
+        env: { ...process.env, MIAO_UI_TEST_ACTION: "test-without-building", MIAO_UI_TEST_DEVICE: state.simulator },
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -219,21 +258,28 @@ export async function run() {
         const coordinates = [...log.matchAll(/PairingUITests\.swift:(\d+)(?::\d+)?: error:/g)]
         coordinates.forEach((match) => console.error(`Native UI assertion failed at PairingUITests.swift:${match[1]}`))
         // Fixed categories and numeric OS codes expose runner failures without publishing dynamic messages.
-        console.error(JSON.stringify({
-          testsStarted: log.includes("Test Case '-["),
-          caughtError: log.includes("caught error"),
-          fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
-          missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
-          buildFailure: log.includes("BUILD FAILED"),
-          testingFailure: log.includes("TEST FAILED"),
-          provisioningFailure: log.includes("No profiles for") || log.includes("No Accounts"),
-          exitCode: state.ui.exitCode,
-          approvalFailed: state.approvalError !== undefined,
-          approvalTimeout: state.approvalError instanceof Error && state.approvalError.name === "TimeoutError",
-          approvalHTTPStatus: state.approvalError instanceof Error ? Number(/rejected with (\d+)$/.exec(state.approvalError.message)?.[1] ?? 0) : 0,
-          runtimeExitCode: state.runtime?.exitCode,
-          osErrors: [...log.matchAll(/(NSCocoaErrorDomain|NSPOSIXErrorDomain)[^\n]{0,80}?Code=(\d+)/g)].map((match) => ({ domain: match[1], code: Number(match[2]) })),
-        }))
+        console.error(
+          JSON.stringify({
+            testsStarted: log.includes("Test Case '-["),
+            caughtError: log.includes("caught error"),
+            fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
+            missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
+            buildFailure: log.includes("BUILD FAILED"),
+            testingFailure: log.includes("TEST FAILED"),
+            provisioningFailure: log.includes("No profiles for") || log.includes("No Accounts"),
+            exitCode: state.ui.exitCode,
+            approvalFailed: state.approvalError !== undefined,
+            approvalTimeout: state.approvalError instanceof Error && state.approvalError.name === "TimeoutError",
+            approvalHTTPStatus:
+              state.approvalError instanceof Error
+                ? Number(/rejected with (\d+)$/.exec(state.approvalError.message)?.[1] ?? 0)
+                : 0,
+            runtimeExitCode: state.runtime?.exitCode,
+            osErrors: [...log.matchAll(/(NSCocoaErrorDomain|NSPOSIXErrorDomain)[^\n]{0,80}?Code=(\d+)/g)].map(
+              (match) => ({ domain: match[1], code: Number(match[2]) }),
+            ),
+          }),
+        )
         throw new Error("Native live Runtime UI test failed")
       }
       await Bun.write(path.join(directory, "ui.log"), (await output) + "\n" + (await errors))
@@ -275,6 +321,10 @@ export async function run() {
     await runtimeOutput.stdout
     await runtimeOutput.stderr
     await hub.stop()
+    if (state.simulator) {
+      await Bun.spawn(["xcrun", "simctl", "shutdown", state.simulator], { stdout: "ignore", stderr: "ignore" }).exited
+      await Bun.spawn(["xcrun", "simctl", "delete", state.simulator], { stdout: "ignore", stderr: "ignore" }).exited
+    }
     // Retain failure evidence privately when requested; never publish invitations or device identity.
     if (process.env.MIAO_UI_TEST_KEEP_RESULTS !== "1") await rm(directory, { recursive: true, force: true })
   }
