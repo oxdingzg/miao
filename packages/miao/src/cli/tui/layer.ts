@@ -62,7 +62,22 @@ const remote: RemoteLocalFactory = async () => ({
         name: input.name,
         runtime: input.runtime,
         callbackURL: `http://127.0.0.1:${server.port}/`,
-        waitForCode: () => received,
+        waitForCode: () =>
+          new Promise<string>((resolve, reject) => {
+            // Bound the wait so dismissing the dialog (or closing the tab) cannot
+            // keep the loopback listener alive forever.
+            const timer = setTimeout(() => reject(new Error("authorization timed out")), 5 * 60 * 1000)
+            received.then(
+              (value) => {
+                clearTimeout(timer)
+                resolve(value)
+              },
+              (error: unknown) => {
+                clearTimeout(timer)
+                reject(error instanceof Error ? error : new Error("Relay authorization failed"))
+              },
+            )
+          }),
         open: async (url) => {
           try {
             await openUrl(url)
