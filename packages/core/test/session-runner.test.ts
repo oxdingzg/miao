@@ -2305,7 +2305,7 @@ describe("SessionRunnerLLM", () => {
       expect(
         permissionAsserts.some((entry) => entry.action === "message" && entry.resources.includes(otherSessionID)),
       ).toBe(true)
-      expect(yield* SessionInput.hasPending(db, otherSessionID, "queue")).toBe(true)
+      expect(yield* SessionInput.hasPending(db, otherSessionID, "steer")).toBe(true)
 
       // Draining the target materializes the attributed message in its transcript.
       responses = [
@@ -2327,6 +2327,46 @@ describe("SessionRunnerLLM", () => {
       expect(first?.type === "user" ? first.text : "").toContain("hello peer")
     }),
   )
+
+  for (const delivery of [undefined, "queue"] as const) {
+    it.effect(`peer messages ${delivery ?? "default"} preserve tools and use the intended delivery boundary`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const agents = yield* AgentV2.Service
+        yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.mode = "primary" }))
+        const runner = yield* SessionRunner.Service
+        const session = yield* SessionV2.Service
+        const database = yield* Database.Service
+        yield* insertSession(otherSessionID)
+        yield* session.prompt({ sessionID: otherSessionID, prompt: Prompt.make({ text: "Target continues its long task" }), resume: false })
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Send useful feedback" }), resume: false })
+        toolExecutionGate = yield* Deferred.make<void>()
+        toolExecutionsStarted = yield* Deferred.make<void>()
+        toolExecutionsReady = 1
+        requests.length = 0
+        responses = [
+          [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "target-work", name: "echo", input: { text: "work in progress" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+          [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding", ...(delivery ? { delivery } : {}) } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+          [], [], [],
+        ]
+        const target = yield* runner.run({ sessionID: otherSessionID, force: true }).pipe(Effect.forkChild)
+        yield* Deferred.await(toolExecutionsStarted)
+        const wakes: string[] = []
+        yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
+        expect(wakes).toEqual([otherSessionID])
+        expect(yield* SessionInput.hasPending(database.db, otherSessionID, delivery ?? "steer")).toBe(true)
+        expect((yield* session.context(otherSessionID)).filter((message) => message.type === "user")).toHaveLength(1)
+        expect(activeToolExecutions).toBe(1)
+        yield* Deferred.succeed(toolExecutionGate, undefined)
+        yield* Fiber.join(target)
+        const recipientRequests = requests.filter((request) => JSON.stringify(request.messages).includes("Target continues its long task"))
+        expect(recipientRequests).toHaveLength(delivery === "queue" ? 3 : 2)
+        expect(JSON.stringify(recipientRequests[1]?.messages).includes("Important peer finding")).toBe(delivery !== "queue")
+        expect(JSON.stringify(recipientRequests.at(-1)?.messages)).toContain("Important peer finding")
+        expect(activeToolExecutions).toBe(0)
+      }),
+    )
+  }
 
   it.effect("fails clearly when a message target is missing", () =>
     Effect.gen(function* () {
@@ -2388,7 +2428,7 @@ describe("SessionRunnerLLM", () => {
           id: SessionMessage.ID.create(),
           sessionID: otherSessionID,
           prompt: Prompt.make({ text: `filler ${index}` }),
-          delivery: "queue",
+          delivery: index % 2 === 0 ? "queue" : "steer",
         })
       }
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping full inbox" }), resume: false })

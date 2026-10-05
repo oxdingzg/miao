@@ -183,6 +183,11 @@ Inbox delivery is explicit:
 - `steer` inputs promote at the next safe provider-turn boundary, including continuation inside the current drain.
 - `queue` inputs remain in a FIFO while the current drain requires continuation. When the Session would otherwise become idle, the runner promotes exactly one queued input, then reevaluates continuation before promoting another.
 
+`send_message` defaults to `steer`: a busy recipient admits the peer message durably and reads it at the next safe provider-turn boundary after running tools settle. It does not interrupt a provider stream or a running tool. An idle recipient is woken through the same Session coordinator. An explicit `delivery: "queue"` preserves idle-boundary FIFO delivery. The peer inbox cap counts both pending delivery classes; message attribution and per-recipient execution permissions remain intact. Existing explicitly queued inputs retain their stored delivery mode.
+
+会话间 `send_message` 默认使用 `steer`：消息先持久化，在运行中的工具结算后、下一个安全的模型轮次边界进入上下文；不会中断当前模型流或工具。空闲接收会话通过原有协调器唤醒。显式指定 `delivery: "queue"` 才等待接收会话将要空闲时按 FIFO 投递。收件箱上限同时计算两类待处理输入；消息保留来源归属，接收方权限规则继续生效。已有显式排队输入保留原投递模式。
+
+
 Execution has two entry points:
 
 - `run` is an explicit resume. It joins any active execution or starts a forced drain while idle. A forced drain bypasses the no-eligible-input guard, but preparation may still fail before a provider attempt.

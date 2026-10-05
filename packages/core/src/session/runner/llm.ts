@@ -1050,7 +1050,7 @@ const layer = Layer.effect(
 
     const runSendMessage = Effect.fnUntraced(function* (
       senderSessionID: SessionSchema.ID,
-      request: { readonly to: string; readonly message: string },
+      request: { readonly to: string; readonly message: string; readonly delivery?: SessionInput.Delivery },
       context: {
         readonly agent: AgentV2.ID
         readonly assistantMessageID: SessionMessage.ID
@@ -1065,10 +1065,10 @@ const layer = Layer.effect(
         return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
       if (target.projectID !== sender.projectID)
         return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
-      const pending = yield* SessionInput.countPending(db, target.id, "queue")
+      const pending = yield* SessionInput.countPending(db, target.id)
       if (pending >= SendMessageTool.MAX_INBOUND_QUEUE)
         return yield* new ToolFailure({
-          message: `Session ${target.id} inbox is full (${pending} queued messages); try again later.`,
+          message: `Session ${target.id} inbox is full (${pending} pending inputs); try again later.`,
         })
       // Consulted as action `message` per target; the shared user-declined path
       // handles an explicit deny.
@@ -1084,7 +1084,7 @@ const layer = Layer.effect(
         id: SessionMessage.ID.create(),
         sessionID: target.id,
         prompt: Prompt.make({ text: `<message from session="${sender.id}">\n${request.message}\n</message>` }),
-        delivery: "queue",
+        delivery: request.delivery ?? "steer",
       })
       // Waking routes through the process-local execution coordinator when the
       // runner was entered from a real drain; admit-only callers leave it durable.
