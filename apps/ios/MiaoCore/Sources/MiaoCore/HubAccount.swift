@@ -159,6 +159,41 @@ public actor HubAccount {
         return hosts
     }
 
+    public func pushRegistrationAvailable() async throws -> Bool {
+        let expected = generation
+        let token = try await bearer()
+        let (data, _) = try await send("/api/hub/version", credential: token)
+        guard generation == expected else { throw HubAccountError.superseded }
+        let version = try JSONDecoder().decode(HubVersion.self, from: data)
+        guard version.protocolVersion == 1, version.capabilities.count <= 32,
+              version.capabilities.allSatisfy({ $0.utf8.count <= 128 }) else { throw HubAccountError.malformed }
+        return version.capabilities.contains("push-registration")
+    }
+
+    public func registerPush(_ registration: PushDeviceRegistration) async throws -> HubPushRegistration {
+        let expected = generation
+        let token = try await bearer()
+        let body = try JSONEncoder().encode(registration)
+        let (data, _) = try await send("/api/hub/push/register", credential: token, body: body)
+        guard generation == expected else { throw HubAccountError.superseded }
+        let result = try JSONDecoder().decode(HubPushRegistration.self, from: data)
+        guard result.registeredAt >= 0, UUID(uuidString: result.registrationID) != nil else {
+            throw HubAccountError.malformed
+        }
+        return result
+    }
+
+    public func revokePush(deviceID: String) async throws {
+        guard let key = try? decodeBase64URL(deviceID), key.count == 65, key.base64URL == deviceID,
+              (try? P256.Signing.PublicKey(x963Representation: key)) != nil else { throw HubAccountError.malformed }
+        let expected = generation
+        let token = try await bearer()
+        let body = try JSONEncoder().encode(PushRevocation(deviceID: deviceID))
+        let (data, _) = try await send("/api/hub/push/revoke", credential: token, body: body)
+        guard generation == expected else { throw HubAccountError.superseded }
+        guard try JSONDecoder().decode(PushRevoked.self, from: data).revoked else { throw HubAccountError.malformed }
+    }
+
     public func signOut() async throws {
         let credential = login ?? pendingLogout
         try clear()
@@ -232,6 +267,13 @@ public actor HubAccount {
     private struct SignIn: Encodable { let email: String; let password: String }
     private struct Token: Decodable { let token: String }
     private struct Directory: Decodable { let data: [HubDirectoryHost] }
+    private struct HubVersion: Decodable {
+        let protocolVersion: Int
+        let capabilities: [String]
+        enum CodingKeys: String, CodingKey { case protocolVersion = "protocol", capabilities }
+    }
+    private struct PushRevocation: Encodable { let deviceID: String }
+    private struct PushRevoked: Decodable { let revoked: Bool }
 
     private func send(_ path: String, credential: String? = nil, body: Data? = nil) async throws -> (Data, HTTPURLResponse) {
         let url = origin.appendingPathComponent(String(path.dropFirst()))

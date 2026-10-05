@@ -34,6 +34,17 @@ private enum AccountProbe {
             guard let bytes = Data(base64Encoded: standard + String(repeating: "=", count: (4 - standard.count % 4) % 4)) else {
                 throw HubAccountError.malformed
             }
+            print("NativeAccountStage:pushRegistration")
+            guard try await account.pushRegistrationAvailable() else { throw HubAccountError.malformed }
+            let deviceID = try P256.Signing.PrivateKey(rawRepresentation: bytes).publicKey.x963Representation.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+            let push = try PushDeviceRegistration(deviceID: deviceID, token: Data(repeating: 0xab, count: 32), environment: .sandbox)
+            let firstPush = try await account.registerPush(push)
+            let replacementPush = try await account.registerPush(push)
+            guard firstPush.registrationID != replacementPush.registrationID,
+                  replacementPush.registeredAt > firstPush.registeredAt else { throw HubAccountError.malformed }
+            try await account.revokePush(deviceID: deviceID)
+            _ = try await account.registerPush(push)
             do {
                 print("NativeAccountStage:denyDevice")
                 let denied = try await HubConnection.open(host: fixture.host, identity: P256.Signing.PrivateKey(),
@@ -59,6 +70,10 @@ private enum AccountProbe {
                 identity: P256.Signing.PrivateKey(rawRepresentation: bytes), allowLoopbackHTTP: true, account: restored) { _ in }
             print("NativeAccountStage:logout")
             try await account.signOut()
+            do {
+                _ = try await account.registerPush(push)
+                throw HubAccountError.malformed
+            } catch HubAccountError.authenticationRequired {}
             do {
                 _ = try await restored.hosts()
                 throw HubAccountError.malformed
