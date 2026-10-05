@@ -5,6 +5,7 @@ import * as Observability from "@miao/core/observability"
 import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
 import { Database } from "@miao/core/database/database"
+import { EventV2 } from "@miao/core/event"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { GitCli } from "@miao/core/git-cli"
@@ -49,6 +50,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     FSUtil.node,
     Blob.node,
     Database.node,
+    EventV2.node,
     Auth.node,
     Config.node,
     GitCli.node,

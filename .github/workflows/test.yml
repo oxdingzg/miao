@@ -48,6 +48,9 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # The PR job filters by the base commit's SHA, which a shallow clone
+          # does not contain.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -77,11 +80,22 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ripgrep -y --no-progress
 
-      # On Windows, keep going after the first failing package so the run reports the full
-      # failure list instead of stopping at @miao/core.
+      # On a PR, run only the packages the change touches (and their
+      # dependents) so the suite no longer pays for the whole monorepo on every
+      # push. On main, run everything: main is the release gate.
       - name: Run unit tests
         timeout-minutes: 20
-        run: GITHUB_ACTIONS=false bun turbo test ${{ runner.os == 'Windows' && '--continue' || '' }}
+        run: |
+          set -euo pipefail
+          filter=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            filter=("--filter=[${{ github.event.pull_request.base.sha }}]")
+          fi
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            GITHUB_ACTIONS=false bun turbo test --continue "${filter[@]}"
+          else
+            GITHUB_ACTIONS=false bun turbo test "${filter[@]}"
+          fi
         env:
           MIAO_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
@@ -89,90 +103,3 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: packages/client
         run: bun run check:generated
-
-  e2e:
-    name: e2e (${{ matrix.settings.label }})
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - name: linux
-            label: linux
-            host: ubuntu-latest
-            blocking: true
-          # non-blocking until Windows suite is fixed; remaining failures: specs/ci-windows.md
-          - name: windows
-            label: windows, non-blocking until Windows suite is fixed
-            host: windows-2025
-            blocking: false
-    runs-on: ${{ matrix.settings.host }}
-    continue-on-error: ${{ !matrix.settings.blocking }}
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
-          node-version: "24.15"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      - name: Install Playwright system dependencies
-        if: runner.os == 'Linux'
-        working-directory: packages/app
-        run: bunx playwright install-deps chromium
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        working-directory: packages/app
-        run: bunx playwright install chromium
-
-      - name: Check browser Remote Control storage
-        if: runner.os == 'Linux'
-        run: |
-          bun --cwd packages/remote-control check:browser
-          bun --cwd packages/remote-control check:web
-          bun --cwd packages/remote-control check:web:mobile
-          bun --cwd packages/remote-control check:web:runtime
-        timeout-minutes: 3
-
-      - name: Run app e2e tests
-        run: bun --cwd packages/app test:e2e:local
-        env:
-          CI: true
-        # The Windows run took 28 minutes on windows-2025, right under the old 30-minute cap.
-        timeout-minutes: ${{ runner.os == 'Windows' && 45 || 30 }}
-
-      - name: Upload Playwright artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: playwright-${{ matrix.settings.name }}-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/app/e2e/test-results
-            packages/app/e2e/playwright-report

@@ -12,6 +12,32 @@ describe("SessionOutputGuard", () => {
     expect(SessionOutputGuard.detect("Let me check the entity model.\n".repeat(80))).toBe(true)
   })
 
+  test("detects the four-phrase production loop and a larger recurring vocabulary", () => {
+    const phrases = ["Let me run.", "Let me go.", "Let me do it.", "Let me execute."]
+    expect(SessionOutputGuard.detect(`${phrases.join("\n")}\n`.repeat(100))).toBe(true)
+    const variants = [...phrases, "I'll run it.", "Executing now.", "Let me output it.", "Here it is."]
+    expect(SessionOutputGuard.detect(`${variants.join("\n")}\n`.repeat(20))).toBe(true)
+    // Occasional new phrasing must not reset a strongly repetitive prose window.
+    const mixed =
+      Array.from({ length: 128 }, (_, index) =>
+        index % 16 === 0
+          ? `A new observation ${String.fromCharCode(97 + index / 16)}.`
+          : phrases[index % phrases.length],
+      ).join("\n") + "\n"
+    expect(SessionOutputGuard.detect(mixed)).toBe(true)
+  })
+
+  test("allows a refrain interleaved with genuinely new progress", () => {
+    const text =
+      Array.from({ length: 128 }, (_, index) =>
+        index % 2 === 0
+          ? "Let me check."
+          : `Inspected module ${String.fromCharCode(97 + (index % 26))} and found its entry point.`,
+      ).join("\n") + "\n"
+    expect(SessionOutputGuard.detect(text)).toBe(false)
+    expect(SessionOutputGuard.detect("Let me run.\nLet me go.\nLet me do it.\nLet me execute.\n".repeat(8))).toBe(false)
+  })
+
   test("is invariant to token, CRLF and Unicode chunk boundaries", () => {
     const text = "好。\r\n\r\n我输出。\r\n".repeat(80)
     const observe = SessionOutputGuard.make()
@@ -62,7 +88,9 @@ describe("SessionOutputGuard", () => {
     let closed = false
     const source = Stream.fromIterable([
       LLMEvent.textStart({ id: "a" }),
-      ...Array.from({ length: 80 }, () => LLMEvent.textDelta({ id: "a", text: "Emit.\nedit.\n" })),
+      ...Array.from({ length: 80 }, () =>
+        LLMEvent.textDelta({ id: "a", text: "Let me run.\nLet me go.\nLet me do it.\nLet me execute.\n" }),
+      ),
       LLMEvent.toolCall({ id: "late", name: "write", input: {} }),
     ]).pipe(
       Stream.ensuring(

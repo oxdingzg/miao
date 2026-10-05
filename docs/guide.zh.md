@@ -236,6 +236,12 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 **Q：模型/供应商怎么配？**
 `miao providers login` 写凭据；`miao models` 查看；在 `miao.jsonc` 的 `providers` 里自定义。provider 的具体报错可用 `miao debug` 排查。
 
+**Q：怎么用我的 Command Code 订阅？**
+用 `miao auth login commandcode`（浏览器辅助登录）连一次，或把 `CMD_API_KEY` 设成
+[commandcode.ai Studio](https://commandcode.ai/studio/) 生成的 API key。连接后会自动从你的账号
+发现可用模型。Command Code 走的是 CLI 订阅端点而非其文档中的 Provider API，因此模型能力与价格
+在目录补充前取保守值。
+
 **Q：成本显示和账单对不上？**
 让 provider 用本币单价（`providers.<id>.models.<m>.cost` 用本币）；或用 `/currency` 切换显示货币。
 

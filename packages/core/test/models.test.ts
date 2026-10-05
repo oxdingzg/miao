@@ -31,6 +31,9 @@ afterAll(() => {
 })
 
 const cacheFile = path.join(Global.Path.cache, "models-dev.json")
+// Conditional-request validators live beside the cache file; they must be
+// cleared per test so a leftover `checkedAt` does not suppress a needed fetch.
+const validatorFile = `${cacheFile}.validator.json`
 
 const fixture: Record<string, ModelsDev.Provider> = {
   acme: {
@@ -72,10 +75,16 @@ const fixture2: Record<string, ModelsDev.Provider> = {
   },
 }
 
+import { ModelsOverlay } from "@miao/core/models-overlay"
+
+// The self-maintained overlay is part of every catalog the service returns.
+const withOverlay = <T extends Record<string, ModelsDev.Provider>>(catalog: T) => ModelsOverlay.merge(catalog)
+
 interface MockState {
   body: string
   status: number
-  calls: Array<{ url: string; userAgent: string | null }>
+  headers?: Record<string, string>
+  calls: Array<{ url: string; userAgent: string | null; ifNoneMatch: string | null }>
 }
 
 const makeMockClient = (state: Ref.Ref<MockState>) =>
@@ -83,10 +92,17 @@ const makeMockClient = (state: Ref.Ref<MockState>) =>
     Effect.gen(function* () {
       yield* Ref.update(state, (s) => ({
         ...s,
-        calls: [...s.calls, { url: request.url, userAgent: request.headers["user-agent"] ?? null }],
+        calls: [
+          ...s.calls,
+          {
+            url: request.url,
+            userAgent: request.headers["user-agent"] ?? null,
+            ifNoneMatch: request.headers["if-none-match"] ?? null,
+          },
+        ],
       }))
       const s = yield* Ref.get(state)
-      return HttpClientResponse.fromWeb(request, new Response(s.body, { status: s.status }))
+      return HttpClientResponse.fromWeb(request, new Response(s.body, { status: s.status, headers: s.headers }))
     }),
   )
 
@@ -117,10 +133,12 @@ const provided = <A, E>(state: Ref.Ref<MockState>, eff: Effect.Effect<A, E, Mode
 
 beforeEach(async () => {
   await rm(cacheFile, { force: true })
+  await rm(validatorFile, { force: true })
 })
 
 afterAll(async () => {
   await rm(cacheFile, { force: true })
+  await rm(validatorFile, { force: true })
 })
 
 const initialState: MockState = {
@@ -138,20 +156,20 @@ describe("ModelsDev Service", () => {
         state,
         ModelsDev.Service.use((s) => s.get()),
       )
-      expect(result).toEqual(fixture)
+      expect(result).toEqual(withOverlay(fixture))
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
     }),
   )
 
-  it.live("get() returns empty catalog when disk empty, fetch disabled, and no bundled snapshot is injected", () =>
+  it.live("get() returns only the self-maintained catalog when disk is empty and fetch is disabled", () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(initialState)
       const result = yield* provided(
         state,
         ModelsDev.Service.use((s) => s.get()),
       )
-      expect(result).toEqual({})
+      expect(result).toEqual(withOverlay({}))
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
     }),
@@ -172,7 +190,7 @@ describe("ModelsDev Service", () => {
             Flag.MIAO_DISABLE_MODELS_FETCH = true
           }),
       )
-      expect(result).toEqual(fixture2)
+      expect(result).toEqual(withOverlay(fixture2))
       expect(yield* Effect.promise(() => readFile(cacheFile, "utf8"))).toBe(JSON.stringify(fixture2))
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
@@ -192,7 +210,7 @@ describe("ModelsDev Service", () => {
           })
         }),
       )
-      for (const result of results) expect(result).toEqual(fixture)
+      for (const result of results) expect(result).toEqual(withOverlay(fixture))
     }),
   )
 
@@ -211,8 +229,8 @@ describe("ModelsDev Service", () => {
           return { a, b }
         }),
       )
-      expect(first.a).toEqual(fixture)
-      expect(first.b).toEqual(fixture)
+      expect(first.a).toEqual(withOverlay(fixture))
+      expect(first.b).toEqual(withOverlay(fixture))
     }),
   )
 
@@ -230,8 +248,8 @@ describe("ModelsDev Service", () => {
           return { before, after }
         }),
       )
-      expect(result.before).toEqual(fixture)
-      expect(result.after).toEqual(fixture2)
+      expect(result.before).toEqual(withOverlay(fixture))
+      expect(result.after).toEqual(withOverlay(fixture2))
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
       expect(final.calls[0].url).toContain("/api.json")
@@ -271,8 +289,8 @@ describe("ModelsDev Service", () => {
           return { before, after }
         }),
       )
-      expect(result.before).toEqual(fixture)
-      expect(result.after).toEqual(fixture2)
+      expect(result.before).toEqual(withOverlay(fixture))
+      expect(result.after).toEqual(withOverlay(fixture2))
       // Adopting a local rewrite must not hit the network.
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
@@ -294,7 +312,7 @@ describe("ModelsDev Service", () => {
       )
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
-      expect(after).toEqual(fixture2)
+      expect(after).toEqual(withOverlay(fixture2))
     }),
   )
 
@@ -310,10 +328,41 @@ describe("ModelsDev Service", () => {
           return yield* svc.get()
         }),
       )
-      expect(result).toEqual(fixture)
+      expect(result).toEqual(withOverlay(fixture))
       // retryTransient retries 5xx, so calls may be > 1.
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBeGreaterThanOrEqual(1)
+    }),
+  )
+
+  it.live("stores the ETag, then revalidates with If-None-Match and keeps the cache on 304", () =>
+    Effect.gen(function* () {
+      // A stale on-disk catalog forces one revalidation.
+      const stale = Date.now() - 13 * 60 * 60 * 1000
+      yield* writeCacheText(JSON.stringify(fixture), stale)
+      yield* Effect.promise(() =>
+        writeFile(validatorFile, JSON.stringify({ etag: '"abc"', checkedAt: stale })),
+      )
+
+      // The source answers 304 Not Modified: body unchanged.
+      const state = yield* Ref.make<MockState>({ body: "", status: 304, headers: { etag: '"abc"' }, calls: [] })
+      const result = yield* provided(
+        state,
+        Effect.gen(function* () {
+          const svc = yield* ModelsDev.Service
+          yield* svc.refresh(false)
+          return yield* svc.get()
+        }),
+      )
+
+      // The stored catalog is served unchanged.
+      expect(result).toEqual(withOverlay(fixture))
+      const calls = (yield* Ref.get(state)).calls
+      // Exactly one conditional request, carrying the stored ETag.
+      expect(calls.length).toBe(1)
+      expect(calls[0].ifNoneMatch).toBe('"abc"')
+      // A 304 leaves the on-disk catalog untouched.
+      expect(JSON.parse(yield* Effect.promise(() => readFile(cacheFile, "utf8")))).toEqual(fixture)
     }),
   )
 })

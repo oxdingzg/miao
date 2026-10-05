@@ -293,6 +293,23 @@ export const sseFraming = (bytes: Stream.Stream<Uint8Array, LLMError>): Stream.S
   )
 
 /**
+ * Newline-delimited JSON framing. Each non-empty line is one JSON document.
+ * Used by protocols that stream a JSON object per line rather than SSE
+ * `data:` events (Command Code's `/alpha/generate`).
+ *
+ * A chunk boundary can fall inside a line, so the decoder buffers the
+ * trailing fragment and only emits complete lines; a final line without a
+ * trailing newline is flushed when the byte stream ends.
+ */
+export const ndjsonFraming = (bytes: Stream.Stream<Uint8Array, LLMError>): Stream.Stream<string, LLMError> =>
+  bytes.pipe(
+    Stream.decodeText(),
+    Stream.splitLines,
+    Stream.map((line) => line.trim()),
+    Stream.filter((line) => line.length > 0),
+  )
+
+/**
  * Canonical invalid-request constructor. Lift one-line `const invalid =
  * (message) => invalidRequest(message)` aliases out of every
  * route so the error constructor lives in one place. If we ever extend

@@ -29,6 +29,7 @@
     "./protocols": "./src/protocols/index.ts",
     "./protocols/anthropic-messages": "./src/protocols/anthropic-messages.ts",
     "./protocols/bedrock-converse": "./src/protocols/bedrock-converse.ts",
+    "./protocols/commandcode": "./src/protocols/commandcode.ts",
     "./protocols/gemini": "./src/protocols/gemini.ts",
     "./protocols/openai-chat": "./src/protocols/openai-chat.ts",
     "./protocols/openai-compatible-chat": "./src/protocols/openai-compatible-chat.ts",

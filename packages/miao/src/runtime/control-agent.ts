@@ -3,7 +3,9 @@ export * as RuntimeControlAgent from "./control-agent"
 import { constants } from "node:fs"
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises"
 import path from "node:path"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
+import { EventV2 } from "@miao/core/event"
+import { RuntimeControlLive } from "./control-live"
 import { OpenCode } from "@miao/client"
 import { DeviceGrants } from "@miao/remote-control/grants"
 import { ControlAgent } from "@miao/remote-control/agent"
@@ -49,6 +51,13 @@ export async function start(input: {
       configuration: typeof Configuration.Type
     }
   } = { stopped: false, tail: Promise.resolve() }
+  const live = RuntimeControlLive.make()
+  const unsubscribe = await AppRuntime.runPromise(
+    EventV2.Service.use((events) => events.listen((event) => Effect.sync(() => live.accept(event)))),
+  ).catch(async (error: unknown) => {
+    await grants.close()
+    throw error
+  })
   const allowLoopbackHTTP = input.allowLoopbackHTTP ?? initial?.allowLoopbackHTTP ?? false
   const activate = (configuration: typeof Configuration.Type) => {
     const pairing = ControlPairing.make({
@@ -63,7 +72,7 @@ export async function start(input: {
       runtimeID: input.runtimeID,
       grants,
       pairing,
-      methods: RuntimeControlMethods.make({ client, run: (effect) => AppRuntime.runPromise(effect) }),
+      methods: RuntimeControlMethods.make({ client, live, run: (effect) => AppRuntime.runPromise(effect) }),
       projectForSession: async (sessionID) =>
         (await client.sessions.get({ sessionID }).catch(() => undefined))?.projectID,
     })
@@ -137,6 +146,8 @@ export async function start(input: {
   try {
     if (initial) activate(initial)
   } catch (error) {
+    await AppRuntime.runPromise(unsubscribe)
+    live.clear()
     await grants.close()
     throw error
   }
@@ -147,6 +158,8 @@ export async function start(input: {
       state.stopped = true
       await state.tail
       await disconnect()
+      await AppRuntime.runPromise(unsubscribe)
+      live.clear()
       await grants.close()
     },
   }

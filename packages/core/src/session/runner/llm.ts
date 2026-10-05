@@ -48,6 +48,7 @@ import { SessionCompaction } from "../compaction"
 import { SessionCompactRequest } from "../compact-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
+import { SessionBackgroundJobs } from "../background-jobs"
 import { SessionMessage } from "../message"
 import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
@@ -1218,31 +1219,12 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           const drainSession = yield* store.get(input.sessionID)
           const drainAgent = drainSession ? yield* agents.select(drainSession.agent) : undefined
-          // Model-facing observation/control for background jobs owned by this
-          // session, when the process provides the registry. It does not launch
-          // jobs; a sandbox/parity launcher and durable restart recovery need a
-          // separate slice.
           const jobsOption = yield* Effect.serviceOption(BackgroundJob.Service)
-          const jobTools = Option.isSome(jobsOption)
-            ? BackgroundJobTool.make({
-                list: () =>
-                  jobsOption.value
-                    .list()
-                    .pipe(Effect.map((jobs) => jobs.filter((job) => job.metadata?.sessionID === input.sessionID))),
-                wait: (id, timeoutMs) =>
-                  Effect.gen(function* () {
-                    const job = yield* jobsOption.value.get(id)
-                    if (!job || job.metadata?.sessionID !== input.sessionID) return { timedOut: false as const }
-                    return yield* jobsOption.value.wait({ id, timeout: timeoutMs })
-                  }),
-                cancel: (id) =>
-                  Effect.gen(function* () {
-                    const job = yield* jobsOption.value.get(id)
-                    if (!job || job.metadata?.sessionID !== input.sessionID) return undefined
-                    return yield* jobsOption.value.cancel(id)
-                  }),
-              })
-            : {}
+          const backgroundJobs = SessionBackgroundJobs.make({
+            db, events, sessionID: input.sessionID,
+            jobs: Option.getOrUndefined(jobsOption),
+          })
+          const jobTools = BackgroundJobTool.make(backgroundJobs)
           if (drainAgent?.info !== undefined)
             yield* tools
               .registerSession(input.sessionID, {
@@ -1300,6 +1282,7 @@ const layer = Layer.effect(
             })
             return
           }
+          yield* backgroundJobs.recover()
           yield* failInterruptedTools(input.sessionID)
           let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
           let shouldRun = input.force || hasSteer || hasQueue
