@@ -1,4 +1,4 @@
-const sources = process.env.MIAO_MODELS_URL ? [process.env.MIAO_MODELS_URL] : ["https://mtty.dev/models"]
+const sources = process.env.MIAO_MODELS_URL ? [process.env.MIAO_MODELS_URL] : ["https://mtty.dev/models", "https://github.com/oxdingzg/mtty.dev/releases/download/models"]
 
 const loadCatalog = async () => {
   if (process.env.MIAO_MODELS_JSON) return Bun.file(process.env.MIAO_MODELS_JSON).text()
