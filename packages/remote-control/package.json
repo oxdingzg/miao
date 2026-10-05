@@ -13,7 +13,8 @@
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",
     "hub": "bun src/hub-main.ts",
     "build:web": "bun script/build-web.ts",
-    "check:web": "bun run build:web && bun script/check-web.ts"
+    "check:web": "bun run build:web && bun script/check-web.ts",
+    "check:web:runtime": "bun run build:web && bun script/check-web-runtime.ts"
   },
   "dependencies": {
     "effect": "catalog:",

@@ -11,7 +11,8 @@
     "script/check-browser.ts",
     "script/check-browser-account.ts",
     "web/client.ts",
-    "script/check-web.ts"
+    "script/check-web.ts",
+    "script/check-web-runtime.ts"
   ],
   "exclude": []
 }

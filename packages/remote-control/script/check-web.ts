@@ -173,6 +173,8 @@ try {
   console.log(
     "Web UI: real Hub/Agent login, pairing, sessions, scoped encrypted prompt, draft restoration and no replay passed",
   )
+} catch {
+  throw new Error("Web interface verification failed")
 } finally {
   if (approveTimer) clearInterval(approveTimer)
   await approvals.catch(() => undefined)
