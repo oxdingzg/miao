@@ -22,6 +22,50 @@ export async function run() {
   const hub = ControlHub.listen({ port: 0, hosts: new Map([[grants.hostID, token]]) })
   const configuration = path.join(directory, "control.json")
   const fixture = path.join(directory, "ui-fixture.json")
+  const stream = { calls: 0, finish: () => {} }
+  const settlement = new Promise<void>((resolve) => {
+    stream.finish = resolve
+  })
+  const provider = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      if (new URL(request.url).pathname === "/finish" && request.method === "GET") {
+        stream.finish()
+        return new Response("done")
+      }
+      if (request.method !== "POST") return new Response(null, { status: 404 })
+      stream.calls++
+      const encoder = new TextEncoder()
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            const send = (delta: unknown, finish: string | null = null) =>
+              controller.enqueue(
+                encoder.encode(
+                  "data: " +
+                    JSON.stringify({
+                      id: "native-stream",
+                      object: "chat.completion.chunk",
+                      created: 1,
+                      model: "selection",
+                      choices: [{ index: 0, delta, finish_reason: finish }],
+                    }) +
+                    "\n\n",
+                ),
+              )
+            send({ role: "assistant", content: "Native live partial" })
+            await settlement
+            send({ content: " completed" })
+            send({}, "stop")
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+            controller.close()
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      )
+    },
+  })
   const environment = {
     ...process.env,
     MIAO_DB: database,
@@ -34,7 +78,8 @@ export async function run() {
           name: "Fixture",
           api: {
             type: "aisdk",
-            package: "@ai-sdk/openai",
+            package: "@ai-sdk/openai-compatible",
+            url: `http://127.0.0.1:${provider.port}/v1`,
             settings: { apiKey: "fixture", baseURL: "http://127.0.0.1:1" },
           },
           models: {
@@ -224,6 +269,7 @@ export async function run() {
       JSON.stringify({
         runID,
         title,
+        finishURL: `http://127.0.0.1:${provider.port}/finish`,
         invitation: `miao://pair#${Buffer.from(JSON.stringify(invitation)).toString("base64url")}`,
       }),
     )
@@ -364,13 +410,16 @@ export async function run() {
         admissions[0].prompt.text !== "retained phone draft"
       )
         throw new Error("The phone must admit exactly one queued input in the real Runtime")
+      if (stream.calls !== 1) throw new Error("Native reconnect repeated provider execution")
       console.log(
-        "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery and process restart passed",
+        "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery, live generation/settlement and process restart passed",
       )
     } finally {
       clearTimeout(timeout)
     }
   } finally {
+    stream.finish()
+    provider.stop(true)
     stopApproval = true
     state.ui?.kill()
     state.runtime?.kill()
