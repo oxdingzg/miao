@@ -15768,7 +15768,7 @@
         "required": ["name", "location", "content"],
         "additionalProperties": false
       },
-      "models-dev.refreshed": {
+      "models-catalog.refreshed": {
         "type": "object",
         "properties": {
           "id": {
@@ -15784,7 +15784,7 @@
           },
           "type": {
             "type": "string",
-            "enum": ["models-dev.refreshed"]
+            "enum": ["models-catalog.refreshed"]
           },
           "durable": {
             "type": "object",
@@ -22891,7 +22891,7 @@
       "V2Event": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/models-dev.refreshed"
+            "$ref": "#/components/schemas/models-catalog.refreshed"
           },
           {
             "$ref": "#/components/schemas/integration.updated"

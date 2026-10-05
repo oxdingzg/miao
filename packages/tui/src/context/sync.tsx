@@ -1003,7 +1003,7 @@ export const {
     const exit = useExit()
     const args = useArgs()
 
-    // `provider.list` carries the whole models.dev catalog (several MB) while
+    // `provider.list` carries the whole catalog (several MB) while
     // startup only needs the connected providers from `config.providers`, so the
     // catalog loads when something like the connect dialog first asks for it.
     let providerCatalog: Promise<void> | undefined

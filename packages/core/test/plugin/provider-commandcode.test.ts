@@ -6,7 +6,7 @@ import { Credential } from "@miao/core/credential"
 import { LayerNodePlatform } from "@miao/core/effect/app-node-platform"
 import { Integration } from "@miao/core/integration"
 import { ModelV2 } from "@miao/core/model"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { PluginV2 } from "@miao/core/plugin"
 import { PluginHost } from "@miao/core/plugin/host"
 import { CommandCodePlugin } from "@miao/core/plugin/provider/commandcode"
@@ -50,9 +50,9 @@ const devCatalog = {
       },
     },
   },
-} as unknown as Record<string, ModelsDev.Provider>
+} as unknown as Record<string, ModelsCatalog.Provider>
 
-const modelsDev = ModelsDev.Service.of({
+const modelsCatalog = ModelsCatalog.Service.of({
   get: () => Effect.succeed(devCatalog),
   refresh: () => Effect.void,
 })
@@ -87,7 +87,7 @@ const seed = Effect.fn(function* () {
 const addPlugin = Effect.fn(function* () {
   const plugin = yield* PluginV2.Service
   const host = yield* PluginHost.make(plugin)
-  yield* CommandCodePlugin.effect(host).pipe(Effect.provideService(ModelsDev.Service, modelsDev))
+  yield* CommandCodePlugin.effect(host).pipe(Effect.provideService(ModelsCatalog.Service, modelsCatalog))
 })
 
 const withPlan = <A, E, R>(plan: string | undefined, self: Effect.Effect<A, E, R>) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { ModelsOverlay } from "@miao/core/models-overlay"
-import type { ModelsDev } from "@miao/core/models-dev"
+import type { ModelsCatalog } from "@miao/core/models-catalog"
 
 describe("ModelsOverlay", () => {
   it("adds miao-maintained providers that models.dev does not list", () => {
@@ -10,7 +10,7 @@ describe("ModelsOverlay", () => {
   })
 
   it("lets the overlay win on provider identity while keeping catalog models", () => {
-    const catalog: Record<string, ModelsDev.Provider> = {
+    const catalog: Record<string, ModelsCatalog.Provider> = {
       commandcode: {
         id: "commandcode",
         name: "Wrong Name",
@@ -37,7 +37,7 @@ describe("ModelsOverlay", () => {
   })
 
   it("does not mutate the input catalog", () => {
-    const catalog: Record<string, ModelsDev.Provider> = {}
+    const catalog: Record<string, ModelsCatalog.Provider> = {}
     ModelsOverlay.merge(catalog)
     expect(catalog.commandcode).toBeUndefined()
   })

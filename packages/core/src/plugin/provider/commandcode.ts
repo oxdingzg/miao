@@ -5,7 +5,7 @@ import { EventV2 } from "../../event"
 import { Flag } from "../../flag/flag"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
-import { ModelsDev } from "../../models-dev"
+import { ModelsCatalog } from "../../models-catalog"
 import { ProviderV2 } from "../../provider"
 import { define } from "../define"
 
@@ -37,7 +37,7 @@ const available = (plan: string | undefined, plans: readonly string[] | undefine
  * per id so a model that accepts images is not forced to text-only; an id the
  * catalog does not carry stays on the conservative default.
  */
-const catalogModalities = (catalog: Record<string, ModelsDev.Provider>) => {
+const catalogModalities = (catalog: Record<string, ModelsCatalog.Provider>) => {
   const inputs = new Map<string, ReadonlyArray<string>>()
   for (const provider of Object.values(catalog)) {
     for (const model of Object.values(provider.models)) {
@@ -56,12 +56,12 @@ const catalogModalities = (catalog: Record<string, ModelsDev.Provider>) => {
  * `/provider/v1/models` once a key is connected, so new models appear without a
  * release. Models are routed through `CommandCode.route` by the session runner.
  */
-export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service | ModelsDev.Service>({
+export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service | ModelsCatalog.Service>({
   id: "commandcode",
   effect: Effect.fn(function* (ctx) {
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2.Service
-    const modelsDev = yield* ModelsDev.Service
+    const modelsCatalog = yield* ModelsCatalog.Service
 
     yield* ctx.integration.transform((draft) => {
       draft.update("commandcode", (integration) => {
@@ -95,7 +95,7 @@ export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service 
           provider.integrationID = INTEGRATION_ID
         })
         const models = yield* load()
-        const catalogModels = yield* modelsDev.get()
+        const catalogModels = yield* modelsCatalog.get()
         const entries = catalogModels["commandcode"]?.models
         const plan = Flag.MIAO_COMMANDCODE_PLAN?.trim().toLowerCase()
         const modalities = catalogModalities(catalogModels)

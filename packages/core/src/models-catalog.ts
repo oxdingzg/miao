@@ -1,7 +1,7 @@
 import path from "path"
 import { Cause, Context, Duration, Effect, Exit, Layer, Option, Ref, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { ModelsDev } from "@miao/schema/models-dev"
+import { ModelsCatalog } from "@miao/schema/models-catalog"
 import { Global } from "./global"
 import { Flag } from "./flag/flag"
 import { Flock } from "./util/flock"
@@ -136,16 +136,16 @@ export const Provider = Schema.Struct({
 
 export type Provider = Schema.Schema.Type<typeof Provider>
 
-export const Event = ModelsDev.Event
+export const Event = ModelsCatalog.Event
 
-declare const MIAO_MODELS_DEV: Record<string, Provider> | undefined
+declare const MIAO_MODELS_SNAPSHOT: Record<string, Provider> | undefined
 
 export interface Interface {
   readonly get: () => Effect.Effect<Record<string, Provider>>
   readonly refresh: (force?: boolean) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@miao/ModelsDev") {}
+export class Service extends Context.Service<Service, Interface>()("@miao/ModelsCatalog") {}
 
 const layer = Layer.effect(
   Service,
@@ -162,21 +162,16 @@ const layer = Layer.effect(
       }),
     )
 
-    // miao's own catalog is tried first, then the public models.dev catalog as
-    // a fallback, so a mtty.dev outage never leaves miao without models. Setting
-    // MIAO_MODELS_URL pins a single source.
-    const sources = Flag.MIAO_MODELS_URL
-      ? [Flag.MIAO_MODELS_URL]
-      : ["https://mtty.dev/models", "https://models.dev"]
+    // miao reads only its own catalog, which an external job syncs from the
+    // upstream sources. MIAO_MODELS_URL pins a different source.
+    const sources = Flag.MIAO_MODELS_URL ? [Flag.MIAO_MODELS_URL] : ["https://mtty.dev/models"]
     const source = sources[0]!
     const filepath = path.join(
       Global.Path.cache,
-      Flag.MIAO_MODELS_URL === undefined || source === "https://models.dev"
-        ? "models-dev.json"
-        : `models-${Hash.fast(source)}.json`,
+      Flag.MIAO_MODELS_URL === undefined ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.hours(12)
-    const lockKey = `models-dev:${filepath}`
+    const lockKey = `models:${filepath}`
     // Conditional-request validators for the cache file, kept beside it so a
     // refetch can ask the source "has this changed?" and skip the download and
     // the write when the answer is no. `checkedAt` tracks the last successful
@@ -214,7 +209,7 @@ const layer = Layer.effect(
       | { readonly notModified: true }
       | { readonly text: string; readonly etag?: string; readonly lastModified?: string }
 
-    const fetchApi = Effect.fn("ModelsDev.fetchApi")(function* () {
+    const fetchApi = Effect.fn("ModelsCatalog.fetchApi")(function* () {
       const validator = yield* readValidator
       let failure: Cause.Cause<unknown> | undefined
       for (const item of sources) {
@@ -267,7 +262,7 @@ const layer = Layer.effect(
     )
 
     const loadSnapshot = Effect.sync(() =>
-      typeof MIAO_MODELS_DEV === "undefined" ? undefined : MIAO_MODELS_DEV,
+      typeof MIAO_MODELS_SNAPSHOT === "undefined" ? undefined : MIAO_MODELS_SNAPSHOT,
     )
 
     // A catalog snapshot can ship next to the executable (see script/build.ts).
@@ -281,7 +276,7 @@ const layer = Layer.effect(
     // body is unchanged, so the on-disk catalog is kept as-is and only the
     // validator's `checkedAt` advances; on a fresh body the file is rewritten
     // and the new validators are stored. Returns the current catalog text.
-    const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
+    const fetchAndWrite = Effect.fn("ModelsCatalog.fetchAndWrite")(function* () {
       const validator = yield* readValidator
       const result = yield* fetchApi()
       if ("notModified" in result) {
@@ -324,12 +319,12 @@ const layer = Layer.effect(
         return JSON.parse(result.text) as Record<string, Provider>
       }).pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning("unable to load models.dev catalog; continuing without it", { cause }).pipe(
+          Effect.logWarning("unable to load the models catalog; continuing without it", { cause }).pipe(
             Effect.as({} as Record<string, Provider>),
           ),
         ),
       )
-    }).pipe(Effect.withSpan("ModelsDev.populate"), Effect.orDie)
+    }).pipe(Effect.withSpan("ModelsCatalog.populate"), Effect.orDie)
 
     // mtime of the on-disk catalog the in-memory cache was loaded from. Lets a
     // running process notice when another process rewrites the cache file.
@@ -365,7 +360,7 @@ const layer = Layer.effect(
       yield* events.publish(Event.Refreshed, {})
     })
 
-    const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
+    const refresh = Effect.fn("ModelsCatalog.refresh")(function* (force = false) {
       if (!force && (yield* fresh())) {
         yield* adoptDiskChanges().pipe(Effect.ignore)
         return
@@ -391,7 +386,7 @@ const layer = Layer.effect(
           yield* events.publish(Event.Refreshed, {})
         }),
       ).pipe(
-        Effect.tapCause((cause) => Effect.logError("Failed to fetch models.dev", { cause: cause })),
+        Effect.tapCause((cause) => Effect.logError("Failed to fetch the models catalog", { cause: cause })),
         Effect.ignore,
       )
     })
@@ -411,4 +406,4 @@ const layer = Layer.effect(
 
 export const node = makeGlobalNode({ service: Service, layer: layer, deps: [FSUtil.node, EventV2.node, httpClient] })
 
-export * as ModelsDev from "./models-dev"
+export * as ModelsCatalog from "./models-catalog"
