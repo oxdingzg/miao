@@ -176,3 +176,8 @@ export const sseJson = {
   id: "http-json/sse",
   with: <Body>() => httpJson<Body, string>({ framing: Framing.sse }),
 } as const
+
+export const ndjsonJson = {
+  id: "http-json/ndjson",
+  with: <Body>() => httpJson<Body, string>({ framing: Framing.ndjson }),
+} as const

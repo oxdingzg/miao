@@ -23,7 +23,7 @@ final class PairingUITests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
         struct Account: Decodable { let origin: String; let email: String; let password: String }
-        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account? }
+        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let app = XCUIApplication()
         app.launchEnvironment["MIAO_UI_TEST_RUN"] = fixture.runID
@@ -120,6 +120,21 @@ final class PairingUITests: XCTestCase {
         let cleared = NSPredicate(format: "value != %@", "retained phone draft")
         expectation(for: cleared, evaluatedWith: draft)
         waitForExpectations(timeout: 15)
+        if app.keyboards.count > 0 { app.buttons["dismissKeyboard"].tap() }
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Native live partial"].waitForExistence(timeout: 30))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.staticTexts["Native live partial"].waitForExistence(timeout: 30))
+        _ = try Data(contentsOf: URL(string: fixture.finishURL)!)
+        XCTAssertTrue(app.staticTexts["Native live partial completed"].waitForExistence(timeout: 30))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
+        app.buttons["Native phone rename"].tap()
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Native live partial completed"].waitForExistence(timeout: 30))
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Native live partial completed")).count, 1)
     }
 
 }
