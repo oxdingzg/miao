@@ -68,7 +68,6 @@ to other still-active logins remain usable.
 This capability advertises registration storage only. It does not indicate that
 Apple delivery credentials are configured or that Runtime subscriptions have
 been approved. Those checks precede actual notification dispatch.
-=
 
 ## Dispatch lifecycle
 
