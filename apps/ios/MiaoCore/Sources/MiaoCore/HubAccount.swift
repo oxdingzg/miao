@@ -31,11 +31,13 @@ private final class HubAccountRedirects: NSObject, URLSessionTaskDelegate {
 public actor HubAccount {
     public let origin: URL
     private let session: URLSession
+    private let relaySession: URLSession
     private let keychainService: String
     private var login: String?
     private var pendingLogout: String?
     private var access: (value: String, until: Date)?
     private var generation: UInt64 = 0
+    private var relaySockets: [URLSessionWebSocketTask] = []
 
     public init(origin: URL, keychainService: String = "miao.remote.hub-account",
                 allowLoopbackHTTP: Bool = false) throws {
@@ -63,6 +65,14 @@ public actor HubAccount {
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: configuration, delegate: HubAccountRedirects(), delegateQueue: nil)
+        let relayConfiguration = URLSessionConfiguration.ephemeral
+        relayConfiguration.httpShouldSetCookies = false
+        relayConfiguration.httpCookieStorage = nil
+        relayConfiguration.urlCache = nil
+        relayConfiguration.timeoutIntervalForRequest = 15
+        // The HTTP account resource deadline must not terminate a foreground relay after twenty seconds.
+        relayConfiguration.timeoutIntervalForResource = 7 * 24 * 60 * 60
+        self.relaySession = URLSession(configuration: relayConfiguration, delegate: HubAccountRedirects(), delegateQueue: nil)
     }
 
     public func restore() throws -> Bool {
@@ -167,7 +177,56 @@ public actor HubAccount {
         login = nil
         pendingLogout = nil
         access = nil
+        relaySockets.forEach { $0.cancel(with: .policyViolation, reason: nil) }
+        relaySockets.removeAll()
         session.invalidateAndCancel()
+        relaySession.invalidateAndCancel()
+    }
+
+    /// Directory discovery can update an execution instance, never the locally pinned host identity or device grant.
+    func refreshedHost(_ host: ApprovedHost) async throws -> ApprovedHost {
+        _ = try relayRequest(hubURL: host.hubURL, hostID: host.target.hostID, token: "validation")
+        let directory = try await hosts()
+        guard let current = directory.first(where: { $0.hostID == host.target.hostID }), current.revokedAt == nil,
+              current.publicKey == host.publicKey else { throw RemoteConnectionError.authorizationBlocked }
+        guard current.online, let runtimeID = current.runtimeID else { throw RemoteRPCError.disconnected }
+        return ApprovedHost(id: host.id, label: host.label, hubURL: host.hubURL,
+                            target: RemoteTarget(hostID: host.target.hostID, runtimeID: runtimeID),
+                            publicKey: host.publicKey, grantID: host.grantID, grantVersion: host.grantVersion)
+    }
+
+    /// The account owns the redirect-rejecting session so relay credentials cannot escape its origin.
+    func relaySocket(hubURL: URL, hostID: String) async throws -> URLSessionWebSocketTask {
+        // Validate before requesting a token, then fence sign-out during the token request.
+        _ = try relayRequest(hubURL: hubURL, hostID: hostID, token: "validation")
+        let expected = generation
+        let token = try await bearer()
+        guard expected == generation, login != nil else { throw HubAccountError.superseded }
+        relaySockets.removeAll { $0.state == .completed || $0.state == .canceling }
+        guard relaySockets.count < 64 else { throw RemoteRPCError.overloaded }
+        let socket = relaySession.webSocketTask(with: try relayRequest(hubURL: hubURL, hostID: hostID, token: token))
+        relaySockets.append(socket)
+        return socket
+    }
+
+    func relayRequest(hubURL: URL, hostID: String, token: String) throws -> URLRequest {
+        guard let supplied = URLComponents(url: hubURL, resolvingAgainstBaseURL: false),
+              let canonical = URLComponents(url: origin, resolvingAgainstBaseURL: false),
+              supplied.user == nil, supplied.password == nil, supplied.query == nil, supplied.fragment == nil,
+              supplied.path.isEmpty || supplied.path == "/",
+              supplied.scheme?.lowercased() == canonical.scheme,
+              supplied.host?.lowercased() == canonical.host,
+              (supplied.port ?? (canonical.scheme == "https" ? 443 : 80))
+                == (canonical.port ?? (canonical.scheme == "https" ? 443 : 80)),
+              Self.validCredential(token) else { throw HubAccountError.invalidEndpoint }
+        try RemoteTarget(hostID: hostID, runtimeID: hostID).validate()
+        let endpoint = try HubConnection.endpoint(hubURL: origin, hostID: hostID,
+                                                  allowLoopbackHTTP: origin.scheme == "http")
+        var request = URLRequest(url: endpoint)
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 15
+        return request
     }
 
     private struct SignIn: Encodable { let email: String; let password: String }
@@ -221,6 +280,8 @@ public actor HubAccount {
     }
 
     private func clear() throws {
+        relaySockets.forEach { $0.cancel(with: .policyViolation, reason: nil) }
+        relaySockets.removeAll()
         generation &+= 1
         login = nil
         access = nil

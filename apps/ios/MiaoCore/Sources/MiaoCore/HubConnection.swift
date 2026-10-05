@@ -29,11 +29,20 @@ public actor HubConnection: ClientConnection {
     }
 
     public static func open(host: ApprovedHost, identity: P256.Signing.PrivateKey,
-                            session: URLSession = .shared, allowLoopbackHTTP: Bool = false,
+                            session: URLSession = .shared, allowLoopbackHTTP: Bool = false, account: HubAccount? = nil,
                             reconcile: @escaping Reconcile) async throws -> HubConnection {
         guard host.grantVersion > 0 else { throw RemoteRPCError.invalidEndpoint }
-        let socket = try session.webSocketTask(with: endpoint(hubURL: host.hubURL, hostID: host.target.hostID,
-                                                        allowLoopbackHTTP: allowLoopbackHTTP))
+        let selected: ApprovedHost
+        do { selected = try await account?.refreshedHost(host) ?? host }
+        catch HubAccountError.authenticationRequired { throw RemoteConnectionError.authorizationBlocked }
+        catch HubAccountError.rejected(let status) where status == 401 || status == 403 {
+            throw RemoteConnectionError.authorizationBlocked
+        }
+        let host = selected
+        let socket: URLSessionWebSocketTask
+        if let account { socket = try await authorizedSocket(account: account, hubURL: host.hubURL, hostID: host.target.hostID) }
+        else { socket = try session.webSocketTask(with: endpoint(hubURL: host.hubURL, hostID: host.target.hostID,
+                                                               allowLoopbackHTTP: allowLoopbackHTTP)) }
         socket.maximumMessageSize = 256 * 1024
         socket.resume()
         let deadline = Task {
@@ -57,7 +66,10 @@ public actor HubConnection: ClientConnection {
             } onCancel: { socket.cancel(with: .goingAway, reason: nil) }
         } catch {
             socket.cancel(with: .goingAway, reason: nil)
-            if error is ChannelError { throw RemoteConnectionError.authorizationBlocked }
+            if error is ChannelError || socket.closeCode == .policyViolation
+                || [401, 403].contains((socket.response as? HTTPURLResponse)?.statusCode ?? 0) {
+                throw RemoteConnectionError.authorizationBlocked
+            }
             throw error
         }
     }
@@ -160,13 +172,21 @@ public actor HubConnection: ClientConnection {
 }
 
 extension HubConnection {
+    private static func authorizedSocket(account: HubAccount, hubURL: URL, hostID: String) async throws -> URLSessionWebSocketTask {
+        do { return try await account.relaySocket(hubURL: hubURL, hostID: hostID) }
+        catch HubAccountError.authenticationRequired { throw RemoteConnectionError.authorizationBlocked }
+        catch HubAccountError.rejected(let status) where status == 401 || status == 403 {
+            throw RemoteConnectionError.authorizationBlocked
+        }
+    }
+
     static func endpoint(hubURL: URL?, hostID: String, allowLoopbackHTTP: Bool) throws -> URL {
         guard let hubURL, var url = URLComponents(url: hubURL, resolvingAgainstBaseURL: false),
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
               !(url.host ?? "").isEmpty, url.path.isEmpty || url.path == "/" else {
             throw RemoteRPCError.invalidEndpoint
         }
-        let local = allowLoopbackHTTP && url.scheme == "http" && ["127.0.0.1", "::1", "[::1]"].contains(url.host ?? "")
+        let local = allowLoopbackHTTP && url.scheme == "http" && ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "")
         guard url.scheme == "https" || local else { throw RemoteRPCError.invalidEndpoint }
         url.scheme = local ? "ws" : "wss"
         url.path = "/v1/client"
@@ -178,13 +198,18 @@ extension HubConnection {
     /// No RPC reader starts until local owner approval is verified and the caller durably saves it.
     /// A lost approval is uncertain, never an excuse to assume a grant or repeat a business operation.
     public static func pair(invitation: PairingInvitation, identity: P256.Signing.PrivateKey, label: String,
-                            session: URLSession = .shared, allowLoopbackHTTP: Bool = false,
+                            session: URLSession = .shared, allowLoopbackHTTP: Bool = false, account: HubAccount? = nil,
                             pending: @escaping @Sendable (String) async -> Void,
                             persist: @escaping @Sendable (ApprovedHost, DeviceGrant) async throws -> Void,
                             reconcile: @escaping Reconcile) async throws -> PairedConnection {
         try invitation.validate(allowLoopbackHTTP: allowLoopbackHTTP)
-        let socket = try session.webSocketTask(with: endpoint(hubURL: URL(string: invitation.hubURL), hostID: invitation.hostID,
-                                                        allowLoopbackHTTP: allowLoopbackHTTP))
+        let socket: URLSessionWebSocketTask
+        if let account, let hubURL = URL(string: invitation.hubURL) {
+            socket = try await authorizedSocket(account: account, hubURL: hubURL, hostID: invitation.hostID)
+        } else {
+            socket = try session.webSocketTask(with: endpoint(hubURL: URL(string: invitation.hubURL), hostID: invitation.hostID,
+                                                            allowLoopbackHTTP: allowLoopbackHTTP))
+        }
         socket.maximumMessageSize = 256 * 1024
         socket.resume()
         let seconds = min(180, max(0, Double(invitation.expiresAt) / 1000 - Date().timeIntervalSince1970))
@@ -234,7 +259,10 @@ extension HubConnection {
         } catch {
             socket.cancel(with: .goingAway, reason: nil)
             if Task.isCancelled { throw CancellationError() }
-            if error is ChannelError { throw RemoteConnectionError.authorizationBlocked }
+            if error is ChannelError || socket.closeCode == .policyViolation
+                || [401, 403].contains((socket.response as? HTTPURLResponse)?.statusCode ?? 0) {
+                throw RemoteConnectionError.authorizationBlocked
+            }
             if provisional { throw PairingError.approvalUncertain }
             throw error
         }

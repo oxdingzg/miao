@@ -2,6 +2,8 @@ import { Database } from "bun:sqlite"
 import { chmod, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { ControlAgent } from "../../../packages/remote-control/src/agent"
+import { DeviceGrants } from "../../../packages/remote-control/src/grants"
 import { HubService } from "../../../packages/remote-control/src/hub-service"
 import { SecureChannel } from "../../../packages/remote-control/src/secure-channel"
 
@@ -11,7 +13,12 @@ const reservation = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new
 const port = reservation.port
 await reservation.stop(true)
 const owner = { email: "probe@example.invalid", password: crypto.randomUUID() + crypto.randomUUID(), name: "Probe" }
-const state: { hub?: Awaited<ReturnType<typeof HubService.listen>>; child?: ReturnType<typeof Bun.spawn> } = {}
+const state: {
+  hub?: Awaited<ReturnType<typeof HubService.listen>>
+  child?: ReturnType<typeof Bun.spawn>
+  agent?: ReturnType<typeof ControlAgent.connect>
+  grants?: Awaited<ReturnType<typeof DeviceGrants.load>>
+} = {}
 try {
   state.hub = await HubService.listen({
     database,
@@ -41,10 +48,23 @@ try {
   const token: unknown = await tokenResponse.json()
   if (!token || typeof token !== "object" || !("token" in token) || typeof token.token !== "string")
     throw new Error("Private account fixture returned no signed token")
+  const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
+  state.grants = grants
+  const device = await SecureChannel.createIdentity()
+  const privateKey = await crypto.subtle.exportKey("jwk", device.keys.privateKey)
+  const grant = await grants.approve({
+    publicKey: device.publicKey,
+    label: "Native account probe",
+    permissions: ["read"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 600_000,
+  })
+  const runtimeID = crypto.randomUUID()
   const host = {
-    hostID: crypto.randomUUID(),
+    hostID: grants.hostID,
     name: "电脑 / 原生目录",
-    publicKey: (await SecureChannel.createIdentity()).publicKey,
+    publicKey: grants.identity.publicKey,
   }
   const registration = await fetch(origin + "/api/hub/hosts", {
     method: "POST",
@@ -52,8 +72,25 @@ try {
     body: JSON.stringify(host),
     signal: AbortSignal.timeout(15_000),
   })
-  await registration.arrayBuffer()
   if (registration.status !== 201) throw new Error("Private account fixture host registration failed")
+  const registered: unknown = await registration.json()
+  if (!registered || typeof registered !== "object" || !("token" in registered) || typeof registered.token !== "string")
+    throw new Error("Private account fixture returned no host credential")
+  state.agent = ControlAgent.connect({
+    hubURL: origin,
+    hostToken: registered.token,
+    runtimeID,
+    grants,
+    allowLoopbackHTTP: true,
+    projectForSession: async () => "project-one",
+    methods: {
+      capabilities: async () => ({ protocol: 1 }),
+      "session.get": async () => ({ title: "Account relay session" }),
+    },
+  })
+  const deadline = Date.now() + 5000
+  while (!state.agent.connected() && Date.now() < deadline) await Bun.sleep(10)
+  if (!state.agent.connected()) throw new Error("Private account fixture Agent did not connect")
   const fixture = path.join(directory, "fixture.json")
   await Bun.write(
     fixture,
@@ -64,6 +101,16 @@ try {
       hostID: host.hostID,
       hostName: host.name,
       hostPublicKey: host.publicKey,
+      host: {
+        id: crypto.randomUUID(),
+        label: host.name,
+        hubURL: origin,
+        target: { hostID: host.hostID, runtimeID },
+        publicKey: host.publicKey,
+        grantID: grant.id,
+        grantVersion: grant.version,
+      },
+      devicePrivateKey: privateKey.d,
     }),
   )
   await chmod(fixture, 0o600)
@@ -82,11 +129,13 @@ try {
   } finally {
     clearTimeout(timer)
   }
-  console.log("Native Hub login, signed bearer, directory, real Keychain restoration and logout invalidation passed")
+  console.log("Native Hub account, Keychain, authenticated encrypted relay and logout invalidation passed")
 } finally {
   state.child?.kill()
   await state.child?.exited
+  state.agent?.stop()
   await state.hub?.stop()
+  await state.grants?.close()
   database.close()
   await rm(directory, { recursive: true, force: true })
 }
