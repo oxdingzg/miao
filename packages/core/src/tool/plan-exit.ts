@@ -1,29 +1,23 @@
-/**
- * Plan→Build approval leaf. The plan agent calls this when it is ready to
- * implement; the user must approve the switch through the question channel, and
- * the same Session then runs as the build agent durably. A peer or subagent
- * cannot approve on the user's behalf: the tool has no input that grants the
- * switch, and the approval only resolves from a user question reply.
- *
- * The switch publishes the same durable `session.next.agent.switched` event
- * `SessionV2.switchAgent` uses, so the projected Session agent and recovery
- * after a restart behave identically.
- */
 export * as PlanExitTool from "./plan-exit"
 
 import { ToolFailure } from "@miao/llm"
 import { DateTime, Effect, Layer, Schema } from "effect"
+import { AgentV2 } from "../agent"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { PermissionV2 } from "../permission"
 import { QuestionV2 } from "../question"
 import { SessionEvent } from "../session/event"
 import { SessionMessage } from "../session/message"
+import { SessionSchema } from "../session/schema"
+import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
 export const name = "plan_exit"
+
+const PLAN_AGENT = AgentV2.ID.make("plan")
 
 export const Input = Schema.Struct({})
 
@@ -45,6 +39,13 @@ const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const question = yield* QuestionV2.Service
     const events = yield* EventV2.Service
+    const store = yield* SessionStore.Service
+    /** The root Session must still be the selected plan agent for the switch to apply. */
+    const rootPlanSession = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      const session = yield* store.get(sessionID)
+      if (session === undefined || session.parentID !== undefined || session.agent !== PLAN_AGENT) return undefined
+      return session
+    })
 
     yield* tools
       .register({
@@ -75,8 +76,14 @@ const layer = Layer.effectDiscard(
                 })
                 .pipe(Effect.mapError(() => new ToolFailure({ message: "Permission denied: plan_exit" })))
 
-              // The user's reply is the only approval path. A dismissed or
-              // unapproved question leaves the Session on the plan agent.
+              // A subagent, or a root that is no longer on the plan agent, must
+              // not switch itself just because its own config allows plan_exit.
+              const started = yield* rootPlanSession(context.sessionID)
+              if (started === undefined || context.agent !== PLAN_AGENT)
+                return yield* new ToolFailure({
+                  message: "Only the root plan Session can switch to the build agent.",
+                })
+
               const answers = yield* question
                 .ask({
                   sessionID: context.sessionID,
@@ -102,8 +109,17 @@ const layer = Layer.effectDiscard(
                 .pipe(Effect.mapError(() => new ToolFailure({ message: "Plan exit was not approved." })))
               if (answers[0]?.[0] !== "Yes") return yield* new ToolFailure({ message: "Plan exit was not approved." })
 
-              // Durable, same-Session switch. The next provider turn selects the
-              // build agent because the projected Session agent changed.
+              // The user may switch agents manually while the question is
+              // pending. Never overwrite that choice with a stale approval.
+              const current = yield* rootPlanSession(context.sessionID)
+              if (
+                current === undefined ||
+                DateTime.toEpochMillis(current.time.updated) !== DateTime.toEpochMillis(started.time.updated)
+              )
+                return yield* new ToolFailure({
+                  message: "The Session changed while waiting for approval; the switch was not applied.",
+                })
+
               yield* events.publish(SessionEvent.AgentSwitched, {
                 sessionID: context.sessionID,
                 messageID: SessionMessage.ID.create(),
@@ -122,5 +138,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/plan-exit",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, QuestionV2.node, EventV2.node],
+  deps: [ToolRegistry.node, PermissionV2.node, QuestionV2.node, EventV2.node, SessionStore.node],
 })

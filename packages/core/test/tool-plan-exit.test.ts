@@ -3,6 +3,9 @@ import { AgentV2 } from "@miao/core/agent"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
+import { asc, eq } from "drizzle-orm"
+import { EventTable } from "@miao/core/event/sql"
+import { SessionMessageTable, SessionTable } from "@miao/core/session/sql"
 import { EventV2 } from "@miao/core/event"
 import { Location } from "@miao/core/location"
 import { PermissionV2 } from "@miao/core/permission"
@@ -14,8 +17,8 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionMessage } from "@miao/core/session/message"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
-import { ToolRegistry } from "@miao/core/tool/registry"
 import { PlanExitTool } from "@miao/core/tool/plan-exit"
+import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { Effect, Layer } from "effect"
 import { testEffect } from "./lib/effect"
@@ -23,6 +26,7 @@ import { executeTool, settleTool, toolDefinitions } from "./lib/tool"
 
 const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 const planAgent = AgentV2.ID.make("plan")
+const manualAgent = AgentV2.ID.make("manual")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -52,6 +56,7 @@ const permission = Layer.succeed(
 
 let captured: QuestionV2.AskInput | undefined
 let outcome: "yes" | "no" | "dismiss" = "yes"
+let onAsk: (() => Effect.Effect<void>) | undefined
 const question = Layer.succeed(
   QuestionV2.Service,
   QuestionV2.Service.of({
@@ -59,6 +64,7 @@ const question = Layer.succeed(
       Effect.sync(() => {
         captured = input
       }).pipe(
+        Effect.andThen(Effect.suspend(() => onAsk?.() ?? Effect.void)),
         Effect.andThen(
           outcome === "dismiss"
             ? Effect.fail(new QuestionV2.RejectedError())
@@ -98,17 +104,18 @@ const reset = () => {
   deny = false
   captured = undefined
   outcome = "yes"
+  onAsk = undefined
 }
 
-const call = (sessionID: SessionV2.ID) => ({
+const call = (sessionID: SessionV2.ID, input: Record<string, unknown> = {}) => ({
   sessionID,
   agent: planAgent,
   assistantMessageID: SessionMessage.ID.make("msg_plan_exit"),
-  call: { type: "tool-call" as const, id: "call-plan-exit", name: "plan_exit", input: {} },
+  call: { type: "tool-call" as const, id: "call-plan-exit", name: "plan_exit", input },
 })
 
 describe("PlanExitTool", () => {
-  it.effect("switches the same Session to build only after the user approves", () =>
+  it.effect("switches the same root plan Session to build only after the user approves", () =>
     Effect.gen(function* () {
       reset()
       const session = yield* SessionV2.Service
@@ -122,8 +129,45 @@ describe("PlanExitTool", () => {
         type: "text",
         value: "User approved switching to the build agent. Continue by implementing the approved plan.",
       })
-      // The durable event projects to the Session row, so the next turn runs build.
+      // The switch is durable: the event is recorded and projects to the row the
+      // next provider turn reads its agent from.
+      const history = yield* session.history({ sessionID: created.id, limit: 10 })
+      expect(history.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "session.next.agent.switched",
+            data: expect.objectContaining({ agent: "build" }),
+          }),
+        ]),
+      )
       expect(yield* session.get(created.id)).toMatchObject({ agent: "build" })
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      const recorded = yield* database.db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, created.id))
+        .orderBy(asc(EventTable.seq))
+        .all()
+        .pipe(Effect.orDie)
+      yield* events.remove(created.id)
+      yield* database.db
+        .delete(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, created.id))
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db.delete(SessionTable).where(eq(SessionTable.id, created.id)).run().pipe(Effect.orDie)
+      yield* events.replayAll(
+        recorded.map((event) => ({
+          id: event.id,
+          aggregateID: event.aggregate_id,
+          seq: event.seq,
+          type: event.type,
+          data: event.data,
+        })),
+      )
+      expect(yield* session.get(created.id)).toMatchObject({ agent: "build" })
+
       expect(assertions.map((input) => input.action)).toEqual(["plan_exit"])
       expect(captured?.questions[0]?.options.map((option) => option.label)).toEqual(["Yes", "No"])
     }),
@@ -175,14 +219,59 @@ describe("PlanExitTool", () => {
     }),
   )
 
-  it.effect("exposes no input that could grant approval on the user's behalf", () =>
+  it.effect("refuses to switch a subagent session even when its permission allows plan_exit", () =>
     Effect.gen(function* () {
+      reset()
+      const session = yield* SessionV2.Service
       const registry = yield* ToolRegistry.Service
-      const definition = (yield* toolDefinitions(registry)).find((tool) => tool.name === "plan_exit")
-      const schema = definition?.inputSchema as { readonly properties?: Record<string, unknown> } | undefined
-      // A peer or subagent cannot pre-approve: approval only comes from the
-      // user's question reply, never from tool input.
-      expect(Object.keys(schema?.properties ?? {})).toEqual([])
+      const parent = yield* session.create({ location, agent: planAgent })
+      const child = yield* session.create({ location, agent: planAgent, parentID: parent.id })
+
+      const settled = yield* settleTool(registry, call(child.id))
+
+      expect(settled.result).toEqual({
+        type: "error",
+        value: "Only the root plan Session can switch to the build agent.",
+      })
+      // The question is never asked and no switch is published.
+      expect(captured).toBeUndefined()
+      expect(yield* session.get(child.id)).toMatchObject({ agent: "plan" })
+    }),
+  )
+
+  it.effect("does not overwrite a manual agent switch made while the question waits", () =>
+    Effect.gen(function* () {
+      reset()
+      onAsk = () => session.switchAgent({ sessionID: created.id, agent: manualAgent }).pipe(Effect.orDie)
+      const session = yield* SessionV2.Service
+      const registry = yield* ToolRegistry.Service
+      const created = yield* session.create({ location, agent: planAgent })
+
+      const settled = yield* settleTool(registry, call(created.id))
+
+      expect(settled.result).toEqual({
+        type: "error",
+        value: "The Session changed while waiting for approval; the switch was not applied.",
+      })
+      expect(yield* session.get(created.id)).toMatchObject({ agent: "manual" })
+    }),
+  )
+
+  it.effect("ignores unexpected input instead of letting it skip the question", () =>
+    Effect.gen(function* () {
+      reset()
+      outcome = "no"
+      const session = yield* SessionV2.Service
+      const registry = yield* ToolRegistry.Service
+      const created = yield* session.create({ location, agent: planAgent })
+
+      // There is no approval field; extra input is stripped and the user is
+      // still asked, so a peer cannot smuggle an approval through the schema.
+      const settled = yield* settleTool(registry, call(created.id, { approved: true, agent: "build" }))
+
+      expect(captured).toBeDefined()
+      expect(settled.result).toEqual({ type: "error", value: "Plan exit was not approved." })
+      expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
     }),
   )
 })
