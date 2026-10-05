@@ -84,6 +84,7 @@ export function make(input: {
 }
 
 const writes = new Set<ControlAgent.Method>(["session.create", "session.prompt", "session.interrupt", "session.rename", "permission.reply", "question.reply"])
+export function isWrite(method: string): method is ControlAgent.Method { return writes.has(method as ControlAgent.Method) }
 const errors = new Set(["forbidden", "not_found", "conflict", "expired", "outcome_unknown", "invalid_request", "unavailable"])
 const operationID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 function isObject(value: unknown): value is Record<string, unknown> {
