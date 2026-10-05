@@ -14,6 +14,7 @@
     "hub": "bun src/hub-main.ts",
     "build:web": "bun script/build-web.ts",
     "check:web": "bun run build:web && bun script/check-web.ts",
+    "check:web:mobile": "bun run build:web && bun script/check-web.ts --mobile",
     "check:web:runtime": "bun run build:web && bun script/check-web-runtime.ts && bun script/check-web-runtime.ts --project-scope"
   },
   "dependencies": {

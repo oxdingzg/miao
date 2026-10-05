@@ -155,6 +155,7 @@ jobs:
         run: |
           bun --cwd packages/remote-control check:browser
           bun --cwd packages/remote-control check:web
+          bun --cwd packages/remote-control check:web:mobile
           bun --cwd packages/remote-control check:web:runtime
         timeout-minutes: 3
 

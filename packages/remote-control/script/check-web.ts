@@ -306,7 +306,7 @@ try {
       })
   }, 25)
   browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const context = await browser.newContext({ viewport: process.argv.includes("--mobile") ? { width: 390, height: 844 } : { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.name))
