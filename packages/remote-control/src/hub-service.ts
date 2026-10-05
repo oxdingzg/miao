@@ -3,6 +3,7 @@ export * as HubService from "./hub-service"
 import { HubAuth } from "./hub-auth"
 import { HubDirectory } from "./hub-directory"
 import { ControlHub } from "./hub"
+import { HubTickets } from "./hub-tickets"
 import { Option, Schema } from "effect"
 
 export type Options = HubAuth.Options & {
@@ -13,6 +14,8 @@ export type Options = HubAuth.Options & {
 }
 const Registration = Schema.Struct({ hostID: Schema.String, name: Schema.String, publicKey: Schema.String })
 const decodeRegistration = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Registration)))
+const TicketRequest = Schema.Struct({ hostID: Schema.String, runtimeID: Schema.String })
+const decodeTicket = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(TicketRequest)))
 
 /** Authenticated directory/control plane and opaque relay share one origin and listener. */
 export async function listen(options: Options) {
@@ -31,6 +34,7 @@ export async function listen(options: Options) {
     if (!authorization.startsWith("Bearer ")) return Promise.resolve(undefined)
     return identity.verify(authorization.slice(7)).catch(() => undefined)
   }
+  const tickets = HubTickets.make()
   const server = ControlHub.listen({
     hostname: options.hostname,
     port: options.port,
@@ -61,7 +65,27 @@ export async function listen(options: Options) {
         const authenticated = await principal(request)
         if (!authenticated || !identity.active(authenticated)) return error("unauthorized", 401)
         if (url.pathname === "/api/hub/version" && request.method === "GET")
-          return Response.json({ protocol: 1, capabilities: ["directory", "account-auth", "opaque-relay"] }, noStore)
+          return Response.json(
+            { protocol: 1, capabilities: ["directory", "account-auth", "opaque-relay", "browser-tickets"] },
+            noStore,
+          )
+        if (url.pathname === "/api/hub/tickets" && request.method === "POST") {
+          const body = decodeTicket(await request.text())
+          if (Option.isNone(body)) return error("invalid_ticket_request", 400)
+          if (!identity.active(authenticated)) return error("unauthorized", 401)
+          if (!directory.belongs(authenticated.accountID, body.value.hostID)) return error("host_unavailable", 404)
+          const host = server
+            .connectedHosts()
+            .find(
+              (host) =>
+                host.hostID === body.value.hostID &&
+                host.accountID === authenticated.accountID &&
+                host.runtimeID === body.value.runtimeID,
+            )
+          if (!host) return error("runtime_unavailable", 503)
+          const issued = tickets.issue(authenticated, host.hostID, host.runtimeID)
+          return issued ? Response.json(issued, noStore) : error("ticket_limit", 429)
+        }
         if (url.pathname === "/api/hub/hosts" && request.method === "GET") {
           const connected = new Map(
             server
@@ -112,6 +136,27 @@ export async function listen(options: Options) {
         return accountID ? { accountID, valid: () => directory.authenticate(hostID, token) === accountID } : undefined
       },
       client: async (request, hostID) => {
+        const protocols = request.headers.get("sec-websocket-protocol")
+        if (protocols) {
+          if (request.headers.has("authorization") || request.headers.get("origin") !== new URL(options.baseURL).origin)
+            return undefined
+          const offered = protocols.split(",").map((value) => value.trim())
+          if (
+            offered.length !== 2 ||
+            offered[0] !== "miao.control.v1" ||
+            !/^miao\.ticket\.[A-Za-z0-9_-]{43}$/.test(offered[1]!)
+          )
+            return undefined
+          const ticket = tickets.consume(offered[1]!.slice("miao.ticket.".length), hostID)
+          if (!ticket || !identity.active(ticket.principal) || !directory.belongs(ticket.principal.accountID, hostID))
+            return undefined
+          return {
+            accountID: ticket.principal.accountID,
+            runtimeID: ticket.runtimeID,
+            protocol: "miao.control.v1",
+            valid: () => identity.active(ticket.principal) && directory.belongs(ticket.principal.accountID, hostID),
+          }
+        }
         const authenticated = await principal(request)
         if (!authenticated || !directory.belongs(authenticated.accountID, hostID)) return undefined
         return {
@@ -121,7 +166,13 @@ export async function listen(options: Options) {
       },
     },
   })
-  return server
+  return {
+    ...server,
+    stop: async () => {
+      tickets.clear()
+      await server.stop()
+    },
+  }
 }
 
 const noStore = { headers: { "cache-control": "no-store" } }
