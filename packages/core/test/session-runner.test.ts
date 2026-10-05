@@ -2107,6 +2107,39 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("recovers a dangling parameter tail through a structured call without replaying earlier tools", () =>
+    Effect.gen(function* () {
+      yield* setup
+      executions.length = 0
+      requests.length = 0
+      const session = yield* SessionV2.Service
+      const toolTurn = (id: string, text: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({ id, name: "echo", input: { text } }),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        toolTurn("before", "before"),
+        fragmentFixture("text", "dangling", ['Now add the helper.\n\n<parameter name="bash">']).completeEvents,
+        toolTurn("after", "after"),
+        fragmentFixture("text", "done", ["Done"]).completeEvents,
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Make both changes" }), resume: false })
+      yield* session.resume(sessionID)
+
+      expect(executions).toEqual(["before", "after"])
+      expect(requests).toHaveLength(4)
+      expect(userTexts(requests[2])).toContain(ToolCallLeak.NUDGE)
+      expect(JSON.stringify(requests[2].messages)).not.toContain('<parameter name="bash">')
+      expect(JSON.stringify(requests[2].messages)).toContain(ToolCallLeak.NEUTRALIZED)
+      const context = yield* session.context(sessionID)
+      expect(context.some((message) => message.type === "assistant" && message.content.some(
+        (part) => part.type === "text" && part.text.includes('<parameter name="bash">'),
+      ))).toBe(true)
+    }),
+  )
+
   it.effect("neutralizes a leaked assistant message in later projections", () =>
     Effect.gen(function* () {
       yield* setup
