@@ -11,6 +11,7 @@ import { Agent } from "@miao/schema/agent"
 import { Model } from "@miao/schema/model"
 import { OpenCode } from "@miao/client"
 import { ControlAgent } from "@miao/remote-control/agent"
+import { RuntimeControlLive } from "./control-live"
 
 const Prompt = Schema.Struct({
   text: Schema.String.check(Schema.isLengthBetween(1, 65536)),
@@ -19,6 +20,7 @@ const Prompt = Schema.Struct({
 
 export function make(options: {
   client: ReturnType<typeof OpenCode.make>
+  live?: ReturnType<typeof RuntimeControlLive.make>
   run: <A, E>(effect: Effect.Effect<A, E, Database.Service>) => Promise<A>
 }) {
   const tails = new Map<string, Promise<unknown>>()
@@ -380,7 +382,7 @@ export function make(options: {
         if (!event.durable || event.durable.seq <= cursor) throw new ControlAgent.RequestError("conflict")
         return event.durable.seq
       }, input.after)
-      return { ...page, cursor }
+      return { ...page, cursor, ...(options.live ? { live: options.live.snapshot(input.sessionID) } : {}) }
     },
     "session.history": async (request, context) => {
       const page = Schema.decodeUnknownOption(

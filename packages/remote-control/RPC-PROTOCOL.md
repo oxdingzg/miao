@@ -71,3 +71,19 @@ not truncated to fit a frame.
 Neither a successful socket write nor a Hub acknowledgment is an operation
 receipt. A lost response remains uncertain until `operation.get` or a method's
 documented exact-retry mechanism establishes its authoritative outcome.
+
+## Live text projection
+
+`session.events` may include `live: {epoch, revision, messageID, parts}` beside
+its durable page and cursor. Each part has `{id, kind, text, truncated}`; kind
+is `text` or `reasoning`. This is the current full transient value, not a delta
+to append. Replace the previous live view on each response. An empty view clears
+it. Never persist its revision as the history cursor, merge it into replayed
+history, or use it to resume provider execution. The Runtime epoch changes on
+restart; the assistant message identity separates provider turns.
+
+Live views are bounded to 32 parts per session, 256 KiB UTF-8 per part, 64
+sessions and 4 MiB total. Oversized parts expose `truncated: true`; idle live
+views expire after two minutes. Durable text/reasoning settlement replaces live
+values through the ordinary history projection. Reads remain session/grant
+scoped and are reauthorized before returning this optional field.
