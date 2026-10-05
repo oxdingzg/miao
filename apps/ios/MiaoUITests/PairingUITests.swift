@@ -52,6 +52,10 @@ final class PairingUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertEqual(draft.value as? String, "retained phone draft")
+        if app.keyboards.count > 0 {
+            XCTAssertTrue(app.buttons["dismissKeyboard"].waitForExistence(timeout: 10))
+            app.buttons["dismissKeyboard"].tap()
+        }
         let menu = app.buttons["sessionMenu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 15))
         expectation(for: NSPredicate { element, _ in
