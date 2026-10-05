@@ -76,7 +76,6 @@ import { useClipboard } from "../../context/clipboard"
 import {
   nextThinkingMode,
   reasoningDone,
-  reasoningHeadline,
   reasoningSummary,
   useThinkingMode,
   type ThinkingMode,
@@ -1601,7 +1600,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     return props.part.text.replace("[REDACTED]", "").trim()
   })
   const opaque = createMemo(() => !content() && Boolean(props.part.metadata))
-  // Hide mode keeps thinking out of the transcript, except for one headline
+  // Hide mode keeps thinking out of the transcript, except for a duration-only
   // line when the step has no text of its own: models that do not narrate
   // between tool calls (DeepSeek) otherwise look like they never reasoned.
   // Narrating models and opaque reasoning stay hidden so long turns do not
@@ -1630,12 +1629,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         flexDirection="column"
         flexShrink={0}
       >
-        <ReasoningHeader
-          done={isDone()}
-          title={hidden() ? reasoningHeadline(content()) : summary().title}
-          duration={isDone() ? duration() : undefined}
-          encrypted={opaque()}
-        />
+        <ReasoningHeader done={isDone()} duration={isDone() ? duration() : undefined} />
         <Show when={!hidden() && !opaque() && summary().body}>
           <box marginTop={1}>
             <code
@@ -1654,22 +1648,21 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   )
 }
 
-function ReasoningHeader(props: { done: boolean; title: string | null; duration?: string; encrypted?: boolean }) {
+function ReasoningHeader(props: { done: boolean; duration?: string }) {
   const { theme } = useTheme()
   // Theme fields are store reads; keep them inside a thunk so a theme switch
   // repaints the header instead of freezing the color it was mounted with.
   const fg = () => theme.textMuted
-  const completed = () => {
-    if (props.encrypted) return `Thought${props.duration ? ` · ${props.duration}` : ""}`
-    const detail = [props.title, props.duration].filter(Boolean).join(" · ")
-    return `Thought${detail ? `: ${detail}` : ""}`
-  }
+  // Claude Code style: a plain label while thinking, then only how long it took.
+  // The raw reasoning stays behind the thinking toggle instead of leaking a
+  // provider-language headline into the transcript.
+  const completed = () => (props.duration ? `Thought for ${props.duration}` : "Thought")
 
   return (
     <Switch>
       <Match when={!props.done}>
         <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
+          <Spinner color={fg()}>Thinking</Spinner>
         </box>
       </Match>
       <Match when={true}>
