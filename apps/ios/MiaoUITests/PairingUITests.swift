@@ -69,6 +69,8 @@ final class PairingUITests: XCTestCase {
         title.tap()
         if let current = title.value as? String { title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
         title.typeText("Native phone rename")
+        print("Native rename input expected=\((title.value as? String) == "Native phone rename")")
+        XCTAssertEqual(title.value as? String, "Native phone rename")
         app.alerts.buttons["保存"].tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         XCTAssertEqual(draft.value as? String, "retained phone draft")
