@@ -62,3 +62,28 @@ The signed login is stored in the device-only Keychain; the password is cleared 
 After a computer restart, reconnect refreshes its Runtime instance after matching the previously approved host public key. Session replay starts in the new Runtime cache partition, while drafts migrate within the same device/grant/host/session scope. Uncertain operations retain their original IDs and are queried, never automatically resent.
 
 On an approved macOS host, `MIAO_UI_TEST_ACCOUNT=1 bun apps/ios/scripts/check-app.ts` runs the full native UI flow against the account-managed Hub: account entry, pairing, session operations, background draft recovery and account restoration after App restart. The default harness retains legacy private-relay coverage. Both use isolated identities and test-only loopback access.
+
+### Notification registration
+
+The account sheet provides an explicit notification enable/disable action. The
+App asks for alert and sound permission only after that action. System token
+callbacks register the current token through the authenticated Hub account;
+tokens remain in memory and are not cached in preferences or checkpoint files.
+Updates are serialized, account changes fence stale responses, and disabling
+waits for pending updates before revoking the device registration. Unconfirmed
+revocation keeps an explicit retry action across launches. Account sign-out
+also removes the login-bound registration on the Hub.
+
+Notification builds must set `MIAO_PUSH_ENVIRONMENT` to `sandbox` or `production`
+and use a signing profile with the matching APNs entitlement. The default
+`disabled` value preserves installations whose profile does not support APNs;
+the App reports notification support as unavailable and does not request OS
+permission. This value is independent of Debug/Release because development
+exports of a Release archive can still require the sandbox environment. Signing
+profiles, push keys and team configuration remain outside the repository.
+
+The Hub must enable push registration before the native client can enroll.
+Enrollment confirms routing metadata only. Approved Runtime subscriptions and
+working Apple provider credentials are also required before reminders can be
+sent. Real Apple delivery and notification navigation must be verified with an
+entitled device build; simulator account tests do not prove APNs delivery.

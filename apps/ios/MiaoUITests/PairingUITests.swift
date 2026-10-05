@@ -37,6 +37,9 @@ final class PairingUITests: XCTestCase {
             app.secureTextFields["hubPassword"].tap(); app.secureTextFields["hubPassword"].typeText(account.password)
             app.buttons["hubSignIn"].tap()
             XCTAssertTrue(app.staticTexts["已登录"].waitForExistence(timeout: 30))
+            XCTAssertTrue(app.buttons["enableNotifications"].waitForExistence(timeout: 10))
+            app.buttons["enableNotifications"].tap()
+            XCTAssertTrue(app.staticTexts["此连接暂不支持通知"].waitForExistence(timeout: 10))
             app.buttons["关闭"].tap()
         }
         XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))

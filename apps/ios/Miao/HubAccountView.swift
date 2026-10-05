@@ -43,6 +43,30 @@ struct HubAccountView: View {
                     if let error = model.accountError { Text(error).font(.footnote).foregroundStyle(.red) }
                 }
                 if model.accountSignedIn {
+                    Section("会话通知") {
+                        Label(model.notificationsRegistered ? "通知设备已连接" : "通知未连接", systemImage: "bell")
+                        if model.notificationsRevocationPending {
+                            Button("重试关闭通知") { Task { await model.disableNotifications() } }
+                                .disabled(model.notificationsBusy)
+                        } else if model.notificationsWanted {
+                            Button("关闭通知", role: .destructive) { Task { await model.disableNotifications() } }
+                                .disabled(model.notificationsBusy)
+                            if !model.notificationsRegistered {
+                                Button("重试连接通知") { Task { await model.enableNotifications() } }
+                                    .disabled(model.notificationsBusy)
+                            }
+                        } else {
+                            Button("开启通知") { Task { await model.enableNotifications() } }
+                                .disabled(model.notificationsBusy)
+                                .accessibilityIdentifier("enableNotifications")
+                        }
+                        if model.notificationsBusy { ProgressView() }
+                        if let error = model.notificationsError {
+                            Text(error).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Text("通知只显示通用提醒，不包含会话内容。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     Section("账号中的电脑") {
                         if model.discoveredHosts.isEmpty { Text("暂无已注册电脑").foregroundStyle(.secondary) }
                         ForEach(model.discoveredHosts) { host in

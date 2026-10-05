@@ -3,6 +3,8 @@ import SwiftUI
 import Observation
 import CryptoKit
 import MiaoCore
+import UIKit
+import UserNotifications
 
 @MainActor @Observable
 final class AppModel {
@@ -22,6 +24,13 @@ final class AppModel {
     var accountError: String?
     var discoveredHosts: [HubDirectoryHost] = []
     var connectionEpoch = 0
+    var notificationsBusy = false
+    var notificationsRegistered = false
+    var notificationsError: String?
+    var notificationsWanted = false
+    var notificationsRevocationPending = false
+    private var notificationEpoch = 0
+    private var pushTask: Task<Void, Never>?
     private var account: HubAccount?
     private var accountOrigin: URL?
     private var accountLoaded = false
@@ -31,6 +40,106 @@ final class AppModel {
     private var pairTask: Task<Void, Never>?
     private var scenes: [UUID: ScenePhase] = [:]
     private var reloadEpoch = 0
+
+    private var notificationPreference: String {
+        AppTestConfiguration.runID.map { "miao.remote.ui-test-notifications." + $0 } ?? "miao.remote.notifications"
+    }
+
+    func enableNotifications() async {
+        guard !notificationsBusy, !notificationsRevocationPending, accountSignedIn, let account else { return }
+        notificationsBusy = true; notificationsError = nil
+        let epoch = accountEpoch
+        defer { notificationsBusy = false }
+        do {
+            guard let raw = Bundle.main.object(forInfoDictionaryKey: "MiaoPushEnvironment") as? String,
+                  PushEnvironment(rawValue: raw) != nil,
+                  try await account.pushRegistrationAvailable() else {
+                notificationsError = "此连接暂不支持通知"; return
+            }
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            let allowed = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            guard allowed else { notificationsError = "请在系统设置中允许 miao 通知"; return }
+            notificationsWanted = true
+            UserDefaults.standard.set(true, forKey: notificationPreference)
+            UIApplication.shared.registerForRemoteNotifications()
+        } catch { if epoch == accountEpoch { notificationsError = "通知连接未完成，请重试" } }
+    }
+
+    func disableNotifications() async {
+        guard !notificationsBusy else { return }
+        notificationsBusy = true
+        notificationsWanted = false; notificationsRegistered = false; notificationEpoch += 1
+        UserDefaults.standard.set(false, forKey: notificationPreference)
+        UIApplication.shared.unregisterForRemoteNotifications()
+        AppNotifications.shared.forget()
+        let epoch = accountEpoch
+        await pushTask?.value
+        defer { notificationsBusy = false }
+        guard epoch == accountEpoch else { return }
+        do {
+            if accountSignedIn, let account {
+                let key = try await identity.loadOrCreate()
+                try await account.revokePush(deviceID: publicKey(key))
+            }
+            guard epoch == accountEpoch else { return }
+            notificationsRevocationPending = false; notificationsError = nil
+            UserDefaults.standard.set(false, forKey: notificationPreference + ".revoke")
+        } catch {
+            guard epoch == accountEpoch else { return }
+            notificationsRevocationPending = true
+            UserDefaults.standard.set(true, forKey: notificationPreference + ".revoke")
+            notificationsError = "通知已在本机关闭，中继注销未确认，请重试"
+        }
+    }
+
+    func receivePushToken(_ token: Data) {
+        guard notificationsWanted, accountSignedIn, let account,
+              let raw = Bundle.main.object(forInfoDictionaryKey: "MiaoPushEnvironment") as? String,
+              let environment = PushEnvironment(rawValue: raw) else { return }
+        notificationEpoch += 1
+        let generation = notificationEpoch
+        let epoch = accountEpoch
+        let previous = pushTask
+        pushTask = Task {
+            await previous?.value
+            guard generation == notificationEpoch, epoch == accountEpoch, notificationsWanted, accountSignedIn else { return }
+            do {
+                let key = try await identity.loadOrCreate()
+                let registration = try PushDeviceRegistration(deviceID: publicKey(key), token: token, environment: environment)
+                _ = try await account.registerPush(registration)
+                guard generation == notificationEpoch, epoch == accountEpoch, notificationsWanted, accountSignedIn else { return }
+                notificationsRegistered = true; notificationsError = nil
+            } catch {
+                guard generation == notificationEpoch, epoch == accountEpoch else { return }
+                notificationsRegistered = false; notificationsError = "通知连接未完成，请重试"
+            }
+        }
+    }
+
+    func pushRegistrationFailed() {
+        notificationEpoch += 1
+        notificationsRegistered = false
+        if notificationsWanted { notificationsError = "通知暂不可用，请稍后重试" }
+    }
+
+    private func restoreNotifications() async {
+        notificationsWanted = UserDefaults.standard.bool(forKey: notificationPreference)
+        notificationsRevocationPending = UserDefaults.standard.bool(forKey: notificationPreference + ".revoke")
+        if notificationsRevocationPending { await disableNotifications(); return }
+        guard notificationsWanted, accountSignedIn,
+              let raw = Bundle.main.object(forInfoDictionaryKey: "MiaoPushEnvironment") as? String,
+              PushEnvironment(rawValue: raw) != nil else { return }
+        let epoch = accountEpoch
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        guard epoch == accountEpoch, accountSignedIn, notificationsWanted else { return }
+        if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+            UIApplication.shared.registerForRemoteNotifications()
+        } else if settings.authorizationStatus == .denied {
+            await disableNotifications()
+            if !notificationsRevocationPending { notificationsError = "请在系统设置中允许 miao 通知" }
+        } else { notificationsRegistered = false }
+    }
 
     func load() async {
         if let loadTask { await loadTask.value; return }
@@ -49,6 +158,7 @@ final class AppModel {
             let key = try await identity.loadOrCreate()
             if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             try await reload()
+            await restoreNotifications()
         } catch { self.error = userMessage(error) }
     }
 
@@ -147,6 +257,7 @@ final class AppModel {
             try await reload()
             connectionEpoch += 1
             await refreshDirectory()
+            await restoreNotifications()
         } catch {
             if generation == accountEpoch {
                 accountError = accountMessage(error)
@@ -160,6 +271,10 @@ final class AppModel {
         guard !accountBusy else { return }
         accountBusy = true; accountEpoch += 1
         accountSignedIn = false; discoveredHosts = []
+        notificationEpoch += 1; notificationsRegistered = false
+        UIApplication.shared.unregisterForRemoteNotifications()
+        AppNotifications.shared.forget()
+        await pushTask?.value
         let pendingPair = pairTask
         pendingPair?.cancel(); await pendingPair?.value
         for client in clients.values { await client.close() }
@@ -205,6 +320,7 @@ final class AppModel {
 
     func scene(_ id: UUID, phase: ScenePhase) {
         scenes[id] = phase
+        if phase == .active, !notificationsBusy { Task { await restoreNotifications() } }
         if scenes.values.allSatisfy({ $0 == .background }) { cancelPairing() }
     }
 
