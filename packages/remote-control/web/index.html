@@ -48,6 +48,7 @@
           </div>
           <span id="connection" class="badge">未连接</span>
           <div class="session-actions">
+            <button id="selection" class="quiet" disabled>Agent / 模型</button>
             <button id="rename" class="quiet" disabled>重命名</button>
             <button id="diff" class="quiet" disabled>文件变化</button>
             <button id="interrupt" class="quiet" disabled>停止任务</button>
@@ -82,6 +83,20 @@
         <button type="button" id="rename-cancel" class="quiet">取消</button>
         <button type="submit">保存名称</button>
       </form>
+    </dialog>
+    <dialog id="selection-dialog" aria-labelledby="selection-title">
+      <h2 id="selection-title">会话设置</h2>
+      <p>保存后从下一次模型调用起生效。</p>
+      <form id="agent-form">
+        <label>Agent<select id="agent-choice" aria-label="Agent" required></select></label>
+        <button type="submit">保存 Agent</button>
+      </form>
+      <form id="model-form">
+        <label>模型<select id="model-choice" aria-label="模型" required></select></label>
+        <label>变体<select id="variant-choice" aria-label="变体"></select></label>
+        <button type="submit">保存模型</button>
+      </form>
+      <button id="selection-close" class="quiet">关闭设置</button>
     </dialog>
     <dialog id="diff-dialog" aria-labelledby="diff-title">
       <h2 id="diff-title">文件变化</h2>

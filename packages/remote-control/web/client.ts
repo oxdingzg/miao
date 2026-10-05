@@ -21,6 +21,13 @@ const send = get("send", HTMLButtonElement)
 const timeline = get("timeline", HTMLDivElement)
 const title = get("session-title", HTMLHeadingElement)
 const badge = get("connection", HTMLSpanElement)
+const selectionButton = get("selection", HTMLButtonElement)
+const selectionDialog = get("selection-dialog", HTMLDialogElement)
+const agentChoice = get("agent-choice", HTMLSelectElement)
+const modelChoice = get("model-choice", HTMLSelectElement)
+const variantChoice = get("variant-choice", HTMLSelectElement)
+let selectionScope: BrowserCheckpoint.Scope | undefined
+let selectionModels: { id: string; providerID: string; name: string; variants: { id: string }[] }[] = []
 const rename = get("rename", HTMLButtonElement)
 const interrupt = get("interrupt", HTMLButtonElement)
 const pending = get("pending", HTMLElement)
@@ -79,6 +86,10 @@ function disconnect() {
   send.disabled = true
   draft.disabled = true
   badge.textContent = "未连接"
+  selectionButton.disabled = true
+  selectionDialog.close()
+  selectionScope = undefined
+  selectionModels = []
   rename.disabled = true
   interrupt.disabled = true
   observedExecutionID = undefined
@@ -528,6 +539,10 @@ async function openSession(sessionID: string, label: string) {
   pendingNodes.clear()
   observedExecutionID = undefined
   interrupt.disabled = true
+  selectionDialog.close()
+  selectionScope = undefined
+  selectionModels = []
+  selectionButton.disabled = !approved.permissions.includes("session.selection")
   rename.disabled = !approved.permissions.includes("session.rename")
   draft.disabled = true
   send.disabled = true
@@ -905,6 +920,91 @@ rename.onclick = () => {
   renameScope = scope
   get("rename-title", HTMLInputElement).value = title.textContent ?? ""
   renameDialog.showModal()
+}
+function populateVariants() {
+  const model = modelChoice.value === "" ? undefined : selectionModels[Number(modelChoice.value)]
+  variantChoice.replaceChildren(
+    new Option("默认", ""),
+    ...(model?.variants.map((variant) => new Option(variant.id, variant.id)) ?? []),
+  )
+}
+modelChoice.onchange = populateVariants
+get("selection-close", HTMLButtonElement).onclick = () => selectionDialog.close()
+selectionButton.onclick = () =>
+  run(async () => {
+    const connection = rpc
+    const partition = scope
+    const current = generation
+    if (!connection || !partition || selectionButton.disabled) return
+    selectionButton.disabled = true
+    try {
+      const value = await connection.request("selection.list", { sessionID: partition.sessionID })
+      if (current !== generation || partition !== scope || connection !== rpc) return
+      if (
+        !record(value) ||
+        !Array.isArray(value.agents) ||
+        value.agents.length > 256 ||
+        !Array.isArray(value.models) ||
+        value.models.length > 4096
+      )
+        throw new Error("Invalid selections")
+      const agents = value.agents.map((agent) => {
+        if (!record(agent) || typeof agent.id !== "string") throw new Error("Invalid agent")
+        return agent.id
+      })
+      selectionModels = value.models.map((model) => {
+        if (
+          !record(model) ||
+          typeof model.id !== "string" ||
+          typeof model.providerID !== "string" ||
+          typeof model.name !== "string" ||
+          !Array.isArray(model.variants) ||
+          model.variants.length > 256
+        )
+          throw new Error("Invalid model")
+        return {
+          id: model.id,
+          providerID: model.providerID,
+          name: model.name,
+          variants: model.variants.map((variant) => {
+            if (!record(variant) || typeof variant.id !== "string") throw new Error("Invalid variant")
+            return { id: variant.id }
+          }),
+        }
+      })
+      agentChoice.replaceChildren(new Option("请选择 Agent", ""), ...agents.map((id) => new Option(id, id)))
+      modelChoice.replaceChildren(
+        new Option("请选择模型", ""),
+        ...selectionModels.map((model, index) => new Option(model.providerID + " / " + model.name, String(index))),
+      )
+      populateVariants()
+      selectionScope = partition
+      selectionDialog.showModal()
+    } finally {
+      if (current === generation) selectionButton.disabled = false
+    }
+  })
+get("agent-form", HTMLFormElement).onsubmit = (event) => {
+  event.preventDefault()
+  const partition = selectionScope
+  const agent = agentChoice.value
+  if (!agent || partition !== scope) return
+  selectionDialog.close()
+  run(async () => {
+    if (await perform("session.switchAgent", { agent }, partition)) report("Agent 已更新，下次模型调用起生效。")
+  })
+}
+get("model-form", HTMLFormElement).onsubmit = (event) => {
+  event.preventDefault()
+  const partition = selectionScope
+  const model = modelChoice.value === "" ? undefined : selectionModels[Number(modelChoice.value)]
+  const variant = variantChoice.value
+  if (!model || partition !== scope || (variant && !model.variants.some((item) => item.id === variant))) return
+  const payload = { model: { id: model.id, providerID: model.providerID, ...(variant ? { variant } : {}) } }
+  selectionDialog.close()
+  run(async () => {
+    if (await perform("session.switchModel", payload, partition)) report("模型已更新，下次模型调用起生效。")
+  })
 }
 get("rename-cancel", HTMLButtonElement).onclick = () => renameDialog.close()
 get("diff-close", HTMLButtonElement).onclick = () => diffDialog.close()

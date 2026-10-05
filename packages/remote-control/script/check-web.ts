@@ -38,6 +38,8 @@ let pairing: ReturnType<typeof ControlPairing.make> | undefined
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
 let approveTimer: ReturnType<typeof setInterval> | undefined
 let approvals = Promise.resolve()
+let selectedAgent = ""
+let selectedModel: unknown
 let prompted = 0
 let creationCalls = 0
 const creationReceipts = new Map<string, unknown>()
@@ -214,6 +216,22 @@ try {
         questionReplied = true
         return { status: "completed" }
       },
+      "selection.list": async () => ({
+        agents: [{ id: "plan" }],
+        models: [
+          { id: "fixture-model", providerID: "fixture", name: "Fixture model", variants: [{ id: "reasoning" }] },
+        ],
+      }),
+      "session.switchAgent": async (request) => {
+        if (JSON.stringify(request.payload) !== JSON.stringify({ agent: "plan" }))
+          throw new Error("Invalid agent selection")
+        selectedAgent = "plan"
+        return { status: "completed" }
+      },
+      "session.switchModel": async (request) => {
+        selectedModel = request.payload
+        return { status: "completed" }
+      },
       "session.rename": async (request) => {
         if (
           typeof request.payload !== "object" ||
@@ -271,6 +289,7 @@ try {
       "read",
       "prompt",
       "session.rename",
+      "session.selection",
       "interrupt",
       "permission.reply",
       "question.reply",
@@ -311,6 +330,27 @@ try {
   await page.getByRole("button", { name: "下一页", exact: true }).click()
   await page.getByRole("button", { name: "Remote workspace", exact: true }).click()
   await page.getByText("已整理变更，等待你的下一步。", { exact: false }).waitFor()
+  stage = "selection"
+  await page.getByRole("button", { name: "Agent / 模型", exact: true }).click()
+  stage = "selection-agent-open"
+  await page.getByLabel("Agent", { exact: true }).selectOption("plan")
+  await page.getByRole("button", { name: "保存 Agent", exact: true }).click()
+  stage = "selection-agent-save"
+  await page.getByText("Agent 已更新，下次模型调用起生效。", { exact: true }).waitFor()
+  if (selectedAgent !== "plan") throw new Error("Agent selection was not applied")
+  await page.getByRole("button", { name: "Agent / 模型", exact: true }).click()
+  stage = "selection-model-open"
+  await page.getByLabel("模型", { exact: true }).selectOption("0")
+  stage = "selection-variant-open"
+  await page.getByLabel("变体", { exact: true }).selectOption("reasoning")
+  await page.getByRole("button", { name: "保存模型", exact: true }).click()
+  stage = "selection-model-save"
+  await page.getByText("模型已更新，下次模型调用起生效。", { exact: true }).waitFor()
+  if (
+    JSON.stringify(selectedModel) !==
+    JSON.stringify({ model: { id: "fixture-model", providerID: "fixture", variant: "reasoning" } })
+  )
+    throw new Error("Model selection was not applied")
   stage = "diff"
   await page.getByRole("button", { name: "文件变化", exact: true }).click()
   await page.locator("#diff-content pre").getByText("+<script>unsafe()</script>", { exact: false }).waitFor()
@@ -379,9 +419,22 @@ try {
     "Web UI: real Hub/Agent login, pairing, rename, fenced interrupt, permission/question choices, preserved form state, prompt and draft recovery passed",
   )
 } catch (error) {
+  const page = browser?.contexts()[0]?.pages()[0]
+  const selectionState = await page
+    ?.evaluate(() => {
+      const model = document.getElementById("model-choice")
+      const dialog = document.getElementById("selection-dialog")
+      return {
+        options: model instanceof HTMLSelectElement ? model.options.length : -1,
+        value: model instanceof HTMLSelectElement ? model.value : "missing",
+        open: dialog instanceof HTMLDialogElement && dialog.open,
+      }
+    })
+    .catch(() => undefined)
   console.error(
     JSON.stringify({
       stage,
+      selectionState,
       errorName: error instanceof Error ? error.name : "unknown",
       permissionReplied,
       questionReplied,

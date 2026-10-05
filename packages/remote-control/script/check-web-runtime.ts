@@ -170,7 +170,7 @@ try {
       })
   }
   const invitation = await request("/api/runtime/control/invitation", {
-    permissions: ["read", "prompt", "session.rename", ...(projectScope ? ["session.create"] : [])],
+    permissions: ["read", "prompt", "session.rename", "session.selection", ...(projectScope ? ["session.create"] : [])],
     sessionIDs: projectScope ? [] : [sessionID],
     projectIDs: projectScope ? [created.data.projectID] : [],
     expiresAt: Date.now() + 600000,
@@ -261,6 +261,14 @@ try {
   const renamed = await request(`/api/session/${sessionID}`)
   if (!object(renamed) || !object(renamed.data) || renamed.data.title !== "Renamed Runtime workspace")
     throw new Error("Runtime rename not persisted")
+  stage = "agent-selection"
+  await page.getByRole("button", { name: "Agent / 模型", exact: true }).click()
+  await page.getByLabel("Agent", { exact: true }).selectOption("plan")
+  await page.getByRole("button", { name: "保存 Agent", exact: true }).click()
+  await page.getByText("Agent 已更新，下次模型调用起生效。", { exact: true }).waitFor()
+  const selected = await request(`/api/session/${sessionID}`)
+  if (!object(selected) || !object(selected.data) || selected.data.agent !== "plan")
+    throw new Error("Runtime agent selection not persisted")
   const before = await request(`/api/session/${sessionID}/history?after=0&limit=100`)
   stage = "recovery"
   await page.reload()
