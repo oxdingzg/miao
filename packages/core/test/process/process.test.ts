@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
-import { realpathSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { Effect, Exit, Fiber, Stream } from "effect"
+import { Duration, Effect, Exit, Fiber, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppProcess } from "@miao/core/process"
@@ -193,6 +193,105 @@ describe("AppProcess", () => {
         ),
         5_000,
       )
+    }
+
+    // The cleanup tests above rely on a child handling SIGTERM, which Windows
+    // does not deliver; tree cleanup there is checked by whether a descendant
+    // gets to run. `start`-style detachment and direct descendants are both
+    // covered because the descendant is started in a new console.
+    if (process.platform === "win32") {
+      const powershell = [
+        process.env.SystemRoot
+          ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+          : undefined,
+        "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      ].find((candidate): candidate is string => candidate !== undefined && existsSync(candidate))
+
+      if (powershell) {
+        // Starts a descendant that writes `marker` after `delaySeconds`; the
+        // outer script then stays busy for `outerSeconds`. If the tree survives
+        // the timeout/interruption the marker appears.
+        const descendant = (marker: string, delaySeconds: number, outerSeconds: number) =>
+          [
+            `$p = Start-Process -PassThru -NoNewWindow -FilePath '${powershell.replaceAll("'", "''")}' -ArgumentList '-NoProfile','-Command',"Start-Sleep ${delaySeconds}; Set-Content -LiteralPath '$env:MIAO_TREE_MARKER' -Value alive"`,
+            `Start-Sleep ${outerSeconds}`,
+          ].join("; ")
+
+        const runDescendant = (marker: string, script: string, timeout?: Duration.Input) => {
+          const command = ChildProcess.make(powershell, ["-NoProfile", "-Command", script], {
+            env: { MIAO_TREE_MARKER: marker },
+            extendEnv: true,
+            forceKillAfter: "3 seconds",
+          })
+          return Effect.gen(function* () {
+            const svc = yield* AppProcess.Service
+            return yield* Effect.exit(svc.run(command, timeout === undefined ? undefined : { timeout }))
+          })
+        }
+
+        it.live(
+          "the descendant marker harness runs when the command is not stopped",
+          Effect.acquireUseRelease(
+            Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "miao-process-tree-"))),
+            (directory) => {
+              const marker = path.join(directory, "alive")
+              return Effect.gen(function* () {
+                const exit = yield* runDescendant(marker, descendant(marker, 1, 3))
+                expect(Exit.isSuccess(exit)).toBe(true)
+                expect(existsSync(marker)).toBe(true)
+              })
+            },
+            (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+          ),
+          20_000,
+        )
+
+        it.live(
+          "timeout cleans up the Windows process tree",
+          Effect.acquireUseRelease(
+            Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "miao-process-tree-"))),
+            (directory) => {
+              const marker = path.join(directory, "leak")
+              return Effect.gen(function* () {
+                const exit = yield* runDescendant(marker, descendant(marker, 4, 30), "1500 millis")
+                expect(Exit.isFailure(exit)).toBe(true)
+                yield* Effect.sleep("6 seconds")
+                expect(existsSync(marker)).toBe(false)
+              })
+            },
+            (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+          ),
+          20_000,
+        )
+
+        it.live(
+          "fiber interruption cleans up the Windows process tree",
+          Effect.acquireUseRelease(
+            Effect.promise(() => fs.mkdtemp(path.join(tmpdir(), "miao-process-tree-"))),
+            (directory) => {
+              const marker = path.join(directory, "leak")
+              return Effect.gen(function* () {
+                const svc = yield* AppProcess.Service
+                const fiber = yield* svc
+                  .run(
+                    ChildProcess.make(powershell, ["-NoProfile", "-Command", descendant(marker, 4, 30)], {
+                      env: { MIAO_TREE_MARKER: marker },
+                      extendEnv: true,
+                      forceKillAfter: "3 seconds",
+                    }),
+                  )
+                  .pipe(Effect.forkChild)
+                yield* Effect.sleep("1500 millis")
+                yield* Fiber.interrupt(fiber)
+                yield* Effect.sleep("6 seconds")
+                expect(existsSync(marker)).toBe(false)
+              })
+            },
+            (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+          ),
+          20_000,
+        )
+      }
     }
   })
 

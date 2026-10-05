@@ -37,6 +37,28 @@ Agents register their stable host ID, public signing key and label through the a
 
 The older private development forwarder configuration (`hosts` plus optional `origins`) remains available for isolated transport probes. It does not provide account authentication or a directory; use account mode for the authenticated service.
 
+## Browser upgrades
+
+A browser first signs into the same-origin authentication service and obtains a
+short-lived access token from `/api/auth/token`. Keep that access token in memory.
+Use it to call `POST /api/hub/tickets` with `{hostID, runtimeID}` from the current
+account directory. The host must be online and owned by the account.
+
+The returned `{ticket, expiresAt}` is valid for one upgrade, for at most 30
+seconds, and only for that host and Runtime. Open the browser WebSocket with
+`["miao.control.v1", "miao.ticket." + ticket]` as its offered subprotocols. The
+server selects only `miao.control.v1`; the ticket is never returned as the selected
+protocol and never belongs in a URL. Upgrades require the configured browser
+origin. Native clients continue using an Authorization header.
+
+Tickets remain hashed in bounded memory: at most 32 pending tickets per account
+and 4096 in total. A redemption attempt spends the nonce, including a wrong-host
+attempt or an upgrade rejected by a connection limit. Obtain a new ticket after
+an unsuccessful attempt or a Runtime change. A ticket authorizes transport only;
+the Agent still verifies the device identity, local approval and scoped requests.
+Logout invalidates pending tickets and live browser channels. Already expired
+credentials cannot receive later Agent responses while awaiting the socket sweep.
+
 ## Container
 
 Bundle from the repository root after installing workspace dependencies:
@@ -52,10 +74,11 @@ Mount the private configuration read-only at `/config/hub.json`. For account mod
 
 - `/health`: liveness and protocol version only.
 - `/v1/host?hostID=…&runtimeID=…`: authenticated Agent WebSocket. One connection per host.
-- `/v1/client?hostID=…`: client WebSocket; account mode requires an access token in the authorization header. The host must belong to that account. The Hub notifies the Agent of a newly allocated connection identity.
+- `/v1/client?hostID=…`: client WebSocket; account mode requires an access token in the authorization header or a one-use browser ticket in the offered subprotocols. The host must belong to that account. The Hub notifies the Agent of a newly allocated connection identity.
 - `/api/auth/sign-in/email`, `/api/auth/get-session`, `/api/auth/token`, `/api/auth/sign-out`: supported login, renewal, access-token and logout routes. Other authentication routes are unavailable.
 - `/api/hub/version` and `/api/hub/hosts`: authenticated capabilities and account-scoped directory; `POST /api/hub/hosts` registers a host.
 - `POST /api/hub/hosts/:hostID/rotate` and `/revoke`: account-scoped host-credential administration.
+- `POST /api/hub/tickets`: authenticated, current-Runtime-bound browser upgrades.
 - Online status means a currently authenticated Agent connection exists. It does not prove Runtime readiness or active model execution.
 - Clients send base64 ciphertext; Agents receive `{type: "frame", connectionID, payload}`. Agents reply with the same envelope; clients receive ciphertext only.
 - `connected` and `disconnected` notifications contain routing metadata only.

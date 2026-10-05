@@ -58,20 +58,22 @@ const decodeUtf8 = (content: Uint8Array) => {
   return { bom, content, text: new TextDecoder().decode(bom ? content.slice(3) : content) }
 }
 
-const previewLines = (value: string, prefix: "+" | "-") => {
-  const lines = normalizeLineEndings(value).split("\n")
-  const shown = lines.slice(0, 6).map((line) => `${prefix}${line.length > 240 ? `${line.slice(0, 240)}...` : line}`)
-  if (lines.length > shown.length) shown.push(`${prefix}...`)
-  return shown
+const previewPatch = (patch: string | undefined) => {
+  const lines = normalizeLineEndings(patch ?? "")
+    .split("\n")
+    .filter(
+      (line) => (line.startsWith("+") && !line.startsWith("+++")) || (line.startsWith("-") && !line.startsWith("---")),
+    )
+  const shown = lines.slice(0, 12).map((line) => (line.length > 240 ? `${line.slice(0, 240)}...` : line))
+  return lines.length > shown.length ? [...shown, "..."] : shown
 }
 
-export const toModelOutput = (output: Output, oldString: string, newString: string) =>
+export const toModelOutput = (output: Output) =>
   [
     `Edited file successfully: ${output.files[0]?.file}`,
     `Replacements: ${output.replacements}`,
     "```diff",
-    ...previewLines(oldString, "-"),
-    ...previewLines(newString, "+"),
+    ...previewPatch(output.files[0]?.patch),
     "```",
   ]
     .concat(output.diagnostics ? ["", "LSP errors detected in this file, please fix:", output.diagnostics] : [])
@@ -100,9 +102,7 @@ const layer = Layer.effectDiscard(
               "Replace exact text in one file. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
             input: Input,
             output: Output,
-            toModelOutput: ({ input, output }) => [
-              { type: "text", text: toModelOutput(output, input.oldString, input.newString) },
-            ],
+            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) => {
               const unableToEdit = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
                 effect.pipe(
@@ -174,13 +174,6 @@ const layer = Layer.effectDiscard(
                 const replaced = planned.replaced
                 const replacements = planned.replacements
                 yield* approve(trimDiff(createTwoFilesPatch(target.canonical, target.canonical, source.text, replaced)))
-                const counts = diffLines(source.text, replaced).reduce(
-                  (result, item) => ({
-                    additions: result.additions + (item.added ? (item.count ?? 0) : 0),
-                    deletions: result.deletions + (item.removed ? (item.count ?? 0) : 0),
-                  }),
-                  { additions: 0, deletions: 0 },
-                )
                 const next = splitBom(replaced)
                 const result = yield* unableToEdit(
                   files.writeIfUnchanged({
@@ -190,6 +183,14 @@ const layer = Layer.effectDiscard(
                   }),
                 )
                 yield* format.file(target.canonical).pipe(Effect.ignore)
+                const final = decodeUtf8(yield* unableToEdit(fs.readFile(target.canonical))).text
+                const counts = diffLines(source.text, final).reduce(
+                  (result, item) => ({
+                    additions: result.additions + (item.added ? (item.count ?? 0) : 0),
+                    deletions: result.deletions + (item.removed ? (item.count ?? 0) : 0),
+                  }),
+                  { additions: 0, deletions: 0 },
+                )
                 yield* lsp.touchFile(target.canonical, "document").pipe(Effect.ignore)
                 const diagnostics = yield* lsp.diagnostics()
                 const report = Diagnostic.report(
@@ -201,7 +202,7 @@ const layer = Layer.effectDiscard(
                   files: [
                     {
                       file: result.resource,
-                      patch: createTwoFilesPatch(result.resource, result.resource, source.text, replaced),
+                      patch: createTwoFilesPatch(result.resource, result.resource, source.text, final),
                       status: "modified" as const,
                       ...counts,
                     },
@@ -221,7 +222,15 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/edit",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
+  deps: [
+    ToolRegistry.node,
+    LocationMutation.node,
+    FileMutation.node,
+    FSUtil.node,
+    PermissionV2.node,
+    Format.node,
+    LSP.node,
+  ],
 })
 
 /** The replaced text and match count, or the failure the model should see. */
@@ -237,7 +246,8 @@ function plan(text: string, input: typeof Input.Type) {
     })
   if (matched._tag === "ambiguous")
     return new ToolFailure({
-      message: "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
+      message:
+        "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
     })
   if (matched._tag === "disproportionate")
     return new ToolFailure({
