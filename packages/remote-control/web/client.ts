@@ -482,12 +482,51 @@ async function pair() {
     transport.close()
   }
 }
-function paint(messages: Message[]) {
+function decodeLive(value: unknown): Message[] {
+  if (value === undefined) return []
+  if (
+    !record(value) ||
+    typeof value.epoch !== "string" ||
+    value.epoch.length > 64 ||
+    !Number.isSafeInteger(value.revision) ||
+    typeof value.revision !== "number" ||
+    value.revision < 0 ||
+    (value.messageID !== null && (typeof value.messageID !== "string" || value.messageID.length > 256)) ||
+    !Array.isArray(value.parts) ||
+    value.parts.length > 32 ||
+    (value.messageID === null && value.parts.length)
+  )
+    throw new Error("Invalid live projection")
+  const seen = new Set<string>()
+  const encoder = new TextEncoder()
+  return value.parts.map((part) => {
+    if (
+      !record(part) ||
+      typeof part.id !== "string" ||
+      part.id.length > 256 ||
+      !["text", "reasoning"].includes(String(part.kind)) ||
+      typeof part.text !== "string" ||
+      typeof part.truncated !== "boolean" ||
+      encoder.encode(part.text).length > 256 * 1024
+    )
+      throw new Error("Invalid live part")
+    const id = "live:" + value.messageID + ":" + part.kind + ":" + part.id
+    if (seen.has(id)) throw new Error("Duplicate live part")
+    seen.add(id)
+    return {
+      id,
+      role: part.kind === "reasoning" ? "activity" : "assistant",
+      text: part.text + (part.truncated ? "\n实时预览已达长度上限，完整内容将在完成后同步。" : ""),
+    }
+  })
+}
+function paint(messages: Message[], live: Message[] = []) {
   const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 80
   timeline.replaceChildren()
-  for (const message of messages) {
+  for (const message of [...messages, ...live]) {
     const item = document.createElement("article")
     item.className = "message " + message.role
+    if (live.includes(message)) item.dataset.live = "true"
     const label = document.createElement("small")
     label.textContent = message.role === "user" ? "你" : message.role === "assistant" ? "MIAO" : "任务进展"
     item.append(label, document.createTextNode(message.text))
@@ -599,7 +638,11 @@ async function openSession(sessionID: string, label: string) {
       page.cursor < cursor
     )
       throw new Error("Invalid history page")
-    if (!page.data.length) continue
+    const live = decodeLive(page.live)
+    if (!page.data.length) {
+      paint(messages, live)
+      continue
+    }
     let next = cursor
     const projected = [...messages]
     let updatedTitle: string | undefined
@@ -638,7 +681,7 @@ async function openSession(sessionID: string, label: string) {
     cursor = next
     messages = bounded
     if (updatedTitle !== undefined) updateTitle(partition.sessionID, updatedTitle)
-    paint(messages)
+    paint(messages, live)
   }
 }
 function updateTitle(sessionID: string, label: string) {

@@ -38,6 +38,7 @@ let pairing: ReturnType<typeof ControlPairing.make> | undefined
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
 let approveTimer: ReturnType<typeof setInterval> | undefined
 let approvals = Promise.resolve()
+let liveText: string | undefined
 let selectedAgent = ""
 let selectedModel: unknown
 let prompted = 0
@@ -128,7 +129,16 @@ try {
           throw new Error("Invalid event request")
         const data = events.filter((event) => event.durable.seq > (request.payload as { after: number }).after)
         if (!data.length) await Bun.sleep(100)
-        return { data, cursor: data.at(-1)?.durable.seq ?? request.payload.after }
+        return {
+          data,
+          cursor: data.at(-1)?.durable.seq ?? request.payload.after,
+          live: {
+            epoch: target.runtimeID,
+            revision: 1,
+            messageID: liveText === undefined ? null : "live-message",
+            parts: liveText === undefined ? [] : [{ id: "live-text", kind: "text", text: liveText, truncated: false }],
+          },
+        }
       },
       "session.prompt": async (request) => {
         if (
@@ -306,7 +316,9 @@ try {
       })
   }, 25)
   browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({ viewport: process.argv.includes("--mobile") ? { width: 390, height: 844 } : { width: 1280, height: 900 } })
+  const context = await browser.newContext({
+    viewport: process.argv.includes("--mobile") ? { width: 390, height: 844 } : { width: 1280, height: 900 },
+  })
   const page = await context.newPage()
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.name))
@@ -330,6 +342,15 @@ try {
   await page.getByRole("button", { name: "下一页", exact: true }).click()
   await page.getByRole("button", { name: "Remote workspace", exact: true }).click()
   await page.getByText("已整理变更，等待你的下一步。", { exact: false }).waitFor()
+  stage = "live-projection"
+  liveText = "正在生成第一段"
+  await page.locator('[data-live="true"]').getByText(liveText, { exact: false }).waitFor()
+  liveText = "正在生成第一段，继续第二段"
+  await page.locator('[data-live="true"]').getByText(liveText, { exact: false }).waitFor()
+  if ((await page.locator('[data-live="true"]').count()) !== 1)
+    throw new Error("Live values appended instead of replaced")
+  liveText = undefined
+  await page.waitForFunction(() => document.querySelectorAll('[data-live="true"]').length === 0)
   stage = "selection"
   await page.getByRole("button", { name: "Agent / 模型", exact: true }).click()
   stage = "selection-agent-open"

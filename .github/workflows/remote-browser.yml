@@ -1,0 +1,39 @@
+name: remote-browser
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/remote-browser.yml"
+      - "packages/remote-control/**"
+      - "packages/miao/src/runtime/**"
+      - "packages/miao/src/effect/app-runtime.ts"
+      - "packages/core/src/session/**"
+      - "packages/schema/src/session-event.ts"
+      - "packages/client/**"
+      - "package.json"
+      - "bun.lock"
+  workflow_dispatch:
+concurrency:
+  group: remote-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24.15"
+      - uses: ./.github/actions/setup-bun
+      - name: Install Chromium
+        working-directory: packages/remote-control
+        run: bunx playwright install --with-deps chromium
+      - name: Verify remote browser
+        working-directory: packages/remote-control
+        run: |
+          bun run check:browser
+          bun run check:web
+          bun run check:web:mobile
+          bun run check:web:runtime

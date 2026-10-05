@@ -17,6 +17,49 @@ const databasePath = path.join(directory, "sessions.db")
 const project = path.join(directory, "project")
 const sessionID = "ses_web_" + crypto.randomUUID().replaceAll("-", "")
 const projectScope = process.argv.includes("--project-scope")
+const liveMode = process.argv.includes("--live")
+const fixture = { calls: 0, expectedCalls: 0, live: false, finish: () => {} }
+const settlement = new Promise<void>((resolve) => {
+  fixture.finish = resolve
+})
+const provider = liveMode
+  ? Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        fixture.calls++
+        const encoder = new TextEncoder()
+        return new Response(
+          new ReadableStream({
+            async start(controller) {
+              const send = (delta: unknown, finish: string | null = null) =>
+                controller.enqueue(
+                  encoder.encode(
+                    "data: " +
+                      JSON.stringify({
+                        id: "fixture-stream",
+                        object: "chat.completion.chunk",
+                        created: 1,
+                        model: "selection",
+                        choices: [{ index: 0, delta, finish_reason: finish }],
+                      }) +
+                      "\n\n",
+                  ),
+                )
+              send({ role: "assistant", content: fixture.live ? "实时生成中的文字" : "初始回复" })
+              if (fixture.live) await settlement
+              send({ content: "，回复已完成。" })
+              send({}, "stop")
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+              controller.close()
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        )
+      },
+    })
+  : undefined
+
 const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
 const hostID = grants.hostID
 const hostKey = grants.identity.publicKey
@@ -115,8 +158,13 @@ try {
             name: "Fixture",
             api: {
               type: "aisdk",
-              package: "@ai-sdk/openai",
-              settings: { apiKey: "fixture", baseURL: "http://127.0.0.1:1" },
+              package: liveMode ? "@ai-sdk/openai-compatible" : "@ai-sdk/openai",
+              url: provider ? `http://127.0.0.1:${provider.port}/v1` : undefined,
+              settings: {
+                apiKey: "fixture",
+                name: "fixture",
+                baseURL: provider ? `http://127.0.0.1:${provider.port}/v1` : "http://127.0.0.1:1",
+              },
             },
             models: {
               selection: {
@@ -301,6 +349,25 @@ try {
     modelSelected.data.model.variant !== "reasoning"
   )
     throw new Error("Runtime model selection not persisted")
+  if (liveMode) {
+    stage = "runtime-live-stream"
+    const baseline = fixture.calls
+    fixture.expectedCalls = baseline + 1
+    fixture.live = true
+    await page.getByLabel("发送到会话").fill("验证流式回复")
+    await page.getByRole("button", { name: "发送 ↑" }).click()
+    await page.locator('[data-live="true"]').getByText("实时生成中的文字", { exact: false }).waitFor()
+    if (fixture.calls !== baseline + 1) throw new Error("Provider call was duplicated")
+    fixture.finish()
+    await page
+      .locator("#timeline article:not([data-live])")
+      .getByText("实时生成中的文字，回复已完成。", { exact: false })
+      .waitFor()
+    await page.waitForFunction(() => document.querySelectorAll('[data-live="true"]').length === 0)
+    if (fixture.calls !== baseline + 1) throw new Error("Transport triggered another provider call")
+    await page.getByLabel("发送到会话").fill("真实 Runtime 草稿")
+    await page.waitForTimeout(200)
+  }
   const before = await request(`/api/session/${sessionID}/history?after=0&limit=100`)
   stage = "recovery"
   await page.reload()
@@ -345,15 +412,31 @@ try {
     object(value) && Array.isArray(value.data)
       ? value.data.filter((event: unknown) => object(event) && event.type === "session.next.prompt.admitted").length
       : -1
-  if (admissions(before) !== 1 || admissions(after) !== 1) throw new Error("Runtime admission was missing or replayed")
+  if (admissions(before) !== (liveMode ? 2 : 1) || admissions(after) !== (liveMode ? 2 : 1))
+    throw new Error("Runtime admission was missing or replayed")
+  if (liveMode) {
+    stage = "stream-recovery"
+    if (fixture.calls !== fixture.expectedCalls) throw new Error("Reconnect repeated provider execution")
+    const completed = page
+      .locator("#timeline article:not([data-live])")
+      .getByText("实时生成中的文字，回复已完成。", { exact: false })
+    await completed.waitFor()
+    if ((await completed.count()) !== 1 || (await page.locator('[data-live="true"]').count()) !== 0)
+      throw new Error("Live text was duplicated or persisted as history")
+  }
   console.log(
     "Web real Runtime: " +
       (projectScope ? "101 project-scoped sessions and bidirectional pagination" : "session-scoped access") +
-      ", durable rename/input/history and no admission replay passed",
+      ", durable rename/input/history and no admission replay passed" +
+      (liveMode ? "; live generation, settlement and reconnect without extra provider calls passed" : ""),
   )
-} catch {
+} catch (error) {
+  await Bun.write(path.join(directory, "verification-error.log"), String(error))
+  console.error("Fixture provider requests:", fixture.calls)
   throw new Error("Web Runtime verification failed at " + stage)
 } finally {
+  fixture.finish()
+  provider?.stop(true)
   stopApproval = true
   await browser?.close()
   if (runtime) {
