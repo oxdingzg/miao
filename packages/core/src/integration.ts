@@ -435,7 +435,7 @@ export const locationLayer = Layer.effect(
         return project(entry, resolveConnections(entry, yield* credentials.list(id)))
       }),
       list: Effect.fn("Integration.list")(function* () {
-        // The models.dev plugin registers an integration for every provider that
+        // The models catalog plugin registers an integration for every provider that
         // has env vars, so confirming "no credentials yet" per integration cost
         // hundreds of queries on every provider turn. Read the credentials once
         // and only consider the integrations that are actually missing.

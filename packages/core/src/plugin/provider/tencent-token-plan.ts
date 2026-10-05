@@ -8,7 +8,7 @@ import { TencentTokenPlan } from "../../tencent-token-plan"
 import { define } from "../define"
 
 /**
- * Token Plan model IDs the gateway publishes that models.dev does not list yet.
+ * Token Plan model IDs the gateway publishes that the catalog does not list yet.
  * An entry is only seeded when the gateway's own per-key list confirms the key
  * can call it, so the plan a key is scoped to decides what appears. The last
  * field marks models that accept image input.
@@ -34,9 +34,9 @@ const SEEDED_MODELS = [
 
 /**
  * Hides the catalog models a Token Plan key cannot call, and seeds the models
- * the gateway lists that models.dev has not caught up with.
+ * the gateway lists that the catalog has not caught up with.
  *
- * models.dev describes the plan from the outside, so it lists models the key is
+ * the catalog describes the plan from the outside, so it lists models the key is
  * not scoped for, and calling one answers 403002 "not authorized". Only the
  * gateway's own per-key model list separates the two, and the listing a request
  * reads is the materialize the plugin boot builds, so the lookup is part of that
