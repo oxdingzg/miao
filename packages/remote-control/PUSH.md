@@ -126,6 +126,28 @@ only the routing binding, notification kind, and encrypted context; no host
 credential is returned. Every API response disables caching. Expired, revoked,
 cross-account, and disconnected contexts are unavailable. Contexts are ephemeral
 and are lost on Hub restart; revocation barriers remain durable.
+
+## Runtime event integration
+
+The owned Runtime attaches `PushSender` to the shared EventV2 listener. It sends
+attention hints for V2 permission/question requests and terminal execution
+failures. Completion requires an observed process-local busy-to-idle drain
+transition, so intermediate assistant steps and startup idle states do not
+generate completion hints. A failed drain does not also generate completion.
+
+Before encryption and again before HTTP admission, the sender checks the current
+unexpired read grant and session/project scope. Each device receives at most one
+hint for an event even when multiple eligible grants exist. Local revocation
+updates grant storage and closes interactive channels before propagating the
+durable Hub barrier. Stored revocations reconcile before future hints, including
+after Runtime restart; a failed reconciliation suppresses delivery until a later
+attempt. Hints do not retry uncertain provider submissions.
+
+The sender admits at most four event tasks, limits one event to 32 devices and
+30 seconds, bounds session status and attention deduplication state, and cancels
+network work on transport replacement or shutdown. Dropped or expired hints do
+not affect durable session state or execution. Device registration and OS
+notification permission remain opt-in on the receiving client.
 This module does not itself attest Runtime grants, produce the encrypted context,
 or expose HTTP routes. The host-authenticated integration must supply those
 checks and native context resolution before notification navigation is usable.

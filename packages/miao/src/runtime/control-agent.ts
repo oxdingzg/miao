@@ -10,6 +10,7 @@ import { OpenCode } from "@miao/client"
 import { DeviceGrants } from "@miao/remote-control/grants"
 import { ControlAgent } from "@miao/remote-control/agent"
 import { ControlPairing } from "@miao/remote-control/pairing"
+import { PushSender } from "@miao/remote-control/push-sender"
 import { RemoteAccess } from "@miao/schema/remote-access"
 import type { RuntimeAdministration } from "@miao/core/runtime/administration"
 import { RuntimeControlMethods } from "./control-methods"
@@ -49,11 +50,19 @@ export async function start(input: {
       agent: ReturnType<typeof ControlAgent.connect>
       pairing: ReturnType<typeof ControlPairing.make>
       configuration: typeof Configuration.Type
+      notifications: ReturnType<typeof PushSender.make>
     }
   } = { stopped: false, tail: Promise.resolve() }
   const live = RuntimeControlLive.make()
   const unsubscribe = await AppRuntime.runPromise(
-    EventV2.Service.use((events) => events.listen((event) => Effect.sync(() => live.accept(event)))),
+    EventV2.Service.use((events) =>
+      events.listen((event) =>
+        Effect.sync(() => {
+          live.accept(event)
+          state.active?.notifications.accept(event)
+        }),
+      ),
+    ),
   ).catch(async (error: unknown) => {
     await grants.close()
     throw error
@@ -76,7 +85,17 @@ export async function start(input: {
       projectForSession: async (sessionID) =>
         (await client.sessions.get({ sessionID }).catch(() => undefined))?.projectID,
     })
-    state.active = { agent, pairing, configuration }
+    const notifications = PushSender.make({
+      hubURL: configuration.hubURL,
+      hostToken: configuration.hostToken,
+      runtimeID: input.runtimeID,
+      grants,
+      connected: () => agent.connected(),
+      allowLoopbackHTTP: configuration.allowLoopbackHTTP,
+      projectForSession: async (sessionID, signal) =>
+        (await client.sessions.get({ sessionID }, { signal }).catch(() => undefined))?.projectID,
+    })
+    state.active = { agent, pairing, configuration, notifications }
   }
   const status = (): RemoteAccess.Status => ({
     enabled: !state.stopped && state.active !== undefined,
@@ -90,6 +109,7 @@ export async function start(input: {
     const active = state.active
     state.active = undefined
     active?.agent.stop()
+    await active?.notifications.stop()
     await active?.pairing.stop()
   }
   const administration: RuntimeAdministration.Interface = {
@@ -140,8 +160,12 @@ export async function start(input: {
     },
     reject: (pairingID) => state.active?.pairing.reject(pairingID),
     devices: () => grants.list(),
-    revoke: (grantID, version) =>
-      state.active ? state.active.agent.revoke(grantID, version) : grants.revoke(grantID, version),
+    revoke: async (grantID, version) => {
+      const active = state.active
+      const result = active ? await active.agent.revoke(grantID, version) : await grants.revoke(grantID, version)
+      await active?.notifications.revoke(result)
+      return result
+    },
   }
   try {
     if (initial) activate(initial)
