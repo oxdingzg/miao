@@ -231,6 +231,7 @@ All shipped clients use the single V2 session runtime; the V1 session runtime an
 
 - [V1 retirement](../specs/v2/v1-retirement.md) records the removal and the remaining compatibility surfaces (database migration and non-session legacy routes).
 - [Session storage](../specs/storage/session-storage-hardening.md) tracks storage design. Use `miao db stats`, `miao db vacuum`, and JSONL exports to inspect and maintain local records.
+- [Agent concurrency](../specs/v2/agent-concurrency.md) designs non-blocking subagents and wake-on-completion so long-running work does not stall a Session.
 - Automatic post-crash execution continuation and clustered ownership are not implemented. The OS sandbox is built into the V2 `bash` tool but remains opt-in; see the [availability matrix](miao-vs-opencode.en.md).
 
 ## 7. FAQ
