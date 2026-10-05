@@ -58,7 +58,7 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
         MIAO_DB: database,
         MIAO_REMOTE_CONTROL_CONFIG: configuration,
         MIAO_PURE: "1",
-        MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false, remote: { projects: {} } }),
+        MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false }),
         MIAO_TEST_HOME: path.join(directory, "home"),
         MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
         XDG_CONFIG_HOME: path.join(directory, "config"),

@@ -7,8 +7,10 @@ export function run(input: TuiInput) {
   return runTui({ ...input, remote: input.remote ?? remote }).pipe(Effect.provide(AppNodeBuilder.build(Global.node)))
 }
 
-// /remote's local logins and daemon start/stop live with `miao remote`; loaded only when the dialog needs them.
-const remote: RemoteLocalFactory = async (settings) => {
-  const { createRemoteLocal } = await import("../cmd/remote")
-  return createRemoteLocal(settings)
-}
+// Relay account setup stays lazy and separate from session execution.
+const remote: RemoteLocalFactory = async () => ({
+  setup: async (input) => {
+    const { HubSetup } = await import("@miao/remote-control/hub-setup")
+    return HubSetup.connect(input)
+  },
+})

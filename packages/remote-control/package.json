@@ -9,8 +9,13 @@
   },
   "scripts": {
     "test": "bun test",
+    "check:browser": "bun script/check-browser.ts && bun script/check-browser-account.ts",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",
-    "hub": "bun src/hub-main.ts"
+    "hub": "bun src/hub-main.ts",
+    "build:web": "bun script/build-web.ts",
+    "check:web": "bun run build:web && bun script/check-web.ts",
+    "check:web:mobile": "bun run build:web && bun script/check-web.ts --mobile",
+    "check:web:runtime": "bun run build:web && bun script/check-web-runtime.ts && bun script/check-web-runtime.ts --project-scope && bun script/check-web-runtime.ts --live"
   },
   "dependencies": {
     "effect": "catalog:",
@@ -19,6 +24,7 @@
     "jose": "6.2.12"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:"

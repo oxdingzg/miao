@@ -43,7 +43,6 @@ export const groupNames = {
   "server.workspace": "workspace",
   "server.worktree": "worktrees",
   "server.controlPlane": "controlPlane",
-  "server.remote": "remote",
 } as const
 
 export const endpointNames = {
@@ -57,14 +56,6 @@ export const endpointNames = {
   "permission.saved.list": "listSaved",
   "permission.saved.remove": "removeSaved",
   "question.request.list": "listRequests",
-  "remote.get": "get",
-  "remote.login.start": "login",
-  "remote.login.events": "loginEvents",
-  "remote.login.input": "loginInput",
-  "remote.login.cancel": "loginCancel",
-  "remote.account.remove": "remove",
-  "remote.account.pair": "pair",
-  "remote.account.test": "test",
 } as const
 
 export const omitEndpoints = new Set(["fs.read", "pty.connect"])

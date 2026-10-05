@@ -25,7 +25,6 @@ import { CredentialHandler } from "./handlers/credential"
 import { ControlPlaneHandler } from "./handlers/control-plane"
 import { ProjectCopyHandler } from "./handlers/project-copy"
 import { ProjectHandler } from "./handlers/project"
-import { RemoteHandler } from "./handlers/remote"
 import { VcsHandler } from "./handlers/vcs"
 import { WorkspaceHandler } from "./handlers/workspace"
 import { WorktreeHandler } from "./handlers/worktree"
@@ -59,6 +58,5 @@ export const handlers = Layer.mergeAll(
   VcsHandler,
   WorkspaceHandler,
   WorktreeHandler,
-  RemoteHandler,
   ControlPlaneHandler,
 )

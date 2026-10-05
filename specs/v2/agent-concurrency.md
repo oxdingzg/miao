@@ -96,10 +96,12 @@ Two facts constrain the implementation and must be respected:
 - **The runner cannot reach global `SessionExecution`.** It is a Location-graph service;
   depending on the global execution service reintroduces the tag cycle documented in
   `specs/v2/session-messaging.md` and `specs/v2/session-scoped-tools.md`. The background
-  launcher must use the **runner-local `runDrain`**, not `SessionExecution.resume`.
+  launcher uses a runtime capability injected into `runner.run`, backed by the local
+  coordinator's `wake`/`awaitIdle`; it does not resolve `SessionExecution` inside the runner.
+  The foreground path keeps its runner-local `runDrain`.
 - **The completion watcher must outlive the parent turn.** The per-turn `toolFibers` set is
-  cleared when the turn ends, so the watcher is forked on a **runner-owned fiber set**
-  (the `titleFibers` pattern) that survives the tool settling and the turn boundary.
+  cleared when the turn ends, so the watcher is forked on a **runtime-owned fiber set**
+  scoped to local execution, surviving the tool settling and the turn boundary.
 
 **The drain cap does not currently bound subagents.** `runSubagent` calls `runDrain`
 directly, bypassing `SessionRunCoordinator`, so children do not consume a concurrency
