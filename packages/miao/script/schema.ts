@@ -7,7 +7,7 @@ import { TuiConfig } from "@miao/tui/config"
 import { Schema } from "effect"
 
 type JsonSchema = Record<string, unknown>
-const MODEL_REF = "https://models.dev/model-schema.json#/$defs/Model"
+const MODEL_REF = "https://mtty.dev/miao/model-schema.json#/$defs/Model"
 
 function generateEffect(schema: Schema.Top) {
   const document = Schema.toJsonSchemaDocument(schema)
