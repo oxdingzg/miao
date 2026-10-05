@@ -115,6 +115,39 @@ public actor HubAccount {
         access = nil
     }
 
+    /// Ask the hub for the provider's authorize URL. The caller presents it and
+    /// returns the one-time code from the app's callback scheme.
+    public func oauthAuthorizeURL(provider: String, callbackURL: String) async throws -> URL {
+        guard provider == "github" || provider == "google",
+              let callback = URL(string: callbackURL), callback.scheme != nil else {
+            throw HubAccountError.invalidEndpoint
+        }
+        let body = try JSONEncoder().encode(SocialSignIn(provider: provider, callbackURL: callbackURL))
+        let (data, _) = try await send("/api/auth/sign-in/social", body: body)
+        let start = try JSONDecoder().decode(SocialStart.self, from: data)
+        guard let url = URL(string: start.url), url.scheme?.lowercased() == "https" else {
+            throw HubAccountError.malformed
+        }
+        return url
+    }
+
+    /// Trade the provider's one-time code for an access token and sign in. mhub
+    /// has no password, so this is the only way in for an OAuth-only hub.
+    public func signInWithOAuth(code: String) async throws {
+        guard !code.isEmpty, code.utf8.count <= 512 else { throw HubAccountError.malformed }
+        if pendingLogout != nil { try await signOut() }
+        generation &+= 1
+        let expected = generation
+        let body = try JSONEncoder().encode(Exchange(code: code))
+        let (data, _) = try await send("/api/auth/exchange", body: body)
+        let token = try JSONDecoder().decode(ExchangeResult.self, from: data).token
+        guard generation == expected else { throw HubAccountError.superseded }
+        guard Self.validCredential(token) else { throw HubAccountError.malformed }
+        try save(token)
+        login = token
+        access = (token, Date().addingTimeInterval(600))
+    }
+
     public func bearer() async throws -> String {
         if let access, access.until > Date() { return access.value }
         guard let credential = login else { throw HubAccountError.authenticationRequired }
@@ -128,6 +161,12 @@ public actor HubAccount {
             }
             // Refresh before the server's fifteen-minute expiry; only the signed login session is persisted.
             access = (token, Date().addingTimeInterval(600))
+            // An OAuth sign-in stores the access token itself as the credential,
+            // so a rotated token must replace it or the next refresh uses a dead one.
+            if login == credential, credential.split(separator: ".").count == 3 {
+                login = token
+                try? save(token)
+            }
             return token
         } catch HubAccountError.authenticationRequired {
             if generation == expected { try clear() }
@@ -284,6 +323,10 @@ public actor HubAccount {
     }
 
     private struct SignIn: Encodable { let email: String; let password: String }
+    private struct SocialSignIn: Encodable { let provider: String; let callbackURL: String }
+    private struct SocialStart: Decodable { let url: String }
+    private struct Exchange: Encodable { let code: String }
+    private struct ExchangeResult: Decodable { let token: String }
     private struct Token: Decodable { let token: String }
     private struct Directory: Decodable { let data: [HubDirectoryHost] }
     private struct HubVersion: Decodable {
