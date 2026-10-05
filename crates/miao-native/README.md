@@ -8,8 +8,8 @@ Linux Landlock sandbox).
 ## Layout
 
 - `src/lib.rs`: the restored edit strategies behind one safe matcher (`matchEdit`),
-  `replace()`/`replaceOnly`/`applyEdit`, `diffStats`, `unifiedPatch`, `deriveNewContents`,
-  `gitStatus`, and Rust unit tests.
+  `replace()`/`replaceOnly`/`applyEdit`, `diffStats`, `unifiedPatch`, `deriveNewContents` +
+  `deriveNewContentsV2`, `gitStatus`, and Rust unit tests.
 - `src/bin/miao-run.rs`: `miao-run`, an OS sandbox wrapper (macOS seatbelt / Linux Landlock).
 - `build.ts`: builds the cdylib with cargo and copies it to `miao-native.node`.
 
@@ -26,8 +26,9 @@ cargo build --release       # also builds target/release/miao-run (the sandbox b
 cargo test --release        # lib + bin Rust unit tests
 ```
 
-The JS parity suite compares the Rust matcher against the TypeScript reference across fixtures and a
-generated corpus (`packages/core/test/tool-edit-native.test.ts`); it skips when the addon is absent.
+The JS parity suites compare the Rust matchers against the TypeScript references across fixtures and a
+generated corpus (`packages/core/test/tool-edit-native.test.ts`, `packages/core/test/patch-native.test.ts`);
+they skip when the addon is absent.
 
 ## API
 
@@ -38,15 +39,18 @@ applyEdit(content, oldString, newString, replaceAll?) -> { content, additions, d
 diffStats(before, after) -> { additions, deletions }
 unifiedPatch(before, after, filePath) -> string
 deriveNewContents(chunks, filePath, originalText) -> { content, unifiedDiff, bom }
+deriveNewContentsV2(chunks, filePath, originalText) -> { content, unifiedDiff, bom }
 gitStatus(path) -> Array<{ path, status }>
 ```
 
 `matchEdit` is the shared contract with `packages/core/src/tool/edit-match.ts`: an exact occurrence
 wins, otherwise the restored V1 strategies run in order, each gated by line-anchor, disproportionate
 span and uniqueness safety. `replaceOnly`/`applyEdit` build on it; an older addon without `matchEdit`
-falls back to the TypeScript reference. `deriveNewContents` ports `deriveNewContentsFromChunks` from
-`packages/miao/src/patch/index.ts`. `gitStatus` uses `gix` and returns worktree-vs-index changes
-(`added` / `modified` / `deleted` / `renamed` / `copied`).
+falls back to the TypeScript reference. `deriveNewContentsV2` is the shared contract with
+`packages/core/src/patch.ts`'s `deriveTs`, used by the V2 apply_patch path; `deriveNewContents` keeps
+the legacy insertion point for `packages/miao/src/patch/index.ts`, and an older addon without
+`deriveNewContentsV2` falls back to the TypeScript reference. `gitStatus` uses `gix` and returns
+worktree-vs-index changes (`added` / `modified` / `deleted` / `renamed` / `copied`).
 
 `miao-run`:
 
@@ -123,7 +127,8 @@ straight into the output, the unified diff buffer is preallocated, and there is 
 ## Status
 
 The V2 edit tool uses the `matchEdit` contract through `packages/core/src/tool/edit-match.ts` when the
-addon exposes it, and falls back to the TypeScript reference otherwise. `deriveNewContents` stays wired
-through `packages/miao/src/patch`. The sandbox runner is wired into the V2 `bash` tool through
-`@miao/core/sandbox`. In-process `gitStatus` remains a prototype; the default Git path is still
-subprocess-based.
+addon exposes it, and falls back to the TypeScript reference otherwise. The V2 apply_patch path uses
+`deriveNewContentsV2` through `packages/core/src/patch.ts` with the same fallback; the legacy
+`deriveNewContents` stays wired through `packages/miao/src/patch`. The sandbox runner is wired into
+the V2 `bash` tool through `@miao/core/sandbox`. In-process `gitStatus` remains a prototype; the
+default Git path is still subprocess-based.

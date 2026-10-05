@@ -768,6 +768,7 @@ fn compute_replacements(
     original: &[&str],
     file_path: &str,
     chunks: &[PatchChunk],
+    append_after_trailing_blank: bool,
 ) -> Result<Vec<Replacement>, String> {
     let lines = original;
     let mut replacements = Vec::new();
@@ -784,7 +785,11 @@ fn compute_replacements(
         }
 
         if chunk.old_lines.is_empty() {
-            let insertion = if !original.is_empty() && original[original.len() - 1].is_empty() {
+            // The V2 primitive appends after every source line, including a
+            // trailing blank line. The legacy primitive inserted before it.
+            let insertion = if append_after_trailing_blank {
+                original.len()
+            } else if !original.is_empty() && original[original.len() - 1].is_empty() {
                 original.len() - 1
             } else {
                 original.len()
@@ -829,23 +834,21 @@ fn compute_replacements(
     Ok(replacements)
 }
 
-fn apply_replacements_into(original: &[&str], replacements: &[Replacement], out: &mut String) {
+fn apply_replacements_into(original: &[&str], replacements: &[Replacement]) -> String {
+    let mut lines: Vec<&str> = Vec::new();
     let mut cursor = 0usize;
     for replacement in replacements {
-        for line in &original[cursor..replacement.start] {
-            out.push_str(line);
-            out.push('\n');
-        }
-        for line in &replacement.lines {
-            out.push_str(line);
-            out.push('\n');
-        }
+        lines.extend(original[cursor..replacement.start].iter().copied());
+        lines.extend(replacement.lines.iter().map(String::as_str));
         cursor = replacement.start + replacement.len;
     }
-    for line in &original[cursor..] {
-        out.push_str(line);
-        out.push('\n');
+    lines.extend(original[cursor..].iter().copied());
+    // Mirror `Patch.derive`: join with `\n` and ensure a single trailing
+    // newline, so a trailing blank line does not survive as a second one.
+    if lines.last().map(|line| !line.is_empty()).unwrap_or(true) {
+        lines.push("");
     }
+    lines.join("\n")
 }
 
 fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
@@ -884,16 +887,33 @@ fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
 }
 
 fn derive_new_contents(chunks: &[PatchChunk], file_path: &str, original_text: &str) -> Result<DeriveResult, String> {
+    derive_new_contents_impl(chunks, file_path, original_text, false)
+}
+
+/// V2 core contract: identical to `packages/core/src/patch.ts`'s `deriveTs`.
+fn derive_new_contents_v2(
+    chunks: &[PatchChunk],
+    file_path: &str,
+    original_text: &str,
+) -> Result<DeriveResult, String> {
+    derive_new_contents_impl(chunks, file_path, original_text, true)
+}
+
+fn derive_new_contents_impl(
+    chunks: &[PatchChunk],
+    file_path: &str,
+    original_text: &str,
+    append_after_trailing_blank: bool,
+) -> Result<DeriveResult, String> {
     let (original_bom, text) = split_bom(original_text);
     let mut original_lines: Vec<&str> = text.split('\n').collect();
     if original_lines.last().map(|line| line.is_empty()).unwrap_or(false) {
         original_lines.pop();
     }
 
-    let replacements = compute_replacements(&original_lines, file_path, chunks)?;
+    let replacements = compute_replacements(&original_lines, file_path, chunks, append_after_trailing_blank)?;
 
-    let mut joined = String::with_capacity(text.len() + 64);
-    apply_replacements_into(&original_lines, &replacements, &mut joined);
+    let joined = apply_replacements_into(&original_lines, &replacements);
 
     let (next_bom, new_content) = split_bom(&joined);
     let unified_diff = generate_unified_diff(text, new_content);
@@ -912,6 +932,15 @@ pub fn derive_new_contents_napi(
     original_text: String,
 ) -> napi::Result<DeriveResult> {
     derive_new_contents(&chunks, &file_path, &original_text).map_err(napi::Error::from_reason)
+}
+
+#[napi(js_name = "deriveNewContentsV2")]
+pub fn derive_new_contents_v2_napi(
+    chunks: Vec<PatchChunk>,
+    file_path: String,
+    original_text: String,
+) -> napi::Result<DeriveResult> {
+    derive_new_contents_v2(&chunks, &file_path, &original_text).map_err(napi::Error::from_reason)
 }
 
 #[napi(object)]
@@ -1634,6 +1663,18 @@ mod tests {
     fn derive_inserts_when_old_lines_empty() {
         let result = derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\nline2\n").unwrap();
         assert_eq!(result.content, "line1\nline2\ninserted\n");
+    }
+
+    #[test]
+    fn derive_v2_appends_after_a_trailing_blank_line() {
+        let result = derive_new_contents_v2(&[chunk(&[], &["inserted"])], "f.txt", "line1\n\n").unwrap();
+        assert_eq!(result.content, "line1\n\ninserted\n");
+    }
+
+    #[test]
+    fn derive_legacy_inserts_before_a_trailing_blank_line() {
+        let result = derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\n\n").unwrap();
+        assert_eq!(result.content, "line1\ninserted\n");
     }
 
     #[test]
