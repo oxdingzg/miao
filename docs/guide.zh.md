@@ -222,6 +222,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 
 - [V1 退役计划](../specs/v2/v1-retirement.md) 记录了删除过程和剩余兼容面（数据库迁移与非会话旧路由）。
 - [会话存储设计](../specs/storage/session-storage-hardening.md) 记录存储方案。可用 `miao db stats`、`miao db vacuum` 和 JSONL 导出检查、维护本地记录。
+- [代理并发](../specs/v2/agent-concurrency.md) 设计非阻塞子代理与完成即唤醒，避免长任务卡住会话。
 - 崩溃后自动执行恢复与集群所有权尚未实现。OS 沙箱已内置于 V2 `bash` 工具但仍需开启，见 [可用范围](miao-vs-opencode.zh.md)。
 
 ## 7. 常见问题（FAQ）

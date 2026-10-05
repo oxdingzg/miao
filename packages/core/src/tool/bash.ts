@@ -3,14 +3,19 @@ export * as BashTool from "./bash"
 import { existsSync } from "fs"
 import path from "path"
 import { ToolFailure } from "@miao/llm"
-import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
+import { EventV2 } from "../event"
+import { Identifier } from "../id/id"
+import { SessionEvent } from "../session/event"
+import { SessionMessage } from "../session/message"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { AppProcess } from "../process"
+import { ToolOutputStore } from "../tool-output-store"
 import { BackgroundJob } from "../background-job"
 import { PermissionV2 } from "../permission"
 import { Sandbox } from "../sandbox"
@@ -28,6 +33,12 @@ export const name = "bash"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
 export const MAX_TIMEOUT_MS = 10 * 60 * 1_000
 export const MAX_CAPTURE_BYTES = 1024 * 1024
+/**
+ * Ceiling on the managed file a background command streams its full output to.
+ * The in-memory preview stays at `MAX_CAPTURE_BYTES`; this only bounds the disk
+ * copy so one runaway command cannot fill the volume.
+ */
+export const MAX_STREAM_BYTES = 256 * 1024 * 1024
 /** Sandboxed runs per command while approving blocked directories. */
 export const MAX_SANDBOX_ATTEMPTS = 4
 /** Permission action for rerunning one command without the OS sandbox. Its approval is never saved. */
@@ -74,6 +85,8 @@ export const StructuredOutput = Schema.Struct({
   timeout: Schema.Boolean.pipe(Schema.optional),
   sandbox: SandboxInfo.pipe(Schema.optional),
   jobID: Schema.String.pipe(Schema.optional),
+  /** Managed file holding the full output when it exceeded the in-memory preview. */
+  outputPath: Schema.String.pipe(Schema.optional),
 })
 
 export const Output = Schema.Struct({
@@ -124,8 +137,10 @@ const modelOutput = (output: Output) => {
   const warnings = output.warnings?.length
     ? `\n\nWarnings:\n${output.warnings.map((warning) => `- ${warning}`).join("\n")}`
     : ""
-  if (output.timeout) return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command timed out before completion.`
-  return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command exited with code ${output.exit}.`
+  const file = output.outputPath === undefined ? "" : `\n\nCaptured output: ${output.outputPath}`
+  if (output.timeout)
+    return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command timed out before completion.${file}`
+  return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command exited with code ${output.exit}.${file}`
 }
 
 const isTimeout = (error: AppProcess.AppProcessError) =>
@@ -345,17 +360,19 @@ const executionLayer = Layer.effect(
     const sandbox = yield* Sandbox.Service
     const shellEnvironment = yield* ShellEnvironment.Service
     const location = yield* Location.Service
+    const outputStore = yield* ToolOutputStore.Service
 
     // With stdin, AppProcess pipes it in from a separate fiber and closes the
     // pipe when done; a command that exits without reading it does not wait on
     // the write, and the timeout still ends the run.
-    const exec = (command: ChildProcess.Command, timeout: number, stdin: string | undefined) =>
+    const exec = (command: ChildProcess.Command, timeout: number, stdin: string | undefined, outputFile?: string) =>
       appProcess
         .run(command, {
           combineOutput: true,
           timeout: Duration.millis(timeout),
           maxOutputBytes: MAX_CAPTURE_BYTES,
           ...(stdin === undefined ? {} : { stdin }),
+          ...(outputFile === undefined ? {} : { outputFile, outputFileMaxBytes: MAX_STREAM_BYTES }),
         })
         .pipe(
           Effect.catchTag("AppProcessError", (error) =>
@@ -416,6 +433,7 @@ const executionLayer = Layer.effect(
     const confined = Effect.fn("BashTool.confined")(function* (input: {
       readonly command: string
       readonly stdin: string | undefined
+      readonly outputFile?: string
       readonly shell: string
       readonly cwd: string
       readonly timeout: number
@@ -435,7 +453,7 @@ const executionLayer = Layer.effect(
             options: input.options,
           })
           if (!wrapped) return undefined
-          const result = yield* exec(wrapped.command, input.timeout, input.stdin)
+          const result = yield* exec(wrapped.command, input.timeout, input.stdin, input.outputFile)
           const denied = yield* wrapped.denied
           yield* Effect.annotateCurrentSpan({
             "sandbox.backend": wrapped.backend,
@@ -464,7 +482,10 @@ const executionLayer = Layer.effect(
         const current = yield* run(attempt)
         // The runner disappeared between the status check and the wrap.
         if (!current)
-          return { result: yield* exec(plain, input.timeout, input.stdin), warnings: [UNAVAILABLE_WARNING] } as Outcome
+          return {
+            result: yield* exec(plain, input.timeout, input.stdin, input.outputFile),
+            warnings: [UNAVAILABLE_WARNING],
+          } as Outcome
         const done: Outcome = {
           result: current.result,
           sandbox: info("sandboxed", current.backend, current.denied),
@@ -523,7 +544,7 @@ const executionLayer = Layer.effect(
           const feedback = level2.feedback ?? (level1 && !level1.approved ? level1.feedback : undefined)
           return { ...done, warnings: [blockedWarning(current.denied, unmapped, feedback)] } as Outcome
         }
-        const result = yield* exec(plain, input.timeout, input.stdin).pipe(
+        const result = yield* exec(plain, input.timeout, input.stdin, input.outputFile).pipe(
           Effect.withSpan("Sandbox.run", {
             attributes: {
               "sandbox.mode": "unsandboxed",
@@ -543,154 +564,212 @@ const executionLayer = Layer.effect(
 
     return Execution.of({
       execute: (input: typeof Input.Type, context: ExecutionContext) =>
-            Effect.gen(function* () {
-              const source = context.source
-              if (input.stdin !== undefined && Buffer.byteLength(input.stdin, "utf8") > MAX_STDIN_BYTES)
-                return yield* new ToolFailure({
-                  message: `stdin is ${Buffer.byteLength(input.stdin, "utf8")} bytes, over the ${MAX_STDIN_BYTES}-byte limit. The command was not run.`,
-                })
-              const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory" })
-              const external = target.externalDirectory
-              if (external)
-                yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external),
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source,
-                })
-              const warnings = (yield* externalCommandDirectories(fs, input.command, target.canonical)).map(
-                (directory) =>
-                  `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
-              )
-              const exact = permissionResources(input.command, input.stdin)
-              // A plain command is approved per command it runs, and "always"
-              // saves prefix rules such as `git status *`, as V1 did. With stdin
-              // (or the stdin marker spelled out) the exact resources stay, so a
-              // script is never approved through a broad prefix.
-              const split =
-                exact.length === 1 && process.platform !== "win32"
-                  ? yield* Effect.tryPromise(() => ShellApproval.bash(input.command)).pipe(
-                      Effect.option,
-                      Effect.map(Option.getOrUndefined),
-                    )
-                  : undefined
-              yield* permission.assert({
-                action: name,
-                resources: split?.resources ?? exact,
-                save: split?.save ?? exact,
-                ...(input.stdin === undefined ? {} : { metadata: { command: input.command, stdin: input.stdin } }),
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-
-              if ((yield* fs.stat(target.canonical)).type !== "Directory")
-                return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
-
-              const entries = yield* config.entries()
-              const shell =
-                resolveShell(
-                  Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))).shell ??
-                    defaultShell(),
+        Effect.gen(function* () {
+          const source = context.source
+          if (input.stdin !== undefined && Buffer.byteLength(input.stdin, "utf8") > MAX_STDIN_BYTES)
+            return yield* new ToolFailure({
+              message: `stdin is ${Buffer.byteLength(input.stdin, "utf8")} bytes, over the ${MAX_STDIN_BYTES}-byte limit. The command was not run.`,
+            })
+          const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory" })
+          const external = target.externalDirectory
+          if (external)
+            yield* permission.assert({
+              ...LocationMutation.externalDirectoryPermission(external),
+              sessionID: context.sessionID,
+              agent: context.agent,
+              source,
+            })
+          const warnings = (yield* externalCommandDirectories(fs, input.command, target.canonical)).map(
+            (directory) =>
+              `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
+          )
+          const exact = permissionResources(input.command, input.stdin)
+          // A plain command is approved per command it runs, and "always"
+          // saves prefix rules such as `git status *`, as V1 did. With stdin
+          // (or the stdin marker spelled out) the exact resources stay, so a
+          // script is never approved through a broad prefix.
+          const split =
+            exact.length === 1 && process.platform !== "win32"
+              ? yield* Effect.tryPromise(() => ShellApproval.bash(input.command)).pipe(
+                  Effect.option,
+                  Effect.map(Option.getOrUndefined),
                 )
-              // Plugin `shell.env` variables, layered over the inherited environment as in V1.
-              const env = yield* shellEnvironment.get({
-                directory: location.directory,
-                cwd: target.canonical,
-                sessionID: context.sessionID,
-                callID: context.callID,
-              })
-              const options = {
-                cwd: target.canonical,
-                ...(Object.keys(env).length === 0 ? {} : { env, extendEnv: true }),
-                stdin: "ignore",
-                detached: process.platform !== "win32",
-                forceKillAfter: Duration.seconds(3),
-              } as const
-              const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
-              const status = yield* sandbox.status()
-              if (status.enabled && !status.available && status.onUnavailable === "fail")
-                return yield* new ToolFailure({
-                  message:
-                    "The OS sandbox is enabled with sandbox.on_unavailable set to fail, but no sandbox runner is available on this host.",
+              : undefined
+          yield* permission.assert({
+            action: name,
+            resources: split?.resources ?? exact,
+            save: split?.save ?? exact,
+            ...(input.stdin === undefined ? {} : { metadata: { command: input.command, stdin: input.stdin } }),
+            sessionID: context.sessionID,
+            agent: context.agent,
+            source,
+          })
+
+          if ((yield* fs.stat(target.canonical)).type !== "Directory")
+            return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
+
+          const entries = yield* config.entries()
+          const shell = resolveShell(
+            Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))).shell ??
+              defaultShell(),
+          )
+          // Plugin `shell.env` variables, layered over the inherited environment as in V1.
+          const env = yield* shellEnvironment.get({
+            directory: location.directory,
+            cwd: target.canonical,
+            sessionID: context.sessionID,
+            callID: context.callID,
+          })
+          const options = {
+            cwd: target.canonical,
+            ...(Object.keys(env).length === 0 ? {} : { env, extendEnv: true }),
+            stdin: "ignore",
+            detached: process.platform !== "win32",
+            forceKillAfter: Duration.seconds(3),
+          } as const
+          const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
+          const status = yield* sandbox.status()
+          if (status.enabled && !status.available && status.onUnavailable === "fail")
+            return yield* new ToolFailure({
+              message:
+                "The OS sandbox is enabled with sandbox.on_unavailable set to fail, but no sandbox runner is available on this host.",
+            })
+          const invalid = yield* syntaxError(shell, input.command, options)
+          if (invalid !== undefined) return yield* new ToolFailure({ message: syntaxErrorMessage(shell, invalid) })
+          // Everything above is permission, syntax, and sandbox setup and
+          // runs before a background job starts; only the command itself is
+          // deferred, so a background command keeps the same authorization
+          // and confinement as a foreground one.
+          // Host-side capture also covers sandboxed commands and partial
+          // output on timeout. Allocate before a job starts so its path can
+          // be observed while it is still running.
+          const directory = outputStore.directory?.()
+          const streamed =
+            directory === undefined
+              ? undefined
+              : yield* Effect.gen(function* () {
+                  yield* fs.ensureDir(directory)
+                  const file = path.join(directory, Identifier.ascending("tool"))
+                  yield* fs.writeFileString(file, "", { flag: "wx" })
+                  return file
                 })
-              const invalid = yield* syntaxError(shell, input.command, options)
-              if (invalid !== undefined) return yield* new ToolFailure({ message: syntaxErrorMessage(shell, invalid) })
-              // Everything above is permission, syntax, and sandbox setup and
-              // runs before a background job starts; only the command itself is
-              // deferred, so a background command keeps the same authorization
-              // and confinement as a foreground one.
-              const run = Effect.gen(function* () {
-                const outcome: Outcome =
-                  status.enabled && status.available
-                    ? yield* confined({
-                        command: input.command,
-                        stdin: input.stdin,
-                        shell,
-                        cwd: target.canonical,
-                        timeout,
-                        network: status.network,
-                        options,
-                        request: { sessionID: context.sessionID, agent: context.agent, source },
-                      })
-                    : {
-                        result: yield* exec(shellCommand(shell, input.command, options), timeout, input.stdin),
-                        warnings: status.enabled ? [UNAVAILABLE_WARNING] : [],
-                      }
-                const allWarnings = [...warnings, ...outcome.warnings]
-                const extra = {
-                  ...(allWarnings.length ? { warnings: allWarnings } : {}),
-                  ...(outcome.sandbox ? { sandbox: outcome.sandbox } : {}),
-                }
-                if (!outcome.result) {
-                  return {
-                    output: `Command exceeded timeout of ${timeout} ms. Retry with a larger timeout if the command is expected to take longer.`,
-                    truncated: false,
-                    timeout: true,
-                    ...extra,
+          const run = Effect.gen(function* () {
+            const outcome: Outcome =
+              status.enabled && status.available
+                ? yield* confined({
+                    command: input.command,
+                    stdin: input.stdin,
+                    outputFile: streamed,
+                    shell,
+                    cwd: target.canonical,
+                    timeout,
+                    network: status.network,
+                    options,
+                    request: { sessionID: context.sessionID, agent: context.agent, source },
+                  })
+                : {
+                    result: yield* exec(shellCommand(shell, input.command, options), timeout, input.stdin, streamed),
+                    warnings: status.enabled ? [UNAVAILABLE_WARNING] : [],
                   }
-                }
-
-                const output =
-                  (outcome.result.output ? AppProcess.decodeOutput(outcome.result.output) : "") || "(no output)"
-                const notice = outcome.result.outputTruncated
-                  ? "[output capture truncated at the in-memory safety limit]"
-                  : undefined
-                return {
-                  exit: outcome.result.exitCode,
-                  output: notice ? `${output}\n\n${notice}` : output,
-                  truncated: outcome.result.outputTruncated === true,
-                  ...extra,
-                }
-              })
-              if (input.run_in_background === true) {
-                const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
-                if (Option.isNone(jobs))
-                  return yield* new ToolFailure({ message: "Background jobs are not available in this runtime." })
-                const job = yield* jobs.value.start({
-                  type: "bash",
-                  title: input.command,
-                  metadata: { sessionID: context.sessionID },
-                  run: run.pipe(
-                    Effect.map((result) => modelOutput(result)),
-                    Effect.catchCause((cause) => Effect.succeed(`Background command failed: ${cause}`)),
-                  ),
-                })
-                return {
-                  output: `Command started in the background as job ${job.id}.`,
-                  truncated: false,
-                  jobID: job.id,
-                }
+            const allWarnings = [...warnings, ...outcome.warnings]
+            const extra = {
+              ...(allWarnings.length ? { warnings: allWarnings } : {}),
+              ...(outcome.sandbox ? { sandbox: outcome.sandbox } : {}),
+              ...(streamed !== undefined &&
+              (input.run_in_background === true || !outcome.result || outcome.result.outputTruncated)
+                ? { outputPath: streamed }
+                : {}),
+              ...(outcome.result?.outputFileTruncated
+                ? {
+                    warnings: [
+                      ...allWarnings,
+                      "Streamed output is incomplete: the capture limit was reached or a file write failed.",
+                    ],
+                  }
+                : {}),
+            }
+            if (!outcome.result) {
+              return {
+                output: `Command exceeded timeout of ${timeout} ms. Retry with a larger timeout if the command is expected to take longer.`,
+                truncated: false,
+                timeout: true,
+                ...extra,
               }
-              return yield* run
-            }).pipe(
-              Effect.mapError((error) =>
-                error instanceof ToolFailure
-                  ? error
-                  : new ToolFailure({ message: `Unable to execute command: ${input.command}` }),
-              ),
-            ),
+            }
 
+            const output =
+              (outcome.result.output ? AppProcess.decodeOutput(outcome.result.output) : "") || "(no output)"
+            const notice = outcome.result.outputTruncated
+              ? outcome.result.outputPath === undefined
+                ? "[output capture truncated at the in-memory safety limit]"
+                : `[in-memory preview truncated; ${outcome.result.outputFileTruncated ? "partial" : "full"} output saved to ${outcome.result.outputPath}]`
+              : undefined
+            return {
+              exit: outcome.result.exitCode,
+              output: notice ? `${output}\n\n${notice}` : output,
+              truncated: outcome.result.outputTruncated === true,
+              ...extra,
+            }
+          })
+          if (input.run_in_background === true) {
+            const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
+            if (Option.isNone(jobs))
+              return yield* new ToolFailure({ message: "Background jobs are not available in this runtime." })
+            // Durable lifecycle records, when the process provides the event
+            // service: the session sees the job after a restart, and a crash
+            // mid-job is visible as a start without a finish.
+            const events = yield* Effect.serviceOption(EventV2.Service)
+            const announce = (text: string, metadata: Record<string, unknown>) =>
+              Option.isSome(events)
+                ? Effect.gen(function* () {
+                    yield* events.value.publish(SessionEvent.Synthetic, {
+                      sessionID: context.sessionID,
+                      messageID: SessionMessage.ID.create(),
+                      timestamp: yield* DateTime.now,
+                      text,
+                      metadata,
+                    })
+                  }).pipe(Effect.ignore)
+                : Effect.void
+            const id = Identifier.ascending("job")
+            yield* announce(`Background job ${id} started: ${input.command}`, {
+              backgroundJob: {
+                id,
+                command: input.command,
+                status: "started",
+                ...(streamed === undefined ? {} : { outputPath: streamed }),
+              },
+            })
+            yield* jobs.value.start({
+              id,
+              type: "bash",
+              title: input.command,
+              metadata: { sessionID: context.sessionID, ...(streamed === undefined ? {} : { outputPath: streamed }) },
+              run: run.pipe(
+                Effect.map((result) => modelOutput(result)),
+                Effect.catchCause((cause) => Effect.succeed(`Background command failed: ${cause}`)),
+                Effect.tap((text) =>
+                  announce(`Background job ${id} finished.\n${text}`, {
+                    backgroundJob: { id, command: input.command, status: "finished" },
+                  }),
+                ),
+              ),
+            })
+            return {
+              output: `Command started in the background as job ${id}.`,
+              truncated: false,
+              jobID: id,
+              ...(streamed === undefined ? {} : { outputPath: streamed }),
+            }
+          }
+          return yield* run
+        }).pipe(
+          Effect.mapError((error) =>
+            error instanceof ToolFailure
+              ? error
+              : new ToolFailure({ message: `Unable to execute command: ${input.command}` }),
+          ),
+        ),
     })
   }),
 )
@@ -713,6 +792,7 @@ const layer = Layer.effectDiscard(
             ...(output.timeout === undefined ? {} : { timeout: output.timeout }),
             ...(output.jobID === undefined ? {} : { jobID: output.jobID }),
             ...(output.sandbox === undefined ? {} : { sandbox: output.sandbox }),
+            ...(output.outputPath === undefined ? {} : { outputPath: output.outputPath }),
           }),
           toModelOutput: ({ output }) => [
             { type: "text", text: output.output },
@@ -743,6 +823,7 @@ export const executionNode = makeLocationNode({
     Sandbox.node,
     ShellEnvironment.node,
     Location.node,
+    ToolOutputStore.node,
   ],
 })
 

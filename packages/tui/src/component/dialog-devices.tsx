@@ -158,6 +158,7 @@ export function DialogDevices(props: {
       "question.reply",
       "interrupt",
       "session.rename",
+      "session.selection",
     ]
     return [
       ...(issued

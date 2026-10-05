@@ -8,7 +8,7 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { LspTool } from "./lsp"
-import { PlanExitTool } from "./plan-exit"
+import { PlanApprovalTool } from "./plan-approval"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { SkillTool } from "./skill"
@@ -39,7 +39,7 @@ export const node = makeLocationNode({
     GlobTool.node,
     GrepTool.node,
     LspTool.node,
-    PlanExitTool.node,
+    PlanApprovalTool.node,
     QuestionTool.node,
     ReadTool.node,
     SkillTool.node,

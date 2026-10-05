@@ -80,8 +80,12 @@ export function make() {
       if (state.lines.length !== WINDOW_LINES) continue
       const counts = new Map<string, number>()
       state.lines.forEach((text) => counts.set(text, (counts.get(text) ?? 0) + 1))
-      const ranked = [...counts.values()].toSorted((a, b) => b - a)
-      if (counts.size > 6 || (ranked[0] ?? 0) + (ranked[1] ?? 0) < 58) continue
+      // Count the whole recurring vocabulary, not just its two most frequent
+      // lines: four-way "let me run/go/do it/execute" loops evaded the old
+      // threshold. Require sustained repetition and allow at most six novelty
+      // lines in the window, so ordinary progress with a repeated refrain passes.
+      const recurring = [...counts.values()].filter((count) => count >= 4)
+      if (recurring.length > 8 || recurring.reduce((total, count) => total + count, 0) < 58) continue
       return channel
     }
   }
