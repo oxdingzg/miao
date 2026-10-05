@@ -24,6 +24,12 @@ const toNativeChunks = (chunks: ReadonlyArray<Patch.UpdateFileChunk>) =>
     isEndOfFile: chunk.endOfFile,
   }))
 
+const deriveNative = (item: Case) => {
+  if (!activeNative) throw new Error("V2 native patch addon is unavailable")
+  const result = activeNative.deriveNewContentsV2(toNativeChunks(item.chunks), item.path, item.original)
+  return { content: result.content, bom: result.bom }
+}
+
 const cases: Case[] = [
   { path: "f.txt", original: "line1\nline2\nline3\n", chunks: [{ oldLines: ["line2"], newLines: ["CHANGED"] }] },
   { path: "f.txt", original: "line1\nline2\n", chunks: [{ oldLines: [], newLines: ["inserted"] }] },
@@ -68,10 +74,7 @@ withNative("native patch derive parity", () => {
   test("deriveTs and the addon agree on the fixture set", () => {
     for (const item of cases) {
       const expected = outcome(() => Patch.deriveTs(item.path, item.chunks, item.original))
-      const actual = outcome(() => {
-        const result = activeNative!.deriveNewContentsV2(toNativeChunks(item.chunks), item.path, item.original)
-        return { content: result.content, bom: result.bom }
-      })
+      const actual = outcome(() => deriveNative(item))
       expect(actual).toEqual(expected)
     }
   })
@@ -117,10 +120,7 @@ withNative("native patch derive parity", () => {
                   : [{ oldLines: block, newLines: [`${block[0]}\u2019s`, ...block.slice(1)] }]
 
       const expected = outcome(() => Patch.deriveTs("f.txt", chunks, original))
-      const actual = outcome(() => {
-        const result = activeNative!.deriveNewContentsV2(toNativeChunks(chunks), "f.txt", original)
-        return { content: result.content, bom: result.bom }
-      })
+      const actual = outcome(() => deriveNative({ path: "f.txt", chunks, original }))
       if (JSON.stringify(actual) !== JSON.stringify(expected)) {
         mismatches++
         if (mismatches <= 5) console.error({ iteration, mode, original, chunks, expected, actual })
