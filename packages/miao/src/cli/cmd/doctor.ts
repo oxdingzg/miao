@@ -117,6 +117,22 @@ function retainedSplit(sample: Sample) {
   })
 }
 
+/** Estimated JS heap bytes by sync structure, from a single sample. */
+function bytesSplit(sample: Sample) {
+  return metric(sample, "tui.sync", (value) => {
+    const bytes = value.bytes
+    if (typeof bytes !== "object" || bytes === null) return undefined
+    const record = bytes as Record<string, unknown>
+    return {
+      part: number(record.part) ?? 0,
+      message: number(record.message) ?? 0,
+      diff: number(record.sessionDiff) ?? 0,
+      shadow: number(record.shadow) ?? 0,
+      older: number(record.older) ?? 0,
+    }
+  })
+}
+
 /** A process killed mid-write leaves a partial final line; skip it, keep the rest. */
 function parse(line: string): Sample | undefined {
   try {
@@ -381,6 +397,7 @@ const ReportCommand = cmd({
       renderNodes: trend(samples, renderNodes),
       retainedText: trend(samples, retainedTextUnits),
       retainedMix: retainedSplit(samples.at(-1)!),
+      syncBytes: bytesSplit(samples.at(-1)!),
       renderFps: trend(samples, renderFps),
       cellsPerFrame: trend(samples, renderCellsPerFrame),
       renderFrames: trend(samples, renderFrames),
@@ -419,6 +436,13 @@ const ReportCommand = cmd({
             "retained mix",
             `prose ${compact(report.retainedMix.total - report.retainedMix.reasoning - report.retainedMix.tool)} · ` +
               `reasoning ${compact(report.retainedMix.reasoning)} · tool ${compact(report.retainedMix.tool)}`,
+          )
+        }
+        if (report.syncBytes) {
+          line(
+            "sync bytes",
+            `part ${mb(report.syncBytes.part)} · msg ${mb(report.syncBytes.message)} · diff ${mb(report.syncBytes.diff)} · ` +
+              `shadow ${mb(report.syncBytes.shadow)} · older ${mb(report.syncBytes.older)}`,
           )
         }
         if (report.renderFrames) line("frames/sample", `${report.renderFrames.first} → ${report.renderFrames.last}`)
