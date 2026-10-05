@@ -14,6 +14,17 @@ final class HubAccountTests: XCTestCase {
         XCTAssertNoThrow(try HubAccount(origin: URL(string: "http://127.0.0.1:4600")!, allowLoopbackHTTP: true))
     }
 
+    /// A session's kind is what the console files it under, and a client that
+    /// does not declare itself falls back to its User-Agent. This asserts the
+    /// declaration reaches the wire with the name the hub knows.
+    func testExchangeDeclaresItselfAsThePhoneApp() throws {
+        let encoded = try JSONEncoder().encode(HubAccount.Exchange(code: "one-time", client: "ios"))
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: String])
+        XCTAssertEqual(Set(body.keys), Set(["client", "code"]))
+        XCTAssertEqual(body["client"], "ios")
+        XCTAssertEqual(body["code"], "one-time")
+    }
+
     func testRelayRequestKeepsBearerOutOfURLsAndRejectsDifferentOrigins() async throws {
         let account = try HubAccount(origin: URL(string: "https://relay.invalid")!)
         let hostID = "host_abcdefghijklmnop"

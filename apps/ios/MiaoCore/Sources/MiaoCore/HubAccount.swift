@@ -138,7 +138,7 @@ public actor HubAccount {
         if pendingLogout != nil { try await signOut() }
         generation &+= 1
         let expected = generation
-        let body = try JSONEncoder().encode(Exchange(code: code))
+        let body = try JSONEncoder().encode(Exchange(code: code, client: "ios"))
         let (data, _) = try await send("/api/auth/exchange", body: body)
         let token = try JSONDecoder().decode(ExchangeResult.self, from: data).token
         guard generation == expected else { throw HubAccountError.superseded }
@@ -325,7 +325,17 @@ public actor HubAccount {
     private struct SignIn: Encodable { let email: String; let password: String }
     private struct SocialSignIn: Encodable { let provider: String; let callbackURL: String }
     private struct SocialStart: Decodable { let url: String }
-    private struct Exchange: Encodable { let code: String }
+    /// What the hub is told when a one-time code is traded for a session.
+    ///
+    /// `client` lets the hub file this sign-in under "phone app" instead of
+    /// guessing from the User-Agent. The hub treats it as optional, but a
+    /// native client that stays silent relies on its agent string, which is the
+    /// sort of thing that changes without anyone noticing. Internal rather than
+    /// private so a test can assert the wire shape.
+    struct Exchange: Encodable {
+        let code: String
+        let client: String
+    }
     private struct ExchangeResult: Decodable { let token: String }
     private struct Token: Decodable { let token: String }
     private struct Directory: Decodable { let data: [HubDirectoryHost] }
