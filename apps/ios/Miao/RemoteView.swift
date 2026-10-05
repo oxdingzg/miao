@@ -326,11 +326,10 @@ private struct SessionView: View {
             NavigationStack { ScrollView { Text(session.diff?.formatted ?? "").font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding() }
                 .navigationTitle("文件变化").toolbar { Button("关闭") { diffPresented = false } } }
         }
-        .alert("重命名会话", isPresented: $renamePresented) {
-            TextField("会话名称", text: $title)
-            Button("保存") { Task { _ = await session.command(.sessionRename, kind: .sessionRename, payload: .object(["title": .string(title)])) } }
-                .disabled(title.isEmpty || title.utf16.count > 256)
-            Button("取消", role: .cancel) {}
+        .sheet(isPresented: $renamePresented) {
+            RenameSessionView(initialTitle: title) { value in
+                Task { _ = await session.command(.sessionRename, kind: .sessionRename, payload: .object(["title": .string(value)])) }
+            }
         }
     }
 
@@ -489,5 +488,35 @@ private struct QuestionView: View {
     private var answered: Bool {
         let questions = request["questions"]?.array ?? []
         return !questions.isEmpty && questions.indices.allSatisfy { !(selected[$0] ?? []).isEmpty || !(custom[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+}
+
+@MainActor
+private struct RenameSessionView: View {
+    @State private var value: String
+    @Environment(\.dismiss) private var dismiss
+    let save: (String) -> Void
+
+    init(initialTitle: String, save: @escaping (String) -> Void) {
+        _value = State(initialValue: initialTitle)
+        self.save = save
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("会话名称", text: $value).accessibilityIdentifier("renameTitle")
+                Button("清除会话名称") { value = "" }
+                    .accessibilityIdentifier("clearRenameTitle").disabled(value.isEmpty)
+            }
+            .navigationTitle("重命名会话")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save(value); dismiss() }
+                        .disabled(value.isEmpty || value.utf16.count > 256)
+                }
+            }
+        }.presentationDetents([.medium])
     }
 }

@@ -76,37 +76,16 @@ final class PairingUITests: XCTestCase {
         }
         menu.tap()
         app.buttons["重命名"].tap()
-        let title = app.alerts.textFields.firstMatch
+        let title = app.textFields["renameTitle"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        app.buttons["clearRenameTitle"].tap()
+        expectation(for: NSPredicate(format: "value == %@", "会话名称"), evaluatedWith: title)
+        waitForExpectations(timeout: 5)
         title.tap()
-        // A tap may put the caret in the middle on iOS 17. Select the entire old name before replacing it.
-        title.press(forDuration: 1.2)
-        // iOS can expose a stale menu item while the actual editing action is a button.
-        // Existence alone does not mean the action can be tapped.
-        let selectionButton = app.buttons["Select All"].firstMatch
-        let selectionMenu = app.menuItems["Select All"].firstMatch
-        let selectionDeadline = Date().addingTimeInterval(4)
-        while Date() < selectionDeadline &&
-            !(selectionButton.exists && selectionButton.isHittable) &&
-            !(selectionMenu.exists && selectionMenu.isHittable) {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-        if selectionButton.exists && selectionButton.isHittable {
-            print("Native rename selection action=button")
-            selectionButton.tap()
-        } else if selectionMenu.exists && selectionMenu.isHittable {
-            print("Native rename selection action=menu")
-            // iOS 17's editing menu can reject element tap synthesis even when
-            // its live snapshot is hittable. Send a touch at the menu item's center.
-            selectionMenu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        } else {
-            print("Native rename selection action=caret")
-            title.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
-            if let current = title.value as? String { title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
-        }
         title.typeText("Native phone rename")
         print("Native rename input expected=\((title.value as? String) == "Native phone rename")")
         XCTAssertEqual(title.value as? String, "Native phone rename")
-        app.alerts.buttons["保存"].tap()
+        app.buttons["保存"].tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         XCTAssertEqual(draft.value as? String, "retained phone draft")
         app.terminate()
