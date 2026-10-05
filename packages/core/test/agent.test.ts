@@ -128,4 +128,25 @@ describe("AgentV2", () => {
       }
     }),
   )
+
+  it.effect("keeps plan-mode entry user-initiated, not model-requested", () =>
+    Effect.gen(function* () {
+      const agent = yield* AgentV2.Service
+      yield* AgentPlugin.Plugin.effect(
+        host({
+          agent: agentHost(agent),
+        }),
+      ).pipe(
+        Effect.provideService(
+          Location.Service,
+          Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
+        ),
+      )
+
+      const build = yield* agent.get(AgentV2.ID.make("build"))
+      const plan = yield* agent.get(AgentV2.ID.make("plan"))
+      expect(build?.permissions.some((rule) => rule.action === "plan_enter" && rule.effect === "allow")).toBe(false)
+      expect(plan?.permissions.some((rule) => rule.action === "plan_exit" && rule.effect === "allow")).toBe(true)
+    }),
+  )
 })
