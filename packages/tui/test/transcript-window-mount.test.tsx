@@ -27,6 +27,21 @@ test("default options mount a bounded window and shift by a small step", () => {
   expect(before - window.start()).toBe(8)
 })
 
+test("sizes the mounted window to the viewport by rows", () => {
+  const data = Array.from({ length: 500 }, (_, index) => ({ id: `message-${index}` }))
+
+  // Tall messages (10 rows each) with a 40-row viewport: mount only a few, at
+  // least the minimum.
+  const tall = createTranscriptWindow(() => data)
+  tall.follow({ scrollTop: 1_000_000, viewportHeight: 40, mountedHeight: 32 * 10 })
+  expect(tall.messages().length).toBe(8)
+
+  // Short messages (1.5 rows each) with a 60-row viewport: grow to cover it.
+  const short = createTranscriptWindow(() => data)
+  short.follow({ scrollTop: 1_000_000, viewportHeight: 60, mountedHeight: 32 * 1.5 })
+  expect(short.messages().length).toBe(43)
+})
+
 test("a long session mounts only a bounded window while preserving scroll height and top", async () => {
   let window!: ReturnType<typeof createTranscriptWindow<(typeof data)[number]>>
   let scroll!: ScrollBoxRenderable
