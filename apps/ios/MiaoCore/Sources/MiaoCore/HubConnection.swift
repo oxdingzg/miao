@@ -74,6 +74,8 @@ public actor HubConnection: ClientConnection {
         }
     }
 
+    public var target: RemoteTarget { host.target }
+
     public func synchronize() async throws {
         _ = try await request(.capabilities)
         try await reconcile(self)

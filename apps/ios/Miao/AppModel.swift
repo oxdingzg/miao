@@ -15,13 +15,37 @@ final class AppModel {
     var error: String?
     var pairing: String?
     var fingerprint: String?
+    var accountURL = ""
+    var accountSignedIn = false
+    var accountBusy = false
+    var revocationPending = false
+    var accountError: String?
+    var discoveredHosts: [HubDirectoryHost] = []
+    var connectionEpoch = 0
+    private var account: HubAccount?
+    private var accountOrigin: URL?
+    private var accountLoaded = false
+    private var accountEpoch = 0
+    private var loadTask: Task<Void, Never>?
     private var registry: HostRegistry?
     private var pairTask: Task<Void, Never>?
     private var scenes: [UUID: ScenePhase] = [:]
     private var reloadEpoch = 0
 
     func load() async {
+        if let loadTask { await loadTask.value; return }
+        let task = Task { await initialize() }
+        loadTask = task
+        await task.value
+        loadTask = nil
+    }
+
+    private func initialize() async {
         do {
+            if !accountLoaded {
+                accountLoaded = true
+                await restoreAccount()
+            }
             let key = try await identity.loadOrCreate()
             if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             try await reload()
@@ -37,12 +61,15 @@ final class AppModel {
         hosts = snapshot.hosts
         attempts = snapshot.attempts
         for record in hosts where clients[record.id] == nil {
-            clients[record.id] = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"))
+            clients[record.id] = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"), account: accountFor(record.host.hubURL))
         }
     }
 
     func pair(_ uri: String, label: String) {
         guard pairTask == nil, let registry else { return }
+        guard accountSignedIn || AppTestConfiguration.allowLegacyTransport else {
+            error = "请先登录电脑使用的中继，再扫码配对"; return
+        }
         error = nil; fingerprint = nil; pairing = "正在连接电脑…"
         pairTask = Task {
             do {
@@ -50,7 +77,7 @@ final class AppModel {
                 try await registry.begin(invitation)
                 let paired = try await HubConnection.pair(invitation: invitation, identity: identity.loadOrCreate(),
                     label: label,
-                    allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP,
+                    allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP, account: account,
                     pending: { [weak self] value in await self?.pending(value) },
                     persist: { host, grant in try await registry.approve(host: host, grant: grant, pairingID: invitation.pairingID) },
                     reconcile: { _ in throw RemoteRPCError.disconnected })
@@ -61,6 +88,113 @@ final class AppModel {
             } catch is CancellationError { pairing = nil }
             catch { self.error = userMessage(error); pairing = nil; try? await reload() }
             pairTask = nil
+        }
+    }
+
+    private var accountPreference: String { AppTestConfiguration.runID.map { "miao.remote.ui-test-origin." + $0 } ?? "miao.remote.hub-origin" }
+    private var accountService: String { AppTestConfiguration.runID.map { "miao.remote.ui-test-account." + $0 } ?? "miao.remote.hub-account" }
+
+    private func accountFor(_ url: URL) -> HubAccount? {
+        guard accountSignedIn, let accountOrigin,
+              let left = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let right = URLComponents(url: accountOrigin, resolvingAgainstBaseURL: false),
+              left.scheme?.lowercased() == right.scheme?.lowercased(),
+              left.host?.lowercased() == right.host?.lowercased(),
+              (left.port ?? (left.scheme?.lowercased() == "https" ? 443 : 80))
+                == (right.port ?? (right.scheme == "https" ? 443 : 80)) else { return nil }
+        return account
+    }
+
+    private func restoreAccount() async {
+        guard let saved = UserDefaults.standard.string(forKey: accountPreference), let url = URL(string: saved) else { return }
+        accountURL = saved
+        accountBusy = true
+        defer { accountBusy = false }
+        do {
+            let restored = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            account = restored; accountOrigin = await restored.origin
+            accountSignedIn = try await restored.restore()
+            if accountSignedIn { await refreshDirectory() }
+        } catch { accountError = "中继登录未恢复，请重新登录" }
+    }
+
+    func signIn(origin: String, email: String, password: String) async {
+        guard !accountBusy else { return }
+        accountBusy = true; accountError = nil
+        accountEpoch += 1
+        let generation = accountEpoch
+        defer { if generation == accountEpoch { accountBusy = false } }
+        do {
+            guard let url = URL(string: origin.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw HubAccountError.invalidEndpoint }
+            let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            accountSignedIn = false; discoveredHosts = []
+            let pendingPair = pairTask
+            pendingPair?.cancel(); await pendingPair?.value
+            for client in clients.values { await client.close() }
+            clients.removeAll()
+            if let account { try await account.signOut(); await account.close() }
+            // Restore only to revoke this device's previous stored session before replacing it.
+            if try await next.restore() { try await next.signOut() }
+            try await next.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+            guard generation == accountEpoch else { try? await next.signOut(); await next.close(); return }
+            let canonical = await next.origin
+            account = next; accountOrigin = canonical
+            accountURL = canonical.absoluteString
+            accountSignedIn = true; revocationPending = false
+            UserDefaults.standard.set(accountURL, forKey: accountPreference)
+            try await reload()
+            connectionEpoch += 1
+            await refreshDirectory()
+        } catch {
+            if generation == accountEpoch {
+                accountError = accountMessage(error)
+                try? await reload()
+                connectionEpoch += 1
+            }
+        }
+    }
+
+    func signOut() async {
+        guard !accountBusy else { return }
+        accountBusy = true; accountEpoch += 1
+        accountSignedIn = false; discoveredHosts = []
+        let pendingPair = pairTask
+        pendingPair?.cancel(); await pendingPair?.value
+        for client in clients.values { await client.close() }
+        clients.removeAll()
+        do { try await account?.signOut(); accountError = nil; revocationPending = false }
+        catch { revocationPending = true; accountError = "已从本机退出。中继撤销未确认，请联网后再次退出登录" }
+        // Keep the account actor to allow an explicit retry of uncertain remote revocation.
+        try? await reload()
+        connectionEpoch += 1
+        accountBusy = false
+    }
+
+    func refreshDirectory() async {
+        guard accountSignedIn, let account else { return }
+        let generation = accountEpoch
+        do {
+            let hosts = try await account.hosts()
+            guard generation == accountEpoch, accountSignedIn else { return }
+            discoveredHosts = hosts; accountError = nil
+        } catch {
+            guard generation == accountEpoch else { return }
+            accountError = accountMessage(error)
+            if error as? HubAccountError == .authenticationRequired {
+                accountSignedIn = false; discoveredHosts = []
+                for client in clients.values { await client.close() }
+                connectionEpoch += 1
+            }
+        }
+    }
+
+    private func accountMessage(_ error: Error) -> String {
+        switch error {
+        case HubAccountError.invalidEndpoint: return "请输入电脑配置的 HTTPS 中继地址"
+        case HubAccountError.authenticationRequired: return "登录已失效，请重新登录中继"
+        case HubAccountError.invalidCredentials, HubAccountError.rejected(401), HubAccountError.rejected(403): return "登录未成功，请核对邮箱、密码和中继地址"
+        case HubAccountError.storage: return "设备凭证暂时不可用，请解锁后重试"
+        default: return "暂时无法连接中继，请检查网络后重试"
         }
     }
 
@@ -112,7 +246,9 @@ final class HostClient {
     var operations: [PendingOperation] = []
     var error: String?
     var sendingTargets = Set<String>()
+    private(set) var runtimeID: String
     private var connection: HubConnection?
+    private let account: HubAccount?
     private var observer: Task<Void, Never>?
     private var sceneIDs = Set<UUID>()
     private var closed = false
@@ -134,8 +270,9 @@ final class HostClient {
     }
     func sending(_ sessionID: String) -> Bool { sendingTargets.contains(sessionID) }
 
-    init(record: AuthorizedHost, identity: DeviceIdentity, directory: URL) throws {
-        self.record = record; self.identity = identity
+    init(record: AuthorizedHost, identity: DeviceIdentity, directory: URL, account: HubAccount? = nil) throws {
+        self.record = record; self.identity = identity; self.account = account
+        runtimeID = record.host.target.runtimeID
         scope = AuthorizationScope(deviceID: record.grant.publicKey, grantID: record.grant.id, hostID: record.host.target.hostID)
         store = try CheckpointStore(directory: directory, scope: scope)
         coordinator = ConnectionCoordinator { [weak self] in
@@ -154,12 +291,18 @@ final class HostClient {
     }
 
     private func connect() async throws -> HubConnection {
-        guard !record.expired, !closed else { throw RemoteConnectionError.authorizationBlocked }
-        let opened = try await HubConnection.open(host: record.host, identity: identity.loadOrCreate(), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) { [weak self] connection in
+        guard !record.expired, !closed, account != nil || AppTestConfiguration.allowLegacyTransport else {
+            throw RemoteConnectionError.authorizationBlocked
+        }
+        let opened = try await HubConnection.open(host: record.host, identity: identity.loadOrCreate(), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP, account: account) { [weak self] connection in
             guard let self else { throw RemoteRPCError.disconnected }
             try await self.synchronize(connection)
         }
         if closed { await opened.close(); throw RemoteRPCError.disconnected }
+        let target = await opened.target
+        guard !closed else { await opened.close(); throw RemoteRPCError.disconnected }
+        runtimeID = target.runtimeID
+        sessions.values.forEach { $0.updateRuntime(target.runtimeID) }
         connection = opened
         return opened
     }
@@ -284,7 +427,7 @@ final class HostClient {
 final class RemoteSession {
     let summary: SessionSummary
     private weak var client: HostClient?
-    private let address: SessionAddress
+    private var address: SessionAddress
     var timeline = SessionTimeline()
     var pending: JSONValue = .object([:])
     var draft = ""
@@ -299,7 +442,14 @@ final class RemoteSession {
 
     init(summary: SessionSummary, client: HostClient) {
         self.summary = summary; self.client = client
-        address = SessionAddress(hostID: client.record.host.target.hostID, runtimeID: client.record.host.target.runtimeID, sessionID: summary.id)
+        address = SessionAddress(hostID: client.record.host.target.hostID, runtimeID: client.runtimeID, sessionID: summary.id)
+    }
+    func updateRuntime(_ runtimeID: String) {
+        guard address.runtimeID != runtimeID else { return }
+        pause()
+        address = SessionAddress(hostID: address.hostID, runtimeID: runtimeID, sessionID: address.sessionID)
+        timeline = SessionTimeline(); pending = .object([:]); loading = true
+        edit(draft)
     }
     func appear() { viewers += 1; resume() }
     func disappear() { viewers = max(0, viewers - 1); if viewers == 0 { pause() } }
@@ -310,6 +460,7 @@ final class RemoteSession {
         guard viewers > 0, poll == nil, let client, client.ready else { return }
         epoch += 1; let generation = epoch
         let revision = draftRevision
+        let address = address
         poll = Task {
             defer {
                 poll = nil
@@ -324,7 +475,11 @@ final class RemoteSession {
                     guard value.cursor == saved.cursor else { throw ClientStateError.invalidStorage }
                     timeline = value
                 }
-                if draftRevision == revision { draft = checkpoint.drafts.first(where: { $0.address == address })?.text ?? draft }
+                if draftRevision == revision {
+                    draft = checkpoint.drafts.first(where: { $0.address == address })?.text
+                        ?? checkpoint.drafts.last(where: { $0.address.hostID == address.hostID && $0.address.sessionID == address.sessionID })?.text
+                        ?? draft
+                }
                 while !Task.isCancelled, epoch == generation, client.ready {
                     let page = try await client.request(.sessionEvents, sessionID: summary.id, payload: .object([
                         "after": .number(Double(timeline.cursor)), "limit": .number(100), "waitMs": .number(1000)]))

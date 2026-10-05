@@ -8,6 +8,7 @@ struct RemoteView: View {
     @State private var sceneID = UUID()
     @State private var hostID: UUID?
     @State private var pairing = false
+    @State private var accountPresented = false
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -15,6 +16,12 @@ struct RemoteView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $hostID) {
+                Section {
+                    Button { accountPresented = true } label: {
+                        Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
+                    }.accessibilityIdentifier("hubAccount")
+                    if let error = model.accountError { Text(error).font(.footnote).foregroundStyle(.secondary) }
+                }
                 Section("我的电脑") {
                     if model.hosts.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
@@ -46,7 +53,7 @@ struct RemoteView: View {
         } detail: {
             if let hostID, let client = model.clients[hostID] {
                 NavigationStack { HostView(client: client, forget: { Task { await model.forget(hostID); self.hostID = nil } }) }
-                    .id(hostID)
+                    .id(hostID.uuidString + ":" + String(model.connectionEpoch))
             } else {
                 ContentUnavailableView {
                     Label("随时接回会话", systemImage: "bubble.left.and.bubble.right")
@@ -57,11 +64,16 @@ struct RemoteView: View {
         }
         .task {
             await model.load()
-            if let value = AppTestConfiguration.invitation { invitation = value; pairing = true }
+            if let value = AppTestConfiguration.invitation {
+                invitation = value
+                if model.accountSignedIn || AppTestConfiguration.allowLegacyTransport { pairing = true }
+                else { accountPresented = true }
+            }
             if hostID == nil { hostID = model.hosts.first?.id }
             await attach()
         }
         .onChange(of: hostID) { _, _ in Task { await attach() } }
+        .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
         .onChange(of: model.hosts.map(\.id)) { _, ids in
             if hostID == nil { hostID = ids.first }
         }
@@ -74,7 +86,14 @@ struct RemoteView: View {
             let previous = attached
             Task { if let previous { await model.clients[previous]?.removeScene(sceneID) } }
         }
-        .onOpenURL { url in invitation = url.absoluteString; pairing = true }
+        .onOpenURL { url in
+            invitation = url.absoluteString
+            if model.accountSignedIn || AppTestConfiguration.allowLegacyTransport { pairing = true }
+            else { accountPresented = true }
+        }
+        .sheet(isPresented: $accountPresented, onDismiss: {
+            if !invitation.isEmpty, model.accountSignedIn { pairing = true }
+        }) { HubAccountView(model: model) }
         .sheet(isPresented: $pairing, onDismiss: { invitation = "" }) { PairingView(model: model, initialURI: $invitation) }
     }
 

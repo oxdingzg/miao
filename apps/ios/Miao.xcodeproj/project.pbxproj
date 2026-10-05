@@ -8,6 +8,8 @@
 		872247D6705554E6DFD1E56D = { isa = PBXBuildFile; fileRef = 678DF55B84282CA725C9023C; };
 		8B6DBB5DD6BF28E5D06201DE = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppTestConfiguration.swift"; sourceTree = "<group>"; };
 		959CFF7739E42C2DC8DB261B = { isa = PBXBuildFile; fileRef = 8B6DBB5DD6BF28E5D06201DE; };
+		932A46442B3C005252FB4EC2 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HubAccountView.swift"; sourceTree = "<group>"; };
+		CECEF6BA5C4E3B78198260DF = { isa = PBXBuildFile; fileRef = 932A46442B3C005252FB4EC2; };
 		F1BFF28CE189433CC6AB7013 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MiaoApp.swift"; sourceTree = "<group>"; };
 		D8C8DDB2093BB2C7CA8BD368 = { isa = PBXBuildFile; fileRef = F1BFF28CE189433CC6AB7013; };
 		7D0888453056FB00D92E43F7 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RemoteView.swift"; sourceTree = "<group>"; };
@@ -17,7 +19,7 @@
 		CA85A1FABF359B654FB33EC3 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SpeechInput.swift"; sourceTree = "<group>"; };
 		B41E876B11F5D3A419A78EAC = { isa = PBXBuildFile; fileRef = CA85A1FABF359B654FB33EC3; };
 		A172CEDCAE47474B615C54D5 = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Miao.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1455444174429298B0F374B3 = { isa = PBXGroup; children = (678DF55B84282CA725C9023C, 8B6DBB5DD6BF28E5D06201DE, F1BFF28CE189433CC6AB7013, 7D0888453056FB00D92E43F7, 6B86466F715BA53259465B91, CA85A1FABF359B654FB33EC3,); path = Miao; sourceTree = "<group>"; };
+		1455444174429298B0F374B3 = { isa = PBXGroup; children = (678DF55B84282CA725C9023C, 8B6DBB5DD6BF28E5D06201DE, 932A46442B3C005252FB4EC2, F1BFF28CE189433CC6AB7013, 7D0888453056FB00D92E43F7, 6B86466F715BA53259465B91, CA85A1FABF359B654FB33EC3,); path = Miao; sourceTree = "<group>"; };
 		0A3E27B8CA818264D75C8D81 = { isa = PBXGroup; children = (A172CEDCAE47474B615C54D5, 93E46A602338E07A8524AEF6,); name = Products; sourceTree = "<group>"; };
 		7A665CDC8B6BB82F90923CBD = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingUITests.swift; sourceTree = "<group>"; };
 		746629965A4FF5F5BB45B3B5 = { isa = PBXBuildFile; fileRef = 7A665CDC8B6BB82F90923CBD; };
@@ -30,7 +32,7 @@
 		BC4A71180870F7945155FBB0 = { isa = XCLocalSwiftPackageReference; relativePath = MiaoCore; };
 		A8792157CB4F27FB949C035F = { isa = XCSwiftPackageProductDependency; package = BC4A71180870F7945155FBB0; productName = MiaoCore; };
 		6B6027BC8F0309F7F20982CA = { isa = PBXBuildFile; productRef = A8792157CB4F27FB949C035F; };
-		878A52FC5FF6A57D50B7B870 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (872247D6705554E6DFD1E56D, 959CFF7739E42C2DC8DB261B, D8C8DDB2093BB2C7CA8BD368, 93CC58D814591892477608F1, 9095F35F563E11BBC81AAB2E, B41E876B11F5D3A419A78EAC,); runOnlyForDeploymentPostprocessing = 0; };
+		878A52FC5FF6A57D50B7B870 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (872247D6705554E6DFD1E56D, 959CFF7739E42C2DC8DB261B, CECEF6BA5C4E3B78198260DF, D8C8DDB2093BB2C7CA8BD368, 93CC58D814591892477608F1, 9095F35F563E11BBC81AAB2E, B41E876B11F5D3A419A78EAC,); runOnlyForDeploymentPostprocessing = 0; };
 		E2AA269EB967A8853A258BFA = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (6B6027BC8F0309F7F20982CA,); runOnlyForDeploymentPostprocessing = 0; };
 		41D311A605520FC7B8B9A980 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		2B23A31EEC75B029432F2445 = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; ONLY_ACTIVE_ARCH = YES; DEBUG_INFORMATION_FORMAT = dwarf; GCC_OPTIMIZATION_LEVEL = 0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; }; name = Debug; };
