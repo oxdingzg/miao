@@ -23,12 +23,12 @@ public actor CheckpointStore {
 
     @discardableResult
     public func prepare(_ operation: PendingOperation) throws -> PendingOperation {
-        guard operation.scope == scope, operation.address.hostID == scope.hostID else {
+        guard operation.scope == scope, operation.target.hostID == scope.hostID else {
             throw ClientStateError.scopeMismatch
         }
         var next = try load()
         if let existing = next.operations.first(where: { $0.id == operation.id }) {
-            guard existing.scope == operation.scope, existing.address == operation.address,
+            guard existing.scope == operation.scope, existing.target == operation.target,
                   existing.kind == operation.kind, existing.payload == operation.payload else {
                 throw ClientStateError.operationConflict
             }
