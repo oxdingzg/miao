@@ -286,6 +286,8 @@ final class RemoteSession {
     private weak var client: HostClient?
     private let address: SessionAddress
     var timeline = SessionTimeline()
+    private var live: LiveSessionProjection?
+    var visibleMessages: [JSONValue] { live?.displaying(timeline.messages) ?? timeline.messages }
     var pending: JSONValue = .object([:])
     var draft = ""
     var error: String?
@@ -303,7 +305,7 @@ final class RemoteSession {
     }
     func appear() { viewers += 1; resume() }
     func disappear() { viewers = max(0, viewers - 1); if viewers == 0 { pause() } }
-    func pause() { epoch += 1; poll?.cancel() }
+    func pause() { epoch += 1; poll?.cancel(); live = nil }
     func drain() async { let old = poll; pause(); await old?.value; await draftTail?.value }
 
     func resume() {
@@ -330,6 +332,7 @@ final class RemoteSession {
                         "after": .number(Double(timeline.cursor)), "limit": .number(100), "waitMs": .number(1000)]))
                     try Task.checkCancellation()
                     guard epoch == generation else { return }
+                    let projection = try LiveSessionProjection(page["live"])
                     var next = timeline
                     try next.apply(page, sessionID: summary.id)
                     if next.cursor != timeline.cursor {
@@ -337,6 +340,7 @@ final class RemoteSession {
                         guard epoch == generation else { return }
                         timeline = next
                     }
+                    live = projection
                     loading = page["hasMore"]?.bool == true
                     if !loading {
                         let value = try await client.request(.sessionPending, sessionID: summary.id)
@@ -345,7 +349,7 @@ final class RemoteSession {
                     }
                 }
             } catch is CancellationError {}
-            catch { if epoch == generation { self.error = userMessage(error) } }
+            catch { if epoch == generation { live = nil; self.error = userMessage(error) } }
         }
     }
 

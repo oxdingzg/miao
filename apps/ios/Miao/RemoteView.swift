@@ -258,7 +258,7 @@ private struct SessionView: View {
                 if !client.ready { Label("连接恢复后可继续操作，输入会保存在本机", systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary) }
                 if session.loading { ProgressView("正在同步会话…") }
                 if session.timeline.revert != nil { Label("电脑上有待确认的回退操作", systemImage: "arrow.uturn.backward").font(.footnote) }
-                ForEach(Array(session.timeline.messages.enumerated()), id: \.element.messageID) { _, message in
+                ForEach(Array(session.visibleMessages.enumerated()), id: \.element.messageID) { _, message in
                     MessageView(message: message)
                 }
                 PendingView(client: client, session: session)
