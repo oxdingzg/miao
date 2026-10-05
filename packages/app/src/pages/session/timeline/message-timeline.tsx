@@ -54,6 +54,8 @@ import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { sessionPhaseLabelKey } from "@miao/session-ui/session-status-label"
+import type { BusyPhase } from "@miao/schema/session-event"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useSettings } from "@/context/settings"
@@ -119,12 +121,17 @@ const markBoundaryGesture = (input: {
   }
 }
 
-function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
+function TimelineThinkingRow(props: {
+  reasoningHeading?: string
+  showReasoningSummaries: boolean
+  phase?: BusyPhase
+}) {
   const language = useLanguage()
+  const label = createMemo(() => language.t(sessionPhaseLabelKey(props.phase)))
 
   return (
     <div data-slot="session-turn-thinking">
-      <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
+      <TextShimmer text={label()} />
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
@@ -267,6 +274,10 @@ export function MessageTimeline(props: {
     const id = sessionID()
     if (!id) return idle
     return sync().data.session_status[id] ?? idle
+  })
+  const activePhase = createMemo(() => {
+    const current = sessionStatus()
+    return current.type === "busy" ? current.phase : undefined
   })
   const sessionMessages = createMemo(() => (sessionID() ? (sync().data.message[sessionID()!] ?? []) : []))
   const projectedMessages = createMemo(() => {
@@ -1102,6 +1113,7 @@ export function MessageTimeline(props: {
               <TimelineThinkingRow
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
+                phase={activePhase()}
               />
             </div>
           </TimelineRowFrame>

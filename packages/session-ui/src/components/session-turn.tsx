@@ -22,6 +22,7 @@ import { TextReveal } from "@miao/ui/text-reveal"
 import { createAutoScroll } from "@miao/ui/hooks"
 import { useI18n } from "@miao/ui/context/i18n"
 import { normalize } from "./session-diff"
+import { sessionPhaseLabelKey } from "./session-status-label"
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
@@ -372,6 +373,11 @@ export function SessionTurn(
     if (showReasoningSummaries()) return assistantVisible() === 0
     return true
   })
+  const thinkingPhase = createMemo(() => {
+    const current = status()
+    return current.type === "busy" ? current.phase : undefined
+  })
+  const thinkingLabel = createMemo(() => i18n.t(sessionPhaseLabelKey(thinkingPhase())))
 
   const autoScroll = createAutoScroll({
     working,
@@ -418,7 +424,7 @@ export function SessionTurn(
               </Show>
               <Show when={showThinking()}>
                 <div data-slot="session-turn-thinking">
-                  <TextShimmer text={i18n.t("ui.sessionTurn.status.thinking")} />
+                  <TextShimmer text={thinkingLabel()} />
                   <Show when={!showReasoningSummaries()}>
                     <TextReveal
                       text={reasoningHeading()}
