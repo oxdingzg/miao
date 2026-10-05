@@ -48,6 +48,15 @@ final class PairingUITests: XCTestCase {
             return button.isEnabled && button.isHittable
         }, evaluatedWith: menu)
         waitForExpectations(timeout: 30)
+        guard menu.isEnabled && menu.isHittable else {
+            let states = ["已连接": "ready", "正在连接…": "connecting", "正在同步会话…": "syncing",
+                "授权需要重新核对": "authorizationBlocked", "请更新电脑和 App 的版本": "protocolBlocked",
+                "离线，回到前台后会重新连接": "offline", "正在断开连接…": "draining", "等待连接": "quiescent",
+                "授权已过期，请在电脑上重新配对": "expired"]
+            let state = states[menu.value as? String ?? ""] ?? "unknown"
+            print("Native menu recovery enabled=\(menu.isEnabled) hittable=\(menu.isHittable) state=\(state)")
+            return
+        }
         menu.tap()
         app.buttons["重命名"].tap()
         let title = app.alerts.textFields.firstMatch

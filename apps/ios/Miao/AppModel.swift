@@ -119,6 +119,19 @@ final class HostClient {
     private var writes = 0
     private var coordinator: ConnectionCoordinator!
     var ready: Bool { state == .ready && !record.expired && !closed }
+    var connectionDescription: String {
+        if record.expired { return "授权已过期，请在电脑上重新配对" }
+        switch state {
+        case .ready: return "已连接"
+        case .connecting: return "正在连接…"
+        case .syncing: return "正在同步会话…"
+        case .authorizationBlocked: return "授权需要重新核对"
+        case .protocolBlocked: return "请更新电脑和 App 的版本"
+        case .offline: return "离线，回到前台后会重新连接"
+        case .draining: return "正在断开连接…"
+        case .quiescent: return "等待连接"
+        }
+    }
     func sending(_ sessionID: String) -> Bool { sendingTargets.contains(sessionID) }
 
     init(record: AuthorizedHost, identity: DeviceIdentity, directory: URL) throws {

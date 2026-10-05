@@ -190,17 +190,7 @@ private struct HostView: View {
         .sheet(isPresented: $creating) { CreateSessionView(client: client) }
     }
     private var status: String {
-        if client.record.expired { return "授权已过期，请在电脑上重新配对" }
-        switch client.state {
-        case .ready: return "已连接"
-        case .connecting: return "正在连接…"
-        case .syncing: return "正在同步会话…"
-        case .authorizationBlocked: return "授权需要重新核对"
-        case .protocolBlocked: return "请更新电脑和 App 的版本"
-        case .offline: return "离线，回到前台后会重新连接"
-        case .draining: return "正在断开连接…"
-        case .quiescent: return "等待连接"
-        }
+        client.connectionDescription
     }
     private func projectName(_ id: String) -> String {
         if id.isEmpty { return "已授权会话" }
@@ -281,7 +271,7 @@ private struct SessionView: View {
                     Button("重命名", systemImage: "pencil") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
                 }
             } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
-                .accessibilityIdentifier("sessionMenu").disabled(!client.ready)
+                .accessibilityIdentifier("sessionMenu").accessibilityValue(client.connectionDescription).disabled(!client.ready)
         }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }

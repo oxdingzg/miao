@@ -198,7 +198,9 @@ export async function run() {
         permissions: ["read", "prompt", "session.rename"],
         sessionIDs: [sessionID],
         projectIDs: [],
-        expiresAt: Date.now() + 180_000,
+        // Keep the approved grant valid throughout a slow UI run. The separate
+        // one-use pairing invitation still has its normal three-minute limit.
+        expiresAt: Date.now() + 15 * 60_000,
       }),
     )
     await Bun.write(
@@ -265,6 +267,10 @@ export async function run() {
             missingElement: log.includes("No matches found"),
             ambiguousElement: log.includes("Multiple matching"),
             notHittable: log.includes("not hittable") || log.includes("not visible"),
+            menuRecovery:
+              /Native menu recovery enabled=(true|false) hittable=(true|false) state=(ready|connecting|syncing|authorizationBlocked|protocolBlocked|offline|draining|quiescent|expired|unknown)/
+                .exec(log)
+                ?.slice(1),
             fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
             missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
             buildFailure: log.includes("BUILD FAILED"),
