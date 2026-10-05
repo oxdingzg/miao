@@ -1,6 +1,7 @@
 # miao Roadmap — Remaining Work
 
-Status snapshot: **2026-10-04**, latest published release **v0.1.4**.
+Status snapshot: **2026-10-05**, latest published tag **v0.1.4** (0.1.5–0.1.7 prepared;
+0.1.8 open in PR #151).
 
 This is the single authoritative inventory of every open item in the V1→V2 rebuild. It replaces
 the earlier distributed trackers (the remaining-work checklist and handoff, the V2 todo list, the
@@ -12,7 +13,7 @@ entry points where known, and an observable acceptance check.
 
 - **Status**: `open`, `partial` (some slices landed), or `blocked`.
 - **Acceptance** is the observable proof the slice is done, not just "code merged".
-- Ordered roughly by dependency and value, not strictly.
+- Ordered by the **Next up** list below, then by section.
 - Ground rules that apply to every slice are collected at the end.
 
 ## Already done (context, not remaining)
@@ -30,6 +31,51 @@ entry points where known, and an observable acceptance check.
   G2/G3/G9/G11/G13 slices are done.
 - Storage recovery acceptance for the 2026-10-04 snapshot is complete.
 
+## Landed since the 2026-10-04 snapshot
+
+- **V1 residue**: project persistence moved into core and the legacy `packages/miao` `Project`
+  facade retired (#35 #36 #46). `PluginInput.client` now exposes the V2 `@miao/client` and the V2
+  plugin entry point (`@miao/plugin/v2/promise` / `@miao/plugin/v2/effect`) exists; the V1 `Hooks`
+  entry is deprecated (§1.1).
+- **V2 architecture**: durable background jobs with lifecycle, restart recovery, and
+  observation/control tools (#111 #133 #105 #144) and durable background subagent handoff (#144);
+  `failInterruptedTools` distinguishes undispatched from unknown-outcome calls (#101) and dangling
+  tool-call openers are recovered on stop turns (#139); full shell output streams to managed
+  storage (#132); ripgrep is bounded (default timeout + `Stream.splitLines` + row limit); the AST
+  fuzzy edit ladder (line-trimmed, block-anchor, similarity-threshold) is implemented (#76 #80
+  #103); peer messages are delivered at safe continuation boundaries with outgoing receipts (#112); provider-repetition detection covers multi-phrase loops (#53 #127).
+- **Config/storage/perf**: config V1 auto-migration (`ConfigMigrateV1` in `packages/core/src/config.ts`);
+  `miao db {stats,backfill,vacuum,compact,restore,externalize-blobs,gc-blobs,retention}` (#55 #56
+  #61 #63 #77); durable-log read paging (#52); concurrent drain cap (#100); isolated PTY
+  input-latency harness (#141) and input-timing tracing.
+- **New stream (see §8)**: hub auth/directory/relay (#98 #99 #109 #110), remote-control
+  channels/grants (#67 #70 #71 #87 #90), iOS app and pairing (#72 #85 #96 #125), Command Code
+  provider (#129 #138 #149).
+
+## Next up (ordered)
+
+1. **§1.3** Remove the `packages/miao` `app-runtime` V1 layer and remaining non-session routes;
+   switch the release server to the V2-only assembly. Finishes the V1→V2 reset.
+2. **§1.2** Retire the app's legacy types, transitional session/message events, and route mocks.
+3. **§2.1** Finish the runner slices: coalesce streamed deltas + covering projected-history
+   indexes, drop the `@miao/llm` tool loop, expose replayable Session event cursors.
+4. **§2.5** Remaining output bounds: non-streamed JSON/image body caps.
+5. **§2.3** Cancellation: cascade cancel as one first-class path, incremental tool progress,
+   materialize remote/managed URIs before history lowering.
+6. **§2.4** Crash-recovery idempotency: idempotency key + one-shot consume token.
+7. **§2.8** Extend the core sandbox to the remaining mutating tools, then default-on.
+8. **§2.7** MCP progressive discovery / CIMD OAuth / deterministic `tools/list`.
+9. **§2.2** ACP terminal contract (`terminal/create`, `wait_for_exit`, `kill`, `release`).
+10. **§3** Finish config/plugin/service rework (nested instructions, per-service hot reload,
+    providers-as-plugins).
+11. **§4** Storage operational acceptance (compact `miao-main.db`, measure `miao.db`, delta-only
+    events).
+12. **§2.9** Design durable continuation recovery (currently blocked).
+13. **§5** Produce the bilingual performance report.
+14. **§7** Refresh stale guides.
+15. **§6** Released-binary acceptance (mostly owner/credential-blocked).
+16. **§8** Land the remote-control / Hub / iOS / push stream.
+
 ---
 
 ## 1. V1 residue — P5 (legacy SDK) and P7 (non-session routes)
@@ -40,11 +86,12 @@ left, and no client depends on `@miao/sdk` or unprefixed legacy routes.
 ### 1.1 Legacy JS SDK (P5)
 The legacy V1 SDK is gone: no package depends on a V1 SDK surface, the app and CLI talk through
 `@miao/client`, and `packages/sdk` is now the **embedded SDK entry point** (`OpenCode.create()` for
-library use), not a legacy surface — keep it. Remaining:
-- [ ] Move the plugin `Hooks` interface and `PluginInput.client` off the V1 shape
-      (`packages/plugin/src/index.ts`). This is plugin-API design work (section 3), not a cleanup.
-- **Acceptance:** <code>PluginInput.client</code> exposes a V2 client and the V1 `Hooks` interface is
-  either adapted or retired.
+library use), not a legacy surface — keep it.
+- [x] `PluginInput.client` exposes the V2 `@miao/client` (`OpenCode.make`) and the V2 plugin entry
+      point (`define` from `@miao/plugin/v2/promise` or `@miao/plugin/v2/effect`) exists. The V1
+      `Hooks` entry remains only as a deprecated shim that logs a one-time warning under V2.
+- **Acceptance:** `PluginInput.client` exposes a V2 client and the V1 `Hooks` interface is either
+  adapted or retired. (Met; the deprecated shim may be deleted once no consumer uses it.)
 
 ### 1.2 App legacy types and adapters
 The app's network calls are migrated and the identity `server-compat` shim is gone (#40). Note that
@@ -70,17 +117,11 @@ legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
 ### 1.3 Non-session legacy routes and server teardown
 Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content`, `config.update`,
 `workspace.reset` via `/api/worktree`, `project.initGit`, `project` persistence). Remaining:
-- [x] Move project persistence into core. The ID migration, sandbox maintenance, directory
-      registration, and `project.updated` event already lived in core `ProjectRegistry`;
-      `ProjectMetadata` now also owns `setInitialized`, `sandboxes`, `addSandbox`, and
-      `removeSandbox`. The `packages/miao` `Project` service delegates to core and no longer writes
-      `ProjectTable` directly (#35, #36). The server handlers already use core only.
-- [x] Delete the legacy `packages/miao` `Project` facade. Instance startup calls core's complete
-      registration directly; the `/init` subscription lives in instance bootstrap and is released
-      with the instance. Worktrees, CLI commands, and tests use `ProjectRegistry`, `ProjectMetadata`,
-      and Schema types directly. Migration, directory, icon, and metadata regressions are retained.
+- [x] Move project persistence into core (#35, #36).
+- [x] Delete the legacy `packages/miao` `Project` facade (#46).
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy routes;
-      switch the release server to the V2-only assembly.
+      switch the release server to the V2-only assembly. (`AppRuntime` is still used by
+      `packages/miao/src/runtime/*`, the remote command, and the TUI worker.)
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
       read, project rename, directory picker, custom providers).
 - **Acceptance:** `packages/miao` is only the CLI shell; the server mounts `/api/*` only; no V1
@@ -94,7 +135,7 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 
 ### 2.1 Native runner slices
 The first Effect-native local runner is implemented. Next reviewed slices:
-- [ ] Preserve eager structured local-tool settlement: durably record each complete call, start its
+- [x] Preserve eager structured local-tool settlement: durably record each complete call, start its
       child execution immediately, await every settlement after the provider turn closes, then
       reload projected history once.
 - [ ] Revisit per-turn tool-call limits, output truncation, and operational backpressure before
@@ -107,14 +148,15 @@ The first Effect-native local runner is implemented. Next reviewed slices:
       consumers need them.
 
 ### 2.2 Background / async jobs (G6)
-**Entry:** `packages/core/src/background-job.ts` (exists, **unwired to V2**),
-`packages/core/src/tool/bash.ts:72-74`.
+**Entry:** `packages/core/src/session/background-jobs.ts`, `packages/core/src/tool/background-job.ts`,
+`packages/core/src/background-job.ts`, `packages/core/src/tool/bash.ts`.
 - [ ] Adopt the ACP terminal contract (`terminal/create` → `output`
       [output/truncated/exitStatus] / `wait_for_exit` / `kill` / `release`, `outputByteLimit`
       truncated from the head on a char boundary).
-- [ ] Integrate `BackgroundJob` with V2 tool execution: durable status, bounded preview,
-      cooperative cancel, incremental delivery, completion delivery.
-- [ ] Define restart recovery and authorization before exposing remote observation.
+- [x] Integrate `BackgroundJob` with V2 tool execution: durable status, bounded preview,
+      cooperative cancel, incremental delivery, completion delivery, observation/control tools
+      (#105 #111 #133).
+- [x] Define restart recovery and authorization before exposing remote observation (#133 #144).
 - **Acceptance:** launch a background job, restart the dev server, query status and fetch exit code
   plus truncated output.
 
@@ -137,28 +179,29 @@ end to end (`session.next.tool.progress`).
 ### 2.4 Crash-recovery idempotency (G5)
 **Entry:** `packages/core/src/session/runner/llm.ts`.
 Progress: a tool left running by a prior process is settled with an outcome-unknown error
-(`failInterruptedTools`).
+(`failInterruptedTools`), and undispatched calls are distinguished from unknown-outcome calls (#101).
 - [ ] Idempotency key (`callID` + attempt) plus a one-shot consume token.
 - [ ] On restart, mark unsettled calls outcome-unknown and require explicit retry/abandon.
 - **Acceptance:** kill mid-tool, resume → no repeated side effect; the model sees "result unknown".
 
 ### 2.5 Output bounds / timeouts / caps (G7)
-**Entry:** `packages/core/src/tool/bash.ts`, `ripgrep.ts`, `tool/websearch.ts`,
-`tool/http-body.ts`, `tool-output-store.ts`.
-Progress: ripgrep enforces a default 30s timeout (overridable) that kills the invocation and fails
-the call; webfetch/websearch bound response bodies; MCP image results are capped at 5 MB base64.
-- [ ] Stream full shell output to managed storage while keeping a bounded in-memory preview.
-- [ ] Add bounded line framing for ripgrep.
+**Entry:** `packages/core/src/tool/bash.ts`, `packages/core/src/ripgrep.ts`,
+`packages/core/src/tool/{websearch,http-body}.ts`, `packages/core/src/tool-output-store.ts`.
+Progress: ripgrep enforces a default 30s timeout (overridable) and bounds a scan with
+`Stream.splitLines` plus a row limit; webfetch/websearch bound response bodies; MCP image results
+are capped at 5 MB base64; full shell output streams to managed storage while an in-memory preview
+is bounded (#132).
+- [x] Stream full shell output to managed storage while keeping a bounded in-memory preview (#132).
+- [x] Add bounded line framing for ripgrep.
 - [ ] Non-streamed JSON/image body caps where not yet bounded.
 - **Acceptance:** `yes` / huge-line output does not blow memory or hang; a long grep times out
   cleanly.
 
 ### 2.6 AST edit ladder (G8 remainder)
-**Entry:** `packages/core/src/tool/edit.ts`, `edit-fuzzy.ts`, `packages/core/src/snapshot.ts`.
-Progress: snapshot-based undo/redo exists; mid-line fuzzy matches that would corrupt are refused.
-- [ ] AST-aware edit ladder after exact-edit behavior is established (port the V1 fuzzy correction
-      strategies deliberately: line-trimmed matching, block-anchor fallback, indentation
-      correction, similarity-threshold review).
+**Entry:** `packages/core/src/tool/edit.ts`, `edit-fuzzy.ts`, `edit-match.ts`,
+`packages/core/src/snapshot.ts`.
+- [x] AST-aware edit ladder ported deliberately from V1 (line-trimmed matching, block-anchor
+      fallback, indentation correction, similarity-threshold review) (#76 #80 #103).
 - **Acceptance:** an edit a token match would corrupt is applied structurally or refused; undo
   restores pre-edit bytes.
 
@@ -176,8 +219,9 @@ Progress: canonical MCP tool names are deduped deterministically (codepoint orde
 
 ### 2.8 Sandbox coverage beyond bash (G12 remainder)
 **Entry:** `packages/core/src/sandbox.ts` (`Sandbox.Service`),
-`packages/core/src/sandbox/{runner,policy}.ts`.
-Progress: V2 bash runs under the core OS sandbox; a catch-all allow rule cannot lift it.
+`packages/core/src/sandbox/{runner,policy}.ts`, `packages/core/src/config/sandbox.ts`.
+Progress: V2 bash and code-mode run under the core OS sandbox; a catch-all allow rule cannot lift
+it.
 - [ ] Extend the same core-owned sandbox to the other mutating tools (workdir, allowed paths,
       network), fail-closed, model-visible denials.
 - [ ] Make the sandbox default-on for the remaining tools.
@@ -207,8 +251,8 @@ work.
 - [ ] Simplify the process-local durable-tail wake lifecycle with Effect `RcMap` and one shared
       `PubSub.sliding<void>(1)` per active aggregate, keeping SQLite cursor replay and
       subscribe-before-history semantics unchanged.
-- [ ] Page large durable aggregate replay reads instead of loading every row after a stale cursor
-      into one array.
+- [x] Page large durable aggregate replay reads instead of loading every row after a stale cursor
+      into one array (#52).
 - [ ] Decide whether connected tails need a periodic polling fallback for cross-process SQLite
       writers (current advisory wakes are intentionally process-local).
 - [ ] Stream-cap websearch body collection before parsing.
@@ -228,7 +272,8 @@ Progress: `send_message` resolves a Session ID or `@slug`, rejects missing and c
 targets, refuses to overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
 `<message from session="…">` input, and wakes the target through a `wake` callback on
 `SessionRunner.run`. `list_sessions` enumerates sibling Sessions. Delivery asserts the `message`
-permission action per target (default ask). A → B delivery works in the same project.
+permission action per target (default ask); peer messages are delivered at safe continuation
+boundaries (#112) and outgoing receipts are shown. A → B delivery works in the same project.
 - [ ] Loop-guard cost accounting for a receiving drain.
 - [ ] Replies route back; no duplicate delivery after restart; sessions isolated from unrelated
       ones.
@@ -236,10 +281,10 @@ permission action per target (default ask). A → B delivery works in the same p
 
 ### 2.12 Repetitive provider output protection
 - [x] Bound per-stream text/reasoning detection state, abort high-confidence short-prose loops
-      without automatic retry, and preserve prior tool settlement.
+      without automatic retry, and preserve prior tool settlement (#53).
 - [x] Neutralize recognized repetitive assistant output in provider-facing history only, retaining
-      durable records and completed tool calls/results.
-- [ ] Extend coverage beyond short newline-delimited prose after collecting more wire evidence.
+      durable records and completed tool calls/results (#53).
+- [x] Extend coverage beyond short newline-delimited prose to multi-phrase loops (#127).
 - **Evidence:** [Investigation and limits](provider-output-repetition.en.md), including concurrent
   same-model normal-session controls. This is a client mitigation, not a proven provider root fix.
 
@@ -247,15 +292,17 @@ permission action per target (default ask). A → B delivery works in the same p
 
 ## 3. Config, plugins, services
 
-**Status:** open.
-- [ ] Rework config for a cleaner shape with auto-conversion of old configs. Old configs should be
-      converted automatically.
-- [ ] Plugin-defined context registration and hot-reload lifecycle on the scoped System Context
-      registry seam.
+**Status:** partial — the plugin API and config migration landed; service hot-reload and
+provider-as-plugin remain.
+- [x] Config V1 auto-migration (`ConfigMigrateV1`); a document with any V1 key is migrated as a
+      whole (`packages/core/src/config.ts`).
+- [x] A V2 plugin surface with a scoped context/registration seam exists
+      (`packages/plugin/src/v2/{promise,effect}` including `context.ts` and `registration.ts` on top
+      of `packages/core/src/system-context/registry.ts`).
 - [ ] Nested project instruction discovery after successful reads, admitted durably at the next
-      Safe Provider-Turn Boundary.
+      Safe Provider-Turn Boundary (`packages/core/src/instruction-context.ts` is the entry point).
 - [ ] Design the server plugin API and hooks (immer drafts so bad mutations can be thrown away, a
-      global instance, tool registration such as `opencode.tool.register({...})`).
+      global instance, tool registration).
 - [ ] Make every service hot-reloadable via granular events instead of teardown, so services react
       to changes and reconfigure themselves (and the frontend can receive them, e.g. `model.added`);
       this also prevents startup from blocking.
@@ -266,22 +313,22 @@ permission action per target (default ask). A → B delivery works in the same p
 
 ## 4. Storage operations
 
-**Status:** partial.
-- [ ] Compact `miao-main.db` (preview channel; **2.34 GB** on 2026-10-04, uncompacted). Follow the
-      V1-table retirement path (`miao db compact`: batched delete of `message.*` events, drop
-      `message`/`part`, reset only the emptied `event_sequence` rows, checkpoint + vacuum).
-- [ ] Measure `miao.db` against the <200 MB acceptance (**876 MB** on 2026-10-04; previously 666 MB
-      on 2026-10-03).
-- [x] Delete old `miao*.db.bak-*` / `*.compacted-*` copies and the `retirement-20261003` rehearsal
-      stash in `~/.local/share/miao`. Owner-approved deletion on 2026-10-04: 21 GB → 5.8 GB (about
-      15 GB reclaimed). Active databases (`miao.db`, `miao-main.db`, `miao-local.db`) and the
-      accepted `backups/acceptance-*` snapshots were retained. The macmini build host carries no
-      miao database files, so there was nothing to migrate there.
+**Status:** partial — the tooling landed; the operational acceptance remains.
+- [x] `miao db {stats,backfill,vacuum,compact,restore,externalize-blobs,gc-blobs,retention}` exist
+      (#55 #56 #61 #63 #77). `db stats` reports the blob store and inline base64; `db compact` runs
+      the V1-table retirement (batched delete of `message.*` events, drop `message`/`part`, reset
+      only emptied `event_sequence` rows, checkpoint + vacuum); `db gc-blobs` deletes unreferenced
+      blobs; `db retention` reports prunable events.
+- [ ] Compact `miao-main.db` (preview channel; **2.34 GB** on 2026-10-04, uncompacted) and record
+      the result.
+- [ ] Measure `miao.db` against the <200 MB acceptance (**876 MB** on 2026-10-04).
+- [x] Delete old `miao*.db.bak-*` / `*.compacted-*` copies and the retirement stash in
+      `~/.local/share/miao` (owner-approved 2026-10-04: 21 GB → 5.8 GB, about 15 GB reclaimed).
 - [ ] Delta-only events: retire the V1 per-delta sync events; keep one durable row per completed
-      fragment/message. Do not carry V1's snapshot-per-delta forward. (The V2 write path already
-      persists one durable `text.started`/`text.ended` per fragment with no durable delta.)
-- [ ] Event-log retention/compaction (snapshot-then-truncate).
-- [ ] Per-project blob GC (refcount or mark-and-sweep).
+      fragment/message. (The V2 write path already persists one durable `text.started`/`text.ended`
+      per fragment with no durable delta.)
+- [ ] Event-log retention/compaction (snapshot-then-truncate), building on `db retention`.
+- [x] Per-project blob GC (`db gc-blobs`, #61).
 - [ ] Verify `db stats` shows no `message.part.updated` bloat, no inline base64, an `event` row
       count bounded by fragment/message count, and that `db vacuum` reclaims size.
 - **Acceptance:** bounded event rows, no inline base64, reclaimed file size.
@@ -294,7 +341,8 @@ permission action per target (default ask). A → B delivery works in the same p
 run on the compiled 0.1.2 preview finished: 1800 s, 119 inputs / 0 timeouts, PTY write-to-echo P50
 19.5 ms / P95 23.7 ms / P99 25.4 ms / max 27.3 ms; main-isolate RSS 725.6 MB → 747.9 MB; FD count
 steady at 35; hydration count 1. The measurement boundary excludes terminal presentation and this
-was idle-plus-typing, not streaming or repeated Session lifecycle switching.
+was idle-plus-typing, not streaming or repeated Session lifecycle switching. An isolated PTY
+input-latency harness now exists (#141) and input-timing is traced (#146).
 - [ ] Run the downloaded 0.1.0 artifact against the identical fixture for a controlled before/after
       comparison, serially with follow-up runs. (The artifact path is recorded in the archived
       2026-10-04 handoff; do not hard-code a temporary path here.)
@@ -326,8 +374,8 @@ Verified on the released binary:
       isolated database.
 
 Still open or blocked:
-- [ ] Validate the released **Windows 0.1.4** artifact upgrade path from 0.1.2 (fresh install only
-      so far).
+- [ ] Validate the released Windows artifact upgrade path from 0.1.2 (fresh install only so far);
+      re-check against the current release (0.1.7 prepared / 0.1.8 open).
 - [ ] Validate outgoing message cards and cross-process sender/recipient behavior in a released
       binary (blocked: no provider credential on the verification machines).
 - [ ] Observe provider-error visibility in a released binary against a real provider (blocked: no
@@ -353,6 +401,24 @@ used a throwaway `HOME` plus `MIAO_DB` so no owner database was touched.
 - [ ] Update current guides that still describe the removed SDK or superseded architecture.
 - [ ] Preserve historical release/research records and upstream licensing notices.
 - [ ] Keep OpenCode vendor provider IDs (`opencode`, `opencode-go`) as real provider identities.
+
+---
+
+## 8. Remote control, Hub, iOS, push (new since the snapshot)
+
+**Status:** in progress. This stream is not yet in the extracted remaining-work list; it lives in
+open PRs and recent merges.
+- [x] Authenticated encrypted relay hub, channels, and durable grants (#67 #70 #71 #87 #90).
+- [x] Hub account authentication, directory binding, and one-use runtime tickets (#98 #99 #109
+      #110).
+- [x] Android/iOS native remote-control application and pairing (#72 #85 #96 #125), and runtime
+      control without restarting sessions (#121 #122 #134).
+- [ ] Browser session workspace, account cookies, checkpoints, and relay connections (#124 #126
+      #128 #130).
+- [ ] Push delivery: APNs transport, registry, registration API, iOS token lifecycle (#146 #147
+      #148 #150 #152).
+- [ ] Private named-tunnel deployment (#145) and bounded live text snapshots (#142).
+- [ ] Design doc for unified session remote control (#64).
 
 ---
 
