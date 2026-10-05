@@ -66,6 +66,8 @@ import {
   SessionTable,
 } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
+import { SessionDelegation } from "@miao/core/session/delegation"
+import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { SystemContext } from "@miao/core/system-context"
 import DEFAULT_PERSONA from "@miao/core/system-context/persona/default.txt"
 import { SystemContextRegistry } from "@miao/core/system-context/registry"
@@ -86,6 +88,7 @@ const requests: LLMRequest[] = []
 let response: LLMEvent[] = []
 let responses: LLMEvent[][] | undefined
 let responseStream: Stream.Stream<LLMEvent, LLMError> | undefined
+let responseFor: ((request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>) | undefined
 // Title requests run on their own fiber; answering them separately keeps ordering deterministic.
 const TITLE_SYSTEM = "You generate titles"
 let titleResponse: LLMEvent[] | undefined
@@ -105,6 +108,7 @@ const client = Layer.succeed(
       requests.push(request)
       if (titleResponse && request.system.some((part) => part.text === TITLE_SYSTEM))
         return Stream.fromIterable(titleResponse)
+      if (responseFor) return responseFor(request)
       if (responseStream) {
         const stream = responseStream
         responseStream = undefined
@@ -357,7 +361,8 @@ const config = Layer.succeed(
       ]),
   }),
 )
-const runnerLayer = AppNodeBuilder.build(SessionRunnerLLM.node, [
+const runnerLayer = AppNodeBuilder.build(
+  LayerNode.group([SessionRunnerLLM.node, Database.node, EventV2.node, SessionStore.node]), [
   [Snapshot.node, Snapshot.noopLayer],
   [LayerNodePlatform.llmClient, client],
   [SessionRunnerModel.node, models],
@@ -367,16 +372,32 @@ const runnerLayer = AppNodeBuilder.build(SessionRunnerLLM.node, [
   [ReferenceGuidance.node, referenceGuidance],
   [PermissionV2.node, permission],
   [Config.node, config],
-])
-const execution = Layer.effect(
+],
+)
+const makeExecution = (maxConcurrent?: number) =>
+  Layer.effect(
   SessionExecution.Service,
   Effect.gen(function* () {
     const sessionRunner = yield* SessionRunner.Service
+      const db = (yield* Database.Service).db
+      const events = yield* EventV2.Service
+      const store = yield* SessionStore.Service
     let wake: (sessionID: SessionV2.ID) => Effect.Effect<void> = () => Effect.void
+      let delegation: SessionDelegation.API | undefined
     const coordinator = yield* SessionRunCoordinator.make<SessionV2.ID, SessionRunner.RunError>({
-      drain: (sessionID, force) => sessionRunner.run({ sessionID, force, wake }),
+        maxConcurrent,
+        drain: (sessionID, force) => sessionRunner.run({ sessionID, force, wake, delegation }),
     })
     wake = coordinator.wake
+      delegation = yield* SessionDelegation.make({
+        db,
+        events,
+        store,
+        wake: coordinator.wake,
+        wait: coordinator.awaitIdle,
+        executions: coordinator.executions,
+        interruptIf: coordinator.interruptIf,
+      })
     return SessionExecution.Service.of({
       active: coordinator.active,
       executions: coordinator.executions,
@@ -417,6 +438,7 @@ const location = (directory: string): LayerNode.Replacement => [
   Location.node,
   Location.boundNode({ directory: AbsolutePath.make(directory) }),
 ]
+const execution = makeExecution()
 const appOverrides = (bound: LayerNode.Replacement): LayerNode.Replacements => [
   [LayerNodePlatform.llmClient, client],
   [PermissionV2.node, permission],
@@ -430,6 +452,12 @@ const appOverrides = (bound: LayerNode.Replacement): LayerNode.Replacements => [
   [Config.node, config],
 ]
 const it = testEffect(AppNodeBuilder.build(LayerNode.group(appNodes), appOverrides(location("/project"))))
+const itWithSinglePermit = testEffect(
+  AppNodeBuilder.build(LayerNode.group(appNodes), [
+    ...appOverrides(location("/project")).filter(([node]) => node !== SessionExecution.node),
+    [SessionExecution.node, makeExecution(1)],
+  ]),
+)
 // A turn that goes through the shipped bash tool needs the built-in registered on
 // top of the harness layer; the base layer only provides the registry itself. The
 // tool also resolves its workdir through the real filesystem, so this harness has
@@ -464,6 +492,7 @@ const setup = Effect.gen(function* () {
   const todos = yield* SessionTodo.Service
   todoBaseline = (yield* SystemContext.initialize(SessionTodo.context(todos, sessionID))).baseline
   const { db } = yield* Database.Service
+  requests.length = 0
   response = []
   commandDeniedAction = undefined
   systemBaseline = "Initial context"
@@ -477,6 +506,7 @@ const setup = Effect.gen(function* () {
   responses = undefined
   streamFailure = undefined
   responseStream = undefined
+  responseFor = undefined
   titleResponse = undefined
   streamGate = undefined
   streamStarted = undefined
@@ -712,6 +742,234 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  itWithSinglePermit.effect("delivers a background report once after an idle parent, with one coordinator permit", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const execution = yield* SessionExecution.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const childGate = yield* Deferred.make<void>()
+      const childStarted = yield* Deferred.make<void>()
+      const delivered = yield* Deferred.make<void>()
+      let parentTurns = 0
+      const textTurn = (text: string) =>
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "report" }),
+          LLMEvent.textDelta({ id: "report", text }),
+          LLMEvent.textEnd({ id: "report" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ])
+      responseFor = (request) => {
+        if (JSON.stringify(request.messages.filter((m) => m.role === "user")).includes("UNIQUE CHILD PROMPT"))
+          return Stream.unwrap(
+            Deferred.succeed(childStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(childGate)),
+              Effect.as(textTurn("VERBATIM CHILD REPORT")),
+            ),
+          )
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "background-call",
+              name: "task",
+              input: {
+                description: "background test",
+                prompt: "UNIQUE CHILD PROMPT",
+                subagent_type: "build",
+                background: true,
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        if (JSON.stringify(request.messages).includes("VERBATIM CHILD REPORT"))
+          return Stream.unwrap(Deferred.succeed(delivered, undefined).pipe(Effect.as(textTurn("Report received"))))
+        return textTurn("Parent continued independently")
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate in background" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(parentTurns).toBe(2)
+      yield* Deferred.await(childStarted)
+      const tasks = yield* SessionDelegationStore.list(db, sessionID)
+      expect(tasks).toHaveLength(1)
+      expect(tasks[0].status).toBe("running")
+      const context = yield* session.context(sessionID)
+      expect(
+        context
+          .flatMap((m) => (m.type === "assistant" ? m.content : []))
+          .find((p) => p.type === "tool" && p.name === "task"),
+      ).toMatchObject({ state: { status: "completed", structured: { background: true, taskID: tasks[0].id } } })
+      yield* Deferred.succeed(childGate, undefined)
+      yield* Deferred.await(delivered)
+      yield* execution.wait(sessionID)
+      expect(parentTurns).toBe(3)
+      expect((yield* SessionDelegationStore.get(db, sessionID, tasks[0].id))?.result).toBe("VERBATIM CHILD REPORT")
+      expect(yield* SessionDelegationStore.hasNotifications(db, sessionID)).toBe(false)
+      const after = yield* session.context(sessionID)
+      expect(after.filter((m) => m.type === "synthetic" && m.metadata?.backgroundTask)).toHaveLength(1)
+      yield* execution.wake(sessionID)
+      yield* execution.wait(sessionID)
+      expect(parentTurns).toBe(3)
+    }),
+  )
+
+  it.effect(
+    "enforces background invocation identity, ownership and caps, and cancels only its observed execution",
+    () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* SessionV2.Service
+        const db = (yield* Database.Service).db
+        const events = yield* EventV2.Service
+        const store = yield* SessionStore.Service
+        const waiting = yield* Deferred.make<void>()
+        const woke = yield* Deferred.make<void>()
+        const wakes: SessionV2.ID[] = []
+        const interrupts: string[] = []
+        let creates = 0
+        const child = yield* session.create({
+          parentID: sessionID,
+          agent: AgentV2.ID.make("build"),
+          location: { directory: AbsolutePath.make("/project") },
+        })
+        const manager = yield* SessionDelegation.make({
+          db,
+          events,
+          store,
+          maximum: 1,
+          wake: (id) =>
+            Effect.sync(() => {
+              wakes.push(id)
+            }).pipe(Effect.andThen(Deferred.succeed(woke, undefined)), Effect.asVoid),
+          wait: () => Deferred.await(waiting),
+          executions: Effect.succeed(new Map([[child.id, "owned-execution"]])),
+          interruptIf: (id, execution) =>
+            Effect.sync(() => {
+              interrupts.push(`${id}:${execution}`)
+              return true
+            }),
+        })
+        const request = {
+          id: "stable-invocation",
+          sessionID,
+          agent: "build",
+          prompt: "Do work",
+          description: "work",
+          createChild: () =>
+            Effect.sync(() => {
+              creates += 1
+              return child
+            }),
+        }
+        const started = yield* manager.start(request)
+        yield* Deferred.await(woke)
+        expect((yield* manager.start(request)).taskID).toBe(started.taskID)
+        expect(creates).toBe(1)
+        expect((yield* manager.start({ ...request, prompt: "conflict" }).pipe(Effect.flip)).message).toContain(
+          "conflicting",
+        )
+        expect((yield* manager.start({ ...request, id: "second" }).pipe(Effect.flip)).message).toContain("active")
+        expect(yield* manager.result(otherSessionID, started.taskID)).toBeUndefined()
+        expect(yield* manager.cancel(otherSessionID, started.taskID)).toBe(false)
+        expect(yield* manager.cancel(sessionID, started.taskID)).toBe(true)
+        expect(yield* manager.cancel(sessionID, started.taskID)).toBe(false)
+        expect(interrupts).toEqual([`${child.id}:owned-execution`])
+        expect((yield* manager.result(sessionID, started.taskID))?.status).toBe("cancelled")
+        expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(1)
+        yield* Deferred.succeed(waiting, undefined)
+        yield* Effect.yieldNow
+        expect((yield* manager.result(sessionID, started.taskID))?.status).toBe("cancelled")
+        expect(wakes.filter((id) => id === child.id)).toHaveLength(1)
+        yield* insertSession(otherSessionID)
+        expect(
+          (yield* manager.start({ ...request, id: "foreign", sessionID: otherSessionID }).pipe(Effect.flip)).message,
+        ).toContain("another Session/project")
+      }),
+  )
+
+  it.effect("promotes background reports at a safe boundary without resetting the human step allowance", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.steps = 2 }))
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const child = yield* session.create({ parentID: sessionID, agent: AgentV2.ID.make("build"), location: { directory: AbsolutePath.make("/project") } })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID, id: "step-report", childSessionID: child.id, promptMessageID: SessionMessage.ID.create(),
+        agent: "build", prompt: "Find facts", description: "facts", owner: "finished-owner", timestamp: yield* DateTime.now,
+      })
+      yield* events.publish(SessionEvent.DelegationEnded, {
+        sessionID, id: "step-report", status: "completed", text: "BOUNDARY REPORT", timestamp: yield* DateTime.now,
+      })
+      responses = [[
+        LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "before-report", name: "echo", input: { text: "work" } }),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" }),
+      ], [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })]]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Human instruction" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[0].messages)).not.toContain("BOUNDARY REPORT")
+      expect(JSON.stringify(requests[1].messages)).toContain("BOUNDARY REPORT")
+      expect(requests[1].toolChoice).toMatchObject({ type: "none" })
+      expect(requests[1].tools).toEqual([])
+    }),
+  )
+
+  it.effect("reconciles lost delegation owners without executing children and promotes one durable notification", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "lost-task",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Never replay",
+        description: "lost owner",
+        owner: "dead-runtime",
+        timestamp: yield* DateTime.now,
+      })
+      yield* SessionDelegationStore.recover(db, events, sessionID, "new-owner", () => false)
+      yield* SessionDelegationStore.recover(db, events, sessionID, "new-owner", () => false)
+      expect((yield* SessionDelegationStore.get(db, sessionID, "lost-task"))?.status).toBe("interrupted")
+      expect(yield* SessionDelegationStore.get(db, child.id, "lost-task")).toBeUndefined()
+      expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(1)
+      yield* events.publish(SessionEvent.DelegationEnded, {
+        sessionID,
+        id: "lost-task",
+        status: "completed",
+        text: "Late report",
+        timestamp: yield* DateTime.now,
+      })
+      expect((yield* SessionDelegationStore.get(db, sessionID, "lost-task"))?.status).toBe("interrupted")
+      expect(yield* SessionDelegationStore.promoteNext(db, events, sessionID)).toBe(true)
+      expect(yield* SessionDelegationStore.promoteNext(db, events, sessionID)).toBe(false)
+      expect(
+        (yield* session.context(sessionID)).filter((m) => m.type === "synthetic" && m.metadata?.backgroundTask),
+      ).toHaveLength(1)
+      expect(yield* session.context(child.id)).toHaveLength(0)
+    }),
+  )
+
   it.effect("persists model resolution errors as a visible failed assistant", () =>
     Effect.gen(function* () {
       yield* setup
@@ -2077,7 +2335,7 @@ describe("SessionRunnerLLM", () => {
 
       requests.length = 0
       const leaked =
-        "Let me look.\n< | DSML | invoke name=\"bash\">\n<parameter name=\"command\">ls</parameter>\n</ | DSML | invoke>"
+        'Let me look.\n< | DSML | invoke name="bash">\n<parameter name="command">ls</parameter>\n</ | DSML | invoke>'
       responses = [
         [
           LLMEvent.stepStart({ index: 0 }),
@@ -2115,7 +2373,7 @@ describe("SessionRunnerLLM", () => {
 
       requests.length = 0
       const leaked =
-        "Let me look.\n< | DSML | invoke name=\"bash\">\n<parameter name=\"command\">ls</parameter>\n</ | DSML | invoke>"
+        'Let me look.\n< | DSML | invoke name="bash">\n<parameter name="command">ls</parameter>\n</ | DSML | invoke>'
       responses = [
         [
           LLMEvent.stepStart({ index: 0 }),
@@ -2177,7 +2435,7 @@ describe("SessionRunnerLLM", () => {
 
       requests.length = 0
       const leaked =
-        "<tool_calls>\n<invoke name=\"bash\"><parameter name=\"command\">ls</parameter></invoke>\n</tool_calls>"
+        '<tool_calls>\n<invoke name="bash"><parameter name="command">ls</parameter></invoke>\n</tool_calls>'
       const leakTurn = (id: string) => [
         LLMEvent.stepStart({ index: 0 }),
         LLMEvent.textStart({ id }),
