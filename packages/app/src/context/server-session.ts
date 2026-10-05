@@ -980,8 +980,11 @@ export function createServerSession(
         time: { ...info.time, updated: event.data.timestamp },
       })
     // The drain itself has no settlement event, so a turn counts as busy while a step is open and
-    // settles only when a step finishes without handing off to more tool work.
-    if (event.type === "session.next.step.started") setData("session_status", sessionID, { type: "busy" })
+    // settles only when a step finishes without handing off to more tool work. A live
+    // `session.next.status` already carries the drain phase, so keep it instead of clobbering it
+    // with a phase-less busy; `step.started` only seeds busy when nothing more precise arrived.
+    if (event.type === "session.next.step.started" && data.session_status[sessionID]?.type !== "busy")
+      setData("session_status", sessionID, { type: "busy" })
     if (
       (event.type === "session.next.step.ended" && event.data.finish !== "tool-calls") ||
       event.type === "session.next.step.failed"
