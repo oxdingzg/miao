@@ -136,6 +136,13 @@ const MAX_IDENTICAL_TOOL_CALLS = 5
 const MAX_OVERFLOW_COMPACTIONS = 2
 
 /**
+ * How many compactions in one Session before the frequency is worth surfacing.
+ * A Session that keeps compacting is either growing faster than the summary can
+ * reclaim or fighting its context budget; the count makes that visible.
+ */
+const COMPACTION_THRASH_WARNING = 3
+
+/**
  * How long a subagent may go without emitting any event before its drain is
  * treated as stuck. Silence means no provider delta, no tool call, and no tool
  * result, so the longest legitimate gap is a tool running to its own ceiling;
@@ -199,6 +206,22 @@ const layer = Layer.effect(
     // compaction). Process-local and best-effort.
     const WARM_WINDOW_MS = 5 * 60_000
     const turns = new Map<string, { at: number; afterCompaction: boolean }>()
+    // Compactions per Session, so a Session that keeps compacting is visible
+    // rather than silent. Process-local and best-effort, like the cache telemetry.
+    const compactions = new Map<string, number>()
+    const recordCompaction = (sessionID: SessionSchema.ID, cause: string, ms?: number) =>
+      Effect.gen(function* () {
+        const count = (compactions.get(sessionID) ?? 0) + 1
+        compactions.set(sessionID, count)
+        yield* Effect.logInfo("session.compaction", {
+          sessionID,
+          cause,
+          count,
+          ...(ms === undefined ? {} : { ms }),
+        })
+        if (count === COMPACTION_THRASH_WARNING)
+          yield* Effect.logWarning("session.compaction-thrash", { sessionID, count })
+      })
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
@@ -567,21 +590,13 @@ const layer = Layer.effect(
           request,
         })
         if (compacted) turns.set(session.id, { at: Date.now(), afterCompaction: true })
-        yield* Effect.logInfo("session.compaction", {
-          sessionID: session.id,
-          cause: "overflow",
-          ms: Date.now() - compactStartedAt,
-        })
+        yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
       const compactCheckedAt = Date.now()
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request })) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
-        yield* Effect.logInfo("session.compaction", {
-          sessionID: session.id,
-          cause: "threshold",
-          ms: Date.now() - compactCheckedAt,
-        })
+        yield* recordCompaction(session.id, "threshold", Date.now() - compactCheckedAt)
         return yield* Effect.die(continueAfterCompaction(currentStep))
       }
       const compactMs = Date.now() - compactStartedAt
@@ -763,6 +778,7 @@ const layer = Layer.effect(
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
+            yield* recordCompaction(session.id, "recovery")
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
           if (overflowFailure) yield* publish(overflowFailure)
