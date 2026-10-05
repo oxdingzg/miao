@@ -73,7 +73,7 @@ export async function create(options: Options) {
     return session
   }
   return {
-    async send(signal: Signal): Promise<Result> {
+    async send(signal: Signal, authorized: () => boolean = () => true): Promise<Result> {
       if (!/^(?:[a-fA-F0-9]{2}){16,256}$/.test(signal.token)) throw new Error("Invalid APNs device token")
       if (!/^[A-Za-z0-9_-]{16,128}$/.test(signal.signalID)) throw new Error("Invalid push signal identifier")
       if (signal.kind !== "attention" && signal.kind !== "completed") throw new Error("Invalid push signal kind")
@@ -83,7 +83,7 @@ export async function create(options: Options) {
       state.active += 1
       try {
         const bearer = await authorization()
-        if (state.stopped) return { status: "rejected", id }
+        if (state.stopped || !authorized()) return { status: "rejected", id }
         const body = JSON.stringify({
           aps: {
             alert: {
