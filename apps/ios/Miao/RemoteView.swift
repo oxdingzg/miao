@@ -244,6 +244,7 @@ private struct SessionView: View {
     @State private var speech = SpeechInput()
     @State private var diffPresented = false
     @State private var renamePresented = false
+    @State private var menuPresented = false
     @State private var title = ""
     @State private var queue = false
     @FocusState private var composing: Bool
@@ -267,12 +268,7 @@ private struct SessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("查看文件变化", systemImage: "doc.text.magnifyingglass") { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
-                    if client.record.grant.permissions.contains(.sessionRename) {
-                        Button("重命名", systemImage: "pencil") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
+                Button { composing = false; menuPresented = true } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
                     .accessibilityIdentifier("sessionMenu").accessibilityValue(client.connectionDescription).disabled(!client.ready)
             }
         }
@@ -281,6 +277,13 @@ private struct SessionView: View {
                 Spacer()
                 Button("完成") { composing = false }.accessibilityIdentifier("dismissKeyboard")
             }
+        }
+        .confirmationDialog("会话操作", isPresented: $menuPresented, titleVisibility: .visible) {
+            Button("查看文件变化") { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
+            if client.record.grant.permissions.contains(.sessionRename) {
+                Button("重命名") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
+            }
+            Button("取消", role: .cancel) {}
         }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }
