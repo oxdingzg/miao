@@ -8,6 +8,10 @@ struct HubAccountView: View {
     @State private var origin = ""
     @State private var email = ""
     @State private var password = ""
+    /// Whether the account was already signed in when this sheet opened. It is
+    /// what tells a sign-in *this* sheet performed apart from one that was in
+    /// effect all along — only the former should close the sheet.
+    @State private var wasSignedIn = false
 
     var body: some View {
         NavigationStack {
@@ -88,7 +92,21 @@ struct HubAccountView: View {
             }
             .navigationTitle("中继账号")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { password = ""; dismiss() } } }
-            .onAppear { origin = model.accountURL.isEmpty ? model.defaultAccountURL : model.accountURL }
+            .onAppear {
+                wasSignedIn = model.accountSignedIn
+                origin = model.accountURL.isEmpty ? model.defaultAccountURL : model.accountURL
+            }
+            // A sign-in this sheet performed returns the person to the
+            // workbench, rather than leaving them on a page whose only news is
+            // "signed in". `accountBusy` is the signal rather than
+            // `accountSignedIn`: the latter flips before `reload()` and
+            // `refreshDirectory()` have run, so closing on it would show the
+            // computer list for a moment and then change it.
+            .onChange(of: model.accountBusy) { _, busy in
+                guard !busy, model.accountSignedIn, !wasSignedIn else { return }
+                wasSignedIn = true
+                dismiss()
+            }
             .onDisappear { password = "" }
         }
     }

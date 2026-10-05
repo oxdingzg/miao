@@ -44,11 +44,21 @@ final class PairingUITests: XCTestCase {
             app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)
             app.secureTextFields["hubPassword"].tap(); app.secureTextFields["hubPassword"].typeText(account.password)
             app.buttons["hubSignIn"].tap()
-            XCTAssertTrue(app.staticTexts["已登录"].waitForExistence(timeout: 30))
-            XCTAssertTrue(app.buttons["enableNotifications"].waitForExistence(timeout: 10))
+            // A successful sign-in closes the account sheet on its own, and the
+            // invitation this run launched with pulls pairing up in its place —
+            // nothing taps 关闭 to get out of the sign-in flow.
+            XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 30))
+            // That sheet is gone, so notification enrolment is reached by
+            // reopening it rather than by lingering on the sign-in path.
+            app.buttons["关闭"].tap()
+            XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 15))
+            app.buttons["hubAccount"].tap()
+            XCTAssertTrue(app.buttons["enableNotifications"].waitForExistence(timeout: 15))
             app.buttons["enableNotifications"].tap()
             XCTAssertTrue(app.staticTexts["此连接暂不支持通知"].waitForExistence(timeout: 10))
             app.buttons["关闭"].tap()
+            XCTAssertTrue(app.buttons["连接电脑"].firstMatch.waitForExistence(timeout: 15))
+            app.buttons["连接电脑"].firstMatch.tap()
         }
         XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["开始配对"].isEnabled)
