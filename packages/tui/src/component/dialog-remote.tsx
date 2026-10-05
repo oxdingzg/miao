@@ -77,6 +77,7 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                   void (async () => {
                     const hubURL = await DialogPrompt.show(dialog, "自建中继地址", {
                       placeholder: "https://relay.example.com",
+                      value: process.env.MIAO_HUB_URL ?? "",
                     })
                     if (!hubURL) {
                       reopen()
