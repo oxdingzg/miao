@@ -113,6 +113,40 @@ function closed(ws: WebSocket) {
 }
 
 describe("outbound authorized encrypted Agent", () => {
+  test("selection changes require their own capability, operation IDs and session scope", async () => {
+    const calls: ControlAgent.Request[] = []
+    const handler: ControlAgent.Handler = async (request) => {
+      calls.push(request)
+      return { status: "completed" }
+    }
+    const methods = { "session.switchAgent": handler, "session.switchModel": handler }
+    const promptOnly = await fixture(methods, ["read", "prompt"])
+    const denied = await client(promptOnly)
+    for (const method of ["session.switchAgent", "session.switchModel"] as const) {
+      await denied.send(denied.request({ method, operationID: crypto.randomUUID() }))
+      expect(await denied.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    }
+    const selectable = await fixture(methods, ["read", "session.selection"])
+    const peer = await client(selectable)
+    for (const method of ["session.switchAgent", "session.switchModel"] as const) {
+      await peer.send(peer.request({ method }))
+      expect(await peer.receive()).toMatchObject({ type: "error", code: "forbidden" })
+      await peer.send(peer.request({ method, sessionID: "another-session", operationID: crypto.randomUUID() }))
+      expect(await peer.receive()).toMatchObject({ type: "error", code: "forbidden" })
+      await peer.send(
+        peer.request({
+          method,
+          operationID: crypto.randomUUID(),
+          payload:
+            method === "session.switchAgent"
+              ? { agent: "build" }
+              : { model: { providerID: "fixture", id: "model", variant: "reasoning" } },
+        }),
+      )
+      expect(await peer.receive()).toMatchObject({ type: "result", data: { status: "completed" } })
+    }
+    expect(calls.map((call) => call.method)).toEqual(["session.switchAgent", "session.switchModel"])
+  })
   test("routes approved requests through real Hub and rejects out-of-scope or stale Runtime targets", async () => {
     const calls: ControlAgent.Request[] = []
     const f = await fixture({
