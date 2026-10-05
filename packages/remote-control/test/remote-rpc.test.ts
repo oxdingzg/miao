@@ -57,3 +57,17 @@ test("bounds pending requests and closes all readers on malformed envelopes", as
   expect(f.rpc.stopped()).toBe(true)
   await f.rpc.finished
 })
+
+for (const method of ["session.switchAgent", "session.switchModel"] as const) {
+  test(`${method} requires a persisted operation and preserves uncertain outcomes`, async () => {
+    const f = fixture()
+    try {
+      await expect(f.rpc.request(method)).rejects.toMatchObject({ code: "invalid_request" })
+      expect(f.sent).toHaveLength(0)
+      const operationID = crypto.randomUUID()
+      await expect(f.rpc.request(method, { operationID, timeout: 5 })).rejects.toMatchObject({ code: "outcome_unknown" })
+      expect(f.sent).toHaveLength(1)
+      expect(f.sent[0]).toMatchObject({ method, operationID })
+    } finally { f.rpc.close(); await f.rpc.finished }
+  })
+}
