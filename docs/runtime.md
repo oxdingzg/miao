@@ -175,3 +175,20 @@ network deadline and reject redirects. Relay setup makes several individually
 bounded requests; the desktop caller must allow that flow to settle before
 retrying. This bridge supplies administration operations; the desktop UI is a
 separate integration.
+
+# Terminal pane identity
+
+When running inside mtty, each observing TUI reports its visible Session and
+activity through the pane's local CLI. The report includes an owned Runtime ID
+and storage selector for the normal persistent Runtime, or an explicit attached
+server marker for other endpoints. Returning home clears the visible Session;
+exiting clears the binding. Reports are serialized and pending changes are
+coalesced, so an older update cannot overtake a newer one.
+
+The shared background Runtime does not inherit a launching client's pane ID.
+It cannot act as the state reporter for every TUI that later connects to it.
+Runtime identity metadata is sent through a private pipe using
+`mtty-cli state --runtime-context -`; it contains no administrator credential.
+Older terminal CLIs continue to receive the basic state and Session fields.
+A desktop connection UI must validate the reported owned Runtime and reject
+attached or missing context instead of choosing the default local Runtime.
