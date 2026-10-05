@@ -30,6 +30,25 @@ const available = (plan: string | undefined, plans: readonly string[] | undefine
   plans.includes(plan)
 
 /**
+ * The Provider API's model list carries no capabilities for the models Command
+ * Code serves. Those models keep their canonical vendor ids though (for example
+ * `deepseek/deepseek-v4.1-flash`), and the catalog lists the same ids under
+ * their origin providers with `modalities.input`. Index the first declaration
+ * per id so a model that accepts images is not forced to text-only; an id the
+ * catalog does not carry stays on the conservative default.
+ */
+const catalogModalities = (catalog: Record<string, ModelsDev.Provider>) => {
+  const inputs = new Map<string, ReadonlyArray<string>>()
+  for (const provider of Object.values(catalog)) {
+    for (const model of Object.values(provider.models)) {
+      const input = model.modalities?.input
+      if (input !== undefined && !inputs.has(model.id)) inputs.set(model.id, input)
+    }
+  }
+  return inputs
+}
+
+/**
  * Command Code subscription support.
  *
  * The login is a browser-assisted API-key transfer (a loopback callback plus a
@@ -76,14 +95,22 @@ export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service 
           provider.integrationID = INTEGRATION_ID
         })
         const models = yield* load()
-        const entries = (yield* modelsDev.get())["commandcode"]?.models
+        const catalogModels = yield* modelsDev.get()
+        const entries = catalogModels["commandcode"]?.models
         const plan = Flag.MIAO_COMMANDCODE_PLAN?.trim().toLowerCase()
+        const modalities = catalogModalities(catalogModels)
         for (const model of models) {
           catalog.model.update(PROVIDER_ID, ModelV2.ID.make(model.id), (draft) => {
             draft.name = model.name ?? model.id
             // The models endpoint reports neither capabilities nor pricing, so
-            // these stay conservative until the catalog carries them.
-            draft.capabilities = { tools: true, input: ["text"], output: ["text"] }
+            // borrow the input modalities the catalog lists for the same model
+            // id; ids the catalog does not carry stay on the conservative
+            // text-only default until it does.
+            draft.capabilities = {
+              tools: true,
+              input: [...(modalities.get(model.id) ?? ["text"])],
+              output: ["text"],
+            }
             draft.limit = { context: model.contextLength ?? 128_000, output: 32_768 }
             draft.cost = [{ input: 0, output: 0, cache: { read: 0, write: 0 } }]
             // The catalog records the plan tiers that include each model; hide a
