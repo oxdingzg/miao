@@ -25,4 +25,14 @@ final class HubAccountTests: XCTestCase {
         try await account.signOut()
         await account.close()
     }
+
+    func testEquivalentOriginsShareTheSameKeychainPartitionAndOriginHeader() async throws {
+        let account = try HubAccount(origin: URL(string: "HTTPS://EXAMPLE.invalid:443/")!)
+        let canonical = await account.origin
+        XCTAssertEqual(canonical.absoluteString, "https://example.invalid")
+        let local = try HubAccount(origin: URL(string: "http://LOCALHOST:80/")!, allowLoopbackHTTP: true)
+        let loopback = await local.origin
+        XCTAssertEqual(loopback.absoluteString, "http://localhost")
+        XCTAssertThrowsError(try HubAccount(origin: URL(string: "https://example.invalid:0")!))
+    }
 }

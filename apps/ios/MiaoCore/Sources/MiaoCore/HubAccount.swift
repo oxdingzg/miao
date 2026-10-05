@@ -39,16 +39,21 @@ public actor HubAccount {
 
     public init(origin: URL, keychainService: String = "miao.remote.hub-account",
                 allowLoopbackHTTP: Bool = false) throws {
-        var components = URLComponents(url: origin, resolvingAgainstBaseURL: false)
-        guard let value = components, value.user == nil, value.password == nil,
-              value.query == nil, value.fragment == nil, value.path.isEmpty || value.path == "/",
-              let host = value.host, !host.isEmpty,
-              value.scheme == "https" || (allowLoopbackHTTP && value.scheme == "http"
+        guard var components = URLComponents(url: origin, resolvingAgainstBaseURL: false),
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil, components.path.isEmpty || components.path == "/",
+              let scheme = components.scheme?.lowercased(), let host = components.host?.lowercased(), !host.isEmpty,
+              components.port == nil || (1...65535).contains(components.port!),
+              scheme == "https" || (allowLoopbackHTTP && scheme == "http"
                 && ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)) else {
             throw HubAccountError.invalidEndpoint
         }
-        components?.path = ""
-        guard let normalized = components?.url else { throw HubAccountError.invalidEndpoint }
+        components.scheme = scheme
+        components.host = host
+        components.path = ""
+        if (scheme == "https" && components.port == 443)
+            || (scheme == "http" && components.port == 80) { components.port = nil }
+        guard let normalized = components.url else { throw HubAccountError.invalidEndpoint }
         self.origin = normalized
         self.keychainService = keychainService
         let configuration = URLSessionConfiguration.ephemeral
