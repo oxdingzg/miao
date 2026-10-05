@@ -67,13 +67,15 @@ final class AppModel {
 
     func pair(_ uri: String, label: String) {
         guard pairTask == nil, let registry else { return }
+        let invitation: PairingInvitation
+        do { invitation = try PairingInvitation.parse(uri, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
+        catch { self.error = userMessage(error); return }
         guard accountSignedIn || AppTestConfiguration.allowLegacyTransport else {
             error = "请先登录电脑使用的中继，再扫码配对"; return
         }
         error = nil; fingerprint = nil; pairing = "正在连接电脑…"
         pairTask = Task {
             do {
-                let invitation = try PairingInvitation.parse(uri, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
                 try await registry.begin(invitation)
                 let paired = try await HubConnection.pair(invitation: invitation, identity: identity.loadOrCreate(),
                     label: label,
