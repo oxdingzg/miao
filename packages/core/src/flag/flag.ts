@@ -55,6 +55,12 @@ export const Flag = {
     copy === undefined ? process.platform === "win32" : truthy("MIAO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
   MIAO_MODELS_URL: process.env["MIAO_MODELS_URL"],
   MIAO_MODELS_PATH: process.env["MIAO_MODELS_PATH"],
+  // Public origin of the hosted web UI. Used for the embedded-UI remote
+  // fallback, the trusted CORS origin, and the MCP client_uri. Read at access
+  // time so a deployment can move the hosted origin without a source edit.
+  get MIAO_WEB_UI_UPSTREAM() {
+    return process.env["MIAO_WEB_UI_UPSTREAM"] ?? "https://app.miao.dtee.top"
+  },
   // The connected Command Code account's plan (go | goat | pro | max), used to
   // hide models the plan cannot call. Unset means the plan is unknown and every
   // model stays visible. Read at access time so tests and relaunches can vary it.

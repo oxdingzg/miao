@@ -127,4 +127,17 @@ describe("HttpApi CORS", () => {
     expect(isAllowedCorsOrigin("https://app.opencode.ai")).toBe(false)
     expect(isAllowedCorsOrigin("https://opencode.ai")).toBe(false)
   })
+
+  test("derives the trusted origin from MIAO_WEB_UI_UPSTREAM", () => {
+    const original = process.env.MIAO_WEB_UI_UPSTREAM
+    try {
+      process.env.MIAO_WEB_UI_UPSTREAM = "https://app.example.test"
+      expect(isAllowedCorsOrigin("https://app.example.test")).toBe(true)
+      expect(isAllowedCorsOrigin("https://console.example.test")).toBe(true)
+      expect(isAllowedCorsOrigin("https://app.miao.dtee.top")).toBe(false)
+    } finally {
+      if (original === undefined) delete process.env.MIAO_WEB_UI_UPSTREAM
+      else process.env.MIAO_WEB_UI_UPSTREAM = original
+    }
+  })
 })
