@@ -288,3 +288,93 @@ test("compaction pins the latest goal into the retained context", async () => {
   expect(recents[0]).toContain('<goal status="active">')
   expect(recents[0]).toContain("Ship the release")
 })
+
+const customHarness = (config: unknown, attempt: Stream.Stream<never, never>) => {
+  const requests: Array<{ readonly model: unknown }> = []
+  const compaction = SessionCompaction.make({
+    events: { publish: () => Effect.succeed(undefined) } as never,
+    llm: {
+      stream: (request: { readonly model: unknown }) => {
+        requests.push(request)
+        return attempt as never
+      },
+    },
+    config: config as never,
+  })
+  return { compaction, requests }
+}
+
+const observedInput = (sessionID: string, route: ReturnType<typeof model>, observedTokens: number) =>
+  ({
+    sessionID: SessionSchema.ID.make(sessionID),
+    entries: overflowEntries(),
+    model: route,
+    request: LLM.request({ model: route, messages: [Message.user("continue")] }),
+    observedTokens,
+  }) as never
+
+test("compaction triggers on the provider's reported usage even when the local request estimate is small", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+
+  // The request text estimates far below the window; the provider counted 95k.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_observed_trigger", main, 95_000)))).toBe(
+    true,
+  )
+  expect(requests).toHaveLength(1)
+})
+
+test("compaction stays put when the reported usage is below the threshold window", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+
+  expect(await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_observed_skip", main, 50_000)))).toBe(
+    false,
+  )
+  expect(requests).toHaveLength(0)
+})
+
+test("compaction threshold config triggers earlier than the default", async () => {
+  const main = model("main", 100_000)
+  const early = customHarness([{ type: "document", info: { compaction: { threshold: 0.5 } } }], summary("summary"))
+  const standard = customHarness([], summary("summary"))
+
+  // 55k sits inside the default 90% window but past a 50% window.
+  expect(
+    await Effect.runPromise(standard.compaction.compactIfNeeded(observedInput("ses_threshold", main, 55_000))),
+  ).toBe(false)
+  expect(await Effect.runPromise(early.compaction.compactIfNeeded(observedInput("ses_threshold", main, 55_000)))).toBe(
+    true,
+  )
+  expect(standard.requests).toHaveLength(0)
+  expect(early.requests).toHaveLength(1)
+})
+
+test("compaction ignores an out-of-range threshold instead of thrashing", async () => {
+  const main = model("main", 100_000)
+  const zero = customHarness([{ type: "document", info: { compaction: { threshold: 0 } } }], summary("summary"))
+
+  // `0` would compact every turn; it falls back to the default 0.9, so 50k waits.
+  expect(
+    await Effect.runPromise(zero.compaction.compactIfNeeded(observedInput("ses_threshold_bad", main, 50_000))),
+  ).toBe(false)
+  expect(zero.requests).toHaveLength(0)
+})
+
+test("auto-compaction stops after repeated summary failures until it is reset", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], empty)
+
+  const run = () => Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_breaker", main, 95_000)))
+  expect(await run()).toBe(false)
+  expect(await run()).toBe(false)
+  expect(await run()).toBe(false)
+  // Three failures trip the breaker: the fourth decision makes no new request.
+  expect(await run()).toBe(false)
+  expect(requests).toHaveLength(3)
+
+  // A manual compaction resets it, so the next turn tries again.
+  await Effect.runPromise(compaction.reset(SessionSchema.ID.make("ses_breaker")))
+  expect(await run()).toBe(false)
+  expect(requests).toHaveLength(4)
+})

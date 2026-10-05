@@ -13,6 +13,19 @@ const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const SUMMARY_OUTPUT_TOKENS = 4_096
+/**
+ * Fraction of the context window at which proactive compaction runs. Compacting
+ * only once the window is full leaves no room for the summary and no margin for
+ * the estimate being low; a fraction below 1 reserves both. Mirrors Codex's 90%
+ * default (Claude Code lands around 83–97% depending on the window size).
+ */
+const DEFAULT_THRESHOLD = 0.9
+/**
+ * Consecutive proactive-compaction failures before one Session stops trying.
+ * Without a breaker a summary the provider keeps refusing would spend a turn's
+ * worth of latency on every step; a manual compaction resets the counter.
+ */
+const MAX_COMPACTION_FAILURES = 3
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Objective
@@ -65,6 +78,7 @@ type Settings = {
   readonly preciseTokens: boolean
   readonly summarizeSmall: boolean
   readonly buffer: number
+  readonly threshold: number
   readonly tokens: number
 }
 
@@ -83,10 +97,25 @@ type Input = {
   /** Cheap model for summarization; falls back to the session model when absent or too small. */
   readonly summarizeModel?: Model
   readonly request: LLMRequest
+  /**
+   * Prompt tokens the provider reported for the previous turn of this Session,
+   * when it reported any. The provider's own count is the only signal that
+   * tracks the real window: a local estimate under-counts code and CJK text, so
+   * a Session driven by the estimate alone can reach the provider's true limit
+   * without ever crossing the threshold.
+   */
+  readonly observedTokens?: number
 }
 
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
+
+/**
+ * Keep a configured threshold inside `(0, 1]`. A stray `0` would compact every
+ * turn and a value above `1` would never compact, so an invalid override falls
+ * back to the default rather than changing behavior silently.
+ */
+const normalizeThreshold = (value: number) => (value > 0 && value <= 1 ? value : DEFAULT_THRESHOLD)
 
 // Use the cheap model only when the summary request still fits its context;
 // otherwise the session model is the safe choice.
@@ -144,6 +173,7 @@ const settings = (documents: readonly Config.Entry[]) => {
       preciseTokens: current.precise_tokens ?? result.preciseTokens,
       summarizeSmall: current.summarize_small ?? result.summarizeSmall,
       buffer: current.buffer ?? result.buffer,
+      threshold: normalizeThreshold(current.threshold ?? result.threshold),
       tokens: current.keep?.tokens ?? result.tokens,
     }),
     {
@@ -152,6 +182,7 @@ const settings = (documents: readonly Config.Entry[]) => {
       preciseTokens: false,
       summarizeSmall: false,
       buffer: DEFAULT_BUFFER,
+      threshold: DEFAULT_THRESHOLD,
       tokens: DEFAULT_KEEP_TOKENS,
     },
   )
@@ -229,6 +260,10 @@ export const make = (dependencies: Dependencies) => {
   // character heuristic stays the default.
   const measure = (text: string) => (config.preciseTokens ? Token.count(text) : Token.estimate(text))
   const measureValue = (value: unknown) => Token.measureValue(value, measure)
+  // Consecutive proactive-compaction failures per Session. A provider that keeps
+  // refusing the summary must not cost a summary attempt on every drain; the
+  // breaker trips until a compaction succeeds or a manual one resets it.
+  const failures = new Map<string, number>()
   // One summarization attempt. Returns the text only when the stream completed
   // cleanly and produced a non-empty summary, so an empty or refused response
   // can never replace the conversation.
@@ -373,16 +408,33 @@ export const make = (dependencies: Dependencies) => {
     // ceiling: `limits.output` is a catalog limit, and treating it as the reserve
     // shrinks the usable window to a fraction of the real context.
     const reserve = Math.max(input.request.generation?.maxTokens ?? 0, config.buffer)
-    if (
-      measureValue({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }) <=
-      context - reserve
+    // The provider's reported prompt tokens are ground truth for the history the
+    // last turn sent; the local estimate covers the growth since then (and is the
+    // only signal before the first usage). Take the larger: the estimate alone
+    // under-counts code and CJK text, and the reported count alone lags a turn
+    // that just added a large tool result.
+    const size = Math.max(
+      input.observedTokens ?? 0,
+      measureValue({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }),
     )
-      return false
-    return yield* config.hotPrefix ? compactHot(input) : compactAfterOverflow(input)
+    // Trigger below the raw limit, not at it: the summary request needs room too.
+    if (size <= context * config.threshold - reserve) return false
+    const key = input.sessionID
+    if ((failures.get(key) ?? 0) >= MAX_COMPACTION_FAILURES) return false
+    const compacted = yield* config.hotPrefix ? compactHot(input) : compactAfterOverflow(input)
+    if (compacted) failures.delete(key)
+    else failures.set(key, (failures.get(key) ?? 0) + 1)
+    return compacted
   })
+
+  const reset = (sessionID: Input["sessionID"]) => {
+    failures.delete(sessionID)
+    return Effect.void
+  }
 
   return {
     compactIfNeeded,
     compactAfterOverflow,
+    reset,
   }
 }

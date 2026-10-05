@@ -13,6 +13,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
   hot_prefix: Schema.Boolean.pipe(Schema.optional),
   precise_tokens: Schema.Boolean.pipe(Schema.optional),
   summarize_small: Schema.Boolean.pipe(Schema.optional),
+  /** Fraction of the context window that triggers auto-compaction (default 0.9). */
+  threshold: Schema.Number.pipe(Schema.optional),
   keep: Keep.pipe(Schema.optional),
   buffer: NonNegativeInt.pipe(Schema.optional),
 }) {}

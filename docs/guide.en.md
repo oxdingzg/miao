@@ -96,7 +96,7 @@ overrides the path. Main fields:
 | `lsp`                                                             | language servers: `true` enables all built-ins, `false` disables, or a per-name record. **Omitted = all disabled** |
 | `formatter`                                                       | formatters: `true` enables built-ins, or a per-name record with commands                                           |
 | `mcp`                                                             | MCP servers (local stdio / remote streamable-http)                                                                 |
-| `compaction`                                                      | `prune` old tool output, `summarize_small`, `hot_prefix`, `precise_tokens`                                         |
+| `compaction`                                                      | `prune` old tool output, `threshold` ratio, `summarize_small`, `hot_prefix`, `precise_tokens`                      |
 | `cache`                                                           | `ttl_seconds` extends the prompt-cache TTL                                                                         |
 | `cost`                                                            | `budget_usd` per-session cost budget (warns and stops continuation)                                                |
 | `loop`                                                            | autonomous continuation (see §5.8)                                                                                 |
@@ -221,7 +221,7 @@ V2's `list_sessions` discovers project peers, and `send_message` accepts a sessi
 }
 ```
 
-This optional project configuration combines continued todo work, a scheduling budget, old-output pruning, and a bound on each tool's model-visible output. A budget does not interrupt an in-flight turn and is not a billing cap. Output files are temporary; the bounded transcript is the durable record. Enable small-model summaries or hot-prefix compaction separately after checking that they suit your provider and workload.
+This optional project configuration combines continued todo work, a scheduling budget, old-output pruning, and a bound on each tool's model-visible output. A budget does not interrupt an in-flight turn and is not a billing cap. Output files are temporary; the bounded transcript is the durable record. Tool-output pruning is on by default (disable with `"prune": false`). Automatic compaction triggers at `threshold` (default `0.9`) of the window using the provider's reported prompt tokens, so it runs before the window fills rather than at the last moment. Enable small-model summaries or hot-prefix compaction separately after checking that they suit your provider and workload.
 
 Content that a compaction removed from the model window stays durable on disk. The `recall` tool searches that history by keyword, so an agent can recover a dropped detail instead of re-reading files or repeating finished work.
 
