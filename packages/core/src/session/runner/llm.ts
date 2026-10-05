@@ -223,12 +223,20 @@ const layer = Layer.effect(
         if (count === COMPACTION_THRASH_WARNING)
           yield* Effect.logWarning("session.compaction-thrash", { sessionID, count })
       })
+    // Prompt tokens the provider reported for each Session's last settled turn.
+    // Compaction compares against this instead of trusting a local estimate;
+    // cleared when compaction rewrites the history so the next decision sees the
+    // smaller window rather than the pre-compaction size.
+    const lastPromptTokens = new Map<string, number>()
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
       const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
       let ttl: number | undefined
-      let prune = false
+      // Microcompaction is on by default: clearing tool output an agent no longer
+      // needs is what keeps a long drain from filling the window between
+      // summaries. Lossy, so it stays configurable off.
+      let prune = true
       let budget: number | undefined
       let loop: { readonly maxIterations: number; readonly continuePrompt: string } | undefined
       let disabledTools: ReadonlyArray<string> = []
@@ -583,6 +591,8 @@ const layer = Layer.effect(
       }
       const compactStartedAt = Date.now()
       if (SessionCompactRequest.consume(session.id)) {
+        // A manual compaction is the user's reset: give the breaker a fresh try.
+        yield* compaction.reset(session.id)
         const compacted = yield* compaction.compactAfterOverflow({
           sessionID: session.id,
           entries,
@@ -590,13 +600,26 @@ const layer = Layer.effect(
           summarizeModel,
           request,
         })
-        if (compacted) turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        if (compacted) {
+          turns.set(session.id, { at: Date.now(), afterCompaction: true })
+          lastPromptTokens.delete(session.id)
+        }
         yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
       const compactCheckedAt = Date.now()
-      if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request })) {
+      if (
+        yield* compaction.compactIfNeeded({
+          sessionID: session.id,
+          entries,
+          model,
+          summarizeModel,
+          request,
+          observedTokens: lastPromptTokens.get(session.id),
+        })
+      ) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        lastPromptTokens.delete(session.id)
         yield* recordCompaction(session.id, "threshold", Date.now() - compactCheckedAt)
         return yield* Effect.die(continueAfterCompaction(currentStep))
       }
@@ -780,6 +803,7 @@ const layer = Layer.effect(
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             yield* recordCompaction(session.id, "recovery")
+            lastPromptTokens.delete(session.id)
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
           if (overflowFailure) yield* publish(overflowFailure)
@@ -818,6 +842,8 @@ const layer = Layer.effect(
             yield* withPublication(publisher.failAssistant("Provider stream ended without a completion frame"))
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
+            // Feed the next compaction decision the provider's own count.
+            lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             const cacheMissed = SessionRunnerMetrics.cacheMissed(stepSettlement.tokens)
             const endSnapshotStartedAt = Date.now()
             const endSnapshot = yield* snapshots.capture()
