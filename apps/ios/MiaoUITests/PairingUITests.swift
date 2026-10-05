@@ -78,7 +78,15 @@ final class PairingUITests: XCTestCase {
         app.buttons["重命名"].tap()
         let title = app.alerts.textFields.firstMatch
         title.tap()
-        if let current = title.value as? String { title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
+        // A tap may put the caret in the middle on iOS 17. Select the entire old name before replacing it.
+        title.press(forDuration: 1.2)
+        let selectAll = app.menuItems["Select All"].firstMatch
+        if selectAll.waitForExistence(timeout: 2) { selectAll.tap() }
+        else if app.buttons["Select All"].firstMatch.waitForExistence(timeout: 2) { app.buttons["Select All"].firstMatch.tap() }
+        else {
+            title.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+            if let current = title.value as? String { title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
+        }
         title.typeText("Native phone rename")
         print("Native rename input expected=\((title.value as? String) == "Native phone rename")")
         XCTAssertEqual(title.value as? String, "Native phone rename")
