@@ -250,6 +250,9 @@ export const {
     // that started earlier can skip its stale snapshot.
     const todoLiveAt = new Map<string, number>()
     const hydration = { count: 0, totalMs: 0, maxMs: 0, lastMs: 0 }
+    const diffRequests = new Map<string, AbortController>()
+    const diffLiveAt = new Map<string, number>()
+    onCleanup(() => diffRequests.forEach((request) => request.abort()))
     onCleanup(
       DiagnosticMetrics.register("tui.sync", () => ({
         hydration: { ...hydration },
@@ -362,6 +365,9 @@ export const {
       loadingOlder.delete(sessionID)
       todoLiveAt.delete(sessionID)
       lastViewed.delete(sessionID)
+      diffRequests.get(sessionID)?.abort()
+      diffRequests.delete(sessionID)
+      diffLiveAt.delete(sessionID)
     }
 
     const evictExcessSessions = () => {
@@ -853,6 +859,7 @@ export const {
           break
 
         case "session.diff":
+          diffLiveAt.set(event.properties.sessionID, performance.now())
           setStore("session_diff", event.properties.sessionID, event.properties.diff)
           break
 
@@ -1385,19 +1392,41 @@ export const {
                 }
               }),
             )
-            const [session, messages, todo, diff] = await Promise.all([
+            // A filesystem diff can take seconds. Publish the transcript without
+            // waiting for it, and discard responses superseded by live updates.
+            diffRequests.get(sessionID)?.abort()
+            const diffRequest = new AbortController()
+            diffRequests.set(sessionID, diffRequest)
+            void sdk.api.sessions
+              .diff({ sessionID }, { signal: diffRequest.signal })
+              .then((files) => {
+                if (diffRequests.get(sessionID) !== diffRequest || diffRequest.signal.aborted) return
+                if ((diffLiveAt.get(sessionID) ?? 0) >= started) return
+                setStore(
+                  "session_diff",
+                  sessionID,
+                  reconcile(
+                    files.map((file) => ({
+                      file: file.path,
+                      patch: file.patch,
+                      additions: file.additions,
+                      deletions: file.deletions,
+                      status: file.status,
+                    })),
+                    { key: "file" },
+                  ),
+                )
+              })
+              .catch((error) => {
+                if (!diffRequest.signal.aborted) console.error("Failed to refresh session diff", error)
+              })
+              .finally(() => {
+                if (diffRequests.get(sessionID) === diffRequest) diffRequests.delete(sessionID)
+              })
+            const [session, messages, todo] = await Promise.all([
               sessionPromise,
               messagesPromise,
               sdk.api.sessions.todo({ sessionID }).then((x) => ({ data: mutableResponse(x) })),
-              sdk.api.sessions.diff({ sessionID }).then((x) => ({
-                data: x.map((file) => ({
-                  file: file.path,
-                  patch: file.patch,
-                  additions: file.additions,
-                  deletions: file.deletions,
-                  status: file.status,
-                })),
-              })),
             ])
             batch(() => {
               const match = search(store.session, sessionID, (s) => s.id)
@@ -1467,7 +1496,6 @@ export const {
               // Replacing every object remounts the entire transcript on
               // each hydration, including completed text and tool output.
               setStore("message", sessionID, reconcile(infos))
-              setStore("session_diff", sessionID, reconcile(diff.data ?? [], { key: "file" }))
             })
             pendingPrompts.reconcile(
               sessionID,
