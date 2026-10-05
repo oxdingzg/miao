@@ -38,6 +38,7 @@ final class PairingUITests: XCTestCase {
         if fixture.account != nil { app.launchEnvironment["MIAO_UI_TEST_HUB_ACCOUNT"] = "1" }
         app.launch()
         if let account = fixture.account {
+            stage("account")
             XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
             app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)

@@ -332,7 +332,7 @@ export async function run() {
         tail += text
         const stages = [
           ...tail.matchAll(
-            /NativeUIStage:(launch|pairing|draft|rename|agent|model|relaunch|prompt|live|settlement|restart|done)\r?\n/g,
+            /NativeUIStage:(launch|account|pairing|draft|rename|agent|model|relaunch|prompt|live|settlement|restart|done)\r?\n/g,
           ),
         ]
         for (const match of stages) {
