@@ -19,18 +19,21 @@ const INTEGRATION_ID = Integration.ID.make("commandcode")
 const modelID = (id: string) => ModelV2.ID.make(id)
 
 // `GET /provider/v1/models` is public and plan-agnostic: it lists every model,
-// including the Max-only ones, whatever plan the key is on.
+// including the Max-only ones, whatever plan the key is on. It reports ids and
+// limits only, never capabilities.
 const live = JSON.stringify({
   data: [
     { id: "claude-opus-5-5", name: "Claude Opus 5.5", context_length: 1_000_000 },
     { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", context_length: 1_000_000 },
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", context_length: 1_000_000 },
-    // Not in the catalog yet, so it carries no plan info and must stay visible.
+    { id: "deepseek/deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", context_length: 1_000_000 },
+    // Not in the catalog yet, so it carries no plan info and no modalities.
     { id: "brand/new-model", name: "Brand New", context_length: 200_000 },
   ],
 })
 
-// The miao-owned catalog names the plan tiers that include each model.
+// The miao-owned catalog names the plan tiers that include each model, and
+// carries the input modalities the Provider API omits.
 const devCatalog = {
   commandcode: {
     id: "commandcode",
@@ -41,29 +44,25 @@ const devCatalog = {
       "claude-opus-5-5": { id: "claude-opus-5-5", plans: ["max"] },
       "claude-sonnet-5-5": { id: "claude-sonnet-5-5", plans: ["goat", "pro", "max"] },
       "deepseek/deepseek-v4-pro": { id: "deepseek/deepseek-v4-pro", plans: ["go", "goat", "pro", "max"] },
+      "deepseek/deepseek-v4.1-flash": {
+        id: "deepseek/deepseek-v4.1-flash",
+        modalities: { input: ["text", "image"], output: ["text"] },
+      },
     },
   },
 } as unknown as Record<string, ModelsDev.Provider>
 
-const modelsDevLayer = Layer.succeed(
-  ModelsDev.Service,
-  ModelsDev.Service.of({
-    get: () => Effect.succeed(devCatalog),
-    refresh: () => Effect.void,
-  }),
-)
+const modelsDev = ModelsDev.Service.of({
+  get: () => Effect.succeed(devCatalog),
+  refresh: () => Effect.void,
+})
 
 const http = HttpClient.make((request) =>
   Effect.succeed(HttpClientResponse.fromWeb(request, new Response(live, { status: 200 }))),
 )
 
 const it = testEffect(
-  Layer.fresh(
-    pluginTestLayer([
-      [LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, http)],
-      [ModelsDev.node, modelsDevLayer],
-    ]),
-  ),
+  Layer.fresh(pluginTestLayer([[LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, http)]])),
 )
 
 const seed = Effect.fn(function* () {
@@ -88,7 +87,7 @@ const seed = Effect.fn(function* () {
 const addPlugin = Effect.fn(function* () {
   const plugin = yield* PluginV2.Service
   const host = yield* PluginHost.make(plugin)
-  yield* CommandCodePlugin.effect(host)
+  yield* CommandCodePlugin.effect(host).pipe(Effect.provideService(ModelsDev.Service, modelsDev))
 })
 
 const withPlan = <A, E, R>(plan: string | undefined, self: Effect.Effect<A, E, R>) => {
@@ -125,6 +124,7 @@ describe("CommandCodePlugin", () => {
         expect(yield* available()).toEqual([
           modelID("claude-sonnet-5-5"),
           modelID("deepseek/deepseek-v4-pro"),
+          modelID("deepseek/deepseek-v4.1-flash"),
           modelID("brand/new-model"),
         ])
       }),
@@ -141,6 +141,7 @@ describe("CommandCodePlugin", () => {
           modelID("claude-opus-5-5"),
           modelID("claude-sonnet-5-5"),
           modelID("deepseek/deepseek-v4-pro"),
+          modelID("deepseek/deepseek-v4.1-flash"),
           modelID("brand/new-model"),
         ])
       }),
@@ -153,7 +154,7 @@ describe("CommandCodePlugin", () => {
       Effect.gen(function* () {
         yield* seed()
         yield* addPlugin()
-        expect(yield* available()).toHaveLength(4)
+        expect(yield* available()).toHaveLength(5)
       }),
     ),
   )
@@ -164,8 +165,28 @@ describe("CommandCodePlugin", () => {
       Effect.gen(function* () {
         yield* seed()
         yield* addPlugin()
-        expect(yield* available()).toHaveLength(4)
+        expect(yield* available()).toHaveLength(5)
       }),
     ),
+  )
+
+  it.effect("borrows the catalog's input modalities for a known model id", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      yield* seed()
+      yield* addPlugin()
+      expect(
+        (yield* catalog.model.get(PROVIDER_ID, modelID("deepseek/deepseek-v4.1-flash")))?.capabilities.input,
+      ).toEqual(["text", "image"])
+    }),
+  )
+
+  it.effect("stays text-only for an id the catalog does not carry", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      yield* seed()
+      yield* addPlugin()
+      expect((yield* catalog.model.get(PROVIDER_ID, modelID("brand/new-model")))?.capabilities.input).toEqual(["text"])
+    }),
   )
 })

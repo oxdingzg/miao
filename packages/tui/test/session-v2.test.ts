@@ -3,6 +3,7 @@ import path from "node:path"
 import type { SessionMessage } from "@miao/schema/view-models"
 import {
   isLiveSessionV2Event,
+  isSessionListV2Event,
   isV2StreamFragmentEvent,
   mergeTranscript,
   sessionContextToMessages,
@@ -256,6 +257,14 @@ test("applies stream fragments incrementally instead of re-hydrating", () => {
   expect(isV2StreamFragmentEvent("session.next.text.ended")).toBe(false)
   expect(isV2StreamFragmentEvent("session.next.tool.called")).toBe(false)
   expect(isV2StreamFragmentEvent("session.next.step.ended")).toBe(false)
+})
+
+test("classifies list-only events that must not hydrate an unopened session", () => {
+  expect(isSessionListV2Event("session.next.created")).toBe(true)
+  expect(isSessionListV2Event("session.next.info.updated")).toBe(true)
+  expect(isSessionListV2Event("session.next.text.delta")).toBe(false)
+  expect(isSessionListV2Event("session.next.step.started")).toBe(false)
+  expect(isSessionListV2Event("session.next.compaction.ended")).toBe(false)
 })
 
 test("maps prompt parts into the V2 prompt input", () => {
