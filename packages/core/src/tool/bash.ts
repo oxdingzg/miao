@@ -3,9 +3,13 @@ export * as BashTool from "./bash"
 import { existsSync } from "fs"
 import path from "path"
 import { ToolFailure } from "@miao/llm"
-import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
+import { EventV2 } from "../event"
+import { Identifier } from "../id/id"
+import { SessionEvent } from "../session/event"
+import { SessionMessage } from "../session/message"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { Location } from "../location"
@@ -667,19 +671,45 @@ const executionLayer = Layer.effect(
                 const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
                 if (Option.isNone(jobs))
                   return yield* new ToolFailure({ message: "Background jobs are not available in this runtime." })
-                const job = yield* jobs.value.start({
+                // Durable lifecycle records, when the process provides the event
+                // service: the session sees the job after a restart, and a crash
+                // mid-job is visible as a start without a finish.
+                const events = yield* Effect.serviceOption(EventV2.Service)
+                const announce = (text: string, metadata: Record<string, unknown>) =>
+                  Option.isSome(events)
+                    ? Effect.gen(function* () {
+                        yield* events.value.publish(SessionEvent.Synthetic, {
+                          sessionID: context.sessionID,
+                          messageID: SessionMessage.ID.create(),
+                          timestamp: yield* DateTime.now,
+                          text,
+                          metadata,
+                        })
+                      }).pipe(Effect.ignore)
+                    : Effect.void
+                const id = Identifier.ascending("job")
+                yield* announce(`Background job ${id} started: ${input.command}`, {
+                  backgroundJob: { id, command: input.command, status: "started" },
+                })
+                yield* jobs.value.start({
+                  id,
                   type: "bash",
                   title: input.command,
                   metadata: { sessionID: context.sessionID },
                   run: run.pipe(
                     Effect.map((result) => modelOutput(result)),
                     Effect.catchCause((cause) => Effect.succeed(`Background command failed: ${cause}`)),
+                    Effect.tap((text) =>
+                      announce(`Background job ${id} finished.\n${text}`, {
+                        backgroundJob: { id, command: input.command, status: "finished" },
+                      }),
+                    ),
                   ),
                 })
                 return {
-                  output: `Command started in the background as job ${job.id}.`,
+                  output: `Command started in the background as job ${id}.`,
                   truncated: false,
-                  jobID: job.id,
+                  jobID: id,
                 }
               }
               return yield* run

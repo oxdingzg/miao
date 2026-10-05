@@ -14,6 +14,7 @@ import { LocationMutation } from "@miao/core/location-mutation"
 import { PermissionV2 } from "@miao/core/permission"
 import { AppProcess } from "@miao/core/process"
 import { BackgroundJob } from "@miao/core/background-job"
+import { EventV2 } from "@miao/core/event"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { ShellEnvironment } from "@miao/core/shell/environment"
@@ -48,6 +49,7 @@ let result: AppProcess.RunResult = {
   stderrTruncated: false,
 }
 let runFailure: AppProcess.AppProcessError | undefined
+const published: Array<{ readonly type: string; readonly data: unknown }> = []
 // `<shell> -n -c <command>` syntax checks, kept apart from the command runs.
 const checks: Array<{ readonly shell: string; readonly args: readonly string[] }> = []
 let checkResult: AppProcess.RunResult | undefined
@@ -107,6 +109,16 @@ const config = Layer.succeed(
       ),
   }),
 )
+const eventV2 = Layer.succeed(
+  EventV2.Service,
+  {
+    publish: (definition: { type: string }, data: unknown) =>
+      Effect.sync(() => {
+        published.push({ type: definition.type, data })
+        return {} as never
+      }),
+  } as unknown as EventV2.Interface,
+)
 
 const reset = () => {
   assertions.length = 0
@@ -119,6 +131,7 @@ const reset = () => {
   afterPermission = () => Effect.void
   pluginEnv = {}
   pluginEnvInputs.length = 0
+  published.length = 0
   result = {
     command: "mock",
     exitCode: 0,
@@ -160,12 +173,13 @@ const withTool = <A, E, R>(
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(
-        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node, BackgroundJob.node]),
+        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node, BackgroundJob.node, EventV2.node]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
           [AppProcess.node, processLayer],
           [Config.node, config],
+          [EventV2.node, eventV2],
           [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
           [ShellEnvironment.node, shellEnvironment],
         ],
@@ -184,6 +198,27 @@ const it = testEffect(Layer.empty)
 const liveIf = (condition: boolean) => (condition ? it.live : it.live.skip)
 
 describe("BashTool", () => {
+  it.live("durably announces the background job lifecycle", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            yield* settleTool(registry, call({ command: "echo hi", run_in_background: true }, "call-bg-lifecycle"))
+            const deadline = Date.now() + 5_000
+            while (published.length < 2 && Date.now() < deadline) yield* Effect.sleep("10 millis")
+            const statuses = published.map(
+              (entry) =>
+                (entry.data as { metadata: { backgroundJob: { status: string } } }).metadata.backgroundJob.status,
+            )
+            expect(statuses).toEqual(["started", "finished"])
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
   it.live("starts a bash command as a background job owned by the session", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
