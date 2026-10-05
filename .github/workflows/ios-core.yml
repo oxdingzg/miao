@@ -4,6 +4,8 @@ on:
     paths:
       - apps/ios/**
       - packages/remote-control/src/**
+      - packages/miao/src/runtime/**
+      - packages/miao/test/runtime/native-app.ts
       - .github/workflows/ios-core.yml
   workflow_dispatch:
 permissions:
@@ -14,7 +16,7 @@ concurrency:
 jobs:
   crypto-interop:
     runs-on: macos-14
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: ./.github/actions/setup-bun
@@ -28,6 +30,15 @@ jobs:
           -target arm64-apple-ios17.0
           -sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
           apps/ios/MiaoCore/Sources/MiaoCore/*.swift
+      - name: Universal native app build
+        run: >-
+          sh apps/ios/scripts/build-app.sh -configuration Release
+          -sdk iphoneos -destination 'generic/platform=iOS'
+          -derivedDataPath "$RUNNER_TEMP/miao-ios-app" CODE_SIGNING_ALLOWED=NO
+      - name: iPhone UI smoke test
+        run: sh apps/ios/scripts/test-app.sh iphone -derivedDataPath "$RUNNER_TEMP/miao-ios-ui"
+      - name: iPad UI smoke test
+        run: sh apps/ios/scripts/test-app.sh ipad -derivedDataPath "$RUNNER_TEMP/miao-ios-ui"
       - name: WebCrypto and CryptoKit interoperability
         env:
           MIAO_SWIFT_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/InteropProbe"]'
@@ -40,5 +51,7 @@ jobs:
         env:
           MIAO_SWIFT_PAIRING_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/PairingProbe"]'
         run: bun apps/ios/scripts/check-pairing.ts
+      - name: Native app against a real Runtime
+        run: bun apps/ios/scripts/check-app.ts
       - name: Native Hub account and Keychain integration
         run: bun apps/ios/scripts/check-account.ts

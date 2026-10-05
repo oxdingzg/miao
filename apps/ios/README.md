@@ -32,4 +32,23 @@ If approval is lost or saving fails, pairing reports an uncertain outcome and cl
 
 `PairingProbe` is test-only. `check-pairing.ts` connects real native URLSession transport to the Hub and Agent, exercises a Unicode invitation proof and explicit local approval, checks large grant reconstruction, and verifies that a failed save cannot send RPCs. Its generated test identities never come from production Keychain storage.
 
-CI runs native core tests, the iOS platform source check, crypto interoperability, native transport and pairing integration on a macOS runner. The SwiftUI app, camera UI, durable host registry, Runtime-specific reconciliation and speech input remain subsequent implementation steps.
+`Miao.xcodeproj` contains the SwiftUI iPhone/iPad application. Its local package dependency is `MiaoCore`; no TypeScript runtime is embedded. The host registry saves the public pairing trust anchor before claiming an invitation and atomically saves the approved host and device grant. Invitations and private signing keys are never written to that registry. Removing a computer clears its local cache; revocation remains an explicit owner action on the computer.
+
+The app lists authorized projects and sessions, creates sessions in authorized directories, replays durable conversation events, sends steer or queue inputs, renames sessions, displays file changes, handles one-time permission and question replies, and interrupts the specifically observed execution. Mutating commands retain immutable operation IDs and parameters in the protected ledger. Foreground reconnection queries uncertain results; it does not resend commands. Each host shares its connection across foreground iPad windows, while drafts and timelines retain their full host/Runtime/session address.
+
+Camera scanning and explicit link entry open the pairing flow. Speech recognition requires microphone and speech permission plus an available on-device recognizer. Recognition edits the draft only; the user confirms sending. It stops when the session view closes or its scene enters background, and stops rather than overwriting a draft edited in another window. System keyboard dictation remains available when on-device recognition is unavailable.
+
+Build on an approved macOS build host:
+
+```sh
+sh apps/ios/scripts/build-app.sh -configuration Release -sdk iphoneos \
+  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
+```
+
+The script derives the marketing version from the root `package.json`. Supply signing and provisioning configuration privately for a device installation. `scripts/create-project.py` regenerates the checked-in project after source file additions.
+
+UI smoke tests run with `sh apps/ios/scripts/test-app.sh iphone` or `ipad` on the build host. They launch the actual signed simulator app, check Keychain initialization, enter an invalid invitation and verify that no host is admitted. An unsigned compilation alone does not verify Keychain access at runtime.
+
+`bun apps/ios/scripts/check-app.ts` starts an isolated real Runtime and Hub, creates a session through the authenticated local API, and runs the actual simulator app through pairing, session read/rename, draft background recovery, process restart and queued message admission. The harness verifies the resulting title and exactly one queued admission against the Runtime's durable history; a skipped UI test cannot pass that check. Set `MIAO_UI_TEST_FAMILY=ipad` for the iPad run. Test identities and cache partitions are unique per run, cleartext loopback access exists only in opted-in Debug simulator builds, and the fixture uses an unavailable model so admission testing never requires provider execution.
+
+CI runs native core tests, the iOS platform source check, an unsigned universal app build, iPhone/iPad UI smoke tests, crypto interoperability, native transport and pairing integration on a macOS runner. Physical camera, speech and device installation checks require a real device. APNs registration/delivery, fresh Runtime identity discovery and the complete cross-channel integration are still separate work; the current app does not claim those capabilities.

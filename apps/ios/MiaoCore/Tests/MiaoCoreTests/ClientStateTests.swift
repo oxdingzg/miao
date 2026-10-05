@@ -91,4 +91,24 @@ final class ClientStateTests: XCTestCase {
         let attributes = try FileManager.default.attributesOfItem(atPath: files[0].path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
+    func testLegacySessionOperationMigratesAndProjectCreationHasNoInventedSessionID() async throws {
+        let legacy = PendingOperation(scope: scope, address: address, kind: .prompt, payload: Data("hello".utf8))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(legacy)) as? [String: Any])
+        object.removeValue(forKey: "target")
+        object["address"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(address))
+        let recovered = try JSONDecoder().decode(PendingOperation.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(recovered, legacy)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try CheckpointStore(directory: directory, scope: scope)
+        let target = OperationTarget(hostID: scope.hostID, runtimeID: "runtime", projectID: "project")
+        let create = PendingOperation(scope: scope, target: target, kind: .sessionCreate, payload: Data("directory".utf8))
+        try await store.prepare(create)
+        let restarted = try CheckpointStore(directory: directory, scope: scope)
+        let pending = try await restarted.reconciliation()
+        XCTAssertEqual(pending.first?.target.projectID, "project")
+        XCTAssertNil(pending.first?.target.sessionID)
+        XCTAssertEqual(pending.first?.id, create.id)
+    }
+
 }
