@@ -55,7 +55,13 @@ export const whoami = (http: HttpClient.HttpClient, key: string) =>
       Effect.map((value) => value.user),
     )
 
-/** Fetch the live model list. API keys are per-plan, so this can 403 on Go. */
+/**
+ * Fetch the live model list. API keys are per-plan, so a key that the plan
+ * cannot use for the Provider API can 403 here even though the subscription
+ * login works. The failure is logged and an empty list returned, so a login
+ * that succeeds but exposes no models is diagnosable from the log rather than
+ * looking like an empty catalog.
+ */
 export const fetchModels = (http: HttpClient.HttpClient, key: string): Effect.Effect<ReadonlyArray<CatalogModel>> =>
   http
     .execute(
@@ -74,6 +80,12 @@ export const fetchModels = (http: HttpClient.HttpClient, key: string): Effect.Ef
           name: model.name,
           contextLength: model.context_length,
         })),
+      ),
+      Effect.onError((cause) =>
+        Effect.logWarning("commandcode.models-unavailable", {
+          cause: cause instanceof Error ? cause.message : String(cause),
+          hint: "The connected Command Code key could not list models; the subscription plan may not cover the Provider API.",
+        }),
       ),
       Effect.catch(() => Effect.succeed([])),
     )
@@ -110,7 +122,8 @@ const readBody = (request: IncomingMessage) =>
 const parseCallback = Schema.decodeUnknownSync(
   Schema.Struct({
     apiKey: Schema.String,
-    state: Schema.String,
+    // The Studio may omit `state`; the callback server accepts a missing value.
+    state: Schema.optional(Schema.String),
     userId: Schema.optional(Schema.String),
     userName: Schema.optional(Schema.String),
     keyName: Schema.optional(Schema.String),
@@ -150,24 +163,33 @@ const callbackServer = Effect.fn("CommandCode.callbackServer")(function* (state:
       readBody(request).pipe(
         Effect.flatMap((body) =>
           Effect.try({
-            try: () => parseCallback(JSON.parse(body)) as CallbackPayload & { state: string },
+            try: () => parseCallback(JSON.parse(body)) as CallbackPayload & { state?: string },
             catch: () => undefined,
           }).pipe(Effect.catch(() => Effect.succeed(undefined))),
         ),
         Effect.flatMap((payload) => {
-          if (!payload || payload.state !== state) {
+          // The browser callback carries the `state` we sent. A Studio that
+          // drops the field leaves no way to tell which loopback port reached
+          // us, so accept it for the login that opened this server. A `state`
+          // naming another server is a different browser tab and is rejected.
+          const own = payload === undefined || payload.state === undefined || payload.state === state
+          if (!payload || !own) {
             response.writeHead(403, { ...headers, "Content-Type": "application/json" })
             response.end(JSON.stringify({ success: false, error: "Invalid state token" }))
             return Effect.void
           }
           response.writeHead(200, { ...headers, "Content-Type": "application/json" })
           response.end(JSON.stringify({ success: true }))
-          return Deferred.succeed(deferred, {
-            apiKey: payload.apiKey,
-            userId: payload.userId,
-            userName: payload.userName,
-            keyName: payload.keyName,
-          })
+          Deferred.doneUnsafe(
+            deferred,
+            Effect.succeed({
+              apiKey: payload.apiKey,
+              userId: payload.userId,
+              userName: payload.userName,
+              keyName: payload.keyName,
+            }),
+          )
+          return Effect.void
         }),
       ),
     )
@@ -264,5 +286,3 @@ export const authorizeDetached = Effect.fn("CommandCode.authorizeDetached")(func
     close: () => Effect.void,
   }
 })
-
-

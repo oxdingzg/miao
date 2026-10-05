@@ -318,9 +318,49 @@ export async function run() {
       },
     )
     state.ui = ui
-    const output = new Response(ui.stdout).text()
+    const startedAt = Date.now()
+    const progress = { stage: "notStarted", at: startedAt, timeout: "none" }
+    const output = (async () => {
+      const decoder = new TextDecoder()
+      const chunks: string[] = []
+      let tail = ""
+      const reader = ui.stdout.getReader()
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        const text = decoder.decode(chunk.value, { stream: true })
+        chunks.push(text)
+        tail += text
+        const stages = [
+          ...tail.matchAll(
+            /NativeUIStage:(launch|account|pairing|draft|rename|agent|model|relaunch|prompt|live|settlement|restart|done)\r?\n/g,
+          ),
+        ]
+        for (const match of stages) {
+          progress.stage = match[1]!
+          progress.at = Date.now()
+          console.log(
+            JSON.stringify({
+              nativeUIStage: progress.stage,
+              elapsedSeconds: Math.round((progress.at - startedAt) / 1000),
+            }),
+          )
+        }
+        tail = tail.slice(tail.lastIndexOf("\n") + 1).slice(-512)
+      }
+      reader.releaseLock()
+      chunks.push(decoder.decode())
+      return chunks.join("")
+    })()
     const errors = new Response(ui.stderr).text()
-    const timeout = setTimeout(() => state.ui?.kill(), 240_000)
+    // This scenario includes pairing, two selection dialogs and three App launches.
+    // Bound each observed stage as well as the full scenario on slower CI simulators.
+    const timeout = setInterval(() => {
+      const now = Date.now()
+      if (now - startedAt < 480_000 && now - progress.at < 180_000) return
+      progress.timeout = now - startedAt >= 480_000 ? "scenario" : "stage"
+      state.ui?.kill()
+    }, 5000)
     try {
       if ((await state.ui.exited) !== 0) {
         const log = (await output) + "\n" + (await errors)
@@ -332,6 +372,9 @@ export async function run() {
         console.error(
           JSON.stringify({
             testsStarted: log.includes("Test Case '-["),
+            nativeUIStage: progress.stage,
+            timeout: progress.timeout,
+            elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
             caughtError: log.includes("caught error"),
             missingElement: log.includes("No matches found"),
             renameInputMatches: /Native rename input expected=(true|false)/.exec(log)?.[1],
@@ -423,7 +466,7 @@ export async function run() {
         "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery, live generation/settlement and process restart passed",
       )
     } finally {
-      clearTimeout(timeout)
+      clearInterval(timeout)
     }
   } finally {
     stream.finish()

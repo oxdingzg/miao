@@ -84,7 +84,7 @@ for (const item of targets) {
     define: {
       MIAO_VERSION: `'${Script.version}'`,
       MIAO_CLI_NAME: `'${binary}'`,
-      MIAO_MODELS_DEV: modelsData,
+      MIAO_MODELS_SNAPSHOT: modelsData,
       MIAO_CHANNEL: `'${Script.channel}'`,
       MIAO_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "undefined",
       // FFF_LIBC selects the fff native lib variant: "musl" or "gnu".

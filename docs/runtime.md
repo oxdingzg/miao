@@ -6,10 +6,11 @@ does not terminate other clients or running sessions. Ctrl-C in a headless run
 interrupts the observed execution, using its identity so a delayed request
 cannot interrupt a successor.
 
-The Runtime hosts the session API and IM connectors together. `/remote` uses
-the current connection and credential; `miao remote login wechat` and
-`miao remote login qq` also use that Runtime. A completed login joins its IM
-router immediately.
+The Runtime hosts the session API and the outbound Remote Control Agent.
+`/remote-control` configures a self-hosted relay and authorizes App/Web devices
+against the attached Runtime. Legacy WeChat/QQ connectors, their local session
+Router, the IM daemon and the `miao remote` command have been removed. Existing
+IM account files are left on disk but are no longer loaded or used.
 
 ```sh
 miao runtime status
@@ -17,8 +18,6 @@ miao runtime stop
 miao runtime start  # foreground; useful for service supervisors
 ```
 
-`miao remote` is also a foreground Runtime entrypoint. Existing launchd plans
-therefore keep their foreground process instead of spawning competing owners.
 `miao attach <url>` continues to connect to an explicitly selected server.
 
 Each persistent database has one OS ownership lock. All normal database
@@ -36,7 +35,7 @@ to the adjacent `.runtime.log` file. Never publish these files.
 Startup configuration remains owned by the Runtime. Changing the miao version
 or `MIAO_CONFIG_CONTENT` requires stopping that Runtime first; a new client
 cannot silently replace another session's configuration. A graceful stop
-interrupts active execution, closes IM channels and service scopes, removes
+interrupts active execution, closes Agent channels and service scopes, removes
 discovery information, then releases storage ownership. Restarting preserves
 session history but does not automatically repeat interrupted provider or tool
 work.
@@ -124,3 +123,55 @@ and existing Sessions. Approval supplies `publicKey`; revocation supplies
 `version`. Clients obtain the wire types and methods from the generated SDK's
 `server.runtime` group. Pairing UI and client scanning are separate integrations;
 the API does not require stopping the running Session.
+
+# Desktop integration over a private pipe
+
+Desktop clients can run `miao runtime access` with one JSON request on stdin,
+close stdin, and read one JSON response on stdout. This command discovers and
+attests an existing Runtime; it never starts a second Runtime. Keep stdout in
+an application-owned pipe rather than a terminal transcript or diagnostic log.
+Invitation responses contain a short-lived pairing secret. Send relay passwords
+only through stdin, never command arguments or environment variables.
+
+```json
+{ "version": 1, "method": "status" }
+```
+
+Successful responses contain `version: 1`, `ok: true`, `runtimeID`, and `data`.
+Use the returned Runtime ID on every subsequent request. An optional `storage`
+field selects the attached session's database; omitting it selects the CLI's
+normal database. Do not silently fall back to a different database or Runtime
+when a pane refers to an explicit remote server.
+
+| Method    | Additional request fields                          | Result in `data`                      |
+| --------- | -------------------------------------------------- | ------------------------------------- |
+| `status`  | Optional `runtimeID`                               | Host identity and connection status   |
+| `session` | `runtimeID`, `sessionID`                           | Session ID, project ID and title      |
+| `invite`  | `runtimeID`, `policy`                              | Pairing invitation                    |
+| `pending` | `runtimeID`                                        | Invitations and candidate device keys |
+| `approve` | `runtimeID`, `pairingID`, `publicKey`              | Approved device grant                 |
+| `reject`  | `runtimeID`, `pairingID`                           | `null`                                |
+| `devices` | `runtimeID`                                        | Device grants, including revocations  |
+| `revoke`  | `runtimeID`, `grantID`, `grantVersion`             | Revoked grant                         |
+| `setup`   | `runtimeID`, `hubURL`, `email`, `password`, `name` | Updated connection status             |
+
+`policy` has the same fields as the local invitation API. Present its scopes
+before creating an invitation, confirm the exact candidate public key before
+approval, and revoke only the version observed in `devices`. Relay setup accepts
+an HTTPS origin and stores only the host-scoped relay credential in private
+Runtime configuration; the account login is signed out after setup.
+
+Failure responses contain `ok: false` and a fixed `error` code:
+`invalidRequest`, `noRuntime`, `runtimeChanged`, `unavailable`, or `unconfirmed`.
+They do not forward provider errors, credentials, or input values. On
+`runtimeChanged`, discard pending actions and refresh the selected Runtime.
+On `unconfirmed`, a mutation may have taken effect: inspect pairing, device,
+or connection status before deciding on a new action. Never automatically
+repeat an uncertain approval, revocation, or relay setup.
+
+Input must be a single JSON object with known fields, at most 64 KiB, received
+with stdin closed within five seconds. Local API requests have a 15-second
+network deadline and reject redirects. Relay setup makes several individually
+bounded requests; the desktop caller must allow that flow to settle before
+retrying. This bridge supplies administration operations; the desktop UI is a
+separate integration.

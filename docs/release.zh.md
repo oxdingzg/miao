@@ -20,7 +20,7 @@
    - `publish`：所有平台成功后，先把 Windows 签名状态追加到 release 说明，再执行 `gh release edit --draft=false` 正式发布。
 4. **产物**：`miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`，命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
 
-上述工作流是当前维护的发布入口。每次构建通过 `packages/miao/script/generate.ts` 从 `https://models.dev/api.json` 读取模型目录，也可以用 `MODELS_DEV_API_JSON` 指定本地文件。仓库没有单独提交模型快照的工作流；运行时会独立刷新缓存中的模型目录。
+上述工作流是当前维护的发布入口。每次构建通过 `packages/miao/script/generate.ts` 从 miao 自有目录 `https://mtty.dev/models/api.json` 读取模型目录，失败时回退到 `https://models.dev/api.json`，也可以用 `MODELS_DEV_API_JSON` 指定本地文件，或用 `MIAO_MODELS_URL` 固定单一源。仓库没有单独提交模型快照的工作流；运行时会独立刷新缓存中的模型目录，并用源站的 ETag 做条件请求，内容未变则不重新下载。
 
 目前 Windows 二进制尚未签名。`publish` 步骤会在下载页面记录当前状态。
 

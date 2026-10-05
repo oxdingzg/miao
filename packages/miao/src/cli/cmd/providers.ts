@@ -4,7 +4,7 @@ import { cmd } from "./cmd"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 
 import { map, pipe, sortBy, values } from "remeda"
 import path from "path"
@@ -253,7 +253,7 @@ export const ProvidersListCommand = effectCmd({
   instance: false,
   handler: Effect.fn("Cli.providers.list")(function* (_args) {
     const authSvc = yield* Auth.Service
-    const modelsDev = yield* ModelsDev.Service
+    const modelsCatalog = yield* ModelsCatalog.Service
 
     UI.empty()
     const authPath = path.join(Global.Path.data, "auth.json")
@@ -261,7 +261,7 @@ export const ProvidersListCommand = effectCmd({
     const displayPath = authPath.startsWith(homedir) ? authPath.replace(homedir, "~") : authPath
     yield* Prompt.intro(`Credentials ${UI.Style.TEXT_DIM}${displayPath}`)
     const results = Object.entries(yield* Effect.orDie(authSvc.all()))
-    const database = yield* modelsDev.get()
+    const database = yield* modelsCatalog.get()
 
     for (const [providerID, result] of results) {
       const name = database[providerID]?.name || providerID
@@ -354,15 +354,15 @@ export const ProvidersLoginCommand = effectCmd({
 
     const cfgSvc = yield* Config.Service
     const pluginSvc = yield* Plugin.Service
-    const modelsDev = yield* ModelsDev.Service
-    yield* Effect.ignore(modelsDev.refresh(true))
+    const modelsCatalog = yield* ModelsCatalog.Service
+    yield* Effect.ignore(modelsCatalog.refresh(true))
 
     const config = yield* cfgSvc.get()
 
     const disabled = new Set(config.disabled_providers ?? [])
     const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
 
-    const allProviders = yield* modelsDev.get()
+    const allProviders = yield* modelsCatalog.get()
     const providers: Record<string, (typeof allProviders)[string]> = {}
     for (const [key, value] of Object.entries(allProviders)) {
       if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) providers[key] = value
@@ -507,7 +507,7 @@ export const ProvidersLogoutCommand = effectCmd({
   instance: false,
   handler: Effect.fn("Cli.providers.logout")(function* (args) {
     const authSvc = yield* Auth.Service
-    const modelsDev = yield* ModelsDev.Service
+    const modelsCatalog = yield* ModelsCatalog.Service
 
     UI.empty()
     const credentials: Array<[string, Auth.Info]> = Object.entries(yield* Effect.orDie(authSvc.all()))
@@ -516,7 +516,7 @@ export const ProvidersLogoutCommand = effectCmd({
       yield* Prompt.log.error("No credentials found")
       return
     }
-    const database = yield* modelsDev.get()
+    const database = yield* modelsCatalog.get()
     const options = credentials.map(([key, value]) => ({
       label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
       value: key,

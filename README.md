@@ -21,12 +21,12 @@ miao focuses on the engineering around the model: **context efficiency, durable 
 
 The terminal and browser captures below use the same **illustrative session**, imported into the real application without a model request. Captured on 2026-10-04 with miao v0.1.0; the opt-in mini interface is from the current v0.1.1 development build and uses its built-in demo mode.
 
-| Choose your provider | Review in the browser |
-| --- | --- |
+| Choose your provider                                                                             | Review in the browser                                                                                             |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | ![Browsing available services in the provider picker](docs/images/miao-providers.gif?v=20261004) | ![Browser workspace with an expanded code diff and a draft follow-up prompt](docs/images/miao-web.png?v=20261004) |
 
-| Compact interactive mode · development preview | Review before allowing an edit · development preview |
-| --- | --- |
+| Compact interactive mode · development preview                                                                  | Review before allowing an edit · development preview                                                                                        |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | ![Mini demo with task progress, an edit diff and a multi-select question](docs/images/miao-mini.gif?v=20261004) | ![Mini edit-permission prompt showing the diff and Allow once, Allow always and Reject choices](docs/images/miao-permission.png?v=20261004) |
 
 More short, controllable demos: **[miao on mtty.dev](https://mtty.dev/miao#screens)**.
@@ -115,32 +115,9 @@ The V2 autonomous loop is opt-in. It continues while todos remain open, with ite
 
 Place this in `.miao/miao.jsonc` for a project or `~/.config/miao/miao.jsonc` globally. These settings are optional; see the [configuration guide](docs/guide.en.md#4-configuration) before tuning them.
 
-## Drive sessions from WeChat or QQ (experimental)
+## Remote Control
 
-`miao remote` runs the miao server on `127.0.0.1` together with your IM channels (WeChat iLink ClawBot, a QQ bot), so you can list sessions, start one, send prompts, approve tool calls, and interrupt from your phone. Only the person who scanned the login code is heard, and only directories listed in `remote.projects` can be driven.
-
-```sh
-miao remote login wechat   # scan the QR code with WeChat
-miao remote login qq       # scan with mobile QQ, create a dedicated bot, tap "connect to a third-party platform"
-miao remote                # foreground; open the same sessions on the desktop with: miao attach http://127.0.0.1:4097
-miao remote install        # writes a launchd agent and prints the launchctl command to load it
-miao remote status
-```
-
-```jsonc
-{
-  "remote": {
-    "port": 4097,
-    "projects": { "miao": "~/workspace/code/github/miao" },
-    "wechat": { "push_budget_per_day": 4 },
-    "qq": { "markdown": true },
-  },
-}
-```
-
-In the TUI, `/remote` shows the daemon and every connected account, logs in new ones (the QR code is drawn in the dialog), sends a test message, and disconnects. **The first account can be set up entirely from `/remote`, without the CLI**: when no daemon runs, pressing enter on a connector logs in on this machine (the credentials go to the same `remote-auth.json` the daemon reads), then "start daemon (launchd)" or "start once (background)" shows the exact `launchctl` or launch command and runs it only after you confirm; the dialog switches to the daemon's status once it answers. A running daemon can be stopped from the same dialog, also after confirming. It finds the daemon on `remote.port`. `miao remote` starts even with no account, and accounts logged in later go live at once; if `miao remote login` finds a running daemon it logs in through it, so no restart is needed.
-
-In the IM app send `/help` for commands (`/list`, `/use N`, `/new <project> [prompt]`, `#N message`, `/stop`, `/r`, `/status`). Approval asks arrive as `y7` / `a7` / `n7` codes. WeChat only accepts replies for about two minutes after your last message and throttles proactive messages, so results that finish later are held until you next write (or send `/r`). QQ replies to your message for a few minutes and then switches to proactive messages, so results arrive on time unless you turned proactive messages off for the bot. Tencent neither permits nor forbids third-party ClawBot clients; see [specs/remote-im.md](specs/remote-im.md) for the limits and risks. Other IM apps plug in as connectors listed in `remote.connectors`.
+Use `/remote-control` in the TUI to configure a self-hosted relay and pair or revoke App/Web devices. The legacy WeChat/QQ connectors and local IM session Router have been removed. See [Runtime behavior](docs/runtime.md) and [relay setup](packages/remote-control/README.md).
 
 ## Performance work you can inspect
 
@@ -183,11 +160,11 @@ miao is pre-1.0. The V1 session runtime and its legacy `/session/*` routes have 
 | Capability                                                                     | Availability                                                          |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | V2 sessions, prompt admission, context epochs, project-local session messaging | Implemented                                                           |
-| Autonomous continuation, cost budgets, pruning and compaction tuning           | Opt-in; behavior varies by setting                                   |
-| Code Mode (`MIAO_EXPERIMENTAL_CODE_MODE=1`)                                    | Experimental                                                         |
+| Autonomous continuation, cost budgets, pruning and compaction tuning           | Opt-in; behavior varies by setting                                    |
+| Code Mode (`MIAO_EXPERIMENTAL_CODE_MODE=1`)                                    | Experimental                                                          |
 | OS sandbox for bash                                                            | V2; opt-in through `sandbox` config or `MIAO_SANDBOX=1` (macOS/Linux) |
-| Legacy database migration (`miao db backfill` / `compact` / `restore`)         | Retained for databases written before V2                             |
-| Generated clients and embedded Effect host                                     | Private workspace packages; API still evolving                       |
+| Legacy database migration (`miao db backfill` / `compact` / `restore`)         | Retained for databases written before V2                              |
+| Generated clients and embedded Effect host                                     | Private workspace packages; API still evolving                        |
 
 ### From V1 to V2
 
@@ -219,11 +196,11 @@ miao runs locally without a miao or OpenCode account. Connect your chosen model 
 - MIAO has no Console account or organization support. `MIAO_CONSOLE_URL` only exposes Console OAuth for the OpenCode provider integration; a custom server can specify `MIAO_CONSOLE_CLIENT_ID`.
 - OpenCode Zen / Go remain optional third-party model providers, with their actual OpenCode service names and endpoints.
 
-| Project | What it is | Links |
-|---|---|---|
-| **miao** (this repository) | AI coding agent for the terminal | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
-| **mtty** | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/mtty](https://github.com/oxdingzg/mtty) |
-| **mtty.dev** | The website and documentation for both | [mtty.dev](https://mtty.dev) |
+| Project                    | What it is                                                                                                                         | Links                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **miao** (this repository) | AI coding agent for the terminal                                                                                                   | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **mtty**                   | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/mtty](https://github.com/oxdingzg/mtty)                                      |
+| **mtty.dev**               | The website and documentation for both                                                                                             | [mtty.dev](https://mtty.dev)                                                                                                    |
 
 miao and mtty are separate projects, and each works without the other. Run miao inside an mtty pane and it reports its state (working, waiting for you, done, error) to mtty, which badges the pane, notifies you when the agent needs you, and sends your queued prompt when it goes idle. Outside mtty the report does nothing. `miaotty` was a personal macOS prototype of that terminal and has been replaced by mtty.
 

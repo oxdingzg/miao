@@ -1,11 +1,11 @@
-import type { ModelsDev } from "./models-dev"
+import type { ModelsCatalog } from "./models-catalog"
 
 export * as ModelsOverlay from "./models-overlay"
 
 /**
- * Catalog entries miao maintains itself, merged over the fetched models.dev
+ * Catalog entries miao maintains itself, merged over the fetched the catalog
  * snapshot (and over any `MIAO_MODELS_PATH`). This is the fallback for
- * providers that models.dev does not list yet, so a provider can ship without
+ * providers that the catalog does not list yet, so a provider can ship without
  * waiting on an upstream catalog change.
  *
  * `commandcode` is backed by the CLI subscription endpoint rather than the
@@ -14,7 +14,7 @@ export * as ModelsOverlay from "./models-overlay"
  * discovered at runtime (see `plugin/provider/commandcode.ts`); only the
  * provider identity and credential environment names live here.
  */
-export const providers: Record<string, ModelsDev.Provider> = {
+export const providers: Record<string, ModelsCatalog.Provider> = {
   commandcode: {
     id: "commandcode",
     name: "Command Code",
@@ -25,7 +25,7 @@ export const providers: Record<string, ModelsDev.Provider> = {
 }
 
 /** Merge the overlay over a catalog, letting overlay provider fields win. */
-export const merge = (catalog: Record<string, ModelsDev.Provider>): Record<string, ModelsDev.Provider> => {
+export const merge = (catalog: Record<string, ModelsCatalog.Provider>): Record<string, ModelsCatalog.Provider> => {
   const result = { ...catalog }
   for (const [id, provider] of Object.entries(providers)) {
     const existing = result[id]
