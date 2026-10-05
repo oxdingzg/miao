@@ -24,6 +24,7 @@ import { ProjectV2 } from "@miao/core/project"
 import { ProjectCopy } from "@miao/core/project/copy"
 import { PtyTicket } from "@miao/core/pty/ticket"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
+import { BackgroundJob } from "@miao/core/background-job"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
@@ -111,6 +112,7 @@ const app = LayerNode.group([
   WorkspaceLive.node,
   httpClient,
   EventV2.node,
+  BackgroundJob.node,
   ProjectV2.node,
   ProjectCopy.node,
   PtyTicket.node,
