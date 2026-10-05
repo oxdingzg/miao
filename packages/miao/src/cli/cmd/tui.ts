@@ -243,6 +243,7 @@ export const TuiThreadCommand = cmd({
             pluginHost: createLegacyTuiPluginHost(),
             directory: cwd,
             headers,
+            runtimeNotice: RuntimeConnect.mismatch(runtime),
             args: {
               continue: args.continue,
               sessionID: args.session,

@@ -2,6 +2,7 @@ export * as RuntimeConnect from "./connect"
 
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { InstallationVersion } from "@miao/core/installation/version"
 import { createHash } from "node:crypto"
 import { open } from "node:fs/promises"
 import { spawn } from "node:child_process"
@@ -95,6 +96,24 @@ export async function ensure(filename: string): Promise<RuntimeDiscovery.Record>
   throw new Error("The local Runtime did not become ready; inspect its private runtime log", {
     cause: state.lastError,
   })
+}
+
+/**
+ * A running Runtime executes new Session work with the build it was started
+ * from, which may not be the installed build. Returns a user-facing warning
+ * when the owner's release differs from this client's, or undefined when they
+ * match.
+ */
+export function mismatch(record: RuntimeDiscovery.Record): string | undefined {
+  if (record.version === InstallationVersion) return undefined
+  return `The local Runtime is ${record.version}, but this client is ${InstallationVersion}. New prompts would run ${record.version} execution code. Run "miao runtime restart" to use ${InstallationVersion}.`
+}
+
+/** Stop the running owner (if any) and start this client's release in its place. */
+export async function restart(filename: string): Promise<RuntimeDiscovery.Record> {
+  const record = await current(filename)
+  if (record) await stop(filename, record)
+  return ensure(filename)
 }
 
 async function launch(storage: string) {
