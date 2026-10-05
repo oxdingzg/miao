@@ -39,6 +39,8 @@ let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
 let approveTimer: ReturnType<typeof setInterval> | undefined
 let approvals = Promise.resolve()
 let prompted = 0
+let creationCalls = 0
+const creationReceipts = new Map<string, unknown>()
 let permissionReplied = false
 let questionReplied = false
 let interrupted = false
@@ -86,7 +88,15 @@ try {
     allowLoopbackHTTP: true,
     projectForSession: async () => "project_fixture",
     methods: {
-      "project.list": async () => ({ data: [{ id: "project_fixture", name: "Browser project", directories: [] }] }),
+      "project.list": async () => ({
+        data: [
+          {
+            id: "project_fixture",
+            name: "Browser project",
+            directories: [{ id: "a".repeat(64), name: "Fixture folder" }],
+          },
+        ],
+      }),
       "session.list": async (request) => {
         const cursor =
           typeof request.payload === "object" && request.payload && "cursor" in request.payload
@@ -226,14 +236,46 @@ try {
         interrupted = true
         return { status: "completed" }
       },
-      "operation.get": async () => ({ status: "accepted", result: {} }),
+      "session.create": async (request) => {
+        if (!request.operationID || request.projectID !== "project_fixture") throw new Error("Invalid creation scope")
+        creationCalls++
+        const result = {
+          status: "completed",
+          session: { id: "ses_created_fixture", title: "Created fixture", projectID: "project_fixture" },
+        }
+        creationReceipts.set(request.operationID, {
+          status: "completed",
+          result,
+          sessionID: result.session.id,
+          operationID: request.operationID,
+        })
+        await Bun.sleep(1500)
+        return result
+      },
+      "operation.get": async (request) => {
+        const id =
+          typeof request.payload === "object" && request.payload && "operationID" in request.payload
+            ? request.payload.operationID
+            : undefined
+        return typeof id === "string" && creationReceipts.has(id)
+          ? creationReceipts.get(id)
+          : { status: "accepted", result: {} }
+      },
     },
   })
   const deadline = Date.now() + 10000
   while (!agent.connected() && Date.now() < deadline) await Bun.sleep(20)
   if (!agent.connected()) throw new Error("Agent did not connect")
   const invitation = pairing.issue({
-    permissions: ["read", "prompt", "session.rename", "interrupt", "permission.reply", "question.reply"],
+    permissions: [
+      "read",
+      "prompt",
+      "session.rename",
+      "interrupt",
+      "permission.reply",
+      "question.reply",
+      "session.create",
+    ],
     projectIDs: ["project_fixture"],
     sessionIDs: [],
     expiresAt: Date.now() + 120000,
@@ -314,6 +356,19 @@ try {
   await page.getByRole("button", { name: "Renamed browser workspace", exact: true }).click()
   await page.waitForFunction(() => (document.getElementById("draft") as HTMLTextAreaElement).value === "尚未发送的草稿")
   if (prompted !== 1) throw new Error("Reconnect replayed a prompt")
+  stage = "creation-recovery"
+  await page.getByRole("button", { name: "新建会话", exact: true }).click()
+  const creationDeadline = Date.now() + 5000
+  while (!creationCalls && Date.now() < creationDeadline) await Bun.sleep(20)
+  if (creationCalls !== 1) throw new Error("Creation request was not sent exactly once")
+  await page.reload()
+  await page.getByRole("button", { name: "Studio computer" }).click()
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll("button")).some(
+      (button) => button.textContent === "新建会话" && !button.disabled,
+    ),
+  )
+  if (creationCalls !== 1) throw new Error("Lost creation response caused a replay")
   if (process.env.MIAO_WEB_SCREENSHOT) await page.screenshot({ path: process.env.MIAO_WEB_SCREENSHOT, fullPage: true })
   stage = "logout"
   await page.getByRole("button", { name: "退出账号", exact: true }).click()

@@ -202,13 +202,19 @@ async function connect(host: Host) {
         connected,
         typeof project.name === "string" && project.name ? project.name : "项目会话",
         project.id,
+        project.directories,
       )
       if (connected !== rpc) return
     }
   }
   if (!sessions.childNodes.length) sessions.textContent = "没有已授权的会话。请在电脑调整设备授权。"
 }
-async function sessionGroup(connection: ReturnType<typeof RemoteRPC.make>, label: string, projectID?: string) {
+async function sessionGroup(
+  connection: ReturnType<typeof RemoteRPC.make>,
+  label: string,
+  projectID?: string,
+  directories?: unknown,
+) {
   const group = document.createElement("section")
   const heading = document.createElement("h3")
   heading.textContent = label
@@ -282,6 +288,123 @@ async function sessionGroup(connection: ReturnType<typeof RemoteRPC.make>, label
       await load(nextCursor, page + 1)
     })
   group.append(heading, entries, previous, next)
+  if (projectID && grant?.permissions.includes("session.create")) {
+    if (!Array.isArray(directories) || directories.length > 256) throw new Error("Invalid project directories")
+    const directory = document.createElement("select")
+    directory.setAttribute("aria-label", label + " 会话目录")
+    for (const entry of directories) {
+      if (
+        !record(entry) ||
+        typeof entry.id !== "string" ||
+        !/^[a-f0-9]{64}$/.test(entry.id) ||
+        typeof entry.name !== "string"
+      )
+        throw new Error("Invalid project directory")
+      const option = document.createElement("option")
+      option.value = entry.id
+      option.textContent = entry.name
+      directory.append(option)
+    }
+    const create = document.createElement("button")
+    create.textContent = "新建会话"
+    create.className = "quiet"
+    create.disabled = !directory.options.length
+    const partitionFor = (directoryID: string): BrowserCheckpoint.Scope => {
+      const accountID = account.session()?.accountID
+      const host = selected
+      const approved = grant
+      if (!accountID || !host?.runtimeID || !approved || connection !== rpc) throw new Error("Connection changed")
+      return {
+        hubURL: location.origin,
+        accountID,
+        devicePublicKey: identity.publicKey,
+        hostID: host.hostID,
+        runtimeID: host.runtimeID,
+        grantID: approved.id,
+        grantVersion: approved.version,
+        sessionID: "create_" + directoryID,
+      }
+    }
+    const verify = async () => {
+      create.disabled = true
+      if (!directory.value || connection !== rpc) return false
+      const verifiedDirectory = directory.value
+      const partition = partitionFor(verifiedDirectory)
+      for (const operation of await cache.operations(partition)) {
+        if (operation.method !== "session.create") throw new Error("Invalid creation record")
+        // Another tab may still claim a prepared operation. Reading its ledger must not cancel it.
+        if (operation.status === "prepared") continue
+        if (!["awaitingConfirmation", "outcomeUnknown"].includes(operation.status)) continue
+        const receipt = await connection.request("operation.get", { projectID, payload: { operationID: operation.id } })
+        if (connection !== rpc || directory.value !== verifiedDirectory) return false
+        if (!record(receipt) || !["completed", "rejected"].includes(String(receipt.status))) {
+          report("上次创建结果尚未确认。请在电脑核对，避免重复创建。")
+          return false
+        }
+        await cache.transitionOperation(
+          partition,
+          operation.id,
+          operation.revision,
+          receipt.status === "completed" ? "completed" : "rejected",
+          JSON.stringify(receipt),
+        )
+      }
+      if (connection !== rpc || directory.value !== verifiedDirectory) return false
+      create.disabled = false
+      return true
+    }
+    directory.onchange = () =>
+      run(async () => {
+        await verify()
+      })
+    create.onclick = () =>
+      run(async () => {
+        const accountID = account.session()?.accountID
+        const host = selected
+        const approved = grant
+        if (create.disabled || connection !== rpc || !accountID || !host?.runtimeID || !approved) return
+        create.disabled = true
+        const directoryID = directory.value
+        const partition = partitionFor(directoryID)
+        const prepared = await cache.prepareOperation(partition, {
+          id: crypto.randomUUID(),
+          method: "session.create",
+          payload: JSON.stringify({ projectID, directoryID }),
+        })
+        const claimed = await cache.transitionOperation(
+          partition,
+          prepared.id,
+          prepared.revision,
+          "awaitingConfirmation",
+        )
+        if (connection !== rpc) {
+          await cache.transitionOperation(partition, prepared.id, claimed.revision, "rejected")
+          return
+        }
+        const result = await connection
+          .request("session.create", { projectID, operationID: prepared.id, payload: { directoryID } })
+          .catch((error: unknown) => error)
+        if (
+          !record(result) ||
+          result.status !== "completed" ||
+          !record(result.session) ||
+          typeof result.session.id !== "string" ||
+          typeof result.session.title !== "string" ||
+          result.session.projectID !== projectID
+        ) {
+          await cache.transitionOperation(partition, prepared.id, claimed.revision, "outcomeUnknown")
+          if (connection === rpc) report("创建结果尚未确认。请在电脑核对，避免重复创建。")
+          return
+        }
+        await cache.transitionOperation(partition, prepared.id, claimed.revision, "completed", JSON.stringify(result))
+        if (connection !== rpc) return
+        create.disabled = false
+        await load(undefined, 0)
+        await openSession(result.session.id, result.session.title)
+      })
+    group.append(directory, create)
+    await verify()
+  }
   sessions.append(group)
   await load(undefined, 0)
 }

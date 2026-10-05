@@ -170,7 +170,7 @@ try {
       })
   }
   const invitation = await request("/api/runtime/control/invitation", {
-    permissions: ["read", "prompt", "session.rename"],
+    permissions: ["read", "prompt", "session.rename", ...(projectScope ? ["session.create"] : [])],
     sessionIDs: projectScope ? [] : [sessionID],
     projectIDs: projectScope ? [created.data.projectID] : [],
     expiresAt: Date.now() + 600000,
@@ -269,6 +269,37 @@ try {
   await page.waitForFunction(
     () => (document.getElementById("draft") as HTMLTextAreaElement).value === "真实 Runtime 草稿",
   )
+  if (projectScope) {
+    stage = "creation"
+    const beforeList = await request(`/api/session?project=${created.data.projectID}&limit=100`)
+    await page.getByRole("button", { name: "新建会话", exact: true }).click()
+    await page.waitForFunction(
+      () => document.getElementById("session-title")?.textContent !== "Renamed Runtime workspace",
+    )
+    const list = await request(`/api/session?project=${created.data.projectID}&limit=100`)
+    if (
+      !object(beforeList) ||
+      !Array.isArray(beforeList.data) ||
+      !object(list) ||
+      !Array.isArray(list.data) ||
+      !list.data.some(
+        (session: unknown) => object(session) && typeof session.id === "string" && session.id.startsWith("ses_remote_"),
+      )
+    )
+      throw new Error("Runtime creation did not persist")
+    await page.reload()
+    await page.getByRole("button", { name: "Runtime computer" }).click()
+    await page.getByRole("button", { name: "新建会话", exact: true }).waitFor()
+    const restoredList = await request(`/api/session?project=${created.data.projectID}&limit=100`)
+    if (
+      !object(restoredList) ||
+      !Array.isArray(restoredList.data) ||
+      restoredList.data.filter(
+        (session: unknown) => object(session) && typeof session.id === "string" && session.id.startsWith("ses_remote_"),
+      ).length !== 1
+    )
+      throw new Error("Reconnect recreated the session")
+  }
   const after = await request(`/api/session/${sessionID}/history?after=0&limit=100`)
   const admissions = (value: unknown) =>
     object(value) && Array.isArray(value.data)
