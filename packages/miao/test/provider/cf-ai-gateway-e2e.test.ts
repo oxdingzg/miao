@@ -232,7 +232,7 @@ describe("cf-ai-gateway end-to-end (regression: #24432)", () => {
   })
 
   test("variants() output for openai/gpt-5.4 lands xhigh on the wire", async () => {
-    // fromModelsDevModel resolves the native npm before computing variants, so
+    // fromModelsCatalogModel resolves the native npm before computing variants, so
     // OpenAI models get full Responses-flavored payloads (summary + encrypted
     // reasoning include for stateless multi-turn reasoning).
     const variants = ProviderTransform.variants(cfModel("openai/gpt-5.4"))

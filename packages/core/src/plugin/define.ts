@@ -16,7 +16,7 @@ import type { FSUtil } from "../fs-util"
 import type { Global } from "../global"
 import type { Integration } from "../integration"
 import type { Location } from "../location"
-import type { ModelsDev } from "../models-dev"
+import type { ModelsCatalog } from "../models-catalog"
 import type { Npm } from "../npm"
 import type { Reference } from "../reference"
 import type { SkillV2 } from "../skill"
@@ -33,7 +33,7 @@ export type Requirements =
   | HttpClient.HttpClient
   | Integration.Service
   | Location.Service
-  | ModelsDev.Service
+  | ModelsCatalog.Service
   | Npm.Service
   | Reference.Service
   | SkillV2.Service

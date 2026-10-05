@@ -3,7 +3,7 @@ import { define } from "../define"
 import { ProviderV2 } from "../../provider"
 
 function resolveProject(options: Record<string, any>) {
-  // models.dev advertises GOOGLE_VERTEX_PROJECT for Vertex, while Google SDKs
+  // the catalog advertises GOOGLE_VERTEX_PROJECT for Vertex, while Google SDKs
   // and ADC examples commonly use the broader Google Cloud project aliases.
   return (
     options.project ??

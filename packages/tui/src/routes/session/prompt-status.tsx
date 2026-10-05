@@ -1,23 +1,20 @@
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import type { PendingPrompt } from "../../context/pending-prompts"
 import { useTheme } from "../../context/theme"
+import { useSecond } from "../../component/spinner"
 import { Locale } from "../../util/locale"
 
 export function PromptStatus(props: { prompt: PendingPrompt }) {
   const theme = useTheme()
-  const [elapsed, setElapsed] = createSignal(0)
   // A steer is promoted at a turn boundary, so a turn running a long tool
   // bounds the wait rather than the prompt itself. A static "waiting" line
   // reads as progress; the clock is what lets the user tell waiting from stuck.
-  const admitted = createMemo(() => props.prompt.state === "admitted")
-  createEffect(() => {
-    if (!admitted()) return
-    const read = () => Math.max(0, Date.now() - props.prompt.info.time.created)
-    setElapsed(read())
-    const timer = setInterval(() => setElapsed(read()), 1000)
-    onCleanup(() => clearInterval(timer))
+  const seconds = useSecond()
+  const waited = createMemo(() => {
+    seconds()
+    const elapsed = Math.max(0, Date.now() - props.prompt.info.time.created)
+    return elapsed >= 1000 ? ` · ${Locale.duration(elapsed)}` : ""
   })
-  const waited = createMemo(() => (elapsed() >= 1000 ? ` · ${Locale.duration(elapsed())}` : ""))
   return (
     <box paddingTop={1}>
       <text fg={props.prompt.state === "failed" ? theme.theme.error : theme.theme.textMuted}>

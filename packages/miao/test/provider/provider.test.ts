@@ -4,7 +4,7 @@ import path from "path"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { Effect, Layer } from "effect"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { FSUtil } from "@miao/core/fs-util"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { Global } from "@miao/core/global"
@@ -68,7 +68,7 @@ const providerLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       Config.node,
       Auth.node,
       Plugin.node,
-      ModelsDev.node,
+      ModelsCatalog.node,
       RuntimeFlags.node,
     ]),
     [[RuntimeFlags.node, RuntimeFlags.layer(flags)]],
@@ -1457,15 +1457,15 @@ test("mode options and cost are derived from the base model", () => {
         },
       },
     },
-  } as unknown as ModelsDev.Provider
+  } as unknown as ModelsCatalog.Provider
 
-  const model = Provider.fromModelsDevProvider(provider).models["gpt-5.6-sol-fast"]
+  const model = Provider.fromModelsCatalogProvider(provider).models["gpt-5.6-sol-fast"]
   expect(model.cost.input).toEqual(5)
   expect(model.cost.output).toEqual(30)
   expect(model.cost.cache.read).toEqual(0.5)
   expect(model.cost.cache.write).toEqual(0)
   expect(model.options["serviceTier"]).toEqual("priority")
-  const pro = Provider.fromModelsDevProvider(provider).models["gpt-5.6-sol-pro"]
+  const pro = Provider.fromModelsCatalogProvider(provider).models["gpt-5.6-sol-pro"]
   expect(pro.api.id).toEqual("gpt-5.6-sol")
   expect(pro.options).toEqual({ reasoningMode: "pro", serviceTier: "priority" })
   expect(model.cost.experimentalOver200K).toEqual({
@@ -1490,9 +1490,9 @@ test("models.dev normalization fills required response fields", () => {
         limit: { context: 1_050_000, input: 922_000, output: 128_000 },
       },
     },
-  } as unknown as ModelsDev.Provider
+  } as unknown as ModelsCatalog.Provider
 
-  const model = Provider.fromModelsDevProvider(provider).models["gpt-5.4"]
+  const model = Provider.fromModelsCatalogProvider(provider).models["gpt-5.4"]
   expect(model.api.url).toBe("")
   expect(model.capabilities.temperature).toBe(false)
   expect(model.capabilities.reasoning).toBe(false)
@@ -1548,9 +1548,9 @@ test("models.dev reasoning options replace generated variants and unsupported to
         limit: { context: 1_048_576, output: 131_072 },
       },
     },
-  } as unknown as ModelsDev.Provider
+  } as unknown as ModelsCatalog.Provider
 
-  const models = Provider.fromModelsDevProvider(provider).models
+  const models = Provider.fromModelsCatalogProvider(provider).models
   expect(models.explicit.variants).toEqual({
     low: {
       reasoningEffort: "low",
@@ -1582,9 +1582,9 @@ test("MERGE Gateway exposes declared effort variants without model-specific hand
         limit: { context: 128_000, output: 64_000 },
       },
     },
-  } as unknown as ModelsDev.Provider
+  } as unknown as ModelsCatalog.Provider
 
-  expect(Provider.fromModelsDevProvider(provider).models["openai/gpt-5.6-sol"].variants).toEqual({
+  expect(Provider.fromModelsCatalogProvider(provider).models["openai/gpt-5.6-sol"].variants).toEqual({
     none: { reasoningEffort: "none" },
     low: { reasoningEffort: "low" },
     medium: { reasoningEffort: "medium" },
@@ -1595,7 +1595,7 @@ test("MERGE Gateway exposes declared effort variants without model-specific hand
 })
 
 test("public provider info omits invalid models", () => {
-  const provider = Provider.fromModelsDevProvider({
+  const provider = Provider.fromModelsCatalogProvider({
     id: "test",
     name: "Test",
     env: [],
@@ -1607,7 +1607,7 @@ test("public provider info omits invalid models", () => {
         limit: { context: 128_000, output: 16_000 },
       },
     },
-  } as unknown as ModelsDev.Provider)
+  } as unknown as ModelsCatalog.Provider)
   provider.models.invalid = {
     ...provider.models.valid,
     id: ModelV2.ID.make("invalid"),

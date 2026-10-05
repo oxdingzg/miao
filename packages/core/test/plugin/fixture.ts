@@ -11,6 +11,7 @@ import { FileSystem } from "@miao/core/filesystem"
 import { FSUtil } from "@miao/core/fs-util"
 import { Integration } from "@miao/core/integration"
 import { Location } from "@miao/core/location"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { Npm } from "@miao/core/npm"
 import { PluginV2 } from "@miao/core/plugin"
 import { Reference } from "@miao/core/reference"
@@ -47,6 +48,7 @@ export const pluginTestLayer = (replacements: LayerNode.Replacements = []) =>
       Reference.node,
       SkillV2.node,
       ToolPlugins.node,
+      ModelsCatalog.node,
     ]),
     [[Location.node, tempLocationLayer], [Npm.node, npmLayer], ...replacements],
   )

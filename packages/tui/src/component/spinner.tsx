@@ -32,6 +32,30 @@ export function useAnimationFrame(): Accessor<number> {
   return () => tick() - start
 }
 
+const SECOND_INTERVAL = 1000
+const [second, setSecond] = createSignal(0)
+let secondSubscribers = 0
+let secondTimer: ReturnType<typeof setInterval> | undefined
+
+/**
+ * Seconds elapsed on a shared one-second clock. Elapsed-time labels (a running
+ * tool, a waiting prompt) used to each own an interval; one shared clock keeps
+ * any number of them at a single wakeup per second, for the same reason the
+ * animation clock is shared.
+ */
+export function useSecond(): Accessor<number> {
+  secondSubscribers++
+  if (!secondTimer) secondTimer = setInterval(() => setSecond((value) => value + 1), SECOND_INTERVAL)
+  onCleanup(() => {
+    secondSubscribers--
+    if (secondSubscribers > 0 || !secondTimer) return
+    clearInterval(secondTimer)
+    secondTimer = undefined
+  })
+  const start = second()
+  return () => second() - start
+}
+
 export function Spinner(props: { children?: JSX.Element; color?: RGBA }) {
   const { theme } = useTheme()
   const kv = useKV()

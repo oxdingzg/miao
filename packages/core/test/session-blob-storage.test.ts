@@ -58,7 +58,9 @@ describe("SessionBlobStorage", () => {
     withBlob((blob) =>
       Effect.gen(function* () {
         const base64 = Buffer.alloc(200 * 1024, 2).toString("base64")
-        const content = [{ type: "file" as const, uri: `data:image/png;base64,${base64}`, mime: "image/png", name: "shot.png" }]
+        const content = [
+          { type: "file" as const, uri: `data:image/png;base64,${base64}`, mime: "image/png", name: "shot.png" },
+        ]
         const result = yield* SessionBlobStorage.externalizeToolContent(blob, content)
         const part = result[0]
         const uri = part?.type === "file" ? part.uri : ""
@@ -77,6 +79,43 @@ describe("SessionBlobStorage", () => {
         ])
         const part = result[0]
         expect(part?.type === "file" ? part.uri : undefined).toBe(uri)
+      }),
+    ),
+  )
+
+  it.live("externalizes an oversized inline structured content field", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const base64 = Buffer.alloc(200 * 1024, 3).toString("base64")
+        const structured = { uri: "shot.png", name: "shot.png", encoding: "base64", mime: "image/png", content: base64 }
+        const result = yield* SessionBlobStorage.externalizeToolStructured(blob, structured)
+        expect(result.contentRef).toBe(true)
+        expect(Blob.isRef(result.content as string)).toBe(true)
+        expect(yield* blob.has(Blob.hashOf(result.content as string) ?? "")).toBe(true)
+        const bytes = yield* blob.get(Blob.hashOf(result.content as string) ?? "").pipe(Effect.orDie)
+        expect(bytes?.length).toBe(200 * 1024)
+      }),
+    ),
+  )
+
+  it.live("externalizes an oversized field nested in an array", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const base64 = Buffer.alloc(200 * 1024, 4).toString("base64")
+        const structured = { type: "pdf-pages", images: [{ page: 1, mime: "image/jpeg", content: base64 }] }
+        const result = yield* SessionBlobStorage.externalizeToolStructured(blob, structured)
+        const image = (result.images as Record<string, unknown>[])[0]!
+        expect(image.contentRef).toBe(true)
+        expect(Blob.isRef(image.content as string)).toBe(true)
+      }),
+    ),
+  )
+
+  it.live("keeps a small structured content field untouched", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const structured = { encoding: "base64", mime: "image/png", content: "aGk=" }
+        expect(yield* SessionBlobStorage.externalizeToolStructured(blob, structured)).toEqual(structured)
       }),
     ),
   )

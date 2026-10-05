@@ -40,6 +40,11 @@ const withEnv = <A, E, R>(body: (input: { db: DatabaseService; blob: Blob.Interf
 
 const sessionID = SessionSchema.ID.make("ses_blob_migrate")
 const bigUri = () => `data:image/png;base64,${Buffer.alloc(200 * 1024, 9).toString("base64")}`
+const bigStructured = () => ({
+  encoding: "base64",
+  mime: "image/png",
+  content: Buffer.alloc(200 * 1024, 7).toString("base64"),
+})
 
 const seed = (db: DatabaseService) =>
   Effect.gen(function* () {
@@ -92,7 +97,7 @@ const seed = (db: DatabaseService) =>
                 state: {
                   status: "completed",
                   input: {},
-                  structured: {},
+                  structured: bigStructured(),
                   content: [{ type: "file", uri: bigUri(), mime: "image/png", name: "shot.png" }],
                 },
               },
@@ -121,7 +126,11 @@ const seed = (db: DatabaseService) =>
           aggregate_id: sessionID,
           seq: 1,
           type: "session.next.tool.success.1",
-          data: { sessionID, content: [{ type: "file", uri: bigUri(), mime: "image/png", name: "shot.png" }] },
+          data: {
+            sessionID,
+            structured: bigStructured(),
+            content: [{ type: "file", uri: bigUri(), mime: "image/png", name: "shot.png" }],
+          },
         },
       ])
       .run()
@@ -165,9 +174,21 @@ describe("SessionBlobMigrate", () => {
           .where(eq(SessionMessageTable.id, SessionMessage.ID.make("msg_assistant")))
           .get()
           .pipe(Effect.orDie)
-        const toolUri = (assistant?.data as unknown as { content: { state: { content: { uri: string }[] } }[] }).content[0]!.state
-          .content[0]!.uri
-        expect(Blob.isRef(toolUri)).toBe(true)
+        const toolState = (assistant?.data as unknown as { content: { state: { content: { uri: string }[] } }[] })
+          .content[0]!.state
+        expect(Blob.isRef(toolState.content[0]!.uri)).toBe(true)
+
+        // The raw structured output's oversized content moves out of line too.
+        const toolEvent = yield* db
+          .select({ data: EventTable.data })
+          .from(EventTable)
+          .where(eq(EventTable.id, EventV2.ID.make("evt_tool")))
+          .get()
+          .pipe(Effect.orDie)
+        const structured = (toolEvent?.data as unknown as { structured: { content: string; contentRef?: boolean } })
+          .structured
+        expect(structured.contentRef).toBe(true)
+        expect(Blob.isRef(structured.content)).toBe(true)
 
         // A second pass finds nothing left inline.
         expect(yield* SessionBlobMigrate.migrate(blob, db)).toMatchObject({ messages: 0, events: 0 })

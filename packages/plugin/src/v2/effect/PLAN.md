@@ -299,28 +299,28 @@ Outside a batch, transform registration and disposal rebuild immediately.
 Models.dev performs effectful reads directly from its transforms and rebuilds affected domains after refresh.
 
 ```ts
-export const ModelsDevPlugin = define({
-  id: "models-dev",
+export const ModelsCatalogPlugin = define({
+  id: "models-catalog",
   effect: (ctx) =>
     Effect.gen(function* () {
-      const modelsDev = yield* ModelsDev.Service
+      const modelsCatalog = yield* ModelsCatalog.Service
       const event = yield* EventV2.Service
 
       yield* ctx.integration.transform(
         Effect.fn(function* (integration) {
-          const data = yield* modelsDev.get()
+          const data = yield* modelsCatalog.get()
           applyIntegrations(data, integration)
         }),
       )
 
       yield* ctx.catalog.transform(
         Effect.fn(function* (catalog) {
-          const data = yield* modelsDev.get()
+          const data = yield* modelsCatalog.get()
           applyCatalog(data, catalog)
         }),
       )
 
-      yield* event.subscribe(ModelsDev.Event.Refreshed).pipe(
+      yield* event.subscribe(ModelsCatalog.Event.Refreshed).pipe(
         Stream.runForEach(
           Effect.fn(function* () {
             yield* ctx.integration.rebuild()
