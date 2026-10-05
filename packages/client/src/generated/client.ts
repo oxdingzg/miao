@@ -233,6 +233,8 @@ import type {
   ServerRuntimeIdentityOutput,
   ServerRuntimeStopOutput,
   ServerRuntimeGetOutput,
+  ServerRuntimeConfigureInput,
+  ServerRuntimeConfigureOutput,
   ServerRuntimeInviteInput,
   ServerRuntimeInviteOutput,
   ServerRuntimePendingOutput,
@@ -1889,6 +1891,18 @@ export function make(options: ClientOptions) {
             path: `/api/runtime/control`,
             successStatus: 200,
             declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      configure: (input: ServerRuntimeConfigureInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeConfigureOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/configuration`,
+            body: { hubURL: input["hubURL"], hostToken: input["hostToken"] },
+            successStatus: 200,
+            declaredStatuses: [503, 400, 401],
             empty: false,
           },
           requestOptions,
