@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "bun test",
+    "check:browser": "bun script/check-browser.ts",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",
     "hub": "bun src/hub-main.ts"
   },
@@ -19,6 +20,7 @@
     "jose": "6.2.12"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:"
