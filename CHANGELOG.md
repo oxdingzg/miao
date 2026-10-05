@@ -10,6 +10,14 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-05
+
+### Added
+- **core**: add durable background subagent handoff (#144) (`64030825c`)
+
+### Fixed
+- **core**: accept state-less Command Code browser callback (#149) (`ba596d6f9`)
+
 ## [0.1.7] - 2026-10-05
 
 ### Added
