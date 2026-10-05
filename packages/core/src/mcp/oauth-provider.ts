@@ -5,6 +5,7 @@ import type {
   OAuthClientInformation,
   OAuthClientInformationFull,
 } from "@modelcontextprotocol/sdk/shared/auth.js"
+import { Flag } from "../flag/flag"
 import { Effect } from "effect"
 import { McpAuth } from "./auth"
 
@@ -44,7 +45,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
     return {
       redirect_uris: [this.redirectUrl],
       client_name: "OpenCode",
-      client_uri: "https://miao.dtee.top",
+      client_uri: new URL(Flag.MIAO_WEB_UI_UPSTREAM).origin,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: this.config.clientSecret ? "client_secret_post" : "none",

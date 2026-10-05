@@ -97,7 +97,12 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
 }
 
 const getCurrentUrl = () => {
-  if (location.hostname.includes("miao.dtee.top")) return "http://localhost:4096"
+  // A hosted web build is loaded from a CDN origin but talks to the user's
+  // local server, so a hosted origin resolves to localhost. Configure the
+  // hosted origin with VITE_MIAO_HOSTED_ORIGIN so a deployment move needs no
+  // source edit.
+  const hosted = import.meta.env.VITE_MIAO_HOSTED_ORIGIN ?? "miao.dtee.top"
+  if (location.hostname === hosted || location.hostname.endsWith(`.${hosted}`)) return "http://localhost:4096"
   if (import.meta.env.DEV)
     return `http://${import.meta.env.VITE_MIAO_SERVER_HOST ?? "localhost"}:${import.meta.env.VITE_MIAO_SERVER_PORT ?? "4096"}`
   return location.origin
