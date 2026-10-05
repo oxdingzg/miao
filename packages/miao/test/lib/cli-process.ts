@@ -219,17 +219,27 @@ export function withCliFixture<A, E>(
       const storage = await RuntimeOwnership.canonicalStorage(filename)
       const record = await RuntimeDiscovery.read(storage)
       if (!record) return
-      await RuntimeDiscovery.attest(record, {
+      // A Runtime this fixture started can already be gone (a daemon test kills
+      // its owner, or the child failed to bind) while its discovery record
+      // lingers. Cleanup must remove that stale record, not fail the test on a
+      // refused connection, so attestation is best-effort.
+      const verified = await RuntimeDiscovery.attest(record, {
         version: InstallationVersion,
         storageID: createHash("sha256").update(storage).digest("hex"),
-      })
-      const response = await fetch(new URL("/api/runtime/stop", record.url), {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.timeout(3000),
-        headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
-      })
-      if (!response.ok) throw new Error("Test Runtime shutdown failed")
+      }).then(
+        () => true,
+        () => false,
+      )
+      if (verified) {
+        const response = await fetch(new URL("/api/runtime/stop", record.url), {
+          method: "POST",
+          redirect: "error",
+          signal: AbortSignal.timeout(3000),
+          headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
+        }).catch(() => undefined)
+        if (response && !response.ok) throw new Error("Test Runtime shutdown failed")
+      }
+      await RuntimeDiscovery.remove(storage, record.runtimeID)
       const deadline = Date.now() + 5000
       while (Date.now() < deadline) {
         if (!(await RuntimeDiscovery.read(storage))) return
