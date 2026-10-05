@@ -40,3 +40,5 @@ jobs:
         env:
           MIAO_SWIFT_PAIRING_PROBE_COMMAND: '["apps/ios/MiaoCore/.build/debug/PairingProbe"]'
         run: bun apps/ios/scripts/check-pairing.ts
+      - name: Native Hub account and Keychain integration
+        run: bun apps/ios/scripts/check-account.ts
