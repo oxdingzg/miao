@@ -292,6 +292,9 @@ export function Session() {
 
   createEffect(() => {
     const sessionID = route.sessionID
+    // Keep this session's transcript resident while the route shows it.
+    sync.session.pin(sessionID)
+    onCleanup(() => sync.session.unpin(sessionID))
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
@@ -1114,8 +1117,14 @@ export function Session() {
   // while only the rows near the reader remain mounted.
   function followWindow() {
     if (!scroll || scroll.isDestroyed || loadingHistory) return
-    // Lifecycle passes run before layout; skip until the scrollbox has geometry.
-    if (scroll.scrollHeight <= 0) return
+    // Lifecycle passes run before layout, so the scrollbox may still report no
+    // geometry. That is only transient: retry on the next frame instead of
+    // giving up, or a transcript that mounted before its first layout would
+    // never follow the viewport and every message would stay mounted.
+    if (scroll.scrollHeight <= 0) {
+      requestAnimationFrame(followWindow)
+      return
+    }
     transcript.follow({
       scrollTop: scroll.scrollTop,
       viewportHeight: scroll.height,
@@ -2368,7 +2377,12 @@ function Task(props: ToolProps) {
 
   onMount(() => {
     const sessionID = stringValue(props.metadata.sessionId)
-    if (sessionID && !sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
+    if (!sessionID) return
+    // The subagent transcript is rendered inline, so keep it resident until the
+    // tool cell unmounts.
+    sync.session.pin(sessionID)
+    onCleanup(() => sync.session.unpin(sessionID))
+    if (!sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
   })
 
   const sessionID = createMemo(() => stringValue(props.metadata.sessionId))

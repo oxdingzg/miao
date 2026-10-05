@@ -126,6 +126,9 @@ only the routing binding, notification kind, and encrypted context; no host
 credential is returned. Every API response disables caching. Expired, revoked,
 cross-account, and disconnected contexts are unavailable. Contexts are ephemeral
 and are lost on Hub restart; revocation barriers remain durable.
+This module does not itself attest Runtime grants, produce the encrypted context,
+or expose HTTP routes. The host-authenticated integration must supply those
+checks and native context resolution before notification navigation is usable.
 
 ## Device-encrypted context
 

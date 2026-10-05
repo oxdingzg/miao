@@ -214,21 +214,6 @@ import type {
   WorktreesResetOutput,
   ControlPlaneMoveSessionInput,
   ControlPlaneMoveSessionOutput,
-  RemoteGetOutput,
-  RemoteLoginInput,
-  RemoteLoginOutput,
-  RemoteLoginEventsInput,
-  RemoteLoginEventsOutput,
-  RemoteLoginInputInput,
-  RemoteLoginInputOutput,
-  RemoteLoginCancelInput,
-  RemoteLoginCancelOutput,
-  RemoteRemoveInput,
-  RemoteRemoveOutput,
-  RemotePairInput,
-  RemotePairOutput,
-  RemoteTestInput,
-  RemoteTestOutput,
   ServerRuntimeIdentityInput,
   ServerRuntimeIdentityOutput,
   ServerRuntimeStopOutput,
@@ -1767,94 +1752,6 @@ export function make(options: ClientOptions) {
             },
             successStatus: 200,
             declaredStatuses: [400, 401],
-            empty: false,
-          },
-          requestOptions,
-        ),
-    },
-    remote: {
-      get: (requestOptions?: RequestOptions) =>
-        request<RemoteGetOutput>(
-          { method: "GET", path: `/api/remote`, successStatus: 200, declaredStatuses: [404, 401, 400], empty: false },
-          requestOptions,
-        ),
-      login: (input: RemoteLoginInput, requestOptions?: RequestOptions) =>
-        request<RemoteLoginOutput>(
-          {
-            method: "POST",
-            path: `/api/remote/login/${encodeURIComponent(input.connector)}`,
-            successStatus: 200,
-            declaredStatuses: [404, 401, 400],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      loginEvents: (
-        input: RemoteLoginEventsInput,
-        requestOptions?: RequestOptions,
-      ): AsyncIterable<RemoteLoginEventsOutput> =>
-        sse<RemoteLoginEventsOutput>(
-          {
-            method: "GET",
-            path: `/api/remote/login/${encodeURIComponent(input.flow)}/event`,
-            successStatus: 200,
-            declaredStatuses: [404, 401, 400],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      loginInput: (input: RemoteLoginInputInput, requestOptions?: RequestOptions) =>
-        request<RemoteLoginInputOutput>(
-          {
-            method: "POST",
-            path: `/api/remote/login/${encodeURIComponent(input.flow)}/input`,
-            body: { value: input["value"] },
-            successStatus: 204,
-            declaredStatuses: [404, 409, 401, 400],
-            empty: true,
-          },
-          requestOptions,
-        ),
-      loginCancel: (input: RemoteLoginCancelInput, requestOptions?: RequestOptions) =>
-        request<RemoteLoginCancelOutput>(
-          {
-            method: "DELETE",
-            path: `/api/remote/login/${encodeURIComponent(input.flow)}`,
-            successStatus: 204,
-            declaredStatuses: [404, 401, 400],
-            empty: true,
-          },
-          requestOptions,
-        ),
-      remove: (input: RemoteRemoveInput, requestOptions?: RequestOptions) =>
-        request<RemoteRemoveOutput>(
-          {
-            method: "DELETE",
-            path: `/api/remote/account/${encodeURIComponent(input.connector)}/${encodeURIComponent(input.account)}`,
-            successStatus: 204,
-            declaredStatuses: [404, 401, 400],
-            empty: true,
-          },
-          requestOptions,
-        ),
-      pair: (input: RemotePairInput, requestOptions?: RequestOptions) =>
-        request<RemotePairOutput>(
-          {
-            method: "POST",
-            path: `/api/remote/account/${encodeURIComponent(input.connector)}/${encodeURIComponent(input.account)}/pair`,
-            successStatus: 200,
-            declaredStatuses: [404, 400, 401],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      test: (input: RemoteTestInput, requestOptions?: RequestOptions) =>
-        request<RemoteTestOutput>(
-          {
-            method: "POST",
-            path: `/api/remote/account/${encodeURIComponent(input.connector)}/${encodeURIComponent(input.account)}/test`,
-            successStatus: 200,
-            declaredStatuses: [404, 401, 400],
             empty: false,
           },
           requestOptions,

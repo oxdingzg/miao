@@ -17,12 +17,13 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { httpClient } from "@miao/core/effect/app-node-platform"
 import { EventV2 } from "@miao/core/event"
-import { ModelsDev } from "@miao/core/models-dev"
+import { ModelsCatalog } from "@miao/core/models-catalog"
 import { Npm } from "@miao/core/npm"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { ProjectV2 } from "@miao/core/project"
 import { ProjectCopy } from "@miao/core/project/copy"
 import { PtyTicket } from "@miao/core/pty/ticket"
+import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
@@ -42,7 +43,6 @@ import { corsVaryFix } from "./middleware/cors-vary"
 import { layer as locationLayer } from "./location"
 import { sessionLocationLayer } from "./middleware/session-location"
 import { PtyEnvironment } from "./pty-environment"
-import { RemoteControl } from "./remote-control"
 import { RuntimeIdentity } from "@miao/core/runtime/identity"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
@@ -58,7 +58,6 @@ const cors = (corsOptions?: CorsOptions) =>
 
 export interface AssemblyOptions {
   readonly cors?: CorsOptions
-  readonly remote?: RemoteControl.Interface
   readonly runtime?: RuntimeIdentity.Interface
   /** Provides `ServerAuth.Config`; defaults to the environment-backed layer. */
   readonly auth?: Layer.Layer<ServerAuth.Config, any, any>
@@ -75,14 +74,9 @@ export interface AssemblyOptions {
 // - extensions: host-supplied raw routes (OpenAPI document, embedded UI).
 // - the catch-all UI fallback lives in the host extension so the server package
 //   stays free of build-time virtual modules.
-const apiRoutes = (
-  remote: RemoteControl.Interface | undefined,
-  auth: AssemblyOptions["auth"],
-  runtime: AssemblyOptions["runtime"],
-) =>
+const apiRoutes = (auth: AssemblyOptions["auth"], runtime: AssemblyOptions["runtime"]) =>
   HttpApiBuilder.layer(Api).pipe(
     Layer.provide(handlers),
-    Layer.provide(remote ? RemoteControl.layer(remote) : Layer.empty),
     Layer.provide(runtime ? Layer.succeed(RuntimeIdentity.Service)(runtime) : Layer.empty),
     Layer.provide([authorizationLayer.pipe(Layer.provide(auth ?? ServerAuth.Config.layer)), schemaErrorLayer]),
   )
@@ -110,7 +104,7 @@ const app = LayerNode.group([
   // the cwd-based GitCli service above.
   Git.node,
   Ripgrep.node,
-  ModelsDev.node,
+  ModelsCatalog.node,
   PermissionSaved.node,
   SessionProjector.node,
   McpAuth.node,
@@ -120,6 +114,10 @@ const app = LayerNode.group([
   ProjectV2.node,
   ProjectCopy.node,
   PtyTicket.node,
+  // Retention for managed tool output. The tool's Location layer writes the
+  // files; this global node runs the hourly prune. Without it here, tool-output
+  // files accumulate past their 7-day retention for the life of the runtime.
+  ToolOutputStore.cleanupNode,
 ])
 
 export function createRoutes(
@@ -127,17 +125,8 @@ export function createRoutes(
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = buildLocationServiceMap()
 
-  const http = Layer.mergeAll(
-    apiRoutes(options.remote, options.auth, options.runtime),
-    options.extensions ?? Layer.empty,
-  ).pipe(
-    Layer.provide([
-      errorLayer,
-      compressionLayer,
-      corsVaryFix,
-      cors(options.cors),
-      HttpServer.layerServices,
-    ]),
+  const http = Layer.mergeAll(apiRoutes(options.auth, options.runtime), options.extensions ?? Layer.empty).pipe(
+    Layer.provide([errorLayer, compressionLayer, corsVaryFix, cors(options.cors), HttpServer.layerServices]),
     Layer.provide(Layer.succeed(CorsConfig)(options.cors)),
     Layer.provide(sessionLocationLayer),
     Layer.provide(locationLayer),
@@ -162,7 +151,7 @@ export function createRoutes(
     ),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,
     // so Observability must come after every service graph. Otherwise eagerly forked
-    // fibers (e.g. the ModelsDev background refresh) capture Effect's default stdout
+    // fibers (e.g. the ModelsCatalog background refresh) capture Effect's default stdout
     // logger and corrupt the TUI (#34730).
     Layer.provideMerge(Observability.layer),
   ) as Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements>

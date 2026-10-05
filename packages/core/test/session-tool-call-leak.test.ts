@@ -3,12 +3,28 @@ import { ToolCallLeak } from "@miao/core/session/tool-call-leak"
 
 // A real leak from issue #2: DeepSeek V4 Flash framed a call with fullwidth
 // pipe DSML markers and the provider flushed it as assistant text.
-const DSML =
-  '\n< | DSML | invoke name="bash">\n<parameter name="command">ls</parameter>\n</ | DSML | invoke>\n'
+const DSML = '\n< | DSML | invoke name="bash">\n<parameter name="command">ls</parameter>\n</ | DSML | invoke>\n'
 
 describe("ToolCallLeak.detect", () => {
   test("fires on the issue #2 DSML leak", () => {
     expect(ToolCallLeak.detect(DSML)).toBe(true)
+  })
+
+  test("fires on the official API's standalone parameter opener at the end of a stop turn", () => {
+    const text = 'Now add the free function near the existing helper.\n\n<parameter name="bash">\n'
+    expect(ToolCallLeak.detect(text)).toBe(true)
+    expect(ToolCallLeak.detect("Next.\r\n<antml:parameter name='command'>")).toBe(true)
+  })
+
+  test("ignores inline, quoted, fenced and self-closing parameter mentions", () => {
+    for (const text of [
+      'Use <parameter name="bash"> for this example.',
+      'The opening tag is <parameter name="bash">',
+      '`<parameter name="bash">`',
+      '```xml\n<parameter name="bash">\n```',
+      '<parameter name="bash" />',
+    ])
+      expect(ToolCallLeak.detect(text)).toBe(false)
   })
 
   test("fires on a fullwidth-pipe DSML envelope", () => {
@@ -49,9 +65,7 @@ describe("ToolCallLeak.detect", () => {
   // `</invoke>` tail was not in CLOSING_TAIL), so the leak stayed in history and
   // was imitated every later turn.
   test("fires on a stray closer run with the openers eaten", () => {
-    const text =
-      "I traced the Enter handler. The overlay is harmless.\n" +
-      "</parameter>\n</invoke>\n".repeat(8)
+    const text = "I traced the Enter handler. The overlay is harmless.\n" + "</parameter>\n</invoke>\n".repeat(8)
     expect(ToolCallLeak.detect(text)).toBe(true)
   })
 
@@ -92,14 +106,16 @@ describe("ToolCallLeak.isLeakedAssistant", () => {
 
   test("ignores a turn that is not finished", () => {
     expect(ToolCallLeak.isLeakedAssistant(assistant({ finish: "tool-calls" }))).toBe(false)
+    expect(
+      ToolCallLeak.isLeakedAssistant(
+        assistant({ finish: "length", content: [{ type: "text", text: '<parameter name="bash">' }] }),
+      ),
+    ).toBe(false)
   })
 
   test("ignores a turn that recorded a tool part", () => {
     const message = assistant({
-      content: [
-        { type: "tool" },
-        { type: "text", text: "</parameter>\n</invoke>\n".repeat(5) },
-      ],
+      content: [{ type: "tool" }, { type: "text", text: "</parameter>\n</invoke>\n".repeat(5) }],
     })
     expect(ToolCallLeak.isLeakedAssistant(message)).toBe(false)
   })

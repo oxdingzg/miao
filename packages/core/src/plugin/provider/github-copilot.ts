@@ -105,7 +105,7 @@ export const GithubCopilotPlugin = define<HttpClient.HttpClient | EventV2.Servic
         connection === undefined
           ? undefined
           : yield* ctx.integration.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      // Only a Copilot login can list models; an env GITHUB_TOKEN keeps the models.dev catalog.
+      // Only a Copilot login can list models; an env GITHUB_TOKEN keeps the catalog.
       if (credential?.type !== "oauth") return undefined
       const enterpriseUrl = credential.metadata?.enterpriseUrl
       const base = CopilotModels.baseURL(typeof enterpriseUrl === "string" ? enterpriseUrl : undefined)
