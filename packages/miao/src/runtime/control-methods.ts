@@ -7,6 +7,8 @@ import { Database } from "@miao/core/database/database"
 import { RemoteOperations } from "@miao/core/runtime/operations"
 import { SessionInput } from "@miao/core/session/input"
 import { SessionMessage } from "@miao/core/session/message"
+import { Agent } from "@miao/schema/agent"
+import { Model } from "@miao/schema/model"
 import { OpenCode } from "@miao/client"
 import { ControlAgent } from "@miao/remote-control/agent"
 
@@ -138,6 +140,14 @@ export function make(options: {
         await options.client.sessions.rename({ sessionID: request.sessionID!, title: payload.title })
       },
     ),
+    "session.switchAgent": mutation(Schema.Struct({ agent: Agent.ID }), async (payload, request, context) => {
+      context.authorize()
+      await options.client.sessions.switchAgent({ sessionID: request.sessionID!, agent: payload.agent })
+    }),
+    "session.switchModel": mutation(Schema.Struct({ model: Model.Ref }), async (payload, request, context) => {
+      context.authorize()
+      await options.client.sessions.switchModel({ sessionID: request.sessionID!, model: payload.model })
+    }),
     "session.interrupt": mutation(
       Schema.Struct({ executionID: Schema.String.check(Schema.isLengthBetween(1, 128)) }),
       async (payload, request, context) => {

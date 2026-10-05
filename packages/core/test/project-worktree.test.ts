@@ -1,6 +1,7 @@
 import { afterAll, describe, expect } from "bun:test"
 import { $ } from "bun"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { Effect, Exit, Fiber, Stream } from "effect"
 import { Database } from "@miao/core/database/database"
