@@ -10,6 +10,22 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-05
+
+### Added
+
+- **ios**: Support OAuth sign-in to OAuth-only Hubs and a preconfigured Hub origin (#194). This release includes the iOS source changes; the CLI archives do not distribute an iOS app.
+
+### Fixed
+
+- **ios**: Return to the workbench after a successful sign-in while keeping account management available.
+- **runtime**: Allow clients from different software releases to share a verified Runtime with a supported wire protocol. Installing an update no longer prevents newly opened clients from joining the existing Runtime (#195).
+- **runtime**: Allow cross-release status and graceful stop; show the running service release and protocol and wait for storage ownership to be released (#195).
+
+### Upgrade behavior
+
+Existing windows and active tasks continue running while the installed program is updated. Newly opened windows use the installed client build and connect to the compatible shared Runtime. The Runtime keeps its execution build until explicitly restarted; automatic installation does not restart active sessions.
+
 ## [0.1.8] - 2026-10-05
 
 ### Added
