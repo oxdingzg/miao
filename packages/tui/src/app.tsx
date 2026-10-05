@@ -147,12 +147,13 @@ export type TuiInput = {
   args: Args
   config: TuiConfig.Resolved
   onSnapshot?: () => Promise<string[]>
+  onSessionChange?: (session?: { sessionID?: string; cwd?: string; state: "idle" | "processing" | "awaiting" }) => void
   directory?: string
   fetch?: typeof fetch
   headers?: RequestInit["headers"]
   events?: EventSource
   pluginHost: TuiPluginHost
-  /** Lets /remote log in and start the daemon on this machine when none is running. */
+  /** Lets /remote-control configure the attached Runtime relay. */
   remote?: RemoteLocalFactory
 }
 
@@ -318,6 +319,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                     <RemoteLocalProvider value={input.remote}>
                                                                       <App
                                                                         onSnapshot={input.onSnapshot}
+                                                                        onSessionChange={input.onSessionChange}
                                                                         pluginHost={input.pluginHost}
                                                                       />
                                                                     </RemoteLocalProvider>
@@ -366,7 +368,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   })
 })
 
-function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPluginHost }) {
+function App(props: {
+  onSnapshot?: () => Promise<string[]>
+  onSessionChange?: TuiInput["onSessionChange"]
+  pluginHost: TuiPluginHost
+}) {
   const startup = useTuiStartup()
   const tuiConfig = useTuiConfig()
   const route = useRoute()
@@ -388,6 +394,24 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const pluginRuntime = usePluginRuntime()
   const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
   const clipboard = useClipboard()
+
+  createEffect(() => {
+    if (!props.onSessionChange) return
+    const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
+    const session = sessionID ? sync.session.get(sessionID) : undefined
+    const pending =
+      session && (sync.data.permission[session.id]?.length ?? 0) + (sync.data.question[session.id]?.length ?? 0) > 0
+    const busy =
+      session &&
+      sync.data.session_status[session.id]?.type !== undefined &&
+      sync.data.session_status[session.id]?.type !== "idle"
+    props.onSessionChange({
+      sessionID: session?.id,
+      cwd: session?.directory,
+      state: pending ? "awaiting" : busy ? "processing" : "idle",
+    })
+  })
+  onCleanup(() => props.onSessionChange?.())
 
   const api = createTuiApi(
     createTuiApiAdapters({

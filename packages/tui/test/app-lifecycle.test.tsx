@@ -12,6 +12,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
   const titles: string[] = []
+  const reports: unknown[] = []
   const setTitle = setup.renderer.setTerminalTitle.bind(setup.renderer)
   setup.renderer.setTerminalTitle = (title) => {
     titles.push(title)
@@ -36,6 +37,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
         fetch: calls.fetch,
         events: events.source,
         args: {},
+        onSessionChange: (session) => reports.push(session),
         pluginHost: {
           async start() {
             started()
@@ -53,6 +55,8 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
     expect(setup.renderer.isDestroyed).toBe(true)
     expect(titles.at(-1)).toBe("")
     expect(disposes).toBe(1)
+    expect(reports.length).toBeGreaterThan(0)
+    expect(reports.at(-1)).toBeUndefined()
     expect(process.listeners("SIGHUP").every((listener) => listeners.has(listener))).toBe(true)
   } finally {
     if (!setup.renderer.isDestroyed) setup.renderer.destroy()
@@ -61,6 +65,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
 })
 
 test("app.exit prints the session epilogue after scoped cleanup", async () => {
+  const reports: Array<{ sessionID?: string; cwd?: string; state: string } | undefined> = []
   const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
@@ -105,6 +110,7 @@ test("app.exit prints the session epilogue after scoped cleanup", async () => {
         fetch: calls.fetch,
         events: events.source,
         args: { continue: true },
+        onSessionChange: (session) => reports.push(session),
         pluginHost: {
           async start(input) {
             api = input.api
@@ -121,6 +127,8 @@ test("app.exit prints the session epilogue after scoped cleanup", async () => {
     api?.keymap.dispatchCommand("app.exit")
     await task
 
+    expect(reports).toContainEqual({ sessionID: "dummy", cwd: directory, state: "idle" })
+    expect(reports.at(-1)).toBeUndefined()
     expect(stdout).toContain("Demo session")
     expect(stdout).toContain("miao -s dummy")
   } finally {
