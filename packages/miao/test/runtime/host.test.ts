@@ -70,6 +70,20 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     children.push(child)
     return child
   }
+  const access = async (input: Record<string, unknown> | string) => {
+    const child = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime", "access"], {
+      cwd: path.resolve(import.meta.dir, "../.."),
+      env: environment,
+      stdin: new Blob([typeof input === "string" ? input : JSON.stringify({ version: 1, ...input })]),
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    children.push(child)
+    const output = await new Response(child.stdout).text()
+    expect(await child.exited).toBe(0)
+    expect(output).not.toContain(hostToken)
+    return JSON.parse(output)
+  }
   const ready = async (child: ReturnType<typeof start>) => {
     const deadline = Date.now() + 20_000
     while (Date.now() < deadline) {
@@ -168,8 +182,35 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     return call
   }
   try {
+    expect(await access({ method: "status" })).toMatchObject({ ok: false, error: "noRuntime" })
+    expect(await RuntimeDiscovery.read(database)).toBeUndefined()
+    expect(await access({ method: "status", password: "secret-extra-field" })).toMatchObject({
+      ok: false,
+      error: "invalidRequest",
+    })
+    expect(await access("{invalid")).toMatchObject({ ok: false, error: "invalidRequest" })
+    expect(await access(" ".repeat(65_537))).toMatchObject({ ok: false, error: "invalidRequest" })
     const first = start()
     const record = await ready(first)
+    expect(await access({ method: "status" })).toMatchObject({
+      version: 1,
+      ok: true,
+      runtimeID: record.runtimeID,
+      data: { enabled: true, hostID: grants.hostID },
+    })
+    expect(
+      await access({
+        method: "invite",
+        runtimeID: "wrong-runtime-identity",
+        policy: {
+          permissions: ["read"],
+          sessionIDs: [sessionID],
+          projectIDs: [],
+          expiresAt: Date.now() + 60_000,
+        },
+      }),
+    ).toMatchObject({ ok: false, error: "runtimeChanged" })
+    expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({ ok: true, data: [] })
     const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
     expect((await fetch(new URL("/api/health", record.url))).status).toBe(401)
     expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(404)
@@ -206,37 +247,47 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     expect(configured).toMatchObject({ enabled: true, hostID: grants.hostID, runtimeID: record.runtimeID })
     expect((await RuntimeDiscovery.read(database))?.runtimeID).toBe(record.runtimeID)
     expect(await sdk.sessions.get({ sessionID })).toMatchObject({ id: sessionID, projectID: session.projectID })
-    const invitationResponse = await fetch(new URL("/api/runtime/control/invitation", record.url), {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({
+    expect(await access({ method: "session", runtimeID: record.runtimeID, sessionID })).toMatchObject({
+      ok: true,
+      data: { sessionID, projectID: session.projectID },
+    })
+    const invited = await access({
+      method: "invite",
+      runtimeID: record.runtimeID,
+      policy: {
         permissions: ["read"],
         sessionIDs: [sessionID],
         projectIDs: [],
-        expiresAt: Date.now() + 60000,
-      }),
+        expiresAt: Date.now() + 60_000,
+      },
     })
-    expect(invitationResponse.status).toBe(200)
-    const invitation = (await invitationResponse.json()) as ControlPairing.Invitation
+    expect(invited.ok).toBe(true)
+    const invitation = invited.data as ControlPairing.Invitation
     const newDevice = await SecureChannel.createIdentity()
     const provisional = await connection(record, newDevice, invitation)
     expect(
       JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
     ).toMatchObject({ type: "pairing", status: "pending" })
-    const candidates = await fetch(new URL("/api/runtime/control/pairing", record.url), { headers })
-    expect(await candidates.json()).toMatchObject([
-      { pairingID: invitation.pairingID, candidate: { publicKey: newDevice.publicKey } },
-    ])
-    const approvedResponse = await fetch(
-      new URL(`/api/runtime/control/pairing/${invitation.pairingID}/approve`, record.url),
-      {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ publicKey: newDevice.publicKey }),
-      },
-    )
-    expect(approvedResponse.status).toBe(200)
-    const newGrant = (await approvedResponse.json()) as DeviceGrants.Grant
+    expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({
+      ok: true,
+      data: [{ pairingID: invitation.pairingID, candidate: { publicKey: newDevice.publicKey } }],
+    })
+    expect(
+      await access({
+        method: "approve",
+        runtimeID: record.runtimeID,
+        pairingID: invitation.pairingID,
+        publicKey: device.publicKey,
+      }),
+    ).toMatchObject({ ok: false, error: "unconfirmed" })
+    const approved = await access({
+      method: "approve",
+      runtimeID: record.runtimeID,
+      pairingID: invitation.pairingID,
+      publicKey: newDevice.publicKey,
+    })
+    expect(approved.ok).toBe(true)
+    const newGrant = approved.data as DeviceGrants.Grant
     expect(
       JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
     ).toMatchObject({ type: "pairing", status: "approved", grant: { id: newGrant.id } })
@@ -260,16 +311,32 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     expect(
       JSON.parse(new TextDecoder().decode(await provisional.channel.open(await provisional.receive()))),
     ).toMatchObject({ type: "result", data: { id: sessionID } })
-    const revoked = await fetch(new URL(`/api/runtime/control/device/${newGrant.id}/revoke`, record.url), {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ version: newGrant.version }),
+    expect(
+      await access({
+        method: "revoke",
+        runtimeID: record.runtimeID,
+        grantID: newGrant.id,
+        grantVersion: newGrant.version + 1,
+      }),
+    ).toMatchObject({ ok: false, error: "unconfirmed" })
+    expect(
+      await access({
+        method: "revoke",
+        runtimeID: record.runtimeID,
+        grantID: newGrant.id,
+        grantVersion: newGrant.version,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        id: newGrant.id,
+        version: newGrant.version + 1,
+        revokedAt: expect.any(Number),
+      },
     })
-    expect(revoked.status).toBe(200)
-    expect(await revoked.json()).toMatchObject({
-      id: newGrant.id,
-      version: newGrant.version + 1,
-      revokedAt: expect.any(Number),
+    expect(await access({ method: "devices", runtimeID: record.runtimeID })).toMatchObject({
+      ok: true,
+      data: expect.arrayContaining([expect.objectContaining({ id: newGrant.id, revokedAt: expect.any(Number) })]),
     })
     const call = await connectRemote(record, grant)
     expect(await call("session.get", {})).toMatchObject({ type: "result", data: { id: sessionID } })
@@ -419,6 +486,11 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     const next = await ready(start())
     expect(next.runtimeID).not.toBe(record.runtimeID)
     expect(next.credential).not.toBe(record.credential)
+    expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({
+      ok: false,
+      error: "runtimeChanged",
+      runtimeID: next.runtimeID,
+    })
     const resumed = await fetch(new URL(`/api/session/${session.id}`, next.url), {
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
     })
@@ -475,4 +547,4 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     await hub.stop()
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 60_000)
+}, 120_000)

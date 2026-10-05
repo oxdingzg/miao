@@ -4,8 +4,13 @@ import { DatabaseFile } from "@miao/core/database/file"
 export const RuntimeCommand = cmd({
   command: "runtime [action]",
   describe: "run the persistent local session Runtime",
-  builder: (yargs) => yargs.positional("action", { choices: ["start", "status", "stop"] as const, default: "start" }),
+  builder: (yargs) => yargs.positional("action", { choices: ["start", "status", "stop", "access"] as const, default: "start" }),
   async handler(args) {
+    if (args.action === "access") {
+      const { RuntimeAccessCLI } = await import("./runtime-access")
+      console.log(JSON.stringify(await RuntimeAccessCLI.run(DatabaseFile.path())))
+      return
+    }
     if (args.action !== "start") {
       const { RuntimeConnect } = await import("@/runtime/connect")
       const record = await RuntimeConnect.current(DatabaseFile.path())
