@@ -80,10 +80,24 @@ final class PairingUITests: XCTestCase {
         title.tap()
         // A tap may put the caret in the middle on iOS 17. Select the entire old name before replacing it.
         title.press(forDuration: 1.2)
-        let selectAll = app.menuItems["Select All"].firstMatch
-        if selectAll.waitForExistence(timeout: 2) { selectAll.tap() }
-        else if app.buttons["Select All"].firstMatch.waitForExistence(timeout: 2) { app.buttons["Select All"].firstMatch.tap() }
-        else {
+        // iOS can expose a stale menu item while the actual editing action is a button.
+        // Existence alone does not mean the action can be tapped.
+        let selectionButton = app.buttons["Select All"].firstMatch
+        let selectionMenu = app.menuItems["Select All"].firstMatch
+        let selectionDeadline = Date().addingTimeInterval(4)
+        while Date() < selectionDeadline &&
+            !(selectionButton.exists && selectionButton.isHittable) &&
+            !(selectionMenu.exists && selectionMenu.isHittable) {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        if selectionButton.exists && selectionButton.isHittable {
+            print("Native rename selection action=button")
+            selectionButton.tap()
+        } else if selectionMenu.exists && selectionMenu.isHittable {
+            print("Native rename selection action=menu")
+            selectionMenu.tap()
+        } else {
+            print("Native rename selection action=caret")
             title.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
             if let current = title.value as? String { title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
         }

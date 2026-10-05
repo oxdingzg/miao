@@ -273,6 +273,7 @@ export async function run() {
             caughtError: log.includes("caught error"),
             missingElement: log.includes("No matches found"),
             renameInputMatches: /Native rename input expected=(true|false)/.exec(log)?.[1],
+            renameSelection: /Native rename selection action=(button|menu|caret)/.exec(log)?.[1],
             ambiguousElement: log.includes("Multiple matching"),
             notHittable: log.includes("not hittable") || log.includes("not visible"),
             menuRecovery:
