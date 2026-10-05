@@ -21,10 +21,9 @@ export const JobInfo = Schema.Struct({
 const text = (value: unknown) => [{ type: "text" as const, text: JSON.stringify(value) }]
 
 /**
- * Model-facing observation and control for the process-local BackgroundJob
- * registry, owner-bound to one Session. It does not launch jobs: a
- * sandbox- and permission-parity launcher and durable restart recovery need a
- * separate slice (see `background-job.ts`).
+ * Model-facing observation and control, owner-bound to one Session. The runner
+ * combines live process jobs with durable lifecycle records; interrupted jobs
+ * stay observable after restart without replaying commands.
  */
 export const make = (api: {
   readonly list: () => Effect.Effect<ReadonlyArray<BackgroundJob.Info>>
