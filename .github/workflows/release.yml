@@ -82,7 +82,11 @@ jobs:
       - cli
     runs-on: ubuntu-latest
     steps:
+      # The Chinese notes mirror is committed to `main` after the tag is cut, so
+      # it must be read from `main`, not the dispatch SHA (see script/release-notes.ts).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: main
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: Publish the draft release
         run: |
