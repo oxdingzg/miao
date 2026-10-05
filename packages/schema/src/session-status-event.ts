@@ -1,36 +1,14 @@
 export * as SessionStatusEvent from "./session-status-event"
 
-import { Schema } from "effect"
-import { optional } from "./schema"
 import { Event } from "./event"
-import { NonNegativeInt } from "./schema"
 import { SessionID } from "./session-id"
+import { StatusInfo } from "./session-event"
 
-export const Info = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("idle"),
-  }),
-  Schema.Struct({
-    type: Schema.Literal("retry"),
-    attempt: NonNegativeInt,
-    message: Schema.String,
-    action: optional(
-      Schema.Struct({
-        reason: Schema.String,
-        provider: Schema.String,
-        title: Schema.String,
-        message: Schema.String,
-        label: Schema.String,
-        link: optional(Schema.String),
-      }),
-    ),
-    next: NonNegativeInt,
-  }),
-  Schema.Struct({
-    type: Schema.Literal("busy"),
-  }),
-]).annotate({ identifier: "SessionStatus" })
-export type Info = Schema.Schema.Type<typeof Info>
+// The compat `session.status` event carries the same status shape as the
+// current `session.next.status` event. Keep one canonical definition in
+// `session-event.ts` rather than a second one here.
+export const Info = StatusInfo
+export type Info = StatusInfo
 
 export const Status = Event.define({
   type: "session.status",

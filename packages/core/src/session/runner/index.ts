@@ -2,6 +2,7 @@ export * as SessionRunner from "./index"
 
 import type { LLMError } from "@miao/llm"
 import { Context, Effect } from "effect"
+import type { BusyPhase } from "@miao/schema/session-event"
 import { SessionSchema } from "../schema"
 import type { ContextSnapshotDecodeError, LegacyNotMigratedError, MessageDecodeError } from "../error"
 import { SessionRunnerModel } from "./model"
@@ -32,6 +33,8 @@ export interface Interface {
     readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
     /** Runtime-owned background execution capability, injected without a tag cycle. */
     readonly delegation?: SessionDelegation.API
+    /** Reports local drain phases so a client can tell preparation from a dispatched request. */
+    readonly phase?: (phase: BusyPhase) => Effect.Effect<void>
   }) => Effect.Effect<void, RunError>
 }
 

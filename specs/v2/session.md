@@ -125,15 +125,16 @@ Clients such as `--mini`, ACP, and the app follow a running Session through thre
 
 | Event | Durable | Published when | Payload |
 |---|---|---|---|
-| `session.next.status` | no | the process starts or stops draining the Session | `{ sessionID, timestamp, status: { type: "busy" \| "idle" } }` |
+| `session.next.status` | no | the process starts or stops draining the Session, or the drain changes phase | `{ sessionID, timestamp, status: { type: "busy", phase, since } \| { type: "idle" } }` |
 | `session.next.retried.1` | yes | a provider attempt that failed before any visible output is retried | `{ sessionID, timestamp, attempt, error: { message, isRetryable, statusCode? } }` |
 | `session.next.failed` | no | a drain ends with a failure outside any provider step | `{ sessionID, timestamp, error: { type: "unknown", message }, name? }` |
 
 Status:
 
-- `SessionRunCoordinator` reports the transitions; `SessionExecutionLocal` publishes them. Successor drains for coalesced wakes stay busy, so one burst of work reports exactly one `busy` and one `idle`.
-- Reports read the live state under one lock and skip repeats, so overlapping drains never leave a stale value. `idle` is published before callers awaiting the drain resume.
-- `status` uses the same `{ type }` shape as `GET /api/session/:sessionID/status` (`session.next.status_info`). It is process state, so it is not stored: a client that (re)subscribes reads the route once and then follows the events.
+- `SessionRunCoordinator` reports the transitions; `SessionExecutionLocal` publishes them. Successor drains for coalesced wakes stay busy, so one burst of work reports exactly one `idle` at the end.
+- Reports read the live state under one lock and skip repeats, so overlapping drains never leave a stale value. A `busy` report carries the drain `phase` and the epoch-millis `since` when that phase began; a client renders the elapsed time per phase. A phase repeat is not republished.
+- `phase` is `queued` (owned but waiting on a concurrency slot), `preparing` (local turn work: history, model, tools, request build, compaction, snapshot), `requesting` (request dispatched, awaiting the provider's first event, i.e. TTFT), `streaming` (at least one provider event received), or `retrying` (a bounded retry of a failed attempt). `phase` and `since` are optional on the wire so optimistic client writes and older producers stay valid; a missing `phase` reads as `preparing`.
+- `status` uses the same shape as `GET /api/session/:sessionID/status` (`session.next.status_info`). It is process state, so it is not stored: a client that (re)subscribes reads the route once and then follows the events. The compat `session.status` event and the `retry` variant share the same canonical `StatusInfo` definition.
 
 Retry:
 

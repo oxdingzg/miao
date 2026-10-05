@@ -29,6 +29,7 @@ const execution = Layer.succeed(
   SessionExecution.Service.of({
     active: Effect.sync(() => new Set(activeSessions)),
     executions: Effect.succeed(new Map()),
+    status: () => Effect.succeed({ type: "idle" }),
     interruptIf: () => Effect.succeed(false),
     resume: (sessionID) =>
       Effect.sync(() => {

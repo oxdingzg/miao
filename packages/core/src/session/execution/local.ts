@@ -23,6 +23,10 @@ const layer = Layer.effect(
     // without a circular type reference.
     let wake: (sessionID: SessionSchema.ID) => Effect.Effect<void> = () => Effect.void
     let delegation: SessionDelegation.API | undefined
+    // Same forward-reference break as `wake`: the runner reports phases into the
+    // coordinator that owns the drain.
+    let setPhase: (sessionID: SessionSchema.ID, phase: SessionEvent.BusyPhase) => Effect.Effect<void> = () =>
+      Effect.void
     // A high default bounds runaway fan-out without constraining normal use.
     // `MIAO_MAX_CONCURRENT_DRAINS=0` (or a non-positive value) removes the cap.
     const configured = Number(process.env.MIAO_MAX_CONCURRENT_DRAINS ?? 8)
@@ -32,7 +36,15 @@ const layer = Layer.effect(
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
-        return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force, wake, delegation })).pipe(
+        return yield* SessionRunner.Service.use((runner) =>
+          runner.run({
+            sessionID,
+            force,
+            wake,
+            delegation,
+            phase: (phase) => setPhase(sessionID, phase),
+          }),
+        ).pipe(
           Effect.provide(locations.get(session.location)),
           Effect.tapCause((cause) =>
             Cause.hasInterruptsOnly(cause)
@@ -41,12 +53,19 @@ const layer = Layer.effect(
           ),
         )
       }),
-      status: Effect.fnUntraced(
-        function* (sessionID: SessionSchema.ID, status: "busy" | "idle") {
+      report: Effect.fnUntraced(
+        function* (sessionID: SessionSchema.ID, status: SessionRunCoordinator.Status) {
           const session = yield* store.get(sessionID)
           yield* events.publish(
             SessionEvent.Status,
-            { sessionID, timestamp: yield* DateTime.now, status: { type: status } },
+            {
+              sessionID,
+              timestamp: yield* DateTime.now,
+              status:
+                status.type === "busy"
+                  ? { type: "busy" as const, phase: status.phase, since: status.since }
+                  : { type: "idle" as const },
+            },
             session ? { location: session.location } : undefined,
           )
         },
@@ -54,6 +73,7 @@ const layer = Layer.effect(
       ),
     })
     wake = coordinator.wake
+    setPhase = coordinator.setPhase
     const backgroundLimit = Number(process.env.MIAO_MAX_BACKGROUND_SUBAGENTS ?? 4)
     delegation = yield* SessionDelegation.make({
       db,
@@ -69,6 +89,7 @@ const layer = Layer.effect(
     return SessionExecution.Service.of({
       active: coordinator.active,
       executions: coordinator.executions,
+      status: coordinator.status,
       interrupt: coordinator.interrupt,
       interruptIf: coordinator.interruptIf,
       resume: coordinator.run,

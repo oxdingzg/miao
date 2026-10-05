@@ -1174,7 +1174,29 @@ export type SessionsInputsOutput = {
 
 export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
-export type SessionsStatusOutput = { readonly data: { readonly type: "idle" | "busy" } }["data"]
+export type SessionsStatusOutput = {
+  readonly data:
+    | { readonly type: "idle" }
+    | {
+        readonly type: "busy"
+        readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+        readonly since?: number
+      }
+    | {
+        readonly type: "retry"
+        readonly attempt: number
+        readonly message: string
+        readonly action?: {
+          readonly reason: string
+          readonly provider: string
+          readonly title: string
+          readonly message: string
+          readonly label: string
+          readonly link?: string
+        }
+        readonly next: number
+      }
+}["data"]
 
 export type SessionsChildrenInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
