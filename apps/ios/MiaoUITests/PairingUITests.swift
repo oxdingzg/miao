@@ -28,13 +28,25 @@ final class PairingUITests: XCTestCase {
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
-        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let finishURL: String }
+        struct Account: Decodable { let origin: String; let email: String; let password: String }
+        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         stage("launch")
         let app = XCUIApplication()
         app.launchEnvironment["MIAO_UI_TEST_RUN"] = fixture.runID
         app.launchEnvironment["MIAO_UI_TEST_INVITATION"] = fixture.invitation
+        if fixture.account != nil { app.launchEnvironment["MIAO_UI_TEST_HUB_ACCOUNT"] = "1" }
         app.launch()
+        if let account = fixture.account {
+            stage("account")
+            XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
+            app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
+            app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)
+            app.secureTextFields["hubPassword"].tap(); app.secureTextFields["hubPassword"].typeText(account.password)
+            app.buttons["hubSignIn"].tap()
+            XCTAssertTrue(app.staticTexts["已登录"].waitForExistence(timeout: 30))
+            app.buttons["关闭"].tap()
+        }
         XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["开始配对"].isEnabled)
         stage("pairing")

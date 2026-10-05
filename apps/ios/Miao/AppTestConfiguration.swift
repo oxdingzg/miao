@@ -11,6 +11,8 @@ enum AppTestConfiguration {
         #endif
     }
     static var allowLoopbackHTTP: Bool { runID != nil }
+    static var requiresAccount: Bool { runID != nil && ProcessInfo.processInfo.environment["MIAO_UI_TEST_HUB_ACCOUNT"] == "1" }
+    static var allowLegacyTransport: Bool { allowLoopbackHTTP && !requiresAccount }
     static var invitation: String? {
         #if DEBUG && targetEnvironment(simulator)
         return runID == nil ? nil : ProcessInfo.processInfo.environment["MIAO_UI_TEST_INVITATION"]

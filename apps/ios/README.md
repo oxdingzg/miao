@@ -51,4 +51,14 @@ UI smoke tests run with `sh apps/ios/scripts/test-app.sh iphone` or `ipad` on th
 
 `bun apps/ios/scripts/check-app.ts` starts an isolated real Runtime and Hub, creates a session through the authenticated local API, and runs the actual simulator app through pairing, session read/rename, draft background recovery, process restart and queued message admission. The harness verifies the resulting title and exactly one queued admission against the Runtime's durable history; a skipped UI test cannot pass that check. Set `MIAO_UI_TEST_FAMILY=ipad` for the iPad run. Test identities and cache partitions are unique per run, cleartext loopback access exists only in opted-in Debug simulator builds, and the fixture uses an unavailable model so admission testing never requires provider execution.
 
-CI runs native core tests, the iOS platform source check, an unsigned universal app build, iPhone/iPad UI smoke tests, crypto interoperability, native transport and pairing integration on a macOS runner. Physical camera, speech and device installation checks require a real device. APNs registration/delivery, fresh Runtime identity discovery and the complete cross-channel integration are still separate work; the current app does not claim those capabilities.
+CI runs native core tests, the iOS platform source check, an unsigned universal app build, iPhone/iPad UI smoke tests, crypto interoperability, native transport and pairing integration on a macOS runner. Physical camera, speech and device installation checks require a real device. APNs registration/delivery and the complete cross-channel integration are still separate work; the current app does not claim those capabilities.
+
+## Hub accounts
+
+Open **登录中继** and enter the computer's configured HTTPS Hub address and account. The account screen lists registered computers and their online status. Session access still requires scanning an invitation and approving this device on the computer; directory discovery cannot replace that approval or a pinned computer key. A pending invitation resumes after account login.
+
+The signed login is stored in the device-only Keychain; the password is cleared from the form when submitted or dismissed. WebSocket credentials remain short-lived and confined to the signed-in origin. Logging out closes transports and clears the displayed session view while host tasks continue. A failed remote revocation is shown explicitly with a retry action.
+
+After a computer restart, reconnect refreshes its Runtime instance after matching the previously approved host public key. Session replay starts in the new Runtime cache partition, while drafts migrate within the same device/grant/host/session scope. Uncertain operations retain their original IDs and are queried, never automatically resent.
+
+On an approved macOS host, `MIAO_UI_TEST_ACCOUNT=1 bun apps/ios/scripts/check-app.ts` runs the full native UI flow against the account-managed Hub: account entry, pairing, session operations, background draft recovery and account restoration after App restart. The default harness retains legacy private-relay coverage. Both use isolated identities and test-only loopback access.

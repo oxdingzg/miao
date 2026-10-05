@@ -8,6 +8,7 @@ struct RemoteView: View {
     @State private var sceneID = UUID()
     @State private var hostID: UUID?
     @State private var pairing = false
+    @State private var accountPresented = false
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
@@ -15,22 +16,76 @@ struct RemoteView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $hostID) {
-                Section("我的电脑") {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("远程工作台").font(.title2.weight(.semibold))
+                        Text("连接你的电脑，随时继续同一个会话。")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                }
+                Section {
+                    Button { accountPresented = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle")
+                                .font(.title3).foregroundStyle(.tint).frame(width: 32, height: 32)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(model.accountSignedIn ? "中继账号" : "登录中继")
+                                    .font(.headline).foregroundStyle(.primary)
+                                Text(model.accountSignedIn ? "管理账号与已注册电脑" : "登录后同步你的电脑")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("hubAccount")
+                    if let error = model.accountError { Text(error).font(.footnote).foregroundStyle(.secondary) }
+                }
+                Section {
                     if model.hosts.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("在电脑的 /remote-control 中选择 App，扫码后即可接回会话。")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                            Button("连接电脑", systemImage: "qrcode.viewfinder") { pairing = true }
-                                .buttonStyle(.borderedProminent)
-                        }.padding(.vertical, 8)
+                        VStack(alignment: .leading, spacing: 20) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "desktopcomputer")
+                                    .font(.title3).foregroundStyle(.secondary).frame(width: 32, height: 32)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("连接第一台电脑").font(.headline)
+                                    Text("在电脑上打开 /remote-control，扫描二维码并确认授权。")
+                                        .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Button { pairing = true } label: {
+                                Label("连接电脑", systemImage: "qrcode.viewfinder")
+                                    .font(.body.weight(.semibold))
+                                    .frame(maxWidth: .infinity, minHeight: 32)
+                            }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                            .labelStyle(.titleAndIcon)
+                            .buttonBorderShape(.roundedRectangle(radius: 12))
+                        }
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ForEach(model.hosts) { record in
-                        Label {
+                        HStack(spacing: 12) {
+                            Image(systemName: "desktopcomputer").font(.title3).frame(width: 32, height: 32)
+                                .foregroundStyle(.secondary)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(record.host.label)
-                                Text(record.expired ? "授权已过期" : "已配对").font(.caption).foregroundStyle(.secondary)
+                                Text(record.host.label).font(.headline)
+                                Label(record.expired ? "授权已过期" : "已配对", systemImage: record.expired ? "exclamationmark.circle" : "checkmark.circle")
+                                    .font(.caption).foregroundStyle(record.expired ? .orange : .secondary)
                             }
-                        } icon: { Image(systemName: "desktopcomputer") }.tag(record.id)
+                        }.padding(.vertical, 4).tag(record.id)
+                    }
+                } header: { Text("我的电脑") } footer: {
+                    if model.hosts.isEmpty {
+                        Text("任务在电脑上持续运行。手机用于查看进展、发送输入和确认操作。")
                     }
                 }
                 if !model.attempts.isEmpty {
@@ -41,12 +96,16 @@ struct RemoteView: View {
                 }
                 if let error = model.error { Text(error).foregroundStyle(.red).font(.footnote) }
             }
+            .listStyle(.insetGrouped)
+            .listSectionSpacing(20)
+            .contentMargins(.top, 16, for: .scrollContent)
             .navigationTitle("miao")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("连接电脑", systemImage: "qrcode.viewfinder") { pairing = true } }
         } detail: {
             if let hostID, let client = model.clients[hostID] {
                 NavigationStack { HostView(client: client, forget: { Task { await model.forget(hostID); self.hostID = nil } }) }
-                    .id(hostID)
+                    .id(hostID.uuidString + ":" + String(model.connectionEpoch))
             } else {
                 ContentUnavailableView {
                     Label("随时接回会话", systemImage: "bubble.left.and.bubble.right")
@@ -57,11 +116,16 @@ struct RemoteView: View {
         }
         .task {
             await model.load()
-            if let value = AppTestConfiguration.invitation { invitation = value; pairing = true }
+            if let value = AppTestConfiguration.invitation {
+                invitation = value
+                if model.accountSignedIn || AppTestConfiguration.allowLegacyTransport { pairing = true }
+                else { accountPresented = true }
+            }
             if hostID == nil { hostID = model.hosts.first?.id }
             await attach()
         }
         .onChange(of: hostID) { _, _ in Task { await attach() } }
+        .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
         .onChange(of: model.hosts.map(\.id)) { _, ids in
             if hostID == nil { hostID = ids.first }
         }
@@ -74,7 +138,14 @@ struct RemoteView: View {
             let previous = attached
             Task { if let previous { await model.clients[previous]?.removeScene(sceneID) } }
         }
-        .onOpenURL { url in invitation = url.absoluteString; pairing = true }
+        .onOpenURL { url in
+            invitation = url.absoluteString
+            if model.accountSignedIn || AppTestConfiguration.allowLegacyTransport { pairing = true }
+            else { accountPresented = true }
+        }
+        .sheet(isPresented: $accountPresented, onDismiss: {
+            if !invitation.isEmpty, model.accountSignedIn { pairing = true }
+        }) { HubAccountView(model: model) }
         .sheet(isPresented: $pairing, onDismiss: { invitation = "" }) { PairingView(model: model, initialURI: $invitation) }
     }
 

@@ -1,3 +1,5 @@
+import { Database } from "bun:sqlite"
+import { HubService } from "@miao/remote-control/hub-service"
 import { Schema } from "effect"
 import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -18,8 +20,12 @@ export async function run() {
   const sessionID = "ses_native_ui_" + runID.replaceAll("-", "")
   const title = "Native runtime session"
   const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
-  const token = crypto.randomUUID() + crypto.randomUUID()
-  const hub = ControlHub.listen({ port: 0, hosts: new Map([[grants.hostID, token]]) })
+  const relay = await fixtureHub(grants).catch(async (error: unknown) => {
+    await grants.close()
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  })
+  const { hub, token } = relay
   const configuration = path.join(directory, "control.json")
   const fixture = path.join(directory, "ui-fixture.json")
   const stream = { calls: 0, finish: () => {} }
@@ -268,6 +274,7 @@ export async function run() {
       JSON.stringify({
         runID,
         title,
+        account: relay.account,
         finishURL: `http://127.0.0.1:${provider.port}/finish`,
         invitation: `miao://pair#${Buffer.from(JSON.stringify(invitation)).toString("base64url")}`,
       }),
@@ -325,7 +332,7 @@ export async function run() {
         tail += text
         const stages = [
           ...tail.matchAll(
-            /NativeUIStage:(launch|pairing|draft|rename|agent|model|relaunch|prompt|live|settlement|restart|done)\r?\n/g,
+            /NativeUIStage:(launch|account|pairing|draft|rename|agent|model|relaunch|prompt|live|settlement|restart|done)\r?\n/g,
           ),
         ]
         for (const match of stages) {
@@ -452,6 +459,7 @@ export async function run() {
         admissions[0].prompt.text !== "retained phone draft"
       )
         throw new Error("The phone must admit exactly one queued input in the real Runtime")
+      if (relay.account) console.log("Native App Hub account entry and Keychain account restoration passed")
       if (stream.calls !== 1) throw new Error("Native reconnect repeated provider execution")
       console.log(
         "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery, live generation/settlement and process restart passed",
@@ -470,12 +478,78 @@ export async function run() {
     await runtimeOutput.stdout
     await runtimeOutput.stderr
     await hub.stop()
+    relay.closeDatabase()
+    await grants.close()
     if (state.simulator) {
       await Bun.spawn(["xcrun", "simctl", "shutdown", state.simulator], { stdout: "ignore", stderr: "ignore" }).exited
       await Bun.spawn(["xcrun", "simctl", "delete", state.simulator], { stdout: "ignore", stderr: "ignore" }).exited
     }
     // Retain failure evidence privately when requested; never publish invitations or device identity.
     if (process.env.MIAO_UI_TEST_KEEP_RESULTS !== "1") await rm(directory, { recursive: true, force: true })
+  }
+}
+
+async function fixtureHub(grants: Awaited<ReturnType<typeof DeviceGrants.load>>) {
+  if (process.env.MIAO_UI_TEST_ACCOUNT !== "1") {
+    const token = crypto.randomUUID() + crypto.randomUUID()
+    return {
+      hub: ControlHub.listen({ port: 0, hosts: new Map([[grants.hostID, token]]) }),
+      token,
+      account: undefined,
+      closeDatabase: () => {},
+    }
+  }
+  const database = new Database(":memory:")
+  const reservation = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() })
+  const port = reservation.port
+  await reservation.stop(true)
+  const origin = `http://127.0.0.1:${port}`
+  const owner = { email: "native-ui@example.invalid", password: crypto.randomUUID(), name: "Native UI" }
+  let hub: Awaited<ReturnType<typeof HubService.listen>> | undefined
+  try {
+    hub = await HubService.listen({
+      database,
+      baseURL: origin,
+      secret: crypto.randomUUID() + crypto.randomUUID(),
+      allowLoopbackHTTP: true,
+      migrate: true,
+      bootstrap: owner,
+      hostname: "127.0.0.1",
+      port,
+    })
+    const signIn = await fetch(origin + "/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify(owner),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const login = signIn.headers.get("set-auth-token")
+    await signIn.arrayBuffer()
+    if (!signIn.ok || !login) throw new Error("Native account fixture login failed")
+    const response = await fetch(origin + "/api/auth/token", {
+      headers: { origin, authorization: "Bearer " + login },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) throw new Error("Native account fixture token failed")
+    const bearer = Schema.decodeUnknownSync(Schema.Struct({ token: Schema.String }))(await response.json())
+    const registered = await fetch(origin + "/api/hub/hosts", {
+      method: "POST",
+      headers: { origin, authorization: "Bearer " + bearer.token, "content-type": "application/json" },
+      body: JSON.stringify({ hostID: grants.hostID, name: "Native UI computer", publicKey: grants.identity.publicKey }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (registered.status !== 201) throw new Error("Native account fixture registration failed")
+    const host = Schema.decodeUnknownSync(Schema.Struct({ token: Schema.String }))(await registered.json())
+    return {
+      hub,
+      token: host.token,
+      account: { origin, email: owner.email, password: owner.password },
+      closeDatabase: () => database.close(),
+    }
+  } catch (error) {
+    await hub?.stop()
+    database.close()
+    throw error
   }
 }
 
