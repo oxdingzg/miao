@@ -14,6 +14,17 @@ async function setup() {
 }
 
 describe("Remote Control authenticated secure channel", () => {
+  test("non-exportable browser identities still authenticate and encrypt", async () => {
+    const device = await SecureChannel.createIdentity({ extractable: false })
+    expect(device.keys.privateKey.extractable).toBe(false)
+    await expect(crypto.subtle.exportKey("pkcs8", device.keys.privateKey)).rejects.toThrow()
+    const host = await SecureChannel.createIdentity()
+    const client = await SecureChannel.startClient(device, target)
+    const accepted = await SecureChannel.acceptClient(host, target, connectionID, client.hello, device.publicKey)
+    const connected = await client.finish(accepted.hello, host.publicKey)
+    const packet = await connected.channel.seal(text.encode("browser command"))
+    expect(new TextDecoder().decode(await accepted.channel.open(packet))).toBe("browser command")
+  })
   test("encrypts bidirectionally with fresh handshake keys", async () => {
     const pair = await setup()
     const first = await pair.connected.channel.seal(text.encode("prompt"))

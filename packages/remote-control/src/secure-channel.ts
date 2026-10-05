@@ -37,8 +37,8 @@ export type Channel = {
   readonly open: (packet: string) => Promise<Uint8Array<ArrayBuffer>>
 }
 
-export async function createIdentity(): Promise<Identity> {
-  const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
+export async function createIdentity(options: { extractable?: boolean } = {}): Promise<Identity> {
+  const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, options.extractable ?? true, ["sign", "verify"])
   return { keys, publicKey: encode(new Uint8Array(await crypto.subtle.exportKey("raw", keys.publicKey))) }
 }
 
