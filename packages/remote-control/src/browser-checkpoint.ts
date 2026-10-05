@@ -31,6 +31,26 @@ export async function open(name = "miao.remote-control.checkpoints") {
   }
   return {
     close: () => database.close(),
+    /** Close the account transport and stop projection before clearing its cached pages. */
+    clearAccount: async (hubURL: string, accountID: string): Promise<void> => {
+      const url = new URL(hubURL)
+      if (url.username || url.password || url.search || url.hash || url.pathname !== "/" ||
+          !["https:", "http:"].includes(url.protocol) || !accountID || accountID.length > 128)
+        throw new Error("Invalid checkpoint account")
+      const prefix = JSON.stringify([url.origin, accountID]).slice(0, -1) + ","
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction("checkpoints", "readwrite")
+        const cursor = transaction.objectStore("checkpoints").openCursor()
+        cursor.onsuccess = () => {
+          const row = cursor.result
+          if (!row) return
+          if (typeof row.key === "string" && row.key.startsWith(prefix)) row.delete()
+          row.continue()
+        }
+        transaction.oncomplete = () => resolve()
+        transaction.onabort = transaction.onerror = () => reject(new Error("Account checkpoint cleanup failed"))
+      })
+    },
     read: async (scope: Scope): Promise<Checkpoint | undefined> => {
       const address = key(scope)
       return new Promise((resolve, reject) => {
