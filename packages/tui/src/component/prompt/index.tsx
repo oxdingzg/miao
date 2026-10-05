@@ -63,9 +63,8 @@ import { readLocalAttachment } from "./local-attachment"
 import { PromptPlaceholder } from "./placeholder"
 import { useLocation } from "../../context/location"
 
-// The scanner steps on the shared 80ms animation clock (it used its own 40ms
-// timer), so halve the default 30/9 hold frames to keep the pauses as long.
-const SCANNER_HOLD = { holdStart: 15, holdEnd: 5 }
+// Match the original scanner pauses on the shared 160ms animation clock.
+const SCANNER_HOLD = { holdStart: 8, holdEnd: 2 }
 
 export type PromptProps = {
   sessionID?: string

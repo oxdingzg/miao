@@ -1,8 +1,8 @@
-import { createSignal, For, onCleanup, Show, type Accessor } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show, type Accessor } from "solid-js"
 import { useTheme } from "../context/theme"
 import { useKV } from "../context/kv"
 import type { JSX } from "@opentui/solid"
-import type { RGBA } from "@opentui/core"
+import { parseColor, type BoxRenderable, type RGBA } from "@opentui/core"
 import type { ColorGenerator } from "opentui-spinner"
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -12,7 +12,7 @@ export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", 
 // milliseconds (WeakMap and code-finalizer scans over the whole heap), far more
 // than the frame itself. Independent spinner timers therefore cost CPU per wakeup;
 // sharing one clock keeps any number of visible spinners at one wakeup per frame.
-export const ANIMATION_INTERVAL = 80
+export const ANIMATION_INTERVAL = 160
 
 const [tick, setTick] = createSignal(0)
 let subscribers = 0
@@ -74,25 +74,49 @@ export function Spinner(props: { children?: JSX.Element; color?: RGBA }) {
 
 function SpinnerFrame(props: { color: RGBA }) {
   const frame = useAnimationFrame()
+  let view: BoxRenderable | undefined
+  createEffect(() => {
+    frame()
+    props.color
+    view?.requestRender()
+  })
+  // Fixed-size drawing keeps animation ticks out of the text/Yoga layout path.
   return (
-    <text fg={props.color} flexShrink={0}>
-      {SPINNER_FRAMES[frame() % SPINNER_FRAMES.length]}
-    </text>
+    <box
+      width={1}
+      height={1}
+      flexShrink={0}
+      ref={(value) => (view = value)}
+      renderAfter={function (buffer) {
+        buffer.drawText(SPINNER_FRAMES[frame() % SPINNER_FRAMES.length]!, this.x, this.y, props.color)
+      }}
+    />
   )
 }
 
 /** Multi-cell scanner whose cells are coloured per frame, e.g. the knight-rider prompt indicator. */
 export function ScannerSpinner(props: { frames: string[]; color: ColorGenerator }) {
   const frame = useAnimationFrame()
-  const index = () => frame() % props.frames.length
-  const cells = () => Array.from(props.frames[index()] ?? "")
+  let view: BoxRenderable | undefined
+  createEffect(() => {
+    frame()
+    props.frames
+    props.color
+    view?.requestRender()
+  })
   return (
-    <text flexShrink={0}>
-      <For each={Array.from(props.frames[0] ?? "", (_, cell) => cell)}>
-        {(cell) => (
-          <span style={{ fg: props.color(index(), cell, props.frames.length, cells().length) }}>{cells()[cell]}</span>
-        )}
-      </For>
-    </text>
+    <box
+      width={Array.from(props.frames[0] ?? "").length}
+      height={1}
+      flexShrink={0}
+      ref={(value) => (view = value)}
+      renderAfter={function (buffer) {
+        const index = frame() % props.frames.length
+        const cells = Array.from(props.frames[index] ?? "")
+        cells.forEach((cell, offset) =>
+          buffer.drawText(cell, this.x + offset, this.y, parseColor(props.color(index, offset, props.frames.length, cells.length))),
+        )
+      }}
+    />
   )
 }
