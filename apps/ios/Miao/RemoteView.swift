@@ -264,6 +264,7 @@ private struct SessionView: View {
     @State private var diffPresented = false
     @State private var renamePresented = false
     @State private var menuPresented = false
+    @State private var selectedAction: String?
     @State private var title = ""
     @State private var queue = false
     @FocusState private var composing: Bool
@@ -297,12 +298,26 @@ private struct SessionView: View {
                 Button("完成") { composing = false }.accessibilityIdentifier("dismissKeyboard")
             }
         }
-        .confirmationDialog("会话操作", isPresented: $menuPresented, titleVisibility: .visible) {
-            Button("查看文件变化") { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
-            if client.record.grant.permissions.contains(.sessionRename) {
-                Button("重命名") { title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title; renamePresented = true }
+        .sheet(isPresented: $menuPresented, onDismiss: {
+            let action = selectedAction
+            selectedAction = nil
+            if action == "rename" {
+                title = session.timeline.title.isEmpty ? session.summary.title : session.timeline.title
+                renamePresented = true
             }
-            Button("取消", role: .cancel) {}
+            if action == "diff" { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
+        }) {
+            NavigationStack {
+                Form {
+                    Button("查看文件变化") { selectedAction = "diff"; menuPresented = false }
+                    if client.record.grant.permissions.contains(.sessionRename) {
+                        Button("重命名") { selectedAction = "rename"; menuPresented = false }
+                    }
+                }
+                .navigationTitle("会话操作")
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { menuPresented = false } } }
+            }
+            .presentationDetents([.medium])
         }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }
