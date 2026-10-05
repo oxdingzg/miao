@@ -14,7 +14,7 @@ afterEach(async () => {
 
 function app(password: string, runtime?: RuntimeIdentity.Interface) {
   const server = HttpRouter.toWebHandler(
-    HttpApiApp.createRoutes(undefined, undefined, runtime).pipe(
+    HttpApiApp.createRoutes(undefined, runtime).pipe(
       Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ MIAO_SERVER_PASSWORD: password }))),
     ),
     { disableLogger: true },

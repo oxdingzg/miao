@@ -442,7 +442,6 @@
         "@miao/native": "workspace:*",
         "@miao/plugin": "workspace:*",
         "@miao/protocol": "workspace:*",
-        "@miao/remote": "workspace:*",
         "@miao/remote-control": "workspace:*",
         "@miao/schema": "workspace:*",
         "@miao/script": "workspace:*",
@@ -575,17 +574,6 @@
       "dependencies": {
         "@miao/schema": "workspace:*",
         "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
-      },
-    },
-    "packages/remote": {
-      "name": "@miao/remote",
-      "dependencies": {
-        "@miao/client": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
@@ -1409,8 +1397,6 @@
     "@miao/plugin": ["@miao/plugin@workspace:packages/plugin"],
 
     "@miao/protocol": ["@miao/protocol@workspace:packages/protocol"],
-
-    "@miao/remote": ["@miao/remote@workspace:packages/remote"],
 
     "@miao/remote-control": ["@miao/remote-control@workspace:packages/remote-control"],
 

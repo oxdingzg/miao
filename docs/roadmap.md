@@ -23,7 +23,7 @@ entry points where known, and an observable acceptance check.
 - V1 retirement Stages 1–5 have landed. Creation is V2-native (`session.next.created.1`); the V1
   projector and `packages/core/v1` schemas remain only for legacy DB reads, backfill, compact, and
   restore.
-- Every shipped client — TUI, `--mini`, ACP, `miao run`, web/desktop app, `miao remote` — reads and
+- Every shipped client — TUI, `--mini`, ACP, `miao run`, web/desktop app — reads and
   writes through `/api/*`. The TUI has **zero** legacy SDK calls left.
 - The app moved off the vendored upstream client to `@miao/client`; the `detectServerProtocol` and
   `protocol === "v1"` branches were removed. The TUI console/org switching feature was deleted.
@@ -121,7 +121,7 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 - [x] Delete the legacy `packages/miao` `Project` facade (#46).
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy routes;
       switch the release server to the V2-only assembly. (`AppRuntime` is still used by
-      `packages/miao/src/runtime/*`, the remote command, and the TUI worker.)
+      `packages/miao/src/runtime/*` and the TUI worker.)
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
       read, project rename, directory picker, custom providers).
 - **Acceptance:** `packages/miao` is only the CLI shell; the server mounts `/api/*` only; no V1

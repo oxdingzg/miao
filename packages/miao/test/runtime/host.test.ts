@@ -14,7 +14,7 @@ import { SecureChannel } from "@miao/remote-control/secure-channel"
 import { ControlHub } from "@miao/remote-control/hub"
 import { ControlPairing } from "@miao/remote-control/pairing"
 
-test("Runtime owns storage, hosts IM controls, authenticates clients, and persists sessions across restart", async () => {
+test("Runtime owns storage, hosts Remote Control, authenticates clients, and persists sessions across restart", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-host-test-"))
   const database = path.join(directory, "sessions.db")
   const project = path.join(directory, "project")
@@ -50,7 +50,7 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     MIAO_DB: database,
     MIAO_REMOTE_CONTROL_CONFIG: configuration,
     MIAO_PURE: "1",
-    MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false, remote: { projects: {} } }),
+    MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false }),
     MIAO_TEST_HOME: path.join(directory, "home"),
     MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
     XDG_CONFIG_HOME: path.join(directory, "config"),
@@ -170,17 +170,9 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
   try {
     const first = start()
     const record = await ready(first)
-    const status = Bun.spawn([process.execPath, "run", "src/index.ts", "remote", "status"], {
-      cwd: path.resolve(import.meta.dir, "../.."),
-      env: environment,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-    expect(await status.exited).toBe(0)
-    expect(await new Response(status.stdout).text()).toContain(record.url)
     const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
     expect((await fetch(new URL("/api/health", record.url))).status).toBe(401)
-    expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(200)
+    expect((await fetch(new URL("/api/remote", record.url), { headers })).status).toBe(404)
     const created = await fetch(new URL("/api/session", record.url), {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },

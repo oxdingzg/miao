@@ -86,7 +86,6 @@
     "@miao/llm": "workspace:*",
     "@miao/native": "workspace:*",
     "@miao/protocol": "workspace:*",
-    "@miao/remote": "workspace:*",
     "@miao/remote-control": "workspace:*",
     "@miao/schema": "workspace:*",
     "@miao/script": "workspace:*",
