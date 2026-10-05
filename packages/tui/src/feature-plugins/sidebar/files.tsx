@@ -1,6 +1,6 @@
 import type { TuiPlugin, TuiPluginApi } from "@miao/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
-import { createMemo, For, Show, createSignal } from "solid-js"
+import { createMemo, For, Show, createSignal, createEffect, on } from "solid-js"
 import { Locale } from "../../util/locale"
 
 const id = "internal:sidebar-files"
@@ -12,23 +12,38 @@ function changeCountWidth(item: { additions: number; deletions: number }) {
 }
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
-  const [open, setOpen] = createSignal(true)
+  const pageSize = 24
+  const [open, setOpen] = createSignal<boolean>()
+  const [page, setPage] = createSignal(0)
   const theme = () => props.api.theme.current
   const list = createMemo(() => props.api.state.session.diff(props.session_id))
+  const expanded = () => open() ?? list().length <= pageSize
+  const pageCount = () => Math.ceil(list().length / pageSize)
+  const currentPage = () => Math.min(page(), Math.max(0, pageCount() - 1))
+  const visible = createMemo(() => list().slice(currentPage() * pageSize, (currentPage() + 1) * pageSize))
+  createEffect(
+    on(
+      () => props.session_id,
+      () => {
+        setOpen(undefined)
+        setPage(0)
+      },
+    ),
+  )
 
   return (
     <Show when={list().length > 0}>
       <box>
-        <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
+        <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen(!expanded())}>
           <Show when={list().length > 2}>
-            <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
+            <text fg={theme().text}>{expanded() ? "▼" : "▶"}</text>
           </Show>
           <text fg={theme().text}>
-            <b>Modified Files</b>
+            <b>Modified Files ({list().length})</b>
           </text>
         </box>
-        <Show when={list().length <= 2 || open()}>
-          <For each={list()}>
+        <Show when={list().length <= 2 || expanded()}>
+          <For each={visible()}>
             {(item) => (
               <box flexDirection="row" gap={1} justifyContent="space-between">
                 <text fg={theme().textMuted} wrapMode="none">
@@ -45,6 +60,26 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
               </box>
             )}
           </For>
+          <Show when={pageCount() > 1}>
+            <box flexDirection="row" justifyContent="space-between">
+              <text
+                fg={currentPage() > 0 ? theme().text : theme().textMuted}
+                onMouseDown={() => setPage(Math.max(0, currentPage() - 1))}
+              >
+                ←
+              </text>
+              <text fg={theme().textMuted}>
+                {currentPage() * pageSize + 1}–{Math.min((currentPage() + 1) * pageSize, list().length)} /{" "}
+                {list().length}
+              </text>
+              <text
+                fg={currentPage() + 1 < pageCount() ? theme().text : theme().textMuted}
+                onMouseDown={() => setPage(Math.min(pageCount() - 1, currentPage() + 1))}
+              >
+                →
+              </text>
+            </box>
+          </Show>
         </Show>
       </box>
     </Show>
