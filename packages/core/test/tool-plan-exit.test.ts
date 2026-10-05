@@ -26,7 +26,6 @@ import { executeTool, settleTool, toolDefinitions } from "./lib/tool"
 
 const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 const planAgent = AgentV2.ID.make("plan")
-const manualAgent = AgentV2.ID.make("manual")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -115,7 +114,7 @@ const call = (sessionID: SessionV2.ID, input: Record<string, unknown> = {}) => (
 })
 
 describe("PlanExitTool", () => {
-  it.effect("switches the same root plan Session to build only after the user approves", () =>
+  it.effect("switches the same root plan Session to build automatically", () =>
     Effect.gen(function* () {
       reset()
       const session = yield* SessionV2.Service
@@ -127,7 +126,7 @@ describe("PlanExitTool", () => {
 
       expect(settled.result).toEqual({
         type: "text",
-        value: "User approved switching to the build agent. Continue by implementing the approved plan.",
+        value: "Switched to the build agent. Continue by implementing the plan.",
       })
       // The switch is durable: the event is recorded and projects to the row the
       // next provider turn reads its agent from.
@@ -169,37 +168,8 @@ describe("PlanExitTool", () => {
       expect(yield* session.get(created.id)).toMatchObject({ agent: "build" })
 
       expect(assertions.map((input) => input.action)).toEqual(["plan_exit"])
-      expect(captured?.questions[0]?.options.map((option) => option.label)).toEqual(["Yes", "No"])
-    }),
-  )
-
-  it.effect("keeps the plan agent and does not publish a switch when the user declines", () =>
-    Effect.gen(function* () {
-      reset()
-      outcome = "no"
-      const session = yield* SessionV2.Service
-      const registry = yield* ToolRegistry.Service
-      const created = yield* session.create({ location, agent: planAgent })
-
-      const settled = yield* settleTool(registry, call(created.id))
-
-      expect(settled.result).toEqual({ type: "error", value: "Plan exit was not approved." })
-      expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
-    }),
-  )
-
-  it.effect("keeps the plan agent when the user dismisses the question", () =>
-    Effect.gen(function* () {
-      reset()
-      outcome = "dismiss"
-      const session = yield* SessionV2.Service
-      const registry = yield* ToolRegistry.Service
-      const created = yield* session.create({ location, agent: planAgent })
-
-      const settled = yield* settleTool(registry, call(created.id))
-
-      expect(settled.result).toEqual({ type: "error", value: "Plan exit was not approved." })
-      expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
+      // Plan exit applies without asking the user.
+      expect(captured).toBeUndefined()
     }),
   )
 
@@ -233,45 +203,28 @@ describe("PlanExitTool", () => {
         type: "error",
         value: "Only the root plan Session can switch to the build agent.",
       })
-      // The question is never asked and no switch is published.
       expect(captured).toBeUndefined()
       expect(yield* session.get(child.id)).toMatchObject({ agent: "plan" })
     }),
   )
 
-  it.effect("does not overwrite a manual agent switch made while the question waits", () =>
+  it.effect("ignores unexpected input and switches automatically", () =>
     Effect.gen(function* () {
       reset()
-      onAsk = () => session.switchAgent({ sessionID: created.id, agent: manualAgent }).pipe(Effect.orDie)
       const session = yield* SessionV2.Service
       const registry = yield* ToolRegistry.Service
       const created = yield* session.create({ location, agent: planAgent })
 
-      const settled = yield* settleTool(registry, call(created.id))
-
-      expect(settled.result).toEqual({
-        type: "error",
-        value: "The Session changed while waiting for approval; the switch was not applied.",
-      })
-      expect(yield* session.get(created.id)).toMatchObject({ agent: "manual" })
-    }),
-  )
-
-  it.effect("ignores unexpected input instead of letting it skip the question", () =>
-    Effect.gen(function* () {
-      reset()
-      outcome = "no"
-      const session = yield* SessionV2.Service
-      const registry = yield* ToolRegistry.Service
-      const created = yield* session.create({ location, agent: planAgent })
-
-      // There is no approval field; extra input is stripped and the user is
-      // still asked, so a peer cannot smuggle an approval through the schema.
+      // There is no approval field; extra input is stripped and the switch
+      // still applies without asking the user.
       const settled = yield* settleTool(registry, call(created.id, { approved: true, agent: "build" }))
 
-      expect(captured).toBeDefined()
-      expect(settled.result).toEqual({ type: "error", value: "Plan exit was not approved." })
-      expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
+      expect(captured).toBeUndefined()
+      expect(settled.result).toEqual({
+        type: "text",
+        value: "Switched to the build agent. Continue by implementing the plan.",
+      })
+      expect(yield* session.get(created.id)).toMatchObject({ agent: "build" })
     }),
   )
 })
