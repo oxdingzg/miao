@@ -32,3 +32,20 @@ certificate alone does not configure a push provider.
 
 Protocol references: [Apple APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)
 and [token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns).
+
+## Device registration storage
+
+`PushRegistry` stores device public identities, environment-specific tokens and
+registration generations in the private Hub database. Its schema migration is
+explicit and independent of host metadata. Registrations bind to a verified Hub
+account and its current login session; queries exclude expired or deleted login
+sessions, and pruning removes their tokens. An account can store up to 32 device
+identities. Token replacement keeps one current row per identity, and a token
+cannot be assigned to two identities in the same APNs environment.
+
+Unregistered-token responses remove only the exact registration generation used
+for that delivery. The provider timestamp, when present, must also be at least
+as recent as registration. A delayed response cannot erase a replacement token
+or a renewed registration of the same token. Device revocation is account scoped.
+Runtime subscription approval remains a separate authority check: storing a
+push token alone must never subscribe a device to a host or session.
