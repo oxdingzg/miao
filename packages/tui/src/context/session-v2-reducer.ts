@@ -11,6 +11,7 @@ import type { Event as TuiEvent } from "@miao/schema/event-view"
 import type { SessionMessage } from "@miao/schema/view-models"
 
 type Assistant = Extract<SessionMessage, { type: "assistant" }>
+type User = Extract<SessionMessage, { type: "user" }>
 type Shell = Extract<SessionMessage, { type: "shell" }>
 type ToolState = Extract<Assistant["content"][number], { type: "tool" }>["state"]
 type ToolContent = Extract<ToolState, { status: "completed" }>["content"]
@@ -61,10 +62,26 @@ export function createTuiV2SessionReducer() {
           id: event.properties.messageID,
           type: "user",
           text: event.properties.prompt.text,
+          command: event.properties.prompt.command,
           files: event.properties.prompt.files,
           agents: event.properties.prompt.agents,
           time: { created: event.properties.timestamp },
         })
+      case "session.next.command.started":
+        return updateMessage<User>(source,
+          (item): item is User => item.type === "user" && item.id === event.properties.messageID,
+          (item) => ({ ...item, commandState: "running" }),
+          event.properties.sessionID,)
+      case "session.next.command.completed":
+        return updateMessage<User>(source,
+          (item): item is User => item.type === "user" && item.id === event.properties.messageID,
+          (item) => ({ ...item, text: event.properties.prompt.text, files: event.properties.prompt.files, agents: event.properties.prompt.agents, commandState: "completed" }),
+          event.properties.sessionID,)
+      case "session.next.command.failed":
+        return updateMessage<User>(source,
+          (item): item is User => item.type === "user" && item.id === event.properties.messageID,
+          (item) => ({ ...item, text: event.properties.text, commandState: "failed", commandError: event.properties.error }),
+          event.properties.sessionID,)
       case "session.next.agent.switched":
         return append(event.properties.sessionID, {
           id: event.properties.messageID,

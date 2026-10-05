@@ -5,6 +5,17 @@ const ARGS = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const QUOTE_TRIM = /^["']|["']$/g
 
 /**
+ * `@path` or `@agent` mentions in a command template. The lookbehind keeps
+ * email addresses and fenced-code text from matching.
+ */
+export const MENTION = /(?<![\w`])@(\.?[^\s`,.]*(?:\.[^\s`,.]+)*)/g
+/** `` !`command` `` shell substitutions in a command template. */
+export const SHELL = /!`([^`]+)`/g
+
+export const files = (template: string) => Array.from(template.matchAll(MENTION))
+export const shell = (template: string) => Array.from(template.matchAll(SHELL))
+
+/**
  * Renders a slash-command template with positional (`$1`, `$2`, ...) and
  * `$ARGUMENTS` placeholders, matching V1 semantics: the highest positional
  * placeholder captures the remaining arguments, and a template with no

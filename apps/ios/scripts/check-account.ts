@@ -121,9 +121,18 @@ try {
   try {
     const code = await state.child.exited
     const log = await output
-    await errors
+    const stderr = await errors
     // simctl can return success when the application exits with an error; require the probe's explicit result.
     if (code !== 0 || !log.split("\n").some((line) => line.trim() === '{"nativeAccount":true}')) {
+      const stages = [...log.matchAll(/^NativeAccountStage:(fixture|login|directory|keychain|denyDevice|refreshRuntime|rpc|secondConnection|logout|disconnect|cleared)\s*$/gm)]
+      console.log(JSON.stringify({
+        nativeAccount: false,
+        exitCode: code,
+        stage: stages.at(-1)?.[1] ?? "notStarted",
+        probeFailed: log.includes("Native account integration failed"),
+        buildFailed: /BUILD FAILED|error: emit-module|error: compile command/.test(stderr),
+        simulatorFailed: /Unable to boot|Unable to launch|Failed to launch|Unable to lookup/.test(stderr),
+      }))
       throw new Error("Native Hub account integration failed; private fixture output is not published")
     }
   } finally {

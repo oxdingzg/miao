@@ -464,6 +464,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           yield* session
             .command({
               sessionID: ctx.params.sessionID,
+              id: ctx.payload.id,
               command: ctx.payload.command,
               arguments: ctx.payload.arguments,
               resume: ctx.payload.resume,
@@ -477,6 +478,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   }),
                 ),
               ),
+              Effect.catchTag("Session.PromptConflictError", (error) => Effect.fail(new ConflictError({ message: `Command message ID conflicts with an existing durable record: ${error.messageID}`, resource: error.messageID }))),
               Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
             )
         }),

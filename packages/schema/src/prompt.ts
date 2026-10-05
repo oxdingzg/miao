@@ -1,3 +1,4 @@
+import { Model } from "./model"
 import { Schema } from "effect"
 import { optional } from "./schema"
 import { statics } from "./schema"
@@ -42,9 +43,18 @@ export const AgentAttachment = Schema.Struct({
   source: Source.pipe(optional),
 }).annotate({ identifier: "Prompt.AgentAttachment" })
 
+export const CommandInvocation = Schema.Struct({
+  name: Schema.String,
+  arguments: Schema.String,
+  agent: Schema.String.pipe(optional),
+  model: Model.Ref.pipe(optional),
+  subtask: Schema.Boolean,
+}).annotate({ identifier: "Prompt.CommandInvocation" })
+
 export interface Prompt extends Schema.Schema.Type<typeof Prompt> {}
 export const Prompt = Schema.Struct({
   text: Schema.String,
+  command: CommandInvocation.pipe(optional),
   files: Schema.Array(FileAttachment).pipe(optional),
   agents: Schema.Array(AgentAttachment).pipe(optional),
 })
@@ -52,9 +62,10 @@ export const Prompt = Schema.Struct({
   .pipe(
     statics((schema) => ({
       equivalence: Schema.toEquivalence(schema),
-      fromUserMessage: (input: Pick<Prompt, "text" | "files" | "agents">) =>
+      fromUserMessage: (input: Pick<Prompt, "text" | "files" | "agents" | "command">) =>
         schema.make({
           text: input.text,
+          ...(input.command === undefined ? {} : { command: input.command }),
           ...(input.files === undefined ? {} : { files: input.files }),
           ...(input.agents === undefined ? {} : { agents: input.agents }),
         }),

@@ -8,6 +8,7 @@ public enum PairingError: Error, Equatable {
 public enum RemotePermission: String, Codable, Sendable {
     case read, prompt, permissionReply = "permission.reply", questionReply = "question.reply"
     case interrupt, sessionCreate = "session.create", sessionRename = "session.rename"
+    case sessionSelection = "session.selection"
 }
 
 public struct DeviceGrant: Codable, Sendable, Equatable, Identifiable {

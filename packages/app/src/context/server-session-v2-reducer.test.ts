@@ -218,3 +218,16 @@ describe("v2 session reducer", () => {
     })
   })
 })
+
+ test("updates the original command message through preparation and failure", () => {
+  const reducer = createV2SessionReducer()
+  const promoted = reducer.reduce([], event({ ...base, id: "evt_command", type: "session.next.prompted", data: { ...stamp, messageID: "msg_command", delivery: "steer", prompt: { text: "raw !`echo`", command: { name: "daily", arguments: "", subtask: false } } } }))
+  const started = reducer.reduce(promoted?.messages ?? [], event({ ...base, id: "evt_started", type: "session.next.command.started", data: { ...stamp, messageID: "msg_command" } }))
+  expect(started?.messages[0]).toMatchObject({ id: "msg_command", commandState: "running" })
+  const completed = reducer.reduce(started?.messages ?? [], event({ ...base, id: "evt_completed", type: "session.next.command.completed", data: { ...stamp, messageID: "msg_command", prompt: { text: "expanded output" } } }))
+  expect(completed?.touched).toEqual(["msg_command"])
+  expect(completed?.messages).toHaveLength(1)
+  expect(completed?.messages[0]).toMatchObject({ text: "expanded output", commandState: "completed" })
+  const failed = reducer.reduce(started?.messages ?? [], event({ ...base, id: "evt_failed", type: "session.next.command.failed", data: { ...stamp, messageID: "msg_command", error: "refused", text: "canonical failure text" } }))
+  expect(failed?.messages[0]).toMatchObject({ text: "canonical failure text", commandState: "failed", commandError: "refused" })
+ })

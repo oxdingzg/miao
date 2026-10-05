@@ -1,7 +1,8 @@
 export * as SessionV2 from "./session"
 export * from "./session/schema"
 
-import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
+import { DateTime, Effect, Layer, Option, Schema, Context, Stream } from "effect"
+import path from "path"
 import { ListAnchor } from "@miao/schema/session"
 import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
@@ -186,10 +187,11 @@ export interface Interface {
   }) => Effect.Effect<SessionSchema.Info, NotFoundError | LegacyNotMigratedError>
   readonly command: (input: {
     sessionID: SessionSchema.ID
+    id?: SessionMessage.ID
     command: string
     arguments: string
     resume?: boolean
-  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
+  }) => Effect.Effect<void, NotFoundError | PromptConflictError | LegacyNotMigratedError>
   readonly rename: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly archive: (input: { sessionID: SessionSchema.ID; archived: boolean }) => Effect.Effect<void, NotFoundError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
@@ -455,35 +457,39 @@ const layer = Layer.effect(
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
-        const command = yield* Effect.gen(function* () {
+        if (input.id) {
+          const existing = yield* SessionInput.find(db, input.id)
+          if (existing) {
+            if (existing.sessionID !== session.id || existing.prompt.command?.name !== input.command || existing.prompt.command.arguments !== input.arguments || existing.delivery !== "steer")
+              return yield* new PromptConflictError({ sessionID: input.sessionID, messageID: input.id })
+            if (input.resume !== false) yield* execution.wake(session.id)
+            return
+          }
+        }
+        const definition = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
-          return yield* commands.get(input.command)
-        }).pipe(
-          Effect.provide(locations.get(session.location)),
-          Effect.orElseSucceed(() => undefined),
-        )
-        if (command === undefined) return yield* new NotFoundError({ sessionID: input.sessionID })
-        const text = SessionCommand.renderTemplate(command.template, input.arguments)
-        if (command.agent !== undefined)
-          yield* events.publish(SessionEvent.AgentSwitched, {
-            sessionID: session.id,
-            messageID: SessionMessage.ID.create(),
-            timestamp: yield* DateTime.now,
-            agent: command.agent,
-          })
-        if (command.model !== undefined)
-          yield* events.publish(SessionEvent.ModelSwitched, {
-            sessionID: session.id,
-            messageID: SessionMessage.ID.create(),
-            timestamp: yield* DateTime.now,
-            model: command.model,
-          })
-        yield* SessionInput.admit(db, events, {
-          id: SessionMessage.ID.create(),
+          const command = yield* commands.get(input.command)
+          if (!command) return
+          const agents = yield* AgentV2.Service
+          const agent = yield* agents.select(command.agent ?? session.agent)
+          if (!agent.info) return
+          return { command, subtask: command.subtask ?? agent.info.mode === "subagent" }
+        }).pipe(Effect.provide(locations.get(session.location)))
+        if (!definition) return yield* new NotFoundError({ sessionID: input.sessionID })
+        const messageID = input.id ?? SessionMessage.ID.create()
+        const admitted = yield* SessionInput.admit(db, events, {
+          id: messageID,
           sessionID: session.id,
-          prompt: Prompt.make({ text }),
+          prompt: Prompt.make({
+            text: SessionCommand.renderTemplate(definition.command.template, input.arguments),
+            command: { name: input.command, arguments: input.arguments, agent: definition.command.agent, model: definition.command.model, subtask: definition.subtask },
+          }),
           delivery: "steer",
-        })
+        }).pipe(Effect.catchDefect((defect) => defect instanceof SessionInput.LifecycleConflict
+          ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+          : Effect.die(defect)))
+        if (admitted.sessionID !== session.id || admitted.prompt.command?.name !== input.command || admitted.prompt.command.arguments !== input.arguments || admitted.delivery !== "steer")
+          return yield* new PromptConflictError({ sessionID: input.sessionID, messageID: admitted.id })
         // `/init` writes the project's AGENTS.md; record when the project was set up.
         if (input.command === "init")
           yield* db

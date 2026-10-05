@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { $ } from "bun"
 import { Database } from "bun:sqlite"
+import { OpenCode } from "@miao/client"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
@@ -190,6 +191,29 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     expect((await fetch(new URL("/api/runtime/control", record.url))).status).toBe(401)
     const control = await fetch(new URL("/api/runtime/control", record.url), { headers })
     expect(await control.json()).toMatchObject({ enabled: true, hostID: grants.hostID })
+    const configureURL = new URL("/api/runtime/control/configuration", record.url)
+    expect(
+      (
+        await fetch(configureURL, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ hubURL: `http://127.0.0.1:${hub.port}`, hostToken }),
+        })
+      ).status,
+    ).toBe(401)
+    const sdk = OpenCode.make({ baseUrl: record.url, headers })
+    const invalidToken = "private-token-must-not-appear-in-errors!"
+    const rejectedConfiguration = await fetch(configureURL, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ hubURL: `http://127.0.0.1:${hub.port}`, hostToken: invalidToken }),
+    })
+    expect(rejectedConfiguration.status).toBe(400)
+    expect(await rejectedConfiguration.text()).not.toContain(invalidToken)
+    const configured = await sdk["server.runtime"].configure({ hubURL: `http://127.0.0.1:${hub.port}`, hostToken })
+    expect(configured).toMatchObject({ enabled: true, hostID: grants.hostID, runtimeID: record.runtimeID })
+    expect((await RuntimeDiscovery.read(database))?.runtimeID).toBe(record.runtimeID)
+    expect(await sdk.sessions.get({ sessionID })).toMatchObject({ id: sessionID, projectID: session.projectID })
     const invitationResponse = await fetch(new URL("/api/runtime/control/invitation", record.url), {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
@@ -410,7 +434,11 @@ test("Runtime owns storage, hosts IM controls, authenticates clients, and persis
     const devices = await fetch(new URL("/api/runtime/control/device", next.url), {
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
     })
-    expect(await devices.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: newGrant.id, version: newGrant.version + 1, revokedAt: expect.any(Number) })]))
+    expect(await devices.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: newGrant.id, version: newGrant.version + 1, revokedAt: expect.any(Number) }),
+      ]),
+    )
     const restoredCall = await connectRemote(next, grant)
     expect(await restoredCall("session.rename", { title: "Interrupted rename" }, unknownID)).toMatchObject({
       type: "result",

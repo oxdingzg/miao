@@ -14,6 +14,7 @@ export const Permission = Schema.Literals([
   "interrupt",
   "session.create",
   "session.rename",
+  "session.selection",
 ]).annotate({ identifier: "RemoteAccess.Permission" })
 export type Permission = typeof Permission.Type
 export interface Policy extends Schema.Schema.Type<typeof Policy> {}
@@ -60,3 +61,9 @@ export const Status = Schema.Struct({
   hostPublicKey: PublicKey.pipe(optional),
   hubURL: Schema.String.pipe(optional),
 }).annotate({ identifier: "RemoteAccess.Status" })
+
+export interface Configuration extends Schema.Schema.Type<typeof Configuration> {}
+export const Configuration = Schema.Struct({
+  hubURL: Schema.String.check(Schema.isLengthBetween(1, 2048)),
+  hostToken: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{32,256}$/)).pipe(Schema.redact),
+}).annotate({ identifier: "RemoteAccess.Configuration" })

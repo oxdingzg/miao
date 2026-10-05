@@ -45,6 +45,9 @@ export interface User extends Schema.Schema.Type<typeof User> {}
 export const User = Schema.Struct({
   ...Base,
   text: Prompt.fields.text,
+  command: Prompt.fields.command,
+  commandState: Schema.Literals(["running", "completed", "failed"]).pipe(optional),
+  commandError: Schema.String.pipe(optional),
   files: Prompt.fields.files,
   agents: Prompt.fields.agents,
   type: Schema.Literal("user"),

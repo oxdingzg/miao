@@ -26,6 +26,8 @@ export const Method = Schema.Literals([
   "session.prompt",
   "session.interrupt",
   "session.rename",
+  "session.switchAgent",
+  "session.switchModel",
   "permission.reply",
   "question.reply",
 ])
@@ -92,6 +94,8 @@ const required: Partial<Record<Method, DeviceGrants.Permission>> = {
   "session.prompt": "prompt",
   "session.interrupt": "interrupt",
   "session.rename": "session.rename",
+  "session.switchAgent": "session.selection",
+  "session.switchModel": "session.selection",
   "permission.reply": "permission.reply",
   "question.reply": "question.reply",
 }
@@ -104,6 +108,8 @@ const sessionMethods = new Set<Method>([
   "session.prompt",
   "session.interrupt",
   "session.rename",
+  "session.switchAgent",
+  "session.switchModel",
   "permission.reply",
   "question.reply",
 ])

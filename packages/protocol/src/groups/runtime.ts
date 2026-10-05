@@ -34,6 +34,18 @@ export const RuntimeGroup = HttpApiGroup.make("server.runtime").add(
   }).annotateMerge(
     OpenApi.annotations({ identifier: "v2.runtime.control.get", summary: "Inspect local Remote Control status" }),
   ),
+  HttpApiEndpoint.post("runtime.control.configure", "/api/runtime/control/configuration", {
+    payload: RemoteAccess.Configuration,
+    success: RemoteAccess.Status,
+    error: [ServiceUnavailableError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.configure",
+      summary: "Configure the local owner's outbound relay",
+      description:
+        "Requires the local Runtime administrator credential. Persists an owner-only relay credential and reconnects transport without restarting sessions. Not exposed to remote device grants.",
+    }),
+  ),
   HttpApiEndpoint.post("runtime.control.invite", "/api/runtime/control/invitation", {
     payload: RemoteAccess.Policy,
     success: RemoteAccess.Invitation,
