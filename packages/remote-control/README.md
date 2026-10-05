@@ -65,8 +65,11 @@ Bundle from the repository root after installing workspace dependencies:
 
 ```sh
 bun build packages/remote-control/src/hub-main.ts --target=bun --outfile=packages/remote-control/dist/hub.mjs
+(cd packages/remote-control && bun run build:web)
 docker build -t miao-control-hub:preview packages/remote-control
 ```
+
+The image includes the browser client at `/app/web`. To serve it from the same origin as account authentication, set `webDirectory` to `/app/web` in the private Hub configuration. Assets are loaded at startup and served through the Hub’s existing content-security policy. Omitting `webDirectory` keeps the web routes disabled.
 
 Mount the private configuration read-only at `/config/hub.json`. For account mode, set its database path to `/data/hub.db` and mount an owner-only persistent directory at `/data`. Run as a non-root UID/GID matching the configuration and data owner (override the container user when needed). Publish the port only on the interface used by the reverse proxy. Use a read-only root filesystem, dropped capabilities, and `no-new-privileges`; only the metadata volume is writable. Keep the database backup and authentication secret private.
 

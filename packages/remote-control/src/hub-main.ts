@@ -14,6 +14,8 @@ const Account = Schema.Struct({
   database: Schema.String,
   baseURL: Schema.String,
   secret: Schema.String,
+  webDirectory: Schema.optional(Schema.String),
+  pushRegistrations: Schema.optional(Schema.Boolean),
   migrate: Schema.optional(Schema.Boolean),
   bootstrap: Schema.optional(Schema.Struct({ email: Schema.String, password: Schema.String, name: Schema.String })),
 })
@@ -51,7 +53,12 @@ const server = await (async () => {
       origins: new Set(config.origins ?? []),
     })
   const { HubService } = await import("./hub-service")
-  return HubService.listen({ ...config, ...options, database: database! }).catch((error: unknown) => {
+  return HubService.listen({
+    ...config,
+    ...options,
+    database: database!,
+    webDirectory: config.webDirectory ? path.resolve(path.dirname(filename), config.webDirectory) : undefined,
+  }).catch((error: unknown) => {
     database!.close()
     throw error
   })

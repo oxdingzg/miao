@@ -1,6 +1,18 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "lib": ["ESNext", "DOM"] },
-  "include": ["src/browser-identity.ts"],
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM"]
+  },
+  "include": [
+    "src/browser-identity.ts",
+    "src/browser-channel.ts",
+    "src/browser-checkpoint.ts",
+    "src/browser-account.ts",
+    "script/check-browser.ts",
+    "script/check-browser-account.ts",
+    "web/client.ts",
+    "script/check-web.ts",
+    "script/check-web-runtime.ts"
+  ],
   "exclude": []
 }

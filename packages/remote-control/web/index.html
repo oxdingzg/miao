@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>miao · Remote</title>
+    <link rel="stylesheet" href="/control.css" />
+    <script type="module" src="/control.js"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <a class="wordmark" href="/">miao<span>REMOTE</span></a>
+        <p class="eyebrow">你的工作，随处继续</p>
+        <section id="login">
+          <h1>回到你的工作台。</h1>
+          <p>登录中继，连接运行 miao 的电脑。</p>
+          <form id="login-form">
+            <label>邮箱<input id="email" type="email" autocomplete="username" required /></label
+            ><label>密码<input id="password" type="password" autocomplete="current-password" required /></label
+            ><button type="submit">登录 →</button>
+          </form>
+        </section>
+        <section id="directory" hidden>
+          <div class="section-title">
+            <h2>电脑</h2>
+            <button id="refresh" class="quiet">刷新</button>
+          </div>
+          <div id="hosts"></div>
+          <details>
+            <summary>配对新设备</summary>
+            <p>在电脑的 /remote-control 创建邀请，粘贴后在电脑确认授权。</p>
+            <form id="pair-form">
+              <label>配对邀请<textarea id="invitation" rows="4" autocomplete="off" required></textarea></label
+              ><button type="submit">请求配对</button>
+            </form>
+          </details>
+          <h2>会话</h2>
+          <div id="sessions"></div>
+          <button id="logout" class="quiet">退出账号</button>
+        </section>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <span class="eyebrow">SESSION</span>
+            <h2 id="session-title">选择一个会话</h2>
+          </div>
+          <span id="connection" class="badge">未连接</span>
+          <div class="session-actions">
+            <button id="selection" class="quiet" disabled>Agent / 模型</button>
+            <button id="rename" class="quiet" disabled>重命名</button>
+            <button id="diff" class="quiet" disabled>文件变化</button>
+            <button id="interrupt" class="quiet" disabled>停止任务</button>
+          </div>
+        </header>
+        <div id="notice" role="status" aria-live="polite"></div>
+        <section id="pending" aria-label="等待你的决定"></section>
+        <div id="timeline" aria-label="会话记录">
+          <div class="welcome">
+            <span class="orbit">✳</span>
+            <h1>距离不打断思路。</h1>
+            <p>电脑执行任务。这里查看进展、发送输入，继续同一个会话。</p>
+          </div>
+        </div>
+        <form id="composer">
+          <label class="sr-only" for="draft">发送到会话</label
+          ><textarea id="draft" rows="3" placeholder="继续你的想法…" disabled></textarea>
+          <div class="compose-actions">
+            <select id="delivery" aria-label="输入方式">
+              <option value="steer">引导当前任务</option>
+              <option value="queue">排队执行</option></select
+            ><button id="send" type="submit" disabled>发送 ↑</button>
+          </div>
+        </form>
+        <footer>miao remote · 你的电脑负责执行</footer>
+      </main>
+    </div>
+    <dialog id="rename-dialog">
+      <form id="rename-form">
+        <h2>重命名会话</h2>
+        <label>新名称<input id="rename-title" maxlength="256" required /></label>
+        <button type="button" id="rename-cancel" class="quiet">取消</button>
+        <button type="submit">保存名称</button>
+      </form>
+    </dialog>
+    <dialog id="selection-dialog" aria-labelledby="selection-title">
+      <h2 id="selection-title">会话设置</h2>
+      <p>保存后从下一次模型调用起生效。</p>
+      <form id="agent-form">
+        <label>Agent<select id="agent-choice" aria-label="Agent" required></select></label>
+        <button type="submit">保存 Agent</button>
+      </form>
+      <form id="model-form">
+        <label>模型<select id="model-choice" aria-label="模型" required></select></label>
+        <label>变体<select id="variant-choice" aria-label="变体"></select></label>
+        <button type="submit">保存模型</button>
+      </form>
+      <button id="selection-close" class="quiet">关闭设置</button>
+    </dialog>
+    <dialog id="diff-dialog" aria-labelledby="diff-title">
+      <h2 id="diff-title">文件变化</h2>
+      <div id="diff-content"></div>
+      <button id="diff-close" class="quiet">关闭文件变化</button>
+    </dialog>
+  </body>
+</html>
