@@ -73,6 +73,10 @@ The image includes the browser client at `/app/web`. To serve it from the same o
 
 Mount the private configuration read-only at `/config/hub.json`. For account mode, set its database path to `/data/hub.db` and mount an owner-only persistent directory at `/data`. Run as a non-root UID/GID matching the configuration and data owner (override the container user when needed). Publish the port only on the interface used by the reverse proxy. Use a read-only root filesystem, dropped capabilities, and `no-new-privileges`; only the metadata volume is writable. Keep the database backup and authentication secret private.
 
+For a stable HTTPS entry point with no host ports exposed, use the
+[Cloudflare Compose deployment](deploy/README.md). Its private configuration,
+data directory and tunnel token stay outside the checkout.
+
 ## Protocol and limits
 
 - `/health`: liveness and protocol version only.
