@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
-import type { BoxRenderable } from "@opentui/core"
+import { InputRenderable, type BoxRenderable } from "@opentui/core"
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -146,6 +146,7 @@ async function renderUntil(
     if (ready(app.captureCharFrame())) return
     await Bun.sleep(20)
   }
+  throw new Error("Selector did not reach the expected state before the deadline")
 }
 
 test("compact selector preserves the conversation and input, scrolls to the current model, and closes on Escape", async () => {
@@ -226,10 +227,13 @@ test("a digit picks a numbered option in a short list", async () => {
     onSelect: (value) => selected.push(value),
   })
   try {
-    await renderUntil(selector.app, (frame) => /3\.\s+Model 2/.test(frame))
+    await renderUntil(
+      selector.app,
+      (frame) =>
+        /3\.\s+Model 2/.test(frame) && selector.app.renderer.currentFocusedRenderable instanceof InputRenderable,
+    )
     await selector.app.mockInput.typeText("3")
-    await Bun.sleep(30)
-    await selector.app.renderOnce()
+    await renderUntil(selector.app, () => selected.length === 1)
     expect(selected).toEqual([2])
   } finally {
     await selector.cleanup()
@@ -241,7 +245,11 @@ test("a long list numbers every option and lets digits search", async () => {
   const selected: number[] = []
   const selector = await mountSelector({ root: tmp.path, keybinds: {}, onSelect: (value) => selected.push(value) })
   try {
-    await renderUntil(selector.app, (frame) => /21\.\s+. Model 20/.test(frame))
+    await renderUntil(
+      selector.app,
+      (frame) =>
+        /21\.\s+. Model 20/.test(frame) && selector.app.renderer.currentFocusedRenderable instanceof InputRenderable,
+    )
     await selector.app.mockInput.typeText("27")
     await renderUntil(selector.app, (frame) => !frame.includes("Model 20"))
     const frame = selector.app.captureCharFrame()
