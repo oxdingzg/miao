@@ -448,13 +448,54 @@ export const Retried = Event.define({
 })
 export type Retried = typeof Retried.Type
 
-/** Whether this process is draining the Session; the same shape `GET /api/session/:sessionID/status` returns. */
-export const StatusInfo = Schema.Struct({
-  type: Schema.Literals(["idle", "busy"]),
-}).annotate({
+/**
+ * Where an active drain currently is. `queued` is owned but waiting on a
+ * concurrency slot; `preparing` is local turn work (history, model, tools,
+ * request build, compaction, snapshot); `requesting` is a dispatched request
+ * awaiting the provider's first event (TTFT); `streaming` is at least one
+ * provider event received; `retrying` is a bounded retry of a failed attempt.
+ */
+export const BusyPhase = Schema.Literals(["queued", "preparing", "requesting", "streaming", "retrying"]).annotate({
+  identifier: "session.next.busy_phase",
+})
+export type BusyPhase = Schema.Schema.Type<typeof BusyPhase>
+
+/**
+ * Whether this process is draining the Session; the same shape
+ * `GET /api/session/:sessionID/status` returns. A `busy` carries the drain
+ * phase so a client can tell local preparation from a dispatched provider
+ * request: `phase` and `since` are optional so optimistic client writes and
+ * older producers stay valid, and a missing `phase` reads as `preparing`.
+ * A `retry` is the `retrying` phase with the attempt detail a client renders.
+ */
+export const StatusInfo = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("idle"),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("busy"),
+    phase: BusyPhase.pipe(optional),
+    /** Epoch millis when the current phase began. */
+    since: Schema.Finite.pipe(optional),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("retry"),
+    attempt: NonNegativeInt,
+    message: Schema.String,
+    action: Schema.Struct({
+      reason: Schema.String,
+      provider: Schema.String,
+      title: Schema.String,
+      message: Schema.String,
+      label: Schema.String,
+      link: optional(Schema.String),
+    }).pipe(optional),
+    next: NonNegativeInt,
+  }),
+]).annotate({
   identifier: "session.next.status_info",
 })
-export interface StatusInfo extends Schema.Schema.Type<typeof StatusInfo> {}
+export type StatusInfo = Schema.Schema.Type<typeof StatusInfo>
 
 // Live process state, published on each busy/idle transition and never stored.
 // A client that (re)subscribes reads the current value from the status route.

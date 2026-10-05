@@ -78,8 +78,12 @@ describe("SessionExecutionLocal", () => {
           yield* events.all().pipe(
             Stream.runForEach((event) =>
               Effect.sync(() => {
-                if (event.type === SessionEvent.Status.type)
-                  seen.push(`status:${(event.data as SessionEvent.Status["data"]).status.type}`)
+                if (event.type === SessionEvent.Status.type) {
+                  const status = (event.data as SessionEvent.Status["data"]).status
+                  seen.push(
+                    status.type === "busy" ? `status:${status.phase ?? "preparing"}` : `status:${status.type}`,
+                  )
+                }
                 if (event.type === SessionEvent.Failed.type)
                   seen.push(`failed:${(event.data as SessionEvent.Failed["data"]).name}`)
               }),
@@ -92,7 +96,7 @@ describe("SessionExecutionLocal", () => {
           yield* execution.resume(sessionID).pipe(Effect.exit)
           yield* Effect.sleep("10 millis")
 
-          expect(seen).toEqual(["status:busy", "failed:Session.LegacyNotMigratedError", "status:idle"])
+          expect(seen).toEqual(["status:queued", "failed:Session.LegacyNotMigratedError", "status:idle"])
           expect(yield* execution.active).toEqual(new Set())
         }),
       ),

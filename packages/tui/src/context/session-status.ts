@@ -1,4 +1,18 @@
 import type { Message, Part } from "@miao/schema/view-models"
+import type { SessionStatus } from "@miao/schema/view-models"
+
+export type SessionPhase = "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+
+/**
+ * Normalizes a status to its phase. `retry` is the `retrying` phase, and a busy
+ * status with no phase (an optimistic write or an older producer) reads as
+ * `preparing`.
+ */
+export function statusPhase(status: SessionStatus | undefined): SessionPhase | undefined {
+  if (!status || status.type === "idle") return undefined
+  if (status.type === "retry") return "retrying"
+  return status.phase ?? "preparing"
+}
 
 export function waitingForResponse(input: { busy: boolean; blocked: boolean; message?: Message; parts: Part[] }) {
   if (!input.busy || input.blocked) return false

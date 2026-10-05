@@ -641,28 +641,65 @@ describe("SessionRunCoordinator", () => {
         let runs = 0
         const coordinator = yield* SessionRunCoordinator.make<string, never>({
           drain: () => Effect.suspend(() => (++runs === 1 ? Deferred.await(gate) : Effect.void)),
-          status: (key, status) => Effect.sync(() => statuses.push(`${key}:${status}`)),
+          report: (key, status) =>
+            Effect.sync(() => statuses.push(`${key}:${status.type === "busy" ? status.phase : "idle"}`)),
         })
 
         const first = yield* coordinator.run("session").pipe(Effect.forkChild)
         yield* Effect.yieldNow
         yield* coordinator.wake("session")
         yield* coordinator.wake("session")
-        expect(statuses).toEqual(["session:busy"])
+        expect(statuses).toEqual(["session:queued"])
         yield* Deferred.succeed(gate, undefined)
         yield* Fiber.join(first)
         yield* coordinator.awaitIdle("session")
 
         expect(runs).toBe(2)
-        expect(statuses).toEqual(["session:busy", "session:idle"])
+        expect(statuses).toEqual(["session:queued", "session:idle"])
 
         // A failed drain still settles to idle before its caller resumes.
         const failing = yield* SessionRunCoordinator.make<string, string>({
           drain: () => Effect.fail("boom"),
-          status: (key, status) => Effect.sync(() => statuses.push(`${key}:${status}`)),
+          report: (key, status) =>
+            Effect.sync(() => statuses.push(`${key}:${status.type === "busy" ? status.phase : "idle"}`)),
         })
         yield* failing.run("other").pipe(Effect.exit)
-        expect(statuses).toEqual(["session:busy", "session:idle", "other:busy", "other:idle"])
+        expect(statuses).toEqual(["session:queued", "session:idle", "other:queued", "other:idle"])
+      }),
+    ),
+  )
+
+  it.effect("publishes an active drain's phase transitions and resets on idle", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        const statuses: string[] = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(gate))),
+          report: (key, status) =>
+            Effect.sync(() => statuses.push(`${key}:${status.type === "busy" ? status.phase : "idle"}`)),
+        })
+
+        const drain = yield* coordinator.run("session").pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        expect(statuses).toEqual(["session:queued"])
+        yield* coordinator.setPhase("session", "preparing")
+        yield* coordinator.setPhase("session", "requesting")
+        yield* coordinator.setPhase("session", "requesting")
+        yield* coordinator.setPhase("session", "streaming")
+        expect(statuses).toEqual(["session:queued", "session:preparing", "session:requesting", "session:streaming"])
+        expect(yield* coordinator.status("session")).toMatchObject({ type: "busy", phase: "streaming" })
+
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(drain)
+        yield* coordinator.awaitIdle("session")
+        expect(statuses.at(-1)).toBe("session:idle")
+        expect(yield* coordinator.status("session")).toEqual({ type: "idle" })
+
+        // A phase report after the drain settled is ignored.
+        yield* coordinator.setPhase("session", "streaming")
+        expect(statuses.at(-1)).toBe("session:idle")
       }),
     ),
   )

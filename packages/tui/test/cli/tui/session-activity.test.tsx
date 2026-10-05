@@ -108,3 +108,48 @@ test("turn activity replaces the waiting text on the same status line", async ()
     app.renderer.destroy()
   }
 })
+
+test("the waiting label names the current drain phase", async () => {
+  await using tmp = await tmpdir()
+  const state = path.join(tmp.path, "state")
+  await mkdir(state, { recursive: true })
+  await Bun.write(path.join(state, "kv.json"), "{}")
+  const [{ SessionWaiting }, { KVProvider }, { ThemeProvider }, { TuiConfigProvider }] = await Promise.all([
+    import("../../../src/routes/session/activity"),
+    import("../../../src/context/kv"),
+    import("../../../src/context/theme"),
+    import("../../../src/config"),
+  ])
+  const [phase, setPhase] = createSignal<"queued" | "preparing" | "requesting" | undefined>("requesting")
+  const app = await testRender(
+    () => (
+      <TestTuiContexts directory={tmp.path} paths={{ home: tmp.path, state, worktree: tmp.path }}>
+        <TuiConfigProvider config={createTuiResolvedConfig()}>
+          <KVProvider>
+            <ThemeProvider mode="dark">
+              <SessionWaiting waiting elapsed={0} phase={phase()} />
+            </ThemeProvider>
+          </KVProvider>
+        </TuiConfigProvider>
+      </TestTuiContexts>
+    ),
+    { width: 120, height: 10 },
+  )
+  try {
+    const settled = async (text: string) => {
+      const deadline = Date.now() + 2000
+      while (!app.captureCharFrame().includes(text) && Date.now() < deadline) {
+        await Bun.sleep(20)
+        await app.renderOnce()
+      }
+      return app.captureCharFrame()
+    }
+    expect(await settled("Waiting for model response")).toContain("Waiting for model response")
+    setPhase("preparing")
+    expect(await settled("Preparing request")).toContain("Preparing request")
+    setPhase("queued")
+    expect(await settled("Queued")).toContain("Queued")
+  } finally {
+    app.renderer.destroy()
+  }
+})

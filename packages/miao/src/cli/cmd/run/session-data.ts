@@ -61,7 +61,11 @@ export type PartEvent = Extract<Event, { type: "message.updated" | "message.part
 export type SessionStatusEvent = {
   id?: string
   type: "session.next.status"
-  properties: { sessionID: string; timestamp: number; status: { type: "busy" | "idle" } }
+  properties: {
+    sessionID: string
+    timestamp: number
+    status: { type: "idle" } | { type: "busy"; phase?: string; since?: number }
+  }
 }
 
 export type SessionFailedEvent = {

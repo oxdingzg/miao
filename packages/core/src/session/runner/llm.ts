@@ -439,12 +439,18 @@ const layer = Layer.effect(
       return rows.length > 0
     })
 
+    type ReportPhase = (phase: SessionEvent.BusyPhase) => Effect.Effect<void>
+
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
       promotion: Promotion | undefined,
       step: number,
+      phase: ReportPhase,
       recoverOverflow?: typeof compaction.compactAfterOverflow,
     ) {
+      // Every provider turn starts with local work (history, model, tools,
+      // request build, compaction, snapshot) before anything is dispatched.
+      yield* phase("preparing")
       const attemptStartedAt = Date.now()
       const initialSession = yield* getSession(sessionID)
       if (initialSession.location.directory !== location.directory || initialSession.location.workspaceID !== location.workspaceID)
@@ -506,6 +512,7 @@ const layer = Layer.effect(
                 Effect.andThen(
                   Effect.logWarning("retrying unavailable model", { sessionID: session.id, tag: error._tag }),
                 ),
+                Effect.andThen(phase("retrying")),
               )
             : Effect.void,
         ),
@@ -734,7 +741,10 @@ const layer = Layer.effect(
                 model: `${model.provider}/${model.id}`,
                 gapMs: stallMs,
               })
-            firstEventAt ??= receivedAt
+            if (firstEventAt === undefined) {
+              firstEventAt = receivedAt
+              yield* phase("streaming")
+            }
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
@@ -826,7 +836,9 @@ const layer = Layer.effect(
               Effect.andThen(
                 Effect.suspend(() => {
                   requestStartedAt = Date.now()
-                  return restore(providerStream)
+                  // The request is dispatched now; the next client-visible
+                  // boundary is the provider's first streamed event (TTFT).
+                  return phase("requesting").pipe(Effect.andThen(restore(providerStream)))
                 }),
               ),
             )
@@ -847,6 +859,7 @@ const layer = Layer.effect(
                         ...retryLog(error),
                       }),
                     ),
+                    Effect.andThen(phase("retrying")),
                   )
                 : Effect.void,
             ),
@@ -984,6 +997,7 @@ const layer = Layer.effect(
       sessionID: SessionSchema.ID,
       promotion: Promotion | undefined,
       step: number,
+      phase: ReportPhase,
       remaining?: number,
     ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number }, RunError>
 
@@ -997,9 +1011,10 @@ const layer = Layer.effect(
       sessionID,
       promotion,
       step,
+      phase,
       remaining = MAX_OVERFLOW_COMPACTIONS - 1,
     ) {
-      return yield* runTurnAttempt(sessionID, promotion, step, remaining > 0 ? recoverOverflow : undefined).pipe(
+      return yield* runTurnAttempt(sessionID, promotion, step, phase, remaining > 0 ? recoverOverflow : undefined).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
@@ -1007,17 +1022,17 @@ const layer = Layer.effect(
               if (remaining <= 0)
                 return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
               yield* Effect.yieldNow
-              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, remaining - 1)
+              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, phase, remaining - 1)
             }
             yield* Effect.yieldNow
-            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, remaining)
+            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, phase, remaining)
           }),
         ),
       )
     })
 
-    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
-      return yield* runTurnAttempt(sessionID, promotion, step, compaction.compactAfterOverflow).pipe(
+    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step, phase) {
+      return yield* runTurnAttempt(sessionID, promotion, step, phase, compaction.compactAfterOverflow).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
@@ -1025,8 +1040,8 @@ const layer = Layer.effect(
               return { needsContinuation: false, step: defect.transition.step }
             yield* Effect.yieldNow
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
-              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)
-            return yield* runTurn(sessionID, undefined, defect.transition.step)
+              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, phase)
+            return yield* runTurn(sessionID, undefined, defect.transition.step, phase)
           }),
         ),
       )
@@ -1270,7 +1285,10 @@ const layer = Layer.effect(
       readonly force: boolean
       readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
         readonly delegation?: SessionDelegation.API
+        /** Reports local drain phases so a client can tell preparation from a dispatched request. */
+        readonly phase?: ReportPhase
     }) {
+      const report: ReportPhase = input.phase ?? (() => Effect.void)
       return yield* Effect.scoped(
         Effect.gen(function* () {
           const drainSession = yield* store.get(input.sessionID)
@@ -1387,7 +1405,7 @@ const layer = Layer.effect(
             }
             let needsContinuation = true
             while (needsContinuation) {
-              const result = yield* runTurn(input.sessionID, promotion, step)
+              const result = yield* runTurn(input.sessionID, promotion, step, report)
               needsContinuation = result.needsContinuation
               step = result.step + 1
               promotion = "steer"

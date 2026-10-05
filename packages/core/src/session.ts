@@ -170,7 +170,7 @@ export interface Interface {
   }) => Effect.Effect<SessionMessage.Message | undefined>
   readonly todo: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.Info>, NotFoundError>
-  readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly type: "idle" | "busy" }, NotFoundError>
+  readonly status: (sessionID: SessionSchema.ID) => Effect.Effect<SessionEvent.StatusInfo, NotFoundError>
   readonly inputs: (input: {
     sessionID: SessionSchema.ID
     after?: number
@@ -428,8 +428,7 @@ const layer = Layer.effect(
       }),
       status: Effect.fn("V2Session.status")(function* (sessionID) {
         yield* result.get(sessionID)
-        const active = yield* execution.active
-        return { type: active.has(sessionID) ? ("busy" as const) : ("idle" as const) }
+        return yield* execution.status(sessionID)
       }),
       rename: Effect.fn("V2Session.rename")(function* (input) {
         const session = yield* result.get(input.sessionID)

@@ -2,7 +2,7 @@ import { createEffect, createMemo, onCleanup, Show } from "solid-js"
 import { Spinner, useSecond } from "../../component/spinner"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
-import { waitingForResponse, watchSessionStatus } from "../../context/session-status"
+import { waitingForResponse, watchSessionStatus, statusPhase, type SessionPhase } from "../../context/session-status"
 import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
 import type { Part, ReasoningPart, ToolPart } from "@miao/schema/view-models"
@@ -103,7 +103,9 @@ export function lastOutputAt(parts: ReadonlyArray<Part>, fallback: number | unde
 export function SessionActivity(props: { sessionID: string }) {
   const sync = useSync()
   const seconds = useSecond()
-  const busy = createMemo(() => sync.data.session_status[props.sessionID]?.type === "busy")
+  const status = createMemo(() => sync.data.session_status[props.sessionID])
+  const busy = createMemo(() => status()?.type === "busy")
+  const phase = createMemo(() => statusPhase(status()))
   const blocked = createMemo(
     () =>
       (sync.data.permission[props.sessionID]?.length ?? 0) > 0 ||
@@ -134,10 +136,14 @@ export function SessionActivity(props: { sessionID: string }) {
   const active = createMemo(() => busy() && !blocked())
   // A start that is not epoch millis would print "NaNd NaNh"; show no timer
   // rather than a broken one. The shared one-second clock drives the re-read.
+  // Prefer the phase's own start so the timer is TTFT for `requesting`, not the
+  // time since the last streamed output.
   const elapsed = createMemo(() => {
     if (!active()) return 0
     seconds()
-    const value = Date.now() - (lastOutput() ?? Number.NaN)
+    const current = status()
+    const since = current?.type === "busy" ? current.since : undefined
+    const value = Date.now() - (since ?? lastOutput() ?? Number.NaN)
     return Number.isFinite(value) ? Math.max(0, value) : 0
   })
 
@@ -159,7 +165,10 @@ export function SessionActivity(props: { sessionID: string }) {
     return status?.type === "retry" ? status.message : sync.data.session_error[props.sessionID]
   })
   return (
-    <Show when={error()} fallback={<SessionWaiting waiting={waiting()} elapsed={elapsed()} activity={activity()} />}>
+    <Show
+      when={error()}
+      fallback={<SessionWaiting waiting={waiting()} elapsed={elapsed()} activity={activity()} phase={phase()} />}
+    >
       {(message) => <ProviderFailure message={message()} />}
     </Show>
   )
@@ -192,7 +201,7 @@ export function turnActivity(input: { parts: Part[]; working: boolean }) {
   return segments.length > 0 ? segments.join(", ") : undefined
 }
 
-export function SessionWaiting(props: { waiting: boolean; elapsed: number; activity?: string }) {
+export function SessionWaiting(props: { waiting: boolean; elapsed: number; activity?: string; phase?: SessionPhase }) {
   const { theme } = useTheme()
   // Claude Code keeps the elapsed time on the live status line whether the turn
   // is still reading its first token or already running tools.
@@ -201,7 +210,7 @@ export function SessionWaiting(props: { waiting: boolean; elapsed: number; activ
       return props.elapsed > 0 ? `${props.activity} · ${Locale.duration(props.elapsed)}` : props.activity
     }
     if (!props.waiting) return undefined
-    return waitingText(props.elapsed)
+    return waitingText(props.phase, props.elapsed)
   })
   return (
     <Show when={text()}>
@@ -214,7 +223,20 @@ export function SessionWaiting(props: { waiting: boolean; elapsed: number; activ
   )
 }
 
-function waitingText(elapsed: number) {
+// Name what is actually being waited on. `requesting` is a dispatched request
+// awaiting the first token (TTFT); `preparing` and `queued` have not reached the
+// provider yet, which is the distinction the old single label could not make.
+function waitingText(phase: SessionPhase | undefined, elapsed: number) {
+  const label =
+    phase === "queued"
+      ? "Queued · waiting for a free slot"
+      : phase === "preparing"
+        ? "Preparing request"
+        : phase === "streaming"
+          ? "Receiving model response"
+          : phase === "retrying"
+            ? "Retrying"
+            : "Waiting for model response"
   const suffix = elapsed >= 30000 ? " · no readable output yet; esc interrupt" : ""
-  return `Waiting for model response · ${Locale.duration(elapsed)}${suffix}`
+  return `${label} · ${Locale.duration(elapsed)}${suffix}`
 }

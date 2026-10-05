@@ -9,6 +9,10 @@ export interface Coordinator<Key, E> {
   readonly active: Effect.Effect<ReadonlySet<Key>>
   /** Process-unique identities for the currently owned drains; never reused by successors. */
   readonly executions: Effect.Effect<ReadonlyMap<Key, string>>
+  /** Current status for a key, including the active drain phase. */
+  readonly status: (key: Key) => Effect.Effect<Status>
+  /** Sets the phase of an active drain; ignored once the key is idle. */
+  readonly setPhase: (key: Key, phase: Phase) => Effect.Effect<void>
   /** Starts execution while idle or joins the active execution. */
   readonly run: (key: Key) => Effect.Effect<void, E>
   /** Registers one coalesced follow-up after newly recorded work. */
@@ -32,13 +36,19 @@ type Entry<E> = {
   execution: string
 }
 
+/** Where an active drain currently is, in order. */
+export type Phase = "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+export type Status =
+  | { readonly type: "busy"; readonly phase: Phase; readonly since: number }
+  | { readonly type: "idle" }
+
 export const make = <Key, E>(options: {
   readonly drain: (key: Key, force: boolean) => Effect.Effect<void, E>
   /**
-   * Observes busy/idle transitions. Successor drains for coalesced wakes stay
-   * busy, so one burst of work reports exactly one busy and one idle.
+   * Observes status transitions. Successor drains for coalesced wakes stay
+   * busy, so one burst of work reports exactly one idle at the end.
    */
-  readonly status?: (key: Key, status: "busy" | "idle") => Effect.Effect<void>
+  readonly report?: (key: Key, status: Status) => Effect.Effect<void>
   /**
    * Caps how many drains run concurrently across all keys. Omitted means no cap
    * (different keys always run concurrently, as before).
@@ -49,18 +59,39 @@ export const make = <Key, E>(options: {
     const active = new Map<Key, Entry<E>>()
     const permits = options.maxConcurrent === undefined ? undefined : Semaphore.makeUnsafe(Math.max(1, options.maxConcurrent))
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
-    // Reports read the live state under one lock and skip repeats, so reports
-    // from overlapping owners can never leave a stale busy or idle behind.
-    const reported = new Set<Key>()
+    // Keys whose busy status was last reported, mapped to the reported phase.
+    // Only active drains are present, so a settled key is skipped as idle.
+    const reported = new Map<Key, Phase>()
+    const phases = new Map<Key, { phase: Phase; since: number }>()
     const reporting = Semaphore.makeUnsafe(1)
-    const report = (key: Key) =>
+    const statusOf = (key: Key): Status => {
+      if (!active.has(key)) return { type: "idle" }
+      const current = phases.get(key)
+      return { type: "busy", phase: current?.phase ?? "queued", since: current?.since ?? Date.now() }
+    }
+    // Publishes under the reporting lock. Reads the live state and skips repeats
+    // so reports from overlapping owners can never leave a stale phase behind.
+    const publish = (key: Key) =>
+      Effect.suspend(() => {
+        if (!options.report) return Effect.void
+        const status = statusOf(key)
+        if (status.type === "idle") {
+          if (!reported.has(key)) return Effect.void
+          reported.delete(key)
+          return options.report(key, status)
+        }
+        if (reported.get(key) === status.phase) return Effect.void
+        reported.set(key, status.phase)
+        return options.report(key, status)
+      })
+    const report = (key: Key) => reporting.withPermit(publish(key))
+    const setPhase = (key: Key, phase: Phase) =>
       reporting.withPermit(
         Effect.suspend(() => {
-          const busy = active.has(key)
-          if (busy === reported.has(key) || !options.status) return Effect.void
-          if (busy) reported.add(key)
-          else reported.delete(key)
-          return options.status(key, busy ? "busy" : "idle")
+          if (!active.has(key)) return Effect.void
+          if (phases.get(key)?.phase === phase) return Effect.void
+          phases.set(key, { phase, since: Date.now() })
+          return publish(key)
         }),
       )
 
@@ -73,6 +104,9 @@ export const make = <Key, E>(options: {
 
     const start = (key: Key, entry: Entry<E>, force: boolean, successor = false) => {
       entry.execution = randomUUID()
+      // A fresh drain is owned but not yet running; its phase becomes the
+      // runner's first `preparing` report.
+      if (!successor) phases.set(key, { phase: "queued", since: Date.now() })
       const ready = Deferred.makeUnsafe<void>()
       const owner = fork(
         (successor ? Effect.yieldNow : Deferred.await(ready)).pipe(
@@ -100,8 +134,10 @@ export const make = <Key, E>(options: {
         }
 
         const successor = entry.pendingWake ? makeEntry() : undefined
-        if (successor === undefined) active.delete(key)
-        else {
+        if (successor === undefined) {
+          active.delete(key)
+          phases.delete(key)
+        } else {
           active.set(key, successor)
           start(key, successor, false, true)
         }
@@ -173,6 +209,8 @@ export const make = <Key, E>(options: {
     return {
       active: Effect.sync(() => new Set(active.keys())),
       executions: Effect.sync(() => new Map(Array.from(active, ([key, entry]) => [key, entry.execution]))),
+      status: (key: Key) => Effect.sync(() => statusOf(key)),
+      setPhase,
       run,
       wake,
       interrupt,
