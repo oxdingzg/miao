@@ -14,6 +14,7 @@ export type Scope = {
   sessionID: string
 }
 export type Checkpoint = { revision: number; cursor: number; state: string; updatedAt: number }
+export type Draft = { revision: number; text: string; updatedAt: number }
 export type OperationStatus =
   | "prepared"
   | "awaitingConfirmation"
@@ -82,6 +83,42 @@ export async function open(name = "miao.remote-control.checkpoints") {
   }
   return {
     close: () => database.close(),
+    readDraft: async (scope: Scope): Promise<Draft | undefined> => {
+      const address = key(scope).slice(0, -1) + ',"draft"]'
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction("checkpoints", "readonly")
+        const request = transaction.objectStore("checkpoints").get(address)
+        transaction.oncomplete = () => {
+          try {
+            resolve(request.result === undefined ? undefined : validateDraft(request.result))
+          } catch {
+            reject(new Error("Saved draft is invalid"))
+          }
+        }
+        transaction.onabort = transaction.onerror = () => reject(new Error("Draft could not be read"))
+      })
+    },
+    saveDraft: async (scope: Scope, text: string, expectedRevision: number): Promise<Draft> => {
+      const address = key(scope).slice(0, -1) + ',"draft"]'
+      const draft = validateDraft({ text, revision: expectedRevision + 1, updatedAt: Date.now() })
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error("Invalid draft revision")
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction("checkpoints", "readwrite")
+        const store = transaction.objectStore("checkpoints")
+        const request = store.get(address)
+        request.onsuccess = () => {
+          try {
+            const previous = request.result === undefined ? undefined : validateDraft(request.result)
+            if ((previous?.revision ?? 0) !== expectedRevision) throw new Error()
+            store.put(draft, address)
+          } catch {
+            transaction.abort()
+          }
+        }
+        transaction.oncomplete = () => resolve(draft)
+        transaction.onabort = transaction.onerror = () => reject(new Error("Draft changed; reload before saving"))
+      })
+    },
     prepareOperation: async (
       scope: Scope,
       input: { id: string; method: ControlAgent.Method; payload: string },
@@ -307,6 +344,26 @@ function validate(value: unknown): Checkpoint {
     throw new Error("Invalid checkpoint")
   JSON.parse(value.state)
   return { revision: value.revision, cursor: value.cursor, state: value.state, updatedAt: value.updatedAt }
+}
+
+function validateDraft(value: unknown): Draft {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("text" in value) ||
+    typeof value.text !== "string" ||
+    new TextEncoder().encode(value.text).length > 64 * 1024 ||
+    !("revision" in value) ||
+    typeof value.revision !== "number" ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 1 ||
+    !("updatedAt" in value) ||
+    typeof value.updatedAt !== "number" ||
+    !Number.isSafeInteger(value.updatedAt) ||
+    value.updatedAt < 0
+  )
+    throw new Error("Invalid draft")
+  return { text: value.text, revision: value.revision, updatedAt: value.updatedAt }
 }
 
 const transitions: Record<OperationStatus, readonly OperationStatus[]> = {

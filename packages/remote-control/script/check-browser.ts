@@ -60,6 +60,9 @@ try {
       second.commit(scope, { cursor: 50, state: "{broken" }, checkpoint.revision),
     ])
     const unchanged = await first.read(scope)
+    const draft = await first.saveDraft(scope, "尚未发送的输入", 0)
+    await second.saveDraft(scope, "用户继续编辑的输入", draft.revision)
+    const staleClear = await Promise.allSettled([first.saveDraft(scope, "", draft.revision)])
     const operationID = crypto.randomUUID()
     const operation = await first.prepareOperation(scope, {
       id: operationID,
@@ -78,6 +81,7 @@ try {
     second.close()
     const restored = await window.openCheckpoints()
     const loaded = await restored.read(scope)
+    const restoredDraft = await restored.readDraft(scope)
     const operations = await restored.operations(scope)
     const completed = await restored.transitionOperation(
       scope,
@@ -95,6 +99,7 @@ try {
     const removed = await restored.read(scope)
     const retained = await restored.read(other)
     const removedOperations = await restored.operations(scope)
+    const removedDraft = await restored.readDraft(scope)
     restored.close()
     const bounded = await window.openCheckpoints("miao.browser.operation.capacity")
     const entries = []
@@ -115,7 +120,9 @@ try {
       rejected: failures.every((failure) => failure.status === "rejected"),
       atomic: unchanged?.cursor === checkpoint.cursor && unchanged?.state === checkpoint.state,
       persisted: loaded?.cursor === checkpoint.cursor && loaded?.state === checkpoint.state && loaded?.revision === 1,
-      cleanup: removed === undefined && retained?.cursor === 7 && removedOperations.length === 0,
+      cleanup:
+        removed === undefined && retained?.cursor === 7 && removedOperations.length === 0 && removedDraft === undefined,
+      draftRestored: restoredDraft?.text === "用户继续编辑的输入" && staleClear[0]?.status === "rejected",
       operationClaim: claims.filter((claim) => claim.status === "fulfilled").length === 1,
       immutableOperation: immutable.every((claim) => claim.status === "rejected"),
       operationRestored:
