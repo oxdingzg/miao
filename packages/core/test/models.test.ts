@@ -345,7 +345,7 @@ describe("ModelsDev Service", () => {
       )
 
       // The source answers 304 Not Modified: body unchanged.
-      const state = yield* Ref.make({ body: "", status: 304, headers: { etag: '"abc"' }, calls: [] })
+      const state = yield* Ref.make<MockState>({ body: "", status: 304, headers: { etag: '"abc"' }, calls: [] })
       const result = yield* provided(
         state,
         Effect.gen(function* () {
