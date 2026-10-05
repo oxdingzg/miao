@@ -39,9 +39,15 @@ export const make = <Key, E>(options: {
    * busy, so one burst of work reports exactly one busy and one idle.
    */
   readonly status?: (key: Key, status: "busy" | "idle") => Effect.Effect<void>
+  /**
+   * Caps how many drains run concurrently across all keys. Omitted means no cap
+   * (different keys always run concurrently, as before).
+   */
+  readonly maxConcurrent?: number
 }): Effect.Effect<Coordinator<Key, E>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const active = new Map<Key, Entry<E>>()
+    const permits = options.maxConcurrent === undefined ? undefined : Semaphore.makeUnsafe(Math.max(1, options.maxConcurrent))
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
     // Reports read the live state under one lock and skip repeats, so reports
     // from overlapping owners can never leave a stale busy or idle behind.
@@ -71,7 +77,11 @@ export const make = <Key, E>(options: {
       const owner = fork(
         (successor ? Effect.yieldNow : Deferred.await(ready)).pipe(
           Effect.andThen(report(key)),
-          Effect.andThen(Effect.suspend(() => options.drain(key, force))),
+          Effect.andThen(
+            permits === undefined
+              ? Effect.suspend(() => options.drain(key, force))
+              : permits.withPermits(1)(Effect.suspend(() => options.drain(key, force))),
+          ),
           Effect.onExit((exit) => settle(key, entry, exit)),
           Effect.exit,
           Effect.asVoid,

@@ -36,6 +36,7 @@ export interface NativeModule {
   diffStats(before: string, after: string): { additions: number; deletions: number }
   unifiedPatch(before: string, after: string, filePath: string): string
   deriveNewContents(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
+  deriveNewContentsV2(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
   gitStatus(path: string): Array<{ path: string; status: string }>
   gitRevParse(path: string, rev: string): string
   gitRevParseAsync(path: string, rev: string): Promise<string>

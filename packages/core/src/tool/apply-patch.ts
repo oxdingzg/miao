@@ -210,14 +210,17 @@ const layer = Layer.effectDiscard(
                       try: () => Patch.derive(hunk.path, hunk.chunks, original),
                       catch: () => fail(hunk.path),
                     })
+                    const after = original.includes("\r\n")
+                      ? update.content.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n")
+                      : update.content
                     return {
                       ...hunk,
                       target,
                       destination,
                       source,
-                      content: Patch.joinBom(update.content, update.bom),
+                      content: Patch.joinBom(after, update.bom),
                       before,
-                      after: update.content,
+                      after,
                     } satisfies Prepared
                   }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(item.hunk.path)))),
                 ).pipe(Effect.result)
@@ -332,7 +335,18 @@ const layer = Layer.effectDiscard(
                   )
                   .filter((item) => item !== "")
                   .join("\n")
-                return { applied, files: patchFiles, ...(report ? { diagnostics: report } : {}) }
+                const finalFiles = yield* Effect.forEach(prepared, (change) => {
+                  if (
+                    change.type === "delete" ||
+                    (change.type === "update" && (change.binary || change.chunks.length === 0))
+                  )
+                    return Effect.succeed(filesForChange(change))
+                  const target = change.type === "update" && change.destination ? change.destination : change.target
+                  return fs
+                    .readFileString(target.canonical)
+                    .pipe(Effect.map((after) => filesForChange({ ...change, after: after.replace(/^\uFEFF/, "") })))
+                })
+                return { applied, files: finalFiles.flat(), ...(report ? { diagnostics: report } : {}) }
               }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail("patch"))))
             },
           }),

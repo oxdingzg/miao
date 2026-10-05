@@ -13,6 +13,7 @@ import { Location } from "@miao/core/location"
 import { LocationMutation } from "@miao/core/location-mutation"
 import { PermissionV2 } from "@miao/core/permission"
 import { AppProcess } from "@miao/core/process"
+import { BackgroundJob } from "@miao/core/background-job"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { ShellEnvironment } from "@miao/core/shell/environment"
@@ -159,7 +160,7 @@ const withTool = <A, E, R>(
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(
-        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node]),
+        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node, BackgroundJob.node]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
@@ -183,6 +184,30 @@ const it = testEffect(Layer.empty)
 const liveIf = (condition: boolean) => (condition ? it.live : it.live.skip)
 
 describe("BashTool", () => {
+  it.live("starts a bash command as a background job owned by the session", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            yield* settleTool(registry, call({ command: "echo hi", run_in_background: true }, "call-background"))
+            const jobs = yield* BackgroundJob.Service
+            const listed = yield* jobs.list()
+            expect(listed).toHaveLength(1)
+            const job = listed[0]!
+            expect(job.type).toBe("bash")
+            expect(job.metadata?.sessionID).toBe(sessionID)
+            const settled = yield* jobs.wait({ id: job.id, timeout: 5_000 })
+            expect(settled.timedOut).toBe(false)
+            expect(settled.info?.status).toBe("completed")
+            expect(settled.info?.output).toContain("Command exited with code 0")
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
   it.live("registers and returns structured successful output from the active Location", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -551,7 +576,7 @@ describe("BashTool stdin and permissions", () => {
     ),
   )
 
-  it.live("approves a command without stdin by command, saving its BashArity prefix", () =>
+  liveIf(process.platform !== "win32")("approves a command without stdin by command, saving its BashArity prefix", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -572,7 +597,7 @@ describe("BashTool stdin and permissions", () => {
     ),
   )
 
-  it.live("splits a compound command into one resource and one prefix rule per command", () =>
+  liveIf(process.platform !== "win32")("splits a compound command into one resource and one prefix rule per command", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -661,7 +686,7 @@ describe("BashTool stdin and permissions", () => {
     ),
   )
 
-  it.live("checks syntax after approval and before the run", () =>
+  liveIf(process.platform !== "win32")("checks syntax after approval and before the run", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -685,7 +710,7 @@ describe("BashTool stdin and permissions", () => {
     ),
   )
 
-  it.live("runs the command when the syntax check itself fails", () =>
+  liveIf(process.platform !== "win32")("runs the command when the syntax check itself fails", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) =>
@@ -718,7 +743,7 @@ describe("BashTool stdin and permissions", () => {
     ),
   )
 
-  it.live("skips the syntax check when the command can change how later lines parse", () =>
+  liveIf(process.platform !== "win32")("skips the syntax check when the command can change how later lines parse", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) =>
@@ -1061,6 +1086,85 @@ if (process.platform !== "win32") {
       ),
     )
   })
+}
+
+if (process.platform === "win32") {
+  const runRealWindows = (directory: string, input: typeof BashTool.Input.Type, shell?: string) =>
+    Effect.suspend(() => {
+      reset()
+      configuredShell = shell
+      return withTool(
+        directory,
+        (registry) => settleTool(registry, call(input)),
+        LayerNode.compile(AppProcess.node),
+      )
+    })
+
+  const windowsText = (settled: ToolRegistry.Settlement) =>
+    settled.result.type === "content"
+      ? settled.result.value.map((part: ToolContent) => (part.type === "text" ? part.text : "")).join("\n")
+      : String(settled.result.value)
+
+  // Windows ships Windows PowerShell; PS7 may sit alongside it. Honor an
+  // override for hosts that keep a portable build outside PATH.
+  const powerShell = [
+    process.env.MIAO_TEST_PWSH,
+    process.env.SystemRoot
+      ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+      : undefined,
+    "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+  ].find((candidate): candidate is string => candidate !== undefined && existsSync(candidate))
+
+  it.live("runs the default Windows shell through /d /s /c and reports its native exit code", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const invoked = yield* runRealWindows(tmp.path, { command: "echo %CMDCMDLINE%" })
+          expect(windowsText(invoked)).toContain("/d /s /c")
+
+          const failed = yield* runRealWindows(tmp.path, { command: "exit /b 3" })
+          expect(windowsText(failed)).toContain("Command exited with code 3.")
+          expect(failed.output?.structured).toMatchObject({ exit: 3 })
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  if (powerShell) {
+    it.live("invokes a configured PowerShell profile-free with -Command", () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) =>
+          Effect.gen(function* () {
+            const settled = yield* runRealWindows(tmp.path, { command: "[Environment]::CommandLine" }, powerShell)
+            const line = windowsText(settled)
+            expect(line).toContain("-NoProfile")
+            expect(line).toContain("-Command")
+            expect(line).not.toContain("/d /s /c")
+          }),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    )
+
+    it.live("preserves PowerShell quoting, metacharacters, and non-ASCII output", () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) =>
+          Effect.gen(function* () {
+            const settled = yield* runRealWindows(
+              tmp.path,
+              { command: "Write-Output 'a & b | c > d'; Write-Output '中文'" },
+              powerShell,
+            )
+            const output = windowsText(settled)
+            expect(output).toContain("a & b | c > d")
+            expect(output).toContain("中文")
+          }),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    )
+  }
 }
 
 test("keeps locked deferred parity TODOs visible", async () => {

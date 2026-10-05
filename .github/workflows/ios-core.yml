@@ -53,3 +53,5 @@ jobs:
         run: bun apps/ios/scripts/check-pairing.ts
       - name: Native app against a real Runtime
         run: bun apps/ios/scripts/check-app.ts
+      - name: Native Hub account and Keychain integration
+        run: bun apps/ios/scripts/check-account.ts

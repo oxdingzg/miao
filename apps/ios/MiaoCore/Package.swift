@@ -10,6 +10,7 @@ let package = Package(
         .testTarget(name: "MiaoCoreTests", dependencies: ["MiaoCore"]),
         .executableTarget(name: "InteropProbe", dependencies: ["MiaoCore"]),
         .executableTarget(name: "TransportProbe", dependencies: ["MiaoCore"]),
-        .executableTarget(name: "PairingProbe", dependencies: ["MiaoCore"])
+        .executableTarget(name: "PairingProbe", dependencies: ["MiaoCore"]),
+        .executableTarget(name: "HubAccountProbe", dependencies: ["MiaoCore"])
     ]
 )

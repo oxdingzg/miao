@@ -32,6 +32,9 @@ import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
+import { GoalTool } from "../../tool/goal"
+import { BackgroundJob } from "../../background-job"
+import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
 import { ToolOutputStore } from "../../tool-output-store"
@@ -272,17 +275,21 @@ const layer = Layer.effect(
         if (message.type !== "assistant") continue
         for (const tool of message.content) {
           if (tool.type !== "tool" || (tool.state.status !== "pending" && tool.state.status !== "running")) continue
+          // `pending` means the runner never dispatched the call (there is no
+          // `session.next.tool.called`), so no side effect happened and the model
+          // may retry it. `running` means it was dispatched; the side effect may
+          // or may not have happened, so the outcome is unknown.
+          const dispatched = tool.state.status === "running"
           yield* events.publish(SessionEvent.Tool.Failed, {
             sessionID,
             timestamp: yield* DateTime.now,
             assistantMessageID: message.id,
             callID: tool.id,
-            // The process stopped while this tool was running, so the side
-            // effect may or may not have happened. Tell the model it is
-            // unknown rather than reporting a definite failure.
             error: {
               type: "unknown",
-              message: "Tool execution outcome unknown: the process stopped while it was running.",
+              message: dispatched
+                ? "Tool execution outcome unknown: the process stopped while it was running."
+                : "Tool was not executed: the process stopped before it was dispatched, so it is safe to retry.",
             },
             provider: {
               executed: tool.provider?.executed === true,
@@ -947,9 +954,24 @@ const layer = Layer.effect(
       const selection = yield* agents.select(request.agent)
       if (!selection.info) return yield* new ToolFailure({ message: `Unknown agent type: ${request.agent}` })
       const resumed = request.taskId ? yield* store.get(SessionSchema.ID.make(request.taskId)) : undefined
-      const child =
-        resumed ??
-        (yield* creation.create({ parentID: parentSessionID, agent: selection.id, location: parent.location }))
+      const parentContext = yield* store.context(parentSessionID)
+      const parentAssistant = parentContext.findLast((message) => message.type === "assistant")
+      // Inherit the active turn, including a sampled model that changed after resolution.
+      const model = selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : parent.model)
+      const child = resumed ?? (yield* creation.create({
+        parentID: parentSessionID,
+        agent: selection.id,
+        location: parent.location,
+        model,
+      }))
+      // Older children were created without a model and fell back to the Location default.
+      if (resumed && !resumed.model && model)
+        yield* events.publish(SessionEvent.ModelSwitched, {
+          sessionID: child.id,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(Date.now()),
+          model,
+        })
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: child.id,
@@ -1097,9 +1119,35 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           const drainSession = yield* store.get(input.sessionID)
           const drainAgent = drainSession ? yield* agents.select(drainSession.agent) : undefined
+          // Model-facing observation/control for background jobs owned by this
+          // session, when the process provides the registry. It does not launch
+          // jobs; a sandbox/parity launcher and durable restart recovery need a
+          // separate slice.
+          const jobsOption = yield* Effect.serviceOption(BackgroundJob.Service)
+          const jobTools = Option.isSome(jobsOption)
+            ? BackgroundJobTool.make({
+                list: () =>
+                  jobsOption.value
+                    .list()
+                    .pipe(Effect.map((jobs) => jobs.filter((job) => job.metadata?.sessionID === input.sessionID))),
+                wait: (id, timeoutMs) =>
+                  Effect.gen(function* () {
+                    const job = yield* jobsOption.value.get(id)
+                    if (!job || job.metadata?.sessionID !== input.sessionID) return { timedOut: false as const }
+                    return yield* jobsOption.value.wait({ id, timeout: timeoutMs })
+                  }),
+                cancel: (id) =>
+                  Effect.gen(function* () {
+                    const job = yield* jobsOption.value.get(id)
+                    if (!job || job.metadata?.sessionID !== input.sessionID) return undefined
+                    return yield* jobsOption.value.cancel(id)
+                  }),
+              })
+            : {}
           if (drainAgent?.info !== undefined)
             yield* tools
               .registerSession(input.sessionID, {
+                ...jobTools,
                 task: TaskTool.make((request) =>
                   runSubagent(input.sessionID, request).pipe(
                     Effect.mapError((error) =>
@@ -1115,6 +1163,11 @@ const layer = Layer.effect(
                   ),
                 ),
                 list_sessions: ListSessionsTool.make(() => runListSessions(input.sessionID)),
+                goal: GoalTool.make((goal) =>
+                  GoalTool.record(events, input.sessionID, goal).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
+                  ),
+                ),
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
