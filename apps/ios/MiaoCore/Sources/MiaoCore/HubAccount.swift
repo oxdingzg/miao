@@ -159,7 +159,7 @@ public actor HubAccount {
         return hosts
     }
 
-    public func pushRegistrationAvailable() async throws -> Bool {
+    public func pushRegistrationAvailable(requireDelivery: Bool = false) async throws -> Bool {
         let expected = generation
         let token = try await bearer()
         let (data, _) = try await send("/api/hub/version", credential: token)
@@ -167,7 +167,8 @@ public actor HubAccount {
         let version = try JSONDecoder().decode(HubVersion.self, from: data)
         guard version.protocolVersion == 1, version.capabilities.count <= 32,
               version.capabilities.allSatisfy({ $0.utf8.count <= 128 }) else { throw HubAccountError.malformed }
-        return version.capabilities.contains("push-registration")
+        return version.capabilities.contains("push-registration") &&
+            (!requireDelivery || version.capabilities.contains("push-delivery"))
     }
 
     public func registerPush(_ registration: PushDeviceRegistration) async throws -> HubPushRegistration {
@@ -181,6 +182,24 @@ public actor HubAccount {
             throw HubAccountError.malformed
         }
         return result
+    }
+
+    public func pushContext(deviceID: String, signalID: String) async throws -> HubPushNotice {
+        guard deviceID.range(of: "^[A-Za-z0-9_-]{87}$", options: .regularExpression) != nil,
+              signalID.range(of: "^[A-Za-z0-9_-]{16,128}$", options: .regularExpression) != nil else {
+            throw HubAccountError.malformed
+        }
+        let expected = generation
+        let token = try await bearer()
+        let (data, _) = try await send("/api/hub/push/context", credential: token,
+            query: [URLQueryItem(name: "deviceID", value: deviceID), URLQueryItem(name: "signalID", value: signalID)])
+        guard generation == expected else { throw HubAccountError.superseded }
+        guard data.count <= 8192 else { throw HubAccountError.malformed }
+        let notice = try JSONDecoder().decode(HubPushNotice.self, from: data)
+        guard notice.binding.deviceID == deviceID, notice.binding.signalID == signalID else {
+            throw HubAccountError.malformed
+        }
+        return notice
     }
 
     public func revokePush(deviceID: String) async throws {
@@ -275,8 +294,11 @@ public actor HubAccount {
     private struct PushRevocation: Encodable { let deviceID: String }
     private struct PushRevoked: Decodable { let revoked: Bool }
 
-    private func send(_ path: String, credential: String? = nil, body: Data? = nil) async throws -> (Data, HTTPURLResponse) {
-        let url = origin.appendingPathComponent(String(path.dropFirst()))
+    private func send(_ path: String, credential: String? = nil, body: Data? = nil,
+                      query: [URLQueryItem] = []) async throws -> (Data, HTTPURLResponse) {
+        var components = URLComponents(url: origin.appendingPathComponent(String(path.dropFirst())), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty { components.queryItems = query }
+        guard let url = components.url else { throw HubAccountError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = body == nil ? "GET" : "POST"
         request.httpBody = body

@@ -29,6 +29,9 @@ final class AppModel {
     var notificationsError: String?
     var notificationsWanted = false
     var notificationsRevocationPending = false
+    var notificationHostID: UUID?
+    var notificationDestination: NotificationDestination?
+    private var notificationOpenTask: Task<Void, Never>?
     private var notificationEpoch = 0
     private var pushTask: Task<Void, Never>?
     private var account: HubAccount?
@@ -45,6 +48,43 @@ final class AppModel {
         AppTestConfiguration.runID.map { "miao.remote.ui-test-notifications." + $0 } ?? "miao.remote.notifications"
     }
 
+    func openNotification(_ signalID: String) {
+        notificationOpenTask?.cancel()
+        notificationDestination = nil
+        notificationOpenTask = Task {
+            await load()
+            guard !Task.isCancelled, accountSignedIn, let account else { return }
+            let epoch = accountEpoch
+            do {
+                let key = try await identity.loadOrCreate()
+                let notice = try await account.pushContext(deviceID: publicKey(key), signalID: signalID)
+                let origin = await account.origin
+                guard !Task.isCancelled, accountEpoch == epoch, accountSignedIn,
+                      let record = hosts.first(where: { $0.host.target.hostID == notice.binding.hostID && $0.host.hubURL == origin }),
+                      let client = clients[record.id] else { throw HubAccountError.authenticationRequired }
+                let payload = try notice.resolve(device: key, host: record)
+                notificationHostID = record.id
+                let until = Date().addingTimeInterval(15)
+                while !client.ready && Date() < until {
+                    try Task.checkCancellation()
+                    guard accountEpoch == epoch, accountSignedIn, hosts.contains(where: { $0.id == record.id }) else {
+                        throw HubAccountError.superseded
+                    }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                guard client.ready, client.runtimeID == notice.binding.runtimeID else { throw HubAccountError.superseded }
+                let result = try await client.request(.sessionGet, sessionID: payload.sessionID)
+                guard !Task.isCancelled, accountEpoch == epoch, accountSignedIn,
+                      let summary = SessionSummary(result), summary.id == payload.sessionID,
+                      summary.projectID == payload.projectID, payload.expiresAt > Int64(Date().timeIntervalSince1970 * 1000),
+                      hosts.contains(where: { $0.id == record.id }) else { throw HubAccountError.superseded }
+                notificationDestination = NotificationDestination(hostID: record.id, summary: summary)
+            } catch {
+                if !Task.isCancelled && accountEpoch == epoch { notificationsError = "无法打开此通知，请从电脑列表查看当前会话" }
+            }
+        }
+    }
+
     func enableNotifications() async {
         guard !notificationsBusy, !notificationsRevocationPending, accountSignedIn, let account else { return }
         notificationsBusy = true; notificationsError = nil
@@ -53,7 +93,7 @@ final class AppModel {
         do {
             guard let raw = Bundle.main.object(forInfoDictionaryKey: "MiaoPushEnvironment") as? String,
                   PushEnvironment(rawValue: raw) != nil,
-                  try await account.pushRegistrationAvailable() else {
+                  try await account.pushRegistrationAvailable(requireDelivery: true) else {
                 notificationsError = "此连接暂不支持通知"; return
             }
             guard epoch == accountEpoch, accountSignedIn else { return }
@@ -107,6 +147,9 @@ final class AppModel {
             do {
                 let key = try await identity.loadOrCreate()
                 let registration = try PushDeviceRegistration(deviceID: publicKey(key), token: token, environment: environment)
+                guard try await account.pushRegistrationAvailable(requireDelivery: true) else {
+                    throw HubAccountError.rejected(503)
+                }
                 _ = try await account.registerPush(registration)
                 guard generation == notificationEpoch, epoch == accountEpoch, notificationsWanted, accountSignedIn else { return }
                 notificationsRegistered = true; notificationsError = nil
@@ -270,6 +313,8 @@ final class AppModel {
     func signOut() async {
         guard !accountBusy else { return }
         accountBusy = true; accountEpoch += 1
+        notificationOpenTask?.cancel()
+        notificationHostID = nil; notificationDestination = nil
         accountSignedIn = false; discoveredHosts = []
         notificationEpoch += 1; notificationsRegistered = false
         UIApplication.shared.unregisterForRemoteNotifications()
@@ -348,6 +393,12 @@ struct SessionSummary: Identifiable {
         guard let id = value["id"]?.string, let title = value["title"]?.string, let projectID = value["projectID"]?.string else { return nil }
         self.id = id; self.title = title; self.projectID = projectID
     }
+}
+
+struct NotificationDestination: Identifiable {
+    let id = UUID()
+    let hostID: UUID
+    let summary: SessionSummary
 }
 
 @MainActor @Observable

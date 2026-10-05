@@ -34,6 +34,32 @@ struct PushInterop: Decodable { let binding: PushContextBinding; let pinnedHostK
 guard let pushLine = readLine(), let pushData = pushLine.data(using: .utf8) else { throw ChannelError.malformed }
 let push = try JSONDecoder().decode(PushInterop.self, from: pushData)
 let openedPush = try PushContext.open(push.context, device: identity, pinnedHostKey: push.pinnedHostKey, binding: push.binding)
+var noticeFields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(push.binding)) as! [String: Any]
+noticeFields["context"] = push.context
+noticeFields["kind"] = "attention"
+let notice = try JSONDecoder().decode(HubPushNotice.self, from: JSONSerialization.data(withJSONObject: noticeFields))
+let grantFields: [String: Any] = ["id": push.binding.grantID, "version": push.binding.grantVersion,
+    "publicKey": push.binding.deviceID, "label": "Phone", "permissions": ["read"],
+    "projectIDs": [openedPush.projectID], "sessionIDs": [], "createdAt": 0,
+    "expiresAt": openedPush.expiresAt, "revokedAt": NSNull()]
+func authorized(_ changes: [String: Any] = [:]) throws -> AuthorizedHost {
+    let grant = try JSONDecoder().decode(DeviceGrant.self,
+        from: JSONSerialization.data(withJSONObject: grantFields.merging(changes) { _, new in new }))
+    let host = ApprovedHost(label: "Computer", hubURL: URL(string: "https://relay.example.invalid")!,
+        target: RemoteTarget(hostID: push.binding.hostID, runtimeID: push.binding.runtimeID),
+        publicKey: push.pinnedHostKey, grantID: push.binding.grantID, grantVersion: Int(push.binding.grantVersion))
+    return AuthorizedHost(host: host, grant: grant)
+}
+guard try notice.resolve(device: identity, host: authorized()) == openedPush else { throw ChannelError.malformed }
+for change: [String: Any] in [
+    ["version": push.binding.grantVersion + 1], ["permissions": ["prompt"]],
+    ["projectIDs": ["other-project"]], ["expiresAt": 0], ["revokedAt": 1],
+] {
+    do {
+        _ = try notice.resolve(device: identity, host: authorized(change))
+        throw ChannelError.malformed
+    } catch HubAccountError.authenticationRequired {}
+}
 do {
     _ = try PushContext.open(push.context, device: identity, pinnedHostKey: base64URL(identity.publicKey.x963Representation), binding: push.binding)
     throw ChannelError.malformed

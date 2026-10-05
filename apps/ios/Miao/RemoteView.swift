@@ -12,6 +12,7 @@ struct RemoteView: View {
     @State private var invitation = ""
     @State private var attached: UUID?
     @State private var attachEpoch = 0
+    @State private var notificationSession: NotificationDestination?
 
     var body: some View {
         NavigationSplitView {
@@ -116,6 +117,7 @@ struct RemoteView: View {
         }
         .task {
             await model.load()
+            applyNotification()
             if let value = AppTestConfiguration.invitation {
                 invitation = value
                 if model.accountSignedIn || AppTestConfiguration.allowLegacyTransport { pairing = true }
@@ -125,11 +127,26 @@ struct RemoteView: View {
             await attach()
         }
         .onChange(of: hostID) { _, _ in Task { await attach() } }
+        .onChange(of: model.notificationHostID) { _, value in
+            applyNotification()
+        }
+        .onChange(of: model.notificationDestination?.id) { _, _ in
+            applyNotification()
+        }
+        .sheet(item: $notificationSession) { destination in
+            if let client = model.clients[destination.hostID] {
+                NavigationStack {
+                    SessionView(client: client, session: client.session(destination.summary))
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { notificationSession = nil } } }
+                }
+            }
+        }
         .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
         .onChange(of: model.hosts.map(\.id)) { _, ids in
             if hostID == nil { hostID = ids.first }
         }
         .onChange(of: phase) { _, value in
+            if value == .active { applyNotification() }
             model.scene(sceneID, phase: value)
             Task { if let attached { await model.clients[attached]?.scene(sceneID, phase: value) } }
         }
@@ -147,6 +164,19 @@ struct RemoteView: View {
             if !invitation.isEmpty, model.accountSignedIn { pairing = true }
         }) { HubAccountView(model: model) }
         .sheet(isPresented: $pairing, onDismiss: { invitation = "" }) { PairingView(model: model, initialURI: $invitation) }
+    }
+
+    private func applyNotification() {
+        guard phase == .active else { return }
+        if let target = model.notificationHostID {
+            model.notificationHostID = nil
+            hostID = target
+        }
+        if let destination = model.notificationDestination {
+            model.notificationDestination = nil
+            hostID = destination.hostID
+            notificationSession = destination
+        }
     }
 
     @MainActor private func attach() async {

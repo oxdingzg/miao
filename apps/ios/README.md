@@ -82,7 +82,16 @@ permission. This value is independent of Debug/Release because development
 exports of a Release archive can still require the sandbox environment. Signing
 profiles, push keys and team configuration remain outside the repository.
 
-The Hub must enable push registration before the native client can enroll.
+The Hub must advertise both push registration and configured push delivery before
+the native client can enable notifications. Clicking a generic notification
+fetches its opaque context through the signed-in account, verifies the locally
+pinned host signature and matching unexpired read grant, and decrypts the session
+hint with the device key. The app then reconnects and reads the session through
+the current Runtime before opening it. Stale Runtime targets, revoked grants,
+foreign devices/accounts and expired hints do not authorize navigation or actions.
+Notification clicks contain no executable session operations and never replay
+inputs. Cold launches retain at most one pending signal until the app model loads;
+only an active scene consumes the navigation request.
 Enrollment confirms routing metadata only. Approved Runtime subscriptions and
 working Apple provider credentials are also required before reminders can be
 sent. Real Apple delivery and notification navigation must be verified with an
