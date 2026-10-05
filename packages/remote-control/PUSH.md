@@ -68,3 +68,28 @@ to other still-active logins remain usable.
 This capability advertises registration storage only. It does not indicate that
 Apple delivery credentials are configured or that Runtime subscriptions have
 been approved. Those checks precede actual notification dispatch.
+
+## Dispatch lifecycle
+
+`PushDispatch` admits bounded ephemeral notices, selects a current registration
+in the configured APNs environment, and sends only the generic alert and signal
+ID. The separately stored context is opaque ciphertext intended for that device;
+it never enters the Apple payload. The routing caller supplies the current
+Runtime/grant authorization check. Transport invokes that check again after JWT
+creation and immediately before HTTP/2 submission, together with registration
+and dispatch-generation checks. Revocation can cancel an admitted request that
+has not yet reached transport submission.
+
+The dispatcher deduplicates admitted signal IDs, preserves uncertain outcomes
+without replay, limits concurrent dispatches to 16, and retains at most 1024
+notices for ten minutes. Context lookup requires the matching account and device,
+a live login-bound registration, and still-current Runtime/grant authorization.
+Renewing a token on foreground return preserves lookup of an already accepted
+notice within that login; ending the login blocks it.
+Revocation and shutdown discard contexts. An APNs unregistered response removes
+only the registration used by that attempt. Delivery already accepted by Apple
+cannot be recalled by these admission checks.
+
+This module does not itself attest Runtime grants, produce the encrypted context,
+or expose HTTP routes. The host-authenticated integration must supply those
+checks and native context resolution before notification navigation is usable.
