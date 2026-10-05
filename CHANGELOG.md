@@ -10,6 +10,94 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-05
+
+### Added
+- **provider**: add Command Code subscription provider (#129) (`775824cc3`)
+- **remote-control**: authorize durable agent and model selection (#134) (`2ad145fd5`)
+- **core**: stream shell output to managed storage (#132) (`265e1a7a4`)
+- **remote-control**: persist browser identities and prove pairing (#123) (`31cb23b94`)
+- **core**: add the plan_enter switch and fix Windows test/PDF dependency handling (#120) (`f66ffacdc`)
+- **core**: record background job lifecycle durably (#111) (`eef1fec6b`)
+- **tui**: configure relay login within remote control (#122) (`1eea09b9e`)
+- **runtime**: configure outbound remote control without restarting sessions (#121) (`ccc1f538b`)
+- **core**: prepare durable slash commands at runner boundaries (#114) (`7343df88f`)
+- **ios**: authorize relay connections through Hub accounts (#117) (`202e4fe4c`)
+- **core**: keep the goal across compaction and report compaction count (#116) (`edae851bd`)
+- **core**: add recall tool for durable session history (#115) (`a72c4aa48`)
+- **ios**: authenticate Hub accounts and discover registered hosts (#109) (`c59910718`)
+- **hub**: authorize browser upgrades with one-use Runtime tickets (#110) (`bf1495216`)
+- **core**: expose background-job observation and control tools (#105) (`9b0eb33c7`)
+- **core**: route V2 patch derive through the native addon (#103) (`96fe85808`)
+- **core**: add plan_exit approval switch to the build agent (#102) (`f1921c9fc`)
+- **core**: add a durable session goal tool (#104) (`d7fdff530`)
+- **hub**: bind account directory and authenticated relay roles (#99) (`3fb3de7b2`)
+- **core**: cap concurrent session drains (#100) (`16d0f501a`)
+- **hub**: add durable account authentication foundation (#98) (`ac6a5038c`)
+- **ios**: pair native devices through owner approval (#96) (`42e27ef47`)
+- **tui**: pair and revoke remote-control devices (#95) (`57ad46c50`)
+- **runtime**: manage pairing through authenticated local API (#94) (`a63c15b54`)
+- **remote-control**: bind provisional pairing to local device approval (#93) (`1f2aa0c42`)
+- **runtime**: connect encrypted Agent to scoped sessions (#92) (`362e64f7d`)
+- **core**: persist remote operation admission receipts (#90) (`7d6bdddd6`)
+- **ios**: connect native clients through encrypted Hub RPC (#88) (`232ff29f9`)
+- **runtime**: host sessions independently of terminal clients (#83) (`d55210589`)
+
+### Fixed
+- **miao**: validate tui arguments before the Windows VT check (#136) (`a06c0ad79`)
+- **core**: recover background job observations after restart (#133) (`7965c8f02`)
+- **core**: detect multi-phrase provider repetition (#127) (`d645641aa`)
+- **core**: trigger compaction on reported usage before the window fills (#113) (`f4bfbde4f`)
+- **core**: deliver peer messages at safe continuation boundaries (#112) (`3c63fccc8`)
+- **core**: preserve text format and report final edit diffs (#108) (`16c1f465d`)
+- **core**: invoke Windows PowerShell with -NoProfile -Command (#106) (`2620af4e6`)
+- **core**: distinguish undispatched tools from unknown-outcome tools on recovery (#101) (`dd431edd7`)
+- **core**: inherit parent model in subagent sessions (#79) (`07fdafb1c`)
+
+## [0.1.7] - 2026-10-05
+
+### Added
+- **provider**: add Command Code subscription provider (#129) (`775824cc3`)
+- **remote-control**: authorize durable agent and model selection (#134) (`2ad145fd5`)
+- **core**: stream shell output to managed storage (#132) (`265e1a7a4`)
+- **remote-control**: persist browser identities and prove pairing (#123) (`31cb23b94`)
+- **core**: add the plan_enter switch and fix Windows test/PDF dependency handling (#120) (`f66ffacdc`)
+- **core**: record background job lifecycle durably (#111) (`eef1fec6b`)
+- **tui**: configure relay login within remote control (#122) (`1eea09b9e`)
+- **runtime**: configure outbound remote control without restarting sessions (#121) (`ccc1f538b`)
+- **core**: prepare durable slash commands at runner boundaries (#114) (`7343df88f`)
+- **ios**: authorize relay connections through Hub accounts (#117) (`202e4fe4c`)
+- **core**: keep the goal across compaction and report compaction count (#116) (`edae851bd`)
+- **core**: add recall tool for durable session history (#115) (`a72c4aa48`)
+- **ios**: authenticate Hub accounts and discover registered hosts (#109) (`c59910718`)
+- **hub**: authorize browser upgrades with one-use Runtime tickets (#110) (`bf1495216`)
+- **core**: expose background-job observation and control tools (#105) (`9b0eb33c7`)
+- **core**: route V2 patch derive through the native addon (#103) (`96fe85808`)
+- **core**: add plan_exit approval switch to the build agent (#102) (`f1921c9fc`)
+- **core**: add a durable session goal tool (#104) (`d7fdff530`)
+- **hub**: bind account directory and authenticated relay roles (#99) (`3fb3de7b2`)
+- **core**: cap concurrent session drains (#100) (`16d0f501a`)
+- **hub**: add durable account authentication foundation (#98) (`ac6a5038c`)
+- **ios**: pair native devices through owner approval (#96) (`42e27ef47`)
+- **tui**: pair and revoke remote-control devices (#95) (`57ad46c50`)
+- **runtime**: manage pairing through authenticated local API (#94) (`a63c15b54`)
+- **remote-control**: bind provisional pairing to local device approval (#93) (`1f2aa0c42`)
+- **runtime**: connect encrypted Agent to scoped sessions (#92) (`362e64f7d`)
+- **core**: persist remote operation admission receipts (#90) (`7d6bdddd6`)
+- **ios**: connect native clients through encrypted Hub RPC (#88) (`232ff29f9`)
+- **runtime**: host sessions independently of terminal clients (#83) (`d55210589`)
+
+### Fixed
+- **miao**: validate tui arguments before the Windows VT check (#136) (`a06c0ad79`)
+- **core**: recover background job observations after restart (#133) (`7965c8f02`)
+- **core**: detect multi-phrase provider repetition (#127) (`d645641aa`)
+- **core**: trigger compaction on reported usage before the window fills (#113) (`f4bfbde4f`)
+- **core**: deliver peer messages at safe continuation boundaries (#112) (`3c63fccc8`)
+- **core**: preserve text format and report final edit diffs (#108) (`16c1f465d`)
+- **core**: invoke Windows PowerShell with -NoProfile -Command (#106) (`2620af4e6`)
+- **core**: distinguish undispatched tools from unknown-outcome tools on recovery (#101) (`dd431edd7`)
+- **core**: inherit parent model in subagent sessions (#79) (`07fdafb1c`)
+
 ## [0.1.6] - 2026-10-04
 
 ### Added
