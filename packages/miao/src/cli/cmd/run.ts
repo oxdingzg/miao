@@ -257,6 +257,8 @@ export const RunCommand = cmd({
       args.password = runtime.credential
       args.username = "miao"
       args.dir = path.resolve(process.env.PWD ?? process.cwd(), args.dir ?? ".")
+      const notice = RuntimeConnect.mismatch(runtime)
+      if (notice) UI.warn(notice)
     }
     const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
     const interactive = args.mini

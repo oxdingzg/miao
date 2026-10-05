@@ -155,6 +155,8 @@ export type TuiInput = {
   pluginHost: TuiPluginHost
   /** Lets /remote-control configure the attached Runtime relay. */
   remote?: RemoteLocalFactory
+  /** Warns once at startup when the attached Runtime's build differs from this client. */
+  runtimeNotice?: string
 }
 
 function errorMessage(error: unknown) {
@@ -321,6 +323,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                         onSnapshot={input.onSnapshot}
                                                                         onSessionChange={input.onSessionChange}
                                                                         pluginHost={input.pluginHost}
+                                                                        runtimeNotice={input.runtimeNotice}
                                                                       />
                                                                     </RemoteLocalProvider>
                                                                   </LocationProvider>
@@ -372,6 +375,7 @@ function App(props: {
   onSnapshot?: () => Promise<string[]>
   onSessionChange?: TuiInput["onSessionChange"]
   pluginHost: TuiPluginHost
+  runtimeNotice?: string
 }) {
   const startup = useTuiStartup()
   const tuiConfig = useTuiConfig()
@@ -394,6 +398,10 @@ function App(props: {
   const pluginRuntime = usePluginRuntime()
   const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
   const clipboard = useClipboard()
+
+  onMount(() => {
+    if (props.runtimeNotice) toast.show({ message: props.runtimeNotice, variant: "warning", duration: 15000 })
+  })
 
   createEffect(() => {
     if (!props.onSessionChange) return

@@ -3,9 +3,26 @@ import { RuntimeConnect } from "../../src/runtime/connect"
 import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
 import { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
+import { InstallationVersion } from "@miao/core/installation/version"
 import { tmpdir } from "../fixture/fixture"
 import path from "node:path"
 import { createHash } from "node:crypto"
+
+test("mismatch warns only when the owner release differs from this client", () => {
+  const identity = RuntimeIdentity.create("/tmp/miao-mismatch.db", InstallationVersion, "0".repeat(48))
+  const record: RuntimeDiscovery.Record = {
+    url: "http://127.0.0.1:1234/",
+    runtimeID: identity.runtimeID,
+    version: InstallationVersion,
+    protocol: 1,
+    storageID: identity.storageID,
+    credential: "0".repeat(48),
+  }
+  expect(RuntimeConnect.mismatch(record)).toBeUndefined()
+  const warning = RuntimeConnect.mismatch({ ...record, version: "0.0.1" })
+  expect(warning).toContain("0.0.1")
+  expect(warning).toContain(InstallationVersion)
+})
 
 for (const scenario of ["older", "newer", "forged", "unsupported", "configuration"] as const) {
   test(`Runtime connection handles a ${scenario} owner across releases`, async () => {
