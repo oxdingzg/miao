@@ -7,6 +7,7 @@ import { Global } from "@miao/core/global"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
+import { cmd } from "./cmd"
 
 /**
  * Anomaly thresholds, in one place so they can be recalibrated from observed
@@ -292,15 +293,14 @@ const SnapshotCommand = effectCmd({
   }),
 })
 
-const ReportCommand = effectCmd({
+const ReportCommand = cmd({
   command: "report",
   describe: "replay sampled history and report trends and anomalies",
-  instance: false,
   builder: (yargs: Argv) =>
     yargs
       .option("since", { type: "string", default: "24h", describe: "window, e.g. 30m, 24h, 7d" })
       .option("json", { type: "boolean", default: false, describe: "emit machine-readable output" }),
-  handler: Effect.fn("Cli.doctor.report")(function* (args: { since: string; json: boolean }) {
+  handler: (args: { since: string; json: boolean }) => {
     const window = duration(args.since, 24 * 3_600_000)
     const { byPid } = read(window)
     const reports = [...byPid.entries()].map(([pid, samples]) => ({
@@ -348,7 +348,7 @@ const ReportCommand = effectCmd({
       console.log(`\n${anomalies.length} finding(s).`)
       process.exitCode = 1
     }
-  }),
+  },
 })
 
 export const DoctorCommand = effectCmd({
