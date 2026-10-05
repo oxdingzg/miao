@@ -340,6 +340,39 @@ export const {
     const v2Reducer = createTuiV2SessionReducer()
     const streamText = createStreamText()
 
+    // A long-lived TUI can open many sessions (route changes, inline subagents).
+    // Each hydrated transcript is large, so bound how many stay resident and
+    // evict the least recently used beyond the cap. A session is pinned while it
+    // is on screen (the route session, or an inline subagent) so eviction never
+    // blanks a mounted transcript; reopening an evicted session re-hydrates it.
+    const lastViewed = new Map<string, number>()
+    const pinnedSessions = new Set<string>()
+    const MAX_RETAINED_SESSIONS = 12
+
+    const releaseSession = (sessionID: string) => {
+      for (const message of store.message[sessionID] ?? []) setStore("part", message.id, undefined!)
+      setStore("message", sessionID, undefined!)
+      sessionMessages.delete(sessionID)
+      fullSyncedSessions.delete(sessionID)
+      watchedSessions.delete(sessionID)
+      syncingSessions.delete(sessionID)
+      hydratingSessions.delete(sessionID)
+      olderHistory.delete(sessionID)
+      olderLoaded.delete(sessionID)
+      loadingOlder.delete(sessionID)
+      todoLiveAt.delete(sessionID)
+      lastViewed.delete(sessionID)
+    }
+
+    const evictExcessSessions = () => {
+      if (sessionMessages.size <= MAX_RETAINED_SESSIONS) return
+      const candidates = [...sessionMessages.keys()]
+        .filter((id) => !pinnedSessions.has(id))
+        .filter((id) => !Object.values(pendingPrompts.data).some((prompt) => prompt.info.sessionID === id))
+        .sort((a, b) => (lastViewed.get(a) ?? 0) - (lastViewed.get(b) ?? 0))
+      while (sessionMessages.size > MAX_RETAINED_SESSIONS && candidates.length > 0) releaseSession(candidates.shift()!)
+    }
+
     // Text and reasoning fragments append in place. `touchPart` keeps an
     // in-flight re-hydration from clobbering the locally streamed value; the
     // durable `ended` event later replaces it with the authoritative text.
@@ -1292,10 +1325,22 @@ export const {
           if (last.role === "user") return "working"
           return last.time.completed ? "idle" : "working"
         },
+        // Keep a session's transcript resident while it is on screen. Called by
+        // the session route and by an inline subagent while it is mounted.
+        pin(sessionID: string) {
+          pinnedSessions.add(sessionID)
+          lastViewed.set(sessionID, Date.now())
+        },
+        unpin(sessionID: string) {
+          pinnedSessions.delete(sessionID)
+          lastViewed.set(sessionID, Date.now())
+          evictExcessSessions()
+        },
         async sync(sessionID: string) {
           // Opening a session marks it watched even if a sync is already in
           // flight, so its live events are applied from here on.
           watchedSessions.add(sessionID)
+          lastViewed.set(sessionID, Date.now())
           if (fullSyncedSessions.has(sessionID)) return
           const syncing = syncingSessions.get(sessionID)
           if (syncing) return syncing
@@ -1435,6 +1480,7 @@ export const {
             mergeStreamedTextIntoShadow(sessionID, messages.source)
             fullSyncedSessions.add(sessionID)
             streamText.releaseEnded(sessionID)
+            evictExcessSessions()
           })().finally(() => {
             hydration.lastMs = performance.now() - started
             hydration.totalMs += hydration.lastMs

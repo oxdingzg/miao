@@ -292,6 +292,9 @@ export function Session() {
 
   createEffect(() => {
     const sessionID = route.sessionID
+    // Keep this session's transcript resident while the route shows it.
+    sync.session.pin(sessionID)
+    onCleanup(() => sync.session.unpin(sessionID))
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
@@ -2374,7 +2377,12 @@ function Task(props: ToolProps) {
 
   onMount(() => {
     const sessionID = stringValue(props.metadata.sessionId)
-    if (sessionID && !sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
+    if (!sessionID) return
+    // The subagent transcript is rendered inline, so keep it resident until the
+    // tool cell unmounts.
+    sync.session.pin(sessionID)
+    onCleanup(() => sync.session.unpin(sessionID))
+    if (!sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
   })
 
   const sessionID = createMemo(() => stringValue(props.metadata.sessionId))
