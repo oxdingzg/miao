@@ -33,6 +33,7 @@ import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
 import { GoalTool } from "../../tool/goal"
+import { RecallTool } from "../../tool/recall"
 import { BackgroundJob } from "../../background-job"
 import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
@@ -136,6 +137,13 @@ const MAX_IDENTICAL_TOOL_CALLS = 5
 const MAX_OVERFLOW_COMPACTIONS = 2
 
 /**
+ * How many compactions in one Session before the frequency is worth surfacing.
+ * A Session that keeps compacting is either growing faster than the summary can
+ * reclaim or fighting its context budget; the count makes that visible.
+ */
+const COMPACTION_THRASH_WARNING = 3
+
+/**
  * How long a subagent may go without emitting any event before its drain is
  * treated as stuck. Silence means no provider delta, no tool call, and no tool
  * result, so the longest legitimate gap is a tool running to its own ceiling;
@@ -199,6 +207,22 @@ const layer = Layer.effect(
     // compaction). Process-local and best-effort.
     const WARM_WINDOW_MS = 5 * 60_000
     const turns = new Map<string, { at: number; afterCompaction: boolean }>()
+    // Compactions per Session, so a Session that keeps compacting is visible
+    // rather than silent. Process-local and best-effort, like the cache telemetry.
+    const compactions = new Map<string, number>()
+    const recordCompaction = (sessionID: SessionSchema.ID, cause: string, ms?: number) =>
+      Effect.gen(function* () {
+        const count = (compactions.get(sessionID) ?? 0) + 1
+        compactions.set(sessionID, count)
+        yield* Effect.logInfo("session.compaction", {
+          sessionID,
+          cause,
+          count,
+          ...(ms === undefined ? {} : { ms }),
+        })
+        if (count === COMPACTION_THRASH_WARNING)
+          yield* Effect.logWarning("session.compaction-thrash", { sessionID, count })
+      })
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
@@ -567,21 +591,13 @@ const layer = Layer.effect(
           request,
         })
         if (compacted) turns.set(session.id, { at: Date.now(), afterCompaction: true })
-        yield* Effect.logInfo("session.compaction", {
-          sessionID: session.id,
-          cause: "overflow",
-          ms: Date.now() - compactStartedAt,
-        })
+        yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
       const compactCheckedAt = Date.now()
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, summarizeModel, request })) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
-        yield* Effect.logInfo("session.compaction", {
-          sessionID: session.id,
-          cause: "threshold",
-          ms: Date.now() - compactCheckedAt,
-        })
+        yield* recordCompaction(session.id, "threshold", Date.now() - compactCheckedAt)
         return yield* Effect.die(continueAfterCompaction(currentStep))
       }
       const compactMs = Date.now() - compactStartedAt
@@ -763,6 +779,7 @@ const layer = Layer.effect(
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
+            yield* recordCompaction(session.id, "recovery")
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
           if (overflowFailure) yield* publish(overflowFailure)
@@ -1050,7 +1067,7 @@ const layer = Layer.effect(
 
     const runSendMessage = Effect.fnUntraced(function* (
       senderSessionID: SessionSchema.ID,
-      request: { readonly to: string; readonly message: string },
+      request: { readonly to: string; readonly message: string; readonly delivery?: SessionInput.Delivery },
       context: {
         readonly agent: AgentV2.ID
         readonly assistantMessageID: SessionMessage.ID
@@ -1065,10 +1082,10 @@ const layer = Layer.effect(
         return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
       if (target.projectID !== sender.projectID)
         return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
-      const pending = yield* SessionInput.countPending(db, target.id, "queue")
+      const pending = yield* SessionInput.countPending(db, target.id)
       if (pending >= SendMessageTool.MAX_INBOUND_QUEUE)
         return yield* new ToolFailure({
-          message: `Session ${target.id} inbox is full (${pending} queued messages); try again later.`,
+          message: `Session ${target.id} inbox is full (${pending} pending inputs); try again later.`,
         })
       // Consulted as action `message` per target; the shared user-declined path
       // handles an explicit deny.
@@ -1084,7 +1101,7 @@ const layer = Layer.effect(
         id: SessionMessage.ID.create(),
         sessionID: target.id,
         prompt: Prompt.make({ text: `<message from session="${sender.id}">\n${request.message}\n</message>` }),
-        delivery: "queue",
+        delivery: request.delivery ?? "steer",
       })
       // Waking routes through the process-local execution coordinator when the
       // runner was entered from a real drain; admit-only callers leave it durable.
@@ -1166,6 +1183,11 @@ const layer = Layer.effect(
                 goal: GoalTool.make((goal) =>
                   GoalTool.record(events, input.sessionID, goal).pipe(
                     Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
+                  ),
+                ),
+                recall: RecallTool.make(() =>
+                  SessionHistory.all(db, input.sessionID).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
                   ),
                 ),
               })
