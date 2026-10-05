@@ -282,7 +282,7 @@ miao runtime [action]
 run the persistent local session Runtime
 
 Positionals:
-  action                                     [choices: "start", "status", "stop"] [default: "start"]
+  action                           [choices: "start", "status", "stop", "access"] [default: "start"]
 
 Options:
   -h, --help        show help                                                              [boolean]
