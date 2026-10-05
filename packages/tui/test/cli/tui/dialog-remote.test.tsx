@@ -360,6 +360,40 @@ test("the SDK-backed api reads status, follows login steps over SSE, and treats 
 })
 
 const running: DaemonStatus = { pid: 42, port: 4097, version: "0.0.33", connectors: [wechat] }
+
+test("relay setup masks the password and opens device pairing after configuring the Runtime", async () => {
+  await using tmp = await tmpdir()
+  const remote = daemon(undefined)
+  const here = machine({ remote, saved: [] })
+  const control = deviceControl(false)
+  let received = ""
+  const local: RemoteLocal = { ...here.local, setup: async (input) => {
+    received = input.password
+    return input.runtime.configure({ hubURL: input.hubURL, hostToken: "a".repeat(43) })
+  } }
+  const view = await mount(tmp.path, environment(remote.api, { local, devices: control.api,
+    configure: async () => { control.state.status = { enabled: true, connected: true }; return control.state.status } }))
+  try {
+    await view.until((frame) => frame.includes("配置自建中继"))
+    await view.select(0)
+    await view.until((frame) => frame.includes("自建中继地址"))
+    await view.app.mockInput.typeText("https://relay.example.invalid")
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("中继账号邮箱"))
+    await view.app.mockInput.typeText("owner@example.invalid")
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("这台电脑的名称"))
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("中继账号密码"))
+    await view.app.mockInput.typeText("masked-fixture-password")
+    const masked = await view.until((frame) => frame.includes("••••"))
+    expect(masked).not.toContain("masked-fixture-password")
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("分享当前会话（只读）"))
+    expect(received).toBe("masked-fixture-password")
+    expect(control.state.status.enabled).toBe(true)
+  } finally { view.cleanup() }
+})
 const plist = "/home/me/Library/LaunchAgents/dev.mtty.miao.remote.plist"
 
 /**

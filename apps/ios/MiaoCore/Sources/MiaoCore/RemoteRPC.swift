@@ -32,6 +32,7 @@ public enum RemoteMethod: String, Codable, Sendable {
     case sessionPending = "session.pending", sessionDiff = "session.diff", selectionList = "selection.list"
     case operationGet = "operation.get", sessionCreate = "session.create", sessionPrompt = "session.prompt"
     case sessionInterrupt = "session.interrupt", sessionRename = "session.rename"
+    case sessionSwitchAgent = "session.switchAgent", sessionSwitchModel = "session.switchModel"
     case permissionReply = "permission.reply", questionReply = "question.reply"
 }
 

@@ -25,3 +25,12 @@ Run `swift test --package-path apps/ios/MiaoCore` on an approved macOS build hos
 probe against a real account Hub, registers a host, checks its Unicode directory
 record, restores a real Keychain login, and verifies logout invalidation. It owns
 and deletes its simulator and keeps credentials out of command arguments and logs.
+
+Authenticated relay connections
+------------------------------
+
+Pass the signed-in `HubAccount` to `HubConnection.open` or `HubConnection.pair` for an account-managed Hub. The account supplies a cached short-lived bearer on each new socket, validates the exact origin (including its port), and owns a separate ephemeral, redirect-rejecting WebSocket session. Credentials remain in headers rather than URLs. Pairing still requires local owner approval; an account login never substitutes for an Agent device grant.
+
+Signing out closes this account instance's sockets immediately, including when remote revocation fails. A successful server sign-out also invalidates sockets using a restored copy of the same login. New connections retrieve a fresh bearer after its cache deadline; failed or uncertain RPC operations are never retried by this layer. On reconnect, the account directory supplies the current Runtime instance only after the stored host public key matches; a missing, revoked or changed identity blocks authorization, while an offline host remains offline. The grant ID/version and local trust anchor stay intact. The legacy no-account transport is retained for private integration fixtures.
+
+The native account integration probe exercises a real Hub and Agent, rejects an unapproved device even with a valid account, reads an encrypted session with the approved device, and checks both local socket closure and server-side logout invalidation.

@@ -1,4 +1,5 @@
 import { Context, Duration, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { appendFile, stat } from "node:fs/promises"
 import type { PlatformError } from "effect/PlatformError"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -52,6 +53,13 @@ export interface RunOptions {
   readonly combineOutput?: boolean
   readonly maxOutputBytes?: number
   readonly maxErrorBytes?: number
+  /**
+   * Append output here as it arrives: merged stdout/stderr with combineOutput,
+   * stdout otherwise. The in-memory preview stays bounded by maxOutputBytes.
+   */
+  readonly outputFile?: string
+  /** Cap on bytes appended to `outputFile`; the file stops growing once reached. */
+  readonly outputFileMaxBytes?: number
   readonly signal?: AbortSignal
   readonly timeout?: Duration.Input
   readonly stdin?: string | Uint8Array | Stream.Stream<Uint8Array, PlatformError>
@@ -73,6 +81,12 @@ export interface RunResult {
   readonly outputTruncated?: boolean
   readonly stdoutTruncated: boolean
   readonly stderrTruncated: boolean
+  /** Path the full output was streamed to, when `outputFile` was set. */
+  readonly outputPath?: string
+  /** Total bytes received, before the in-memory preview was truncated. */
+  readonly outputBytes?: number
+  /** True when file capture dropped bytes due to its size cap or a write error. */
+  readonly outputFileTruncated?: boolean
 }
 
 export type Interface = ChildProcessSpawner["Service"] & {
@@ -147,23 +161,70 @@ const normalizeStdin = (
       ? Stream.make(input)
       : input
 
-export const collectStream = (stream: Stream.Stream<Uint8Array, PlatformError>, maxOutputBytes: number | undefined) =>
-  Stream.runFold(
-    stream,
-    () => ({ chunks: [] as Uint8Array[], bytes: 0, truncated: false }),
-    (acc, chunk) => {
-      if (maxOutputBytes === undefined) {
-        acc.chunks.push(chunk)
+export const collectStream = (
+  stream: Stream.Stream<Uint8Array, PlatformError>,
+  maxOutputBytes: number | undefined,
+  outputFile?: string,
+  outputFileMaxBytes?: number,
+) =>
+  Effect.gen(function* () {
+    // Subscribe immediately after spawning: awaiting filesystem work here can
+    // lose output from short-lived children that finish before stream setup.
+    // File-write failures mark capture incomplete without failing the command.
+    let fileBytes = 0
+    let fileTruncated = false
+    let fileFailed = false
+    const teed =
+      outputFile === undefined
+        ? stream
+        : stream.pipe(
+            Stream.mapEffect((chunk) => {
+              if (fileFailed) return Effect.succeed(chunk)
+              const remaining =
+                outputFileMaxBytes === undefined ? chunk.length : Math.max(0, outputFileMaxBytes - fileBytes)
+              const captured = chunk.subarray(0, remaining)
+              if (captured.length < chunk.length) fileTruncated = true
+              if (captured.length === 0) return Effect.succeed(chunk)
+              return Effect.tryPromise(() => appendFile(outputFile, captured)).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    fileBytes += captured.length
+                  }),
+                ),
+                Effect.catch(() =>
+                  Effect.sync(() => {
+                    fileFailed = true
+                    fileTruncated = true
+                  }),
+                ),
+                Effect.as(chunk),
+              )
+            }),
+          )
+    return yield* Stream.runFold(
+      teed,
+      () => ({ chunks: [] as Uint8Array[], bytes: 0, truncated: false }),
+      (acc, chunk) => {
+        if (maxOutputBytes === undefined) {
+          acc.chunks.push(chunk)
+          acc.bytes += chunk.length
+          return acc
+        }
+        const remaining = maxOutputBytes - acc.bytes
+        if (remaining > 0) acc.chunks.push(remaining >= chunk.length ? chunk : chunk.slice(0, remaining))
         acc.bytes += chunk.length
+        acc.truncated = acc.truncated || acc.bytes > maxOutputBytes
         return acc
-      }
-      const remaining = maxOutputBytes - acc.bytes
-      if (remaining > 0) acc.chunks.push(remaining >= chunk.length ? chunk : chunk.slice(0, remaining))
-      acc.bytes += chunk.length
-      acc.truncated = acc.truncated || acc.bytes > maxOutputBytes
-      return acc
-    },
-  ).pipe(Effect.map((x) => ({ buffer: Buffer.concat(x.chunks), truncated: x.truncated })))
+      },
+    ).pipe(
+      Effect.map((x) => ({
+        buffer: Buffer.concat(x.chunks),
+        truncated: x.truncated,
+        bytes: x.bytes,
+        fileTruncated,
+      })),
+    )
+  })
 
 const layer = Layer.effect(
   Service,
@@ -174,10 +235,21 @@ const layer = Layer.effect(
       const description = describeCommand(command)
       const collect = Effect.scoped(
         Effect.gen(function* () {
+          // Include output from earlier attempts in the file cap, before the
+          // child starts so capture can subscribe without an asynchronous gap.
+          const file = options?.outputFile
+          const maximum = options?.outputFileMaxBytes
+          const fileBudget =
+            file === undefined || maximum === undefined
+              ? maximum
+              : yield* Effect.tryPromise(() => stat(file)).pipe(
+                  Effect.map((info) => Math.max(0, maximum - info.size)),
+                  Effect.catch(() => Effect.succeed(maximum)),
+                )
           const handle = yield* spawner.spawn(command)
           if (options?.combineOutput) {
             const [output, exitCode] = yield* Effect.all(
-              [collectStream(handle.all, options.maxOutputBytes), handle.exitCode],
+              [collectStream(handle.all, options.maxOutputBytes, options.outputFile, fileBudget), handle.exitCode],
               { concurrency: "unbounded" },
             )
             return {
@@ -189,11 +261,18 @@ const layer = Layer.effect(
               outputTruncated: output.truncated,
               stdoutTruncated: false,
               stderrTruncated: false,
+              ...(options.outputFile === undefined
+                ? {}
+                : {
+                    outputPath: options.outputFile,
+                    outputBytes: output.bytes,
+                    outputFileTruncated: output.fileTruncated,
+                  }),
             } satisfies RunResult
           }
           const [stdout, stderr, exitCode] = yield* Effect.all(
             [
-              collectStream(handle.stdout, options?.maxOutputBytes),
+              collectStream(handle.stdout, options?.maxOutputBytes, options?.outputFile, fileBudget),
               collectStream(handle.stderr, options?.maxErrorBytes),
               handle.exitCode,
             ],
@@ -206,6 +285,13 @@ const layer = Layer.effect(
             stderr: stderr.buffer,
             stdoutTruncated: stdout.truncated,
             stderrTruncated: stderr.truncated,
+            ...(options?.outputFile === undefined
+              ? {}
+              : {
+                  outputPath: options.outputFile,
+                  outputBytes: stdout.bytes,
+                  outputFileTruncated: stdout.fileTruncated,
+                }),
           } satisfies RunResult
         }),
       )

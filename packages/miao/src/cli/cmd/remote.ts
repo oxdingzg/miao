@@ -10,6 +10,7 @@ import type { AccountStatus, ConnectorStatus, FlowStep, Host, LoginFlow, LoginIn
 import type { RemoteControl } from "@miao/server/remote-control"
 import { fail } from "../effect-cmd"
 import { cmd } from "./cmd"
+import { CliProgram } from "@/cli-program"
 
 const DefaultPort = 4097
 
@@ -355,7 +356,7 @@ const UninstallCommand = cmd({
 
 /** The command that runs the daemon: a source checkout runs through bun; a compiled binary is its own executable. */
 function remoteProgram() {
-  return Bun.main.endsWith(".ts") ? [process.execPath, "run", Bun.main, "remote"] : [process.execPath, "remote"]
+  return CliProgram.command("remote")
 }
 
 /** The launchd agent's environment. It never includes MIAO_SERVER_PASSWORD. */
@@ -387,6 +388,10 @@ export async function createRemoteLocal(remote: RemoteSettings | undefined) {
     return found
   }
   return {
+    setup: async (input: Parameters<typeof import("@miao/remote-control/hub-setup").connect>[0]) => {
+      const { HubSetup } = await import("@miao/remote-control/hub-setup")
+      return HubSetup.connect(input)
+    },
     status: () => host().then((item) => item.status()),
     login: async (connector: string) => {
       const local = await createLocalHost(settings, log)

@@ -6,6 +6,7 @@ import { InstallationVersion } from "@miao/core/installation/version"
 import { createHash } from "node:crypto"
 import { open } from "node:fs/promises"
 import { spawn } from "node:child_process"
+import { CliProgram } from "@/cli-program"
 
 export async function current(filename: string): Promise<RuntimeDiscovery.Record | undefined> {
   const storage = await RuntimeOwnership.canonicalStorage(filename)
@@ -67,9 +68,7 @@ async function launch(storage: string) {
   const log = await open(`${storage}.runtime.log`, "a", 0o600)
   try {
     await log.chmod(0o600)
-    const program = Bun.main.endsWith(".ts")
-      ? [process.execPath, "run", Bun.main, "runtime"]
-      : [process.execPath, "runtime"]
+    const program = CliProgram.command("runtime")
     const child = spawn(program[0], program.slice(1), {
       detached: true,
       stdio: ["ignore", log.fd, log.fd],

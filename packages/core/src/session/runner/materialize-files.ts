@@ -52,6 +52,10 @@ export const materializeEvent = (
     // Each case narrows to exactly one member: spreading a union of payloads
     // first and then narrowing pairs every payload with every event type.
     switch (event.type) {
+      case "session.next.command.completed": {
+        const prompt = yield* materializePrompt(blob, cache, event.data.prompt)
+        return { ...event, data: { ...event.data, prompt } }
+      }
       case "session.next.prompted":
       case "session.next.prompt.admitted": {
         const prompt = yield* materializePrompt(blob, cache, event.data.prompt)

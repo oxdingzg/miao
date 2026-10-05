@@ -2,5 +2,6 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": { "lib": ["ESNext"] },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": ["src/browser-identity.ts"]
 }

@@ -41,6 +41,13 @@ export type Error = StorageError
 
 export interface Interface {
   readonly limits: () => Effect.Effect<{ readonly maxLines: number; readonly maxBytes: number }>
+  /**
+   * The managed directory tool output is written to. Exposed so a long-running
+   * command can stream its output there while it runs, before `bound` sees the
+   * finished result, and share the store's retention cleanup. Hosts without
+   * managed file capture can omit it.
+   */
+  readonly directory?: () => string
   readonly bound: (input: BoundInput) => Effect.Effect<BoundResult, Error>
   readonly cleanup: () => Effect.Effect<void>
 }
@@ -188,7 +195,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ limits, bound, cleanup })
+    return Service.of({ limits, directory: () => directory, bound, cleanup })
   }),
 )
 

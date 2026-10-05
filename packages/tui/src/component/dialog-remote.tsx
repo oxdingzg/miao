@@ -16,6 +16,8 @@ import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogConfirm } from "../ui/dialog-confirm"
 import { DialogPrompt } from "../ui/dialog-prompt"
+import { DialogSecret } from "../ui/dialog-secret"
+import type { RemoteAccess } from "@miao/schema/remote-access"
 import { useToast } from "../ui/toast"
 import { useBindings } from "../keymap"
 import { DialogDevices, type DeviceApi } from "./dialog-devices"
@@ -106,6 +108,13 @@ export type DaemonResult = { readonly ok: true; readonly log: string } | { reado
  * only after the user confirms the shown commands.
  */
 export type RemoteLocal = {
+  readonly setup?: (input: {
+    hubURL: string
+    email: string
+    password: string
+    name: string
+    runtime: { get(): Promise<RemoteAccess.Status>; configure(value: RemoteAccess.Configuration): Promise<RemoteAccess.Status> }
+  }) => Promise<RemoteAccess.Status>
   /** Connectors and the accounts saved on this machine, without a daemon. */
   readonly status: () => Promise<ReadonlyArray<ConnectorStatus>>
   readonly login: RemoteApi["login"]
@@ -130,6 +139,7 @@ export const RemoteLocalProvider = RemoteLocalContext.Provider
 export type RemoteEnvironment = {
   readonly api: RemoteApi
   readonly devices?: DeviceApi
+  readonly configure?: ReturnType<typeof OpenCode.make>["server.runtime"]["configure"]
   readonly port: number
   /** This TUI is attached to the daemon's server, so its sessions can be driven from IM. */
   readonly attached: boolean
@@ -181,6 +191,7 @@ export function DialogRemote() {
       environment={{
         api: createRemoteApi({ url, client: sdk.api.remote }),
         devices: sdk.api["server.runtime"],
+        configure: sdk.api["server.runtime"].configure,
         port,
         attached: sameServer(sdk.url, url),
         sessionID,
@@ -203,6 +214,10 @@ function lazyLocal(load: () => Promise<RemoteLocal>): RemoteLocal {
       throw error
     }))
   return {
+    setup: (input) => get().then((local) => {
+      if (!local.setup) throw new Error("Relay setup is unavailable")
+      return local.setup(input)
+    }),
     status: () => get().then((local) => local.status()),
     login: (connector) => get().then((local) => local.login(connector)),
     events: (flow, signal) => ({
@@ -526,6 +541,34 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
     <DialogSelect
       title="远程遥控"
       options={[
+        ...(local?.setup && environment.devices && environment.configure ? [{
+          value: "relay-setup", title: "配置自建中继", category: "设备接入",
+          description: "登录中继并登记这台电脑，无需重启会话",
+          onSelect: () => void (async () => {
+            const hubURL = await DialogPrompt.show(dialog, "自建中继地址", { placeholder: "https://relay.example.com" })
+            if (!hubURL) { reopen(); return }
+            const email = await DialogPrompt.show(dialog, "中继账号邮箱")
+            if (!email) { reopen(); return }
+            const name = await DialogPrompt.show(dialog, "这台电脑的名称", { value: "我的电脑" })
+            if (!name) { reopen(); return }
+            let password = await DialogSecret.show(dialog, "中继账号密码")
+            if (password === null) { reopen(); return }
+            const connecting = local.setup!({ hubURL, email, password, name,
+              runtime: { get: () => environment.devices!.get(), configure: environment.configure! } })
+            password = null
+            let dismissed = false
+            dialog.replace(() => <DialogAlert title="连接中继" message="正在登录和登记电脑…" />, () => { dismissed = true })
+            try {
+              await connecting
+              if (dismissed) return
+              dialog.replace(() => <DialogDevices api={environment.devices!} sessionID={environment.sessionID} projectID={environment.projectID} />)
+            } catch {
+              if (dismissed) return
+              await DialogAlert.show(dialog, "配置未确认", "请检查 Runtime 状态和中继设备目录，再重试。账号凭据不会保存到电脑配置中。")
+              reopen()
+            }
+          })(),
+        }] : []),
         ...(environment.devices
           ? [
               {

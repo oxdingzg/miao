@@ -345,6 +345,7 @@ const Endpoint8_18 = (raw: RawClient["server.session"]) => (input: Endpoint8_18I
 type Endpoint8_19Request = Parameters<RawClient["server.session"]["session.command"]>[0]
 type Endpoint8_19Input = {
   readonly sessionID: Endpoint8_19Request["params"]["sessionID"]
+  readonly id?: Endpoint8_19Request["payload"]["id"]
   readonly command: Endpoint8_19Request["payload"]["command"]
   readonly arguments: Endpoint8_19Request["payload"]["arguments"]
   readonly resume?: Endpoint8_19Request["payload"]["resume"]
@@ -352,7 +353,7 @@ type Endpoint8_19Input = {
 const Endpoint8_19 = (raw: RawClient["server.session"]) => (input: Endpoint8_19Input) =>
   raw["session.command"]({
     params: { sessionID: input["sessionID"] },
-    payload: { command: input["command"], arguments: input["arguments"], resume: input["resume"] },
+    payload: { id: input["id"], command: input["command"], arguments: input["arguments"], resume: input["resume"] },
   }).pipe(Effect.mapError(mapClientError))
 
 type Endpoint8_20Request = Parameters<RawClient["server.session"]["session.fork"]>[0]
@@ -1265,14 +1266,24 @@ const Endpoint29_1 = (raw: RawClient["server.runtime"]) => () =>
 const Endpoint29_2 = (raw: RawClient["server.runtime"]) => () =>
   raw["runtime.control.get"]({}).pipe(Effect.mapError(mapClientError))
 
-type Endpoint29_3Request = Parameters<RawClient["server.runtime"]["runtime.control.invite"]>[0]
+type Endpoint29_3Request = Parameters<RawClient["server.runtime"]["runtime.control.configure"]>[0]
 type Endpoint29_3Input = {
-  readonly permissions: Endpoint29_3Request["payload"]["permissions"]
-  readonly projectIDs: Endpoint29_3Request["payload"]["projectIDs"]
-  readonly sessionIDs: Endpoint29_3Request["payload"]["sessionIDs"]
-  readonly expiresAt: Endpoint29_3Request["payload"]["expiresAt"]
+  readonly hubURL: Endpoint29_3Request["payload"]["hubURL"]
+  readonly hostToken: Endpoint29_3Request["payload"]["hostToken"]
 }
 const Endpoint29_3 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_3Input) =>
+  raw["runtime.control.configure"]({ payload: { hubURL: input["hubURL"], hostToken: input["hostToken"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint29_4Request = Parameters<RawClient["server.runtime"]["runtime.control.invite"]>[0]
+type Endpoint29_4Input = {
+  readonly permissions: Endpoint29_4Request["payload"]["permissions"]
+  readonly projectIDs: Endpoint29_4Request["payload"]["projectIDs"]
+  readonly sessionIDs: Endpoint29_4Request["payload"]["sessionIDs"]
+  readonly expiresAt: Endpoint29_4Request["payload"]["expiresAt"]
+}
+const Endpoint29_4 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_4Input) =>
   raw["runtime.control.invite"]({
     payload: {
       permissions: input["permissions"],
@@ -1282,34 +1293,34 @@ const Endpoint29_3 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_3I
     },
   }).pipe(Effect.mapError(mapClientError))
 
-const Endpoint29_4 = (raw: RawClient["server.runtime"]) => () =>
+const Endpoint29_5 = (raw: RawClient["server.runtime"]) => () =>
   raw["runtime.control.pending"]({}).pipe(Effect.mapError(mapClientError))
 
-type Endpoint29_5Request = Parameters<RawClient["server.runtime"]["runtime.control.approve"]>[0]
-type Endpoint29_5Input = {
-  readonly pairingID: Endpoint29_5Request["params"]["pairingID"]
-  readonly publicKey: Endpoint29_5Request["payload"]["publicKey"]
+type Endpoint29_6Request = Parameters<RawClient["server.runtime"]["runtime.control.approve"]>[0]
+type Endpoint29_6Input = {
+  readonly pairingID: Endpoint29_6Request["params"]["pairingID"]
+  readonly publicKey: Endpoint29_6Request["payload"]["publicKey"]
 }
-const Endpoint29_5 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_5Input) =>
+const Endpoint29_6 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_6Input) =>
   raw["runtime.control.approve"]({
     params: { pairingID: input["pairingID"] },
     payload: { publicKey: input["publicKey"] },
   }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint29_6Request = Parameters<RawClient["server.runtime"]["runtime.control.reject"]>[0]
-type Endpoint29_6Input = { readonly pairingID: Endpoint29_6Request["params"]["pairingID"] }
-const Endpoint29_6 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_6Input) =>
+type Endpoint29_7Request = Parameters<RawClient["server.runtime"]["runtime.control.reject"]>[0]
+type Endpoint29_7Input = { readonly pairingID: Endpoint29_7Request["params"]["pairingID"] }
+const Endpoint29_7 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_7Input) =>
   raw["runtime.control.reject"]({ params: { pairingID: input["pairingID"] } }).pipe(Effect.mapError(mapClientError))
 
-const Endpoint29_7 = (raw: RawClient["server.runtime"]) => () =>
+const Endpoint29_8 = (raw: RawClient["server.runtime"]) => () =>
   raw["runtime.control.devices"]({}).pipe(Effect.mapError(mapClientError))
 
-type Endpoint29_8Request = Parameters<RawClient["server.runtime"]["runtime.control.revoke"]>[0]
-type Endpoint29_8Input = {
-  readonly grantID: Endpoint29_8Request["params"]["grantID"]
-  readonly version: Endpoint29_8Request["payload"]["version"]
+type Endpoint29_9Request = Parameters<RawClient["server.runtime"]["runtime.control.revoke"]>[0]
+type Endpoint29_9Input = {
+  readonly grantID: Endpoint29_9Request["params"]["grantID"]
+  readonly version: Endpoint29_9Request["payload"]["version"]
 }
-const Endpoint29_8 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_8Input) =>
+const Endpoint29_9 = (raw: RawClient["server.runtime"]) => (input: Endpoint29_9Input) =>
   raw["runtime.control.revoke"]({ params: { grantID: input["grantID"] }, payload: { version: input["version"] } }).pipe(
     Effect.mapError(mapClientError),
   )
@@ -1318,12 +1329,13 @@ const adaptGroup29 = (raw: RawClient["server.runtime"]) => ({
   identity: Endpoint29_0(raw),
   stop: Endpoint29_1(raw),
   get: Endpoint29_2(raw),
-  invite: Endpoint29_3(raw),
-  pending: Endpoint29_4(raw),
-  approve: Endpoint29_5(raw),
-  reject: Endpoint29_6(raw),
-  devices: Endpoint29_7(raw),
-  revoke: Endpoint29_8(raw),
+  configure: Endpoint29_3(raw),
+  invite: Endpoint29_4(raw),
+  pending: Endpoint29_5(raw),
+  approve: Endpoint29_6(raw),
+  reject: Endpoint29_7(raw),
+  devices: Endpoint29_8(raw),
+  revoke: Endpoint29_9(raw),
 })
 
 const adaptClient = (raw: RawClient) => ({

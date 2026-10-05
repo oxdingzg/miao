@@ -9,7 +9,7 @@ export type TokenUsage = {
 const MIN_CACHEABLE_TOKENS = 1_024
 
 /** Total prompt tokens the provider billed for, cached and fresh alike. */
-const promptTokens = (usage: TokenUsage) => usage.input + usage.cache.read + usage.cache.write
+export const promptTokens = (usage: TokenUsage) => usage.input + usage.cache.read + usage.cache.write
 
 /** Share of input tokens served from the prompt cache, matching `/usage` semantics. */
 export const cacheHitRatio = (usage: TokenUsage) => {

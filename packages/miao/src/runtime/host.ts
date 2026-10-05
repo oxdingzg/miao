@@ -100,6 +100,7 @@ export async function start(filename: string) {
       url: state.server.url.href,
       credential,
       runtimeID: identity.runtimeID,
+      storage: owner.storage,
     })
     await state.im.start(state.server.url)
     const record: RuntimeDiscovery.Record = {
