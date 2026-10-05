@@ -46,8 +46,11 @@ test("owner configuration connects and switches only relay transport, preserving
       runtimeID: before.runtimeID,
       hostPublicKey: before.hostPublicKey,
     })
-    expect((await stat(filename)).mode & 0o777).toBe(0o600)
-    expect((await stat(path.dirname(filename))).mode & 0o777).toBe(0o700)
+    // Windows stat exposes synthetic Unix mode bits, not the file's ACL.
+    if (process.platform !== "win32") {
+      expect((await stat(filename)).mode & 0o777).toBe(0o600)
+      expect((await stat(path.dirname(filename))).mode & 0o777).toBe(0o700)
+    }
     const saved = await readFile(filename, "utf8")
     await expect(configure({ hubURL: "https://user:secret@example.invalid/path", hostToken: token })).rejects.toThrow()
     await expect(configure({ hubURL: "https://example.invalid", hostToken: "bad\r\nheader" })).rejects.toThrow()
