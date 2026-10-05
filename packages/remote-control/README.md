@@ -99,3 +99,11 @@ The host supplies scoped session handlers and authoritative session-to-project l
 Agent limits include a 10-second unapproved handshake window, 8 queued requests and 512 KiB pending input per client, plus an 8 MiB response ceiling. Larger results are split into ordered encrypted 64 KiB chunks, without silently truncating history. Expired grants are checked on dispatch and periodically close live channels; owner revocation immediately aborts matching connections and queued requests. Closing the Agent only closes transport resources.
 
 See [the RPC contract](RPC-PROTOCOL.md) for native/web client integration. Runtime composition, interactive pairing, replay and user interfaces are separate delivery steps; the Hub alone is not a usable remote session client.
+
+### Configuring a running local Runtime
+
+The owner-only `POST /api/runtime/control/configuration` endpoint accepts a root HTTPS `hubURL` and the registered host's `hostToken`. It saves the relay credential in an owner-only configuration file and replaces only the outbound Agent transport. Existing sessions, their execution ownership, the Runtime identity, and the locally pinned host identity remain intact. The configuration endpoint is excluded from the remote device RPC contract.
+
+Without `MIAO_REMOTE_CONTROL_CONFIG`, the Runtime uses a private `.remote-control` sidecar directory next to its session database. A disabled Runtime still exposes its stable public host identity to its local administrator, allowing account registration before connecting. Existing private environment-selected configurations continue to load. Credentials never appear in status responses, and failed validation or an unsafe target does not replace a working configuration.
+
+The generated local SDK exposes `client["server.runtime"].configure`. This is the backend path for the setup wizard; the account-login and channel-selection UI are delivered separately. Loopback plaintext is allowed only by an already private test configuration or an explicit test-only manager option, never by the public configuration payload.

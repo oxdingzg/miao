@@ -34,6 +34,7 @@ test("exposes every standard HTTP API group", () => {
     "worktrees",
     "controlPlane",
     "remote",
+    "server.runtime",
   ])
   expect(Object.keys(client.messages)).toEqual(["list"])
   expect(Object.keys(client.integrations)).toEqual([
@@ -45,8 +46,8 @@ test("exposes every standard HTTP API group", () => {
     "attemptComplete",
     "attemptCancel",
   ])
-  expect(Object.keys(client.files)).toEqual(["list", "find"])
-  expect(Object.keys(client.ptys)).toEqual(["list", "create", "get", "update", "remove"])
+  expect(Object.keys(client.files)).toEqual(["content", "list", "find"])
+  expect(Object.keys(client.ptys)).toEqual(["shells", "list", "create", "get", "update", "remove", "connectToken"])
   expect(Object.keys(client.remote)).toEqual([
     "get",
     "login",

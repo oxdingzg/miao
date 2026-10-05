@@ -30,6 +30,14 @@ export const RuntimeHandler = HttpApiBuilder.group(Api, "server.runtime", (handl
       .handle("runtime.control.get", () =>
         Effect.sync(() => administration()?.status() ?? { enabled: false, connected: false }),
       )
+      .handle("runtime.control.configure", (ctx) => {
+        const configure = administration()?.configure
+        if (!configure) return Effect.fail(unavailable())
+        return Effect.tryPromise({
+          try: () => configure(ctx.payload),
+          catch: () => new InvalidRequestError({ message: "Relay configuration could not be saved or applied" }),
+        })
+      })
       .handle("runtime.control.invite", (ctx) => {
         const admin = administration()
         if (!admin) return Effect.fail(unavailable())

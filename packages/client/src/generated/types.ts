@@ -4356,6 +4356,20 @@ export type ServerRuntimeGetOutput = {
   readonly hubURL?: string
 }
 
+export type ServerRuntimeConfigureInput = {
+  readonly hubURL: { readonly hubURL: string; readonly hostToken: string }["hubURL"]
+  readonly hostToken: { readonly hubURL: string; readonly hostToken: string }["hostToken"]
+}
+
+export type ServerRuntimeConfigureOutput = {
+  readonly enabled: boolean
+  readonly connected: boolean
+  readonly hostID?: string
+  readonly runtimeID?: string
+  readonly hostPublicKey?: string
+  readonly hubURL?: string
+}
+
 export type ServerRuntimeInviteInput = {
   readonly permissions: {
     readonly permissions: ReadonlyArray<
