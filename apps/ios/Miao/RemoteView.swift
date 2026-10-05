@@ -246,6 +246,7 @@ private struct SessionView: View {
     @State private var renamePresented = false
     @State private var title = ""
     @State private var queue = false
+    @FocusState private var composing: Bool
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
@@ -275,9 +276,15 @@ private struct SessionView: View {
                     .accessibilityIdentifier("sessionMenu").accessibilityValue(client.connectionDescription).disabled(!client.ready)
             }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") { composing = false }.accessibilityIdentifier("dismissKeyboard")
+            }
+        }
         .onAppear { session.appear() }
         .onDisappear { speech.stop(); session.disappear() }
-        .onChange(of: phase) { _, value in if value == .background { speech.stop() } }
+        .onChange(of: phase) { _, value in if value == .background { speech.stop(); composing = false } }
         .sheet(isPresented: $diffPresented) {
             NavigationStack { ScrollView { Text(session.diff?.formatted ?? "").font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding() }
                 .navigationTitle("文件变化").toolbar { Button("关闭") { diffPresented = false } } }
@@ -295,6 +302,7 @@ private struct SessionView: View {
             if let error = speech.error { Text(error).font(.caption).foregroundStyle(.red) }
             if client.record.grant.permissions.contains(.prompt) {
                 TextField("给 miao 的消息", text: Binding(get: { session.draft }, set: { session.edit($0) }), axis: .vertical)
+                    .focused($composing)
                     .lineLimit(2...8).padding(10).background(.background, in: RoundedRectangle(cornerRadius: 12))
                     .disabled(speech.recording).accessibilityIdentifier("messageDraft")
                 HStack {
