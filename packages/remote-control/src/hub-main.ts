@@ -16,6 +16,15 @@ const Account = Schema.Struct({
   secret: Schema.String,
   webDirectory: Schema.optional(Schema.String),
   pushRegistrations: Schema.optional(Schema.Boolean),
+  pushProvider: Schema.optional(
+    Schema.Struct({
+      teamID: Schema.String,
+      keyID: Schema.String,
+      privateKey: Schema.String,
+      topic: Schema.String,
+      environment: Schema.Literals(["sandbox", "production"]),
+    }),
+  ),
   migrate: Schema.optional(Schema.Boolean),
   bootstrap: Schema.optional(Schema.Struct({ email: Schema.String, password: Schema.String, name: Schema.String })),
 })

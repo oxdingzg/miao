@@ -90,6 +90,42 @@ Revocation and shutdown discard contexts. An APNs unregistered response removes
 only the registration used by that attempt. Delivery already accepted by Apple
 cannot be recalled by these admission checks.
 
+The dispatcher does not itself attest Runtime grants or produce encrypted context.
+The Runtime must check the current device grant and session/project scope before
+sealing and submitting each hint. Native context resolution is required before
+notification navigation is usable.
+
+## Hub delivery API
+
+Private account-mode configuration may additionally set `pushProvider` with
+`teamID`, `keyID`, PKCS#8 `privateKey`, bundle-ID `topic`, and `environment`
+(`sandbox` or `production`). These credentials stay in the existing owner-only
+configuration file. The executable does not accept a custom provider endpoint.
+Delivery requires registration storage and an explicit migration for durable
+grant-revocation barriers. Configured instances advertise `push-delivery`.
+
+`POST /api/hub/hosts/<hostID>/push/send` accepts `signalID`, `deviceID`,
+`runtimeID`, `grantID`, `grantVersion`, `kind`, and device-encrypted `context`.
+It requires that host's bearer credential, derives the account from the host
+directory, and checks the currently connected Runtime. It admits at most 8 KiB
+within five seconds. Host credential rotation, disconnect, Runtime replacement,
+and grant barriers are checked again immediately before provider submission.
+The Hub trusts the authenticated Runtime to attest its locally approved grant;
+the Hub does not have plaintext session scopes.
+
+`POST /api/hub/hosts/<hostID>/push/revoke` accepts `grantID` and `grantVersion`.
+It durably raises the revocation barrier, discards matching retained contexts,
+and fences pending sends. Lower versions cannot lower that barrier, including
+after a Hub restart. Each host can retain at most 1024 grant barriers.
+The Runtime must propagate every local revocation and reconcile stored
+revocations on reconnection before sending notifications.
+
+`GET /api/hub/push/context?deviceID=<deviceID>&signalID=<signalID>` requires a
+live account bearer and matching login-bound device registration. It returns
+only the routing binding, notification kind, and encrypted context; no host
+credential is returned. Every API response disables caching. Expired, revoked,
+cross-account, and disconnected contexts are unavailable. Contexts are ephemeral
+and are lost on Hub restart; revocation barriers remain durable.
 This module does not itself attest Runtime grants, produce the encrypted context,
 or expose HTTP routes. The host-authenticated integration must supply those
 checks and native context resolution before notification navigation is usable.
