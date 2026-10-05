@@ -87,6 +87,8 @@ export const dict = {
   "ui.sessionTurn.status.thinkingWithTopic": "ຄິດ - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "ການລວບລວມຄວາມຄິດ",
   "ui.sessionTurn.status.consideringNextSteps": "ພິຈາລະນາຂັ້ນຕອນຕໍ່ໄປ",
+  "ui.sessionTurn.status.preparingRequest": "ກຳລັງກະກຽມຄຳຂໍ",
+  "ui.sessionTurn.status.waitingForModel": "ກຳລັງລໍຖ້າການຕອບສະໜອງຈາກໂມເດລ",
   "ui.messagePart.diagnostic.error": "ຜິດພາດ",
   "ui.messagePart.title.edit": "ແກ້ໄຂ",
   "ui.messagePart.title.write": "ຂຽນ",

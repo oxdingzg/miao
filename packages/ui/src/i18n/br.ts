@@ -93,6 +93,8 @@ export const dict = {
   "ui.sessionTurn.status.thinkingWithTopic": "Pensando - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Organizando pensamentos",
   "ui.sessionTurn.status.consideringNextSteps": "Considerando próximos passos",
+  "ui.sessionTurn.status.preparingRequest": "O prientiñ ar goulenn",
+  "ui.sessionTurn.status.waitingForModel": "O c'hortoz respont ar model",
 
   "ui.messagePart.questions.dismissed": "Perguntas descartadas",
   "ui.messagePart.compaction": "Sessão compactada",

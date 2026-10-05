@@ -88,6 +88,8 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.thinkingWithTopic": "Se gândește - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Se adună idei",
   "ui.sessionTurn.status.consideringNextSteps": "Se analizează următorii pași",
+  "ui.sessionTurn.status.preparingRequest": "Se pregătește cererea",
+  "ui.sessionTurn.status.waitingForModel": "Se așteaptă răspunsul modelului",
   "ui.messagePart.diagnostic.error": "Eroare",
   "ui.messagePart.title.edit": "Editare",
   "ui.messagePart.title.write": "Scriere",
