@@ -12,6 +12,22 @@ import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 const replyPath = () => "/api/session/ses_test/question/que_test/reply"
 const rejectPath = () => "/api/session/ses_test/question/que_test/reject"
 
+// Rendering and key handling settle over a few frames on slower CI hosts, so
+// wait for the expected text instead of reading a single frame.
+async function waitForText(
+  app: { captureCharFrame: () => string; renderOnce: () => Promise<void> },
+  text: string,
+  timeout = 2000,
+) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    if (app.captureCharFrame().includes(text)) return
+    await Bun.sleep(20)
+    await app.renderOnce()
+  }
+  throw new Error(`timed out waiting for ${JSON.stringify(text)} in the frame`)
+}
+
 type QuestionInput = {
   header: string
   question: string
@@ -151,7 +167,7 @@ for (const action of ["enter", "escape"] as const) {
     const { app, calls } = await mountQuestion(tmp.path)
     try {
       app.mockInput.pressKey("2")
-      await app.renderOnce()
+      await waitForText(app, "Confirm")
       const lines = app.captureCharFrame().split("\n")
       const y = lines.findIndex((line) => line.includes("Confirm"))
       const x = lines[y].indexOf("Confirm")
@@ -248,14 +264,10 @@ test("shows the focused option preview beside a single-select question", async (
     },
   ])
   try {
-    await Bun.sleep(150)
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("preview-fast-body")
+    await waitForText(app, "preview-fast-body")
     expect(app.captureCharFrame()).not.toContain("preview-safe-body")
     await app.mockInput.pressKeys(["ARROW_DOWN"])
-    await Bun.sleep(150)
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("preview-safe-body")
+    await waitForText(app, "preview-safe-body")
   } finally {
     app.renderer.destroy()
   }
