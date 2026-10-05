@@ -33,6 +33,7 @@ import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { TaskTool } from "../../tool/task"
 import { GoalTool } from "../../tool/goal"
+import { RecallTool } from "../../tool/recall"
 import { BackgroundJob } from "../../background-job"
 import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
@@ -1166,6 +1167,11 @@ const layer = Layer.effect(
                 goal: GoalTool.make((goal) =>
                   GoalTool.record(events, input.sessionID, goal).pipe(
                     Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
+                  ),
+                ),
+                recall: RecallTool.make(() =>
+                  SessionHistory.all(db, input.sessionID).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
                   ),
                 ),
               })
