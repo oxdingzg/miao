@@ -15,6 +15,7 @@ const Account = Schema.Struct({
   baseURL: Schema.String,
   secret: Schema.String,
   webDirectory: Schema.optional(Schema.String),
+  pushRegistrations: Schema.optional(Schema.Boolean),
   migrate: Schema.optional(Schema.Boolean),
   bootstrap: Schema.optional(Schema.Struct({ email: Schema.String, password: Schema.String, name: Schema.String })),
 })
