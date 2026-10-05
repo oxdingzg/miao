@@ -2,7 +2,6 @@ export * as CommandCode from "./commandcode"
 
 import { randomBytes } from "node:crypto"
 import { createServer, type IncomingMessage } from "node:http"
-import type { AddressInfo } from "node:net"
 import { Deferred, Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import type { IntegrationOAuthMethodRegistration } from "@miao/plugin/v2/effect/integration"
@@ -91,8 +90,7 @@ interface CallbackPayload {
 }
 
 const callbackCors = ["http://localhost:3000", "https://staging.commandcode.ai", STUDIO]
-const allowedOrigin = (origin: string | undefined) =>
-  origin && callbackCors.includes(origin) ? origin : callbackCors[0]!
+const allowedOrigin = (origin: string | undefined) => (origin && callbackCors.includes(origin) ? origin : STUDIO)
 
 const corsHeaders = (origin: string | undefined) => ({
   "Access-Control-Allow-Origin": allowedOrigin(origin),
@@ -178,7 +176,10 @@ const callbackServer = Effect.fn("CommandCode.callbackServer")(function* (state:
   const port = yield* Effect.acquireRelease(
     Effect.callback<number>((resume) => {
       server.once("error", (error) => resume(Effect.die(error)))
-      server.listen(0, "127.0.0.1", () => resume(Effect.succeed((server.address() as AddressInfo).port)))
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address()
+        resume(Effect.succeed(typeof address === "object" && address ? address.port : 0))
+      })
     }),
     () =>
       Effect.sync(() => {
@@ -250,7 +251,7 @@ export const grantCredential = (
  * scope, for the V1 auth hook which keeps the loopback server alive across its
  * separate `authorize` and `callback` calls.
  */
-export const authorizeDetached = Effect.fn("CommandCode.authorizeDetached")(function* (http: HttpClient.HttpClient) {
+export const authorizeDetached = Effect.fn("CommandCode.authorizeDetached")(function* () {
   const state = randomBytes(32).toString("base64url")
   const server = yield* callbackServer(state)
   const url = `${STUDIO}/studio/auth/cli?callback=${encodeURIComponent(

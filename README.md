@@ -212,7 +212,8 @@ Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for
 
 miao runs locally without a miao or OpenCode account. Connect your chosen model provider directly with its API key or supported OAuth method.
 
-- Model metadata comes from the public [models.dev](https://models.dev) catalog; builds bundle a snapshot for offline startup. Override it with `MIAO_MODELS_URL` or `MIAO_MODELS_PATH`.
+- Model metadata comes from miao's own catalog (mtty.dev), falling back to the public [models.dev](https://models.dev) catalog; miao-maintained providers that models.dev does not list yet (currently Command Code) are merged on top. Builds bundle a snapshot for offline startup. Pin a source with `MIAO_MODELS_URL`, or select an exact catalog with `MIAO_MODELS_PATH`.
+- [Command Code](https://commandcode.ai) is available as a subscription provider: connect it with `miao auth login commandcode` (browser-assisted) or `CMD_API_KEY`, and its models are discovered from the account at runtime.
 - Release notes and updates come from [oxdingzg/miao releases](https://github.com/oxdingzg/miao/releases).
 - Sharing has no default backend. Configure `enterprise.url` in `miao.json` to enable a compatible server; shared conversation content is sent only to that configured server.
 - MIAO has no Console account or organization support. `MIAO_CONSOLE_URL` only exposes Console OAuth for the OpenCode provider integration; a custom server can specify `MIAO_CONSOLE_CLIENT_ID`.

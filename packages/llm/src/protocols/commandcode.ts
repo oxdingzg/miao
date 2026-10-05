@@ -156,8 +156,6 @@ interface ParserState {
   readonly finished: boolean
 }
 
-const invalid = ProviderShared.invalidRequest
-
 const commandCodeOptions = (request: LLMRequest) => request.providerOptions?.commandcode ?? {}
 
 // =============================================================================

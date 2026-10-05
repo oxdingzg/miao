@@ -33,7 +33,7 @@ export const CommandCodeAuthPlugin: (input: InternalPluginInput) => Promise<Hook
             const session = await run(
               Effect.gen(function* () {
                 const scope = yield* Scope.make()
-                const authorization = yield* CommandCode.authorizeDetached(http).pipe(Scope.provide(scope))
+                const authorization = yield* CommandCode.authorizeDetached().pipe(Scope.provide(scope))
                 return { authorization, scope }
               }),
             )

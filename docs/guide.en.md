@@ -248,6 +248,13 @@ manual toggle still works.
 `miao providers login` writes credentials; `miao models` lists them; customize under
 `providers` in `miao.jsonc`. Use `miao debug` for provider errors.
 
+**How do I use my Command Code subscription?**
+Connect once with `miao auth login commandcode` (a browser-assisted login), or set
+`CMD_API_KEY` to an API key from [commandcode.ai Studio](https://commandcode.ai/studio/).
+Its models are discovered from your account when it connects. Command Code uses its CLI
+subscription endpoint rather than the documented Provider API, so model capabilities and
+pricing are conservative until the catalog reports them.
+
 **Cost does not match the bill?**
 Use native-currency pricing (`providers.<id>.models.<m>.cost`), or switch display currency with
 `/currency`.
