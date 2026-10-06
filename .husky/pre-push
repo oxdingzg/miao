@@ -23,4 +23,8 @@ if command -v gitleaks >/dev/null 2>&1; then
 else
   echo "gitleaks not found, skipping secret scan"
 fi
-bun typecheck
+# No `bun typecheck` here: CI runs it as a required check on every PR, and a
+# full turbo typecheck inside the hook spawns ~2 GB tsgo processes per task.
+# Concurrent pushes from parallel sessions then pile up to machine-wide
+# swapping (observed: >37 GB private memory from stacked `tsgo --noEmit`).
+# Run `bun typecheck` deliberately when you want the local gate.
