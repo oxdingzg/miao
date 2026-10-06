@@ -13,12 +13,12 @@ already-running binaries retain their existing behavior.
 | TUI theme `tui.log`                      | 1 MiB per file, 2 MiB combined budget, at most two managed files (`tui.log` and `.previous`)    | Rotation on write; managed-file age cleanup uses a seven-day cutoff |
 | `log/monitor/` resource samples          | 1 MiB per file, 32 MiB directory budget, at most 64 managed files including `.previous` backups | Seven-day cutoff; startup cleanup runs even with `MIAO_MONITOR=0`   |
 | Provider wire archive (opt-in)           | Rotation threshold of 32 MiB per file; no aggregate byte or file-count quota                    | Files older than two days pruned at startup and rotation            |
-| Automatic `heap-*.heapsnapshot` (opt-in) | Capture triggers above 2 GiB RSS; no snapshot file-size or aggregate storage limit              | No retention cleanup in `Heap.start`                                |
+| Automatic `heap-*.heapsnapshot` (opt-in) | Capture triggers above 2 GiB RSS; at most four snapshots and 2 GiB combined                      | Pruned after each capture with the shared seven-day cutoff          |
 
 There is therefore **no fixed total diagnostic-storage ceiling**. In particular,
 the 2 GiB heap trigger is a process-memory threshold, not a snapshot disk quota.
-The monitor, theme, and ordinary-log budgets do not bound heap snapshots or all
-wire archives combined.
+Heap snapshots were the last artifact without a budget; provider wire archives
+remain aggregate-unbounded within their two-day retention window.
 
 ## Bounded stores
 

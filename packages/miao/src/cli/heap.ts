@@ -1,5 +1,6 @@
 import path from "path"
 import { writeHeapSnapshot } from "node:v8"
+import { DiagnosticFiles } from "@miao/core/diagnostic-files"
 import { Flag } from "@miao/core/flag/flag"
 import { Global } from "@miao/core/global"
 const MINUTE = 60_000
@@ -32,6 +33,13 @@ export function start() {
     await Promise.resolve()
       .then(() => writeHeapSnapshot(file))
       .catch(() => {})
+    // Snapshots are diagnostic artifacts: bounded like the rest of the log
+    // directory instead of growing without limit across months of RSS spikes.
+    await DiagnosticFiles.cleanupAsync(Global.Path.log, {
+      match: (name) => /^heap-.*\.heapsnapshot$/.test(name),
+      maxBytes: 2 * 1024 * 1024 * 1024,
+      maxFiles: 4,
+    })
 
     lock = false
   }
