@@ -6,8 +6,8 @@ import path from "node:path"
 
 export class BusyError extends Error {
   override readonly name = "RuntimeOwnership.BusyError"
-  constructor() {
-    super("This storage already has a running Runtime; attach to that Runtime instead")
+  constructor(message = "This storage already has a running Runtime; close its windows before exclusive maintenance") {
+    super(message)
   }
 }
 
@@ -17,6 +17,80 @@ export type Owner = {
 }
 
 const shared = new Map<string, { owner: Promise<Owner>; users: number }>()
+
+export type Usage = Owner & {
+  readonly exclusive: () => void
+  readonly share: () => void
+}
+
+/** Each database scope retains its own reader, including during a peer's failed upgrade. */
+export async function use(filename: string): Promise<Usage> {
+  return usage(await canonicalStorage(filename))
+}
+
+async function usage(storage: string): Promise<Usage> {
+  const filename = `${storage}.runtime-lock`
+  const native = openRuntimeLock(filename)
+  const state = { exclusive: false, released: false }
+  const share = () => {
+    if (state.exclusive) native.exec("ROLLBACK")
+    native.exec("PRAGMA busy_timeout = 5000")
+    try {
+      native.exec("BEGIN; SELECT name FROM sqlite_master LIMIT 1")
+      state.exclusive = false
+    } finally {
+      native.exec("PRAGMA busy_timeout = 0")
+    }
+  }
+  try {
+    await chmod(filename, 0o600)
+    native.exec("PRAGMA busy_timeout = 0")
+    // Prefer exclusive initialization so simultaneous first openers cannot both
+    // hold read locks on an empty database and prevent its initial migration.
+    try {
+      native.exec("BEGIN EXCLUSIVE")
+      state.exclusive = true
+    } catch (error) {
+      if (!busy(error)) throw error
+      share()
+    }
+  } catch (error) {
+    native.close()
+    if (busy(error)) throw new BusyError()
+    throw error
+  }
+  return {
+    storage,
+    share: () => {
+      if (!state.exclusive) return
+      share()
+    },
+    exclusive: () => {
+      if (state.exclusive) return
+      native.exec("ROLLBACK")
+      try {
+        native.exec("BEGIN EXCLUSIVE")
+        state.exclusive = true
+      } catch (error) {
+        if (busy(error)) throw new BusyError("Close other miao windows before migrating or maintaining this database")
+        throw error
+      }
+    },
+    release: () => {
+      if (state.released) return
+      state.released = true
+      native.close()
+    },
+  }
+}
+
+function busy(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (("code" in error && error.code === "SQLITE_BUSY") || ("errcode" in error && error.errcode === 5))
+  )
+}
 
 /** Independent service scopes in one process share its single OS ownership lease. */
 export async function acquireShared(filename: string): Promise<Owner> {

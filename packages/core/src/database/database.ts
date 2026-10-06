@@ -2,7 +2,7 @@ export * as Database from "./database"
 
 import { EffectDrizzleSqlite } from "@miao/effect-drizzle-sqlite"
 import { layer as sqliteLayer } from "#sqlite"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schedule } from "effect"
 import { DatabaseMigration } from "./migration"
 import { DatabaseFile } from "./file"
 import { makeGlobalNode } from "../effect/app-node"
@@ -18,7 +18,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/storage/Database") {}
 
 /** Owner opens migrate; a participant never migrates and must find a schema at least as new. */
-const open = (options: { migrate: boolean }) =>
+const open = (options: { migrate: boolean; usage?: RuntimeOwnership.Usage }) =>
   Layer.effect(
     Service,
     Effect.gen(function* () {
@@ -30,7 +30,8 @@ const open = (options: { migrate: boolean }) =>
       yield* db.run("PRAGMA cache_size = -64000")
       yield* db.run("PRAGMA foreign_keys = ON")
       yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
-      if (options.migrate) yield* DatabaseMigration.apply(db)
+      if (options.usage) yield* DatabaseMigration.initialize(db, options.usage)
+      else if (options.migrate) yield* DatabaseMigration.apply(db)
       else yield* DatabaseMigration.verify(db)
 
       return { db }
@@ -49,6 +50,26 @@ export function layerFromPath(filename: string) {
         )
   // Ownership must build beneath the native layer, before opening or migrating.
   return open({ migrate: true }).pipe(Layer.provide(sqliteLayer({ filename }).pipe(Layer.provide(ownership))))
+}
+
+/** Multiple windows may use a migrated database; migrations require exclusive access. */
+export function sharedLayerFromPath(filename: string) {
+  if (filename === ":memory:") return layerFromPath(filename)
+  return Layer.unwrap(
+    Effect.gen(function* () {
+      const usage = yield* Effect.acquireRelease(
+        Effect.tryPromise({ try: () => RuntimeOwnership.use(filename), catch: (error) => error }).pipe(
+          Effect.retry({
+            while: (error) => error instanceof RuntimeOwnership.BusyError,
+            schedule: Schedule.spaced("50 millis").pipe(Schedule.both(Schedule.recurs(100))),
+          }),
+          Effect.orDie,
+        ),
+        (owner) => Effect.sync(owner.release),
+      )
+      return open({ migrate: true, usage }).pipe(Layer.provide(sqliteLayer({ filename: usage.storage })))
+    }),
+  )
 }
 
 /**
