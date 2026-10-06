@@ -125,6 +125,26 @@ describe("SessionTodo", () => {
         { sessionID, todos: [{ content: "replacement", status: "completed", priority: "medium" }] },
         { sessionID, todos: [] },
       ])
+
+      // An unchanged list rewrites nothing and publishes nothing.
+      yield* todos.update({ sessionID, todos: [] })
+      expect(published).toHaveLength(3)
+      yield* todos.update({
+        sessionID,
+        todos: [
+          { content: "second", status: "pending", priority: "low" },
+          { content: "first", status: "in_progress", priority: "high" },
+        ],
+      })
+      expect(published).toHaveLength(4)
+      yield* todos.update({
+        sessionID,
+        todos: [
+          { content: "second", status: "completed", priority: "low" },
+          { content: "first", status: "in_progress", priority: "high" },
+        ],
+      })
+      expect(published).toHaveLength(5)
     }),
   )
 })
