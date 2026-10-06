@@ -13,7 +13,7 @@ import * as Client from "effect/unstable/sql/SqlClient"
 import type { Connection } from "effect/unstable/sql/SqlConnection"
 import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
 import * as Statement from "effect/unstable/sql/Statement"
-import { Sqlite } from "./sqlite"
+import { Sqlite, executeSqlite } from "./sqlite"
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
@@ -73,15 +73,7 @@ const make = (options: Config) =>
       Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
         const statement = prepare(query)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
-        try {
-          return Effect.succeed(statement.all(...(params as SQLInputValue[])) as Array<Record<string, unknown>>)
-        } catch (cause) {
-          return Effect.fail(
-            new SqlError({
-              reason: classifySqliteError(cause, { message: "Failed to execute statement", operation: "execute" }),
-            }),
-          )
-        }
+        return executeSqlite(() => statement.all(...(params as SQLInputValue[])) as Array<Record<string, unknown>>)
       })
 
     const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
@@ -89,17 +81,9 @@ const make = (options: Config) =>
         const statement = prepare(query, true)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
         statement.setReturnArrays(true)
-        try {
-          return Effect.succeed(
-            statement.all(...(params as SQLInputValue[])) as unknown as ReadonlyArray<ReadonlyArray<unknown>>,
-          )
-        } catch (cause) {
-          return Effect.fail(
-            new SqlError({
-              reason: classifySqliteError(cause, { message: "Failed to execute statement", operation: "execute" }),
-            }),
-          )
-        }
+        return executeSqlite(
+          () => statement.all(...(params as SQLInputValue[])) as unknown as ReadonlyArray<ReadonlyArray<unknown>>,
+        )
       })
 
     const connection = identity<SqliteConnection>({
