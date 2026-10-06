@@ -78,12 +78,18 @@ private enum AccountProbe {
                 await denied.close()
                 throw HubAccountError.malformed
             } catch RemoteConnectionError.authorizationBlocked {}
-            // A saved Runtime instance is stale after a computer restart; only the directory may refresh it.
+            // A stale window must never silently reconnect to another window.
             let previousHost = ApprovedHost(id: fixture.host.id, label: fixture.host.label, hubURL: fixture.host.hubURL,
                 target: RemoteTarget(hostID: fixture.host.target.hostID, runtimeID: UUID().uuidString),
                 publicKey: fixture.host.publicKey, grantID: fixture.host.grantID, grantVersion: fixture.host.grantVersion)
             print("NativeAccountStage:refreshRuntime")
-            let connection = try await HubConnection.open(host: previousHost,
+            do {
+                let stale = try await HubConnection.open(host: previousHost,
+                    identity: P256.Signing.PrivateKey(rawRepresentation: bytes), allowLoopbackHTTP: true, account: account) { _ in }
+                await stale.close()
+                throw HubAccountError.malformed
+            } catch RemoteConnectionError.authorizationBlocked {}
+            let connection = try await HubConnection.open(host: fixture.host,
                 identity: P256.Signing.PrivateKey(rawRepresentation: bytes), allowLoopbackHTTP: true, account: account) { connection in
                 let result = try await connection.request(.sessionGet, sessionID: "session-one")
                 guard result == .object(["title": .string("Account relay session")]) else { throw RemoteRPCError.malformed }

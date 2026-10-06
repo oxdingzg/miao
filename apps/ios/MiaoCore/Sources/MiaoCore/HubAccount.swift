@@ -289,20 +289,20 @@ public actor HubAccount {
     }
 
     /// The account owns the redirect-rejecting session so relay credentials cannot escape its origin.
-    func relaySocket(hubURL: URL, hostID: String) async throws -> URLSessionWebSocketTask {
+    func relaySocket(hubURL: URL, hostID: String, runtimeID: String) async throws -> URLSessionWebSocketTask {
         // Validate before requesting a token, then fence sign-out during the token request.
-        _ = try relayRequest(hubURL: hubURL, hostID: hostID, token: "validation")
+        _ = try relayRequest(hubURL: hubURL, hostID: hostID, runtimeID: runtimeID, token: "validation")
         let expected = generation
         let token = try await bearer()
         guard expected == generation, login != nil else { throw HubAccountError.superseded }
         relaySockets.removeAll { $0.state == .completed || $0.state == .canceling }
         guard relaySockets.count < 64 else { throw RemoteRPCError.overloaded }
-        let socket = relaySession.webSocketTask(with: try relayRequest(hubURL: hubURL, hostID: hostID, token: token))
+        let socket = relaySession.webSocketTask(with: try relayRequest(hubURL: hubURL, hostID: hostID, runtimeID: runtimeID, token: token))
         relaySockets.append(socket)
         return socket
     }
 
-    func relayRequest(hubURL: URL, hostID: String, token: String) throws -> URLRequest {
+    func relayRequest(hubURL: URL, hostID: String, runtimeID: String? = nil, token: String) throws -> URLRequest {
         guard let supplied = URLComponents(url: hubURL, resolvingAgainstBaseURL: false),
               let canonical = URLComponents(url: origin, resolvingAgainstBaseURL: false),
               supplied.user == nil, supplied.password == nil, supplied.query == nil, supplied.fragment == nil,
@@ -314,7 +314,7 @@ public actor HubAccount {
               Self.validCredential(token) else { throw HubAccountError.invalidEndpoint }
         try RemoteTarget(hostID: hostID, runtimeID: hostID).validate()
         let endpoint = try HubConnection.endpoint(hubURL: origin, hostID: hostID,
-                                                  allowLoopbackHTTP: origin.scheme == "http")
+                                                  allowLoopbackHTTP: origin.scheme == "http", runtimeID: runtimeID)
         var request = URLRequest(url: endpoint)
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.cachePolicy = .reloadIgnoringLocalCacheData
