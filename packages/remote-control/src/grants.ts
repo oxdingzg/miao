@@ -2,7 +2,8 @@ export * as DeviceGrants from "./grants"
 
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises"
 import path from "node:path"
-import { constants } from "node:fs"
+import { constants, openSync, closeSync, fstatSync, readFileSync } from "node:fs"
+import { openGrantLock } from "#grant-lock"
 import { Option, Schema } from "effect"
 import { SecureChannel } from "./secure-channel"
 import { RemoteAccess } from "@miao/schema/remote-access"
@@ -28,33 +29,35 @@ const State = Schema.Struct({
 type State = typeof State.Type
 const decode = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(State)))
 
-/** Open only under the Runtime's exclusive storage ownership, once per host.
- * Owner-only administration is deliberately not part of the remote data plane.
- */
+/** Durable device identity is shared; each operation coordinates through an OS lock. */
 export async function load(filename: string) {
-  const saved = await read(filename)
-  const generated = saved ? undefined : await SecureChannel.createIdentity()
-  const exported = generated ? await crypto.subtle.exportKey("jwk", generated.keys.privateKey) : undefined
-  const initial: State = saved ?? {
-    version: 1,
-    hostID: crypto.randomUUID(),
-    privateKey: { kty: "EC", crv: "P-256", x: exported!.x!, y: exported!.y!, d: exported!.d! },
-    grants: [],
-  }
-  const identity = generated ?? (await importIdentity(initial.privateKey))
-  const state = { value: initial, tail: Promise.resolve(), available: true, accepting: true }
-  if (!saved) await persist(filename, initial)
+  const initial = await locked(filename, async () => {
+    const saved = await read(filename)
+    if (saved) return saved
+    const generated = await SecureChannel.createIdentity()
+    const exported = await crypto.subtle.exportKey("jwk", generated.keys.privateKey)
+    const created: State = {
+      version: 1,
+      hostID: crypto.randomUUID(),
+      privateKey: { kty: "EC", crv: "P-256", x: exported.x!, y: exported.y!, d: exported.d! },
+      grants: [],
+    }
+    await persist(filename, created)
+    return created
+  })
+  const identity = await importIdentity(initial.privateKey)
+  const state = { tail: Promise.resolve(), available: true, accepting: true }
   function mutate<T>(update: (current: State) => { next: State; result: T }) {
     if (!state.accepting) return Promise.reject(new Error("Device grant storage closed"))
     const pending = state.tail.then(async () => {
       if (!state.available) throw new Error("Device grant storage unavailable")
-      const updated = update(state.value)
-      await persist(filename, updated.next).catch((error: unknown) => {
-        state.available = false
-        throw error
+      return locked(filename, async () => {
+        const current = await read(filename)
+        if (!current || current.hostID !== initial.hostID) throw new Error("Device identity changed")
+        const updated = update(current)
+        await persist(filename, updated.next)
+        return updated.result
       })
-      state.value = updated.next
-      return updated.result
     })
     state.tail = pending.then(
       () => undefined,
@@ -62,9 +65,14 @@ export async function load(filename: string) {
     )
     return pending
   }
+  function readCurrent() {
+    const current = readSync(filename)
+    if (current.hostID !== initial.hostID) throw new Error("Device identity changed")
+    return current
+  }
   function active(publicKey: string, now = Date.now()) {
     if (!state.available) return []
-    return state.value.grants.filter(
+    return readCurrent().grants.filter(
       (grant) => grant.publicKey === publicKey && grant.revokedAt === null && grant.expiresAt > now,
     )
   }
@@ -76,7 +84,7 @@ export async function load(filename: string) {
     },
     hostID: initial.hostID,
     identity,
-    list: () => structuredClone(state.value.grants),
+    list: () => structuredClone(readCurrent().grants),
     active: (publicKey: string) => structuredClone(active(publicKey)),
     get: (id: string, publicKey: string) => structuredClone(active(publicKey).find((grant) => grant.id === id)),
     approve: async (input: {
@@ -204,5 +212,65 @@ async function persist(filename: string, state: State) {
   } finally {
     await handle.close().catch(() => undefined)
     await unlink(temporary).catch(() => undefined)
+  }
+}
+
+/** Never replace the sidecar: SQLite holds its lock in the kernel, including after SIGSTOP. */
+async function locked<A>(filename: string, use: () => Promise<A>): Promise<A> {
+  await mkdir(path.dirname(filename), { recursive: true, mode: 0o700 })
+  const handle = await open(
+    filename + ".lock",
+    constants.O_CREAT | constants.O_RDWR | (constants.O_NOFOLLOW ?? 0),
+    0o600,
+  )
+  try {
+    const stat = await handle.stat()
+    if (
+      !stat.isFile() ||
+      (process.platform !== "win32" && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()))
+    )
+      throw new Error("Unsafe device grant lock")
+  } finally {
+    await handle.close()
+  }
+  const native = openGrantLock(filename + ".lock")
+  native.exec("PRAGMA busy_timeout = 0")
+  try {
+    const deadline = Date.now() + 5000
+    for (;;) {
+      try {
+        native.exec("BEGIN EXCLUSIVE")
+        break
+      } catch (error) {
+        const busy =
+          typeof error === "object" &&
+          error !== null &&
+          (("code" in error && error.code === "SQLITE_BUSY") || ("errcode" in error && error.errcode === 5))
+        if (!busy || Date.now() >= deadline) throw error
+        await new Promise<void>((resolve) => setTimeout(resolve, 10))
+      }
+    }
+    return await use()
+  } finally {
+    native.close()
+  }
+}
+
+/** Fresh atomic-file reads make grants and revocations visible in every window. */
+function readSync(filename: string): State {
+  const handle = openSync(filename, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+  try {
+    const stat = fstatSync(handle)
+    if (
+      !stat.isFile() ||
+      stat.size > 1024 * 1024 ||
+      (process.platform !== "win32" && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()))
+    )
+      throw new Error("Unsafe device grant storage")
+    const decoded = decode(readFileSync(handle, "utf8"))
+    if (Option.isNone(decoded)) throw new Error("Invalid device grant storage")
+    return decoded.value
+  } finally {
+    closeSync(handle)
   }
 }

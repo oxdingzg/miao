@@ -4,6 +4,7 @@ import type { RemoteAccess } from "@miao/schema/remote-access"
 
 /** Implemented only by the storage-owning Runtime, never by a remote grant. */
 export interface Interface {
+  readonly setEnabled?: (enabled: boolean) => Promise<RemoteAccess.Status>
   readonly status: () => RemoteAccess.Status
   readonly configure?: (configuration: RemoteAccess.Configuration) => Promise<RemoteAccess.Status>
   readonly invite: (policy: RemoteAccess.Policy) => Promise<RemoteAccess.Invitation>

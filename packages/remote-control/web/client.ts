@@ -138,7 +138,7 @@ async function refresh() {
       typeof item.name !== "string" ||
       typeof item.publicKey !== "string" ||
       typeof item.online !== "boolean" ||
-      (item.runtimeID !== undefined && typeof item.runtimeID !== "string") ||
+      (item.runtimeID != null && typeof item.runtimeID !== "string") ||
       (item.revokedAt !== null && typeof item.revokedAt !== "number")
     )
       throw new Error("Invalid host directory entry")
@@ -147,7 +147,7 @@ async function refresh() {
       name: item.name,
       publicKey: item.publicKey,
       online: item.online,
-      runtimeID: item.runtimeID,
+      runtimeID: item.runtimeID ?? undefined,
       revokedAt: item.revokedAt,
     }
     discovered.push(host)
@@ -1123,7 +1123,10 @@ document.addEventListener("visibilitychange", () => {
   run(async () => {
     if (!(await account.restore())) return
     await refresh()
-    const host = discovered.find((host) => host.hostID === hostID && host.online && host.revokedAt === null)
+    const host = discovered.find(
+      (host) =>
+        host.hostID === hostID && host.runtimeID === selected?.runtimeID && host.online && host.revokedAt === null,
+    )
     if (!host) {
       report("电脑暂时离线。可在恢复连接后继续。")
       return

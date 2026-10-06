@@ -270,19 +270,18 @@ export async function listen(options: Options) {
           return issued ? Response.json(issued, noStore) : error("ticket_limit", 429)
         }
         if (url.pathname === "/api/hub/hosts" && request.method === "GET") {
-          const connected = new Map(
-            server
-              .connectedHosts()
-              .filter((host) => host.accountID === authenticated.accountID)
-              .map((host) => [host.hostID, host.runtimeID]),
-          )
+          const connected = server.connectedHosts().filter((host) => host.accountID === authenticated.accountID)
           return Response.json(
             {
-              data: directory.list(authenticated.accountID).map((host) => ({
-                ...host,
-                online: host.revokedAt === null && connected.has(host.hostID),
-                runtimeID: host.revokedAt === null ? (connected.get(host.hostID) ?? null) : null,
-              })),
+              data: directory.list(authenticated.accountID).flatMap((host) => {
+                const windows = host.revokedAt === null ? connected.filter((run) => run.hostID === host.hostID) : []
+                return (windows.length ? windows : [{ runtimeID: null }]).map((run, index) => ({
+                  ...host,
+                  name: windows.length > 1 ? `${host.name} · 窗口 ${index + 1}` : host.name,
+                  online: run.runtimeID !== null,
+                  runtimeID: run.runtimeID,
+                }))
+              }),
             },
             noStore,
           )

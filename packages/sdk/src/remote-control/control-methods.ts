@@ -19,6 +19,7 @@ const Prompt = Schema.Struct({
 })
 
 export function make(options: {
+  owned: (sessionID: string) => Promise<boolean>
   client: ReturnType<typeof OpenCode.make>
   live?: ReturnType<typeof RuntimeControlLive.make>
   run: <A, E>(effect: Effect.Effect<A, E, Database.Service>) => Promise<A>
@@ -305,7 +306,11 @@ export function make(options: {
           { signal: context.signal },
         )
         context.authorize()
-        return { ...sessions, data: sessions.data.filter((session) => session.projectID === request.projectID) }
+        const ownership = await Promise.all(sessions.data.map((session) => options.owned(session.id)))
+        return {
+          ...sessions,
+          data: sessions.data.filter((session, index) => ownership[index] && session.projectID === request.projectID),
+        }
       }
       // Session-only grants must not enumerate sibling Sessions in their project.
       // Their cursor is an index into the stable, owner-approved ID list.
@@ -314,12 +319,14 @@ export function make(options: {
         throw new ControlAgent.RequestError("invalid_request")
       const ids = context.grant.sessionIDs.slice(offset, offset + (page.value.limit ?? 100))
       const sessions = await Promise.all(
-        ids.map((sessionID) =>
-          options.client.sessions.get({ sessionID }, { signal: context.signal }).catch((error: unknown) => {
-            if (error && typeof error === "object" && "_tag" in error && error._tag === "SessionNotFoundError")
-              return undefined
-            throw error
-          }),
+        ids.map(async (sessionID) =>
+          (await options.owned(sessionID))
+            ? options.client.sessions.get({ sessionID }, { signal: context.signal }).catch((error: unknown) => {
+                if (error && typeof error === "object" && "_tag" in error && error._tag === "SessionNotFoundError")
+                  return undefined
+                throw error
+              })
+            : undefined,
         ),
       )
       context.authorize()
@@ -482,6 +489,8 @@ export function make(options: {
       const receipt = await query((db) => RemoteOperations.get(db, subject, payload.value.operationID))
       context.authorize()
       if (!receipt) return { status: "not_admitted" }
+      if (receipt.session_id && !(await options.owned(receipt.session_id)))
+        throw new ControlAgent.RequestError("forbidden")
       // Receipt disclosure is subject scoped; the grant also has to retain access
       // to its target after an administrator narrows authorization.
       if (receipt.session_id && !context.grant.sessionIDs.includes(receipt.session_id)) {

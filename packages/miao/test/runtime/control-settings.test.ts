@@ -3,7 +3,26 @@ import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ControlHub } from "@miao/remote-control/hub"
-import { RuntimeControlAgent } from "../../src/runtime/control-agent"
+import { RuntimeControlAgent } from "@miao/sdk/remote-control/control-agent"
+
+import { ManagedRuntime } from "effect"
+import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
+import { LayerNode } from "@miao/core/effect/layer-node"
+import { makeGlobalNode } from "@miao/core/effect/app-node"
+import { Database } from "@miao/core/database/database"
+import { EventV2 } from "@miao/core/event"
+import { SessionOwnership } from "@miao/core/session/ownership"
+
+function runtime() {
+  return ManagedRuntime.make(
+    AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionOwnership.node]), [
+      [
+        Database.node,
+        makeGlobalNode({ service: Database.Service, layer: Database.layerFromPath(":memory:"), deps: [] }),
+      ],
+    ]),
+  )
+}
 
 async function connected(manager: NonNullable<Awaited<ReturnType<typeof RuntimeControlAgent.start>>>) {
   const until = Date.now() + 5000
@@ -13,6 +32,7 @@ async function connected(manager: NonNullable<Awaited<ReturnType<typeof RuntimeC
 
 test("owner configuration connects and switches only relay transport, preserving the host identity across restart", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "miao-control-settings-"))
+  const core = runtime()
   const storage = path.join(directory, "sessions.db")
   const filename = path.join(storage + ".remote-control", "control.json")
   const tokens = new Map<string, string>()
@@ -23,6 +43,7 @@ test("owner configuration connects and switches only relay transport, preserving
   try {
     const manager = await RuntimeControlAgent.start({
       storage,
+      run: (effect) => core.runPromise(effect),
       url: "http://127.0.0.1:1",
       credential: "local-only",
       runtimeID: crypto.randomUUID(),
@@ -67,11 +88,14 @@ test("owner configuration connects and switches only relay transport, preserving
     await manager!.stop()
     const restored = await RuntimeControlAgent.start({
       storage,
+      run: (effect) => core.runPromise(effect),
       url: "http://127.0.0.1:1",
       credential: "new-local-only",
       runtimeID: crypto.randomUUID(),
     })
     managers.push(restored!)
+    expect(restored!.administration.status().enabled).toBe(false)
+    await restored!.administration.setEnabled!(true)
     await connected(restored!)
     expect(restored!.administration.status()).toMatchObject({
       hostID: before.hostID,
@@ -83,18 +107,21 @@ test("owner configuration connects and switches only relay transport, preserving
     await Promise.all(hubs.map((hub) => hub.stop()))
     if (previous === undefined) delete process.env.MIAO_REMOTE_CONTROL_CONFIG
     else process.env.MIAO_REMOTE_CONTROL_CONFIG = previous
+    await core.dispose()
     await rm(directory, { recursive: true, force: true })
   }
 }, 20_000)
 
 test("production owner configuration rejects plaintext and unsafe existing targets", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "miao-control-private-"))
+  const core = runtime()
   const storage = path.join(directory, "sessions.db")
   const filename = path.join(storage + ".remote-control", "control.json")
   const previous = process.env.MIAO_REMOTE_CONTROL_CONFIG
   delete process.env.MIAO_REMOTE_CONTROL_CONFIG
   const manager = await RuntimeControlAgent.start({
     storage,
+    run: (effect) => core.runPromise(effect),
     url: "http://127.0.0.1:1",
     credential: "local-only",
     runtimeID: crypto.randomUUID(),
@@ -116,6 +143,7 @@ test("production owner configuration rejects plaintext and unsafe existing targe
     await manager?.stop()
     if (previous === undefined) delete process.env.MIAO_REMOTE_CONTROL_CONFIG
     else process.env.MIAO_REMOTE_CONTROL_CONFIG = previous
+    await core.dispose()
     await rm(directory, { recursive: true, force: true })
   }
 }, 10_000)

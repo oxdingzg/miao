@@ -110,7 +110,9 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     invitation?: ControlPairing.Invitation,
   ) => {
     // Use the actual encrypted Hub -> Runtime Agent -> local API path.
-    const socket = new WebSocket(`ws://127.0.0.1:${hub.port}/v1/client?hostID=${grants.hostID}`)
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${hub.port}/v1/client?hostID=${grants.hostID}&runtimeID=${record.runtimeID}`,
+    )
     sockets.push(socket)
     const messages: string[] = []
     socket.addEventListener("message", (event) => messages.push(String(event.data)))
@@ -203,7 +205,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
       version: 1,
       ok: true,
       runtimeID: record.runtimeID,
-      data: { enabled: true, hostID: grants.hostID },
+      data: { enabled: false, hostID: grants.hostID },
     })
     expect(
       await access({
@@ -230,7 +232,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     const session = ((await created.json()) as { data: { id: string; projectID: string } }).data
     expect((await fetch(new URL("/api/runtime/control", record.url))).status).toBe(401)
     const control = await fetch(new URL("/api/runtime/control", record.url), { headers })
-    expect(await control.json()).toMatchObject({ enabled: true, hostID: grants.hostID })
+    expect(await control.json()).toMatchObject({ enabled: false, hostID: grants.hostID })
     const configureURL = new URL("/api/runtime/control/configuration", record.url)
     expect(
       (
@@ -460,6 +462,31 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     await expect(peerClient.sessions.rename({ sessionID, title: "peer mutation" })).rejects.toThrow(
       "another miao window",
     )
+    const peerSession = await peerClient.sessions.create({ location: { directory: project } })
+    const broad = await grants.approve({
+      publicKey: device.publicKey,
+      label: "project reader",
+      permissions: ["read"],
+      projectIDs: [session.projectID],
+      sessionIDs: [],
+      expiresAt: Date.now() + 120000,
+    })
+    const scopedCall = await connectRemote(record, broad)
+    expect(await scopedCall("session.get", {}, undefined, undefined, peerSession.id)).toMatchObject({
+      type: "error",
+      code: "forbidden",
+    })
+    expect(await scopedCall("session.list", {}, undefined, session.projectID)).toMatchObject({
+      type: "result",
+      data: { data: expect.not.arrayContaining([expect.objectContaining({ id: peerSession.id })]) },
+    })
+    await peerClient["server.runtime"].setEnabled({ enabled: true })
+    const connectedDeadline = Date.now() + 5000
+    while (hub.connectedHosts().length !== 2 && Date.now() < connectedDeadline) await Bun.sleep(20)
+    expect(hub.connectedHosts()).toHaveLength(2)
+    await peerClient["server.runtime"].setEnabled({ enabled: false })
+    expect((await peerClient.health.get()).healthy).toBe(true)
+    expect(await scopedCall("session.get", {})).toMatchObject({ type: "result" })
     second.kill("SIGTERM")
     await second.exited
     const execution = await fetch(new URL(`/api/session/${session.id}/execution`, record.url), { headers })
@@ -519,6 +546,13 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
         expect.objectContaining({ id: newGrant.id, version: newGrant.version + 1, revokedAt: expect.any(Number) }),
       ]),
     )
+    const nextClient = OpenCode.make({
+      baseUrl: next.url,
+      headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
+    })
+    // A new window explicitly adopts the Session before it can expose that history remotely.
+    await nextClient.sessions.rename({ sessionID, title: "Phone session" })
+    await nextClient["server.runtime"].setEnabled({ enabled: true })
     const restoredCall = await connectRemote(next, grant)
     expect(await restoredCall("session.rename", { title: "Interrupted rename" }, unknownID)).toMatchObject({
       type: "result",

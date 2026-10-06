@@ -39,6 +39,15 @@ export const RuntimeHandler = HttpApiBuilder.group(Api, "server.runtime", (handl
           Effect.catch(() => Effect.succeed({ enabled: false, connected: false })),
         ),
       )
+      .handle("runtime.control.setEnabled", (ctx) =>
+        required().pipe(
+          Effect.flatMap((admin) =>
+            admin.setEnabled
+              ? Effect.tryPromise({ try: () => admin.setEnabled!(ctx.payload.enabled), catch: unavailable })
+              : Effect.fail(unavailable()),
+          ),
+        ),
+      )
       .handle("runtime.control.configure", (ctx) =>
         required().pipe(
           Effect.flatMap(

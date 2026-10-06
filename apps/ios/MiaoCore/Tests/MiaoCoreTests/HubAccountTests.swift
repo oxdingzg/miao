@@ -30,6 +30,10 @@ final class HubAccountTests: XCTestCase {
         let hostID = "host_abcdefghijklmnop"
         let request = try await account.relayRequest(hubURL: URL(string: "HTTPS://RELAY.invalid:443/")!,
                                                     hostID: hostID, token: "short.jwt.token")
+        let runtimeID = UUID().uuidString
+        let selected = try await account.relayRequest(hubURL: URL(string: "https://relay.invalid")!,
+                                                     hostID: hostID, runtimeID: runtimeID, token: "short.jwt.token")
+        XCTAssertTrue(selected.url!.absoluteString.contains("runtimeID=" + runtimeID))
         XCTAssertEqual(request.url?.scheme, "wss")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer short.jwt.token")
         XCTAssertFalse(request.url!.absoluteString.contains("short.jwt.token"))

@@ -15,7 +15,7 @@ public struct HubDirectoryHost: Decodable, Sendable, Equatable, Identifiable {
     public let revokedAt: Int64?
     public let online: Bool
     public let runtimeID: String?
-    public var id: String { hostID }
+    public var id: String { hostID + ":" + (runtimeID ?? "offline") }
 }
 
 private final class HubAccountRedirects: NSObject, URLSessionTaskDelegate {
@@ -180,7 +180,7 @@ public actor HubAccount {
         let (data, _) = try await send("/api/hub/hosts", credential: token)
         guard generation == expected else { throw HubAccountError.superseded }
         let hosts = try JSONDecoder().decode(Directory.self, from: data).data
-        guard hosts.count <= 64, Set(hosts.map(\.hostID)).count == hosts.count,
+        guard hosts.count <= 64, Set(hosts.map(\.id)).count == hosts.count,
               hosts.allSatisfy({ $0.hostID.range(of: "^[A-Za-z0-9_-]{16,128}$", options: .regularExpression) != nil
                 && !$0.name.isEmpty && $0.name.utf8.count <= 512
                 && $0.publicKey.utf8.count <= 128
@@ -280,7 +280,7 @@ public actor HubAccount {
     func refreshedHost(_ host: ApprovedHost) async throws -> ApprovedHost {
         _ = try relayRequest(hubURL: host.hubURL, hostID: host.target.hostID, token: "validation")
         let directory = try await hosts()
-        guard let current = directory.first(where: { $0.hostID == host.target.hostID }), current.revokedAt == nil,
+        guard let current = directory.first(where: { $0.hostID == host.target.hostID && $0.runtimeID == host.target.runtimeID }), current.revokedAt == nil,
               current.publicKey == host.publicKey else { throw RemoteConnectionError.authorizationBlocked }
         guard current.online, let runtimeID = current.runtimeID else { throw RemoteRPCError.disconnected }
         return ApprovedHost(id: host.id, label: host.label, hubURL: host.hubURL,
@@ -289,20 +289,20 @@ public actor HubAccount {
     }
 
     /// The account owns the redirect-rejecting session so relay credentials cannot escape its origin.
-    func relaySocket(hubURL: URL, hostID: String) async throws -> URLSessionWebSocketTask {
+    func relaySocket(hubURL: URL, hostID: String, runtimeID: String) async throws -> URLSessionWebSocketTask {
         // Validate before requesting a token, then fence sign-out during the token request.
-        _ = try relayRequest(hubURL: hubURL, hostID: hostID, token: "validation")
+        _ = try relayRequest(hubURL: hubURL, hostID: hostID, runtimeID: runtimeID, token: "validation")
         let expected = generation
         let token = try await bearer()
         guard expected == generation, login != nil else { throw HubAccountError.superseded }
         relaySockets.removeAll { $0.state == .completed || $0.state == .canceling }
         guard relaySockets.count < 64 else { throw RemoteRPCError.overloaded }
-        let socket = relaySession.webSocketTask(with: try relayRequest(hubURL: hubURL, hostID: hostID, token: token))
+        let socket = relaySession.webSocketTask(with: try relayRequest(hubURL: hubURL, hostID: hostID, runtimeID: runtimeID, token: token))
         relaySockets.append(socket)
         return socket
     }
 
-    func relayRequest(hubURL: URL, hostID: String, token: String) throws -> URLRequest {
+    func relayRequest(hubURL: URL, hostID: String, runtimeID: String? = nil, token: String) throws -> URLRequest {
         guard let supplied = URLComponents(url: hubURL, resolvingAgainstBaseURL: false),
               let canonical = URLComponents(url: origin, resolvingAgainstBaseURL: false),
               supplied.user == nil, supplied.password == nil, supplied.query == nil, supplied.fragment == nil,
@@ -314,7 +314,7 @@ public actor HubAccount {
               Self.validCredential(token) else { throw HubAccountError.invalidEndpoint }
         try RemoteTarget(hostID: hostID, runtimeID: hostID).validate()
         let endpoint = try HubConnection.endpoint(hubURL: origin, hostID: hostID,
-                                                  allowLoopbackHTTP: origin.scheme == "http")
+                                                  allowLoopbackHTTP: origin.scheme == "http", runtimeID: runtimeID)
         var request = URLRequest(url: endpoint)
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.cachePolicy = .reloadIgnoringLocalCacheData

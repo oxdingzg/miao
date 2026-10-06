@@ -218,6 +218,8 @@ import type {
   ServerRuntimeIdentityOutput,
   ServerRuntimeStopOutput,
   ServerRuntimeGetOutput,
+  ServerRuntimeSetEnabledInput,
+  ServerRuntimeSetEnabledOutput,
   ServerRuntimeConfigureInput,
   ServerRuntimeConfigureOutput,
   ServerRuntimeInviteInput,
@@ -1786,6 +1788,18 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/runtime/control`,
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      setEnabled: (input: ServerRuntimeSetEnabledInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeSetEnabledOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/enabled`,
+            body: { enabled: input["enabled"] },
             successStatus: 200,
             declaredStatuses: [503, 401, 400],
             empty: false,

@@ -5,7 +5,8 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./remote-control/*": "./src/remote-control/*.ts"
   },
   "scripts": {
     "test": "bun test --timeout 5000",
@@ -15,7 +16,9 @@
     "@miao/client": "workspace:*",
     "@miao/core": "workspace:*",
     "@miao/server": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "@miao/remote-control": "workspace:*",
+    "@miao/schema": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",

@@ -40,9 +40,9 @@ public actor HubConnection: ClientConnection {
         }
         let host = selected
         let socket: URLSessionWebSocketTask
-        if let account { socket = try await authorizedSocket(account: account, hubURL: host.hubURL, hostID: host.target.hostID) }
+        if let account { socket = try await authorizedSocket(account: account, hubURL: host.hubURL, hostID: host.target.hostID, runtimeID: host.target.runtimeID) }
         else { socket = try session.webSocketTask(with: endpoint(hubURL: host.hubURL, hostID: host.target.hostID,
-                                                               allowLoopbackHTTP: allowLoopbackHTTP)) }
+                                                               allowLoopbackHTTP: allowLoopbackHTTP, runtimeID: host.target.runtimeID)) }
         socket.maximumMessageSize = 256 * 1024
         socket.resume()
         let deadline = Task {
@@ -174,15 +174,15 @@ public actor HubConnection: ClientConnection {
 }
 
 extension HubConnection {
-    private static func authorizedSocket(account: HubAccount, hubURL: URL, hostID: String) async throws -> URLSessionWebSocketTask {
-        do { return try await account.relaySocket(hubURL: hubURL, hostID: hostID) }
+    private static func authorizedSocket(account: HubAccount, hubURL: URL, hostID: String, runtimeID: String) async throws -> URLSessionWebSocketTask {
+        do { return try await account.relaySocket(hubURL: hubURL, hostID: hostID, runtimeID: runtimeID) }
         catch HubAccountError.authenticationRequired { throw RemoteConnectionError.authorizationBlocked }
         catch HubAccountError.rejected(let status) where status == 401 || status == 403 {
             throw RemoteConnectionError.authorizationBlocked
         }
     }
 
-    static func endpoint(hubURL: URL?, hostID: String, allowLoopbackHTTP: Bool) throws -> URL {
+    static func endpoint(hubURL: URL?, hostID: String, allowLoopbackHTTP: Bool, runtimeID: String? = nil) throws -> URL {
         guard let hubURL, var url = URLComponents(url: hubURL, resolvingAgainstBaseURL: false),
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
               !(url.host ?? "").isEmpty, url.path.isEmpty || url.path == "/" else {
@@ -193,6 +193,10 @@ extension HubConnection {
         url.scheme = local ? "ws" : "wss"
         url.path = "/v1/client"
         url.queryItems = [URLQueryItem(name: "hostID", value: hostID)]
+        if let runtimeID {
+            try RemoteTarget(hostID: hostID, runtimeID: runtimeID).validate()
+            url.queryItems?.append(URLQueryItem(name: "runtimeID", value: runtimeID))
+        }
         guard let endpoint = url.url else { throw RemoteRPCError.invalidEndpoint }
         return endpoint
     }
@@ -207,10 +211,10 @@ extension HubConnection {
         try invitation.validate(allowLoopbackHTTP: allowLoopbackHTTP)
         let socket: URLSessionWebSocketTask
         if let account, let hubURL = URL(string: invitation.hubURL) {
-            socket = try await authorizedSocket(account: account, hubURL: hubURL, hostID: invitation.hostID)
+            socket = try await authorizedSocket(account: account, hubURL: hubURL, hostID: invitation.hostID, runtimeID: invitation.runtimeID)
         } else {
             socket = try session.webSocketTask(with: endpoint(hubURL: URL(string: invitation.hubURL), hostID: invitation.hostID,
-                                                            allowLoopbackHTTP: allowLoopbackHTTP))
+                                                            allowLoopbackHTTP: allowLoopbackHTTP, runtimeID: invitation.runtimeID))
         }
         socket.maximumMessageSize = 256 * 1024
         socket.resume()
