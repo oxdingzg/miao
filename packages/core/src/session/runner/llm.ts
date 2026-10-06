@@ -45,6 +45,7 @@ import { BackgroundJob } from "../../background-job"
 import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
+import { ReadSessionContextTool } from "../../tool/read-session-context"
 import { WorktreeTool } from "../../tool/worktree"
 import { WorkflowTool } from "../../tool/workflow"
 import { PushNotificationTool } from "../../tool/push-notification"
@@ -1284,6 +1285,42 @@ const layer = Layer.effect(
       return { sessionID: target.id }
     })
 
+    const runReadSessionContext = Effect.fnUntraced(function* (
+      senderSessionID: SessionSchema.ID,
+      request: { readonly session: string; readonly limit?: number; readonly before?: string },
+      context: {
+        readonly agent: AgentV2.ID
+        readonly assistantMessageID: SessionMessage.ID
+        readonly toolCallID: string
+      },
+    ) {
+      const sender = yield* getSession(senderSessionID)
+      const target = yield* resolveMessageTarget(sender, request.session)
+      if (!target) return yield* new ToolFailure({ message: `Unknown session: ${request.session}` })
+      if (target.id === sender.id)
+        return yield* new ToolFailure({
+          message: "Cannot read this session's own transcript; it is already in context. Use recall to search it.",
+        })
+      // `SessionHistory.all` has no project predicate, so the guard has to be
+      // here; without it this tool reads any Session in the database.
+      if (target.projectID !== sender.projectID)
+        return yield* new ToolFailure({ message: "Cross-project session reads are not allowed." })
+      yield* permission.assert({
+        action: ReadSessionContextTool.PERMISSION,
+        resources: [target.id],
+        save: [target.id],
+        sessionID: sender.id,
+        agent: context.agent,
+        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+      })
+      return yield* ReadSessionContextTool.page({
+        session: { id: target.id, title: target.title },
+        entries: yield* SessionHistory.all(db, target.id),
+        limit: request.limit,
+        before: request.before,
+      })
+    })
+
     // A moved Session cannot keep running in the runner that served this call:
     // `runTurnAttempt` refuses a turn whose Session location no longer matches the
     // runner's own. `SessionPlacement` admits its reminder as a steer, and the wake
@@ -1394,6 +1431,13 @@ const layer = Layer.effect(
                 list_sessions: Tool.withConcurrency(
                   ListSessionsTool.make(() => runListSessions(input.sessionID)),
                   "concurrent",
+                ),
+                read_session_context: ReadSessionContextTool.make((request, context) =>
+                  runReadSessionContext(input.sessionID, request, context).pipe(
+                    Effect.mapError((error) =>
+                      error instanceof ToolFailure ? error : new ToolFailure({ message: "Session read failed" }),
+                    ),
+                  ),
                 ),
                 goal: GoalTool.make((goal) =>
                   GoalTool.record(events, input.sessionID, goal).pipe(
