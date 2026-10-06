@@ -39,6 +39,8 @@ export type MaterializeOptions = {
   readonly codeMode?: boolean
   /** Defer external tool schemas above a budget behind a stable `tool_search` tool. */
   readonly disclosure?: boolean
+  /** Tool names disclosure must keep advertised. */
+  readonly alwaysLoad?: ReadonlyArray<string>
   /** Overlay session-scoped registrations owned by this Session on top of location and application scopes. */
   readonly sessionID?: SessionSchema.ID
   /** Tool names hidden from the model. Filtering happens before ordering so the prefix stays stable. */
@@ -332,7 +334,7 @@ const registryLayer = Layer.effect(
           const resident: ToolDefinition[] = []
           const deferred: ToolDefinition[] = []
           for (const item of definitions) {
-            if (item.metadata?.external !== true) {
+            if (item.metadata?.external !== true || options?.alwaysLoad?.includes(item.name) === true) {
               resident.push(item)
               continue
             }
