@@ -508,6 +508,21 @@ export const Status = Event.define({
 })
 export type Status = typeof Status.Type
 
+// A model-initiated request for the human's attention. Like live process state
+// this is a signal rather than session state, so it is never stored: a client
+// that was not connected when it fired has nothing to replay, and the terminal
+// and remote-control fan-outs both treat it as a best-effort hint.
+export const Notified = Event.define({
+  type: "session.next.notified",
+  schema: {
+    ...Base,
+    /** Defaults to the Session title when the caller does not name the subject. */
+    title: optional(Schema.String),
+    message: Schema.String,
+  },
+})
+export type Notified = typeof Notified.Type
+
 // A drain failed outside any provider step. Provider and model-resolution
 // failures are already recorded on the assistant message as `step.failed`, so
 // they never produce this event; everything else that ends a drain does.
@@ -670,6 +685,7 @@ export const Definitions = Event.inventory(
   Tool.Failed,
   Retried,
   Status,
+  Notified,
   Failed,
   Compaction.Started,
   Compaction.Delta,

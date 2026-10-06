@@ -84,6 +84,19 @@ const tui: TuiPlugin = async (api) => {
     errored.add(sessionID)
     notify(api, sessionID, sessionErrorMessage(event.properties.error), "error")
   })
+
+  // The model asked for the human directly, so this path does not wait for the
+  // Session to go idle and does not deduplicate the way the derived signals do.
+  api.event.on("session.next.notified", (event) => {
+    const session = api.state.session.get(event.properties.sessionID)
+    const isSubagent = session?.parentID !== undefined
+    void api.attention.notify({
+      title: event.properties.title ?? session?.title,
+      message: event.properties.message,
+      notification: isSubagent ? false : { when: "blurred" },
+      sound: { name: "default", when: "always" },
+    })
+  })
 }
 
 const plugin: BuiltinTuiPlugin = {

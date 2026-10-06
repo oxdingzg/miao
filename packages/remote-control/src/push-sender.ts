@@ -132,7 +132,10 @@ export function make(options: Options) {
         track(send(sessionID, "completed"))
         return
       }
-      if (!["permission.v2.asked", "question.v2.asked", "session.next.failed"].includes(event.type)) return
+      if (
+        !["permission.v2.asked", "question.v2.asked", "session.next.failed", "session.next.notified"].includes(event.type)
+      )
+        return
       if (event.type === "session.next.failed") {
         const previous = busy.get(sessionID)
         if (previous) previous.failed = true
