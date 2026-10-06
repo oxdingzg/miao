@@ -1,5 +1,12 @@
 # Runtime upgrades and release compatibility
 
+> Superseded target, 2026-10-06: [Window-owned runtime](window-runtime.md)
+> replaces the shared-owner upgrade model and supplies the implementation
+> schedule. Existing windows retain their execution build; new windows start
+> their own installed execution build. No automatic service replacement or
+> versioned worker routing is planned. The body below records the current
+> `packages/miao` shared-Runtime contract, not the future product contract.
+
 ## Contract
 
 Installing a release must not interrupt a running Session, stop a Runtime, or

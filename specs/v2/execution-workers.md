@@ -1,5 +1,13 @@
 # Versioned execution workers
 
+> Withdrawn, 2026-10-06: [Window-owned runtime](../window-runtime.md) replaces
+> this coordinator/worker design. A running window keeps its loaded build for
+> its entire lifetime, including later provider turns; a new window owns a new
+> runtime. Do not continue the routing, hot replacement or durable lease-based
+> takeover work below. Participant database and SessionLease primitives have
+> landed, but the execution split has not; reassess these primitives under the
+> new shared-storage and Session ownership requirements. Retained for context.
+
 Status: design, 2026-10-05; revised 2026-10-06 to close the P0/P1 findings of the
 first review. Extends `specs/runtime-upgrades.md` ("Future service replacement")
 into a concrete architecture. Not yet implemented.
