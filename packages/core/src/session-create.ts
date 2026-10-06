@@ -7,6 +7,7 @@ import { Database } from "./database/database"
 import { EventV2 } from "./event"
 import { ProjectV2 } from "./project"
 import { ProjectTable } from "./project/sql"
+import { SessionOwnership } from "./session/ownership"
 import { SessionStore } from "./session/store"
 import { SessionProjector } from "./session/projector"
 import { SessionSchema } from "./session/schema"
@@ -41,12 +42,14 @@ const layer = Layer.effect(
     const events = yield* EventV2.Service
     const projects = yield* ProjectV2.Service
     const store = yield* SessionStore.Service
+    const ownership = yield* SessionOwnership.Service
     const db: EffectDrizzleSqlite.EffectSQLiteDatabase = database.db
 
     const create = Effect.fn("SessionCreate.create")(function* (input: Input) {
       const sessionID = input.id ?? SessionSchema.ID.create()
       const recorded = yield* store.get(sessionID)
       if (recorded) return recorded
+      yield* ownership.claim(sessionID)
       const project = yield* projects.resolve(input.location.directory)
       yield* db
         .insert(ProjectTable)
@@ -102,5 +105,5 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node],
+  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, SessionOwnership.node],
 })

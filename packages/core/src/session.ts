@@ -49,6 +49,7 @@ import { SessionBlobStorage } from "./session/blob-storage"
 import { materializeBlobRefs, materializeEvent, materializePrompt } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
 import { EventSequenceTable } from "./event/sql"
+import { SessionOwnership } from "./session/ownership"
 import { SessionDelegationStore } from "./session/delegation-store"
 
 export const RevertState = Revert.State
@@ -264,6 +265,7 @@ const layer = Layer.effect(
     const db = database.db
     const events = yield* EventV2.Service
     const execution = yield* SessionExecution.Service
+    const ownership = yield* SessionOwnership.Service
     const store = yield* SessionStore.Service
     const creation = yield* SessionCreate.Service
     const appProcess = yield* AppProcess.Service
@@ -432,6 +434,7 @@ const layer = Layer.effect(
         return yield* execution.status(sessionID)
       }),
       rename: Effect.fn("V2Session.rename")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         const session = yield* result.get(input.sessionID)
         yield* events.publish(SessionEvent.Info.Updated, {
           sessionID: session.id,
@@ -440,6 +443,7 @@ const layer = Layer.effect(
         })
       }),
       archive: Effect.fn("V2Session.archive")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         const session = yield* result.get(input.sessionID)
         yield* events.publish(SessionEvent.Info.Updated, {
           sessionID: session.id,
@@ -448,6 +452,7 @@ const layer = Layer.effect(
         })
       }),
       remove: Effect.fn("V2Session.remove")(function* (sessionID) {
+        yield* ownership.claim(sessionID)
         yield* result.get(sessionID)
         yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
         yield* events.remove(sessionID)
@@ -455,6 +460,7 @@ const layer = Layer.effect(
         SessionHistory.invalidate(db)
       }),
       command: Effect.fn("V2Session.command")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
         if (input.id) {
@@ -660,6 +666,7 @@ const layer = Layer.effect(
       prompt: Effect.fn("V2Session.prompt")((input) =>
         Effect.uninterruptible(
           Effect.gen(function* () {
+            yield* ownership.claim(input.sessionID)
             yield* result.get(input.sessionID)
             yield* requireMigrated(input.sessionID)
             // Image attachments arrive already shrunk: `session.prompt` in the
@@ -694,6 +701,7 @@ const layer = Layer.effect(
         ),
       ),
       shell: Effect.fn("V2Session.shell")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
         const callID = input.id ?? SessionMessage.ID.create()
@@ -715,6 +723,7 @@ const layer = Layer.effect(
         if (input.resume !== false) yield* execution.wake(session.id)
       }),
       skill: Effect.fn("V2Session.skill")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
         const skill = yield* Effect.gen(function* () {
@@ -734,6 +743,7 @@ const layer = Layer.effect(
         if (input.resume !== false) yield* execution.wake(session.id)
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         yield* result.get(input.sessionID)
         yield* requireMigrated(input.sessionID)
         yield* events.publish(SessionEvent.AgentSwitched, {
@@ -744,6 +754,7 @@ const layer = Layer.effect(
         })
       }),
       switchModel: Effect.fn("V2Session.switchModel")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         const session = yield* result.get(input.sessionID)
         yield* requireMigrated(session.id)
         if (
@@ -760,6 +771,7 @@ const layer = Layer.effect(
         })
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
+        yield* ownership.claim(input.sessionID)
         yield* result.get(input.sessionID)
         yield* requireMigrated(input.sessionID)
         SessionCompactRequest.request(input.sessionID)
@@ -773,6 +785,7 @@ const layer = Layer.effect(
       executions: execution.executions,
       interruptIf: (sessionID, identity) => Effect.uninterruptible(execution.interruptIf(sessionID, identity)),
       resume: Effect.fn("V2Session.resume")(function* (sessionID) {
+        yield* ownership.claim(sessionID)
         yield* result.get(sessionID)
         yield* requireMigrated(sessionID)
         yield* execution.resume(sessionID)
@@ -782,6 +795,7 @@ const layer = Layer.effect(
       ),
       revert: {
         stage: Effect.fn("V2Session.revert.stage")(function* (input) {
+          yield* ownership.claim(input.sessionID)
           const session = yield* result.get(input.sessionID)
           return yield* SessionRevert.stage({ session, messageID: input.messageID, files: input.files }).pipe(
             Effect.provideService(Database.Service, database),
@@ -790,6 +804,7 @@ const layer = Layer.effect(
           )
         }),
         clear: Effect.fn("V2Session.revert.clear")(function* (sessionID) {
+          yield* ownership.claim(sessionID)
           const session = yield* result.get(sessionID)
           yield* SessionRevert.clear(session).pipe(
             Effect.provideService(EventV2.Service, events),
@@ -797,6 +812,7 @@ const layer = Layer.effect(
           )
         }),
         commit: Effect.fn("V2Session.revert.commit")(function* (sessionID) {
+          yield* ownership.claim(sessionID)
           const session = yield* result.get(sessionID)
           yield* SessionRevert.commit(session).pipe(Effect.provideService(EventV2.Service, events))
         }),
@@ -831,6 +847,7 @@ export const node = makeGlobalNode({
     SessionExecution.node,
     SessionStore.node,
     SessionCreate.node,
+    SessionOwnership.node,
     AppProcess.node,
     LocationServiceMap.node,
     SessionProjector.node,

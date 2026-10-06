@@ -6,6 +6,7 @@ import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { Identifier } from "../id/id"
 import { Cron } from "./cron"
+import { SessionOwnership } from "./ownership"
 import { SessionExecution } from "./execution"
 import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
@@ -78,6 +79,7 @@ export const make = Effect.gen(function* () {
   const db = (yield* Database.Service).db
   const events = yield* EventV2.Service
   const execution = yield* SessionExecution.Service
+  const ownership = yield* SessionOwnership.Service
 
   // Firing reuses the sanctioned prompt admission path: one durable
   // `session_input` row, then an advisory wake. `queue` delivery makes the
@@ -139,6 +141,7 @@ export const make = Effect.gen(function* () {
   const create: Interface["create"] = Effect.fn("SessionSchedule.create")(function* (input) {
     return yield* Effect.uninterruptible(
       Effect.gen(function* () {
+        yield* ownership.claim(input.sessionID)
         const createdAt = yield* Clock.currentTimeMillis
         const nextAt = yield* Effect.gen(function* () {
           if (input.cron !== undefined) {
@@ -198,4 +201,8 @@ export const make = Effect.gen(function* () {
 
 const layer = Layer.effect(Service, make)
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, EventV2.node, SessionExecution.node] })
+export const node = makeGlobalNode({
+  service: Service,
+  layer,
+  deps: [Database.node, EventV2.node, SessionExecution.node, SessionOwnership.node],
+})

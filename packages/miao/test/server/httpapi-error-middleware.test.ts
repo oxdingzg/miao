@@ -1,4 +1,5 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
+import { SessionOwnership } from "@miao/core/session/ownership"
 import { NamedError } from "@miao/core/util/error"
 import { describe, expect } from "bun:test"
 import { ConfigErrorV1 } from "@miao/core/v1/config/error"
@@ -19,6 +20,23 @@ function expectUnknownErrorBody(body: unknown) {
 }
 
 describe("HttpApi error middleware", () => {
+  it.live("returns a declared conflict when another window owns the Session", () =>
+    Effect.gen(function* () {
+      yield* HttpRouter.add("POST", "/owned", Effect.die(new SessionOwnership.BusyError("ses_owned"))).pipe(
+        Layer.provide(errorLayer),
+        HttpRouter.serve,
+        Layer.build,
+      )
+      const response = yield* HttpClientRequest.post("/owned").pipe(HttpClient.execute)
+      expect(response.status).toBe(409)
+      expect(yield* response.json).toMatchObject({
+        _tag: "ConflictError",
+        resource: "ses_owned",
+        message: expect.stringContaining("another miao window"),
+      })
+    }),
+  )
+
   it.live("returns a safe body for unknown 500 defects", () =>
     Effect.gen(function* () {
       yield* HttpRouter.add("GET", "/boom", Effect.die(new Error("secret stack marker"))).pipe(
