@@ -6,6 +6,7 @@ import { SessionEvent } from "../event"
 import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
 import { SessionRunnerCost } from "./cost"
+import type { Tool } from "../../tool/tool"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -71,6 +72,29 @@ const settledOutput = (value: ToolOutput | undefined, result: ToolResultValue): 
  * authoritative state arrives with tool.success regardless.
  */
 export const PROGRESS_MIN_INTERVAL_MS = 500
+
+/**
+ * A file preview above this many base64 characters stays out of the durable
+ * progress event entirely: progress replays nowhere, and the tool result
+ * carries the real bytes externalized to the blob store.
+ */
+export const PROGRESS_MAX_INLINE_BASE64 = 256 * 1024
+
+/** Durable progress content, without oversized inline file previews. */
+export const progressContent = (
+  parts: ReadonlyArray<Tool.Content>,
+): SessionEvent.Tool.Progress["data"]["content"] => {
+  const content: Array<SessionEvent.Tool.Progress["data"]["content"][number]> = []
+  for (const part of parts) {
+    if (part.type !== "file") {
+      content.push({ type: "text", text: part.text })
+      continue
+    }
+    if (part.data.length > PROGRESS_MAX_INLINE_BASE64) continue
+    content.push({ type: "file", uri: `data:${part.mime};base64,${part.data}`, mime: part.mime, name: part.name })
+  }
+  return content
+}
 
 /** Per-call admission for durable tool progress events. */
 export const progressGate = () => {

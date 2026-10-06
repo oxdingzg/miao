@@ -81,7 +81,7 @@ import { SessionRunnerModel } from "./model"
 import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
-import { createLLMEventPublisher, progressGate } from "./publish-llm-event"
+import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -612,16 +612,7 @@ const layer = Layer.effect(
                   assistantMessageID: input.assistantMessageID,
                   callID: input.call.id,
                   structured: update.structured ?? {},
-                  content: (update.content ?? []).map((part) =>
-                    part.type === "text"
-                      ? { type: "text" as const, text: part.text }
-                      : {
-                          type: "file" as const,
-                          uri: `data:${part.mime};base64,${part.data}`,
-                          mime: part.mime,
-                          name: part.name,
-                        },
-                  ),
+                  content: progressContent(update.content ?? []),
                 })
                 .pipe(Effect.asVoid)
             },

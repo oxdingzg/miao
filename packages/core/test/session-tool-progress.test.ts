@@ -15,7 +15,7 @@ import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionTable, SessionMessageTable } from "@miao/core/session/sql"
-import { progressGate } from "../src/session/runner/publish-llm-event"
+import { progressContent, progressGate, PROGRESS_MAX_INLINE_BASE64 } from "../src/session/runner/publish-llm-event"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Database.node, EventV2.node, SessionProjector.node])))
@@ -166,5 +166,19 @@ describe("progressGate", () => {
     expect(admit("ses:call-1", 1_499)).toBe(false)
     expect(admit("ses:call-1", 1_500)).toBe(true)
     expect(admit("ses:call-2", 1_100)).toBe(true)
+  })
+})
+
+describe("progressContent", () => {
+  test("keeps text and small file previews, drops oversized inline bytes", () => {
+    const content = progressContent([
+      { type: "text", text: "rendering frame 3" },
+      { type: "file", data: "a".repeat(1024), mime: "image/png", name: "thumb.png" },
+      { type: "file", data: "b".repeat(PROGRESS_MAX_INLINE_BASE64 + 1), mime: "image/png", name: "full.png" },
+    ])
+    expect(content).toEqual([
+      { type: "text", text: "rendering frame 3" },
+      { type: "file", uri: `data:image/png;base64,${"a".repeat(1024)}`, mime: "image/png", name: "thumb.png" },
+    ])
   })
 })
