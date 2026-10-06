@@ -1307,8 +1307,10 @@ const layer = Layer.effect(
           : `${new TextDecoder().decode(bytes.subarray(0, DelegationReportTool.MAX_REPORT_BYTES), { stream: true })}\n[Progress note truncated.]`
       // Counted before this note lands, so the receipt is the backlog the
       // parent already had rather than a number that depends on projection
-      // timing.
+      // timing. The allowance is read the same way, so a child learns that its
+      // note cannot be promoted now instead of sending notes nobody reads.
       const parentUnread = yield* SessionDelegationStore.pendingCount(db, task.session_id)
+      const parentWakeBudget = yield* SessionDelegationStore.wakeAllowance(db, task.session_id)
       yield* events.publish(SessionEvent.DelegationReported, {
         sessionID: task.session_id,
         id: task.id,
@@ -1319,7 +1321,12 @@ const layer = Layer.effect(
       // The same wake a delegation result uses: a draining parent promotes it
       // at the next safe boundary, an idle one starts a drain that does.
       if (wake) yield* wake(task.session_id)
-      return { queued: true, parentUnread, reportsRemaining: DelegationReportTool.MAX_REPORTS - sent - 1 }
+      return {
+        queued: true,
+        parentUnread,
+        reportsRemaining: DelegationReportTool.MAX_REPORTS - sent - 1,
+        parentWakeBudget,
+      }
     })
 
     const runReadSessionContext = Effect.fnUntraced(function* (

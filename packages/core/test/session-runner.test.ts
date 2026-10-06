@@ -1170,6 +1170,69 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("tells a subagent its note cannot be promoted while the parent's allowance is spent", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const execution = yield* SessionExecution.Service
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "blocked",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Work",
+        description: "work",
+        owner: "finished-owner",
+        timestamp: yield* DateTime.now,
+      })
+      yield* drainWakeAllowance(sessionID, 0)
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "no-budget", name: "report", input: { text: "STILL WORKING" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "reply" }),
+          LLMEvent.textDelta({ id: "reply", text: "Finishing anyway" }),
+          LLMEvent.textEnd({ id: "reply" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.prompt({ sessionID: child.id, prompt: Prompt.make({ text: "Report" }), resume: false })
+      yield* session.resume(child.id)
+      // The child is told its note will not be read soon, rather than getting a
+      // receipt that implies the parent picked it up.
+      expect(JSON.stringify(yield* session.context(child.id))).toContain("wake allowance is spent")
+      // The note is durable and waiting; nothing may promote it, including the
+      // drain the report itself just woke, until a person prompts the parent.
+      yield* execution.wait(sessionID)
+      expect(yield* SessionDelegationStore.progressCount(db, sessionID, "blocked")).toBe(1)
+      expect(yield* SessionDelegationStore.hasPromotableNotifications(db, sessionID)).toBe(false)
+      expect(yield* wakeAllowance(sessionID)).toBe(0)
+      expect(
+        (yield* session.context(sessionID)).filter((message) => message.type === "synthetic"),
+      ).toHaveLength(0)
+    }),
+  )
+
   it.effect(
     "enforces background invocation identity, ownership and caps, and cancels only its observed execution",
     () =>

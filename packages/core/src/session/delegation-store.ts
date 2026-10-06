@@ -355,6 +355,20 @@ export const recharge = Effect.fn("SessionDelegationStore.recharge")(function* (
     .pipe(Effect.orDie)
 })
 
+/** Wakeups the machine may still spend on its own before a person speaks again. */
+export const wakeAllowance = Effect.fn("SessionDelegationStore.wakeAllowance")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+) {
+  const row = yield* db
+    .select({ value: SessionTable.wake_allowance })
+    .from(SessionTable)
+    .where(eq(SessionTable.id, sessionID))
+    .get()
+    .pipe(Effect.orDie)
+  return row?.value ?? 0
+})
+
 export const projectNotification = Effect.fn("SessionDelegationStore.projectNotification")(function* (
   db: DB,
   event: SessionEvent.Synthetic,
