@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Context, Effect, Layer, Ref, Schema, Stream } from "effect"
 import * as Option from "effect/Option"
 import { Auth, type Auth as AuthDef } from "./auth"
 import { Endpoint, type EndpointPatch } from "./endpoint"
@@ -11,12 +11,13 @@ import { WebSocketExecutor, WebSocketPool } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
 import * as ProviderShared from "../protocols/shared"
-import type { LLMError, LLMEvent, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
+import type { LLMError, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
 import {
   GenerationOptions,
   HttpOptions,
   LLMRequest,
   LLMResponse,
+  LLMEvent,
   Model,
   ModelLimits,
   LLMError as LLMErrorClass,
@@ -305,22 +306,40 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
         }),
       streamPrepared: (prepared: Prepared, request: LLMRequest, runtime: TransportRuntime) => {
         const route = `${request.model.provider}/${request.model.route.id}`
-        const events = routeInput.transport
-          .frames(prepared, request, runtime)
-          .pipe(
-            Stream.mapEffect(decodeEvent(route)),
-            Stream.filter(Option.isSome),
-            Stream.map((event) => event.value),
-            protocol.stream.terminal ? Stream.takeUntil(protocol.stream.terminal) : (stream) => stream,
-          )
-        return events.pipe(
-          Stream.mapAccumEffect(
-            () => protocol.stream.initial(request),
-            protocol.stream.step,
-            protocol.stream.onHalt ? { onHalt: protocol.stream.onHalt } : undefined,
-          ),
-          Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))),
-        )
+        const terminal = protocol.stream.terminal
+        return Stream.unwrap(
+          Effect.gen(function* () {
+            const events = routeInput.transport.frames(prepared, request, runtime).pipe(
+              Stream.mapEffect(decodeEvent(route)),
+              Stream.filter(Option.isSome),
+              Stream.map((event) => event.value),
+              terminal ? Stream.takeUntil(terminal) : (stream) => stream,
+            )
+            const completed = yield* Ref.make(false)
+            return events.pipe(
+              Stream.mapAccumEffect(
+                () => protocol.stream.initial(request),
+                protocol.stream.step,
+                protocol.stream.onHalt ? { onHalt: protocol.stream.onHalt } : undefined,
+              ),
+              // A provider that ends the stream without a terminal frame has not
+              // completed the turn. Fail retryably so an attempt that has
+              // published nothing is retried, instead of presenting a partial
+              // answer as complete. `finish` flushed by `onHalt` counts; an
+              // in-band `provider-error` already fails the turn its own way.
+              Stream.tap((event) =>
+                LLMEvent.is.finish(event) || LLMEvent.is.providerError(event) ? Ref.set(completed, true) : Effect.void,
+              ),
+              Stream.concat(
+                Stream.fromEffect(
+                  Ref.get(completed).pipe(
+                    Effect.flatMap((ok) => (ok ? Effect.void : Effect.fail(ProviderShared.streamClosed(route)))),
+                  ),
+                ).pipe(Stream.drain),
+              ),
+            )
+          }),
+        ).pipe(Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))))
       },
     } satisfies Route<Body, Prepared>
     return route
@@ -385,9 +404,7 @@ const wireSummary = (body: unknown) => {
       const content = item.content
       return {
         role: item.role,
-        tool_calls: Array.isArray(toolCalls)
-          ? toolCalls.map((call) => (call as { id?: unknown }).id)
-          : undefined,
+        tool_calls: Array.isArray(toolCalls) ? toolCalls.map((call) => (call as { id?: unknown }).id) : undefined,
         tool_call_id: item.tool_call_id,
         content_size: typeof content === "string" ? content.length : Array.isArray(content) ? content.length : content,
       }
