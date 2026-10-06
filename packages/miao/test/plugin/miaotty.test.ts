@@ -8,34 +8,69 @@ test("maps session activity to processing and idle", () => {
   const tracker = createMiaottyStateTracker()
   expect(tracker.current).toBe("idle")
   expect(
-    tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } })),
+    tracker.handle(
+      event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "busy" } } }),
+    ),
   ).toBe("processing")
   expect(
-    tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } })),
+    tracker.handle(
+      event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "busy" } } }),
+    ),
   ).toBeUndefined()
   expect(
-    tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "idle" } } })),
+    tracker.handle(
+      event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "idle" } } }),
+    ),
   ).toBe("idle")
+})
+
+test("retry keeps the pane processing", () => {
+  const tracker = createMiaottyStateTracker()
+  tracker.handle(event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "busy" } } }))
+  expect(
+    tracker.handle(
+      event({
+        type: "session.next.status",
+        properties: { sessionID: "s1", status: { type: "retry", attempt: 1, message: "rate limited", next: 30 } },
+      }),
+    ),
+  ).toBeUndefined()
 })
 
 test("pending questions or permissions surface as awaiting", () => {
   const tracker = createMiaottyStateTracker()
-  tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } }))
-  expect(tracker.handle(event({ type: "question.asked", properties: { id: "q1", sessionID: "s1" } }))).toBe("awaiting")
-  expect(tracker.handle(event({ type: "permission.asked", properties: { id: "p1", sessionID: "s1" } }))).toBeUndefined()
-  expect(tracker.handle(event({ type: "question.replied", properties: { requestID: "q1", sessionID: "s1" } }))).toBe(
-    undefined,
+  tracker.handle(event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "busy" } } }))
+  expect(tracker.handle(event({ type: "question.v2.asked", properties: { id: "q1", sessionID: "s1" } }))).toBe(
+    "awaiting",
   )
-  expect(tracker.handle(event({ type: "permission.replied", properties: { requestID: "p1", sessionID: "s1" } }))).toBe(
+  expect(tracker.handle(event({ type: "permission.v2.asked", properties: { id: "p1", sessionID: "s1" } }))).toBeUndefined()
+  expect(
+    tracker.handle(event({ type: "question.v2.replied", properties: { requestID: "q1", sessionID: "s1" } })),
+  ).toBeUndefined()
+  expect(
+    tracker.handle(event({ type: "permission.v2.replied", properties: { requestID: "p1", sessionID: "s1" } })),
+  ).toBe("processing")
+})
+
+test("a reply while the session keeps working does not fall back to idle", () => {
+  const tracker = createMiaottyStateTracker()
+  tracker.handle(event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "busy" } } }))
+  tracker.handle(event({ type: "permission.v2.asked", properties: { id: "p1", sessionID: "s1" } }))
+  expect(tracker.handle(event({ type: "permission.v2.replied", properties: { requestID: "p1", sessionID: "s1" } }))).toBe(
     "processing",
   )
+  expect(tracker.current).toBe("processing")
 })
 
 test("errors show until the session becomes active again", () => {
   const tracker = createMiaottyStateTracker()
-  expect(tracker.handle(event({ type: "session.error", properties: { sessionID: "s1" } }))).toBe("error")
   expect(
-    tracker.handle(event({ type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } })),
+    tracker.handle(event({ type: "session.next.failed", properties: { sessionID: "s1", error: { message: "x" } } })),
+  ).toBe("error")
+  expect(
+    tracker.handle(
+      event({ type: "session.next.status", properties: { sessionID: "s1", status: { type: "busy" } } }),
+    ),
   ).toBe("processing")
 })
 

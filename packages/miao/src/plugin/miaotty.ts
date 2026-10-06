@@ -31,8 +31,9 @@ export function createMiaottyStateTracker() {
     },
     handle(event: Event): MiaottyState | undefined {
       switch (event.type) {
-        case "session.status": {
+        case "session.next.status": {
           const sessionID = event.properties.sessionID
+          // busy and retry both mean the Session is still working.
           if (event.properties.status.type === "idle") active.delete(sessionID)
           else {
             active.add(sessionID)
@@ -40,29 +41,19 @@ export function createMiaottyStateTracker() {
           }
           break
         }
-        case "session.idle": {
-          active.delete(event.properties.sessionID)
-          break
-        }
-        case "session.error": {
+        case "session.next.failed": {
           const sessionID = event.properties.sessionID
-          if (sessionID) {
-            active.delete(sessionID)
-            errored.add(sessionID)
-          }
+          active.delete(sessionID)
+          errored.add(sessionID)
           break
         }
-        case "question.asked":
         case "question.v2.asked":
-        case "permission.asked":
         case "permission.v2.asked": {
           pending.add(event.properties.id)
           break
         }
-        case "question.replied":
-        case "question.rejected":
         case "question.v2.replied":
-        case "permission.replied":
+        case "question.v2.rejected":
         case "permission.v2.replied": {
           pending.delete(event.properties.requestID)
           break
