@@ -1200,15 +1200,6 @@ function App(props: {
     })
   })
 
-  event.on("installation.updated", (evt) => {
-    toast.show({
-      variant: "info",
-      title: "Updated",
-      message: `miao v${evt.properties.version} installed. New windows use this version; this window keeps running.`,
-      duration: 15000,
-    })
-  })
-
   const plugin = createMemo(() => {
     if (!ready()) return
     if (route.data.type !== "plugin") return
