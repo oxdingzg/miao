@@ -1,4 +1,5 @@
 import "@miao/core/flag/legacy-env"
+import { Crash } from "@/cli/crash"
 import { Server } from "@/server/server"
 import { InstanceRuntime } from "@/project/instance-runtime"
 import { Rpc } from "@/util/rpc"
@@ -16,9 +17,16 @@ import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecy
 Heap.start()
 Monitor.start()
 
-const onUnhandledRejection = (_error: unknown) => {}
+// The server thread swallows these so one rejected promise cannot take the
+// worker down, but swallowing silently makes a flash exit undebuggable. Record
+// it first; the process keeps running exactly as before.
+const onUnhandledRejection = (error: unknown) => {
+  Crash.recordCrash("unhandledRejection", error)
+}
 
-const onUncaughtException = (_error: Error) => {}
+const onUncaughtException = (error: Error) => {
+  Crash.recordCrash("uncaughtException", error)
+}
 
 process.on("unhandledRejection", onUnhandledRejection)
 process.on("uncaughtException", onUncaughtException)
