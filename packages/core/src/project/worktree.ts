@@ -2,9 +2,10 @@ export * as ProjectWorktree from "./worktree"
 
 import path from "path"
 import { eq, like, or } from "drizzle-orm"
-import { Context, Effect, Layer, Schema, Scope } from "effect"
+import { Context, DateTime, Effect, Layer, Schema, Scope } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Event as DirectoriesEvent } from "@miao/schema/project-directories"
+import { SessionEvent } from "@miao/schema/session-event"
 import { WorktreeEvent } from "@miao/schema/worktree-event"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -12,9 +13,10 @@ import { EventV2 } from "../event"
 import { FSUtil } from "../fs-util"
 import { GitCli } from "../git-cli"
 import { Global } from "../global"
+import { Location } from "../location"
 import { AppProcess } from "../process"
 import { Project } from "../project"
-import { AbsolutePath } from "../schema"
+import { AbsolutePath, RelativePath } from "../schema"
 import { Slug } from "../util/slug"
 import { ProjectDirectories } from "./directories"
 import { ProjectMetadata } from "./metadata"
@@ -270,21 +272,29 @@ const layer = Layer.effect(
       yield* requireGit(target)
       const directory = yield* canonical(input.directory)
       // Deleting a worktree whose directory still anchors sessions leaves them
-      // with a dead cwd: tools, snapshots, and every later resume fail. Refuse
-      // while any session row still points into the tree, even when git has
-      // already forgotten the worktree registration.
-      const living = yield* db
-        .select({ id: SessionTable.id, title: SessionTable.title })
+      // with a dead cwd: tools, snapshots, and every later resume fail. Move
+      // every anchored Session back to the checkout — where exit_worktree would
+      // have returned it — before the tree goes away, even when git has already
+      // forgotten the worktree registration.
+      const anchored = yield* db
+        .select({ id: SessionTable.id, directory: SessionTable.directory })
         .from(SessionTable)
         .where(or(eq(SessionTable.directory, directory), like(SessionTable.directory, `${directory}/%`)))
         .all()
         .pipe(Effect.orDie)
-      if (living.length > 0)
-        return yield* new WorktreeError({
-          message:
-            `Cannot remove the worktree at "${directory}": ${living.length} session(s) still live in it ` +
-            `(${living.map((session) => `${session.id} "${session.title}"`).join(", ")}). ` +
-            "Move them out with exit_worktree or delete the sessions first.",
+      for (const session of anchored) {
+        yield* events.publish(SessionEvent.Moved, {
+          sessionID: session.id,
+          location: Location.Ref.make({ directory: AbsolutePath.make(target.checkout) }),
+          subdirectory: RelativePath.make(path.relative(directory, session.directory).replaceAll("\\", "/")),
+          timestamp: yield* DateTime.now,
+        })
+      }
+      if (anchored.length > 0)
+        yield* Effect.logWarning("relocated Sessions out of a removed worktree", {
+          worktree: directory,
+          checkout: target.checkout,
+          sessions: anchored.map((session) => session.id),
         })
       const entry = yield* locate(target.checkout, directory)
       if (!entry?.path) {

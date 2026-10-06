@@ -3,8 +3,7 @@ import { $ } from "bun"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Cause, Effect, Exit, Fiber, Option, Stream } from "effect"
-import { eq } from "drizzle-orm"
+import { Effect, Exit, Fiber, Stream } from "effect"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -14,6 +13,7 @@ import { Project } from "@miao/core/project"
 import { ProjectDirectories } from "@miao/core/project/directories"
 import { ProjectTable } from "@miao/core/project/sql"
 import { ProjectWorktree } from "@miao/core/project/worktree"
+import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
 import { SessionTable } from "@miao/core/session/sql"
 import { AbsolutePath } from "@miao/core/schema"
@@ -30,9 +30,16 @@ const dataRoot = await fs.realpath(await fs.mkdtemp(path.join(await fs.realpath(
 afterAll(() => fs.rm(dataRoot, { recursive: true, force: true }))
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([ProjectWorktree.node, ProjectDirectories.node, Database.node, EventV2.node]), [
-    [Global.node, Global.layerWith({ data: dataRoot })],
-  ]),
+  AppNodeBuilder.build(
+    LayerNode.group([
+      ProjectWorktree.node,
+      ProjectDirectories.node,
+      Database.node,
+      EventV2.node,
+      SessionProjector.node,
+    ]),
+    [[Global.node, Global.layerWith({ data: dataRoot })]],
+  ),
 )
 
 async function initRepo(directory: string) {
@@ -151,40 +158,44 @@ describe("ProjectWorktree", () => {
     }),
   )
 
-  it.live("refuses to remove a worktree while sessions live in it", () =>
+  it.live("relocates anchored sessions to the checkout when removing a worktree", () =>
     Effect.gen(function* () {
       const { target } = yield* setup
       const worktrees = yield* ProjectWorktree.Service
       const info = yield* worktrees.create(target)
       yield* waitFor(() => Bun.file(path.join(info.directory, "README.md")).exists())
       const sessionID = SessionV2.ID.make("ses_worktree_live")
+      const nestedID = SessionV2.ID.make("ses_worktree_nested")
       const { db } = yield* Database.Service
-      yield* db
-        .insert(SessionTable)
-        .values({
-          id: sessionID,
-          project_id: projectID,
-          slug: "worktree-live",
-          directory: info.directory,
-          title: "still working here",
-          version: "test",
-          time_created: 1,
-          time_updated: 1,
-        })
-        .run()
-        .pipe(Effect.orDie)
+      const rows = [
+        { id: sessionID, directory: info.directory },
+        { id: nestedID, directory: path.join(info.directory, "nested") },
+      ]
+      for (const [index, row] of rows.entries())
+        yield* db
+          .insert(SessionTable)
+          .values({
+            id: row.id,
+            project_id: projectID,
+            slug: `worktree-live-${index}`,
+            directory: AbsolutePath.make(row.directory),
+            title: "still working here",
+            version: "test",
+            time_created: 1,
+            time_updated: 1,
+          })
+          .run()
+          .pipe(Effect.orDie)
 
-      const refused = yield* worktrees.remove(target, { directory: info.directory }).pipe(Effect.exit)
-      expect(Exit.isFailure(refused)).toBe(true)
-      if (Exit.isFailure(refused)) {
-        const message = Option.getOrUndefined(Cause.findErrorOption(refused.cause))
-        expect(String(message)).toContain(sessionID)
-        expect(String(message)).toContain("still live in it")
-      }
-      expect(yield* Effect.promise(() => Bun.file(path.join(info.directory, "README.md")).exists())).toBe(true)
-
-      yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
       expect(yield* worktrees.remove(target, { directory: info.directory })).toBe(true)
+      expect(yield* Effect.promise(() => Bun.file(path.join(info.directory, "README.md")).exists())).toBe(false)
+      const moved = yield* db
+        .select({ id: SessionTable.id, directory: SessionTable.directory })
+        .from(SessionTable)
+        .all()
+        .pipe(Effect.orDie)
+      expect(new Set(moved.map((row) => row.id))).toEqual(new Set([sessionID, nestedID]))
+      for (const row of moved) expect(row.directory).toBe(target.checkout)
     }),
   )
 })
