@@ -1,3 +1,4 @@
+import { InstallationExecutable } from "@miao/core/installation/executable"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { httpClient } from "@miao/core/effect/app-node-platform"
@@ -154,7 +155,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
           const result = yield* run(windowsCommand(windowsUpgrade), {
             env: {
               MIAO_UPGRADE_VERSION: target,
-              MIAO_UPGRADE_EXECUTABLE: process.execPath,
+              MIAO_UPGRADE_EXECUTABLE: InstallationExecutable.launcher,
               MIAO_UPGRADE_ARCH: process.arch,
             },
           })

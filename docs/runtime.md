@@ -49,3 +49,14 @@ retain their loaded execution code; new windows load the installed build.
 Source development runs read source files and do not provide an immutable code
 snapshot across source edits. See the [implementation plan](../specs/window-runtime.md)
 for remaining release and installation validation.
+
+## 安装和后台升级
+
+官方安装器将验证后的每个构建保存在 `.versions/<build-id>/`，再原子切换启动入口。
+构建标识与公开版本号独立，同版本重编译也不会覆盖已有文件。当前窗口固定自己的可执行文件；
+后续 sandbox 子进程仍从同一构建启动，新窗口使用新入口。不自动清理保留的构建。
+Windows 使用 NTFS hard link 与 `File.Replace`，避免覆盖正在执行的文件。安装失败保留原入口。
+
+仅官方安装渠道自动后台安装；包管理器渠道提示更新，由用户手动执行。源码入口不提供源码编辑后的运行快照。
+preview 先在构建机编译，再执行 `./script/install-local.sh --binary /path/to/prebuilt/miao`，
+独立安装到 `miao-preview`，回退入口指向上一次保留的构建。

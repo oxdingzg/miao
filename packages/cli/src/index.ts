@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { InstallationExecutable } from "@miao/core/installation/executable"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { Commands } from "./commands/commands"
@@ -16,6 +17,11 @@ const Handlers = Runtime.handlers(Commands, {
   migrate: () => import("./commands/handlers/migrate"),
   serve: () => import("./commands/handlers/serve"),
 })
+
+if (process.argv.includes("--build-id")) {
+  console.log(InstallationExecutable.buildID)
+  process.exit(0)
+}
 
 Runtime.run(Commands, Handlers, { version: "local" }).pipe(
   Effect.provide(Layer.mergeAll(LocalRuntime.layer, layer)),

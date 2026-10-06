@@ -1,3 +1,4 @@
+import { InstallationExecutable } from "@miao/core/installation/executable"
 export * as SandboxRunner from "./runner"
 
 /**
@@ -41,16 +42,22 @@ export function backend(): Backend | undefined {
 export function resolve(): Runner | undefined {
   const fromEnv = process.env.MIAO_RUN
   if (fromEnv && existsSync(fromEnv)) return { program: fromEnv, prefix: [] }
-  const sibling = path.join(path.dirname(process.execPath), process.platform === "win32" ? "miao-run.exe" : "miao-run")
+  const sibling = path.join(
+    path.dirname(InstallationExecutable.executable),
+    process.platform === "win32" ? "miao-run.exe" : "miao-run",
+  )
   if (existsSync(sibling)) return { program: sibling, prefix: [] }
   if (!addon?.sandboxSupported()) return undefined
   if (typeof MIAO_PACKAGED !== "undefined" && MIAO_PACKAGED)
-    return { program: process.execPath, prefix: ["__sandbox-run"] }
+    return { program: InstallationExecutable.executable, prefix: ["__sandbox-run"] }
   // A compiled build without the define cannot re-execute a source file.
-  if (!path.basename(process.execPath).startsWith("bun")) return undefined
+  if (!path.basename(InstallationExecutable.executable).startsWith("bun")) return undefined
   // The runner inherits the command's cwd; ignore any bunfig.toml (and its
   // preloads) that the sandboxed project ships.
-  return { program: process.execPath, prefix: ["--config=/dev/null", path.join(import.meta.dir, "main.ts")] }
+  return {
+    program: InstallationExecutable.executable,
+    prefix: ["--config=/dev/null", path.join(import.meta.dir, "main.ts")],
+  }
 }
 
 /** Whether process-level sandboxing can run on this host. */

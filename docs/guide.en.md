@@ -46,11 +46,11 @@ The current Windows release is not Authenticode-signed. The archive is `miao-win
 
 **Three entry points (coexisting, independent)**
 
-| Command        | What it is                                                           | Data / config                       | Updates                |
-| -------------- | -------------------------------------------------------------------- | ----------------------------------- | ---------------------- |
-| `miao`         | Stable release binary                                                | channel `latest`, DB `miao.db`      | background auto-update |
-| `miao-dev`     | Runs from source; the only entry that sees uncommitted edits         | channel `local`, DB `miao-local.db` | manual                 |
-| `miao-preview` | Compiled build of the current checkout (`./script/install-local.sh`) | channel = current branch            | none                   |
+| Command        | What it is                                                                                           | Data / config                       | Updates                |
+| -------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------- |
+| `miao`         | Stable release binary                                                                                | channel `latest`, DB `miao.db`      | background auto-update |
+| `miao-dev`     | Runs from source; the only entry that sees uncommitted edits                                         | channel `local`, DB `miao-local.db` | manual                 |
+| `miao-preview` | Compiled build of the current checkout (`./script/install-local.sh --binary /path/to/prebuilt/miao`) | channel = current branch            | none                   |
 
 `auth.json`, config, and snapshots are shared across channels, so credentials carry over.
 
@@ -295,7 +295,7 @@ bun install
 bun run dev                     # run from source (same as miao-dev)
 bun --cwd packages/miao typecheck
 bun --cwd packages/miao test
-./script/install-local.sh       # build and install miao-preview
+./script/install-local.sh --binary /path/to/prebuilt/miao  # install build-host artifact
 ```
 
 ## License

@@ -42,7 +42,6 @@ export const Flag = {
   get MIAO_SANDBOX_DENY_NETWORK() {
     return truthy("MIAO_SANDBOX_DENY_NETWORK")
   },
-  MIAO_PACKAGE_MANAGER_AUTO_UPDATE: truthy("MIAO_PACKAGE_MANAGER_AUTO_UPDATE"),
 
   // Experimental
   MIAO_EXPERIMENTAL_FILEWATCHER: Config.boolean("MIAO_EXPERIMENTAL_FILEWATCHER").pipe(Config.withDefault(false)),

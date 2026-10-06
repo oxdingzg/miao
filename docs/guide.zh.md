@@ -45,11 +45,11 @@ $env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/mia
 
 **三个入口（并存，互不干扰）**
 
-| 命令           | 是什么                                                     | 数据/配置                           | 更新         |
-| -------------- | ---------------------------------------------------------- | ----------------------------------- | ------------ |
-| `miao`         | 稳定版（官方 release 二进制）                              | channel `latest`，DB `miao.db`      | 后台自动更新 |
-| `miao-dev`     | 从源码运行，唯一能看到**未提交改动**的入口                 | channel `local`，DB `miao-local.db` | 手动         |
-| `miao-preview` | 当前 checkout 的编译版（`./script/install-local.sh` 安装） | 当前分支为 channel                  | 不自动更新   |
+| 命令           | 是什么                                                                                     | 数据/配置                           | 更新         |
+| -------------- | ------------------------------------------------------------------------------------------ | ----------------------------------- | ------------ |
+| `miao`         | 稳定版（官方 release 二进制）                                                              | channel `latest`，DB `miao.db`      | 后台自动更新 |
+| `miao-dev`     | 从源码运行，唯一能看到**未提交改动**的入口                                                 | channel `local`，DB `miao-local.db` | 手动         |
+| `miao-preview` | 当前 checkout 的编译版（`./script/install-local.sh --binary /path/to/prebuilt/miao` 安装） | 当前分支为 channel                  | 不自动更新   |
 
 `auth.json`、配置、快照在各入口间共享，凭证无需重复登录。
 
@@ -277,7 +277,7 @@ bun install
 bun run dev                     # 源码运行（等价 miao-dev）
 bun --cwd packages/miao typecheck
 bun --cwd packages/miao test
-./script/install-local.sh       # 构建并安装 miao-preview
+./script/install-local.sh --binary /path/to/prebuilt/miao  # 安装构建机产物
 ```
 
 ## 许可证

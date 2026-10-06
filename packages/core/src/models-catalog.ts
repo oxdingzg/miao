@@ -1,3 +1,4 @@
+import { InstallationExecutable } from "@miao/core/installation/executable"
 import path from "path"
 import { Cause, Context, Duration, Effect, Exit, Layer, Option, Ref, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
@@ -268,7 +269,7 @@ const layer = Layer.effect(
     // A catalog snapshot can ship next to the executable (see script/build.ts).
     // It is the offline default when no user cache exists, and can be refreshed
     // independently of the compiled-in snapshot.
-    const loadShipped = fs.readJson(path.join(path.dirname(process.execPath), "models.json")).pipe(
+    const loadShipped = fs.readJson(path.join(path.dirname(InstallationExecutable.executable), "models.json")).pipe(
       Effect.catch(() => Effect.succeed(undefined)),
     )
 
