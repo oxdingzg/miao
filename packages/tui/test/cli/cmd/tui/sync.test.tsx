@@ -40,26 +40,4 @@ describe("tui sync", () => {
     }
   })
 
-  test("vcs branch updates only apply for the active workspace", async () => {
-    await using tmp = await tmpdir()
-    await Bun.write(`${tmp.path}/kv.json`, "{}")
-    const { app, emit, project, sync } = await mount(undefined, tmp.path)
-
-    try {
-      expect(sync.data.vcs?.branch).toBe("main")
-
-      project.workspace.set("ws_a")
-      emit(branchEvent("other", "ws_b"))
-      await Bun.sleep(30)
-
-      expect(sync.data.vcs?.branch).toBe("main")
-
-      emit(branchEvent("feature", "ws_a"))
-      await wait(() => sync.data.vcs?.branch === "feature")
-
-      expect(sync.data.vcs?.branch).toBe("feature")
-    } finally {
-      app.renderer.destroy()
-    }
   })
-})

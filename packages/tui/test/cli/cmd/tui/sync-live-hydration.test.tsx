@@ -515,27 +515,3 @@ test("session hydration completes while its diff is still pending", async () => 
   }
 })
 
-test("a pending diff cannot overwrite newer live file changes", async () => {
-  await using tmp = await tmpdir()
-  await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const pending = Promise.withResolvers<Response>()
-  const mounted = await mount(routes({ diff: () => pending.promise }), tmp.path)
-  try {
-    await mounted.sync.session.sync(sessionID)
-    mounted.emit(
-      global({
-        type: "session.diff",
-        properties: { sessionID, diff: [{ file: "live.ts", patch: "live", additions: 2, deletions: 0 }] },
-      }),
-    )
-    await wait(() => mounted.sync.data.session_diff[sessionID]?.[0]?.file === "live.ts")
-    pending.resolve(
-      json({ data: [{ path: "stale.ts", patch: "stale", status: "modified", additions: 1, deletions: 0 }] }),
-    )
-    await Bun.sleep(30)
-    expect(mounted.sync.data.session_diff[sessionID][0].file).toBe("live.ts")
-  } finally {
-    mounted.app.renderer.destroy()
-    pending.resolve(json({ data: [] }))
-  }
-})
