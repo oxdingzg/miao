@@ -22,8 +22,8 @@ jobs:
         id: committer
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.MIAO_APP_ID }}
-          opencode-app-secret: ${{ secrets.MIAO_APP_SECRET }}
+          miao-app-id: ${{ vars.MIAO_APP_ID }}
+          miao-app-secret: ${{ secrets.MIAO_APP_SECRET }}
 
       - name: Generate
         run: ./script/generate.ts

@@ -23,7 +23,9 @@ type Diff = {
 }
 
 const repo = process.env.GH_REPO ?? "oxdingzg/miao"
-const bot = ["actions-user", "github-actions[bot]", "opencode", "opencode-agent[bot]"]
+// Keep the opencode entries: miao's history still contains upstream commits by
+// those accounts, and dropping them would leak bot commits into the changelog.
+const bot = ["actions-user", "github-actions[bot]", "opencode", "opencode-agent[bot]", "miao-agent[bot]"]
 const team = [
   ...(await Bun.file(new URL("../.github/TEAM_MEMBERS", import.meta.url))
     .text()
