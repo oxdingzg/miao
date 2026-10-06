@@ -10,8 +10,9 @@ import { SessionBlobMigrate } from "@miao/core/session/blob-migrate"
 import { SessionRetention } from "@miao/core/session/retention"
 import { SessionCompact } from "@miao/core/session/compact"
 import { SessionRestore } from "@miao/core/session/restore"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { sql } from "drizzle-orm"
+import { BlobSiblings } from "../blob-siblings"
 import { effectCmd } from "../effect-cmd"
 
 const QueryCommand = effectCmd({
@@ -316,24 +317,33 @@ const GcBlobsCommand = effectCmd({
     const databaseDir = dirname(Database.path())
     const configured = basename(Database.path())
     const directory = join(databaseDir, Blob.DIRECTORY)
-    // The blob directory is shared by every channel database, but only the
-    // configured database's references can be marked. When another channel
-    // database is present its references are unknown, so refuse to delete.
+    // The blob directory is shared by every channel database, so the sweep
+    // must union references from every sibling before it may delete.
     const siblings = (yield* Effect.promise(() => readdir(databaseDir).catch(() => [] as string[]))).filter(
       (name) => /^miao.*\.db$/.test(name) && name !== configured,
     )
     const referenced = yield* SessionBlobGc.collect(db)
+    const unreadable: string[] = []
+    for (const sibling of siblings) {
+      const exit = yield* BlobSiblings.collectReferences(join(databaseDir, sibling)).pipe(Effect.exit)
+      if (Exit.isSuccess(exit)) {
+        for (const hash of exit.value) referenced.add(hash)
+        continue
+      }
+      unreadable.push(sibling)
+    }
     const result = yield* SessionBlobGc.sweep({
       blob,
       directory,
       referenced,
-      dryRun: !args.yes || siblings.length > 0,
+      dryRun: !args.yes || unreadable.length > 0,
       graceMs: args["grace-hours"] * 3_600_000,
     })
     console.log(`blobs: ${result.referenced} referenced, ${result.orphans} unreferenced (${mb(result.bytes)} MB)`)
-    if (siblings.length > 0) {
-      console.log(`refusing to delete: other channel databases share this blob store (${siblings.join(", ")})`)
-      console.log("their references are not scanned, so deleting could remove live blobs")
+    if (unreadable.length > 0) {
+      console.log(
+        `refusing to delete: could not read channel database(s) ${unreadable.join(", ")} to check their blob references`,
+      )
     } else if (args.yes) console.log(`deleted ${result.deleted} blob(s)`)
     else if (result.orphans > 0) console.log("re-run with --yes to delete")
   }),
