@@ -1,4 +1,4 @@
-export * as RuntimeDiscovery from "./discovery"
+export * as RuntimeRegistration from "./registration"
 
 import { RuntimeIdentity } from "./identity"
 import { Challenge, Proof } from "@miao/schema/runtime-identity"
@@ -19,17 +19,17 @@ const Record = Schema.Struct({
 export type Record = typeof Record.Type
 
 export class IdentityError extends Error {
-  override readonly name = "RuntimeDiscovery.IdentityError"
+  override readonly name = "RuntimeRegistration.IdentityError"
   constructor() {
     super("Local Runtime identity could not be verified; no authentication was sent")
   }
 }
 
-/** Call only while holding storage ownership; publish after the listener is ready. */
+/** Publish only this invocation’s private attachment record after its listener is ready. */
 export async function publish(storage: string, record: Record) {
   Schema.decodeUnknownSync(Record)(record)
   requireLocalURL(record.url)
-  const filename = `${storage}.runtime-info.json`
+  const filename = recordPath(storage, record.runtimeID)
   const temporary = `${filename}.${randomBytes(16).toString("hex")}.tmp`
   const file = await open(temporary, "wx", 0o600)
   try {
@@ -44,8 +44,8 @@ export async function publish(storage: string, record: Record) {
   }
 }
 
-export async function read(storage: string): Promise<Record | undefined> {
-  const file = await open(`${storage}.runtime-info.json`, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+export async function read(storage: string, runtimeID: string): Promise<Record | undefined> {
+  const file = await open(recordPath(storage, runtimeID), constants.O_RDONLY | constants.O_NOFOLLOW).catch(
     (error: unknown) => {
       if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return undefined
       throw error
@@ -115,10 +115,10 @@ async function readProof(response: Response) {
   }
 }
 
-/** Remove before releasing ownership, so cleanup cannot race a successor Runtime. */
+/** Remove only this invocation’s record; peers keep their own attachments. */
 export async function remove(storage: string, runtimeID: string) {
-  const record = await read(storage)
-  if (record?.runtimeID === runtimeID) await unlink(`${storage}.runtime-info.json`)
+  const record = await read(storage, runtimeID)
+  if (record?.runtimeID === runtimeID) await unlink(recordPath(storage, runtimeID))
 }
 
 function requireLocalURL(input: string) {
@@ -135,4 +135,10 @@ function requireLocalURL(input: string) {
   )
     throw new IdentityError()
   return url
+}
+
+function recordPath(storage: string, runtimeID: string) {
+  const id = Schema.decodeUnknownSync(Proof.fields.runtimeID)(runtimeID)
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(id)) throw new IdentityError()
+  return `${storage}.runtime-${id}.json`
 }

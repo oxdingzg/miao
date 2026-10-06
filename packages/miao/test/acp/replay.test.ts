@@ -75,15 +75,15 @@ describe("acp V2 replay", () => {
         const legacyID = "ses_legacyacpreplay0001"
         seedLegacy(original, { sessionID: legacyID, projectID: modern.projectID, directory: fixture.home })
 
-        // Startup backfills legacy sessions automatically, so the server replays it from the V2 projection.
+        // Read-only replay does not take ownership or automatically rewrite legacy history.
         const second = yield* start(fixture, original)
         yield* expectLegacyReplay(second.url, fixture.home, legacyID)
         yield* stop(second)
 
         const backfill = yield* fixture.opencode.spawn(["db", "backfill"], { env: { MIAO_DB: original } })
         fixture.opencode.expectExit(backfill, 0, "db backfill")
-        // The automatic startup backfill already migrated the session, so the manual run has nothing left.
-        expect(backfill.stdout).toContain("backfilled 0 session(s)")
+        // History conversion is explicit; startup did not mutate this legacy Session.
+        expect(backfill.stdout).toContain("backfilled 1 session(s)")
 
         checkpoint(original)
         yield* Effect.promise(() => copyFile(original, compacted))
@@ -109,8 +109,7 @@ describe("acp V2 replay", () => {
         expect(continued.stopReason).toBe("end_turn")
         expect(acp.text(legacyID, "agent_message_chunk")).toEndWith("continued on V2")
 
-        // The database has one process owner. Close the embedded server before
-        // the stdio adapter starts its persistent Runtime for this same store.
+        // Close the Session owner before the stdio adapter explicitly continues it.
         yield* stop(third)
 
         // The real `miao acp` command over stdio, on the compacted database.

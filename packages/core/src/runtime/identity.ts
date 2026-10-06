@@ -8,7 +8,10 @@ import type { RuntimeAdministration } from "./administration"
 export interface Interface {
   readonly prove: (challenge: string) => RuntimeIdentity.Proof | undefined
   readonly stop?: () => void
-  readonly administration?: () => RuntimeAdministration.Interface | undefined
+  readonly administration?: () =>
+    | RuntimeAdministration.Interface
+    | undefined
+    | Promise<RuntimeAdministration.Interface | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/core/RuntimeIdentity") {}

@@ -1,3 +1,4 @@
+import { WindowLifecycle } from "@/runtime/lifecycle"
 import { cmd } from "@/cli/cmd/cmd"
 import { Rpc } from "@/util/rpc"
 import { type rpc } from "../tui/worker"
@@ -8,42 +9,10 @@ import { errorMessage } from "@miao/tui/util/error"
 import { withTimeout } from "@/util/timeout"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
-import type { GlobalEvent } from "@miao/tui/context/sdk"
-import type { EventSource } from "@miao/tui/context/sdk"
 import { validateSession } from "../tui/validate-session"
 
 declare global {
   const MIAO_WORKER_PATH: string
-}
-
-type RpcClient = ReturnType<typeof Rpc.client<typeof rpc>>
-
-function createWorkerFetch(client: RpcClient): typeof fetch {
-  const fn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init)
-    const body = request.body ? await request.text() : undefined
-    const result = await client.call("fetch", {
-      url: request.url,
-      method: request.method,
-      headers: Object.fromEntries(request.headers.entries()),
-      body,
-    })
-    return new Response(result.body, {
-      status: result.status,
-      headers: result.headers,
-    })
-  }
-  return fn as typeof fetch
-}
-
-function createEventSource(client: RpcClient): EventSource {
-  return {
-    subscribe: async (handler) => {
-      return client.on<GlobalEvent>("global.event", (e) => {
-        handler(e)
-      })
-    },
-  }
 }
 
 async function target() {
@@ -224,40 +193,6 @@ export const TuiThreadCommand = cmd({
 
       const network = resolveNetworkOptionsNoConfig(args)
       const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
-      if (!external) {
-        const { RuntimeConnect } = await import("@/runtime/connect")
-        const { DatabaseFile } = await import("@miao/core/database/file")
-        const runtime = await RuntimeConnect.ensure(DatabaseFile.path())
-        const { ServerAuth } = await import("@/server/auth")
-        const headers = ServerAuth.headers({ username: "miao", password: runtime.credential })
-        await validateSession({ url: runtime.url, sessionID: args.session, directory: cwd, headers })
-        const { TuiConfig } = await import("@/config/tui")
-        const { Effect } = await import("effect")
-        const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
-        await Effect.runPromise(
-          run({
-            url: runtime.url,
-            runtimeTarget: { runtimeID: runtime.runtimeID, storage: DatabaseFile.path() },
-            config: await TuiConfig.get(),
-            pluginHost: createLegacyTuiPluginHost(),
-            directory: cwd,
-            headers,
-            runtimeNotice: RuntimeConnect.mismatch(runtime),
-            args: {
-              continue: args.continue,
-              sessionID: args.session,
-              agent: args.agent,
-              model: args.model,
-              prompt: await input(args.prompt),
-              fork: args.fork,
-              auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
-            },
-          }),
-        )
-        return
-      }
-
       const worker = new Worker(file, {
         env: Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
@@ -278,53 +213,47 @@ export const TuiThreadCommand = cmd({
         worker.terminate()
       }
 
-      const prompt = await input(args.prompt)
-      // Import the TUI config graph only after the worker is spawned: evaluating it
-      // costs hundreds of milliseconds, and the worker can load the server graph
-      // on its own thread meanwhile.
-      const { TuiConfig } = await import("@/config/tui")
-      const config = await TuiConfig.get()
-
-      const headers = external ? (await import("@/server/auth")).ServerAuth.headers() : undefined
-
-      const transport = external
-        ? {
-            url: (await client.call("server", network)).url,
-            fetch: undefined,
-            events: undefined,
-            headers,
-          }
-        : {
-            url: "http://opencode.internal",
-            fetch: createWorkerFetch(client),
-            events: createEventSource(client),
-          }
-
+      const unregister = WindowLifecycle.register(stop)
       try {
-        await validateSession({
-          url: transport.url,
-          sessionID: args.session,
-          directory: cwd,
-          fetch: transport.fetch,
-          headers,
-        })
-      } catch (error) {
-        UI.error(errorMessage(error))
-        process.exitCode = 1
-        return
-      }
+        const prompt = await input(args.prompt)
+        // Import the TUI config graph only after the worker is spawned: evaluating it
+        // costs hundreds of milliseconds, and the worker can load the server graph
+        // on its own thread meanwhile.
+        const { TuiConfig } = await import("@/config/tui")
+        const config = await TuiConfig.get()
 
-      setTimeout(() => {
-        client.call("checkUpgrade", { directory: cwd }).catch(() => {})
-      }, 1000).unref?.()
+        const owned = external ? undefined : await client.call("runtime", undefined)
+        const { ServerAuth } = await import("@/server/auth")
+        const transport = external
+          ? { url: (await client.call("server", network)).url, headers: ServerAuth.headers() }
+          : { url: owned!.url, headers: ServerAuth.headers({ username: "miao", password: owned!.credential }) }
 
-      try {
+        try {
+          await validateSession({
+            url: transport.url,
+            sessionID: args.session,
+            directory: cwd,
+
+            headers: transport.headers,
+          })
+        } catch (error) {
+          UI.error(errorMessage(error))
+          process.exitCode = 1
+          return
+        }
+
+        setTimeout(() => {
+          client.call("checkUpgrade", { directory: cwd }).catch(() => {})
+        }, 1000).unref?.()
+
+        const { DatabaseFile } = await import("@miao/core/database/file")
         const { Effect } = await import("effect")
         const { run } = await import("../tui/layer")
         const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
         await Effect.runPromise(
           run({
             url: transport.url,
+            runtimeTarget: owned ? { runtimeID: owned.runtimeID, storage: DatabaseFile.path() } : undefined,
             async onSnapshot() {
               const { writeHeapSnapshot } = await import("node:v8")
               const tui = writeHeapSnapshot("tui.heapsnapshot")
@@ -334,9 +263,9 @@ export const TuiThreadCommand = cmd({
             config,
             pluginHost: createLegacyTuiPluginHost(),
             directory: cwd,
-            fetch: transport.fetch,
+
             headers: transport.headers,
-            events: transport.events,
+
             args: {
               continue: args.continue,
               sessionID: args.session,
@@ -350,13 +279,13 @@ export const TuiThreadCommand = cmd({
         )
       } finally {
         await stop()
+        unregister()
       }
     } finally {
       try {
         unguard?.()
       } catch {}
     }
-    process.exit()
   },
 })
 // scratch

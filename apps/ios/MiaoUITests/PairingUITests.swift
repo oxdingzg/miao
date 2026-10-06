@@ -59,6 +59,13 @@ final class PairingUITests: XCTestCase {
             app.buttons["关闭"].tap()
             XCTAssertTrue(app.buttons["连接电脑"].firstMatch.waitForExistence(timeout: 15))
             app.buttons["连接电脑"].firstMatch.tap()
+            // Dismissing pairing clears the one-use link. Supply it again when
+            // returning from the separate notification enrolment flow.
+            let link = app.textFields["pairingURI"].exists ? app.textFields["pairingURI"] : app.textViews["pairingURI"]
+            XCTAssertTrue(link.waitForExistence(timeout: 5))
+            link.tap(); link.typeText(fixture.invitation)
+            XCTAssertTrue(link.value as? String == fixture.invitation, "The complete pairing link is entered")
+
         }
         XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["开始配对"].isEnabled)

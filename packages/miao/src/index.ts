@@ -1,3 +1,4 @@
+import { WindowLifecycle } from "./runtime/lifecycle"
 import "@miao/core/flag/legacy-env"
 import yargs, { type CommandModule } from "yargs"
 import { hideBin } from "yargs/helpers"
@@ -112,11 +113,9 @@ async function buildCli(selection: "all" | "default" | readonly string[]) {
       process.env.MIAO = "1"
       process.env.MIAO_PID = String(process.pid)
 
-      // `db` keeps backfill and compact explicit; the rest never touch sessions.
-      if (!["db", "upgrade", "uninstall", "completion"].includes(String(opts._[0]))) {
-        const { migrateLegacySessions } = await import("./cli/legacy-migration")
-        await migrateLegacySessions()
-      }
+      if (opts._[0] === "db" && !["path", "stats", "retention"].includes(String(opts._[1])))
+        process.env.MIAO_DATABASE_EXCLUSIVE = "1"
+      WindowLifecycle.register(WindowLifecycle.disposeCore)
     })
     .usage("")
     .completion("completion", "generate shell completion script")
@@ -158,6 +157,8 @@ const known = positional !== undefined && commandLoaders.some(([name]) => name =
 const selection: "all" | "default" | readonly string[] =
   positional !== undefined ? (known ? [positional] : "all") : wantsVersion ? [] : wantsHelp ? "all" : "default"
 
+WindowLifecycle.install()
+
 try {
   if (process.platform === "win32") {
     const { win32EnableVirtualTerminal } = await import("@miao/tui/terminal-win32")
@@ -182,9 +183,9 @@ try {
   }
   process.exitCode = 1
 } finally {
-  // Some subprocesses don't react properly to SIGTERM and similar signals.
-  // Most notably, some docker-container-based MCP servers don't handle such signals unless
-  // run using `docker run --init`.
-  // Explicitly exit to avoid any hanging subprocesses.
+  await WindowLifecycle.close().catch((error: unknown) => {
+    console.error(error)
+    process.exitCode = 1
+  })
   process.exit()
 }

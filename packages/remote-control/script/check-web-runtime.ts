@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url"
 import { createHash } from "node:crypto"
 import { HubService } from "../src/hub-service"
 import { DeviceGrants } from "../src/grants"
-import { RuntimeDiscovery } from "../../core/src/runtime/discovery"
+import { readWindow } from "../../miao/test/fixture/window-runtime"
+import { RuntimeRegistration } from "../../core/src/runtime/registration"
 import { RuntimeOwnership } from "../../core/src/runtime/ownership"
 import { InstallationVersion } from "../../core/src/installation/version"
 
@@ -144,7 +145,7 @@ try {
   )
     throw new Error("Fixture project unavailable")
   stage = "runtime"
-  const started = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
+  const started = Bun.spawn([process.execPath, "run", "test/runtime/fixture-host.ts"], {
     cwd: path.join(root, "packages/miao"),
     env: {
       ...process.env,
@@ -194,13 +195,13 @@ try {
   const storageID = createHash("sha256")
     .update(await RuntimeOwnership.canonicalStorage(databasePath))
     .digest("hex")
-  let owner: RuntimeDiscovery.Record | undefined
+  let owner: RuntimeRegistration.Record | undefined
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
     if (runtime.exitCode !== null) throw new Error("Fixture Runtime exited before readiness")
-    const candidate = await RuntimeDiscovery.read(databasePath)
+    const candidate = await readWindow(databasePath)
     if (candidate)
-      owner = await RuntimeDiscovery.attest(candidate, { version: InstallationVersion, storageID }).catch(
+      owner = await RuntimeRegistration.attest(candidate, { version: InstallationVersion, storageID }).catch(
         () => undefined,
       )
     if (owner) break

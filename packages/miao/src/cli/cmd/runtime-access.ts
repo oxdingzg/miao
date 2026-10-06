@@ -1,16 +1,19 @@
 import { OpenCode } from "@miao/client"
 import { RemoteAccess } from "@miao/schema/remote-access"
 import { Option, Schema } from "effect"
-import { RuntimeConnect } from "@/runtime/connect"
+import { RuntimeRegistration } from "@miao/core/runtime/registration"
+import { RuntimeOwnership } from "@miao/core/runtime/ownership"
+import { createHash } from "node:crypto"
 
 const ID = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{16,128}$/))
 const common = {
   version: Schema.Literal(1),
   storage: Schema.String.check(Schema.isLengthBetween(1, 4096)).pipe(Schema.optional),
+  runtimeID: ID,
 }
 const bound = { ...common, runtimeID: ID }
 const Request = Schema.Union([
-  Schema.Struct({ ...common, method: Schema.Literal("status"), runtimeID: ID.pipe(Schema.optional) }),
+  Schema.Struct({ ...common, method: Schema.Literal("status") }),
   Schema.Struct({
     ...bound,
     method: Schema.Literal("session"),
@@ -51,7 +54,14 @@ export async function run(storage: string) {
     : Schema.decodeUnknownOption(Request, { onExcessProperty: "error" })(json.value)
   if (Option.isNone(request)) return { version: 1, ok: false, error: "invalidRequest" }
   const input = request.value
-  const record = await RuntimeConnect.current(input.storage ?? storage).catch(() => undefined)
+  const canonical = await RuntimeOwnership.canonicalStorage(input.storage ?? storage)
+  const candidate = await RuntimeRegistration.read(canonical, input.runtimeID).catch(() => undefined)
+  const record = candidate
+    ? await RuntimeRegistration.attest(candidate, {
+        version: candidate.version,
+        storageID: createHash("sha256").update(canonical).digest("hex"),
+      }).catch(() => undefined)
+    : undefined
   if (!record) return { version: 1, ok: false, error: "noRuntime" }
   if (input.runtimeID !== undefined && input.runtimeID !== record.runtimeID)
     return { version: 1, ok: false, runtimeID: record.runtimeID, error: "runtimeChanged" }
