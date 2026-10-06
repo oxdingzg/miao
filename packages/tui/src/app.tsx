@@ -24,8 +24,7 @@ import {
   batch,
   Show,
   on,
-  lazy,
-  Suspense,
+  createResource,
 } from "solid-js"
 import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider, useTuiStartup } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
@@ -59,7 +58,27 @@ import { Home } from "./routes/home"
 // The session route pulls the transcript, editor, syntax, and diff graph — by
 // far the largest slice of the TUI's startup heap. Load it when a session is
 // first shown so the home screen does not pay for it.
-const Session = lazy(() => import("./routes/session").then((module) => ({ default: module.Session })))
+function Session() {
+  // Solid's lazy/Suspense inserts an empty text placeholder while loading.
+  // OpenTUI rejects text nodes outside <text>, leaving the session route blank.
+  const [component] = createResource(async () => {
+    const { Session } = await import("./routes/session")
+    return Session
+  })
+  return (
+    <Show
+      when={component()}
+      keyed
+      fallback={
+        <box flexGrow={1}>
+          <text>Loading session…</text>
+        </box>
+      }
+    >
+      {(Component) => <Component />}
+    </Show>
+  )
+}
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
@@ -1191,11 +1210,7 @@ function App(props: {
             </Match>
             <Match when={route.data.type === "session"}>
               <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
-                {(_) => (
-                  <Suspense fallback={<box flexGrow={1} />}>
-                    <Session />
-                  </Suspense>
-                )}
+                {(_) => <Session />}
               </Show>
             </Match>
           </Switch>
