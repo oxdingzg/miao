@@ -1,7 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { DateTime, Deferred, Effect, Equal, Hash, Schema } from "effect"
+import { DateTime, Deferred, Effect, Equal, Hash, Option, Schema } from "effect"
+import { BackgroundJob } from "@miao/core/background-job"
 import { Tool } from "@miao/core/tool/tool"
 import { define } from "@miao/plugin/v2/effect"
 import { AgentV2 } from "@miao/core/agent"
@@ -266,6 +267,39 @@ describe("LocationServiceMap", () => {
             websearch: "concurrent",
             write: "exclusive",
           })
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir.path) })),
+          ),
+        ),
+      ),
+    ),
+  )
+
+  it.live("outputs process background jobs and events into a location's context", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          // bash, monitor, and the runner read these ambiently at execution
+          // time, so they are only visible when the Location layer itself
+          // outputs them. Lose the location re-export nodes and every
+          // run_in_background and monitor call fails with "not available in
+          // this runtime" while unit tests that provide the services directly
+          // stay green.
+          const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
+          expect(Option.isSome(jobs)).toBe(true)
+          const events = yield* Effect.serviceOption(EventV2.Service)
+          expect(Option.isSome(events)).toBe(true)
+
+          const listed = yield* Option.getOrThrowWith(
+            jobs,
+            () => new Error("BackgroundJob.Service is not provided to the location graph"),
+          ).list()
+          expect(listed).toEqual([])
         }).pipe(
           Effect.scoped,
           Effect.provide(

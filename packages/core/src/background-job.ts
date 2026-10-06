@@ -2,7 +2,7 @@ export * as BackgroundJob from "./background-job"
 
 import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Scope, SynchronizedRef } from "effect"
 import { Identifier } from "./id/id"
-import { makeGlobalNode } from "./effect/app-node"
+import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
 
@@ -363,3 +363,16 @@ export const make = Effect.gen(function* () {
 const layer = Layer.effect(Service, make)
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [] })
+
+/**
+ * Re-exports the process instance as part of the Location runtime's own
+ * output. Ambient `serviceOption` reads (bash run_in_background, monitor, the
+ * runner's job tools) only see services the Location layer outputs, while the
+ * hoisted global node only satisfies declared requirements and never enters
+ * that context. The dependency keeps the instance the hoisted process one.
+ */
+export const locationNode = makeLocationNode({
+  name: "background-job/location",
+  layer: Layer.effect(Service, Service),
+  deps: [node],
+})

@@ -1,12 +1,14 @@
 import { Effect, Layer, LayerMap } from "effect"
 import { AgentV2 } from "./agent"
 import { AISDK } from "./aisdk"
+import { BackgroundJob } from "./background-job"
 import { Catalog } from "./catalog"
 import { CommandV2 } from "./command"
 import { Config } from "./config"
 import { LayerNode } from "./effect/layer-node"
 import { Node } from "./effect/app-node"
 import { FileMutation } from "./file-mutation"
+import { EventV2 } from "./event"
 import { FileSystem } from "./filesystem"
 import { Format } from "./format"
 import { Git } from "./git"
@@ -48,6 +50,8 @@ export { LocationServiceMap } from "./location-service-map"
 
 export const locationServices = LayerNode.group([
   Location.node,
+  BackgroundJob.locationNode,
+  EventV2.locationNode,
   Policy.node,
   Config.node,
   AgentV2.node,
