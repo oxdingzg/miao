@@ -110,7 +110,13 @@ MIAO_BENCHMARK_CATALOG=1 bun test test/session-model-lookup.test.ts
 
 该文件还通过真实 Catalog/Integration/Credential 服务验证配置覆盖更新、模型/provider 禁用或移除、凭据创建与撤销、可选鉴权及 SDK settings key。正确性测试不设置墙钟阈值。
 
-下一步需补足运行时精细计时，区分模型目录选择、integration 查找、凭据解析/刷新以及事件循环争用，再评估剩余 resolve 长尾。
+## 运行时精细计时（2026-10-06）
+
+`session.resolve` 日志按 attempt 记录 selectionMs / connectionMs / credentialMs / totalMs，
+`session.snapshot` 只记录 ≥500ms 的 capture（refreshMs / writeTreeMs）。
+`baseline.ts` 的"阶段计时"节给出二者的分布；resolve 长尾与 snapshot 长尾的归因以这些
+字段为准，不再只看整段 resolveMs / startSnapshotMs。事件循环争用仍无直接观测量，
+只能通过多阶段同时变慢间接推断。
 
 ## 第三轮：删除同次 integration 调用的重复凭据读取（2026-10-06）
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { distribution, markdown, parseTurn, report, summarize } from "../src/baseline"
+import { distribution, markdown, parseStage, parseTurn, report, summarize } from "../src/baseline"
 
 const line =
   "timestamp=2026-10-06T00:00:00.000Z message=session.turn sessionID=ses_example model=example/model local.preRequestMs=200 local.startSnapshotMs=50 local.endSnapshotMs=20 local.filesMs=10 ttftMs=800 turnMs=1500 warm=true cacheMiss=false cacheMissCause=none cacheHitRatio=0.8 tokens.input=100 tokens.cache.read=400"
@@ -84,4 +84,22 @@ test("CLI filters actual files and fails on an empty selection", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test("stage records parse into separate resolve and snapshot distributions", () => {
+  const resolve =
+    "timestamp=2026-10-06T00:00:01.000Z message=session.resolve sessionID=ses_example model=example/model selectionMs=5 connectionMs=40 credentialMs=120 totalMs=170"
+  const snapshot =
+    "timestamp=2026-10-06T00:00:02.000Z message=session.snapshot refreshMs=900 writeTreeMs=60 scopes=1"
+  const stages = [parseStage(resolve)!, parseStage(snapshot)!, parseStage(line)!].filter(Boolean)
+  expect(stages).toHaveLength(2)
+  const result = report([parseTurn(line)!], stages)
+  expect(result.stages.resolve.selectionMs).toEqual({ n: 1, mean: 5, p50: 5, p90: 5, p99: 5, max: 5 })
+  expect(result.stages.resolve.totalMs?.max).toBe(170)
+  expect(result.stages.snapshot.refreshMs?.n).toBe(1)
+  expect(result.stages.snapshot.writeTreeMs?.p99).toBe(60)
+  const text = markdown(report([parseTurn(line)!], stages))
+  expect(text).toContain("resolve.credentialMs")
+  expect(text).toContain("snapshot.refreshMs")
+  expect(text).toContain("只记录 ≥500ms 的 capture")
 })
