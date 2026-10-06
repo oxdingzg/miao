@@ -50,7 +50,10 @@ const layer = Layer.effect(
           Effect.provide(locations.get(session.location)),
           Effect.tapCause((cause) =>
             Cause.hasInterruptsOnly(cause)
-              ? Effect.void
+              ? // Interrupts are a normal control path (esc, undo, shutdown), but a
+                // silent drain exit makes them impossible to attribute after the
+                // fact, so record that the signal arrived.
+                Effect.logWarning("Session drain was interrupted", { sessionID })
               : Effect.logError("Failed to drain Session", cause).pipe(Effect.annotateLogs({ sessionID })),
           ),
         )
