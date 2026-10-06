@@ -4,15 +4,30 @@ import os from "node:os"
 import path from "node:path"
 import { parseArgs } from "node:util"
 
-export function parseTurn(line: string) {
+function fieldsOf(line: string) {
   const fields: Record<string, string> = {}
   for (const match of line.matchAll(/(?:^|\s)([\w.]+)=("(?:[^"\\]|\\.)*"|[^\s]+)/g)) {
     fields[match[1]!] = match[2]!.startsWith('"') ? JSON.parse(match[2]!) : match[2]!
   }
+  return fields
+}
+
+export function parseTurn(line: string) {
+  const fields = fieldsOf(line)
   return fields.message === "session.turn" ? fields : undefined
 }
 
 type Turn = NonNullable<ReturnType<typeof parseTurn>>
+
+/** Stage records log only when a stage is worth attributing (see the doc). */
+export function parseStage(line: string) {
+  const fields = fieldsOf(line)
+  if (fields.message !== "session.resolve" && fields.message !== "session.snapshot") return undefined
+  return fields as Turn & { message: "session.resolve" | "session.snapshot" }
+}
+
+const resolveStages = ["selectionMs", "connectionMs", "credentialMs", "totalMs"]
+const snapshotStages = ["refreshMs", "writeTreeMs"]
 
 const metrics = [
   "local.preRequestMs",
@@ -37,6 +52,30 @@ function number(turn: Turn, key: string) {
   if (turn[key] === undefined || turn[key] === "") return undefined
   const value = Number(turn[key])
   return Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+type Stage = NonNullable<ReturnType<typeof parseStage>>
+
+/**
+ * Stage records are best-effort attributions, not full distributions: snapshot
+ * stages only log slow captures, and resolve stages log per provider attempt,
+ * so their n differs from the turn metrics.
+ */
+export function stageDistributions(stages: Stage[]) {
+  const dist = (message: Stage["message"], keys: string[]) =>
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        distribution(
+          stages.flatMap((stage) => {
+            if (stage.message !== message) return []
+            const value = Number(stage[key])
+            return Number.isFinite(value) && value >= 0 ? [value] : []
+          }),
+        ),
+      ]),
+    )
+  return { resolve: dist("session.resolve", resolveStages), snapshot: dist("session.snapshot", snapshotStages) }
 }
 
 export function distribution(values: number[]) {
@@ -85,7 +124,7 @@ export function summarize(turns: Turn[]) {
   }
 }
 
-export function report(turns: Turn[]) {
+export function report(turns: Turn[], stages: Stage[] = []) {
   const groups = new Map<string, Turn[]>()
   for (const turn of turns) {
     const key = JSON.stringify([turn.model ?? "unknown", turn.warm ?? "unknown", turn.cacheMissCause ?? "unknown"])
@@ -95,6 +134,7 @@ export function report(turns: Turn[]) {
   }
   return {
     overall: summarize(turns),
+    stages: stageDistributions(stages),
     groups: [...groups]
       .map(([key, values]) => ({
         model: JSON.parse(key)[0] as string,
@@ -125,6 +165,21 @@ export function markdown(result: ReturnType<typeof report>) {
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...metricRows,
     `| snapshotTotalMs（前+后+diff） | ${result.overall.snapshotTotalMs?.n ?? 0} | ${format(result.overall.snapshotTotalMs?.mean)} | ${format(result.overall.snapshotTotalMs?.p50)} | ${format(result.overall.snapshotTotalMs?.p90)} | ${format(result.overall.snapshotTotalMs?.p99)} | ${format(result.overall.snapshotTotalMs?.max)} |`,
+    "",
+    "## 阶段计时",
+    "",
+    "resolve 阶段按 provider attempt 记录；snapshot 阶段只记录 ≥500ms 的 capture，缺测表示没有慢 capture。这些 n 与 turn 指标不可比。",
+    "",
+    "| 阶段 | n | mean | p50 | p90 | p99 | max |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...Object.entries(result.stages.resolve).map(
+      ([key, value]) =>
+        `| resolve.${key} | ${value?.n ?? 0} | ${format(value?.mean)} | ${format(value?.p50)} | ${format(value?.p90)} | ${format(value?.p99)} | ${format(value?.max)} |`,
+    ),
+    ...Object.entries(result.stages.snapshot).map(
+      ([key, value]) =>
+        `| snapshot.${key} | ${value?.n ?? 0} | ${format(value?.mean)} | ${format(value?.p50)} | ${format(value?.p90)} | ${format(value?.p99)} | ${format(value?.max)} |`,
+    ),
     "",
     "## 按模型 / warm / cache 原因分层",
     "",
@@ -183,19 +238,26 @@ if (import.meta.main) {
     ),
   ]
   const turns: Turn[] = []
+  const stages: Stage[] = []
   for (const file of files) {
     const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
     for await (const line of lines) {
-      const turn = parseTurn(line)
-      if (!turn) continue
-      if (args.values.model && turn.model !== args.values.model) continue
-      if (args.values.session && turn.sessionID !== args.values.session) continue
-      if (args.values.run && turn.run !== args.values.run) continue
-      const timestamp = Date.parse(turn.timestamp ?? "")
-      if (!Number.isFinite(timestamp) || timestamp < since || timestamp > until) continue
-      turns.push(turn)
+      const fields = fieldsOf(line)
+      const timestamp = Date.parse(fields.timestamp ?? "")
+      if (Number.isFinite(timestamp) && (timestamp < since || timestamp > until)) continue
+      if (fields.message === "session.resolve" || fields.message === "session.snapshot") {
+        // Stage records only carry sessionID; model/run filters are turn-scoped.
+        if (args.values.session && fields.sessionID !== args.values.session) continue
+        stages.push(fields as Stage)
+        continue
+      }
+      if (fields.message !== "session.turn") continue
+      if (args.values.model && fields.model !== args.values.model) continue
+      if (args.values.session && fields.sessionID !== args.values.session) continue
+      if (args.values.run && fields.run !== args.values.run) continue
+      turns.push(fields as Turn)
     }
   }
   if (turns.length === 0) throw new Error("No completed session.turn records matched the filters")
-  console.log(args.values.json ? JSON.stringify(report(turns), null, 2) : markdown(report(turns)))
+  console.log(args.values.json ? JSON.stringify(report(turns, stages), null, 2) : markdown(report(turns, stages)))
 }

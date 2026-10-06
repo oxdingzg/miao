@@ -630,8 +630,18 @@ const layer = Layer.effect(
         locked(
           input.repository,
           Effect.gen(function* () {
+            const refreshStartedAt = Date.now()
             yield* Effect.forEach(input.scopes, (scope) => refresh({ ...input, scope }), { discard: true })
-            return yield* writeTree(input.repository)
+            const refreshMs = Date.now() - refreshStartedAt
+            const writeStartedAt = Date.now()
+            const tree = yield* writeTree(input.repository)
+            // The untracked walk inside refresh dominates slow captures on big
+            // trees; log only the captures worth attributing so the steady
+            // state stays out of the log.
+            const writeMs = Date.now() - writeStartedAt
+            if (refreshMs + writeMs >= 500)
+              yield* Effect.logInfo("session.snapshot", { refreshMs, writeTreeMs: writeMs, scopes: input.scopes.length })
+            return tree
           }),
         ),
     )

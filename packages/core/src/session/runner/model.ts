@@ -577,6 +577,7 @@ export const locationLayer = Layer.effect(
     const integrations = yield* Integration.Service
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
+        const resolveStartedAt = Date.now()
         // Location plugins populate and filter the catalog asynchronously during layer startup.
         const defaultModel = session.model ? undefined : yield* catalog.model.default()
         const selected = session.model
@@ -590,15 +591,29 @@ export const locationLayer = Layer.effect(
             modelID: session.model.id,
           })
         if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
+        const selectionMs = Date.now() - resolveStartedAt
+        const connectionStartedAt = Date.now()
         const provider = yield* catalog.provider.get(selected.providerID)
         const connection = yield* integrations.connection.active(
           provider?.integrationID ?? Integration.ID.make(selected.providerID),
         )
-        return yield* resolveWithInfo(
-          session,
-          selected,
-          connection ? yield* integrations.connection.resolve(connection) : undefined,
-        )
+        const connectionMs = Date.now() - connectionStartedAt
+        const credentialStartedAt = Date.now()
+        const credential = connection ? yield* integrations.connection.resolve(connection) : undefined
+        const credentialMs = Date.now() - credentialStartedAt
+        // Attribute the resolve long tail the way the latency baseline doc
+        // prescribes: catalog selection, integration lookup, and credential
+        // resolution have separate owners, and the whole-call resolveMs cannot
+        // say which of them paid for a slow step.
+        yield* Effect.logInfo("session.resolve", {
+          sessionID: session.id,
+          model: `${selected.providerID}/${selected.id}`,
+          selectionMs,
+          connectionMs,
+          credentialMs,
+          totalMs: Date.now() - resolveStartedAt,
+        })
+        return yield* resolveWithInfo(session, selected, credential)
       }),
       resolveSmall: Effect.fn("SessionRunnerModel.resolveSmall")(function* (session) {
         return yield* Effect.gen(function* () {
