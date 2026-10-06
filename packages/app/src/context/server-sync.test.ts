@@ -126,7 +126,7 @@ describe("loadRootSessions", () => {
     })
 
     expect(result.data).toEqual([
-      expect.objectContaining({ id: "session-1", directory: "dir", slug: "session-1", version: "" }),
+      expect.objectContaining({ id: "session-1", location: { directory: "dir" } }),
     ])
     expect(result.limited).toBe(true)
     expect(calls).toEqual([{ directory: "dir", roots: true, limit: 10, order: "desc" }])
