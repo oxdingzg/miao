@@ -51,6 +51,7 @@ import { SessionOutputGuard } from "@miao/core/session/runner/output-guard"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
 import { SendMessageTool } from "@miao/core/tool/send-message"
+import { DelegationReportTool } from "@miao/core/tool/delegation-report"
 import { AgentV2 } from "@miao/core/agent"
 import { CommandV2 } from "@miao/core/command"
 import { Config } from "@miao/core/config"
@@ -884,6 +885,231 @@ describe("SessionRunnerLLM", () => {
       yield* execution.wake(sessionID)
       yield* execution.wait(sessionID)
       expect(parentTurns).toBe(3)
+    }),
+  )
+
+  it.effect("carries a running subagent's mid-flight note to its parent without settling the task", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const execution = yield* SessionExecution.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const childStarted = yield* Deferred.make<void>()
+      const childGate = yield* Deferred.make<void>()
+      const promoted = yield* Deferred.make<void>()
+      const delivered = yield* Deferred.make<void>()
+      let parentTurns = 0
+      const textTurn = (text: string) =>
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "reply" }),
+          LLMEvent.textDelta({ id: "reply", text }),
+          LLMEvent.textEnd({ id: "reply" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ])
+      responseFor = (request) => {
+        const messages = JSON.stringify(request.messages)
+        const addressed = JSON.stringify(request.messages.filter((message) => message.role === "user"))
+        if (addressed.includes("UNIQUE CHILD PROMPT")) {
+          if (messages.includes("BLOCKED ON CREDENTIALS"))
+            return Stream.unwrap(Deferred.await(childGate).pipe(Effect.as(textTurn("VERBATIM CHILD REPORT"))))
+          return Stream.unwrap(
+            Deferred.succeed(childStarted, undefined).pipe(
+              Effect.as(
+                Stream.fromIterable([
+                  LLMEvent.stepStart({ index: 0 }),
+                  LLMEvent.toolCall({
+                    id: "mid-flight-report",
+                    name: "report",
+                    input: { text: "BLOCKED ON CREDENTIALS" },
+                  }),
+                  LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+                  LLMEvent.finish({ reason: "tool-calls" }),
+                ]),
+              ),
+            ),
+          )
+        }
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "background-call",
+              name: "task",
+              input: {
+                description: "background test",
+                prompt: "UNIQUE CHILD PROMPT",
+                subagent_type: "build",
+                background: true,
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        if (messages.includes("<subagent-result"))
+          return Stream.unwrap(
+            Deferred.succeed(delivered, undefined).pipe(Effect.as(textTurn("Final report received"))),
+          )
+        if (messages.includes("<subagent-progress"))
+          return Stream.unwrap(Deferred.succeed(promoted, undefined).pipe(Effect.as(textTurn("Note received"))))
+        return textTurn("Parent continued independently")
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate in background" }), resume: false })
+      yield* session.resume(sessionID)
+      yield* Deferred.await(childStarted)
+      const [task] = yield* SessionDelegationStore.list(db, sessionID)
+      expect(task.status).toBe("running")
+      // The note is only interesting if it lands while the task is still going.
+      yield* Deferred.await(promoted)
+      expect((yield* SessionDelegationStore.get(db, sessionID, task.id))?.status).toBe("running")
+      const notified = (yield* session.context(sessionID)).filter(
+        (message) => message.type === "synthetic" && message.metadata?.backgroundTask !== undefined,
+      )
+      expect(notified).toHaveLength(1)
+      expect(JSON.stringify(notified[0])).toContain("<subagent-progress")
+      expect(JSON.stringify(notified[0])).toContain("BLOCKED ON CREDENTIALS")
+      // The receipt is the child's own; it does not end the delegation.
+      expect(JSON.stringify(yield* session.context(task.child_session_id))).toContain("Report delivered to the parent")
+      yield* Deferred.succeed(childGate, undefined)
+      yield* Deferred.await(delivered)
+      yield* execution.wait(sessionID)
+      const settled = yield* SessionDelegationStore.get(db, sessionID, task.id)
+      expect(settled?.status).toBe("completed")
+      expect(settled?.result).toBe("VERBATIM CHILD REPORT")
+    }),
+  )
+
+  it.effect("counts progress notes apart from unread task results", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "noisy",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Explore",
+        description: "explore",
+        owner: "finished-owner",
+        timestamp: yield* DateTime.now,
+      })
+      expect((yield* SessionDelegationStore.runningForChild(db, child.id))?.id).toBe("noisy")
+      for (let index = 0; index < 3; index++)
+        yield* events.publish(SessionEvent.DelegationReported, {
+          sessionID,
+          id: "noisy",
+          childSessionID: child.id,
+          text: `note ${index}`,
+          timestamp: yield* DateTime.now,
+        })
+      expect(yield* SessionDelegationStore.progressCount(db, sessionID, "noisy")).toBe(3)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(3)
+      // Notes are bounded per task, so they must not consume the cap that keeps
+      // a parent's unread results in hand.
+      expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(0)
+      yield* events.publish(SessionEvent.DelegationEnded, {
+        sessionID,
+        id: "noisy",
+        status: "completed",
+        text: "DONE",
+        timestamp: yield* DateTime.now,
+      })
+      expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(1)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(4)
+      // A note published after the task settled is not progress; the result
+      // already carries everything the parent needs.
+      yield* events.publish(SessionEvent.DelegationReported, {
+        sessionID,
+        id: "noisy",
+        childSessionID: child.id,
+        text: "late",
+        timestamp: yield* DateTime.now,
+      })
+      expect(yield* SessionDelegationStore.progressCount(db, sessionID, "noisy")).toBe(3)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(4)
+      expect(yield* SessionDelegationStore.runningForChild(db, child.id)).toBeUndefined()
+    }),
+  )
+
+  it.effect("refuses a subagent's progress note past the per-task limit", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "chatty",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Talk",
+        description: "chat",
+        owner: "finished-owner",
+        timestamp: yield* DateTime.now,
+      })
+      for (let index = 0; index < DelegationReportTool.MAX_REPORTS; index++)
+        yield* events.publish(SessionEvent.DelegationReported, {
+          sessionID,
+          id: "chatty",
+          childSessionID: child.id,
+          text: `note ${index}`,
+          timestamp: yield* DateTime.now,
+        })
+      expect(yield* SessionDelegationStore.progressCount(db, sessionID, "chatty")).toBe(DelegationReportTool.MAX_REPORTS)
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "one-too-many", name: "report", input: { text: "still going" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "reply" }),
+          LLMEvent.textDelta({ id: "reply", text: "Giving up on notes" }),
+          LLMEvent.textEnd({ id: "reply" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.prompt({ sessionID: child.id, prompt: Prompt.make({ text: "Report" }), resume: false })
+      yield* session.resume(child.id)
+      expect(
+        (yield* session.context(child.id))
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((part) => part.type === "tool" && part.name === "report"),
+      ).toMatchObject({
+        state: { status: "error", error: { message: expect.stringContaining("already sent 8 progress reports") } },
+      })
+      expect(yield* SessionDelegationStore.progressCount(db, sessionID, "chatty")).toBe(DelegationReportTool.MAX_REPORTS)
     }),
   )
 

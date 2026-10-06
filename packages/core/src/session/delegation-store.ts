@@ -14,6 +14,50 @@ type DB = Database.Interface["db"]
 export type Info = typeof SessionDelegationTable.$inferSelect
 export const resultID = (id: string) => SessionMessage.ID.make(`msg_delegation_${Hash.sha256(id)}`)
 
+/**
+ * Identified by the reporting event's own sequence, so a replayed projection
+ * inserts the same row at most once.
+ */
+export const progressID = (id: string, seq: number) =>
+  SessionMessage.ID.make(`msg_progress_${Hash.sha256(`${id}:${seq}`)}`)
+
+/**
+ * One pending notification for a Session. A notification is durable work the
+ * machine owes the model, never a user prompt: promotion decides only when the
+ * model reads it, not whether it is kept.
+ */
+const insertNotification = (
+  db: DB,
+  input: {
+    readonly sessionID: SessionSchema.ID
+    readonly id: SessionMessage.ID
+    readonly text: string
+    readonly metadata: Record<string, unknown>
+    readonly admittedSeq: number
+    readonly timeCreated: number
+  },
+) =>
+  db
+    .insert(SessionNotificationTable)
+    .values({
+      id: input.id,
+      session_id: input.sessionID,
+      text: input.text,
+      metadata: input.metadata,
+      admitted_seq: input.admittedSeq,
+      time_created: input.timeCreated,
+    })
+    .onConflictDoNothing()
+    .run()
+    .pipe(Effect.orDie)
+
+/**
+ * Whether a notification is a subagent progress note. Metadata is the only
+ * place a notification carries its kind, so this reads into the JSON column
+ * rather than adding a column for one flag.
+ */
+const progressFlag = sql`json_extract(${SessionNotificationTable.metadata}, '$.backgroundTask.progress')`
+
 export const get = Effect.fn("SessionDelegationStore.get")(function* (db: DB, sessionID: SessionSchema.ID, id: string) {
   return yield* db
     .select()
@@ -96,19 +140,98 @@ export const projectEnded = Effect.fn("SessionDelegationStore.projectEnded")(fun
     bytes.length <= 64 * 1024
       ? event.data.text
       : `${new TextDecoder().decode(bytes.subarray(0, 64 * 1024), { stream: true })}\n[Report truncated; use task_result for the complete report.]`
-  yield* db
-    .insert(SessionNotificationTable)
-    .values({
-      id: resultID(task.id),
-      session_id: task.session_id,
-      text: `<subagent-result session="${task.child_session_id}" task="${task.id}" status="${task.status}">\n${report}\n</subagent-result>`,
-      metadata: { backgroundTask: { id: task.id, sessionID: task.child_session_id, status: task.status } },
-      admitted_seq: event.durable.seq,
-      time_created: DateTime.toEpochMillis(event.data.timestamp),
-    })
-    .onConflictDoNothing()
-    .run()
+  yield* insertNotification(db, {
+    sessionID: task.session_id,
+    id: resultID(task.id),
+    text: `<subagent-result session="${task.child_session_id}" task="${task.id}" status="${task.status}">\n${report}\n</subagent-result>`,
+    metadata: { backgroundTask: { id: task.id, sessionID: task.child_session_id, status: task.status } },
+    admittedSeq: event.durable.seq,
+    timeCreated: DateTime.toEpochMillis(event.data.timestamp),
+  })
+})
+
+/**
+ * Projects a running subagent's interim note. It is wrapped in its own tag and
+ * flagged in metadata so the parent can tell a progress note from the result,
+ * which is the one that settles the delegation.
+ */
+export const projectReported = Effect.fn("SessionDelegationStore.projectReported")(function* (
+  db: DB,
+  event: SessionEvent.DelegationReported,
+) {
+  if (!event.durable) return yield* Effect.die("Delegation report requires a durable sequence")
+  const task = yield* db
+    .select()
+    .from(SessionDelegationTable)
+    .where(
+      and(eq(SessionDelegationTable.id, event.data.id), eq(SessionDelegationTable.session_id, event.data.sessionID)),
+    )
+    .get()
     .pipe(Effect.orDie)
+  if (!task || task.status !== "running") return
+  yield* insertNotification(db, {
+    sessionID: task.session_id,
+    id: progressID(task.id, event.durable.seq),
+    text: `<subagent-progress session="${task.child_session_id}" task="${task.id}">\n${event.data.text}\n</subagent-progress>`,
+    metadata: { backgroundTask: { id: task.id, sessionID: task.child_session_id, progress: true } },
+    admittedSeq: event.durable.seq,
+    timeCreated: DateTime.toEpochMillis(event.data.timestamp),
+  })
+})
+
+/** The running background delegation that owns this child Session, if any. */
+export const runningForChild = Effect.fn("SessionDelegationStore.runningForChild")(function* (
+  db: DB,
+  childSessionID: SessionSchema.ID,
+) {
+  return yield* db
+    .select()
+    .from(SessionDelegationTable)
+    .where(
+      and(
+        eq(SessionDelegationTable.child_session_id, childSessionID),
+        eq(SessionDelegationTable.status, "running"),
+      ),
+    )
+    .orderBy(desc(SessionDelegationTable.time_created))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+})
+
+/** Progress notes one delegation has sent, whether or not the parent read them. */
+export const progressCount = Effect.fn("SessionDelegationStore.progressCount")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+  id: string,
+) {
+  const row = yield* db
+    .select({ value: count() })
+    .from(SessionNotificationTable)
+    .where(
+      and(
+        eq(SessionNotificationTable.session_id, sessionID),
+        eq(sql`json_extract(${SessionNotificationTable.metadata}, '$.backgroundTask.id')`, id),
+        sql`${progressFlag} IS 1`,
+      ),
+    )
+    .get()
+    .pipe(Effect.orDie)
+  return row?.value ?? 0
+})
+
+/** Un-promoted notifications of every kind waiting for a Session. */
+export const pendingCount = Effect.fn("SessionDelegationStore.pendingCount")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+) {
+  const row = yield* db
+    .select({ value: count() })
+    .from(SessionNotificationTable)
+    .where(and(eq(SessionNotificationTable.session_id, sessionID), isNull(SessionNotificationTable.promoted_seq)))
+    .get()
+    .pipe(Effect.orDie)
+  return row?.value ?? 0
 })
 
 export const hasNotifications = Effect.fn("SessionDelegationStore.hasNotifications")(function* (
@@ -125,6 +248,11 @@ export const hasNotifications = Effect.fn("SessionDelegationStore.hasNotificatio
   return row !== undefined
 })
 
+/**
+ * Unread delegation outcomes. Progress notes are excluded: they are bounded per
+ * delegation, so counting them would let a chatty subagent stop its parent from
+ * starting any new work.
+ */
 export const notificationCount = Effect.fn("SessionDelegationStore.notificationCount")(function* (
   db: DB,
   sessionID: SessionSchema.ID,
@@ -132,7 +260,13 @@ export const notificationCount = Effect.fn("SessionDelegationStore.notificationC
   const row = yield* db
     .select({ value: count() })
     .from(SessionNotificationTable)
-    .where(and(eq(SessionNotificationTable.session_id, sessionID), isNull(SessionNotificationTable.promoted_seq)))
+    .where(
+      and(
+        eq(SessionNotificationTable.session_id, sessionID),
+        isNull(SessionNotificationTable.promoted_seq),
+        sql`COALESCE(${progressFlag}, 0) != 1`,
+      ),
+    )
     .get()
     .pipe(Effect.orDie)
   return row?.value ?? 0

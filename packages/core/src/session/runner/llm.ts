@@ -38,6 +38,7 @@ import { LocationMutation } from "../../location-mutation"
 import { SessionCommandPrepare } from "../command-prepare"
 import { TaskTool } from "../../tool/task"
 import { BackgroundTaskTool } from "../../tool/background-task"
+import { DelegationReportTool } from "../../tool/delegation-report"
 import { Tool } from "../../tool/tool"
 import { GoalTool } from "../../tool/goal"
 import { RecallTool } from "../../tool/recall"
@@ -1284,6 +1285,42 @@ const layer = Layer.effect(
       return { sessionID: target.id }
     })
 
+    // A background subagent reporting mid-flight. The note is a durable event
+    // on the parent, not an inbox admission, so the parent reads it at its next
+    // safe boundary and the delegation keeps running.
+    const runDelegationReport = Effect.fnUntraced(function* (
+      childSessionID: SessionSchema.ID,
+      task: SessionDelegationStore.Info,
+      request: { readonly text: string },
+      wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
+    ) {
+      const sent = yield* SessionDelegationStore.progressCount(db, task.session_id, task.id)
+      if (sent >= DelegationReportTool.MAX_REPORTS)
+        return yield* new ToolFailure({
+          message: `This background task has already sent ${sent} progress reports. Finish the task and return its result instead.`,
+        })
+      const bytes = Buffer.from(request.text)
+      const text =
+        bytes.length <= DelegationReportTool.MAX_REPORT_BYTES
+          ? request.text
+          : `${new TextDecoder().decode(bytes.subarray(0, DelegationReportTool.MAX_REPORT_BYTES), { stream: true })}\n[Progress note truncated.]`
+      // Counted before this note lands, so the receipt is the backlog the
+      // parent already had rather than a number that depends on projection
+      // timing.
+      const parentUnread = yield* SessionDelegationStore.pendingCount(db, task.session_id)
+      yield* events.publish(SessionEvent.DelegationReported, {
+        sessionID: task.session_id,
+        id: task.id,
+        childSessionID,
+        timestamp: yield* DateTime.now,
+        text,
+      })
+      // The same wake a delegation result uses: a draining parent promotes it
+      // at the next safe boundary, an idle one starts a drain that does.
+      if (wake) yield* wake(task.session_id)
+      return { queued: true, parentUnread, reportsRemaining: DelegationReportTool.MAX_REPORTS - sent - 1 }
+    })
+
     // A moved Session cannot keep running in the runner that served this call:
     // `runTurnAttempt` refuses a turn whose Session location no longer matches the
     // runner's own. `SessionPlacement` admits its reminder as a steer, and the wake
@@ -1372,11 +1409,26 @@ const layer = Layer.effect(
                       ),
                 })
               : {}
+          // Only a Session that a running background delegation owns may report
+          // mid-flight. A foreground child is one its parent is blocking on, so
+          // a note would arrive after the result it was meant to precede.
+          const reportedBy = yield* SessionDelegationStore.runningForChild(db, input.sessionID)
           if (drainAgent?.info !== undefined)
             yield* tools
               .registerSession(input.sessionID, {
                 ...jobTools,
                   ...taskTools,
+                ...(reportedBy === undefined
+                  ? {}
+                  : {
+                      report: DelegationReportTool.make((request) =>
+                        runDelegationReport(input.sessionID, reportedBy, request, input.wake).pipe(
+                          Effect.mapError((error) =>
+                            error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to report progress" }),
+                          ),
+                        ),
+                      ),
+                    }),
                 task: TaskTool.make((request) =>
                     runSubagent(input.sessionID, request, input.delegation).pipe(
                     Effect.mapError((error) =>
