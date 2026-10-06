@@ -1273,6 +1273,9 @@ export const {
           setStore("session", reconcile(list))
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
+          // The pending-input read is independent of the status response, so
+          // both requests share the tick instead of serializing it.
+          const inputsRead = signal?.aborted ? undefined : result.session.syncInputs(sessionID, signal)
           const response = await sdk.api.sessions.status({ sessionID }, { signal })
           const busy = response.type !== "idle"
           if (signal?.aborted) return busy ? "busy" : "idle"
@@ -1294,7 +1297,11 @@ export const {
           // event: fetch the final transcript instead of leaving stale output.
           if ((previousType === "busy" || previousType === "retry") && response.type === "idle")
             v2Refresh.schedule(sessionID)
-          await result.session.syncInputs(sessionID, signal)
+          if (signal?.aborted) {
+            inputsRead?.catch(() => {})
+            return busy ? "busy" : "idle"
+          }
+          await inputsRead
           return busy ? "busy" : "idle"
         },
         async syncInputs(sessionID: string, signal?: AbortSignal) {
