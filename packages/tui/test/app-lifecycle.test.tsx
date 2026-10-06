@@ -64,6 +64,56 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
   }
 })
 
+test("restores the terminal when the process exits before scoped cleanup", async () => {
+  const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
+  const core = await import("@opentui/core")
+  mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
+  const listeners = new Set(process.listeners("exit"))
+  const events = createEventSource()
+  const calls = createFetch()
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+
+  try {
+    const { run } = await import("../src/app")
+    const task = Effect.runPromise(
+      run({
+        url: "http://test",
+        directory,
+        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        fetch: calls.fetch,
+        events: events.source,
+        args: {},
+        onSessionChange: () => {},
+        pluginHost: {
+          async start() {
+            started()
+          },
+          async dispose() {},
+        },
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+    )
+    await ready
+
+    // A fatal error exits through the entry's own `process.exit`, so no scoped
+    // finalizer runs and the renderer survives unless an exit listener tears it
+    // down. Reaching those listeners directly is the only way to observe it.
+    const restore = process.listeners("exit").filter((listener) => !listeners.has(listener))
+    expect(restore.length).toBe(1)
+    restore.forEach((listener) => listener(1))
+
+    expect(setup.renderer.isDestroyed).toBe(true)
+
+    await task
+    expect(process.listeners("exit").every((listener) => listeners.has(listener))).toBe(true)
+  } finally {
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    mock.restore()
+  }
+})
+
 test("app.exit prints the session epilogue after scoped cleanup", async () => {
   const reports: Array<{ sessionID?: string; cwd?: string; state: string } | undefined> = []
   const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
