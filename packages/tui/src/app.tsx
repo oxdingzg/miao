@@ -320,26 +320,29 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                   <ThemeProvider mode={mode}>
                                                     <LocalProvider>
                                                       <PromptStashProvider>
-                                                        <DialogProvider>
-                                                          <FrecencyProvider>
-                                                            <PromptHistoryProvider>
-                                                              <PromptRefProvider>
-                                                                <EditorContextProvider>
-                                                                  <LocationProvider>
-                                                                    <RemoteLocalProvider value={input.remote}>
+                                                        {/* Dialogs render from DialogProvider's own scope, so
+                                                            /remote-control only sees this context when it is
+                                                            provided above DialogProvider. */}
+                                                        <RemoteLocalProvider value={input.remote}>
+                                                          <DialogProvider>
+                                                            <FrecencyProvider>
+                                                              <PromptHistoryProvider>
+                                                                <PromptRefProvider>
+                                                                  <EditorContextProvider>
+                                                                    <LocationProvider>
                                                                       <App
                                                                         onSnapshot={input.onSnapshot}
                                                                         onSessionChange={input.onSessionChange}
                                                                         pluginHost={input.pluginHost}
                                                                         runtimeNotice={input.runtimeNotice}
                                                                       />
-                                                                    </RemoteLocalProvider>
-                                                                  </LocationProvider>
-                                                                </EditorContextProvider>
-                                                              </PromptRefProvider>
-                                                            </PromptHistoryProvider>
-                                                          </FrecencyProvider>
-                                                        </DialogProvider>
+                                                                    </LocationProvider>
+                                                                  </EditorContextProvider>
+                                                                </PromptRefProvider>
+                                                              </PromptHistoryProvider>
+                                                            </FrecencyProvider>
+                                                          </DialogProvider>
+                                                        </RemoteLocalProvider>
                                                       </PromptStashProvider>
                                                     </LocalProvider>
                                                   </ThemeProvider>
