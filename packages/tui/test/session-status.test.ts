@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { statusPhase, waitingForResponse, watchSessionStatus } from "../src/context/session-status"
+import { idlePollInterval, statusPhase, waitingForResponse, watchSessionStatus } from "../src/context/session-status"
 import { sessionContextToMessages } from "../src/context/session-v2"
 
 const [user, assistant] = sessionContextToMessages({
@@ -169,4 +169,16 @@ test("normalizes a status to its phase", () => {
   expect(statusPhase({ type: "busy", phase: "queued" })).toBe("queued")
   expect(statusPhase({ type: "busy", phase: "requesting", since: 1 })).toBe("requesting")
   expect(statusPhase({ type: "retry", attempt: 1, message: "rate limited", next: 2 })).toBe("retrying")
+})
+
+test("idle polls back off while the streak grows and reset on any change", () => {
+  expect(idlePollInterval(5000, 0)).toBe(5000)
+  expect(idlePollInterval(5000, 1)).toBe(10000)
+  expect(idlePollInterval(5000, 2)).toBe(20000)
+  expect(idlePollInterval(5000, 3)).toBe(30000)
+  expect(idlePollInterval(5000, 99)).toBe(30000)
+  // The cap scales with the cadence; a change resets the streak in the poll
+  // loop, so streak 0 is the close cadence again.
+  expect(idlePollInterval(1000, 99)).toBe(6000)
+  expect(idlePollInterval(1000, 0)).toBe(1000)
 })
