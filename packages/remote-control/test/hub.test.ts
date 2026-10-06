@@ -121,3 +121,23 @@ describe("Remote Control opaque Hub", () => {
     expect(received).toEqual(["b3du"])
   })
 })
+
+test("one host can relay independent windows and closing one leaves the other connected", async () => {
+  const base = start()
+  const first = await connect(hostURL(base), true)
+  const runtimeID = "runtime-0000000001"
+  const second = await connect(hostURL(base).replace("runtime-0000000000", runtimeID), true)
+  expect((await fetch(`${base}/v1/client?hostID=${hostID}`)).status).toBe(409)
+  const firstJoined = message(first)
+  const firstClient = await connect(`${base}/v1/client?hostID=${hostID}&runtimeID=runtime-0000000000`)
+  await firstJoined
+  const secondJoined = message(second)
+  const secondClient = await connect(`${base}/v1/client?hostID=${hostID}&runtimeID=${runtimeID}`)
+  await secondJoined
+  const disconnected = closed(firstClient)
+  first.close()
+  expect((await disconnected).code).toBe(1012)
+  const forwarded = message(second)
+  secondClient.send("c2Vjb25kLXdpbmRvdw==")
+  expect(JSON.parse(await forwarded).payload).toBe("c2Vjb25kLXdpbmRvdw==")
+})

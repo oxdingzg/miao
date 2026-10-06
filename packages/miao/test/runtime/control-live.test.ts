@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { RuntimeControlLive } from "../../src/runtime/control-live"
+import { RuntimeControlLive } from "@miao/sdk/remote-control/control-live"
 
 function event(type: string, sessionID = "session", assistantMessageID = "message", extra = {}) {
   return { type: "session.next." + type, data: { sessionID, assistantMessageID, textID: "text", ...extra } }

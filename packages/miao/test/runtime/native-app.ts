@@ -261,6 +261,7 @@ export async function run() {
     await request(`/api/session/${sessionID}/rename`, { title })
     const session = Schema.decodeUnknownSync(Session)(await request(`/api/session/${sessionID}`)).data
     if (session.title !== title) throw new Error("Fixture session did not receive its title")
+    await request("/api/runtime/control/enabled", { enabled: true })
     const invitation = Schema.decodeUnknownSync(Invitation)(
       await request("/api/runtime/control/invitation", {
         permissions: ["read", "prompt", "session.rename", "session.selection"],

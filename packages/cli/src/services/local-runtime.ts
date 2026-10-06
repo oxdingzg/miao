@@ -25,7 +25,7 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           if (!state.url) {
             const { listen } = yield* Effect.promise(() => import("./listener"))
-            state.url = yield* listen("127.0.0.1", 0, password).pipe(Effect.provideService(Scope.Scope, scope))
+            state.url = yield* listen("127.0.0.1", 0, password, true).pipe(Effect.provideService(Scope.Scope, scope))
           }
           return { url: state.url, headers: ServerAuth.headers({ username: "opencode", password }) }
         }),

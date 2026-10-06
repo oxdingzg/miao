@@ -142,3 +142,37 @@ test("closing grant storage drains admitted revocation writes and prevents late 
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test("independent processes share identity and preserve concurrent grants and revocations", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-grants-process-"))
+  const filename = path.join(directory, "devices.json")
+  try {
+    const processes = ["first", "second"].map((label) =>
+      Bun.spawn([process.execPath, "run", path.join(import.meta.dir, "fixture/grants.ts"), filename, label], {
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    )
+    const results = await Promise.all(
+      processes.map(async (process) => {
+        const output = await new Response(process.stdout).text()
+        const errors = await new Response(process.stderr).text()
+        expect(errors).toBe("")
+        expect(await process.exited).toBe(0)
+        return JSON.parse(output)
+      }),
+    )
+    expect(results[0]).toEqual(results[1])
+    const first = await DeviceGrants.load(filename)
+    const second = await DeviceGrants.load(filename)
+    expect(first.list()).toHaveLength(16)
+    const grant = first.list()[0]!
+    expect(second.get(grant.id, grant.publicKey)).toBeDefined()
+    await first.revoke(grant.id, grant.version)
+    expect(second.get(grant.id, grant.publicKey)).toBeUndefined()
+    expect(second.list()[0]!.version).toBe(grant.version + 1)
+    await Promise.all([first.close(), second.close()])
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 10000)

@@ -14,8 +14,9 @@ import { PushSender } from "@miao/remote-control/push-sender"
 import { RemoteAccess } from "@miao/schema/remote-access"
 import type { RuntimeAdministration } from "@miao/core/runtime/administration"
 import { RuntimeControlMethods } from "./control-methods"
-import { AppRuntime } from "../effect/app-runtime"
-import { ServerAuth } from "../server/auth"
+import { Database } from "@miao/core/database/database"
+import { SessionOwnership } from "@miao/core/session/ownership"
+import { ServerAuth } from "@miao/server/auth"
 
 const Configuration = Schema.Struct({
   hubURL: Schema.String,
@@ -27,6 +28,8 @@ const Configuration = Schema.Struct({
 /** Owner-only configuration, never received through the remote RPC channel. */
 export async function start(input: {
   url: string
+  run: <A, E>(effect: Effect.Effect<A, E, Database.Service | EventV2.Service | SessionOwnership.Service>) => Promise<A>
+  username?: string
   credential: string
   runtimeID: string
   storage?: string
@@ -41,11 +44,12 @@ export async function start(input: {
   const grants = await DeviceGrants.load(path.resolve(path.dirname(filename), grantFile))
   const client = OpenCode.make({
     baseUrl: input.url,
-    headers: ServerAuth.headers({ username: "miao", password: input.credential }),
+    headers: ServerAuth.headers({ username: input.username ?? "miao", password: input.credential }),
   })
   const state: {
     stopped: boolean
     tail: Promise<unknown>
+    unsubscribe?: Effect.Effect<void>
     active?: {
       agent: ReturnType<typeof ControlAgent.connect>
       pairing: ReturnType<typeof ControlPairing.make>
@@ -54,21 +58,24 @@ export async function start(input: {
     }
   } = { stopped: false, tail: Promise.resolve() }
   const live = RuntimeControlLive.make()
-  const unsubscribe = await AppRuntime.runPromise(
-    EventV2.Service.use((events) =>
-      events.listen((event) =>
-        Effect.sync(() => {
-          live.accept(event)
-          state.active?.notifications.accept(event)
-        }),
-      ),
-    ),
-  ).catch(async (error: unknown) => {
-    await grants.close()
-    throw error
-  })
   const allowLoopbackHTTP = input.allowLoopbackHTTP ?? initial?.allowLoopbackHTTP ?? false
-  const activate = (configuration: typeof Configuration.Type) => {
+  const owned = (sessionID: string) =>
+    input.run(SessionOwnership.Service.use((ownership) => ownership.owned(sessionID)))
+  const projectForSession = async (sessionID: string, signal?: AbortSignal) =>
+    (await owned(sessionID))
+      ? (await client.sessions.get({ sessionID }, { signal }).catch(() => undefined))?.projectID
+      : undefined
+  const activate = async (configuration: typeof Configuration.Type) => {
+    state.unsubscribe = await input.run(
+      EventV2.Service.use((events) =>
+        events.listen((event) =>
+          Effect.sync(() => {
+            live.accept(event)
+            state.active?.notifications.accept(event)
+          }),
+        ),
+      ),
+    )
     const pairing = ControlPairing.make({
       grants,
       target: { hostID: grants.hostID, runtimeID: input.runtimeID },
@@ -81,9 +88,8 @@ export async function start(input: {
       runtimeID: input.runtimeID,
       grants,
       pairing,
-      methods: RuntimeControlMethods.make({ client, live, run: (effect) => AppRuntime.runPromise(effect) }),
-      projectForSession: async (sessionID) =>
-        (await client.sessions.get({ sessionID }).catch(() => undefined))?.projectID,
+      methods: RuntimeControlMethods.make({ client, live, owned, run: input.run }),
+      projectForSession,
     })
     const notifications = PushSender.make({
       hubURL: configuration.hubURL,
@@ -92,8 +98,7 @@ export async function start(input: {
       grants,
       connected: () => agent.connected(),
       allowLoopbackHTTP: configuration.allowLoopbackHTTP,
-      projectForSession: async (sessionID, signal) =>
-        (await client.sessions.get({ sessionID }, { signal }).catch(() => undefined))?.projectID,
+      projectForSession,
     })
     state.active = { agent, pairing, configuration, notifications }
   }
@@ -111,9 +116,28 @@ export async function start(input: {
     active?.agent.stop()
     await active?.notifications.stop()
     await active?.pairing.stop()
+    const unsubscribe = state.unsubscribe
+    state.unsubscribe = undefined
+    if (unsubscribe) await input.run(unsubscribe)
+    live.clear()
   }
   const administration: RuntimeAdministration.Interface = {
     status,
+    setEnabled: (enabled) => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped) throw new Error("Remote Control stopped")
+        if (!enabled) {
+          await disconnect()
+          return status()
+        }
+        if (state.active) return status()
+        const configuration = await readConfiguration(filename)
+        if (configuration) await activate(configuration)
+        return status()
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
     configure: (payload) => {
       const operation = state.tail.then(async () => {
         if (state.stopped) throw new Error("Remote Control stopped")
@@ -139,7 +163,7 @@ export async function start(input: {
         await saveConfiguration(filename, configuration)
         if (state.stopped) throw new Error("Remote Control stopped")
         await disconnect()
-        activate(configuration)
+        await activate(configuration)
         return status()
       })
       state.tail = operation.catch(() => undefined)
@@ -149,7 +173,8 @@ export async function start(input: {
       const projects = await client.projects.list()
       if (policy.projectIDs.some((id) => !projects.data.some((project) => project.id === id)))
         throw new Error("Unknown project scope")
-      await Promise.all(policy.sessionIDs.map((sessionID) => client.sessions.get({ sessionID })))
+      if ((await Promise.all(policy.sessionIDs.map(owned))).some((owns) => !owns))
+        throw new Error("This window does not own the requested Session")
       if (state.stopped || !state.active) throw new Error("Remote Control stopped")
       return state.active.pairing.issue(policy)
     },
@@ -167,14 +192,6 @@ export async function start(input: {
       return result
     },
   }
-  try {
-    if (initial) activate(initial)
-  } catch (error) {
-    await AppRuntime.runPromise(unsubscribe)
-    live.clear()
-    await grants.close()
-    throw error
-  }
   return {
     administration,
     stop: async () => {
@@ -182,8 +199,6 @@ export async function start(input: {
       state.stopped = true
       await state.tail
       await disconnect()
-      await AppRuntime.runPromise(unsubscribe)
-      live.clear()
       await grants.close()
     },
   }

@@ -42,8 +42,8 @@ export async function start(filename: string) {
           await state.agentStarting
         },
         () => state.agent?.stop(),
-        () => (state.server ? state.execution?.interruptAll() : undefined),
         () => state.server?.stop(true),
+        () => (state.server ? state.execution?.interruptAll() : undefined),
         () => state.execution?.dispose(),
         () => WindowLifecycle.disposeCore(),
         () => RuntimeRegistration.remove(storage, identity.runtimeID),
@@ -68,7 +68,16 @@ export async function start(filename: string) {
     const { memoMap } = await import("@miao/core/effect/memo-map")
     const { SessionExecution } = await import("@miao/core/session/execution")
     const { SessionExecutionLocal } = await import("@miao/core/session/execution/local")
-    const execution = ManagedRuntime.make(AppNodeBuilder.build(SessionExecutionLocal.node), { memoMap })
+    const { Database } = await import("@miao/core/database/database")
+    const { EventV2 } = await import("@miao/core/event")
+    const { SessionOwnership } = await import("@miao/core/session/ownership")
+    const { LayerNode } = await import("@miao/core/effect/layer-node")
+    const execution = ManagedRuntime.make(
+      AppNodeBuilder.build(
+        LayerNode.group([SessionExecutionLocal.node, EventV2.node, SessionOwnership.node, Database.node]),
+      ),
+      { memoMap },
+    )
     state.execution = {
       interruptAll: () =>
         execution.runPromise(
@@ -91,9 +100,10 @@ export async function start(filename: string) {
         administration: async () => {
           if (state.stopped) return undefined
           state.agentStarting ??= (async () => {
-            const { RuntimeControlAgent } = await import("./control-agent")
+            const { RuntimeControlAgent } = await import("@miao/sdk/remote-control/control-agent")
             const agent = await RuntimeControlAgent.start({
               url: state.server!.url.href,
+              run: (effect) => execution.runPromise(effect),
               credential,
               runtimeID: identity.runtimeID,
               storage,

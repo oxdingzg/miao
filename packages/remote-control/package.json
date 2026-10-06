@@ -28,5 +28,12 @@
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:"
+  },
+  "imports": {
+    "#grant-lock": {
+      "bun": "./src/grant-lock.bun.ts",
+      "node": "./src/grant-lock.node.ts",
+      "default": "./src/grant-lock.bun.ts"
+    }
   }
 }

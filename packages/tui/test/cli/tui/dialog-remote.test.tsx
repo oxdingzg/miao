@@ -397,7 +397,7 @@ test("device access is available without IM and shows an unconfigured relay trut
     await openDevices(view)
     const frame = await view.until((value) => value.includes("中继尚未配置"))
     expect(frame).not.toContain("分享当前会话")
-    expect(frame).not.toContain("持续接入")
+    expect(frame).not.toContain("接入当前窗口")
     expect(control.calls).toEqual([])
   } finally {
     view.cleanup()
@@ -479,7 +479,7 @@ test("closing an invitation cancels it and persistent access only covers the cur
   const view = await mount(tmp.path, environment({ devices: control.api, projectID: "proj_current" }))
   try {
     await openDevices(view)
-    await view.app.mockInput.typeText("持续接入")
+    await view.app.mockInput.typeText("接入当前窗口")
     await view.app.mockInput.pressEnter()
     await view.until((value) => value.includes("二维码到期"))
     expect(control.state.policy?.projectIDs).toEqual(["proj_current"])

@@ -39,6 +39,7 @@ export const RemoteLocalProvider = RemoteLocalContext.Provider
 
 export type RemoteEnvironment = {
   readonly devices: DeviceApi
+  readonly setEnabled?: ReturnType<typeof OpenCode.make>["server.runtime"]["setEnabled"]
   readonly configure?: ReturnType<typeof OpenCode.make>["server.runtime"]["configure"]
   readonly sessionID?: string
   readonly projectID?: string
@@ -60,6 +61,7 @@ export function DialogRemote() {
       environment={{
         devices: sdk.api["server.runtime"],
         configure: sdk.api["server.runtime"].configure,
+        setEnabled: sdk.api["server.runtime"].setEnabled,
         sessionID,
         projectID: sync.data.session.find((session) => session.id === sessionID)?.projectID ?? project.data.project.id,
         local: factory
@@ -99,11 +101,7 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
       await connecting
       if (dismissed) return
       dialog.replace(() => (
-        <DialogDevices
-          api={environment.devices!}
-          sessionID={environment.sessionID}
-          projectID={environment.projectID}
-        />
+        <DialogDevices api={environment.devices!} sessionID={environment.sessionID} projectID={environment.projectID} />
       ))
     } catch (error) {
       if (dismissed) return
@@ -128,6 +126,27 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
     <DialogSelect
       title="远程遥控"
       options={[
+        ...(environment.setEnabled
+          ? [
+              {
+                value: "enable",
+                title: "开启当前窗口的远程接入",
+                description: "使用保存的中继配置；关闭此窗口后接入结束",
+                category: "当前窗口",
+                onSelect: () => void connect(environment.setEnabled!({ enabled: true })),
+              },
+              {
+                value: "disable",
+                title: "关闭当前窗口的远程接入",
+                description: "本地会话继续运行，其他窗口不受影响",
+                category: "当前窗口",
+                onSelect: () =>
+                  void environment.setEnabled!({ enabled: false })
+                    .then(reopen)
+                    .catch(() => DialogAlert.show(dialog, "关闭失败", "请重试关闭远程接入。")),
+              },
+            ]
+          : []),
         ...(local?.setup && runtime
           ? [
               {

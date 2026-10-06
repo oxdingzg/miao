@@ -34,6 +34,16 @@ export const RuntimeGroup = HttpApiGroup.make("server.runtime").add(
   }).annotateMerge(
     OpenApi.annotations({ identifier: "v2.runtime.control.get", summary: "Inspect local Remote Control status" }),
   ),
+  HttpApiEndpoint.post("runtime.control.setEnabled", "/api/runtime/control/enabled", {
+    payload: Schema.Struct({ enabled: Schema.Boolean }),
+    success: RemoteAccess.Status,
+    error: ServiceUnavailableError,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.setEnabled",
+      summary: "Enable or disable Remote Control for this window",
+    }),
+  ),
   HttpApiEndpoint.post("runtime.control.configure", "/api/runtime/control/configuration", {
     payload: RemoteAccess.Configuration,
     success: RemoteAccess.Status,

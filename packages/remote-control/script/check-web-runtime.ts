@@ -234,6 +234,7 @@ try {
         location: { directory: project },
       })
   }
+  await request("/api/runtime/control/enabled", { enabled: true })
   const invitation = await request("/api/runtime/control/invitation", {
     permissions: ["read", "prompt", "session.rename", "session.selection", ...(projectScope ? ["session.create"] : [])],
     sessionIDs: projectScope ? [] : [sessionID],

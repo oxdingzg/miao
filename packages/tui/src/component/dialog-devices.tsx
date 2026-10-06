@@ -220,8 +220,8 @@ export function DialogDevices(props: {
               ? [
                   {
                     value: "invite-project",
-                    title: "持续接入当前项目",
-                    description: "授权 7 天，可查看、操作和创建项目内的会话",
+                    title: "接入当前窗口的项目",
+                    description: "授权 7 天，仅访问此窗口拥有和新建的会话；关窗后离线",
                     onSelect: () =>
                       invite({
                         permissions: [...write, "session.create"],

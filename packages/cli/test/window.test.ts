@@ -41,7 +41,7 @@ test("the CLI scopes its API to each invocation and never replaces another windo
     const second = await start()
     expect(second.transport.url).not.toBe(first.transport.url)
     expect(second.transport.headers).not.toEqual(first.transport.headers)
-    first.child.kill("SIGTERM")
+    first.child.kill(process.platform === "win32" ? "SIGTERM" : "SIGHUP")
     await first.child.exited
     await expect(fetch(first.transport.url, { signal: AbortSignal.timeout(1000) })).rejects.toThrow()
     expect(

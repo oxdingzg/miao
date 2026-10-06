@@ -105,7 +105,7 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
       return text ? JSON.parse(text) : undefined
     }
     await local("/api/session", { id: sessionID, location: { directory: project } })
-    await local("/api/runtime/control")
+    await local("/api/runtime/control/enabled", { enabled: true })
     const connectedDeadline = Date.now() + 10000
     while (!hub.connectedHosts().length && Date.now() < connectedDeadline) await Bun.sleep(20)
     expect(hub.connectedHosts()).toHaveLength(1)

@@ -26,7 +26,8 @@
     "@opentui/solid": "catalog:",
     "@parcel/watcher": "2.5.1",
     "effect": "catalog:",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "@miao/sdk": "workspace:*"
   },
   "devDependencies": {
     "@miao/script": "workspace:*",

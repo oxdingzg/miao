@@ -30,7 +30,14 @@ removed.
 Remote Control administration is initialized only when explicitly accessed,
 for example through `/remote-control`; merely starting miao with saved remote
 configuration does not establish an Agent connection. Its resources belong to
-that window and are closed with it. The relay Hub is an independently deployed
+that window and are closed with it. Use the dialog to enable or disable access for
+this window. Disabling closes its Agent, pairing, notifications and subscriptions
+while local execution continues. Remote reads and mutations are limited to
+Sessions owned by that invocation, including Sessions created remotely there.
+Other windows may enable their own connections independently. Web/iOS reconnects
+keep their explicit window target; they never switch to a different window just
+because it shares the same host identity. Device grants and revocations are
+shared durably without losing simultaneous approvals. The relay Hub is an independently deployed
 service and does not execute or restart local Sessions.
 
 `miao serve` is an explicit foreground API server. Keep its process running to

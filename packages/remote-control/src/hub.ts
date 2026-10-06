@@ -20,7 +20,7 @@ const decodeFrame = Schema.decodeUnknownOption(
 )
 
 type Socket = ServerWebSocket<Peer>
-type Host = { runtimeID: string; accountID?: string; socket?: Socket; clients: Map<string, Client> }
+type Host = { hostID: string; runtimeID: string; accountID?: string; socket?: Socket; clients: Map<string, Client> }
 type Client = { connectionID: string; socket?: Socket }
 export type Authorization = { accountID: string; valid: () => boolean; runtimeID?: string; protocol?: string }
 type Peer =
@@ -98,11 +98,11 @@ export function listen(options: Options) {
           )
             return new Response("Unauthorized", { status: 401 })
         }
-        if (hosts.has(hostID)) return new Response("Host already connected", { status: 409 })
-        const host: Host = { runtimeID, accountID: authorization?.accountID, clients: new Map() }
+        if (hosts.has(`${hostID}:${runtimeID}`)) return new Response("Host already connected", { status: 409 })
+        const host: Host = { hostID, runtimeID, accountID: authorization?.accountID, clients: new Map() }
         if (!server.upgrade(request, { data: { role: "host", hostID, host, authorization } }))
           return new Response("WebSocket required", { status: 426 })
-        hosts.set(hostID, host)
+        hosts.set(`${hostID}:${runtimeID}`, host)
         return
       }
       const authorization = await options.access?.client(request, hostID)
@@ -115,7 +115,16 @@ export function listen(options: Options) {
         ) >= limits.accountClients
       )
         return new Response("Account connection limit", { status: 429 })
-      const host = hosts.get(hostID)
+      const requestedRuntimeID = url.searchParams.get("runtimeID") ?? authorization?.runtimeID
+      if (requestedRuntimeID !== undefined && !identifier.test(requestedRuntimeID))
+        return new Response("Invalid runtime identity", { status: 400 })
+      if (authorization?.runtimeID && requestedRuntimeID !== authorization.runtimeID)
+        return new Response("Runtime changed", { status: 409 })
+      const candidates = [...hosts.values()].filter((host) => host.hostID === hostID)
+      if (!requestedRuntimeID && candidates.length > 1) return new Response("Choose a runtime", { status: 409 })
+      const host = requestedRuntimeID ? hosts.get(`${hostID}:${requestedRuntimeID}`) : candidates[0]
+      if (authorization?.runtimeID && !host && candidates.length)
+        return new Response("Runtime changed", { status: 409 })
       if (options.access && host && host.accountID !== authorization?.accountID)
         return new Response("Unauthorized", { status: 401 })
       if (!host?.socket || (host.socket.data.authorization && !host.socket.data.authorization.valid()))
@@ -147,7 +156,7 @@ export function listen(options: Options) {
           peer.host.socket = socket
           return
         }
-        if (hosts.get(peer.hostID) !== peer.host || !peer.host.socket) {
+        if (hosts.get(`${peer.hostID}:${peer.host.runtimeID}`) !== peer.host || !peer.host.socket) {
           socket.close(1012, "Runtime disconnected")
           return
         }
@@ -192,8 +201,8 @@ export function listen(options: Options) {
           send(peer.host.socket, JSON.stringify({ type: "disconnected", connectionID: peer.client.connectionID }))
           return
         }
-        if (hosts.get(peer.hostID) !== peer.host) return
-        hosts.delete(peer.hostID)
+        if (hosts.get(`${peer.hostID}:${peer.host.runtimeID}`) !== peer.host) return
+        hosts.delete(`${peer.hostID}:${peer.host.runtimeID}`)
         peer.host.clients.forEach((client) => client.socket?.close(1012, "Runtime disconnected"))
         peer.host.clients.clear()
       },
@@ -214,7 +223,7 @@ export function listen(options: Options) {
         .filter(
           ([, host]) => host.socket && (!host.socket.data.authorization || host.socket.data.authorization.valid()),
         )
-        .map(([hostID, host]) => ({ hostID, runtimeID: host.runtimeID, accountID: host.accountID })),
+        .map(([, host]) => ({ hostID: host.hostID, runtimeID: host.runtimeID, accountID: host.accountID })),
     hostname: server.hostname,
     port: server.port,
     stop: async () => {
