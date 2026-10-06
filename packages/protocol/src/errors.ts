@@ -61,6 +61,17 @@ export class SessionNotFoundError extends Schema.TaggedErrorClass<SessionNotFoun
   { httpApiStatus: 404 },
 ) {}
 
+/** The Session row exists, but its stored directory is gone and no project checkout could take it back. */
+export class SessionLocationMissingError extends Schema.TaggedErrorClass<SessionLocationMissingError>()(
+  "SessionLocationMissingError",
+  {
+    sessionID: Schema.String,
+    directory: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 410 },
+) {}
+
 export class MessageNotFoundError extends Schema.TaggedErrorClass<MessageNotFoundError>()(
   "MessageNotFoundError",
   {

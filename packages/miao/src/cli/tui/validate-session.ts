@@ -34,5 +34,17 @@ export async function validateSession(input: {
     )
   if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "SessionNotFoundError")
     throw new Error(`Session not found: ${sessionID}`)
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "SessionLocationMissingError"
+  ) {
+    const body = error as { directory?: unknown }
+    throw new Error(
+      `Session ${sessionID} can no longer be loaded: its directory "${String(body.directory)}" no longer exists`,
+      { cause: { body: error } },
+    )
+  }
   if (error !== undefined) throw new Error("Failed to load session", { cause: { body: error } })
 }

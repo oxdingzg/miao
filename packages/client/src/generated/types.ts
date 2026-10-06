@@ -49,6 +49,15 @@ export type SessionNotFoundError = {
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
 
+export type SessionLocationMissingError = {
+  readonly _tag: "SessionLocationMissingError"
+  readonly sessionID: string
+  readonly directory: string
+  readonly message: string
+}
+export const isSessionLocationMissingError = (value: unknown): value is SessionLocationMissingError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionLocationMissingError"
+
 export type ServiceUnavailableError = {
   readonly _tag: "ServiceUnavailableError"
   readonly message: string
