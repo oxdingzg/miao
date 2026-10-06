@@ -3,6 +3,7 @@ import path from "path"
 import { describe, expect } from "bun:test"
 import { DateTime, Deferred, Effect, Equal, Hash, Option, Schema } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
+import { SessionSchedule } from "@miao/core/session/schedule"
 import { Tool } from "@miao/core/tool/tool"
 import { define } from "@miao/plugin/v2/effect"
 import { AgentV2 } from "@miao/core/agent"
@@ -17,11 +18,12 @@ import { ProjectV2 } from "@miao/core/project"
 import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { SessionMessage } from "@miao/core/session/message"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
-import { toolDefinitions } from "./lib/tool"
+import { toolDefinitions, settleTool } from "./lib/tool"
 import { FSUtil } from "../src/fs-util"
 import { Credential } from "../src/credential"
 import { Database } from "../src/database/database"
@@ -300,6 +302,51 @@ describe("LocationServiceMap", () => {
             () => new Error("BackgroundJob.Service is not provided to the location graph"),
           ).list()
           expect(listed).toEqual([])
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir.path) })),
+          ),
+        ),
+      ),
+    ),
+  )
+
+  it.live("outputs the session schedule into a location's context", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          // The schedule tools read SessionSchedule ambiently at execution
+          // time. Its node depends on the unbound SessionExecution, so the
+          // location map's default local-execution binding is what lets the
+          // hoist compile it; lose either and every cron tool fails with
+          // "Scheduling is not available in this runtime."
+          const scheduleOption = yield* Effect.serviceOption(SessionSchedule.Service)
+          const schedule = Option.getOrThrowWith(
+            scheduleOption,
+            () => new Error("SessionSchedule.Service is not provided to the location graph"),
+          )
+
+          const sessionID = SessionV2.ID.make("ses_location_schedule")
+          const settlement = yield* settleTool(yield* ToolRegistry.Service, {
+            sessionID,
+            agent: AgentV2.ID.make("build"),
+            assistantMessageID: SessionMessage.ID.make("msg_location_schedule"),
+            call: {
+              type: "tool-call" as const,
+              id: "call_location_cron",
+              name: "cron_create",
+              input: { prompt: "schedule wiring smoke", cron: "0 3 1 1 *" },
+            },
+          })
+          // Far-future one-shots fire and finish quickly under timer
+          // clamping, so the wiring assertion is that the tool reached the
+          // service and got a scheduled id back, not that the job lingers.
+          expect(settlement.result.type).not.toBe("error")
+          expect(JSON.stringify(settlement.result)).toContain("sched")
         }).pipe(
           Effect.scoped,
           Effect.provide(
