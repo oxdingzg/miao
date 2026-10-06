@@ -26,6 +26,12 @@ describe("SkillPlugin.Plugin", () => {
           content: expect.stringContaining("@deepseek-ai/libreoffice-kit@0.1.3"),
         }),
       )
+      expect(yield* skill.list()).toContainEqual(
+        expect.objectContaining({
+          name: "media-observe",
+          content: expect.stringContaining("contact sheets"),
+        }),
+      )
     }),
   )
 })
