@@ -10,6 +10,7 @@ import { SessionBlobMigrate } from "@miao/core/session/blob-migrate"
 import { SessionRetention } from "@miao/core/session/retention"
 import { SessionCompact } from "@miao/core/session/compact"
 import { SessionRestore } from "@miao/core/session/restore"
+import { SessionTable } from "@miao/core/session/sql"
 import { Effect, Exit } from "effect"
 import { sql } from "drizzle-orm"
 import { BlobSiblings } from "../blob-siblings"
@@ -363,6 +364,41 @@ const RetentionCommand = effectCmd({
   }),
 })
 
+const StatusCommand = effectCmd({
+  command: "status",
+  describe: "report the V1 to V2 session storage migration status",
+  instance: false,
+  handler: Effect.fn("Cli.db.status")(function* () {
+    const { db } = yield* Database.Service
+    const pending = yield* SessionBackfill.backfill(db, { dryRun: true })
+    const total = yield* db
+      .select({ n: sql<number>`count(*)` })
+      .from(SessionTable)
+      .get()
+      .pipe(Effect.orDie)
+    const present = (
+      yield* db
+        .select({ name: sql<string>`name` })
+        .from(sql`sqlite_master`)
+        .pipe(Effect.orDie)
+    )
+      .map((row) => row.name)
+      .filter((name) => name === "message" || name === "part")
+
+    console.log(`sessions: ${total?.n ?? 0} total`)
+    console.log(`pending migration: ${pending.migrated} session(s), ${pending.repaired} mixed session(s)`)
+    console.log(`legacy tables: ${present.length > 0 ? present.join(", ") : "absent (compacted)"}`)
+    // The gate for deleting the legacy readers (`core/v1`, `v1-read`, the
+    // backfill machinery and the schema V1 wire): every database that opens
+    // miao reports complete, so no build needs the fallback any more.
+    if (pending.migrated + pending.repaired > 0)
+      console.log("migration: incomplete — miao migrates these automatically at the next start")
+    else if (present.length > 0)
+      console.log("migration: complete — `miao db compact` can retire the legacy storage")
+    else console.log("migration: complete — no legacy storage left")
+  }),
+})
+
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
@@ -372,6 +408,7 @@ export const DbCommand = effectCmd({
       .command(QueryCommand)
       .command(PathCommand)
       .command(StatsCommand)
+      .command(StatusCommand)
       .command(VacuumCommand)
       .command(BackfillCommand)
       .command(CompactCommand)
