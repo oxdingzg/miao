@@ -61,7 +61,7 @@ export function sharedLayerFromPath(filename: string) {
         Effect.tryPromise({ try: () => RuntimeOwnership.use(filename), catch: (error) => error }).pipe(
           Effect.retry({
             while: (error) => error instanceof RuntimeOwnership.BusyError,
-            schedule: Schedule.spaced("50 millis").pipe(Schedule.both(Schedule.recurs(100))),
+            schedule: Schedule.spaced("50 millis").pipe(Schedule.while((metadata) => metadata.elapsed < 5000)),
           }),
           Effect.orDie,
         ),

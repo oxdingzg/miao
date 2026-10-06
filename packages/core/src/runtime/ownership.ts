@@ -34,13 +34,10 @@ async function usage(storage: string): Promise<Usage> {
   const state = { exclusive: false, released: false }
   const share = () => {
     if (state.exclusive) native.exec("ROLLBACK")
-    native.exec("PRAGMA busy_timeout = 5000")
-    try {
-      native.exec("BEGIN; SELECT name FROM sqlite_master LIMIT 1")
-      state.exclusive = false
-    } finally {
-      native.exec("PRAGMA busy_timeout = 0")
-    }
+    // Acquisition retries belong to the caller; native waits multiply that
+    // budget and block the event loop while another process owns this store.
+    native.exec("BEGIN; SELECT name FROM sqlite_master LIMIT 1")
+    state.exclusive = false
   }
   try {
     await chmod(filename, 0o600)
