@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "031018c5-0e3d-48c5-b642-6ea54ed5739a",
+  "id": "1dea33c5-b940-4d27-aa50-577f0be673c0",
   "prevIds": [
-    "d2fcd81e-2b12-4817-8b5d-a7493f8e577a"
+    "031018c5-0e3d-48c5-b642-6ea54ed5739a"
   ],
   "ddl": [
     {
@@ -1575,6 +1575,16 @@
       "default": "0",
       "generated": null,
       "name": "cost",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "32",
+      "generated": null,
+      "name": "wake_allowance",
       "entityType": "columns",
       "table": "session"
     },

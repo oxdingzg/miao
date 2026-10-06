@@ -49,6 +49,7 @@ import { SessionBlobStorage } from "./session/blob-storage"
 import { materializeBlobRefs, materializeEvent, materializePrompt } from "./session/runner/materialize-files"
 import { SessionDurable } from "@miao/schema/durable-event-manifest"
 import { EventSequenceTable } from "./event/sql"
+import { SessionDelegationStore } from "./session/delegation-store"
 
 export const RevertState = Revert.State
 export type RevertState = Revert.State
@@ -517,6 +518,9 @@ const layer = Layer.effect(
             .where(eq(ProjectTable.id, session.projectID))
             .run()
             .pipe(Effect.orDie)
+        // A person asked for this run, so the machine gets its wake allowance
+        // back. `prompt` below is the only other recharge point.
+        yield* SessionDelegationStore.recharge(db, session.id)
         if (input.resume !== false) yield* execution.wake(session.id)
       }),
       fork: Effect.fn("V2Session.fork")(function* (input) {
@@ -679,6 +683,11 @@ const layer = Layer.effect(
             )
             if (!SessionInput.equivalent(admitted, expected))
               return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
+            // A person asked for this run, so the machine gets its wake allowance
+            // back. Every other admit — delegation children, messages between
+            // Sessions, schedules, the runner's own loop — goes through
+            // `SessionInput.admit` directly and must not refill it.
+            yield* SessionDelegationStore.recharge(db, admitted.sessionID)
             if (input.resume !== false) yield* execution.wake(admitted.sessionID)
             return admitted
           }),

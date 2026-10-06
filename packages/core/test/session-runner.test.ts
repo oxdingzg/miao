@@ -549,6 +549,26 @@ const insertSession = (id: SessionV2.ID, projectID: Project.ID = Project.ID.glob
       .pipe(Effect.orDie)
   })
 
+const wakeAllowance = (id: SessionV2.ID) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const row = yield* db
+      .select({ value: SessionTable.wake_allowance })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, id))
+      .get()
+      .pipe(Effect.orDie)
+    return row?.value
+  })
+
+// Puts a Session at a budget far from the refill value, so a recharge started
+// by the wrong code path is visible as a jump rather than as a number.
+const drainWakeAllowance = (id: SessionV2.ID, value = 5) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    yield* db.update(SessionTable).set({ wake_allowance: value }).where(eq(SessionTable.id, id)).run().pipe(Effect.orDie)
+  })
+
 // Writes a peer Session's transcript straight to durable storage, oldest first.
 // These tests are about what `read_session_context` reads back, so the rows only
 // have to be valid durable messages, not the product of a real turn. Row IDs are
@@ -915,7 +935,7 @@ describe("SessionRunnerLLM", () => {
       yield* execution.wait(sessionID)
       expect(parentTurns).toBe(3)
       expect((yield* SessionDelegationStore.get(db, sessionID, tasks[0].id))?.result).toBe("VERBATIM CHILD REPORT")
-      expect(yield* SessionDelegationStore.hasNotifications(db, sessionID)).toBe(false)
+      expect(yield* SessionDelegationStore.hasPromotableNotifications(db, sessionID)).toBe(false)
       const after = yield* session.context(sessionID)
       expect(after.filter((m) => m.type === "synthetic" && m.metadata?.backgroundTask)).toHaveLength(1)
       yield* execution.wake(sessionID)
@@ -1024,6 +1044,122 @@ describe("SessionRunnerLLM", () => {
       expect(JSON.stringify(requests[1].messages)).toContain("BOUNDARY REPORT")
       expect(requests[1].toolChoice).toMatchObject({ type: "none" })
       expect(requests[1].tools).toEqual([])
+    }),
+  )
+
+  it.effect("ends the drain instead of looping on notifications it may not promote, then promotes one after a human prompt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "budget-report",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Find facts",
+        description: "facts",
+        owner: "finished-owner",
+        timestamp: yield* DateTime.now,
+      })
+      yield* events.publish(SessionEvent.DelegationEnded, {
+        sessionID,
+        id: "budget-report",
+        status: "completed",
+        text: "BUDGET REPORT",
+        timestamp: yield* DateTime.now,
+      })
+      // A spent budget must make the runner decline the pending notification.
+      // Asking whether a notification merely exists instead would run provider
+      // turns that promote nothing, forever, with no new input.
+      yield* drainWakeAllowance(sessionID, 0)
+      responses = []
+      const execution = yield* SessionExecution.Service
+      yield* execution.wake(sessionID)
+      yield* execution.wait(sessionID)
+      expect(requests).toHaveLength(0)
+      expect(yield* SessionDelegationStore.hasPromotableNotifications(db, sessionID)).toBe(false)
+      expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(1)
+      expect((yield* session.context(sessionID)).filter((m) => m.type === "synthetic")).toHaveLength(0)
+      // A person speaking refills the budget, and the notification that was
+      // held back is promoted at the next safe boundary rather than dropped.
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "before-report", name: "echo", input: { text: "work" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Human instruction" }), resume: false })
+      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET)
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[0].messages)).not.toContain("BUDGET REPORT")
+      expect(JSON.stringify(requests[1].messages)).toContain("BUDGET REPORT")
+      expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(0)
+      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 1)
+    }),
+  )
+
+  it.effect("does not refill the wake allowance from the runner's own loop continuation", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({ sessionID, todos: [{ content: "Do the thing", status: "in_progress", priority: "high" }] })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+      yield* drainWakeAllowance(sessionID)
+
+      requests.length = 0
+      responses = undefined
+      response = fragmentFixture("text", "text-loop", ["ok"]).completeEvents
+      yield* session.resume(sessionID)
+
+      // The loop admitted its own continue prompts, which is exactly the
+      // machinery a budget must not let pay for itself.
+      expect(requests.length).toBeGreaterThan(1)
+      expect(yield* wakeAllowance(sessionID)).toBe(5)
+    }),
+  )
+
+  it.effect("does not refill a peer's wake allowance for a session message", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.mode = "primary" }))
+      const session = yield* SessionV2.Service
+      const execution = yield* SessionExecution.Service
+      yield* insertSession(otherSessionID)
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Send useful feedback" }), resume: false })
+      yield* drainWakeAllowance(otherSessionID)
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      yield* session.resume(sessionID)
+
+      // The target drained the message it was woken for; what must not have
+      // happened is its budget jumping back to the refill value.
+      yield* execution.wait(otherSessionID)
+      const received = yield* session.context(otherSessionID)
+      expect(received.filter((message) => message.type === "user")).toHaveLength(1)
+      expect(yield* wakeAllowance(otherSessionID)).toBe(5)
     }),
   )
 

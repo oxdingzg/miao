@@ -1485,7 +1485,7 @@ const layer = Layer.effect(
             if (delegation) yield* delegation.recover(input.sessionID)
           const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
           const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
-            const hasNotification = yield* SessionDelegationStore.hasNotifications(db, input.sessionID)
+            const hasNotification = yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID)
             if (!input.force && !hasSteer && !hasQueue && !hasNotification) return
           // Refuse to run a provider turn on a session whose history is still only
           // in the legacy V1 tables: the projected context would be empty and the
@@ -1510,7 +1510,7 @@ const layer = Layer.effect(
           }
           yield* backgroundJobs.recover()
           yield* failInterruptedTools(input.sessionID)
-            const recoveredNotification = yield* SessionDelegationStore.hasNotifications(db, input.sessionID)
+            const recoveredNotification = yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID)
             let promotion: Promotion | undefined = hasSteer
               ? "steer"
               : hasQueue
@@ -1539,7 +1539,7 @@ const layer = Layer.effect(
                 if (
                   needsContinuation &&
                   !(yield* SessionInput.hasPending(db, input.sessionID, "steer")) &&
-                  (yield* SessionDelegationStore.hasNotifications(db, input.sessionID))
+                  (yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID))
                 )
                   promotion = "notification"
               if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
@@ -1589,7 +1589,7 @@ const layer = Layer.effect(
               const queuedNext = yield* SessionInput.hasPending(db, input.sessionID, "queue")
               const notificationNext = queuedNext
                 ? false
-                : yield* SessionDelegationStore.hasNotifications(db, input.sessionID)
+                : yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID)
               shouldRun = queuedNext || notificationNext
             if (!shouldRun && settings.loop !== undefined) {
               const current = yield* getSession(input.sessionID)
