@@ -13,6 +13,15 @@
 # the version only means restating the per-platform sources. Only the build uses
 # this; `node_modules.nix` keeps nixpkgs' bun so the fixed-output node_modules
 # hash stays valid.
+#
+# The binary also has to stay byte-identical to that release. `bun build
+# --compile` clones the running bun and edits the clone in place, so anything
+# nixpkgs' fixup phase would do to the template -- strip, patchelf, rpath
+# shrinking -- changes the layout the clone assumes and yields a binary that
+# segfaults at startup. `dontFixup` keeps the artifact as released, and
+# `postPhases` drops the completion phase that would otherwise have to execute
+# the unpatched binary. `./miao.nix` re-points a throwaway copy at the store's
+# interpreter when it needs to run it.
 { bun, fetchurl }:
 let
   version = "1.3.14";
@@ -28,6 +37,10 @@ bun.overrideAttrs (old: {
   # `version` without overriding `src`" warning does not apply here.
   __intentionallyOverridingVersion = true;
   inherit version;
+
+  dontFixup = true;
+  postPhases = [ ];
+
   passthru = old.passthru // {
     sources = {
       "aarch64-darwin" = source "bun-darwin-aarch64.zip" "sha256-2LliIYKK1vl6x6wKt+lYcjQa92MAHogD6CZ2UsJlJiA=";
