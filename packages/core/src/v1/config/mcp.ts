@@ -14,6 +14,10 @@ export const Local = Schema.Struct({
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
     description: "Environment variables to set when running the MCP server",
   }),
+  call_meta: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description:
+      "Identity stamped into `_meta` on every tools/call. `{env:VAR}` values are re-read per call, so credential rotation is picked up without reconnecting.",
+  }),
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Enable or disable the MCP server on startup",
   }),
@@ -49,6 +53,10 @@ export const Remote = Schema.Struct({
   }),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
     description: "Headers to send with the request",
+  }),
+  call_meta: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description:
+      "Identity stamped into `_meta` on every tools/call. `{env:VAR}` values are re-read per call, so credential rotation is picked up without reconnecting.",
   }),
   oauth: Schema.optional(Schema.Union([OAuth, Schema.Literal(false)])).annotate({
     description: "OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.",
