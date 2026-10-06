@@ -12,6 +12,7 @@ import { MonitorTool } from "./monitor"
 import { PlanApprovalTool } from "./plan-approval"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
+import { ScheduleTool } from "./schedule"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
 import { WebFetchTool } from "./webfetch"
@@ -44,6 +45,7 @@ export const node = makeLocationNode({
     PlanApprovalTool.node,
     QuestionTool.node,
     ReadTool.node,
+    ScheduleTool.node,
     SkillTool.node,
     TodoWriteTool.node,
     WebFetchTool.node,
