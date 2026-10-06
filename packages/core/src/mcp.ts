@@ -56,7 +56,13 @@ export const legacyToolName = (serverID: string, tool: string) =>
 
 type Connected = {
   readonly client: Client
-  readonly tools: ReadonlyArray<{ name: string; description?: string; inputSchema?: unknown }>
+  readonly tools: ReadonlyArray<{
+    name: string
+    description?: string
+    inputSchema?: unknown
+    /** Server-declared hints. Only `readOnlyHint === true` is trusted, and only to relax concurrency. */
+    annotations?: { readonly readOnlyHint?: boolean }
+  }>
   readonly resources: ReadonlyArray<ResourceInfo>
 }
 
@@ -266,7 +272,9 @@ function buildTools(
     if (!NAME_PATTERN.test(name) || registered.has(name)) continue
     registered.add(name)
     const legacy = legacyToolName(serverID, tool.name)
-    registrations[name] = Tool.makeExternal({
+    // Annotations are untrusted hints. Trusting `readOnlyHint` only ever relaxes
+    // serialization, so a lying server can create races but cannot gain authority.
+    const external = Tool.makeExternal({
       description: tool.description ?? `MCP tool ${tool.name} from ${serverID}`,
       inputSchema: (tool.inputSchema as JsonSchema.JsonSchema | undefined) ?? { type: "object" },
       permissionAliases: [legacy],
@@ -308,6 +316,8 @@ function buildTools(
             Effect.map((result) => resultContent(result as { content?: ReadonlyArray<unknown> })),
           ),
     })
+    registrations[name] =
+      tool.annotations?.readOnlyHint === true ? Tool.withConcurrency(external, "concurrent") : external
   }
   return registrations
 }

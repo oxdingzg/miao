@@ -60,71 +60,74 @@ const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
-          description:
-            "Search file contents by regular expression within the active Location or an absolute managed tool-output file. Use a path to narrow the search, include to filter files by glob, and limit to bound the match count. Returns concise file resources, line numbers, and bounded line previews.",
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [
-            {
-              type: "text",
-              text: toModelOutput(
-                output.map((match) => ({
-                  ...match,
-                  entry: { ...match.entry, path: path.resolve(location.directory, match.entry.path) },
-                })),
-              ),
-            },
-          ],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              yield* permission.assert({
-                action: name,
-                resources: [input.pattern],
-                save: ["*"],
-                metadata: {
-                  root: ".",
-                  path: input.path,
-                  include: input.include,
-                  limit: input.limit,
-                },
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-              })
-              const target = path.resolve(location.directory, input.path ?? ".")
-              const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
-              return yield* ripgrep
-                .grep({
-                  cwd: info?.type === "Directory" ? target : path.dirname(target),
-                  pattern: input.pattern,
-                  file: info?.type === "File" ? path.basename(target) : undefined,
-                  include: input.include,
-                  limit: input.limit ?? Number.MAX_SAFE_INTEGER,
+        [name]: Tool.withConcurrency(
+          Tool.make({
+            description:
+              "Search file contents by regular expression within the active Location or an absolute managed tool-output file. Use a path to narrow the search, include to filter files by glob, and limit to bound the match count. Returns concise file resources, line numbers, and bounded line previews.",
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [
+              {
+                type: "text",
+                text: toModelOutput(
+                  output.map((match) => ({
+                    ...match,
+                    entry: { ...match.entry, path: path.resolve(location.directory, match.entry.path) },
+                  })),
+                ),
+              },
+            ],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                yield* permission.assert({
+                  action: name,
+                  resources: [input.pattern],
+                  save: ["*"],
+                  metadata: {
+                    root: ".",
+                    path: input.path,
+                    include: input.include,
+                    limit: input.limit,
+                  },
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                 })
-                .pipe(
-                  Effect.map((result) =>
-                    result.map((match) =>
-                      FileSystem.Match.make({
-                        ...match,
-                        entry: FileSystem.Entry.make({
-                          ...match.entry,
-                          path: RelativePath.make(
-                            path.relative(
-                              location.directory,
-                              path.resolve(
-                                info?.type === "Directory" ? target : path.dirname(target),
-                                match.entry.path,
+                const target = path.resolve(location.directory, input.path ?? ".")
+                const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                return yield* ripgrep
+                  .grep({
+                    cwd: info?.type === "Directory" ? target : path.dirname(target),
+                    pattern: input.pattern,
+                    file: info?.type === "File" ? path.basename(target) : undefined,
+                    include: input.include,
+                    limit: input.limit ?? Number.MAX_SAFE_INTEGER,
+                  })
+                  .pipe(
+                    Effect.map((result) =>
+                      result.map((match) =>
+                        FileSystem.Match.make({
+                          ...match,
+                          entry: FileSystem.Entry.make({
+                            ...match.entry,
+                            path: RelativePath.make(
+                              path.relative(
+                                location.directory,
+                                path.resolve(
+                                  info?.type === "Directory" ? target : path.dirname(target),
+                                  match.entry.path,
+                                ),
                               ),
                             ),
-                          ),
+                          }),
                         }),
-                      }),
+                      ),
                     ),
-                  ),
-                )
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to grep for ${input.pattern}` }))),
-        }),
+                  )
+              }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to grep for ${input.pattern}` }))),
+          }),
+          "concurrent",
+        ),
       })
       .pipe(Effect.orDie)
   }),

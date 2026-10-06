@@ -31,6 +31,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "a.b",
       description: "Dot form",
       inputSchema: { type: "object", properties: {} },
+      // Only a hint, and an untrusted one: the registry may relax serialization
+      // on it, never authority.
+      annotations: { readOnlyHint: true },
     },
     {
       name: "a_b",

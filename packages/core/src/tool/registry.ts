@@ -11,12 +11,14 @@ import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ToolCodeMode } from "./code-mode"
 import {
+  concurrency,
   definition,
   permissions,
   permissionExplicit,
   settle,
   validateName,
   type AnyTool,
+  type Concurrency,
   type Progress,
   type RegistrationError,
 } from "./tool"
@@ -59,6 +61,11 @@ export interface Interface {
 export interface Materialization {
   readonly definitions: ReadonlyArray<ToolDefinition>
   readonly settle: (input: ExecuteInput) => Effect.Effect<Settlement, ToolOutputStore.Error>
+  /**
+   * The effective concurrency class of the tool call `name` would settle, after
+   * the same scope precedence `settle` applies. Unknown names are exclusive.
+   */
+  readonly concurrency: (name: string) => Concurrency
 }
 
 export interface Settlement {
@@ -287,6 +294,12 @@ const registryLayer = Layer.effect(
         )
         const inner: Materialization = {
           definitions,
+          // Reads the same map `settle` resolves against, so a session-scoped
+          // registration's class wins over the location one for free.
+          concurrency: (name) => {
+            const registration = registrations.get(name)
+            return registration ? concurrency(registration.tool) : "exclusive"
+          },
           settle: (input) => {
             const captured = registrations.get(input.call.name)
             if (!captured)
@@ -311,6 +324,11 @@ const registryLayer = Layer.effect(
         const executeRegistration: Registration = { identity: {}, tool: execute }
         return {
           definitions: [definition(ToolCodeMode.CODE_MODE_TOOL, execute)],
+          // A code-mode script runs its inner tools inline on the outer fiber, so
+          // the inner classes never fork and cannot be honored individually. The
+          // script serializes as one unit under the `execute` tool's own class.
+          concurrency: (name) =>
+            name === ToolCodeMode.CODE_MODE_TOOL ? concurrency(execute) : inner.concurrency(name),
           settle: (input) =>
             input.call.name === ToolCodeMode.CODE_MODE_TOOL
               ? settleRegistration(input, executeRegistration, executeRegistration.identity, options?.onProgress)

@@ -6,7 +6,7 @@ import { SessionV2 } from "@miao/core/session"
 import { SessionMessage } from "@miao/core/session/message"
 import { ToolOutputStore } from "@miao/core/tool-output-store"
 import { ToolRegistry } from "@miao/core/tool/registry"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Semaphore } from "effect"
 import { testEffect } from "./lib/effect"
 
 const outputStore = Layer.mock(ToolOutputStore.Service, {
@@ -91,6 +91,52 @@ describe("ToolRegistry code mode", () => {
       })
 
       expect(settlement.result).toEqual({ type: "text", value: "hi" })
+    }),
+  )
+
+  it.effect("reports the script's own class, not the classes of the tools it wraps", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({ echo: Tool.withConcurrency(echo, "concurrent") })
+
+      const materialized = yield* service.materialize(undefined, { codeMode: true })
+
+      expect(materialized.concurrency("execute")).toBe("exclusive")
+      expect(materialized.concurrency("echo")).toBe("concurrent")
+    }),
+  )
+
+  it.effect("runs a program of exclusive tools under one permit", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      const order: string[] = []
+      const exclusive = (name: string) =>
+        Tool.make({
+          description: `Record ${name}`,
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          execute: () =>
+            Effect.sync(() => {
+              order.push(name)
+              return {}
+            }),
+        })
+      yield* service.register({ first: exclusive("first"), second: exclusive("second") })
+
+      const materialized = yield* service.materialize(undefined, { codeMode: true })
+      // Mirrors the runner, which holds the one exclusive permit across the
+      // outer `execute` call. A script runs its inner tools on the outer fiber,
+      // so a permit acquired inside settlement would deadlock instead.
+      const permit = yield* Semaphore.make(1)
+
+      const settlement = yield* permit.withPermit(
+        settle(materialized, "execute", {
+          code: 'await tools.miao.first({})\nawait tools.miao.second({})\nreturn "done"',
+        }),
+      )
+
+      expect(order).toEqual(["first", "second"])
+      expect(settlement.result).toEqual({ type: "text", value: "done" })
     }),
   )
 

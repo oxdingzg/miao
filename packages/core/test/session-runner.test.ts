@@ -102,6 +102,9 @@ let toolExecutionsStarted: Deferred.Deferred<void> | undefined
 let toolExecutionsReady = 5
 let activeToolExecutions = 0
 let maxActiveToolExecutions = 0
+let exclusiveActive = 0
+let maxExclusiveActive = 0
+let exclusiveTimeline: string[] = []
 const client = Layer.succeed(
   LLMClient.Service,
   LLMClient.Service.of({
@@ -174,24 +177,29 @@ const permission = Layer.succeed(
 const echo = Layer.effectDiscard(
   ToolRegistry.Service.use((registry) =>
     registry.register({
-      echo: Tool.make({
-        description: "Echo text",
-        input: Schema.Struct({ text: Schema.String }),
-        output: Schema.Struct({ text: Schema.String }),
-        toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
-        execute: ({ text }, context) =>
-          Effect.gen(function* () {
-            authorizations.push(context)
-            executions.push(text)
-            activeToolExecutions++
-            maxActiveToolExecutions = Math.max(maxActiveToolExecutions, activeToolExecutions)
-            if (activeToolExecutions === toolExecutionsReady && toolExecutionsStarted) {
-              yield* Deferred.succeed(toolExecutionsStarted, undefined)
-            }
-            if (toolExecutionGate) yield* Deferred.await(toolExecutionGate)
-            return { text }
-          }).pipe(Effect.ensuring(Effect.sync(() => activeToolExecutions--))),
-      }),
+      // Declared concurrent so the shared fixture keeps standing in for the
+      // batch of independent calls a provider commonly emits in one turn.
+      echo: Tool.withConcurrency(
+        Tool.make({
+          description: "Echo text",
+          input: Schema.Struct({ text: Schema.String }),
+          output: Schema.Struct({ text: Schema.String }),
+          toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
+          execute: ({ text }, context) =>
+            Effect.gen(function* () {
+              authorizations.push(context)
+              executions.push(text)
+              activeToolExecutions++
+              maxActiveToolExecutions = Math.max(maxActiveToolExecutions, activeToolExecutions)
+              if (activeToolExecutions === toolExecutionsReady && toolExecutionsStarted) {
+                yield* Deferred.succeed(toolExecutionsStarted, undefined)
+              }
+              if (toolExecutionGate) yield* Deferred.await(toolExecutionGate)
+              return { text }
+            }).pipe(Effect.ensuring(Effect.sync(() => activeToolExecutions--))),
+        }),
+        "concurrent",
+      ),
       defect: Tool.make({
         description: "Fail unexpectedly",
         input: Schema.Struct({}),
@@ -233,6 +241,53 @@ const spawnTool = Layer.effectDiscard(
             ),
       }),
     })
+  }),
+)
+
+// Two tools that declare no concurrency class, so a test can observe the
+// fail-closed default that keeps them apart. Provided per test for the same
+// reason as `spawnTool`: registering a tool changes the definitions sent to the
+// provider, which other tests assert on.
+const exclusiveTool = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const registry = yield* ToolRegistry.Service
+    const instrumented = (text: string) =>
+      Effect.gen(function* () {
+        executions.push(text)
+        exclusiveTimeline.push(`start:${text}`)
+        activeToolExecutions++
+        maxActiveToolExecutions = Math.max(maxActiveToolExecutions, activeToolExecutions)
+        exclusiveActive++
+        maxExclusiveActive = Math.max(maxExclusiveActive, exclusiveActive)
+        if (activeToolExecutions === toolExecutionsReady && toolExecutionsStarted) {
+          yield* Deferred.succeed(toolExecutionsStarted, undefined)
+        }
+        // Yielding gives a would-be overlap the chance to show up: two bodies
+        // running at once would both record a start before either recorded an
+        // end, which the timeline assertion then reads.
+        yield* Effect.yieldNow
+        yield* Effect.yieldNow
+        yield* Effect.yieldNow
+        if (toolExecutionGate) yield* Deferred.await(toolExecutionGate)
+        exclusiveTimeline.push(`end:${text}`)
+        return { text }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            activeToolExecutions--
+            exclusiveActive--
+          }),
+        ),
+      )
+    const tool = (description: string) =>
+      Tool.make({
+        description,
+        input: Schema.Struct({ text: Schema.String }),
+        output: Schema.Struct({ text: Schema.String }),
+        toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
+        execute: ({ text }) => instrumented(text),
+      })
+    yield* registry.register({ first: tool("First undeclared tool"), second: tool("Second undeclared tool") })
   }),
 )
 
@@ -521,6 +576,9 @@ const setup = Effect.gen(function* () {
   toolExecutionsReady = 5
   activeToolExecutions = 0
   maxActiveToolExecutions = 0
+  exclusiveActive = 0
+  maxExclusiveActive = 0
+  exclusiveTimeline = []
   permissionAsserts.length = 0
   yield* db
     .insert(ProjectTable)
@@ -3446,6 +3504,137 @@ describe("SessionRunnerLLM", () => {
       expect(maxActiveToolExecutions).toBe(5)
       expect(requests).toHaveLength(2)
     }),
+  )
+
+  it.effect("serializes undeclared tools against each other", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run both" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      exclusiveTimeline = []
+      activeToolExecutions = 0
+      maxActiveToolExecutions = 0
+      exclusiveActive = 0
+      maxExclusiveActive = 0
+      response = []
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-first", name: "first", input: { text: "first" } }),
+          LLMEvent.toolCall({ id: "call-second", name: "second", input: { text: "second" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ]
+
+      yield* Fiber.join(yield* session.resume(sessionID).pipe(Effect.forkChild))
+
+      // Neither undeclared tool may be between its own start and end while the
+      // other is, so the timeline alternates whichever one the scheduler ran
+      // first.
+      expect(exclusiveTimeline.map((entry) => entry.split(":")[0])).toEqual(["start", "end", "start", "end"])
+      expect(executions).toHaveLength(2)
+      expect(maxExclusiveActive).toBe(1)
+    }).pipe(Effect.provide(exclusiveTool)),
+  )
+
+  it.effect("runs concurrent tools alongside an exclusive one", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run everything" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      activeToolExecutions = 0
+      maxActiveToolExecutions = 0
+      // The undeclared call holds the one permit and blocks, leaving the
+      // concurrent calls free to run beside it.
+      toolExecutionsReady = 6
+      toolExecutionGate = yield* Deferred.make<void>()
+      toolExecutionsStarted = yield* Deferred.make<void>()
+      response = []
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-first", name: "first", input: { text: "first" } }),
+          ...Array.from({ length: 5 }, (_, index) =>
+            LLMEvent.toolCall({ id: `call-echo-${index}`, name: "echo", input: { text: `echo-${index}` } }),
+          ),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ]
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      yield* Deferred.await(toolExecutionsStarted)
+
+      expect(executions).toContain("first")
+      expect(executions.filter((text) => text.startsWith("echo-"))).toHaveLength(5)
+      expect(maxActiveToolExecutions).toBe(6)
+
+      yield* Deferred.succeed(toolExecutionGate, undefined)
+      yield* Fiber.join(run)
+      toolExecutionGate = undefined
+      toolExecutionsStarted = undefined
+      toolExecutionsReady = 5
+
+      expect(executions).toHaveLength(6)
+      expect(requests).toHaveLength(2)
+    }).pipe(Effect.provide(exclusiveTool)),
+  )
+
+  it.effect("ends a turn whose queued exclusive call is interrupted before it starts", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run everything" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      activeToolExecutions = 0
+      maxActiveToolExecutions = 0
+      exclusiveActive = 0
+      maxExclusiveActive = 0
+      toolExecutionsReady = 1
+      toolExecutionGate = yield* Deferred.make<void>()
+      toolExecutionsStarted = yield* Deferred.make<void>()
+      response = []
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-first", name: "first", input: { text: "first" } }),
+          LLMEvent.toolCall({ id: "call-second", name: "second", input: { text: "second" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ]
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      yield* Deferred.await(toolExecutionsStarted)
+      yield* session.interrupt(sessionID)
+
+      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+      // The holder of the permit is blocked and the other call is still waiting
+      // for it, so an interrupt must reach both rather than let the waiter
+      // inherit the permit and start work on a turn that is already over.
+      expect(executions.filter((text) => text === "first" || text === "second")).toHaveLength(1)
+      expect(maxExclusiveActive).toBe(1)
+      expect(Array.from(yield* session.active)).toEqual([])
+
+      toolExecutionGate = undefined
+      toolExecutionsStarted = undefined
+      toolExecutionsReady = 5
+      responses = undefined
+      response = []
+      requests.length = 0
+    }).pipe(Effect.provide(exclusiveTool)),
   )
 
   it.effect("settles repeated provider-local tool call IDs against their owning assistant messages", () =>

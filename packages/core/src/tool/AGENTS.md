@@ -50,6 +50,12 @@ Custom (`{tool,tools}/*.ts`) and plugin-provided tools assert their registered n
 
 Definition filtering is catalog visibility, not execution authorization. A call still executes the captured leaf policy if it reaches settlement.
 
+## Concurrency
+
+A tool declares how its calls relate to other calls in the same provider turn through `Tool.withConcurrency(tool, "concurrent")`, a built-in-only operation with the same shape as the permission one. The declaration is metadata the registry only reports: `Materialization.concurrency(name)` answers for the call a name would settle, applying the same scope precedence as settlement. The runner, not the registry, owns the permit.
+
+Undeclared tools — including plugin and MCP tools, whose internals Core cannot inspect — are `exclusive`. MCP is the one place a third-party hint is read, and only `annotations.readOnlyHint === true` is trusted: relaxing serialization can create a race but cannot gain authority.
+
 ## Output
 
 Built-ins return complete validated domain output. `ToolRegistry.Materialization.settle` is the only execution and generic model-output bounding boundary and owns managed retention paths.

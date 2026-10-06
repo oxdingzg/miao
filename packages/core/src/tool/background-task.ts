@@ -23,26 +23,32 @@ export const make = (api: {
   result: (id: string) => Effect.Effect<SessionDelegationStore.Info | undefined>
   cancel: (id: string, context: Tool.Context) => Effect.Effect<boolean, ToolFailure>
 }): Record<string, AnyTool> => ({
-  task_list: Tool.make({
-    description: "List this Session's recent background subagent tasks, with child Session IDs and durable status.",
-    input: Schema.Struct({}),
-    output: Schema.Struct({ tasks: Schema.Array(Info) }),
-    toModelOutput: ({ output }) => [{ type: "text", text: JSON.stringify(output.tasks) }],
-    execute: () => api.list().pipe(Effect.map((tasks) => ({ tasks: tasks.map(render) }))),
-  }),
-  task_result: Tool.make({
-    description:
-      "Read a background task's durable report by the taskID returned from task. Does not wait or restart it.",
-    input: Schema.Struct({ id: Schema.String }),
-    output: Schema.Struct({ task: Info, text: Schema.String }),
-    toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
-    execute: ({ id }) =>
-      Effect.gen(function* () {
-        const task = yield* api.result(id)
-        if (!task) return yield* new ToolFailure({ message: "Unknown background task for this Session." })
-        return { task: render(task), text: task.result ?? "Background task is still running." }
-      }),
-  }),
+  task_list: Tool.withConcurrency(
+    Tool.make({
+      description: "List this Session's recent background subagent tasks, with child Session IDs and durable status.",
+      input: Schema.Struct({}),
+      output: Schema.Struct({ tasks: Schema.Array(Info) }),
+      toModelOutput: ({ output }) => [{ type: "text", text: JSON.stringify(output.tasks) }],
+      execute: () => api.list().pipe(Effect.map((tasks) => ({ tasks: tasks.map(render) }))),
+    }),
+    "concurrent",
+  ),
+  task_result: Tool.withConcurrency(
+    Tool.make({
+      description:
+        "Read a background task's durable report by the taskID returned from task. Does not wait or restart it.",
+      input: Schema.Struct({ id: Schema.String }),
+      output: Schema.Struct({ task: Info, text: Schema.String }),
+      toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
+      execute: ({ id }) =>
+        Effect.gen(function* () {
+          const task = yield* api.result(id)
+          if (!task) return yield* new ToolFailure({ message: "Unknown background task for this Session." })
+          return { task: render(task), text: task.result ?? "Background task is still running." }
+        }),
+    }),
+    "concurrent",
+  ),
   task_cancel: Tool.make({
     description:
       "Cancel an owned background subagent task. Interrupting the parent alone does not cancel background children.",

@@ -155,32 +155,36 @@ export const make = (): Record<string, AnyTool> => ({
         return { id: info.id, expression: input.cron, nextAt: info.nextAt, recurring: info.recurring }
       }),
   }),
-  cron_list: Tool.make({
-    description: CRON_LIST_DESCRIPTION,
-    input: Schema.Struct({}),
-    output: CronListOutput,
-    toModelOutput: ({ output }) => [
-      {
-        type: "text",
-        text: output.jobs.length === 0 ? "No scheduled jobs for this Session." : output.jobs.map(SCHEDULE_ENTRY).join("\n"),
-      },
-    ],
-    execute: (_input, context) =>
-      Effect.gen(function* () {
-        const schedule = yield* scheduleService
-        const jobs = yield* schedule.list(context.sessionID)
-        return {
-          jobs: jobs.map((job) => ({
-            id: job.id,
-            prompt: job.prompt,
-            ...(job.expression === undefined ? {} : { expression: job.expression }),
-            ...(job.delaySeconds === undefined ? {} : { delaySeconds: job.delaySeconds }),
-            recurring: job.recurring,
-            nextAt: job.nextAt,
-          })),
-        }
-      }),
-  }),
+  cron_list: Tool.withConcurrency(
+    Tool.make({
+      description: CRON_LIST_DESCRIPTION,
+      input: Schema.Struct({}),
+      output: CronListOutput,
+      toModelOutput: ({ output }) => [
+        {
+          type: "text",
+          text:
+            output.jobs.length === 0 ? "No scheduled jobs for this Session." : output.jobs.map(SCHEDULE_ENTRY).join("\n"),
+        },
+      ],
+      execute: (_input, context) =>
+        Effect.gen(function* () {
+          const schedule = yield* scheduleService
+          const jobs = yield* schedule.list(context.sessionID)
+          return {
+            jobs: jobs.map((job) => ({
+              id: job.id,
+              prompt: job.prompt,
+              ...(job.expression === undefined ? {} : { expression: job.expression }),
+              ...(job.delaySeconds === undefined ? {} : { delaySeconds: job.delaySeconds }),
+              recurring: job.recurring,
+              nextAt: job.nextAt,
+            })),
+          }
+        }),
+    }),
+    "concurrent",
+  ),
   cron_delete: Tool.make({
     description: CRON_DELETE_DESCRIPTION,
     input: CronDeleteInput,

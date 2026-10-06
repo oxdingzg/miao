@@ -38,7 +38,7 @@ import { LocationMutation } from "../../location-mutation"
 import { SessionCommandPrepare } from "../command-prepare"
 import { TaskTool } from "../../tool/task"
 import { BackgroundTaskTool } from "../../tool/background-task"
-import type { Tool } from "../../tool/tool"
+import { Tool } from "../../tool/tool"
 import { GoalTool } from "../../tool/goal"
 import { RecallTool } from "../../tool/recall"
 import { BackgroundJob } from "../../background-job"
@@ -470,6 +470,11 @@ const layer = Layer.effect(
       const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(initialAgent, initialSession.id), initialSession.id)
       const epochMs = Date.now() - epochStartedAt
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
+      // Serializes exclusive tool calls within one provider turn. Concurrent
+      // calls never acquire it, so they neither block nor are blocked. No permit
+      // outlives a turn: every fiber it gates is joined before the attempt
+      // returns, so the next turn starts with it free.
+      const exclusivePermit = yield* Semaphore.make(1)
       let needsContinuation = false
       let currentStep = step
       if (promotion) {
@@ -784,15 +789,14 @@ const layer = Layer.effect(
               return
             }
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
-            yield* Effect.uninterruptibleMask((restore) =>
-              restore(
-                toolMaterialization.settle({
-                  sessionID: session.id,
-                  agent: agent.id,
-                  assistantMessageID,
-                  call: event,
-                }),
-              ).pipe(
+            const settleAndPublish = toolMaterialization
+              .settle({
+                sessionID: session.id,
+                agent: agent.id,
+                assistantMessageID,
+                call: event,
+              })
+              .pipe(
                 Effect.flatMap((settlement) =>
                   publish(
                     LLMEvent.toolResult({
@@ -804,8 +808,17 @@ const layer = Layer.effect(
                     settlement.outputPaths ?? [],
                   ),
                 ),
-              ),
-            ).pipe(FiberSet.run(toolFibers))
+              )
+            yield* Effect.uninterruptibleMask((restore) =>
+              // The wait for the permit sits inside `restore`, so clearing the
+              // fiber set interrupts a queued exclusive call instead of letting
+              // every waiter take the permit in turn just to be interrupted.
+              restore(
+                toolMaterialization.concurrency(event.name) === "exclusive"
+                  ? exclusivePermit.withPermit(settleAndPublish)
+                  : settleAndPublish,
+              ).pipe(FiberSet.run(toolFibers)),
+            )
           }).pipe(
             Effect.ensuring(
               Effect.sync(() => {
@@ -1378,16 +1391,22 @@ const layer = Layer.effect(
                     ),
                   ),
                 ),
-                list_sessions: ListSessionsTool.make(() => runListSessions(input.sessionID)),
+                list_sessions: Tool.withConcurrency(
+                  ListSessionsTool.make(() => runListSessions(input.sessionID)),
+                  "concurrent",
+                ),
                 goal: GoalTool.make((goal) =>
                   GoalTool.record(events, input.sessionID, goal).pipe(
                     Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),
                   ),
                 ),
-                recall: RecallTool.make(() =>
-                  SessionHistory.all(db, input.sessionID).pipe(
-                    Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
+                recall: Tool.withConcurrency(
+                  RecallTool.make(() =>
+                    SessionHistory.all(db, input.sessionID).pipe(
+                      Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
+                    ),
                   ),
+                  "concurrent",
                 ),
                 workflow: WorkflowTool.make((request, context) =>
                   runSubagent(

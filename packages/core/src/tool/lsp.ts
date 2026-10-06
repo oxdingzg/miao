@@ -97,108 +97,112 @@ const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
-          description,
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-          execute: (input, context) => {
-            const unable = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-              effect.pipe(
-                Effect.mapError(
-                  () => new ToolFailure({ message: `Unable to perform ${input.operation} on ${input.filePath}` }),
-                ),
-              )
-            const source = {
-              type: "tool" as const,
-              messageID: context.assistantMessageID,
-              callID: context.toolCallID,
-            }
+        [name]: Tool.withConcurrency(
+          Tool.make({
+            description,
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+            execute: (input, context) => {
+              const unable = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+                effect.pipe(
+                  Effect.mapError(
+                    () => new ToolFailure({ message: `Unable to perform ${input.operation} on ${input.filePath}` }),
+                  ),
+                )
+              const source = {
+                type: "tool" as const,
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              }
 
-            return Effect.gen(function* () {
-              const target = yield* unable(mutation.resolve({ path: input.filePath, kind: "file" }))
-              const external = target.externalDirectory
-              if (external)
+              return Effect.gen(function* () {
+                const target = yield* unable(mutation.resolve({ path: input.filePath, kind: "file" }))
+                const external = target.externalDirectory
+                if (external)
+                  yield* unable(
+                    permission.assert({
+                      ...LocationMutation.externalDirectoryPermission(external),
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source,
+                    }),
+                  )
+
+                // The cursor is only meaningful for position operations; the V1
+                // prompt omitted it from documentSymbol and workspaceSymbol.
+                const cursor =
+                  input.operation === "documentSymbol" || input.operation === "workspaceSymbol"
+                    ? {}
+                    : { line: input.line, character: input.character }
+                const promptPath = input.operation === "workspaceSymbol" ? {} : { filePath: target.canonical }
                 yield* unable(
                   permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external),
+                    action: name,
+                    resources: ["*"],
+                    save: ["*"],
+                    metadata: { operation: input.operation, ...promptPath, ...cursor },
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source,
                   }),
                 )
 
-              // The cursor is only meaningful for position operations; the V1
-              // prompt omitted it from documentSymbol and workspaceSymbol.
-              const cursor =
-                input.operation === "documentSymbol" || input.operation === "workspaceSymbol"
-                  ? {}
-                  : { line: input.line, character: input.character }
-              const promptPath = input.operation === "workspaceSymbol" ? {} : { filePath: target.canonical }
-              yield* unable(
-                permission.assert({
-                  action: name,
-                  resources: ["*"],
-                  save: ["*"],
-                  metadata: { operation: input.operation, ...promptPath, ...cursor },
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source,
-                }),
-              )
+                // Existence and server probes happen only after approval so a
+                // caller without permission cannot learn anything about the path.
+                const exists = yield* fs.existsSafe(target.canonical)
+                if (!exists) return yield* new ToolFailure({ message: `File not found: ${input.filePath}` })
+                const available = yield* lsp.hasClients(target.canonical)
+                if (!available)
+                  return yield* new ToolFailure({ message: "No LSP server available for this file type." })
 
-              // Existence and server probes happen only after approval so a
-              // caller without permission cannot learn anything about the path.
-              const exists = yield* fs.existsSafe(target.canonical)
-              if (!exists) return yield* new ToolFailure({ message: `File not found: ${input.filePath}` })
-              const available = yield* lsp.hasClients(target.canonical)
-              if (!available) return yield* new ToolFailure({ message: "No LSP server available for this file type." })
+                const position = { file: target.canonical, line: input.line - 1, character: input.character - 1 }
+                const result = yield* ((): Effect.Effect<ReadonlyArray<unknown>, LSP.RequestUnavailableError> => {
+                  switch (input.operation) {
+                    case "goToDefinition":
+                      return lsp.definition(position)
+                    case "findReferences":
+                      return lsp.references(position)
+                    case "hover":
+                      return lsp.hover(position)
+                    case "documentSymbol":
+                      return lsp.documentSymbol(target.canonical)
+                    case "workspaceSymbol":
+                      return lsp.workspaceSymbol(target.canonical, input.query ?? "")
+                    case "goToImplementation":
+                      return lsp.implementation(position)
+                    case "prepareCallHierarchy":
+                      return lsp.prepareCallHierarchy(position)
+                    case "incomingCalls":
+                      return lsp.incomingCalls(position)
+                    case "outgoingCalls":
+                      return lsp.outgoingCalls(position)
+                    default:
+                      return Effect.die(new Error("Unsupported LSP operation"))
+                  }
+                })().pipe(
+                  Effect.mapError(
+                    (error) =>
+                      new ToolFailure({
+                        message: `No language server answered ${input.operation}${
+                          error.servers.length > 0 ? ` (tried ${[...new Set(error.servers)].join(", ")})` : ""
+                        }.`,
+                      }),
+                  ),
+                )
 
-              const position = { file: target.canonical, line: input.line - 1, character: input.character - 1 }
-              const result = yield* ((): Effect.Effect<ReadonlyArray<unknown>, LSP.RequestUnavailableError> => {
-                switch (input.operation) {
-                  case "goToDefinition":
-                    return lsp.definition(position)
-                  case "findReferences":
-                    return lsp.references(position)
-                  case "hover":
-                    return lsp.hover(position)
-                  case "documentSymbol":
-                    return lsp.documentSymbol(target.canonical)
-                  case "workspaceSymbol":
-                    return lsp.workspaceSymbol(target.canonical, input.query ?? "")
-                  case "goToImplementation":
-                    return lsp.implementation(position)
-                  case "prepareCallHierarchy":
-                    return lsp.prepareCallHierarchy(position)
-                  case "incomingCalls":
-                    return lsp.incomingCalls(position)
-                  case "outgoingCalls":
-                    return lsp.outgoingCalls(position)
-                  default:
-                    return Effect.die(new Error("Unsupported LSP operation"))
-                }
-              })().pipe(
-                Effect.mapError(
-                  (error) =>
-                    new ToolFailure({
-                      message: `No language server answered ${input.operation}${
-                        error.servers.length > 0 ? ` (tried ${[...new Set(error.servers)].join(", ")})` : ""
-                      }.`,
-                    }),
-                ),
-              )
-
-              return {
-                operation: input.operation,
-                ...promptPath,
-                ...cursor,
-                ...(input.operation === "workspaceSymbol" ? { query: input.query ?? "" } : {}),
-                result,
-              } satisfies Output
-            })
-          },
-        }),
+                return {
+                  operation: input.operation,
+                  ...promptPath,
+                  ...cursor,
+                  ...(input.operation === "workspaceSymbol" ? { query: input.query ?? "" } : {}),
+                  result,
+                } satisfies Output
+              })
+            },
+          }),
+          "concurrent",
+        ),
       })
       .pipe(Effect.orDie)
   }),
