@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
+import type { JSX } from "@opentui/solid"
 import type { Event } from "@miao/schema/event-view"
 import type { TuiPluginApi } from "@miao/plugin/tui"
 import UpdateNotice from "../../../src/feature-plugins/system/update-notice"
