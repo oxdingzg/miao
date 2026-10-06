@@ -8,11 +8,6 @@ import { Runtime } from "./framework/runtime"
 import { LocalRuntime } from "./services/local-runtime"
 import { layer } from "./services/window-signals"
 
-if (process.argv.includes("--build-id")) {
-  console.log(InstallationExecutable.buildID)
-  process.exit(0)
-}
-
 const Handlers = Runtime.handlers(Commands, {
   $: () => import("./commands/handlers/default"),
   api: () => import("./commands/handlers/api"),
@@ -22,6 +17,11 @@ const Handlers = Runtime.handlers(Commands, {
   migrate: () => import("./commands/handlers/migrate"),
   serve: () => import("./commands/handlers/serve"),
 })
+
+if (process.argv.includes("--build-id")) {
+  console.log(InstallationExecutable.buildID)
+  process.exit(0)
+}
 
 Runtime.run(Commands, Handlers, { version: "local" }).pipe(
   Effect.provide(Layer.mergeAll(LocalRuntime.layer, layer)),
