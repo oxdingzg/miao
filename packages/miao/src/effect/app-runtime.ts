@@ -44,6 +44,7 @@ import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location-services"
+import { RuntimeActivity } from "@miao/core/runtime/activity"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
@@ -70,6 +71,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     SessionStore.node,
     BackgroundJob.node,
     SessionSchedule.node,
+    RuntimeActivity.node,
     RuntimeFlags.node,
     EventV2Bridge.node,
     LSP.node,

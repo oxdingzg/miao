@@ -19,6 +19,7 @@ export async function start(filename: string) {
     stopped: boolean
     agent?: { stop: () => Promise<void>; administration: RuntimeAdministration.Interface }
     execution?: { interruptAll: () => Promise<void>; dispose: () => Promise<void> }
+    lifetime?: { stop: () => void }
   } = { stopped: false }
   const completion: { resolve?: () => void } = {}
   const closed = new Promise<void>((resolve) => {
@@ -30,6 +31,7 @@ export async function start(filename: string) {
     const errors: unknown[] = []
     try {
       const actions = [
+        () => state.lifetime?.stop(),
         () => state.agent?.stop(),
         () => (state.server ? state.execution?.interruptAll() : undefined),
         () => state.server?.stop(true),
@@ -108,6 +110,73 @@ export async function start(filename: string) {
         .digest("hex"),
     }
     await RuntimeDiscovery.publish(owner.storage, record)
+    // A background daemon shared by every window must not linger once nothing
+    // needs it (`specs/runtime-lifetime.md`). While the activity vector is empty
+    // a countdown is armed; new activity cancels it.
+    const { RuntimeLifetime } = await import("./lifetime")
+    const linger = RuntimeLifetime.lingerMs()
+    if (linger >= 0) {
+      const pinsRemoteControl = RuntimeLifetime.remoteControlPins()
+      const { AppRuntime } = await import("@/effect/app-runtime")
+      const { RuntimeActivity } = await import("@miao/core/runtime/activity")
+      const startupGrace = RuntimeLifetime.startupGraceMs()
+      const startedAt = Date.now()
+      let everActive = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let checking = false
+      const idle = async () => {
+        if (state.stopped) return false
+        const connections = state.server ? await state.server.connected() : 0
+        if (connections > 0) return false
+        const remote = pinsRemoteControl ? state.agent?.administration.status() : undefined
+        if (remote?.enabled && remote.connected) return false
+        const snapshot = await AppRuntime.runPromise(RuntimeActivity.Service.use((activity) => activity.snapshot))
+        return (
+          snapshot.executions === 0 && snapshot.unpromoted === 0 && snapshot.scheduled === 0 && snapshot.background === 0
+        )
+      }
+      const drain = () => {
+        timer = undefined
+        void (async () => {
+          // Re-evaluate at the instant the countdown fires; resumed activity
+          // re-arms rather than shutting down.
+          if (!(await idle())) return
+          await stop().catch(() => undefined)
+        })()
+      }
+      const tick = () => {
+        if (checking || state.stopped) return
+        checking = true
+        void idle()
+          .then((empty) => {
+            if (!empty) {
+              // Seen activity: from now on an empty vector means the last client left.
+              everActive = true
+              if (timer !== undefined) {
+                clearTimeout(timer)
+                timer = undefined
+              }
+              return
+            }
+            // A just-spawned Runtime has no client yet; give the starting client
+            // the startup grace before treating an empty vector as idle.
+            if (!everActive && Date.now() - startedAt < startupGrace) return
+            if (timer === undefined) timer = setTimeout(drain, linger)
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            checking = false
+          })
+      }
+      const interval = setInterval(tick, 1000)
+      state.lifetime = {
+        stop: () => {
+          clearInterval(interval)
+          if (timer !== undefined) clearTimeout(timer)
+        },
+      }
+      tick()
+    }
     return { record, stop, closed }
   } catch (error) {
     await stop().catch(console.error)
