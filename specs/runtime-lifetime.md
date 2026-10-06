@@ -1,9 +1,16 @@
 # Runtime lifetime and idleness
 
+> Superseded, 2026-10-06: [Window-owned runtime](window-runtime.md) is the
+> product contract and implementation schedule. The idle vector, remote pins,
+> supervisor mode and automatic replacement below are historical proposals,
+> not work to continue. Closing the owning window ends its execution and remote
+> resources even while busy. Activity/linger primitives have landed, but the
+> host does not yet implement the idle-exit policy described below.
+
 Status: design, 2026-10-06. Extends `specs/runtime-upgrades.md` and supplies the
 quiescence signal its "Future service replacement" requires. Prerequisite for the
 automatic replacement discussed there and for `specs/v2/execution-workers.md`.
-Not yet implemented.
+Historical design; partially implemented primitives only.
 
 ## Problem
 

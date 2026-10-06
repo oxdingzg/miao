@@ -3,6 +3,9 @@
 状态：方案稿，2026-10-01。依据：`docs/research/2026-10-01-miao-research-and-plan.html`（本地调研报告：
 用户痛点、功能矩阵、社区反馈、同步架构、内存剖析）与 `docs/research/2026-10-01-zcode-teardown.md`。
 
+2026-10-06 生命周期修订：[随窗口运行方案与排期](window-runtime.md) 替代常驻 daemon、空闲保活和版本化 worker 路线。
+下文 10-01 的现状数据保留其调查日期；本轮先落实窗口所有权、共享库保护和按需远程接入。
+
 ## 目标
 
 驱动下面所有决策的产品目标：**mtty 手机 App，像 Claude 一样做会话同步**——在桌面开始的工作，
@@ -35,7 +38,7 @@
 ```
  客户端：TUI · --mini · miao run · ACP · 桌面/web · mtty 手机 · IM bot（飞书/企微/Telegram）
                           │  V2 协议（命令 + 可续传事件流，版本化）
- 内核：  session runner · 工具 · 权限/沙箱 · LLM transport · 事件存储（SQLite）   ← 常驻 daemon
+ 内核：  session runner · 工具 · 权限/沙箱 · LLM transport · 事件存储（SQLite）   ← 每次运行拥有，随窗口退出
  边缘：  relay（E2E 加密信封、游标、推送）—— 可选，用于不开 VPN 时的访问
 ```
 
@@ -44,8 +47,8 @@
 1. **单一运行时。** 全部走 V2，删除 V1，之后 `db compact` 才安全。
 2. **协议即契约。** 所有客户端（包括 TUI）只用 V2 协议；TS、Swift/Kotlin（经 Rust `miao-wire` crate）
    和 relay 共用生成的类型。
-3. **内核以 daemon 运行。** `miao serve` 由 launchd/systemd 常驻在桌面或家用服务器（macmini/dev，经
-   WireGuard）；本地 TUI 连接它或内嵌它。
+3. **内核随窗口运行。** 每次普通启动拥有固定版本的运行时，关窗一起退出；`/remote-control` 按需分享当前运行。
+   `miao serve` 是显式前台入口；不设计 launchd/systemd 常驻服务。升级只影响后续启动。
 4. **按需加载。** 模型目录、tokenizer、LSP、插件、Babel、MCP 都在第一次用到时才启动。
 5. **事件日志是同步单元。** 每会话单写者（epoch fencing）；客户端带游标做只读复制。不做 CRDT 多写。
 6. **默认安全。** 补上绕过漏洞后沙箱默认开；升级只认显式规则（0.0.31 已做）。
@@ -92,12 +95,12 @@ enterprise / stats / function / slack 等）与旧 JS SDK 属收尾工作。
 
 ### Phase 2 —— 远程就绪内核（约 3 周）
 
-- daemon 模式、设备配对鉴权、可续传全局流、写者 fencing、持久化审批、`initialize`、附件、notifier（见上表）。
+- 随窗口运行、按需远程接入、设备配对鉴权、可续传事件流、写者保护、持久化审批、`initialize`、附件、notifier（见上表）。
 - 门槛：脚本客户端经历断网与内核重启后，事件不丢不重；可远程审批；协议有文档且版本化。
 
 ### Phase 3 —— mtty 手机 MVP（约 4–6 周）
 
-- 先做 iOS，原生 SwiftUI，经 WireGuard 连 daemon（用户已有 wg-office）。
+- 先做 iOS，原生 SwiftUI，连接当前窗口开启的远程接入。
 - 多 agent 收件箱（"谁在等我"）、会话列表/历史、实时流、发 prompt、传图、语音输入、审批/拒绝、中断、
   看 diff；每个会话一个 SwiftTerm 终端标签。
 - 只做结构化 UI——不刮终端屏幕（Omnara 已放弃这条路）。

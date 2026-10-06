@@ -1,5 +1,12 @@
 # Persistent local Runtime
 
+> Transition notice (2026-10-06): this page documents the currently implemented
+> shared Runtime. The accepted replacement is a runtime owned by each CLI
+> invocation: closing its window ends its execution and Remote Control, and new
+> windows execute the newly installed build. See the
+> [design and implementation schedule](../specs/window-runtime.md). That change
+> has not shipped; do not read the plan as current command behavior.
+
 The default TUI, `miao run`, and `miao --mini` connect to a persistent local
 Runtime. The first client starts it in the background. Closing the interface
 does not terminate other clients or running sessions. Ctrl-C in a headless run
