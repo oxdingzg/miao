@@ -46,6 +46,7 @@ import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
 import { WorktreeTool } from "../../tool/worktree"
+import { WorkflowTool } from "../../tool/workflow"
 import { PushNotificationTool } from "../../tool/push-notification"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionCreate } from "../../session-create"
@@ -1386,6 +1387,23 @@ const layer = Layer.effect(
                 recall: RecallTool.make(() =>
                   SessionHistory.all(db, input.sessionID).pipe(
                     Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
+                  ),
+                ),
+                workflow: WorkflowTool.make((request, context) =>
+                  runSubagent(
+                    input.sessionID,
+                    {
+                      agent: request.agent ?? "general",
+                      prompt: request.prompt,
+                      description: request.description,
+                      context,
+                    },
+                    input.delegation,
+                  ).pipe(
+                    Effect.map((result) => ({ sessionID: result.sessionID, text: result.text })),
+                    Effect.mapError((error) =>
+                      error instanceof ToolFailure ? error : new ToolFailure({ message: "Workflow step failed" }),
+                    ),
                   ),
                 ),
                 ...WorktreeTool.make({
