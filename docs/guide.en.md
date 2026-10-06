@@ -42,6 +42,8 @@ $env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/mia
 
 The installer places the binary at `~/.miao/bin/miao` and updates PATH unless `--no-modify-path`.
 
+The current Windows release is not Authenticode-signed. The archive is `miao-windows-x64.zip` (older CPUs: `miao-windows-x64-baseline.zip`), containing `miao.exe`; you can also download and extract it manually from [miao GitHub Releases](https://github.com/oxdingzg/miao/releases). The install script itself usually runs without a prompt, but starting a downloaded `miao.exe` may trigger the SmartScreen “Windows protected your PC” dialog. Follow the [shared Windows security guidance](https://mtty.dev/docs/about/windows-downloads/) when it appears, and do not allow a threat reported by antivirus software.
+
 **Three entry points (coexisting, independent)**
 
 | Command        | What it is                                                           | Data / config                       | Updates                |
