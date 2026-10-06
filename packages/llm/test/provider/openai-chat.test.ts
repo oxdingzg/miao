@@ -667,12 +667,40 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
-  it.effect("fails on malformed stream events", () =>
+  it.effect("fails on a malformed content chunk and keeps the offending frame", () =>
     Effect.gen(function* () {
       const body = sseEvents(deltaChunk({ content: 123 }))
       const error = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
 
       expect(error.message).toContain("Invalid openai/openai-chat stream event")
+      expect(error.message).toContain('"content":123')
+      expect(error.reason).toMatchObject({
+        _tag: "InvalidProviderOutput",
+        raw: expect.stringContaining('"content":123'),
+      })
+    }),
+  )
+
+  it.effect("skips an unknown stream event that carries no content", () =>
+    Effect.gen(function* () {
+      const body = sseEvents(
+        { id: "chatcmpl_fixture", object: "chat.completion.chunk", system_fingerprint: "fp_1" },
+        deltaChunk({ role: "assistant", content: "Hello" }),
+        deltaChunk({}, "stop"),
+      )
+      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
+
+      expect(response.text).toBe("Hello")
+    }),
+  )
+
+  it.effect("surfaces an error payload sent inside the stream", () =>
+    Effect.gen(function* () {
+      const body = sseEvents({ error: { message: "rate limit exceeded", type: "rate_limit_error" } })
+      const error = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
+
+      expect(error.message).toContain("rate limit exceeded")
+      expect(error.reason).toMatchObject({ _tag: "UnknownProvider" })
     }),
   )
 

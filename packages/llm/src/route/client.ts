@@ -226,21 +226,44 @@ const streamError = (route: string, message: string, cause: Cause.Cause<unknown>
   return ProviderShared.eventError(route, message, Cause.pretty(cause))
 }
 
+const RAW_LIMIT = 500
+const boundRaw = (raw: string) => (raw.length > RAW_LIMIT ? `${raw.slice(0, RAW_LIMIT)}… (${raw.length} chars)` : raw)
+const rawFrame = <Frame>(frame: Frame) => (typeof frame === "string" ? frame : ProviderShared.encodeJson(frame))
+const parsedFrame = (raw: string) =>
+  Option.flatMap(Schema.decodeUnknownOption(Schema.UnknownFromJsonString)(raw), (value) =>
+    ProviderShared.isRecord(value) ? Option.some(value) : Option.none(),
+  )
+/** Prefer an OpenAI-style `{ error: { message } }` message over the generic fallback. */
+const providerErrorMessage = (error: unknown) =>
+  ProviderShared.isRecord(error) && typeof error.message === "string" ? error.message : ProviderShared.errorText(error)
+
 function makeFromTransport<Body, Prepared, Frame, Event, State>(
   input: MakeTransportInput<Body, Prepared, Frame, Event, State>,
 ): Route<Body, Prepared> {
   const protocol = input.protocol
   const encodeBody = Schema.encodeSync(Schema.fromJsonString(protocol.body.schema))
   const decodeEventEffect = Schema.decodeUnknownEffect(protocol.stream.event)
+  // One frame that does not match the event schema is not always fatal: a
+  // provider may emit unknown metadata events, or wrap its own error inside the
+  // stream. Fail only on a malformed content chunk; surface an in-band provider
+  // error as a provider error; skip an unknown event that carries no content, so
+  // one stray frame cannot abort a whole turn.
+  const invalidEvent = (route: string, raw: string) =>
+    ProviderShared.eventError(input.id, `Invalid ${route} stream event: ${boundRaw(raw)}`, raw)
+  const classifyFrame = (route: string, raw: string): Effect.Effect<Option.Option<Event>, LLMError> => {
+    const parsed = parsedFrame(raw)
+    if (Option.isNone(parsed)) return Effect.fail(invalidEvent(route, raw))
+    if ("error" in parsed.value)
+      return Effect.fail(ProviderShared.providerError(route, providerErrorMessage(parsed.value.error)))
+    if ("choices" in parsed.value) return Effect.fail(invalidEvent(route, raw))
+    return Effect.succeed(Option.none())
+  }
   const decodeEvent = (route: string) => (frame: Frame) =>
     decodeEventEffect(frame).pipe(
-      Effect.mapError(() =>
-        ProviderShared.eventError(
-          input.id,
-          `Invalid ${route} stream event`,
-          typeof frame === "string" ? frame : ProviderShared.encodeJson(frame),
-        ),
-      ),
+      Effect.matchEffect({
+        onSuccess: (event) => Effect.succeed(Option.some(event)),
+        onFailure: () => classifyFrame(route, rawFrame(frame)),
+      }),
     )
 
   type BuiltRouteInput = Omit<MakeTransportInput<Body, Prepared, Frame, Event, State>, "defaults"> & {
@@ -286,6 +309,8 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           .frames(prepared, request, runtime)
           .pipe(
             Stream.mapEffect(decodeEvent(route)),
+            Stream.filter(Option.isSome),
+            Stream.map((event) => event.value),
             protocol.stream.terminal ? Stream.takeUntil(protocol.stream.terminal) : (stream) => stream,
           )
         return events.pipe(

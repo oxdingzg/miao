@@ -6,6 +6,7 @@ import {
   InvalidProviderOutputReason,
   InvalidRequestReason,
   LLMError,
+  UnknownProviderReason,
   type ContentPart,
   type LLMRequest,
   type MediaPart,
@@ -92,6 +93,19 @@ export const eventError = (route: string, message: string, raw?: string) =>
     module: "ProviderShared",
     method: "stream",
     reason: new InvalidProviderOutputReason({ route, message, raw }),
+  })
+
+/**
+ * A provider error that arrived inside the stream rather than as an HTTP status,
+ * e.g. an OpenAI-compatible relay sending `data: {"error": {...}}`. Surfacing it
+ * as a provider error keeps the provider's own message instead of reporting a
+ * generic "invalid stream event".
+ */
+export const providerError = (route: string, message: string) =>
+  new LLMError({
+    module: "ProviderShared",
+    method: "stream",
+    reason: new UnknownProviderReason({ message: `${route}: ${message}` }),
   })
 
 export const parseJson = (route: string, input: string, message: string) =>
