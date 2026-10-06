@@ -81,7 +81,7 @@ import { SessionRunnerModel } from "./model"
 import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
-import { createLLMEventPublisher } from "./publish-llm-event"
+import { createLLMEventPublisher, progressGate } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -594,6 +594,7 @@ const layer = Layer.effect(
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const settings = yield* readSettings()
       const toolsStartedAt = Date.now()
+      const admitProgress = progressGate()
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
@@ -602,8 +603,9 @@ const layer = Layer.effect(
             alwaysLoad: settings.alwaysLoad,
             sessionID: session.id,
             disabledTools: settings.disabledTools,
-            onProgress: (input, update) =>
-              events
+            onProgress: (input, update) => {
+              if (!admitProgress(`${input.sessionID}:${input.call.id}`, Date.now())) return Effect.void
+              return events
                 .publish(SessionEvent.Tool.Progress, {
                   sessionID: input.sessionID,
                   timestamp: DateTime.makeUnsafe(Date.now()),
@@ -621,7 +623,8 @@ const layer = Layer.effect(
                         },
                   ),
                 })
-                .pipe(Effect.asVoid),
+                .pipe(Effect.asVoid)
+            },
           })
       const toolsMs = Date.now() - toolsStartedAt
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id

@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { asc, eq } from "drizzle-orm"
 import { DateTime, Effect, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
@@ -15,6 +15,7 @@ import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionTable, SessionMessageTable } from "@miao/core/session/sql"
+import { progressGate } from "../src/session/runner/publish-llm-event"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Database.node, EventV2.node, SessionProjector.node])))
@@ -155,4 +156,15 @@ describe("Tool.Progress", () => {
       expect(rows.map((row) => row.type)).toContain(EventV2.versionedType(SessionEvent.Tool.Failed.type, 1))
     }),
   )
+})
+
+describe("progressGate", () => {
+  test("admits the first update per call, then at most one per interval", () => {
+    const admit = progressGate()
+    expect(admit("ses:call-1", 1_000)).toBe(true)
+    expect(admit("ses:call-1", 1_200)).toBe(false)
+    expect(admit("ses:call-1", 1_499)).toBe(false)
+    expect(admit("ses:call-1", 1_500)).toBe(true)
+    expect(admit("ses:call-2", 1_100)).toBe(true)
+  })
 })
