@@ -9,8 +9,8 @@
 import type { Part, SessionMessage, ToolPart } from "@miao/schema/view-models"
 import { type Client } from "@/client"
 import { mutableResponse } from "@miao/tui/util/mutable-response"
-import { isV2StreamFragmentEvent, sessionContextToMessages } from "@miao/tui/context/session-v2"
-import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
+import { isV2StreamFragmentEvent } from "@miao/tui/context/session-v2"
+import { promptInputFromParts, sessionContextToMessages, toolPart } from "@miao/tui/context/session-v2-write"
 
 export type HeadlessInput = {
   client: Client
