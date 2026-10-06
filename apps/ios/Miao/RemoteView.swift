@@ -209,6 +209,7 @@ private struct PairingView: View {
                 Section {
                     Button("扫描电脑上的二维码", systemImage: "qrcode.viewfinder") { scanning = true }
                     TextField("粘贴 miao 配对链接", text: $uri, axis: .vertical)
+                        .lineLimit(1...4)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
                         .accessibilityIdentifier("pairingURI")
                     Button("开始配对") { model.pair(uri.trimmingCharacters(in: .whitespacesAndNewlines), label: label); uri = "" }
