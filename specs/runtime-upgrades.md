@@ -60,7 +60,9 @@ quiescence signal. Checking only active model calls or visible windows is not
 sufficient: queued inputs, approvals, remote clients, and concurrently admitted
 prompts must be accounted for. A new owner may open or migrate storage only
 after the prior owner releases its lock. An interrupted provider/tool call must
-never be automatically replayed as part of an upgrade.
+never be automatically replayed as part of an upgrade. `specs/runtime-lifetime.md`
+designs the Runtime lifecycle and the idleness that supplies the quiescence
+signal.
 
 Running different execution builds simultaneously for one database is a
 separate architecture change. It requires the Runtime to retain durable
