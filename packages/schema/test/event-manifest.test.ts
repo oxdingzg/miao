@@ -9,8 +9,8 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(76)
-    expect(EventManifest.Definitions.length).toBe(98)
+    expect(EventManifest.ServerDefinitions.length).toBe(77)
+    expect(EventManifest.Definitions.length).toBe(99)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,
       SessionV1.Event.Updated,
@@ -23,7 +23,7 @@ describe("public event manifest", () => {
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(98)
+    expect(EventManifest.Latest.size).toBe(99)
     // Durable background subagent handoff added the delegation pair.
     expect(EventManifest.Durable.size).toBe(42)
   })
@@ -43,7 +43,7 @@ describe("public event manifest", () => {
     expect(Reference.Event.Definitions).toEqual([Reference.Event.Updated])
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
     expect(IdeEvent.Definitions).toEqual([IdeEvent.Installed])
-    expect(EventManifest.Definitions.slice(52, 55)).toEqual([
+    expect(EventManifest.Definitions.slice(53, 56)).toEqual([
       SessionV1.Event.PartDelta,
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
