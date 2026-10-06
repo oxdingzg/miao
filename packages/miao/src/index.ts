@@ -78,6 +78,7 @@ const commandLoaders: Array<[string, CommandLoader]> = [
   ["pr", () => import("./cli/cmd/pr").then((m) => m.PrCommand)],
   ["session", () => import("./cli/cmd/session").then((m) => m.SessionCommand)],
   ["plugin", () => import("./cli/cmd/plug").then((m) => m.PluginCommand)],
+  ["marketplace", () => import("./cli/cmd/marketplace").then((m) => m.MarketplaceCommand)],
   ["db", () => import("./cli/cmd/db").then((m) => m.DbCommand)],
   ["doctor", () => import("./cli/cmd/doctor").then((m) => m.DoctorCommand)],
 ]
