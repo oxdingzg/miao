@@ -832,27 +832,6 @@ export const {
         case "server.instance.disposed":
           void bootstrap()
           break
-        case "permission.replied": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "permission.asked": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "question.replied":
-        case "question.rejected": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "question.asked": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
         case "permission.v2.asked": {
           const request = event.properties
           const mapped = {
@@ -948,81 +927,6 @@ export const {
           break
         }
 
-        case "todo.updated":
-          todoLiveAt.set(event.properties.sessionID, performance.now())
-          setStore("todo", event.properties.sessionID, event.properties.todos)
-          break
-
-        case "session.diff":
-          diffLiveAt.set(event.properties.sessionID, performance.now())
-          setStore("session_diff", event.properties.sessionID, event.properties.diff)
-          break
-
-        case "session.deleted": {
-          const id = event.properties.info.id
-          const result = search(store.session, id, (s) => s.id)
-          const messages = store.message[id]
-          batch(() => {
-            if (result.found) {
-              setStore(
-                "session",
-                produce((draft) => {
-                  draft.splice(result.index, 1)
-                }),
-              )
-            }
-            setStore(
-              produce((draft) => {
-                delete draft.message[id]
-                delete draft.todo[id]
-                delete draft.session_diff[id]
-                delete draft.session_status[id]
-                delete draft.permission[id]
-                delete draft.question[id]
-                if (messages) for (const message of messages) delete draft.part[message.id]
-              }),
-            )
-          })
-          diffRequests.get(id)?.abort()
-          diffRequests.delete(id)
-          diffLiveAt.delete(id)
-          lastViewed.delete(id)
-          pinnedSessions.delete(id)
-          fullSyncedSessions.delete(id)
-          watchedSessions.delete(id)
-          syncingSessions.delete(id)
-          hydratingSessions.delete(id)
-          todoLiveAt.delete(id)
-          sessionMessages.delete(id)
-          olderHistory.delete(id)
-          olderLoaded.delete(id)
-          loadingOlder.delete(id)
-          v2Reducer.clear(id)
-          streamText.clear(id)
-          pendingPrompts.clear(id)
-          setStore(
-            "session_error",
-            produce((errors) => {
-              delete errors[id]
-            }),
-          )
-          break
-        }
-        case "session.updated": {
-          const result = search(store.session, event.properties.info.id, (s) => s.id)
-          if (result.found) {
-            setStore("session", result.index, reconcile(event.properties.info))
-            break
-          }
-          setStore(
-            "session",
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.info)
-            }),
-          )
-          break
-        }
-
         case "session.next.text.started": {
           streamText.start(event.properties.sessionID, event.properties.assistantMessageID, event.properties.textID)
           break
@@ -1094,47 +998,6 @@ export const {
               session.time.updated = event.properties.timestamp
             }),
           )
-          break
-        }
-
-        case "session.status": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "message.updated": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-        case "message.removed": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-        case "message.part.updated": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "message.part.delta": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "message.part.removed": {
-          // V1 runtime event; the V2 TUI reads sessions through session.next.* and the V2 API.
-          break
-        }
-
-        case "lsp.updated": {
-          const workspace = project.workspace.current()
-          void sdk.api.lsp.status({ location: { workspace } }).then((x) => setStore("lsp", toLspStatus(x.data ?? [])))
-          break
-        }
-
-        case "vcs.branch.updated": {
-          if (workspace === project.workspace.current()) {
-            setStore("vcs", { branch: event.properties.branch })
-          }
           break
         }
       }
