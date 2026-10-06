@@ -14,17 +14,25 @@ test.skipIf(process.platform === "win32")(
     const binaries = await Promise.all(
       ids.map(async (id) => {
         const outfile = path.join(directory, id)
-        await Bun.build({
-          entrypoints: [path.join(import.meta.dir, "fixture-build.ts")],
-          compile: {
+        const build = Bun.spawn(
+          [
+            process.execPath,
+            "build",
+            path.join(import.meta.dir, "fixture-build.ts"),
+            "--compile",
+            "--outfile",
             outfile,
-            autoloadBunfig: false,
-            autoloadDotenv: false,
-            autoloadTsconfig: false,
-            autoloadPackageJson: false,
-          },
-          define: { MIAO_BUILD_ID: JSON.stringify(id) },
-        })
+            "--define",
+            `MIAO_BUILD_ID=${JSON.stringify(id)}`,
+            "--no-compile-autoload-bunfig",
+            "--no-compile-autoload-dotenv",
+            "--no-compile-autoload-tsconfig",
+            "--no-compile-autoload-package-json",
+          ],
+          { cwd: directory, stdout: "pipe", stderr: "pipe" },
+        )
+        const errors = await new Response(build.stderr).text()
+        expect(await build.exited, errors).toBe(0)
         if (process.platform === "darwin") {
           expect(await Bun.spawn(["codesign", "--force", "--sign", "-", outfile]).exited).toBe(0)
         }
