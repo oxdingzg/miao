@@ -504,4 +504,37 @@ describe("ToolRegistry", () => {
       expect(materialized.definitions.map((definition) => definition.name)).toEqual(["local_echo", "small_external"])
     }),
   )
+
+  it.effect("alwaysLoad keeps a pinned external tool resident above the disclosure budget", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        local_echo: make(),
+        deferred_external: Tool.makeExternal({
+          description: `${"deferred ".repeat(8_200)}(external)`,
+          inputSchema: { type: "object" },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "deferred ok" }]),
+        }),
+        pinned_external: Tool.makeExternal({
+          description: `${"pinned ".repeat(8_200)}(external)`,
+          inputSchema: { type: "object" },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "pinned ok" }]),
+        }),
+      })
+
+      const materialized = yield* service.materialize(undefined, {
+        disclosure: true,
+        alwaysLoad: ["pinned_external"],
+      })
+      const names = materialized.definitions.map((definition) => definition.name)
+      expect(names).toEqual(["local_echo", "pinned_external", "tool_search"])
+
+      const search = yield* materialized.settle({
+        sessionID,
+        ...identity,
+        call: { type: "tool-call", id: "call-search", name: "tool_search", input: { query: "deferred" } },
+      })
+      expect(JSON.stringify(search.result)).toContain("deferred_external")
+    }),
+  )
 })

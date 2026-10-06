@@ -12,6 +12,7 @@ import { ConfigCost } from "./config/cost"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigLinter } from "./config/linter"
+import { ConfigTools } from "./config/tools"
 import { ConfigLSP } from "./config/lsp"
 import { ConfigLoop } from "./config/loop"
 import { ConfigMCP } from "./config/mcp"
@@ -74,6 +75,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   linter: ConfigLinter.Info.pipe(Schema.optional).annotate({
     description: "File-scoped lint commands that run after edits and feed failures back to the model",
+  }),
+  tools: ConfigTools.Info.pipe(Schema.optional).annotate({
+    description: "Tool advertising: defer remote catalogs behind tool_search and pin always-loaded tools",
   }),
   lsp: ConfigLSP.Info.pipe(Schema.optional).annotate({
     description: "Enable built-in language servers or configure server overrides",

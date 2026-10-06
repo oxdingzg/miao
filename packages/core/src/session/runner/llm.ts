@@ -264,18 +264,22 @@ const layer = Layer.effect(
       let budget: number | undefined
       let loop: { readonly maxIterations: number; readonly continuePrompt: string } | undefined
       let disabledTools: ReadonlyArray<string> = []
+      let disclosure: boolean | undefined
+      let alwaysLoad: ReadonlyArray<string> | undefined
       for (const entry of documents) {
         if (entry.info.cache?.ttl_seconds !== undefined) ttl = entry.info.cache.ttl_seconds
         if (entry.info.compaction?.prune !== undefined) prune = entry.info.compaction.prune
         if (entry.info.cost?.budget_usd !== undefined) budget = entry.info.cost.budget_usd
         if (entry.info.disabled_tools !== undefined) disabledTools = entry.info.disabled_tools
+        if (entry.info.tools?.disclosure !== undefined) disclosure = entry.info.tools.disclosure
+        if (entry.info.tools?.always_load !== undefined) alwaysLoad = entry.info.tools.always_load
         if (entry.info.loop?.enabled === true)
           loop = {
             maxIterations: entry.info.loop.max_iterations ?? DEFAULT_LOOP_MAX_ITERATIONS,
             continuePrompt: entry.info.loop.continue_prompt ?? DEFAULT_LOOP_PROMPT,
           }
       }
-      return { ttl, prune, budget, loop, disabledTools }
+      return { ttl, prune, budget, loop, disabledTools, disclosure, alwaysLoad }
     })
     // Title generation runs beside the first provider turn and outlives the drain.
     // One attempt per Session per process, like V1's single first-step attempt.
@@ -592,7 +596,8 @@ const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
-            disclosure: Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE,
+            disclosure: settings.disclosure ?? Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE,
+            alwaysLoad: settings.alwaysLoad,
             sessionID: session.id,
             disabledTools: settings.disabledTools,
             onProgress: (input, update) =>
