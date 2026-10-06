@@ -261,7 +261,7 @@ Use native-currency pricing (`providers.<id>.models.<m>.cost`), or switch displa
 `/currency`.
 
 **Native (Rust) addon problems?**
-`MIAO_NATIVE=0` disables the addon. The V2 edit/patch tools are TypeScript; the addon backs the OS sandbox runner. See the [comparison matrix](miao-vs-opencode.en.md).
+`MIAO_NATIVE=0` disables the addon, and the TypeScript implementations of edit matching and patch derivation take over. The addon also backs the OS sandbox runner. See the [comparison matrix](miao-vs-opencode.en.md).
 
 **Can it keep working autonomously like a single long run?**
 Use the `loop` config (§5.8), or an external loop `miao run --continue "...continue..."`.
