@@ -2,8 +2,8 @@
   lib,
   stdenvNoCC,
   callPackage,
-  bun,
   nodejs,
+  python3,
   sysctl,
   makeBinaryWrapper,
   models-dev,
@@ -11,28 +11,31 @@
   installShellFiles,
   versionCheckHook,
   writableTmpDirAsHomeHook,
+  glibc,
   node_modules ? callPackage ./node-modules.nix { },
 }:
+let
+  # `bun build --compile` bakes a module initialization order into the binary,
+  # and nixpkgs' bun produces one that crashes at startup. See ./bun.nix.
+  bun = callPackage ./bun.nix { };
+
+  # The store's loader for the platform, which is what the compiled binary has
+  # to name as its interpreter to be runnable outside the build sandbox.
+  ldso = "${glibc}/lib/ld-linux-${if stdenvNoCC.hostPlatform.isAarch64 then "aarch64.so.1" else "x86-64.so.2"}";
+in
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "miao";
   inherit (node_modules) version src;
   inherit node_modules;
 
   nativeBuildInputs = [
-    bun
     nodejs # for patchShebangs node_modules
+    python3 # for patch-interp.py, see buildPhase
     installShellFiles
     makeBinaryWrapper
     models-dev
     writableTmpDirAsHomeHook
   ];
-
-  postPatch = ''
-    # NOTE: Relax Bun version check to be a warning instead of an error
-    substituteInPlace packages/script/src/index.ts \
-      --replace-fail 'throw new Error(`This script requires bun@''${expectedBunVersionRange}' \
-                     'console.warn(`Warning: This script requires bun@''${expectedBunVersionRange}'
-  '';
 
   configurePhase = ''
     runHook preConfigure
@@ -52,6 +55,27 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   buildPhase = ''
     runHook preBuild
 
+    ${lib.optionalString stdenvNoCC.hostPlatform.isLinux ''
+      # Build with a bun that can actually run here, without touching the layout
+      # the compiler depends on. `bun build --compile` clones the running bun and
+      # reuses its ELF layout, so the template must stay byte-identical to the
+      # GitHub release: nixpkgs' bun is patchelf'd to the store's glibc, which
+      # relocates the file by a page, and the binaries it compiles then segfault
+      # before main. Rewriting a throwaway copy's interpreter in place (see
+      # ./patch-interp.py) keeps the file the same size, and the compiled
+      # binary inherits the store path -- so it needs no patching either.
+      mkdir -p ./bun-bin
+      cp -f ${bun}/bin/bun ./bun-bin/bun
+      chmod 755 ./bun-bin/bun
+      python3 ${./patch-interp.py} ./bun-bin/bun ${ldso}
+      ./bun-bin/bun --version
+      export PATH="$PWD/bun-bin:$PATH"
+    ''}
+    ${lib.optionalString stdenvNoCC.hostPlatform.isDarwin ''
+      # The darwin release artifact already runs against the system libraries.
+      export PATH="${bun}/bin:$PATH"
+    ''}
+
     cd ./packages/miao
     bun --bun ./script/build.ts --single --skip-install
     bun --bun ./script/schema.ts schema.json
@@ -62,10 +86,10 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
 
-    install -Dm755 dist/miao-*/bin/miao /bin/miao
+    install -Dm755 dist/miao-*/bin/miao $out/bin/miao
     install -Dm644 schema.json $out/share/miao/schema.json
 
-    wrapProgram /bin/miao \
+    wrapProgram $out/bin/miao \
       --prefix PATH : ${
         lib.makeBinPath (
           [
@@ -82,8 +106,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   postInstall = lib.optionalString (stdenvNoCC.buildPlatform.canExecute stdenvNoCC.hostPlatform) ''
     # trick yargs into also generating zsh completions
     installShellCompletion --cmd miao \
-      --bash <(/bin/miao completion) \
-      --zsh <(SHELL=/bin/zsh /bin/miao completion)
+      --bash <($out/bin/miao completion) \
+      --zsh <(SHELL=/bin/zsh $out/bin/miao completion)
   '';
 
   nativeInstallCheckInputs = [
