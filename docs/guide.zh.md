@@ -246,7 +246,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 让 provider 用本币单价（`providers.<id>.models.<m>.cost` 用本币）；或用 `/currency` 切换显示货币。
 
 **Q：native（Rust）addon 出问题怎么办？**
-用 `MIAO_NATIVE=0` 禁用它。V2 的 edit／patch 是 TypeScript 实现；addon 用于 OS 沙箱 runner。详见[接入对比](miao-vs-opencode.zh.md)。
+用 `MIAO_NATIVE=0` 禁用它，编辑匹配与补丁派生随即改由 TypeScript 实现接管。addon 同时用于 OS 沙箱 runner。详见[接入对比](miao-vs-opencode.zh.md)。
 
 **Q：能持续推进一个有多个待办的任务吗？**
 用 `loop` 配置（§5.8），或外部循环 `miao run --continue "...continue..."`。
