@@ -147,6 +147,18 @@ Failure:
 - Everything else that ends a drain does: a Session whose history is still V1-only (`name: "Session.LegacyNotMigratedError"`), a blocked Context Epoch, undecodable history or snapshots, tool output store failures, and defects. `name` is the error tag when there is one, so clients can offer a specific remedy (for example `miao db backfill`). Interruption is not a failure.
 - `session.next.failed` is followed by `session.next.status` `idle`.
 
+## Model-Initiated Notifications
+
+A Session can ask for the human's attention on its own terms, mid-turn, with a message of its own, instead of waiting for a completion or failure signal to be derived from status.
+
+| Event | Durable | Published when | Payload |
+|---|---|---|---|
+| `session.next.notified` | no | the model calls `push_notification` | `{ sessionID, timestamp, title?, message }` |
+
+- Like `session.next.status` this is a signal rather than Session state, so it is not stored: a client that was not connected when it fired has nothing to replay, and every consumer treats it as a best-effort hint.
+- `title` defaults to the Session title when the caller does not name the subject. The TUI uses it as the notification title and the remote-control relay sends the same `attention` push it already sends for a question or a failure.
+- A notification that arrives while the human is watching the terminal is not a substitute for recording the result: the tool's description says so, and the fan-outs stay deliberately lossy (no queue, no replay).
+
 ## V1 Runtime Context Parity
 
 This is the canonical checklist for model-visible runtime context in the V2 runner. V1 has been removed, so the table now tracks V2 completeness rather than a cutover gate. Keep each behavior in its owning boundary rather than treating all model-visible text as a durable Context Source. Update this table in the PR that changes a status.

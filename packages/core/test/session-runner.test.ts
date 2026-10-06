@@ -2947,6 +2947,65 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("raises a notification the human can be pulled back by", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Wake me when it lands" }), resume: false })
+      const live = yield* events
+        .subscribe(SessionEvent.Notified)
+        .pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped)
+      yield* Effect.yieldNow
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-notify",
+            name: "push_notification",
+            input: { title: "Release build", message: "The release build passed" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID, force: true })
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "push_notification")
+      expect(tool).toMatchObject({ type: "tool", name: "push_notification", state: { status: "completed" } })
+
+      const notified = Array.from(yield* Fiber.join(live))
+      expect(notified).toHaveLength(1)
+      expect(notified[0]!.data).toMatchObject({
+        sessionID,
+        title: "Release build",
+        message: "The release build passed",
+      })
+      // The hint is a live signal, not session state: a client that was not
+      // connected when it fired has nothing to replay.
+      const { db } = yield* Database.Service
+      const stored = yield* db.select({ type: EventTable.type }).from(EventTable).all().pipe(Effect.orDie)
+      expect(stored.filter((row) => row.type.includes("notified"))).toHaveLength(0)
+    }),
+  )
+
   it.effect("keeps continuing while todos stay open, then stops on no progress", () =>
     Effect.gen(function* () {
       yield* setup

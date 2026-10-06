@@ -46,6 +46,7 @@ import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
 import { WorktreeTool } from "../../tool/worktree"
+import { PushNotificationTool } from "../../tool/push-notification"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
@@ -1391,6 +1392,11 @@ const layer = Layer.effect(
                   enter: (request, context) => runEnterWorktree(request, context, input.wake),
                   exit: (request, context) => runExitWorktree(request, context, input.wake),
                 }),
+                push_notification: PushNotificationTool.make((request) =>
+                  PushNotificationTool.publish(events, input.sessionID, request).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: "Unable to raise the notification" })),
+                  ),
+                ),
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
