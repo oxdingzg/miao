@@ -464,6 +464,32 @@ export const {
       })
     }
 
+    // The active session is pinned and exempt from LRU eviction, so without a
+    // per-session bound a day-long conversation grows without limit (measured:
+    // a half-day TUI reached 1.1 GB). Keep only the newest slice resident —
+    // the DB is the record of truth, the transcript window reveals the local
+    // timeline on scroll-up, and re-entering the session re-hydrates.
+    const MAX_RESIDENT_MESSAGES = 400
+
+    const capSessionMessages = (sessionID: string) => {
+      const messages = store.message[sessionID]
+      if (!messages || messages.length <= MAX_RESIDENT_MESSAGES) return
+      const evicted = messages.slice(0, messages.length - MAX_RESIDENT_MESSAGES)
+      const ids = new Set(evicted.map((message) => message.id))
+      batch(() => {
+        for (const message of evicted) setStore("part", message.id, undefined!)
+        setStore(
+          "message",
+          sessionID,
+          produce((draft) => {
+            draft.splice(0, evicted.length)
+          }),
+        )
+      })
+      const shadow = sessionMessages.get(sessionID)
+      if (shadow) sessionMessages.set(sessionID, shadow.filter((message) => !ids.has(message.id)))
+    }
+
     // Text and reasoning fragments append in place. `touchPart` keeps an
     // in-flight re-hydration from clobbering the locally streamed value; the
     // durable `ended` event later replaces it with the authoritative text.
@@ -741,6 +767,8 @@ export const {
           if (isSessionListV2Event(event.type)) scheduleListRefresh()
         } else if (sessionID && (FULL_SYNC_V2_EVENTS.has(event.type) || !applyV2DurableEvent(sessionID, event))) {
           v2Refresh.schedule(sessionID)
+        } else if (sessionID) {
+          capSessionMessages(sessionID)
         }
       }
       switch (event.type) {
@@ -1487,6 +1515,7 @@ export const {
             fullSyncedSessions.add(sessionID)
             streamText.releaseEnded(sessionID)
             evictExcessSessions()
+            capSessionMessages(sessionID)
           })().finally(() => {
             hydration.lastMs = performance.now() - started
             hydration.totalMs += hydration.lastMs
