@@ -90,6 +90,18 @@ const waitForOutput = (output: Queue.Queue<string>, text: string) =>
     }),
   )
 
+/** Reads repeatedly from `cursor` until the predicate no longer holds, so output may arrive late. */
+const readWhile = (id: PtyID, cursor: number | undefined, waiting: (result: Pty.ReadResult) => boolean) =>
+  Effect.gen(function* () {
+    const pty = yield* Pty.Service
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const result = yield* pty.read(id, cursor)
+      if (!waiting(result)) return result
+      yield* Effect.sleep("100 millis")
+    }
+    return yield* Effect.fail(new Error("timeout waiting for pty output"))
+  })
+
 describe("pty", () => {
   it.live("returns typed not found errors for missing sessions", () =>
     Effect.gen(function* () {
@@ -101,6 +113,7 @@ describe("pty", () => {
         yield* pty.update(id, { title: "missing" }).pipe(Effect.asVoid, Effect.exit),
         yield* pty.remove(id).pipe(Effect.exit),
         yield* pty.write(id, "input").pipe(Effect.exit),
+        yield* pty.read(id).pipe(Effect.asVoid, Effect.exit),
         yield* pty.attach(id, { onData: () => {}, onEnd: () => {} }).pipe(Effect.asVoid, Effect.exit),
       ]) {
         expect(Exit.isFailure(result)).toBe(true)
@@ -125,6 +138,50 @@ describe("pty", () => {
       expect(yield* waitForEvents(events, info.id, 1)).toEqual(["deleted"])
       const missing = yield* pty.get(info.id).pipe(Effect.exit)
       expect(Exit.isFailure(missing)).toBe(true)
+    }),
+  )
+
+  ptyTest("reads retained output from an absolute cursor without consuming it", () =>
+    Effect.gen(function* () {
+      const pty = yield* Pty.Service
+      const info = yield* createPty("cat")
+      yield* pty.write(info.id, "AAA\n")
+      const first = yield* readWhile(info.id, undefined, (result) => !result.chunk.includes("AAA"))
+
+      expect(first.chunk).toContain("AAA")
+      expect(first.status).toBe("running")
+      expect(first.exitCode).toBeUndefined()
+      expect(first.cursor).toBeGreaterThan(0)
+
+      // Reading is not consuming: the same cursor sees the same bytes again,
+      // while a cursor at the end has nothing left to give.
+      expect(yield* pty.read(info.id, 0)).toEqual(first)
+      expect(yield* pty.read(info.id, first.cursor)).toMatchObject({ chunk: "", cursor: first.cursor })
+
+      yield* pty.write(info.id, "BBB\n")
+      const next = yield* readWhile(info.id, first.cursor, (result) => !result.chunk.includes("BBB"))
+      expect(next.chunk).not.toContain("AAA")
+      const whole = yield* pty.read(info.id, 0)
+      expect(whole.chunk).toContain("AAA")
+      expect(whole.chunk).toContain("BBB")
+    }),
+  )
+
+  ptyTest("reads the tail of a session whose process has exited", () =>
+    Effect.gen(function* () {
+      const pty = yield* Pty.Service
+      const info = yield* createPty("/usr/bin/env", ["sh", "-c", "printf 'BYE\\n'; exit 4"])
+      const tail = yield* readWhile(
+        info.id,
+        undefined,
+        (result) => result.status === "running" || !result.chunk.includes("BYE"),
+      )
+
+      expect(tail.chunk).toContain("BYE")
+      expect(tail.status).toBe("exited")
+      expect(tail.exitCode).toBe(4)
+      // Reading an exited session is what `attach` refuses; the buffer is still there.
+      expect(yield* pty.read(info.id, 0)).toMatchObject({ chunk: tail.chunk, status: "exited", exitCode: 4 })
     }),
   )
 

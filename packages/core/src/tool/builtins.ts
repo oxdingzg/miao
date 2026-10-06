@@ -14,6 +14,7 @@ import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { ScheduleTool } from "./schedule"
 import { SkillTool } from "./skill"
+import { TerminalTool } from "./terminal"
 import { TodoWriteTool } from "./todowrite"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
@@ -47,6 +48,7 @@ export const node = makeLocationNode({
     ReadTool.node,
     ScheduleTool.node,
     SkillTool.node,
+    TerminalTool.node,
     TodoWriteTool.node,
     WebFetchTool.node,
     WebSearchTool.node,
