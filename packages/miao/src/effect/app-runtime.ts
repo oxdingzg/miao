@@ -40,6 +40,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
+import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { buildLocationServiceMap, LocationServiceMap } from "@miao/core/location-services"
@@ -68,6 +69,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     SessionProjector.node,
     SessionStore.node,
     BackgroundJob.node,
+    SessionSchedule.node,
     RuntimeFlags.node,
     EventV2Bridge.node,
     LSP.node,
