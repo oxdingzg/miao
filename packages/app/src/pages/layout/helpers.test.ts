@@ -27,10 +27,9 @@ import { ServerConnection } from "@/context/server"
 
 const serverKey = ServerConnection.Key.make
 
-const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
+const session = (input: Partial<Session> & Pick<Session, "id" | "location">) =>
   ({
     title: "",
-    version: "v2",
     parentID: undefined,
     messageCount: 0,
     permissions: { session: {}, share: {} },
@@ -136,14 +135,14 @@ describe("layout workspace helpers", () => {
       [
         {
           path: { directory: "/root" },
-          session: [session({ id: "root", directory: "/root", time: { created: 1, updated: 1, archived: undefined } })],
+          session: [session({ id: "root", location: { directory: "/root" }, time: { created: 1, updated: 1, archived: undefined } })],
         },
         {
           path: { directory: "/workspace" },
           session: [
             session({
               id: "workspace",
-              directory: "/workspace",
+              location: { directory: "/workspace" },
               time: { created: 2, updated: 2, archived: undefined },
             }),
           ],
@@ -160,8 +159,8 @@ describe("layout workspace helpers", () => {
       {
         path: { directory: "/workspace" },
         session: [
-          session({ id: "ses_z", directory: "/workspace", time: { created: 1, updated: 2, archived: undefined } }),
-          session({ id: "ses_a", directory: "/workspace", time: { created: 1, updated: 3, archived: undefined } }),
+          session({ id: "ses_z", location: { directory: "/workspace" }, time: { created: 1, updated: 2, archived: undefined } }),
+          session({ id: "ses_a", location: { directory: "/workspace" }, time: { created: 1, updated: 3, archived: undefined } }),
         ],
       },
       3,
@@ -172,8 +171,8 @@ describe("layout workspace helpers", () => {
 
   test("uses id only to break equal session timestamps", () => {
     const sessions = [
-      session({ id: "ses_z", directory: "/workspace", time: { created: 1, updated: 2, archived: undefined } }),
-      session({ id: "ses_a", directory: "/workspace", time: { created: 1, updated: 2, archived: undefined } }),
+      session({ id: "ses_z", location: { directory: "/workspace" }, time: { created: 1, updated: 2, archived: undefined } }),
+      session({ id: "ses_a", location: { directory: "/workspace" }, time: { created: 1, updated: 2, archived: undefined } }),
     ]
 
     expect(sessions.sort(compareSessionTime).map((item) => item.id)).toEqual(["ses_a", "ses_z"])
@@ -210,18 +209,18 @@ describe("layout workspace helpers", () => {
           session: [
             session({
               id: "archived",
-              directory: "/workspace",
+              location: { directory: "/workspace" },
               time: { created: 10, updated: 10, archived: 10 },
             }),
             session({
               id: "child",
-              directory: "/workspace",
+              location: { directory: "/workspace" },
               parentID: "parent",
               time: { created: 20, updated: 20, archived: undefined },
             }),
             session({
               id: "root",
-              directory: "/workspace",
+              location: { directory: "/workspace" },
               time: { created: 30, updated: 30, archived: undefined },
             }),
           ],
@@ -235,9 +234,9 @@ describe("layout workspace helpers", () => {
 
   test("finds the direct child on the active session path", () => {
     const list = [
-      session({ id: "root", directory: "/workspace" }),
-      session({ id: "child", directory: "/workspace", parentID: "root" }),
-      session({ id: "leaf", directory: "/workspace", parentID: "child" }),
+      session({ id: "root", location: { directory: "/workspace" } }),
+      session({ id: "child", location: { directory: "/workspace" }, parentID: "root" }),
+      session({ id: "leaf", location: { directory: "/workspace" }, parentID: "child" }),
     ]
 
     expect(childSessionOnPath(list, "root", "leaf")?.id).toBe("child")

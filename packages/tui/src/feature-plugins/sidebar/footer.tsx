@@ -18,9 +18,9 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
   const show = createMemo(() => !has() && !done())
   const path = createMemo(() => {
     const session = props.api.state.session.get(props.sessionID)
-    const dir = session?.directory || props.api.state.path.directory || paths.cwd
+    const dir = session?.location.directory || props.api.state.path.directory || paths.cwd
     const out = abbreviateHome(dir, paths.home)
-    const branch = session?.directory === props.api.state.path.directory ? props.api.state.vcs?.branch : undefined
+    const branch = session?.location.directory === props.api.state.path.directory ? props.api.state.vcs?.branch : undefined
     const text = branch ? out + ":" + branch : out
     const list = text.split("/")
     return {

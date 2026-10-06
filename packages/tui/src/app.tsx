@@ -457,7 +457,7 @@ function App(props: {
       sync.data.session_status[session.id]?.type !== "idle"
     props.onSessionChange({
       sessionID: session?.id,
-      cwd: session?.directory,
+      cwd: session?.location.directory,
       state: pending ? "awaiting" : busy ? "processing" : "idle",
     })
   })

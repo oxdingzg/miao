@@ -8,7 +8,6 @@ import { Locale } from "../util/locale"
 import { useProject } from "../context/project"
 import { useTheme } from "../context/theme"
 import { useSDK } from "../context/sdk"
-import { sessionInfo } from "../context/session-v2-read"
 import { useLocal } from "../context/local"
 import { DialogSessionRename } from "./dialog-session-rename"
 import { createDebouncedSignal } from "../util/signal"
@@ -69,7 +68,7 @@ export function DialogSessionList() {
       })
       .then((x) => ({
         // V2 list has no roots filter; keep only root sessions like the V1 query did.
-        data: (x.data ?? []).map(sessionInfo).filter((session) => session.parentID === undefined),
+        data: (x.data ?? []).filter((session) => session.parentID === undefined),
       }))
 
   const [browseResults, { refetch: refetchBrowse }] = createResource(
@@ -112,7 +111,7 @@ export function DialogSessionList() {
   )
 
   function recover(session: NonNullable<ReturnType<typeof sessions>[number]>) {
-    const workspace = project.workspace.get(session.workspaceID!)
+    const workspace = project.workspace.get(session.location.workspaceID!)
     const list = () => dialog.replace(() => <DialogSessionList />)
     const warp = async (selection: WorkspaceSelection) => {
       const workspaceID = await (async () => {
@@ -148,7 +147,7 @@ export function DialogSessionList() {
         sync,
         project,
         toast,
-        sourceWorkspaceID: session.workspaceID,
+        sourceWorkspaceID: session.location.workspaceID,
         workspaceID,
         sessionID: session.id,
         copyChanges: false,
@@ -158,12 +157,12 @@ export function DialogSessionList() {
     dialog.replace(() => (
       <DialogSessionDeleteFailed
         session={session.title}
-        workspace={workspace?.name ?? session.workspaceID!}
+        workspace={workspace?.name ?? session.location.workspaceID!}
         onDone={list}
         onDelete={async () => {
           const current = currentSessionID()
           const info = current ? sync.data.session.find((item) => item.id === current) : undefined
-          const error = await sdk.api.workspace.remove({ id: session.workspaceID! }).then(
+          const error = await sdk.api.workspace.remove({ id: session.location.workspaceID! }).then(
             () => undefined,
             (error: unknown) => error,
           )
@@ -179,7 +178,7 @@ export function DialogSessionList() {
           await sync.session.refresh()
           await refetchBrowse()
           if (search()) await refetch()
-          if (info?.workspaceID === session.workspaceID) {
+          if (info?.location.workspaceID === session.location.workspaceID) {
             route.navigate({ type: "home" })
           }
           return true
@@ -241,11 +240,11 @@ export function DialogSessionList() {
     function buildOption(id: string, category: string) {
       const x = sessionMap.get(id)
       if (!x) return undefined
-      const directory = x.path
-        ? x.directory.endsWith(x.path)
-          ? x.directory.slice(0, -x.path.length).replace(/\/$/, "")
+      const directory = x.subpath
+        ? x.location.directory.endsWith(x.subpath)
+          ? x.location.directory.slice(0, -x.subpath.length).replace(/\/$/, "")
           : undefined
-        : x.directory
+        : x.location.directory
       const footer =
         directory && directory !== project.data.project.mainDir ? Locale.truncate(path.basename(directory), 20) : ""
 
@@ -317,12 +316,12 @@ export function DialogSessionList() {
           onTrigger: async (option) => {
             if (toDelete() === option.value) {
               const session = sessions().find((item) => item.id === option.value)
-              const status = session?.workspaceID ? project.workspace.status(session.workspaceID) : undefined
+              const status = session?.location.workspaceID ? project.workspace.status(session.location.workspaceID) : undefined
 
               try {
                 await sdk.api.sessions.remove({ sessionID: option.value })
               } catch (err) {
-                if (session?.workspaceID) {
+                if (session?.location.workspaceID) {
                   recover(session)
                 } else {
                   toast.show({

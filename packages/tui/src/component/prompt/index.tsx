@@ -1012,7 +1012,7 @@ export function Prompt(props: PromptProps) {
     }
 
     const workspaceSession = props.sessionID ? sync.session.get(props.sessionID) : undefined
-    const workspaceID = workspaceSession?.workspaceID
+    const workspaceID = workspaceSession?.location.workspaceID
     const workspaceStatus = workspaceID ? (project.workspace.status(workspaceID) ?? "error") : undefined
     if (props.sessionID && workspaceID && workspaceStatus !== "connected") {
       dialog.replace(() => (

@@ -127,7 +127,7 @@ function SessionTabEntry(props: {
     createRoot((dispose) => {
       try {
         void ctx.sync
-          .ensureDirSyncContext(value.directory)
+          .ensureDirSyncContext(value.location.directory)
           .session.sync(value.id)
           .catch(() => {})
           .finally(dispose)
@@ -144,7 +144,7 @@ function SessionTabEntry(props: {
     const current = sdk()
     if (!current) return
     createTabPromptState(tabs, props.tab, current.scope, {
-      dir: base64Encode(value.directory),
+      dir: base64Encode(value.location.directory),
       id: value.id,
     })
   })

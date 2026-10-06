@@ -21,20 +21,16 @@ describe("normalizeSessionInfo", () => {
 
     expect(result).toEqual({
       id: "session-1",
-      slug: "session-1",
       projectID: "project-1",
-      workspaceID: "workspace-1",
-      directory: "/repo/worktree",
-      path: "worktree",
-      parentID: undefined,
-      cost: 0,
-      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      title: "New session",
       agent: "build",
       model: { id: "gpt-5", providerID: "openai", variant: "high" },
-      version: "",
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: 1, updated: 1 },
-      revert: { messageID: "message-1", partID: "part-1", snapshot: "snapshot" },
+      title: "New session",
+      location: { directory: "/repo/worktree", workspaceID: "workspace-1" },
+      subpath: "worktree",
+      revert: { messageID: "message-1", partID: "part-1", snapshot: "snapshot", files: [] },
     })
   })
 

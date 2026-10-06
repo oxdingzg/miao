@@ -731,7 +731,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
-    const directory = session.directory
+    const directory = session.location.directory
     if (!directory) return
 
     const cached = untrack(() => !serverSync().session.shouldPrefetch(session.id, prefetchChunk))
@@ -869,7 +869,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   async function archiveSession(session: Session) {
-    const [store, setStore] = serverSync().child(session.directory)
+    const [store, setStore] = serverSync().child(session.location.directory)
     const sessions = store.session ?? []
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
@@ -1179,29 +1179,31 @@ export default function LegacyLayout(props: ParentProps) {
       dirs = effectiveWorkspaceOrder(root, [root, ...listed], store.workspaceOrder[root])
       return canOpen(target)
     }
-    const openSession = async (target: { directory: string; id: string }) => {
-      if (!canOpen(target.directory)) return false
-      const sync = serverSync().ensureDirSyncContext(target.directory)
+    const openSession = async (target: { location: { directory: string }; id: string }) => {
+      const directory = target.location.directory
+      if (!canOpen(directory)) return false
+      const sync = serverSync().ensureDirSyncContext(directory)
       if (sync.session.get(target.id)) {
-        setStore("lastProjectSession", root, { directory: target.directory, id: target.id, at: Date.now() })
-        navigateWithSidebarReset(`/${base64Encode(target.directory)}/session/${target.id}`)
+        setStore("lastProjectSession", root, { directory, id: target.id, at: Date.now() })
+        navigateWithSidebarReset(`/${base64Encode(directory)}/session/${target.id}`)
         return true
       }
       const resolved = await sync.session
         .sync(target.id)
         .then(() => sync.session.get(target.id))
         .catch(() => undefined)
-      if (!resolved?.directory) return false
-      if (!canOpen(resolved.directory)) return false
-      setStore("lastProjectSession", root, { directory: resolved.directory, id: resolved.id, at: Date.now() })
-      navigateWithSidebarReset(`/${base64Encode(resolved.directory)}/session/${resolved.id}`)
+      const resolvedDirectory = resolved?.location.directory
+      if (!resolvedDirectory) return false
+      if (!canOpen(resolvedDirectory)) return false
+      setStore("lastProjectSession", root, { directory: resolvedDirectory, id: resolved.id, at: Date.now() })
+      navigateWithSidebarReset(`/${base64Encode(resolvedDirectory)}/session/${resolved.id}`)
       return true
     }
 
     const projectSession = store.lastProjectSession[root]
     if (projectSession?.id) {
       await refreshDirs(projectSession.directory)
-      const opened = await openSession(projectSession)
+      const opened = await openSession({ id: projectSession.id, location: { directory: projectSession.directory } })
       if (opened) return
       clearLastProjectSession(root)
     }
@@ -1236,7 +1238,7 @@ export default function LegacyLayout(props: ParentProps) {
 
   function navigateToSession(session: Session | undefined) {
     if (!session) return
-    navigateWithSidebarReset(`/${base64Encode(session.directory)}/session/${session.id}`)
+    navigateWithSidebarReset(`/${base64Encode(session.location.directory)}/session/${session.id}`)
   }
 
   function openProject(directory: string, navigate = true) {

@@ -153,7 +153,7 @@ export function parseHomeSessionIndex(sessions: readonly HomeSessionInfo[]): Ses
 }
 
 export function retainHomeSessions(sessions: Session[], limit: number, now: number) {
-  const grouped = Map.groupBy(sessions, (session) => pathKey(session.directory))
+  const grouped = Map.groupBy(sessions, (session) => pathKey(session.location.directory))
   return [...grouped.values()].flatMap((items) => trimSessions(items, { limit, permission: {}, now }))
 }
 
@@ -170,20 +170,5 @@ export function applyHomeSessionEvent(sessions: Session[], event: HomeSessionEve
 }
 
 function toLegacySummary(session: HomeSessionInfo): Session {
-  return {
-    id: session.id,
-    slug: session.id,
-    projectID: session.projectID,
-    workspaceID: session.location.workspaceID,
-    directory: session.location.directory,
-    path: session.subpath,
-    parentID: session.parentID,
-    cost: session.cost,
-    tokens: session.tokens,
-    title: session.title,
-    agent: session.agent,
-    model: session.model,
-    version: "",
-    time: session.time,
-  }
+  return { ...session } as Session
 }

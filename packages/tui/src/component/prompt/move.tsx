@@ -74,8 +74,8 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
           (session
             ? {
                 type: "directory",
-                directory: session.directory,
-                subdirectory: !!session.path,
+                directory: session.location.directory,
+                subdirectory: !!session.subpath,
               }
             : {
                 type: "directory",
@@ -99,7 +99,7 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
 
   async function moveExistingSession(sessionID: string, selection: MoveSessionSelection) {
     const session = sync.session.get(sessionID)
-    const status = await sdk.api.vcs.status({ location: { directory: session?.directory } }, {}).catch(() => undefined)
+    const status = await sdk.api.vcs.status({ location: { directory: session?.location.directory } }, {}).catch(() => undefined)
     const files = [...(status?.data ?? [])]
     const choice = files.length ? await DialogWorkspaceFileChanges.show(dialog, files) : "no"
     if (!choice) return

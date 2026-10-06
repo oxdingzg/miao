@@ -11,11 +11,11 @@ type MessageApi = ServerApi["messages"]
 
 const session = (id: string, parentID?: string): Session => ({
   id,
-  slug: id,
   projectID: "project",
-  directory: "/repo",
+  location: { directory: "/repo" },
   title: id,
-  version: "1",
+  cost: 0,
+  tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   parentID,
   time: { created: 1, updated: 1 },
 })
@@ -1765,7 +1765,7 @@ describe("server session", () => {
     ctx.store.apply({ type: "session.created", properties: { sessionID: "root", info: session("root") } })
     ctx.store.apply({ type: "session.status", properties: { sessionID: "root", status: { type: "busy" } } })
 
-    expect(ctx.store.get("root")?.directory).toBe("/repo")
+    expect(ctx.store.get("root")?.location.directory).toBe("/repo")
     expect(ctx.store.data.session_working("root")).toBe(true)
     expect(ctx.get).toEqual([])
   })

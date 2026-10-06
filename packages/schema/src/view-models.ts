@@ -64,11 +64,12 @@ export type StripBrand<T> = unknown extends T
 
 type Wire<S> = StripBrand<Schema.Codec.Encoded<S>>
 
-// Session V1 view models.
+// Session view model: the V2 record is the wire truth; messages stay on the V1
+// wire until the transcript cutover lands.
+export type Session = Wire<typeof SessionInfo.Info>
 export type Message = Wire<typeof SessionV1.Info>
 export type UserMessage = Wire<typeof SessionV1.User>
 export type AssistantMessage = Wire<typeof SessionV1.Assistant>
-export type Session = Wire<typeof SessionV1.SessionInfo>
 export type Part = Wire<typeof SessionV1.Part>
 export type ToolPart = Wire<typeof SessionV1.ToolPart>
 export type TextPart = Wire<typeof SessionV1.TextPart>

@@ -3,7 +3,7 @@ import type { ServerConnection } from "@/context/server"
 
 type HomeSession = {
   id: string
-  directory: string
+  location: { directory: string }
 }
 
 export async function archiveHomeSession(input: {
@@ -19,7 +19,7 @@ export async function archiveHomeSession(input: {
       input.remove()
       notifySessionTabsRemoved({
         server: input.server,
-        directory: input.session.directory,
+        directory: input.session.location.directory,
         sessionIDs: [input.session.id],
       })
     })

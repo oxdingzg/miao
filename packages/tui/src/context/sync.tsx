@@ -43,7 +43,6 @@ import {
   sessionContextToMessages,
   type OlderHistory,
 } from "./session-v2"
-import { sessionInfo } from "./session-v2-read"
 import { toAgent, toCommand, toProviderCatalog, toProviderList, type ProviderCatalog } from "./v2-adapters"
 import { createSessionRefreshScheduler } from "./session-refresh"
 import { createTuiV2SessionReducer } from "./session-v2-reducer"
@@ -355,7 +354,7 @@ export const {
       const query = sessionListQuery()
       const promise = sdk.api.sessions
         .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
-        .then((x) => ({ data: (x.data ?? []).map(sessionInfo) }))
+        .then((x) => ({ data: (x.data ?? []) as Session[] }))
       return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
@@ -556,8 +555,8 @@ export const {
       const session = store.session.find((session) => session.id === input.sessionID)
       const [message] = sessionContextToMessages({
         sessionID: input.sessionID,
-        cwd: session?.directory ?? "",
-        root: session?.directory ?? "",
+        cwd: session?.location.directory ?? "",
+        root: session?.location.directory ?? "",
         messages: [
           mutableResponse({
             id: input.id,
@@ -585,6 +584,10 @@ export const {
 
     // Events that rewrite or replace the transcript rather than extend it still
     // need a full re-sync; everything else is folded into the shadow in place.
+    // V2 compaction runs inside a drain; the transcript does not change while
+    // it works, so the status indicator tracks it explicitly.
+    const compactingSessions = new Set<string>()
+
     const FULL_SYNC_V2_EVENTS = new Set<string>([
       "session.next.compaction.started",
       "session.next.compaction.delta",
@@ -644,7 +647,7 @@ export const {
         if (message.type === "assistant" && touched.has(message.id) && parentID) touched.add(parentID)
       }
       const session = store.session.find((item) => item.id === sessionID)
-      const cwd = session?.directory ?? ""
+      const cwd = session?.location.directory ?? ""
       const projected = sessionContextToMessages({
         sessionID,
         cwd,
@@ -729,6 +732,9 @@ export const {
       // store by the switch below but never triggers a transcript fetch, so one
       // client streaming a turn does not make every other client re-render it.
       // A new or renamed session still refreshes the session list.
+      const eventSessionID = sessionIDOf(event)
+      if (event.type === "session.next.compaction.started" && eventSessionID) compactingSessions.add(eventSessionID)
+      if (event.type === "session.next.compaction.ended" && eventSessionID) compactingSessions.delete(eventSessionID)
       if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = sessionIDOf(event)
         if (sessionID && !watchedSessions.has(sessionID)) {
@@ -992,9 +998,9 @@ export const {
             "session",
             result.index,
             produce((session) => {
-              session.directory = event.properties.location.directory
-              session.path = event.properties.subdirectory
-              session.workspaceID = event.properties.location.workspaceID
+              session.location.directory = event.properties.location.directory
+              session.subpath = event.properties.subdirectory
+              session.location.workspaceID = event.properties.location.workspaceID
               session.time.updated = event.properties.timestamp
             }),
           )
@@ -1082,7 +1088,7 @@ export const {
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
           void Promise.all([
-            ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
+            ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions as Session[])))]),
             // The palette only shows names and descriptions; executing a command
             // resolves its template on the server.
             sdk.api.commands
@@ -1295,7 +1301,7 @@ export const {
         status(sessionID: string) {
           const session = result.session.get(sessionID)
           if (!session) return "idle"
-          if (session.time.compacting) return "compacting"
+          if (compactingSessions.has(sessionID)) return "compacting"
           if (store.session_status[sessionID])
             return store.session_status[sessionID].type === "idle" ? "idle" : "working"
           const messages = store.message[sessionID] ?? []
@@ -1328,7 +1334,7 @@ export const {
           hydration.count += 1
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
-            const sessionPromise = sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
+            const sessionPromise = sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: x }))
             // `context` stops at the last compaction, so the first hydration also
             // reads a page of the projected timeline to keep older history
             // reachable. Later re-hydrations reuse the page already held: reading
@@ -1357,8 +1363,8 @@ export const {
                   source,
                   data: sessionContextToMessages({
                     sessionID,
-                    cwd: session.data!.directory,
-                    root: session.data!.directory,
+                    cwd: session.data!.location.directory,
+                    root: session.data!.location.directory,
                     messages: source,
                   }),
                 }
@@ -1402,8 +1408,8 @@ export const {
             ])
             batch(() => {
               const match = search(store.session, sessionID, (s) => s.id)
-              if (match.found) setStore("session", match.index, reconcile(session.data!))
-              if (!match.found) setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data!))
+              if (match.found) setStore("session", match.index, reconcile(session.data! as Session))
+              if (!match.found) setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data! as Session))
               if ((todoLiveAt.get(sessionID) ?? 0) < started) setStore("todo", sessionID, reconcile(todo.data ?? []))
               const currentMessages = store.message[sessionID] ?? []
               const currentByID = new Map(currentMessages.map((message) => [message.id, message]))

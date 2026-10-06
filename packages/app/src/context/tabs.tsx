@@ -349,7 +349,7 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       },
       rememberSessionInfo(tab: SessionTab, session: Session) {
         const key = tabKey(tab)
-        const next = { title: session.title, directory: session.directory }
+        const next = { title: session.title, directory: session.location.directory }
         const current = info[key]
         if (current?.title === next.title && current.directory === next.directory) return
         setInfo(key, next)

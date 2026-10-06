@@ -46,7 +46,7 @@ export const createDirSyncContext = (
 
   const index = (sessionID: string) => {
     const session = serverSync.session.get(sessionID)
-    if (!session || session.directory !== directory) return
+    if (!session || session.location.directory !== directory) return
     const [store, setStore] = current()
     const result = Binary.search(store.session, session.id, (item) => item.id)
     if (result.found) {
@@ -80,7 +80,7 @@ export const createDirSyncContext = (
       },
       get(sessionID: string) {
         const session = serverSync.session.get(sessionID)
-        if (session?.directory === directory) return session
+        if (session?.location.directory === directory) return session
       },
       optimistic: {
         add(input: { directory?: string; sessionID: string; message: Message; parts: Part[] }) {

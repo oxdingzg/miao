@@ -974,9 +974,12 @@ export function createServerSession(
     if (event.type === "session.next.moved" && info)
       remember({
         ...info,
-        workspaceID: event.data.location.workspaceID,
-        directory: event.data.location.directory,
-        path: event.data.subdirectory,
+        location: {
+          ...info.location,
+          workspaceID: event.data.location.workspaceID,
+          directory: event.data.location.directory,
+        },
+        subpath: event.data.subdirectory,
         time: { ...info.time, updated: event.data.timestamp },
       })
     // The drain itself has no settlement event, so a turn counts as busy while a step is open and
