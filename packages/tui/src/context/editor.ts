@@ -8,6 +8,10 @@ import { editorIntegration } from "../editor"
 
 const MCP_PROTOCOL_VERSION = "2025-11-25"
 
+// Discovery retries 1s..10s backoff; after this many failed attempts it stops
+// waking the process until something re-arms it (a directory change).
+const MAX_EDIT_ATTEMPTS = 6
+
 const JsonRpcMessageSchema = Schema.Struct({
   id: Schema.optional(Schema.Union([Schema.Number, Schema.String, Schema.Null])),
   method: Schema.optional(Schema.String),
@@ -276,6 +280,13 @@ export const { use: useEditorContext, provider: EditorContextProvider } = create
     const scheduleReconnect = () => {
       if (closed) return
       if (reconnect) clearTimeout(reconnect)
+      // An environment without an editor used to retry forever at a 10s
+      // cadence, waking the process every 10 seconds for nothing. Give up
+      // after a short burst; changing the directory re-arms discovery.
+      if (attempt >= MAX_EDIT_ATTEMPTS) {
+        setStore("status", "disabled")
+        return
+      }
       attempt += 1
       const delay = Math.min(1000 * 2 ** (attempt - 1), 10_000)
       reconnect = setTimeout(connect, delay)
