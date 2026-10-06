@@ -36,8 +36,8 @@ runs:
         git config --global user.email "${slug}[bot]@users.noreply.github.com"
       shell: bash
 
-    # Without a configured app the checkout's default token is used, so the
-    # workflow does not hard-fail when MIAO_APP_ID / MIAO_APP_SECRET are unset.
+    # Without a configured app the workflow's default token is used: the git
+    # identity is set here, and the token is put on the remote further down.
     - name: Configure git user (default token)
       if: ${{ inputs.miao-app-id == '' }}
       run: |
@@ -51,8 +51,18 @@ runs:
         git config --local --unset-all http.https://github.com/.extraheader || true
       shell: bash
 
-    - name: Configure git remote
+    - name: Configure git remote (app token)
       if: ${{ inputs.miao-app-id != '' }}
       run: |
         git remote set-url origin https://x-access-token:${{ steps.apptoken.outputs.token }}@github.com/${{ github.repository }}
+      shell: bash
+
+    # A commit identity is not a credential. `actions/checkout` only writes the
+    # default token into the git config while `persist-credentials` is true, so a
+    # caller that sets it to false has no credential to push with unless the
+    # remote carries one.
+    - name: Configure git remote (default token)
+      if: ${{ inputs.miao-app-id == '' }}
+      run: |
+        git remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"
       shell: bash

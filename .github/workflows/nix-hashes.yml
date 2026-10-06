@@ -15,6 +15,7 @@ on:
       - "nix/node_modules.nix"
       - "nix/scripts/**"
       - "patches/**"
+      - ".github/actions/setup-git-committer/**"
       - ".github/workflows/nix-hashes.yml"
 
 concurrency:
