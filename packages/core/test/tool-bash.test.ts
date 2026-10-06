@@ -236,7 +236,7 @@ describe("BashTool", () => {
             const settled = yield* jobs.wait({ id: job.id, timeout: 5_000 })
             expect(settled.timedOut).toBe(false)
             expect(settled.info?.status).toBe("completed")
-            expect(settled.info?.output).toContain("Command exited with code 0")
+            expect(settled.info?.output).toContain("[exit code 0]")
             const outputPath = job.metadata?.outputPath
             if (typeof outputPath !== "string") throw new Error("Background output path was not recorded")
             expect(runs[0]?.options?.outputFile).toBe(outputPath)
@@ -268,7 +268,7 @@ describe("BashTool", () => {
                 type: "content",
                 value: [
                   { type: "text", text: "hello\n" },
-                  { type: "text", text: "Command exited with code 0." },
+                  { type: "text", text: "[exit code 0]" },
                 ],
               },
               output: {
@@ -278,7 +278,7 @@ describe("BashTool", () => {
                 },
                 content: [
                   { type: "text", text: "hello\n" },
-                  { type: "text", text: "Command exited with code 0." },
+                  { type: "text", text: "[exit code 0]" },
                 ],
               },
             })
@@ -359,7 +359,7 @@ describe("BashTool", () => {
                   type: "content",
                   value: [
                     { type: "text", text: "core-bash" },
-                    { type: "text", text: "Command exited with code 0." },
+                    { type: "text", text: "[exit code 0]" },
                   ],
                 })
                 expect(settled.output?.structured).toMatchObject({
@@ -469,7 +469,7 @@ describe("BashTool", () => {
             Effect.sync(() => {
               expect(settled.output?.content[1]).toMatchObject({
                 type: "text",
-                text: expect.stringContaining("Command exited with code 7"),
+                text: expect.stringContaining("[exit code 7]"),
               })
               expect(settled.output?.structured).toMatchObject({
                 exit: 7,
@@ -518,7 +518,7 @@ describe("BashTool", () => {
             Effect.sync(() => {
               expect(settled.output?.content[1]).toMatchObject({
                 type: "text",
-                text: expect.stringContaining("Command timed out"),
+                text: expect.stringContaining("command timed out"),
               })
               expect(settled.output?.structured).toMatchObject({
                 timeout: true,
@@ -963,7 +963,7 @@ if (process.platform !== "win32") {
               const settled = yield* runReal(tmp.path, { command }, shell)
               expect({ label, text: text(settled) }).toEqual({
                 label,
-                text: `${expected}\n\nCommand exited with code 0.`,
+                text: `${expected}\n\n[exit code 0]`,
               })
               expect({ label, checks: realChecks }).toEqual({
                 label,
@@ -1009,7 +1009,7 @@ if (process.platform !== "win32") {
             // `-n` alone would reject the pattern, since it never runs the shopt.
             expect(Bun.spawnSync(["/bin/bash", "-n", "-c", command]).exitCode).not.toBe(0)
             const settled = yield* runReal(tmp.path, { command }, "/bin/bash")
-            expect(text(settled)).toBe("a.txt\n\nCommand exited with code 0.")
+            expect(text(settled)).toBe("a.txt\n\n[exit code 0]")
             expect(realChecks).toEqual([])
           }),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -1048,7 +1048,7 @@ if (process.platform !== "win32") {
               "printf '%s\\n' \"it's done\"",
             ].join("\n")
             const settled = yield* runReal(tmp.path, { command: "bash -s", stdin })
-            expect(text(settled)).toBe("a b tick 5\n$HOME stays literal\nit's done\n\nCommand exited with code 0.")
+            expect(text(settled)).toBe("a b tick 5\n$HOME stays literal\nit's done\n\n[exit code 0]")
           }),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       ),
@@ -1164,7 +1164,7 @@ if (process.platform === "win32") {
           expect(windowsText(invoked)).toContain("/d /s /c")
 
           const failed = yield* runRealWindows(tmp.path, { command: "exit /b 3" })
-          expect(windowsText(failed)).toContain("Command exited with code 3.")
+          expect(windowsText(failed)).toContain("[exit code 3]")
           expect(failed.output?.structured).toMatchObject({ exit: 3 })
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),

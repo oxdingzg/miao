@@ -281,7 +281,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
             Effect.gen(function* () {
               const first = yield* tools.run("printf sandboxed-ok")
               expect(first.text).toContain("sandboxed-ok")
-              expect(first.text).toContain("Command exited with code 0.")
+              expect(first.text).toContain("[exit code 0]")
               expect(first.structured?.sandbox).toEqual({
                 state: "sandboxed",
                 backend: SandboxRunner.backend(),
@@ -394,7 +394,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
               expect(result.text).toContain(`The OS sandbox blocked writes to: ${blocked}/f.txt.`)
               expect(result.text).toContain("The command was not rerun outside the sandbox.")
               expect(result.text).toContain("User feedback: use the workspace cache")
-              expect(result.text).toContain("Command exited with code 1.")
+              expect(result.text).toContain("[exit code 1]")
               expect(result.structured).toMatchObject({
                 exit: 1,
                 sandbox: { state: "sandboxed", denied: [`${blocked}/f.txt`], approved: [] },
@@ -440,7 +440,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
             Effect.gen(function* () {
               const stdin = "printf '%s' \"$((6 * 7)) `echo tick`\"\n"
               const result = yield* tools.run("bash -s", undefined, stdin)
-              expect(result.text).toBe("42 tick\nCommand exited with code 0.")
+              expect(result.text).toBe("42 tick\n[exit code 0]")
               expect(result.structured).toMatchObject({ exit: 0, sandbox: { state: "sandboxed" } })
               expect(yield* runner.runs()).toHaveLength(1)
             }),
@@ -489,7 +489,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
               Effect.gen(function* () {
                 const script = "SELECT * FROM t\n"
                 const first = yield* tools.run("cat", undefined, script)
-                expect(first.text).toBe("SELECT * FROM t\n\nCommand exited with code 0.")
+                expect(first.text).toBe("SELECT * FROM t\n\n[exit code 0]")
                 expect(tools.asked).toHaveLength(1)
                 expect(tools.asked[0]?.action).toBe("bash")
                 expect(tools.asked[0]?.resources[0]).toBe(`cat \n<<stdin\n${script}`)
@@ -584,7 +584,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
             body: (tools) =>
               Effect.gen(function* () {
                 const result = yield* tools.run("cat", undefined, "any script\n")
-                expect(result.text).toBe("any script\n\nCommand exited with code 0.")
+                expect(result.text).toBe("any script\n\n[exit code 0]")
                 yield* tools.run("cat -", undefined, "another\n")
                 expect(tools.asked).toEqual([])
               }),
@@ -742,7 +742,7 @@ describe.skipIf(!realAvailable)("BashTool sandbox (macOS seatbelt)", () => {
           Effect.gen(function* () {
             const script = "cat <<'EOF' > inside.txt\n$HOME `id` 'q' \"dq\" 中文\nEOF\ncat inside.txt\n"
             const result = yield* tools.run("bash -s", undefined, script)
-            expect(result.text).toBe("$HOME `id` 'q' \"dq\" 中文\n\nCommand exited with code 0.")
+            expect(result.text).toBe("$HOME `id` 'q' \"dq\" 中文\n\n[exit code 0]")
             expect(result.structured).toMatchObject({ exit: 0, sandbox: { state: "sandboxed" } })
             expect(tools.asked).toEqual([])
           }),

@@ -162,10 +162,10 @@ function scopePart(part: Part): Part {
   return { ...part, id: partKey(part.messageID, part.id) }
 }
 
-// V2 bash appends a model-facing status line ("Command exited with code 0.")
-// after the command output; the exit code is already in the structured
-// output, and V1 showed only the output.
-const BASH_STATUS = /(?:^|\n\n)Command (?:exited with code -?\d+|timed out before completion)\.$/
+// V2 bash appends a model-facing status line ("[exit code 0]") after the
+// command output; the exit code is already in the structured output, and V1
+// showed only the output.
+const BASH_STATUS = /(?:^|\n\n)\[(?:exit code -?\d+|command timed out)\]$/
 
 function trimToolStatus(message: SessionMessage): SessionMessage {
   if (message.type !== "assistant") return message

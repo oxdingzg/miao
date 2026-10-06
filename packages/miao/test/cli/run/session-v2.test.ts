@@ -104,7 +104,7 @@ describe("run session v2 transcript", () => {
       output(
         bash([
           { type: "text", text: "a\nb\n" },
-          { type: "text", text: "Command exited with code 0." },
+          { type: "text", text: "[exit code 0]" },
         ]),
       ),
     ).toBe("a\nb\n")
@@ -112,12 +112,12 @@ describe("run session v2 transcript", () => {
       output(
         bash([
           { type: "text", text: "a\n" },
-          { type: "text", text: "Warnings:\n- sandbox off\n\nCommand exited with code 1." },
+          { type: "text", text: "Warnings:\n- sandbox off\n\n[exit code 1]" },
         ]),
       ),
     ).toBe("a\n\nWarnings:\n- sandbox off")
     // A backfilled legacy call has only its output.
-    expect(output(bash([{ type: "text", text: "Command exited with code 0." }]))).toBe("Command exited with code 0.")
+    expect(output(bash([{ type: "text", text: "[exit code 0]" }]))).toBe("[exit code 0]")
   })
 
   test("keeps shell runs and compactions in transcript order", () => {

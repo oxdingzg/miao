@@ -118,10 +118,10 @@ describe("Session background-job recovery", () => {
     Effect.gen(function* () {
       const test = yield* setup
       yield* test.announce("started")
-      yield* test.announce("finished", "Command exited with code 0.")
+      yield* test.announce("finished", "[exit code 0]")
       const recovered = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
       expect(yield* recovered.list()).toMatchObject([
-        { id: "job_test", status: "completed", started_at: 1000, output: "Command exited with code 0." },
+        { id: "job_test", status: "completed", started_at: 1000, output: "[exit code 0]" },
       ])
       expect((yield* recovered.wait("job_test")).info?.status).toBe("completed")
       expect(yield* test.session.context(test.created.id)).toHaveLength(2)

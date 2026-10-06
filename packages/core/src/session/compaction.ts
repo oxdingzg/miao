@@ -388,6 +388,10 @@ export const make = (dependencies: Dependencies) => {
         model,
         http: input.request.http,
         providerOptions: input.request.providerOptions,
+        // Carry the runner's system parts (including the output-language anchor)
+        // so the summary stays in the conversation's language. The overflow path
+        // cannot reuse the prefix, but the system parts are small.
+        system: input.request.system,
         messages: [Message.user(summaryPrompt)],
         tools: [],
         generation: { maxTokens: summaryOutput },
