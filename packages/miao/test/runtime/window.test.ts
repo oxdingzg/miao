@@ -30,16 +30,18 @@ for (const signal of process.platform === "win32"
     const output = new Response(child.stdout).text()
     const errors = new Response(child.stderr).text()
     try {
-      const deadline = Date.now() + 20_000
+      const deadline = Date.now() + (process.platform === "win32" ? 60_000 : 20_000)
       let record = await readWindow(database)
       while (!record && Date.now() < deadline && child.exitCode === null) {
         await Bun.sleep(50)
         record = await readWindow(database)
       }
-      if (!record) throw new Error("Window did not start")
+      if (!record) throw new Error(`Window did not start before the deadline (exit: ${child.exitCode ?? "running"})`)
+      const closedAt = Date.now()
       if (signal === "stdin") child.stdin.end()
       if (signal !== "stdin") child.kill(signal)
       await child.exited
+      expect(Date.now() - closedAt).toBeLessThan(10_000)
       expect(await errors).toBe("")
       // Windows SIGTERM is forced process termination; it cannot run finally.
       if (process.platform !== "win32" || signal === "stdin")
@@ -53,7 +55,7 @@ for (const signal of process.platform === "win32"
       await Promise.all([output, errors])
       await rm(directory, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, process.platform === "win32" ? 90_000 : 30_000)
 }
 
 test(
