@@ -33,6 +33,9 @@ import { Reference } from "./reference"
 import { ReferenceGuidance } from "./reference/guidance"
 import * as SessionRunnerLLM from "./session/runner/llm"
 import { SessionRunnerModel } from "./session/runner/model"
+import { SessionExecution } from "./session/execution"
+import { SessionExecutionLocal } from "./session/execution/local"
+import { SessionSchedule } from "./session/schedule"
 import { SessionTodo } from "./session/todo"
 import { SkillV2 } from "./skill"
 import { SkillGuidance } from "./skill/guidance"
@@ -52,6 +55,7 @@ export const locationServices = LayerNode.group([
   Location.node,
   BackgroundJob.locationNode,
   EventV2.locationNode,
+  SessionSchedule.locationNode,
   Policy.node,
   Config.node,
   AgentV2.node,
@@ -112,7 +116,18 @@ export function buildLocationServiceMap(
     LocationServiceMap.Service,
     LayerMap.make(
       (ref: Location.Ref) => {
-        const allReplacements = replacements.concat([[Location.node, Location.boundNode(ref)]])
+        const allReplacements: LayerNode.Replacements = [
+          // The map itself, so a replacement subtree (e.g. the local session
+          // execution below, which wakes locations) may depend on it. The
+          // per-ref build runs after the map service exists and the memoMap
+          // dedupes the self reference, so this is not a construction cycle.
+          [LocationServiceMap.node, layer],
+          ...replacements,
+          // Default execution binding for hoisted subtrees that wake sessions
+          // (the schedule's fire path). Caller replacements above override it.
+          [SessionExecution.node, SessionExecutionLocal.node],
+          [Location.node, Location.boundNode(ref)],
+        ]
         // Apply replacements during hoist, not afterward: replacements can
         // introduce new tagged dependencies (Location.boundNode depends on
         // Project), and the hoist walk is the only pass that can still slice

@@ -2,7 +2,7 @@ export * as SessionSchedule from "./schedule"
 
 import { Clock, Context, Duration, Effect, Exit, Layer, Schema, Scope, SynchronizedRef } from "effect"
 import { Database } from "../database/database"
-import { makeGlobalNode } from "../effect/app-node"
+import { makeGlobalNode, makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { Identifier } from "../id/id"
 import { Cron } from "./cron"
@@ -205,4 +205,18 @@ export const node = makeGlobalNode({
   service: Service,
   layer,
   deps: [Database.node, EventV2.node, SessionExecution.node, SessionOwnership.node],
+})
+
+/**
+ * Re-exports the process instance as part of the Location runtime's own
+ * output, so the schedule tools' ambient `serviceOption` read sees it. The
+ * dependency hoists the node, whose SessionExecution requirement the location
+ * map's default binding resolves to the local execution; when the enclosing
+ * app graph builds the same node the memoMap dedupes to that instance, whose
+ * wake is wired to the app's own execution.
+ */
+export const locationNode = makeLocationNode({
+  name: "session-schedule/location",
+  layer: Layer.effect(Service, Service),
+  deps: [node],
 })
