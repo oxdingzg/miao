@@ -287,11 +287,9 @@ test("multiSelect toggles options instead of submitting", async () => {
     },
   ])
   try {
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("select all that apply")
+    await waitForText(app, "select all that apply")
     app.mockInput.pressEnter()
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("[✓] Alpha")
+    await waitForText(app, "[✓] Alpha")
     expect(calls).toHaveLength(0)
   } finally {
     app.renderer.destroy()
