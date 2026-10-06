@@ -8,7 +8,7 @@ import { onCleanup, onMount } from "solid-js"
 import { tmpdir } from "../../fixture/fixture"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { TestTuiContexts } from "../../fixture/tui-environment"
-import type { RemoteEnvironment, RemoteLocal } from "../../../src/component/dialog-remote"
+import type { RemoteEnvironment, RemoteLocal, RemoteLocalFactory } from "../../../src/component/dialog-remote"
 import type { DeviceApi } from "../../../src/component/dialog-devices"
 import type { ClipboardService } from "../../../src/context/clipboard"
 import type { RemoteAccess } from "@miao/schema/remote-access"
@@ -93,6 +93,138 @@ async function mount(root: string, environment: RemoteEnvironment, clipboard?: C
   }
   return { app, until, select, cleanup: () => app.renderer.destroy() }
 }
+
+// Renders the real context-consuming DialogRemote the way app.tsx composes it:
+// RemoteLocalProvider must sit above DialogProvider because dialogs render from
+// DialogProvider's own scope and cannot see providers nested below it.
+async function mountContextual(root: string, remote?: RemoteLocalFactory) {
+  const state = path.join(root, "state")
+  await mkdir(state, { recursive: true })
+  await Bun.write(path.join(state, "kv.json"), "{}")
+  const [
+    { DialogProvider, useDialog },
+    { DialogRemote, RemoteLocalProvider },
+    { KVProvider },
+    { ThemeProvider },
+    { TuiConfigProvider },
+    { ToastProvider, Toast },
+    { OpencodeKeymapProvider, registerOpencodeKeymap },
+    { ClipboardProvider },
+    { ArgsProvider },
+    { SDKProvider },
+    { PermissionProvider },
+    { ProjectProvider },
+    { SyncProvider },
+    { RouteProvider },
+    { ExitProvider },
+    { LocationProvider },
+    { createEventSource, createFetch, directory },
+  ] = await Promise.all([
+    import("../../../src/ui/dialog"),
+    import("../../../src/component/dialog-remote"),
+    import("../../../src/context/kv"),
+    import("../../../src/context/theme"),
+    import("../../../src/config"),
+    import("../../../src/ui/toast"),
+    import("../../../src/keymap"),
+    import("../../../src/context/clipboard"),
+    import("../../../src/context/args"),
+    import("../../../src/context/sdk"),
+    import("../../../src/context/permission"),
+    import("../../../src/context/project"),
+    import("../../../src/context/sync"),
+    import("../../../src/context/route"),
+    import("../../../src/context/exit"),
+    import("../../../src/context/location"),
+    import("../../fixture/tui-sdk"),
+  ])
+  const calls = createFetch()
+  const events = createEventSource()
+
+  function Opener() {
+    const dialog = useDialog()
+    onMount(() => dialog.replace(() => <DialogRemote />))
+    return <text>Conversation</text>
+  }
+
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const resolvedConfig = createTuiResolvedConfig({ keybinds: {}, leader_timeout: 1000 })
+    onCleanup(registerOpencodeKeymap(keymap, renderer, resolvedConfig))
+    return (
+      <TestTuiContexts directory={root} paths={{ home: root, state, worktree: root }}>
+        <ArgsProvider>
+          <OpencodeKeymapProvider keymap={keymap}>
+            <TuiConfigProvider config={resolvedConfig}>
+              <KVProvider>
+                <ThemeProvider mode="dark">
+                  <ToastProvider>
+                    <ClipboardProvider value={undefined}>
+                      <SDKProvider url="http://test" directory={directory} fetch={calls.fetch} events={events.source}>
+                        <PermissionProvider>
+                          <ProjectProvider>
+                            <ExitProvider exit={() => {}}>
+                              <SyncProvider>
+                                <RouteProvider>
+                                  <LocationProvider location={{ directory }}>
+                                    <RemoteLocalProvider value={remote}>
+                                      <DialogProvider>
+                                        <Opener />
+                                        <Toast />
+                                      </DialogProvider>
+                                    </RemoteLocalProvider>
+                                  </LocationProvider>
+                                </RouteProvider>
+                              </SyncProvider>
+                            </ExitProvider>
+                          </ProjectProvider>
+                        </PermissionProvider>
+                      </SDKProvider>
+                    </ClipboardProvider>
+                  </ToastProvider>
+                </ThemeProvider>
+              </KVProvider>
+            </TuiConfigProvider>
+          </OpencodeKeymapProvider>
+        </ArgsProvider>
+      </TestTuiContexts>
+    )
+  }
+
+  const app = await testRender(() => <Harness />, { kittyKeyboard: true, width: 120, height: 90 })
+  const until = async (ready: (frame: string) => boolean, timeout = 3000) => {
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline) {
+      await app.renderOnce()
+      const frame = app.captureCharFrame()
+      if (ready(frame)) return frame
+      await Bun.sleep(20)
+    }
+    throw new Error(`frame never matched:\n${app.captureCharFrame()}`)
+  }
+  return { app, until, cleanup: () => app.renderer.destroy() }
+}
+
+test("DialogRemote reaches the remote factory across the dialog provider boundary", async () => {
+  await using tmp = await tmpdir()
+  const remote: RemoteLocalFactory = async () => ({
+    providers: async () => ({ providers: [] }),
+    setup: async () => {
+      throw new Error("unused")
+    },
+    setupOAuth: async () => {
+      throw new Error("unused")
+    },
+  })
+  const view = await mountContextual(tmp.path, remote)
+  try {
+    const frame = await view.until((value) => value.includes("登录中继并接入"))
+    expect(frame).toContain("Web / iOS 设备")
+  } finally {
+    view.cleanup()
+  }
+})
 
 const environment = (extra: Pick<RemoteEnvironment, "devices"> & Partial<RemoteEnvironment>): RemoteEnvironment => ({
   sessionID: "ses_current",
