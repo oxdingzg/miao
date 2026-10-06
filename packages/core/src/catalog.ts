@@ -52,6 +52,7 @@ export interface Interface extends State.Transformable<Draft> {
   }
   readonly model: {
     readonly get: (providerID: ProviderV2.ID, modelID: ModelV2.ID) => Effect.Effect<ModelV2.Info | undefined>
+    readonly getAvailable: (providerID: ProviderV2.ID, modelID: ModelV2.ID) => Effect.Effect<ModelV2.Info | undefined>
     readonly all: () => Effect.Effect<ModelV2.Info[]>
     readonly available: () => Effect.Effect<ModelV2.Info[]>
     readonly default: () => Effect.Effect<ModelV2.Info | undefined>
@@ -211,6 +212,21 @@ const layer = Layer.effect(
           if (!record) return
           const model = record.models.get(modelID)
           return model && projectModel(model, record.provider)
+        }),
+
+        getAvailable: Effect.fn("CatalogV2.model.getAvailable")(function* (providerID, modelID) {
+          const record = state.get().providers.get(providerID)
+          const model = record?.models.get(modelID)
+          if (!record || !model?.enabled || record.provider.disabled) return
+          // An explicit Session selection needs one model, not a projection and
+          // sort of the entire catalog. Keep auth live rather than caching it.
+          if (!configuredCredential(record.provider)) {
+            const integration = yield* integrations.get(
+              record.provider.integrationID ?? Integration.ID.make(providerID),
+            )
+            if (!available(record.provider, integration)) return
+          }
+          return projectModel(model, record.provider)
         }),
 
         all: Effect.fn("CatalogV2.model.all")(function* () {
