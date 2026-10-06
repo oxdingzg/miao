@@ -2413,7 +2413,11 @@ function Task(props: ToolProps) {
     const first = messages().find((x) => x.role === "user")?.time.created
     if (first !== undefined) {
       const completed = messages().findLast((x) => x.role === "assistant")?.time.completed
-      return (completed ?? (isRunning() ? now() : first)) - first
+      const span = (completed ?? (isRunning() ? now() : first)) - first
+      // A completed child transcript whose final assistant message never
+      // recorded a completion time yields 0ms; the call's own timing below
+      // still reports the real duration.
+      if (span > 0 || isRunning()) return span
     }
     // The child transcript can lag behind the tool call, so fall back to the
     // call's own timing and still report how long the subagent has been running.
