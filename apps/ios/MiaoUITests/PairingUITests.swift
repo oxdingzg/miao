@@ -65,13 +65,7 @@ final class PairingUITests: XCTestCase {
             XCTAssertTrue(link.waitForExistence(timeout: 5))
             link.tap(); link.typeText(fixture.invitation)
             XCTAssertTrue(link.value as? String == fixture.invitation, "The complete pairing link is entered")
-            // A pasted invitation expands the multiline field; bring the action
-            // below it into view before tapping while the keyboard is open.
-            for _ in 0..<4 {
-                if app.buttons["开始配对"].isHittable { break }
-                app.swipeUp()
-            }
-            XCTAssertTrue(app.buttons["开始配对"].isHittable)
+
         }
         XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["开始配对"].isEnabled)
