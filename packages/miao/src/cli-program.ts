@@ -1,3 +1,4 @@
+import { InstallationExecutable } from "@miao/core/installation/executable"
 export * as CliProgram from "./cli-program"
 
 import path from "node:path"
@@ -14,8 +15,8 @@ import { existsSync } from "node:fs"
  */
 export function command(...args: string[]): string[] {
   const entry = cliEntry()
-  if (entry === undefined) return [process.execPath, ...args]
-  return [process.execPath, "run", entry, ...args]
+  if (entry === undefined) return [InstallationExecutable.executable, ...args]
+  return [InstallationExecutable.executable, "run", entry, ...args]
 }
 
 /** Absolute `src/index.ts` path for a source checkout, or undefined for a compiled binary. */

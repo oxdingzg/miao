@@ -211,6 +211,7 @@ for (const item of targets) {
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       MIAO_VERSION: `'${Script.version}'`,
+      MIAO_BUILD_ID: JSON.stringify(crypto.randomUUID()),
       MIAO_MODELS_SNAPSHOT: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
       MIAO_WORKER_PATH: workerPath,

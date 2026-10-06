@@ -17,8 +17,8 @@ export async function verifyWindowsUpgrade(filename = "miao.exe") {
   const fixture = await Bun.spawn(
     windowsCommand(String.raw`
 $ErrorActionPreference = 'Stop'
-Add-Type -TypeDefinition 'public class Program { public static void Main(string[] args) { System.Console.WriteLine("1.2.2"); if (args.Length > 0) System.Threading.Thread.Sleep(60000); } }' -OutputAssembly $env:FIXTURE_OLD -OutputType ConsoleApplication
-Add-Type -TypeDefinition 'public class Candidate { public static void Main() { System.Console.WriteLine("1.2.3"); } }' -OutputAssembly $env:FIXTURE_NEW -OutputType ConsoleApplication
+Add-Type -TypeDefinition 'public class Program { public static void Main(string[] args) { if (args.Length > 0 && args[0] == "--build-id") { System.Console.WriteLine("11111111-1111-1111-1111-111111111111"); return; } System.Console.WriteLine("1.2.2"); if (args.Length > 0 && args[0] != "--version") System.Threading.Thread.Sleep(60000); } }' -OutputAssembly $env:FIXTURE_OLD -OutputType ConsoleApplication
+Add-Type -TypeDefinition 'public class Candidate { public static void Main(string[] args) { System.Console.WriteLine(args.Length > 0 && args[0] == "--build-id" ? "22222222-2222-2222-2222-222222222222" : "1.2.3"); } }' -OutputAssembly $env:FIXTURE_NEW -OutputType ConsoleApplication
 Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
 `),
     {

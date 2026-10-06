@@ -82,7 +82,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-INSTALL_DIR=$HOME/.miao/bin
+INSTALL_DIR=${MIAO_INSTALL_DIR:-$HOME/.miao/bin}
 mkdir -p "$INSTALL_DIR"
 
 # If --binary is provided, skip all download/detection logic
@@ -238,11 +238,10 @@ print_message() {
 }
 
 check_version() {
-    if command -v miao >/dev/null 2>&1; then
-        miao_path=$(which miao)
+    if [ -x "$INSTALL_DIR/${APP}${EXE}" ]; then
 
         ## Check the installed version
-        installed_version=$(miao --version 2>/dev/null || echo "")
+        installed_version=$("$INSTALL_DIR/${APP}${EXE}" --version 2>/dev/null || echo "")
 
         if [[ "$installed_version" != "$specific_version" ]]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."
@@ -306,7 +305,7 @@ download_with_progress() {
     trap "trap - RETURN; rm -f \"$tracefile\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
     (
-        curl --trace-ascii "$tracefile" -s -L -o "$output" "$url"
+        curl --trace-ascii "$tracefile" -f -s -L -o "$output" "$url"
     ) &
     local curl_pid=$!
 
@@ -350,7 +349,7 @@ download_and_install() {
 
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
         # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        curl -# -L -o "$tmp_dir/$filename" "$url"
+        curl -f -# -L -o "$tmp_dir/$filename" "$url"
     fi
 
     if [ "$os" = "linux" ]; then
@@ -359,15 +358,48 @@ download_and_install() {
         unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
     fi
 
-    mv "$tmp_dir/${APP}${EXE}" "$INSTALL_DIR"
-    chmod 755 "${INSTALL_DIR}/${APP}${EXE}"
+    publish_binary "$tmp_dir/${APP}${EXE}"
     rm -rf "$tmp_dir"
+}
+
+publish_binary() {
+    local source="$1"
+    if [[ "$EXE" == ".exe" ]]; then
+        # PowerShell uses NTFS hard links and File.Replace without requiring
+        # symlink privileges, including when the old executable is running.
+        MIAO_BINARY="$(cygpath -w "$source")" MIAO_INSTALL_DIR="$(cygpath -w "$INSTALL_DIR")" powershell.exe -NoProfile -NonInteractive -Command '
+          $ErrorActionPreference = "Stop"
+          $script = (Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1").Content
+          & ([scriptblock]::Create($script)) -Binary $env:MIAO_BINARY -NoModifyPath
+        '
+        return
+    fi
+    local stage
+    stage=$(mktemp -d "$INSTALL_DIR/.install-XXXXXXXX")
+    trap 'rm -rf "$stage"; trap - RETURN' RETURN
+    cp "$source" "$stage/${APP}${EXE}"
+    chmod 755 "$stage/${APP}${EXE}"
+    local version build_id target
+    version=$("$stage/${APP}${EXE}" --version)
+    build_id=$("$stage/${APP}${EXE}" --build-id)
+    [[ "$build_id" =~ ^[0-9a-fA-F-]{36}$ ]] || { print_message error "Invalid build identity"; return 1; }
+    if [[ "$specific_version" != "local" && "$version" != "$specific_version" ]]; then
+        print_message error "Release failed version verification"
+        return 1
+    fi
+    target="$INSTALL_DIR/.versions/$build_id/${APP}${EXE}"
+    mkdir -p "$(dirname "$target")"
+    # Hard-link only a complete verified file, and never overwrite a retained build.
+    if ! ln "$stage/${APP}${EXE}" "$target" 2>/dev/null; then
+        cmp -s "$stage/${APP}${EXE}" "$target" || { print_message error "Conflicting build identity"; return 1; }
+    fi
+    ln -s "$target" "$stage/launcher"
+    mv -f "$stage/launcher" "$INSTALL_DIR/${APP}${EXE}"
 }
 
 install_from_binary() {
     print_message info "\n${MUTED}Installing ${NC}miao ${MUTED}from: ${NC}$binary_path"
-    cp "$binary_path" "${INSTALL_DIR}/${APP}${EXE}"
-    chmod 755 "${INSTALL_DIR}/${APP}${EXE}"
+    publish_binary "$binary_path"
 }
 
 if [ -n "$binary_path" ]; then

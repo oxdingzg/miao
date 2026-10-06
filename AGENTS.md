@@ -209,7 +209,7 @@ entry points so a work-in-progress change can never break the tool you rely on.
 - `miao-dev` runs from source for fast iteration. It is the only entry point that
   reflects uncommitted edits (channel `local`, DB `miao-local.db`).
 - `miao-preview` is a compiled build of the current checkout, installed by
-  `./script/install-local.sh`. It builds the current platform (`--single`), smoke-tests
+  `./script/install-local.sh --binary /path/to/prebuilt/miao` after building on a build host (`--single`). It smoke-tests
   `--version`, installs a versioned binary under `~/.local/share/miao/bin`, and
   atomically repoints `~/.local/bin/miao-preview`. The channel is the current branch,
   so it is a preview build that never auto-updates. The previous install is kept at
@@ -219,7 +219,7 @@ entry points so a work-in-progress change can never break the tool you rely on.
   over.
 - Validate before promoting: `bun typecheck` + targeted `bun test` in the changed
   packages, then a TUI smoke test (`miao-dev`, confirm the prompt renders). Build and
-  smoke-test the release artifact with `./script/install-local.sh` (`miao-preview`)
+  smoke-test the release artifact with `./script/install-local.sh --binary /path/to/prebuilt/miao` (`miao-preview`)
   before cutting a release.
 - Roll back the preview build with
   `ln -sfn ~/.local/share/miao/bin/miao.prev ~/.local/bin/miao-preview`.

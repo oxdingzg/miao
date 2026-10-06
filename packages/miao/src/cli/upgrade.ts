@@ -58,10 +58,9 @@ async function refreshCache(installed: string) {
   if (latest) await writeCache({ checkedAt: Date.now(), latest, installed })
 }
 
-/** Install methods we upgrade in the background. Package managers are opt-in. */
+/** Only the official installer retains immutable builds for active windows. */
 function autoInstalls(method: Installation.Method) {
-  if (method === "curl" || method === "npm" || method === "pnpm" || method === "bun") return true
-  return Flag.MIAO_PACKAGE_MANAGER_AUTO_UPDATE && (method === "brew" || method === "choco" || method === "scoop")
+  return method === "curl"
 }
 
 /**
@@ -79,15 +78,12 @@ async function acquireUpgradeLock() {
 
 /**
  * Check for updates and, by default, upgrade in the background. The running
- * process keeps the old build; the TUI shows a non-blocking "restart to apply"
- * notice. Unlike the previous behavior there is no blocking confirmation dialog.
+ * process keeps the old build and new windows use the installed version.
  */
 export async function upgrade() {
+  if (Installation.isPreview() || Flag.MIAO_DISABLE_AUTOUPDATE) return
   const config = await AppRuntime.runPromise(Config.Service.use((cfg) => cfg.getGlobal()))
-  if (config.autoupdate === false || Flag.MIAO_DISABLE_AUTOUPDATE) return
-  // Preview/dev builds use `0.0.1-<channel>-<timestamp>` versions that cannot be
-  // compared against release versions; never notify or self-upgrade them.
-  if (Installation.isPreview()) return
+  if (config.autoupdate === false) return
 
   const cache = await readCache()
   if (!cache || Date.now() - cache.checkedAt > CHECK_INTERVAL_MS) {

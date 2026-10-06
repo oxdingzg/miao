@@ -72,14 +72,23 @@ try {
   $actual = (& $candidate --version | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'Release executable failed version verification' }
   $phase = 'replace'
-  $backup = $destination + '.bak-' + [Guid]::NewGuid().ToString('N')
-  [IO.File]::Move($destination, $backup)
-  try {
-    [IO.File]::Move($candidate, $destination)
-  } catch {
-    [IO.File]::Move($backup, $destination)
-    throw
+
+  $buildID = (& $candidate --build-id | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $buildID -notmatch '^[0-9a-fA-F-]{36}$') { throw 'Invalid build identity' }
+  $retainedDir = Join-Path (Join-Path $directory '.versions') $buildID
+  New-Item -ItemType Directory -Force -Path $retainedDir | Out-Null
+  $retained = Join-Path $retainedDir (Split-Path -Leaf $destination)
+  if (Test-Path -LiteralPath $retained) {
+    if ((Get-FileHash -LiteralPath $candidate).Hash -ne (Get-FileHash -LiteralPath $retained).Hash) { throw 'Conflicting build identity' }
+  } else {
+    New-Item -ItemType HardLink -Path $retained -Target $candidate | Out-Null
   }
+  $next = Join-Path $stage 'launcher.exe'
+  New-Item -ItemType HardLink -Path $next -Target $retained | Out-Null
+  if (Test-Path -LiteralPath $destination) {
+    $backup = $destination + '.bak-' + [Guid]::NewGuid().ToString('N')
+    [IO.File]::Replace($next, $destination, $backup)
+  } else { [IO.File]::Move($next, $destination) }
   [Console]::Out.WriteLine('Installed ' + $version + '; previous executable: ' + $backup)
 } catch {
   # Avoid exposing credentials embedded in proxy URLs or arbitrary child output.

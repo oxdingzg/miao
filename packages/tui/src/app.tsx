@@ -1204,7 +1204,7 @@ function App(props: {
     toast.show({
       variant: "info",
       title: "Updated",
-      message: `miao v${evt.properties.version} installed. Restart to apply.`,
+      message: `miao v${evt.properties.version} installed. New windows use this version; this window keeps running.`,
       duration: 15000,
     })
   })

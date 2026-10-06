@@ -1,7 +1,6 @@
 import "@miao/core/flag/legacy-env"
 import { Crash } from "@/cli/crash"
 import { Server } from "@/server/server"
-import { InstanceRuntime } from "@/project/instance-runtime"
 import { Rpc } from "@/util/rpc"
 import { upgrade } from "@/cli/upgrade"
 import { Config } from "@/config/config"
@@ -75,8 +74,7 @@ export const rpc = {
     server = await Server.listen(input)
     return { url: server.url.toString() }
   },
-  async checkUpgrade(input: { directory: string }) {
-    await InstanceRuntime.load({ directory: input.directory })
+  async checkUpgrade(_input: { directory: string }) {
     await upgrade().catch(() => {})
   },
   async reload() {

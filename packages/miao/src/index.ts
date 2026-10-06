@@ -1,3 +1,4 @@
+import { InstallationExecutable } from "@miao/core/installation/executable"
 import { WindowLifecycle } from "./runtime/lifecycle"
 import "@miao/core/flag/legacy-env"
 import yargs, { type CommandModule } from "yargs"
@@ -20,6 +21,11 @@ const onFatal = (kind: "uncaughtException" | "unhandledRejection", error: unknow
 }
 process.on("uncaughtException", (error) => onFatal("uncaughtException", error))
 process.on("unhandledRejection", (reason) => onFatal("unhandledRejection", reason))
+
+if (process.argv.includes("--build-id")) {
+  console.log(InstallationExecutable.buildID)
+  process.exit(0)
+}
 
 const args = hideBin(process.argv)
 

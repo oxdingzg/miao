@@ -83,6 +83,7 @@ for (const item of targets) {
     },
     define: {
       MIAO_VERSION: `'${Script.version}'`,
+      MIAO_BUILD_ID: JSON.stringify(crypto.randomUUID()),
       MIAO_CLI_NAME: `'${binary}'`,
       MIAO_MODELS_SNAPSHOT: modelsData,
       MIAO_CHANNEL: `'${Script.channel}'`,

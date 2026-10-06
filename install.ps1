@@ -20,6 +20,36 @@ param(
   [switch]$NoModifyPath = ($env:MIAO_NO_MODIFY_PATH -eq "1")
 )
 
+function Publish-Miao {
+  param([string]$Source, [string]$destination)
+  $directory = Split-Path -Parent $destination
+  $stage = Join-Path $directory ('.install-' + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $stage | Out-Null
+  try {
+    $candidate = Join-Path $stage 'candidate.exe'
+    Copy-Item -LiteralPath $Source -Destination $candidate
+    & $candidate --version | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Executable failed version verification' }
+
+  $buildID = (& $candidate --build-id | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $buildID -notmatch '^[0-9a-fA-F-]{36}$') { throw 'Invalid build identity' }
+  $retainedDir = Join-Path (Join-Path $directory '.versions') $buildID
+  New-Item -ItemType Directory -Force -Path $retainedDir | Out-Null
+  $retained = Join-Path $retainedDir (Split-Path -Leaf $destination)
+  if (Test-Path -LiteralPath $retained) {
+    if ((Get-FileHash -LiteralPath $candidate).Hash -ne (Get-FileHash -LiteralPath $retained).Hash) { throw 'Conflicting build identity' }
+  } else {
+    New-Item -ItemType HardLink -Path $retained -Target $candidate | Out-Null
+  }
+  $next = Join-Path $stage 'launcher.exe'
+  New-Item -ItemType HardLink -Path $next -Target $retained | Out-Null
+  if (Test-Path -LiteralPath $destination) {
+    $backup = $destination + '.bak-' + [Guid]::NewGuid().ToString('N')
+    [IO.File]::Replace($next, $destination, $backup)
+  } else { [IO.File]::Move($next, $destination) }
+  } finally { Remove-Item -LiteralPath $stage -Recurse -Force }
+}
+
 function Install-Miao {
   param([string]$Version, [string]$Binary, [bool]$NoModifyPath)
 
@@ -32,7 +62,7 @@ function Install-Miao {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
   $repo = "oxdingzg/miao"
-  $installDir = Join-Path $HOME ".miao\bin"
+  $installDir = if ($env:MIAO_INSTALL_DIR) { $env:MIAO_INSTALL_DIR } else { Join-Path $HOME ".miao\bin" }
   $exe = Join-Path $installDir "miao.exe"
 
   if (-not [Environment]::Is64BitOperatingSystem) {
@@ -50,7 +80,7 @@ function Install-Miao {
   if ($Binary) {
     if (-not (Test-Path $Binary)) { throw "Binary not found: $Binary" }
     Write-Host "Installing miao from $Binary"
-    Copy-Item -Force $Binary $exe
+    Publish-Miao $Binary $exe
   }
   else {
     $Version = $Version -replace "^v", ""
@@ -86,14 +116,9 @@ function Install-Miao {
       Expand-Archive -Force -Path $zip -DestinationPath $tmp
       $downloaded = Get-ChildItem -Path $tmp -Recurse -Filter "miao.exe" | Select-Object -First 1
       if (-not $downloaded) { throw "miao.exe was not found in $url" }
-      # A running miao.exe cannot be overwritten, but it can be renamed out of the way.
-      if (Test-Path $exe) {
-        $old = "$exe.old"
-        Remove-Item -Force $old -ErrorAction SilentlyContinue
-        try { Move-Item -Force $exe $old } catch { throw "Close every running miao and try again: $exe is in use." }
-      }
-      Move-Item -Force $downloaded.FullName $exe
-      Remove-Item -Force "$exe.old" -ErrorAction SilentlyContinue
+      $actual = (& $downloaded.FullName --version | Out-String).Trim()
+      if ($LASTEXITCODE -ne 0 -or $actual -ne $Version) { throw 'Release failed version verification' }
+      Publish-Miao $downloaded.FullName $exe
     }
     finally {
       Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
