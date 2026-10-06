@@ -1,5 +1,11 @@
 # V2 Schema Changelog
 
+## 2026-10-06: Model-Initiated Notification Event
+
+- Add live `session.next.notified` (`{ sessionID, timestamp, title?, message }`), published when the model calls the new `push_notification` tool. It is not durable, like `session.next.status`: a client that was not connected when it fired has nothing to replay.
+- The transient pair of consumers is the TUI attention plugin and the remote-control push sender, which sends the same `attention` push it already sends for questions and failures. No new route, table, or migration.
+- See `specs/v2/session.md` "Model-Initiated Notifications".
+
 ## 2026-10-02: Local Path on File Attachments
 
 - Add an optional `path` to `PromptInput.FileAttachment` and `Prompt.FileAttachment`: the absolute path on the submitting client's filesystem, set only when the attachment was read from a local file (the TUI sends it for pasted or dropped files). Remote clients omit it.
