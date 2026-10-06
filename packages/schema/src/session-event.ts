@@ -151,6 +151,23 @@ export const DelegationEnded = Event.define({
 })
 export type DelegationEnded = typeof DelegationEnded.Type
 
+/**
+ * An interim note a running background subagent sends its parent. It is
+ * projected as an ordinary notification, so the parent reads it at its next
+ * safe boundary; unlike `DelegationEnded` it does not settle the delegation.
+ */
+export const DelegationReported = Event.define({
+  type: "session.next.delegation.reported",
+  ...options,
+  schema: {
+    ...Base,
+    id: Schema.String,
+    childSessionID: SessionID,
+    text: Schema.String,
+  },
+})
+export type DelegationReported = typeof DelegationReported.Type
+
 export namespace Command {
   export const Started = Event.define({
     type: "session.next.command.started",
@@ -624,6 +641,7 @@ export const DurableDefinitions = Event.inventory(
   Synthetic,
   DelegationStarted,
   DelegationEnded,
+  DelegationReported,
   Command.Started,
   Command.Completed,
   Command.Failed,
@@ -662,6 +680,7 @@ export const Definitions = Event.inventory(
   Synthetic,
   DelegationStarted,
   DelegationEnded,
+  DelegationReported,
   Command.Started,
   Command.Completed,
   Command.Failed,

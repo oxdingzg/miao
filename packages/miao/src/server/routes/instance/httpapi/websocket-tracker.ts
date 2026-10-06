@@ -9,6 +9,8 @@ type Close = Effect.Effect<void, unknown>
 export interface Interface {
   readonly add: (close: Close) => Effect.Effect<boolean>
   readonly remove: (close: Close) => Effect.Effect<void>
+  /** Connected sockets; the Runtime stays alive while at least one is attached. */
+  readonly count: Effect.Effect<number>
   readonly closeAll: Effect.Effect<void>
 }
 
@@ -28,6 +30,7 @@ const layer = Layer.sync(Service)(() => {
       Effect.sync(() => {
         sockets.delete(close)
       }),
+    count: Effect.sync(() => sockets.size),
     closeAll: Effect.gen(function* () {
       closing = true
       const active = Array.from(sockets)

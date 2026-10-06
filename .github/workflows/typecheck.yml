@@ -4,13 +4,25 @@ on:
   push:
     branches:
       - main
+    # Docs-only changes cannot affect the graph; skip the run instead of paying
+    # for checkout and setup on every one.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "specs/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "specs/**"
   workflow_dispatch:
 
 concurrency:
-  # A new push to main (or a PR) cancels the still-running run of an older commit.
-  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: true
+  # A pull request shares one group per number, so a new push cancels its older
+  # run. A push to main groups by commit SHA, so every merged commit gets its own
+  # run and keeps a complete status instead of being superseded and cancelled.
+  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   typecheck:
@@ -22,6 +34,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # The PR filter below names the base commit's SHA, which a shallow
+          # clone does not contain.
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
@@ -31,10 +47,13 @@ jobs:
       - name: Cache Turbo
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: node_modules/.cache/turbo
-          key: turbo-typecheck-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', '**/tsconfig.json') }}-${{ github.sha }}
+          # Turbo 2.x writes its local cache to <repo>/.turbo/cache. Caching
+          # node_modules/.cache/turbo (the pre-2.0 path) silently saved nothing.
+          path: .turbo/cache
+          # No github.sha in the key: the key must be reusable across commits so
+          # an unchanged task can hit an exact match instead of only a prefix.
+          key: turbo-typecheck-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', '**/tsconfig.json', 'bun.lock') }}
           restore-keys: |
-            turbo-typecheck-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', '**/tsconfig.json') }}-
             turbo-typecheck-${{ runner.os }}-
 
       - name: Run typecheck
@@ -42,4 +61,13 @@ jobs:
         # once, which can exhaust the hosted runner's memory and get SIGKILLed
         # (exit 137) even though a warm run finishes in ~2 minutes. Serializing
         # to a couple of tasks keeps peak memory under the runner limit.
-        run: bun typecheck --concurrency=2
+        #
+        # On a PR, typecheck only the packages the change touches and their
+        # dependents; main still typechecks everything.
+        run: |
+          set -euo pipefail
+          filter=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            filter=("--filter=[${{ github.event.pull_request.base.sha }}]")
+          fi
+          bun turbo typecheck --concurrency=2 "${filter[@]}"

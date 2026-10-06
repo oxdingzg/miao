@@ -139,6 +139,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.moved": () => Effect.void,
       "session.next.delegation.started": () => Effect.void,
       "session.next.delegation.ended": () => Effect.void,
+      // A progress note reaches the parent as a promotion (`Synthetic`), which is
+      // what the updater turns into a message.
+      "session.next.delegation.reported": () => Effect.void,
       "session.next.prompted": (event) => {
         return adapter.appendMessage(
           SessionMessage.User.make({
