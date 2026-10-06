@@ -19,6 +19,7 @@ to add a section here.
 
 ### Fixed
 
+- **llm**: treat provider streams that end without a terminal frame as retryable failures (#269).
 - **core**: allow concurrent windows to share history while keeping exclusive Session execution ownership and safe database maintenance (#256, #259).
 - **installation**: atomically switch launchers to immutable builds so active windows and their later child processes retain their version (#266).
 
