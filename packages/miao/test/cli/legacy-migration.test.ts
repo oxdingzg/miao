@@ -59,9 +59,9 @@ const projected = (file: string) => {
   }
 }
 
-describe("startup migration of legacy sessions", () => {
+describe("read-only startup with legacy history", () => {
   cliIt.live(
-    "backs up and backfills a legacy database before the command runs",
+    "does not backfill or back up history as a startup side effect",
     ({ home, opencode }) =>
       Effect.gen(function* () {
         const file = path.join(home, "fixture.db")
@@ -69,18 +69,17 @@ describe("startup migration of legacy sessions", () => {
 
         const first = yield* opencode.spawn(["session", "list", "--format", "json"], { env: { MIAO_DB: file } })
         opencode.expectExit(first, 0, "session list")
-        expect(first.stderr).toContain("migrated 1 legacy session(s); backup: ")
+        expect(first.stderr).not.toContain("migrated 1 legacy session(s)")
         expect(JSON.parse(first.stdout).map((session: { id: string }) => session.id)).toEqual(["ses_startup_legacy"])
-        expect(projected(file)).toBe(1)
+        expect(projected(file)).toBe(0)
         const backups = fs.readdirSync(home).filter((name) => name.startsWith("fixture.db.bak-"))
-        expect(backups).toHaveLength(1)
-        expect(backups[0]).toMatch(/^fixture\.db\.bak-\d{8}-\d{6}$/)
+        expect(backups).toHaveLength(0)
 
-        // Once migrated, later starts neither back up nor print anything.
+        // Later read-only starts likewise leave history untouched.
         const second = yield* opencode.spawn(["session", "list", "--format", "json"], { env: { MIAO_DB: file } })
         opencode.expectExit(second, 0, "session list")
         expect(second.stderr).not.toContain("legacy session")
-        expect(fs.readdirSync(home).filter((name) => name.startsWith("fixture.db.bak-"))).toHaveLength(1)
+        expect(fs.readdirSync(home).filter((name) => name.startsWith("fixture.db.bak-"))).toHaveLength(0)
 
         // `db` keeps migration explicit.
         const third = yield* opencode.spawn(["db", "path"], { env: { MIAO_DB: file } })
