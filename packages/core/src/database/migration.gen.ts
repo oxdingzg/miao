@@ -45,5 +45,6 @@ export const migrations = (
     import("./migration/20261006021212_add_session_lease"),
     import("./migration/20261006025925_session_wake_allowance"),
     import("./migration/20261006062542_remove-session-lease"),
+    import("./migration/20261006095207_session_usage_facts"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

@@ -221,3 +221,58 @@ export const SessionNotificationTable = sqliteTable(
   },
   (table) => [index("session_notification_pending_idx").on(table.session_id, table.promoted_seq, table.admitted_seq)],
 )
+
+/** One settled provider step. Keyed by the settling event's own id, so a replayed projection inserts at most once. */
+export const SessionTurnUsageTable = sqliteTable(
+  "session_turn_usage",
+  {
+    event_id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    assistant_message_id: text().$type<SessionMessage.ID>().notNull(),
+    model_provider: text().notNull(),
+    model_id: text().notNull(),
+    variant: text(),
+    finish: text().notNull(),
+    cost: real().notNull(),
+    tokens_input: integer().notNull(),
+    tokens_output: integer().notNull(),
+    tokens_reasoning: integer().notNull(),
+    tokens_cache_read: integer().notNull(),
+    tokens_cache_write: integer().notNull(),
+    ttft_ms: integer(),
+    time_created: integer().notNull(),
+  },
+  (table) => [
+    index("session_turn_usage_session_time_idx").on(table.session_id, table.time_created),
+    index("session_turn_usage_model_time_idx").on(table.model_provider, table.model_id, table.time_created),
+  ],
+)
+
+/**
+ * One tool call, from `Tool.Called` to its `Tool.Success` / `Tool.Failed`
+ * settlement. Duration and status are readable from `time_called` /
+ * `time_settled`; only the first settlement of a call moves it out of
+ * `running`.
+ */
+export const SessionToolUsageTable = sqliteTable(
+  "session_tool_usage",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    call_id: text().notNull(),
+    assistant_message_id: text().$type<SessionMessage.ID>().notNull(),
+    tool: text().notNull(),
+    status: text().$type<"running" | "success" | "failed">().notNull(),
+    time_called: integer().notNull(),
+    time_settled: integer(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.session_id, table.call_id] }),
+    index("session_tool_usage_tool_time_idx").on(table.tool, table.time_called),
+  ],
+)

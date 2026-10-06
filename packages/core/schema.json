@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3fec286e-c89c-4a5b-8ed3-c67170ad8c87",
+  "id": "a97e79e3-7f2e-455a-8150-8dcd0564ab4a",
   "prevIds": [
-    "1dea33c5-b940-4d27-aa50-577f0be673c0"
+    "3fec286e-c89c-4a5b-8ed3-c67170ad8c87"
   ],
   "ddl": [
     {
@@ -84,6 +84,14 @@
     },
     {
       "name": "session",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_tool_usage",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_turn_usage",
       "entityType": "tables"
     },
     {
@@ -1672,6 +1680,226 @@
       "generated": null,
       "name": "session_id",
       "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "call_id",
+      "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "assistant_message_id",
+      "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool",
+      "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_called",
+      "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_settled",
+      "entityType": "columns",
+      "table": "session_tool_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "event_id",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "assistant_message_id",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model_provider",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model_id",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "variant",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "finish",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tokens_input",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tokens_output",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tokens_reasoning",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tokens_cache_read",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tokens_cache_write",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ttft_ms",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_turn_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
       "table": "todo"
     },
     {
@@ -2000,6 +2228,36 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
+      "name": "fk_session_tool_usage_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_tool_usage"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_session_turn_usage_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_turn_usage"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
       "name": "fk_todo_session_id_session_id_fk",
       "entityType": "fks",
       "table": "todo"
@@ -2048,6 +2306,16 @@
       "name": "project_directory_pk",
       "entityType": "pks",
       "table": "project_directory"
+    },
+    {
+      "columns": [
+        "session_id",
+        "call_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_tool_usage_pk",
+      "entityType": "pks",
+      "table": "session_tool_usage"
     },
     {
       "columns": [
@@ -2210,6 +2478,15 @@
       "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "event_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_turn_usage_pk",
+      "table": "session_turn_usage",
       "entityType": "pks"
     },
     {
@@ -2570,6 +2847,64 @@
       "name": "session_parent_idx",
       "entityType": "indexes",
       "table": "session"
+    },
+    {
+      "columns": [
+        {
+          "value": "tool",
+          "isExpression": false
+        },
+        {
+          "value": "time_called",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_tool_usage_tool_time_idx",
+      "entityType": "indexes",
+      "table": "session_tool_usage"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_turn_usage_session_time_idx",
+      "entityType": "indexes",
+      "table": "session_turn_usage"
+    },
+    {
+      "columns": [
+        {
+          "value": "model_provider",
+          "isExpression": false
+        },
+        {
+          "value": "model_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_turn_usage_model_time_idx",
+      "entityType": "indexes",
+      "table": "session_turn_usage"
     },
     {
       "columns": [

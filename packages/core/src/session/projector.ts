@@ -13,6 +13,7 @@ import { SessionMessageUpdater } from "./message-updater"
 import { SessionHistory } from "./history"
 import { SessionInput } from "./input"
 import { SessionDelegationStore } from "./delegation-store"
+import { SessionUsageStore } from "./usage-store"
 import { SessionLegacyTables } from "./legacy-tables"
 import { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
@@ -568,6 +569,7 @@ const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         yield* applyUsageWithAncestors(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
         yield* run(db, event)
+        yield* SessionUsageStore.projectStepEnded(db, event)
       }),
     )
     yield* events.project(SessionEvent.Step.Failed, (event) => run(db, event))
@@ -575,10 +577,16 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Text.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Input.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Input.Ended, (event) => run(db, event))
-    yield* events.project(SessionEvent.Tool.Called, (event) => run(db, event))
+    yield* events.project(SessionEvent.Tool.Called, (event) =>
+      SessionUsageStore.projectToolCalled(db, event).pipe(Effect.andThen(run(db, event))),
+    )
     yield* events.project(SessionEvent.Tool.Progress, (event) => run(db, event))
-    yield* events.project(SessionEvent.Tool.Success, (event) => run(db, event))
-    yield* events.project(SessionEvent.Tool.Failed, (event) => run(db, event))
+    yield* events.project(SessionEvent.Tool.Success, (event) =>
+      SessionUsageStore.projectToolSettled(db, event, "success").pipe(Effect.andThen(run(db, event))),
+    )
+    yield* events.project(SessionEvent.Tool.Failed, (event) =>
+      SessionUsageStore.projectToolSettled(db, event, "failed").pipe(Effect.andThen(run(db, event))),
+    )
     yield* events.project(SessionEvent.Reasoning.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Retried, (event) => run(db, event))
