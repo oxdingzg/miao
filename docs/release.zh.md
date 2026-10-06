@@ -18,11 +18,11 @@
    - `version`：运行 `script/version.ts`，以根 `package.json` 的版本创建**草稿** release `vX.Y.Z`，并生成 release notes，输出 `version/release/tag/repo`。
    - `cli`：矩阵 `macos-26`(darwin-arm64) / `macos-26-intel`(darwin-x64) / `ubuntu-latest`(linux-x64) / `ubuntu-24.04-arm`(linux-arm64) / `windows-2025`(windows-x64)。每个平台先 `bun install` + 安装 Rust，然后 `packages/miao/script/build.ts --single` 构建本平台二进制（会先构建本机原生 addon 并内嵌），最后把 `miao-<target>.zip|tar.gz` 上传到该草稿 release。
    - `publish`：所有平台成功后，先把 Windows 签名状态追加到 release 说明，再执行 `gh release edit --draft=false` 正式发布。
-4. **产物**：`miao-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}.{zip,tar.gz}`，命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
+4. **产物**：`miao-darwin-{arm64,x64}.zip`、`miao-linux-{x64,arm64}.tar.gz`、`miao-windows-x64.zip`（较旧的 CPU 另有 `miao-windows-x64-baseline.zip`），命名与 `install` 脚本、自更新（`Installation.latest` → `oxdingzg/miao/releases/latest`）一致。
 
 上述工作流是当前维护的发布入口。每次构建通过 `packages/miao/script/generate.ts` 从 miao 自有目录 `https://mtty.dev/models/api.json` 读取模型目录，失败时回退到 `https://models.dev/api.json`，也可以用 `MODELS_DEV_API_JSON` 指定本地文件，或用 `MIAO_MODELS_URL` 固定单一源。仓库没有单独提交模型快照的工作流；运行时会独立刷新缓存中的模型目录，并用源站的 ETag 做条件请求，内容未变则不重新下载。
 
-目前 Windows 二进制尚未签名。`publish` 步骤会在下载页面记录当前状态。
+目前 Windows 二进制尚未签名。`publish` 步骤会把该状态写入 release 正文，[mtty.dev 的 Windows 下载说明](https://mtty.dev/zh/docs/about/windows-downloads/)解释由此产生的提示。
 
 ## 变更日志
 
@@ -54,6 +54,6 @@
 
 ## 已知限制
 
-- 只产 gnu linux + 主流 mac/win；musl / baseline / windows-arm64 暂不产出。
+- 只产 gnu linux + 主流 mac/win；musl 和 windows-arm64 暂不产出。
 - 原生 addon **不做交叉编译**：每个平台由对应 runner 本机构建。
 - 发布属于生产动作：按本仓库规则，需**明确确认**后再执行。

@@ -41,6 +41,8 @@ $env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/mia
 
 安装脚本默认会把二进制放到 `~/.miao/bin/miao` 并写入 PATH；用 `--no-modify-path` 可跳过。
 
+当前 Windows 版本没有 Authenticode 签名。发布包是 `miao-windows-x64.zip`（较旧的 CPU 可用 `miao-windows-x64-baseline.zip`），内含 `miao.exe`；也可以从 [miao GitHub Releases](https://github.com/oxdingzg/miao/releases) 手动下载解压。安装脚本本身通常不会触发提示，但直接启动下载得到的 `miao.exe` 可能出现 SmartScreen 的“Windows 已保护你的电脑”对话框。出现时按[共用的 Windows 安全提示说明](https://mtty.dev/zh/docs/about/windows-downloads/)处理；杀毒软件报出威胁时不要放行。
+
 **三个入口（并存，互不干扰）**
 
 | 命令           | 是什么                                                     | 数据/配置                           | 更新         |
