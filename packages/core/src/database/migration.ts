@@ -10,6 +10,25 @@ import schema from "./schema.gen"
 type Database = EffectDrizzleSqlite.EffectSQLiteDatabase
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0]
 const lock = Semaphore.makeUnsafe(1)
+const initialization = Semaphore.makeUnsafe(1)
+
+/** Never change schema while another window holds a storage-use lock. */
+export function initialize(db: Database, usage: { exclusive: () => void; share: () => void }) {
+  return initialization.withPermit(
+    Effect.gen(function* () {
+      const table = yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"migration"}`)
+      const completed = table
+        ? new Set((yield* db.all<{ id: string }>(sql`SELECT id FROM migration`)).map((row) => row.id))
+        : new Set<string>()
+      if (!table || migrations.some((migration) => !completed.has(migration.id))) {
+        yield* Effect.sync(usage.exclusive)
+        yield* apply(db)
+      }
+      yield* Effect.sync(usage.share)
+      yield* verify(db)
+    }),
+  )
+}
 
 export type Migration = {
   id: string
