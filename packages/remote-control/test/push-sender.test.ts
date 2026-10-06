@@ -85,15 +85,23 @@ test("Runtime hints use scoped device encryption, final drain transitions and re
     await sender.drain()
     expect(requests).toHaveLength(3)
     expect(requests[2]!.body.kind).toBe("attention")
+    sender.accept({
+      id: crypto.randomUUID(),
+      type: "session.next.notified",
+      data: { sessionID, title: "Build", message: "Build finished" },
+    })
+    await sender.drain()
+    expect(requests).toHaveLength(4)
+    expect(requests[3]!.body.kind).toBe("attention")
     const revoked = await grants.revoke(grant.id, grant.version)
     await sender.revoke(revoked)
-    expect(requests[3]).toMatchObject({
+    expect(requests[4]).toMatchObject({
       route: `/api/hub/hosts/${grants.hostID}/push/revoke`,
       body: { grantID: grant.id, grantVersion: revoked.version },
     })
     sender.accept({ id: crypto.randomUUID(), type: "permission.v2.asked", data: { sessionID } })
     await sender.drain()
-    expect(requests).toHaveLength(4)
+    expect(requests).toHaveLength(5)
     const restored = PushSender.make({
       hubURL: server.url.origin,
       hostToken: "fixture-host-credential",
@@ -106,15 +114,15 @@ test("Runtime hints use scoped device encryption, final drain transitions and re
     try {
       restored.accept({ id: crypto.randomUUID(), type: "question.v2.asked", data: { sessionID } })
       await restored.drain()
-      expect(requests).toHaveLength(5)
-      expect(requests[4]!.route).toEndWith("/push/revoke")
+      expect(requests).toHaveLength(6)
+      expect(requests[5]!.route).toEndWith("/push/revoke")
     } finally {
       await restored.stop()
     }
     await sender.stop()
     sender.accept(question)
     await sender.drain()
-    expect(requests).toHaveLength(5)
+    expect(requests).toHaveLength(6)
   } finally {
     await sender.stop()
     await server.stop(true)

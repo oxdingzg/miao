@@ -9,7 +9,7 @@ describe("public event manifest", () => {
     expect(EventManifest.Definitions).toBe(SchemaEventManifest.Definitions)
     expect(EventManifest.Latest).toBe(SchemaEventManifest.Latest)
     expect(EventManifest.Durable).toBe(SchemaEventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(98)
+    expect(EventManifest.Latest.size).toBe(99)
     expect(EventManifest.Latest.get("session.next.delegation.started")).toBe(SessionEvent.DelegationStarted)
     expect(EventManifest.Latest.get("session.next.delegation.ended")).toBe(SessionEvent.DelegationEnded)
     expect(EventManifest.Durable.get("session.next.delegation.started.1")).toBe(SessionEvent.DelegationStarted)

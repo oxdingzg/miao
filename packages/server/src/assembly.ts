@@ -28,6 +28,7 @@ import { BackgroundJob } from "@miao/core/background-job"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV2 } from "@miao/core/session"
+import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
 import { WorkspaceLive } from "@miao/core/workspace-live"
@@ -113,6 +114,7 @@ const app = LayerNode.group([
   httpClient,
   EventV2.node,
   BackgroundJob.node,
+  SessionSchedule.node,
   ProjectV2.node,
   ProjectCopy.node,
   PtyTicket.node,

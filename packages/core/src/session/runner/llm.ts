@@ -27,6 +27,7 @@ import { Image } from "../../image"
 import { SystemContext } from "../../system-context/index"
 import { OutputLanguage } from "../../system-context/output-language"
 import { Persona } from "../../system-context/persona"
+import { PlanIntent } from "../../system-context/plan-intent"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { Flag } from "../../flag/flag"
 import { SkillGuidance } from "../../skill/guidance"
@@ -46,6 +47,7 @@ import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
 import { WorktreeTool } from "../../tool/worktree"
 import { WorkflowTool } from "../../tool/workflow"
+import { PushNotificationTool } from "../../tool/push-notification"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
@@ -648,6 +650,7 @@ const layer = Layer.effect(
               apiID: resolved.info.api.id,
             }),
           system.baseline,
+          PlanIntent.instruction,
           OutputLanguage.instruction,
         ]
           .filter((part): part is string => part !== undefined && part.length > 0)
@@ -1407,6 +1410,11 @@ const layer = Layer.effect(
                   enter: (request, context) => runEnterWorktree(request, context, input.wake),
                   exit: (request, context) => runExitWorktree(request, context, input.wake),
                 }),
+                push_notification: PushNotificationTool.make((request) =>
+                  PushNotificationTool.publish(events, input.sessionID, request).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: "Unable to raise the notification" })),
+                  ),
+                ),
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
