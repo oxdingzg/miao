@@ -592,6 +592,7 @@ const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
+            disclosure: Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE,
             sessionID: session.id,
             disabledTools: settings.disabledTools,
             onProgress: (input, update) =>

@@ -10,6 +10,7 @@ import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ToolCodeMode } from "./code-mode"
+import { ToolSearch } from "./tool-search"
 import {
   concurrency,
   definition,
@@ -36,6 +37,8 @@ export type ExecuteInput = {
 export type MaterializeOptions = {
   /** Collapse the tool set behind one `execute` tool with a budgeted Code Mode catalog. */
   readonly codeMode?: boolean
+  /** Defer external tool schemas above a budget behind a stable `tool_search` tool. */
+  readonly disclosure?: boolean
   /** Overlay session-scoped registrations owned by this Session on top of location and application scopes. */
   readonly sessionID?: SessionSchema.ID
   /** Tool names hidden from the model. Filtering happens before ordering so the prefix stays stable. */
@@ -314,6 +317,47 @@ const registryLayer = Layer.effect(
               })
             return settleRegistration(input, captured, captured.identity, options?.onProgress)
           },
+        }
+        // Disclosure defers large remote catalogs behind one stable search tool
+        // instead of advertising every schema. Deferred tools stay registered,
+        // so a call by name settles exactly like an advertised one. It and
+        // Code Mode are alternative strategies; Code Mode wins when both on.
+        if (!options?.codeMode && options?.disclosure === true && definitions.length > 0) {
+          // Remote definitions above this advertised budget (roughly 10k
+          // tokens) defer behind `tool_search`. Once the budget is exhausted
+          // every later external tool defers too, keeping the cut stable for
+          // a given registration set.
+          const disclosureBudget = 40_000
+          let externalBytes = 0
+          const resident: ToolDefinition[] = []
+          const deferred: ToolDefinition[] = []
+          for (const item of definitions) {
+            if (item.metadata?.external !== true) {
+              resident.push(item)
+              continue
+            }
+            const size = JSON.stringify(item).length
+            if (externalBytes + size > disclosureBudget) {
+              deferred.push(item)
+              continue
+            }
+            externalBytes += size
+            resident.push(item)
+          }
+          if (deferred.length > 0) {
+            const search = ToolSearch.make({ deferred })
+            if (!whollyDisabled(permissions(search, ToolSearch.TOOL_SEARCH_TOOL), rules)) {
+              const searchRegistration: Registration = { identity: {}, tool: search }
+              return {
+                definitions: [...resident, definition(ToolSearch.TOOL_SEARCH_TOOL, search)],
+                concurrency: (name) => (name === ToolSearch.TOOL_SEARCH_TOOL ? "exclusive" : inner.concurrency(name)),
+                settle: (input) =>
+                  input.call.name === ToolSearch.TOOL_SEARCH_TOOL
+                    ? settleRegistration(input, searchRegistration, searchRegistration.identity, options?.onProgress)
+                    : inner.settle(input),
+              }
+            }
+          }
         }
         if (!options?.codeMode || definitions.length === 0) return inner
         const execute = ToolCodeMode.make({
