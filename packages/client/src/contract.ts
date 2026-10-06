@@ -1,12 +1,12 @@
 import { makeDefaultApi } from "@miao/protocol/api"
-import { InvalidRequestError, SessionNotFoundError } from "@miao/protocol/errors"
+import { ConflictError, InvalidRequestError, SessionNotFoundError } from "@miao/protocol/errors"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 
 class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware>()("@miao/client/LocationMiddleware") {}
 
 class SessionLocationMiddleware extends HttpApiMiddleware.Service<SessionLocationMiddleware>()(
   "@miao/client/SessionLocationMiddleware",
-  { error: [InvalidRequestError, SessionNotFoundError] },
+  { error: [InvalidRequestError, SessionNotFoundError, ConflictError] },
 ) {}
 
 export const ClientApi = makeDefaultApi({

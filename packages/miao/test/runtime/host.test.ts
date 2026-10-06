@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import { $ } from "bun"
 import { Database } from "bun:sqlite"
 import { OpenCode } from "@miao/client"
-import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { readWindow } from "../fixture/window-runtime"
+import { RuntimeRegistration } from "@miao/core/runtime/registration"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { createHash } from "node:crypto"
@@ -50,6 +51,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     MIAO_DB: database,
     MIAO_REMOTE_CONTROL_CONFIG: configuration,
     MIAO_PURE: "1",
+    MIAO_DISABLE_MODELS_FETCH: "1",
     MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false }),
     MIAO_TEST_HOME: path.join(directory, "home"),
     MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
@@ -61,7 +63,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
   const children: ReturnType<typeof Bun.spawn>[] = []
   const sockets: WebSocket[] = []
   const start = () => {
-    const child = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
+    const child = Bun.spawn([process.execPath, "run", "test/runtime/fixture-host.ts"], {
       cwd: path.resolve(import.meta.dir, "../.."),
       env: environment,
       stdout: "pipe",
@@ -88,9 +90,9 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     const deadline = Date.now() + 20_000
     while (Date.now() < deadline) {
       if (child.exitCode !== null) throw new Error(await new Response(child.stderr).text())
-      const record = await RuntimeDiscovery.read(database)
+      const record = await readWindow(database)
       if (record) {
-        const verified = await RuntimeDiscovery.attest(record, {
+        const verified = await RuntimeRegistration.attest(record, {
           version: InstallationVersion,
           storageID: createHash("sha256")
             .update(await RuntimeOwnership.canonicalStorage(database))
@@ -103,7 +105,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     throw new Error("Runtime readiness timed out")
   }
   const connection = async (
-    record: RuntimeDiscovery.Record,
+    record: RuntimeRegistration.Record,
     identity = device,
     invitation?: ControlPairing.Invitation,
   ) => {
@@ -145,7 +147,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     ).channel
     return { socket, receive, channel }
   }
-  const connectRemote = async (record: RuntimeDiscovery.Record, approved: DeviceGrants.Grant) => {
+  const connectRemote = async (record: RuntimeRegistration.Record, approved: DeviceGrants.Grant) => {
     const transport = await connection(record)
     const call = async (
       method: string,
@@ -182,8 +184,11 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     return call
   }
   try {
-    expect(await access({ method: "status" })).toMatchObject({ ok: false, error: "noRuntime" })
-    expect(await RuntimeDiscovery.read(database)).toBeUndefined()
+    expect(await access({ method: "status", runtimeID: crypto.randomUUID() })).toMatchObject({
+      ok: false,
+      error: "noRuntime",
+    })
+    expect(await readWindow(database)).toBeUndefined()
     expect(await access({ method: "status", password: "secret-extra-field" })).toMatchObject({
       ok: false,
       error: "invalidRequest",
@@ -192,7 +197,9 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     expect(await access(" ".repeat(65_537))).toMatchObject({ ok: false, error: "invalidRequest" })
     const first = start()
     const record = await ready(first)
-    expect(await access({ method: "status" })).toMatchObject({
+    // Saved credentials alone must not start a remote agent for this window.
+    expect(hub.connectedHosts()).toHaveLength(0)
+    expect(await access({ method: "status", runtimeID: record.runtimeID })).toMatchObject({
       version: 1,
       ok: true,
       runtimeID: record.runtimeID,
@@ -209,7 +216,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
           expiresAt: Date.now() + 60_000,
         },
       }),
-    ).toMatchObject({ ok: false, error: "runtimeChanged" })
+    ).toMatchObject({ ok: false, error: "noRuntime" })
     expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({ ok: true, data: [] })
     const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
     expect((await fetch(new URL("/api/health", record.url))).status).toBe(401)
@@ -245,7 +252,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     expect(await rejectedConfiguration.text()).not.toContain(invalidToken)
     const configured = await sdk["server.runtime"].configure({ hubURL: `http://127.0.0.1:${hub.port}`, hostToken })
     expect(configured).toMatchObject({ enabled: true, hostID: grants.hostID, runtimeID: record.runtimeID })
-    expect((await RuntimeDiscovery.read(database))?.runtimeID).toBe(record.runtimeID)
+    expect((await readWindow(database))?.runtimeID).toBe(record.runtimeID)
     expect(await sdk.sessions.get({ sessionID })).toMatchObject({ id: sessionID, projectID: session.projectID })
     expect(await access({ method: "session", runtimeID: record.runtimeID, sessionID })).toMatchObject({
       ok: true,
@@ -443,14 +450,24 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
       data: { permissions: [], questions: [] },
     })
     const second = start()
-    expect(await second.exited).not.toBe(0)
-    expect(await new Response(second.stderr).text()).toContain("already has a running Runtime")
+    const secondReady = await second.stdout.getReader().read()
+    const peer = JSON.parse(new TextDecoder().decode(secondReady.value))
+    expect(peer.runtimeID).not.toBe(record.runtimeID)
+    const peerClient = OpenCode.make({
+      baseUrl: peer.url,
+      headers: { authorization: `Basic ${Buffer.from(`miao:${peer.credential}`).toString("base64")}` },
+    })
+    await expect(peerClient.sessions.rename({ sessionID, title: "peer mutation" })).rejects.toThrow(
+      "another miao window",
+    )
+    second.kill("SIGTERM")
+    await second.exited
     const execution = await fetch(new URL(`/api/session/${session.id}/execution`, record.url), { headers })
     expect(execution.status).toBe(200)
     expect((await fetch(new URL("/api/runtime/stop", record.url), { method: "POST" })).status).toBe(401)
     expect((await fetch(new URL("/api/runtime/stop", record.url), { method: "POST", headers })).status).toBe(204)
     expect(await first.exited).toBe(0)
-    expect(await RuntimeDiscovery.read(database)).toBeUndefined()
+    expect(await readWindow(database)).toBeUndefined()
     // Reproduce the crash window after preparing a mutation, before its durable
     // result. The next Runtime must not replay that mutation automatically.
     const unknownID = crypto.randomUUID()
@@ -488,8 +505,7 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     expect(next.credential).not.toBe(record.credential)
     expect(await access({ method: "pending", runtimeID: record.runtimeID })).toMatchObject({
       ok: false,
-      error: "runtimeChanged",
-      runtimeID: next.runtimeID,
+      error: "noRuntime",
     })
     const resumed = await fetch(new URL(`/api/session/${session.id}`, next.url), {
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
@@ -548,54 +564,3 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 120_000)
-
-/** Isolated Runtime environment with no Remote Control, so the activity vector can actually empty. */
-const idleEnvironment = (directory: string, database: string, lingerMs: string) => ({
-  ...process.env,
-  MIAO_DB: database,
-  MIAO_RUNTIME_LINGER_MS: lingerMs,
-  MIAO_RUNTIME_STARTUP_GRACE_MS: "0",
-  MIAO_PURE: "1",
-  MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false }),
-  MIAO_TEST_HOME: path.join(directory, "home"),
-  MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
-  XDG_CONFIG_HOME: path.join(directory, "config"),
-  XDG_CACHE_HOME: path.join(directory, "cache"),
-  XDG_DATA_HOME: path.join(directory, "data"),
-  XDG_STATE_HOME: path.join(directory, "state"),
-})
-
-const startIdleRuntime = (directory: string, database: string, lingerMs: string) =>
-  Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
-    cwd: path.resolve(import.meta.dir, "../.."),
-    env: idleEnvironment(directory, database, lingerMs),
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-
-test("the Runtime exits on its own once nothing is active", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-idle-test-"))
-  const child = startIdleRuntime(directory, path.join(directory, "sessions.db"), "0")
-  try {
-    const exited = await Promise.race([child.exited, Bun.sleep(30_000).then(() => undefined)])
-    if (exited === undefined) throw new Error(`Runtime did not idle-exit: ${await new Response(child.stderr).text()}`)
-    expect(exited).toBe(0)
-  } finally {
-    if (child.exitCode === null) child.kill("SIGTERM")
-    await child.exited
-    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
-  }
-}, 60_000)
-
-test("MIAO_RUNTIME_LINGER_MS=-1 never idle-exits", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-linger-test-"))
-  const child = startIdleRuntime(directory, path.join(directory, "sessions.db"), "-1")
-  try {
-    await Bun.sleep(5_000)
-    expect(child.exitCode).toBeNull()
-  } finally {
-    child.kill("SIGTERM")
-    await child.exited
-    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
-  }
-}, 60_000)

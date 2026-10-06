@@ -8,12 +8,12 @@ import { Effect } from "effect"
 import { reply } from "../../lib/llm-server"
 import { cliIt, withCliFixture } from "../../lib/cli-process"
 import { it } from "../../lib/effect"
-import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import path from "node:path"
 
 describe("opencode run (non-interactive subprocess)", () => {
   cliIt.concurrent(
-    "a disconnected terminal leaves the Runtime executing and another client can resume its session",
+    "closing a terminal stops its execution and releases storage before another window continues",
     ({ home, llm, opencode }) =>
       Effect.gen(function* () {
         const state: { release?: () => void } = {}
@@ -27,30 +27,9 @@ describe("opencode run (non-interactive subprocess)", () => {
         terminal.disconnect()
         expect((yield* terminal.result).exitCode).not.toBe(0)
         yield* Effect.promise(async () => {
-          const record = await RuntimeDiscovery.read(path.join(home, "sessions.db"))
-          if (!record) throw new Error("Persistent Runtime discovery missing")
-          const headers = { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` }
-          const listed = (await fetch(new URL(`/api/session?directory=${encodeURIComponent(home)}`, record.url), {
-            headers,
-          }).then((r) => r.json())) as { data: Array<{ id: string }> }
-          const session = listed.data[0]
-          expect(session).toBeDefined()
-          const url = new URL(`/api/session/${session.id}/execution`, record.url)
-          expect(await fetch(url, { headers }).then((r) => r.json())).toMatchObject({ type: "running" })
+          const owner = await RuntimeOwnership.acquire(path.join(home, "sessions.db"))
+          owner.release()
           state.release?.()
-          const deadline = Date.now() + 10_000
-          while (Date.now() < deadline) {
-            const execution = (await fetch(url, { headers }).then((r) => r.json())) as { type: string }
-            if (execution.type === "idle") {
-              const history = await fetch(new URL(`/api/session/${session.id}/context`, record.url), { headers }).then(
-                (r) => r.json(),
-              )
-              expect(JSON.stringify(history)).toContain("completed after disconnect")
-              return
-            }
-            await new Promise<void>((resolve) => setTimeout(resolve, 100))
-          }
-          throw new Error("Runtime did not finish the disconnected session")
         })
         yield* llm.text("reply to the second client")
         const resumed = yield* opencode.run("continue that session", { extraArgs: ["--continue"] })

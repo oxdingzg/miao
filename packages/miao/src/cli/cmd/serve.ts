@@ -17,6 +17,8 @@ export const ServeCommand = effectCmd({
     }
     const opts = yield* resolveNetworkOptions(args)
     const server = yield* Effect.promise(() => Server.listen(opts))
+    const { WindowLifecycle } = yield* Effect.promise(() => import("../../runtime/lifecycle"))
+    WindowLifecycle.register(() => server.stop(true))
     console.log(`miao server listening on http://${server.hostname}:${server.port}`)
 
     yield* Effect.never

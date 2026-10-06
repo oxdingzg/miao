@@ -3,7 +3,8 @@ import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { createHash } from "node:crypto"
-import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { readWindow } from "../fixture/window-runtime"
+import { RuntimeRegistration } from "@miao/core/runtime/registration"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { ControlHub } from "@miao/remote-control/hub"
@@ -51,7 +52,7 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
     await grants.close()
     await mkdir(project)
     expect(await Bun.spawn(["git", "init", "--quiet", project]).exited).toBe(0)
-    const started = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
+    const started = Bun.spawn([process.execPath, "run", "test/runtime/fixture-host.ts"], {
       cwd: path.resolve(import.meta.dir, "../.."),
       env: {
         ...process.env,
@@ -75,13 +76,13 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
     const storageID = createHash("sha256")
       .update(await RuntimeOwnership.canonicalStorage(database))
       .digest("hex")
-    let owner: RuntimeDiscovery.Record | undefined
+    let owner: RuntimeRegistration.Record | undefined
     const deadline = Date.now() + 30000
     while (Date.now() < deadline) {
       if (runtime.exitCode !== null) throw new Error("Fixture Runtime exited before readiness")
-      const candidate = await RuntimeDiscovery.read(database)
+      const candidate = await readWindow(database)
       if (candidate)
-        owner = await RuntimeDiscovery.attest(candidate, { version: InstallationVersion, storageID }).catch(
+        owner = await RuntimeRegistration.attest(candidate, { version: InstallationVersion, storageID }).catch(
           () => undefined,
         )
       if (owner) break
@@ -104,6 +105,7 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
       return text ? JSON.parse(text) : undefined
     }
     await local("/api/session", { id: sessionID, location: { directory: project } })
+    await local("/api/runtime/control")
     const connectedDeadline = Date.now() + 10000
     while (!hub.connectedHosts().length && Date.now() < connectedDeadline) await Bun.sleep(20)
     expect(hub.connectedHosts()).toHaveLength(1)

@@ -1,3 +1,4 @@
+import { CliError } from "../effect-cmd"
 import { FSUtil } from "@miao/core/fs-util"
 // CLI entry point for `miao run` and `miao --mini`.
 //
@@ -252,13 +253,11 @@ export const RunCommand = cmd({
     if (!args.attach) {
       const { RuntimeConnect } = await import("@/runtime/connect")
       const { DatabaseFile } = await import("@miao/core/database/file")
-      const runtime = await RuntimeConnect.ensure(DatabaseFile.path())
+      const runtime = await RuntimeConnect.open(DatabaseFile.path())
       args.attach = runtime.url
       args.password = runtime.credential
       args.username = "miao"
       args.dir = path.resolve(process.env.PWD ?? process.cwd(), args.dir ?? ".")
-      const notice = RuntimeConnect.mismatch(runtime)
-      if (notice) UI.warn(notice)
     }
     const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
     const interactive = args.mini
@@ -267,8 +266,7 @@ export const RunCommand = cmd({
     const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
     const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
     const die = (message: string): never => {
-      UI.error(message)
-      process.exit(1)
+      throw new CliError({ message, exitCode: 1 })
     }
     const dieInteractive = (error: unknown): never => {
       if (error instanceof Error && error.message === INTERACTIVE_INPUT_ERROR) {
@@ -330,7 +328,7 @@ export const RunCommand = cmd({
         return process.cwd()
       } catch {
         UI.error("Failed to change directory to " + args.dir)
-        process.exit(1)
+        throw new CliError({ message: "Command could not continue", exitCode: 1 })
       }
     })()
     const attachHeaders = args.attach
@@ -352,14 +350,14 @@ export const RunCommand = cmd({
         const resolvedPath = path.resolve(local ? (directory ?? root) : root, filePath)
         if (!(await Filesystem.exists(resolvedPath))) {
           UI.error(`File not found: ${filePath}`)
-          process.exit(1)
+          throw new CliError({ message: "Command could not continue", exitCode: 1 })
         }
 
         const stat = Filesystem.stat(resolvedPath)
         const isDirectory = stat?.isDirectory() ?? false
         if (!local && isDirectory) {
           UI.error(`Cannot attach local directory without a shared filesystem: ${filePath}`)
-          process.exit(1)
+          throw new CliError({ message: "Command could not continue", exitCode: 1 })
         }
 
         const content = await (async () => {
@@ -369,7 +367,7 @@ export const RunCommand = cmd({
             const opened = await handle.stat()
             if (!opened.isFile() || Number(opened.size) > ATTACH_FILE_MAX_BYTES) {
               UI.error(`Cannot attach local file larger than 10 MiB or a special file: ${filePath}`)
-              process.exit(1)
+              throw new CliError({ message: "Command could not continue", exitCode: 1 })
             }
             if (opened.size === 0) return Buffer.alloc(0)
             const buffer = Buffer.alloc(Number(opened.size))
@@ -409,12 +407,12 @@ export const RunCommand = cmd({
 
     if (message.trim().length === 0 && !args.command && !interactive) {
       UI.error("You must provide a message or a command")
-      process.exit(1)
+      throw new CliError({ message: "Command could not continue", exitCode: 1 })
     }
 
     if (args.fork && !args.continue && !args.session) {
       UI.error("--fork requires --continue or --session")
-      process.exit(1)
+      throw new CliError({ message: "Command could not continue", exitCode: 1 })
     }
 
     function title() {
@@ -442,7 +440,7 @@ export const RunCommand = cmd({
           .catch(() => undefined)
         if (!found) {
           UI.error("Session not found")
-          process.exit(1)
+          throw new CliError({ message: "Command could not continue", exitCode: 1 })
         }
         return pick(found.id)
       }
@@ -497,7 +495,7 @@ export const RunCommand = cmd({
       }
 
       UI.error("Failed to resolve remote directory")
-      process.exit(1)
+      throw new CliError({ message: "Command could not continue", exitCode: 1 })
     }
 
     async function attachAgent(sdk: Client) {
@@ -548,7 +546,7 @@ export const RunCommand = cmd({
       const sess = await sessionV2(sdk)
       if (!sess?.id) {
         UI.error("Session not found")
-        process.exit(1)
+        throw new CliError({ message: "Command could not continue", exitCode: 1 })
       }
       const sessionID = sess.id
 

@@ -7,9 +7,15 @@ import { Api } from "../api"
 export const RuntimeHandler = HttpApiBuilder.group(Api, "server.runtime", (handlers) =>
   Effect.gen(function* () {
     const identity = yield* Effect.serviceOption(RuntimeIdentity.Service)
-    const administration = () => (Option.isSome(identity) ? identity.value.administration?.() : undefined)
     const unavailable = () =>
       new ServiceUnavailableError({ message: "Remote Control administration unavailable", service: "runtime" })
+    const administration = () =>
+      Effect.tryPromise({
+        try: async () => (Option.isSome(identity) ? identity.value.administration?.() : undefined),
+        catch: unavailable,
+      })
+    const required = () =>
+      administration().pipe(Effect.flatMap((admin) => (admin ? Effect.succeed(admin) : Effect.fail(unavailable()))))
     return handlers
       .handle("runtime.identity", (ctx) => {
         const proof = Option.isSome(identity) ? identity.value.prove(ctx.query.challenge) : undefined
@@ -28,56 +34,64 @@ export const RuntimeHandler = HttpApiBuilder.group(Api, "server.runtime", (handl
         })
       })
       .handle("runtime.control.get", () =>
-        Effect.sync(() => administration()?.status() ?? { enabled: false, connected: false }),
+        administration().pipe(
+          Effect.map((admin) => admin?.status() ?? { enabled: false, connected: false }),
+          Effect.catch(() => Effect.succeed({ enabled: false, connected: false })),
+        ),
       )
-      .handle("runtime.control.configure", (ctx) => {
-        const configure = administration()?.configure
-        if (!configure) return Effect.fail(unavailable())
-        return Effect.tryPromise({
-          try: () => configure(ctx.payload),
-          catch: () => new InvalidRequestError({ message: "Relay configuration could not be saved or applied" }),
-        })
-      })
-      .handle("runtime.control.invite", (ctx) => {
-        const admin = administration()
-        if (!admin) return Effect.fail(unavailable())
-        return Effect.tryPromise({
-          try: () => admin.invite(ctx.payload),
-          catch: () => new InvalidRequestError({ message: "Invalid pairing policy or unavailable scope" }),
-        })
-      })
-      .handle("runtime.control.pending", () => {
-        const admin = administration()
-        return admin ? Effect.sync(() => admin.pending()) : Effect.fail(unavailable())
-      })
-      .handle("runtime.control.approve", (ctx) => {
-        const admin = administration()
-        if (!admin) return Effect.fail(unavailable())
-        return Effect.tryPromise({
-          try: () => admin.approve(ctx.params.pairingID, ctx.payload.publicKey),
-          catch: () => new ConflictError({ message: "Pairing unavailable or device key changed" }),
-        })
-      })
-      .handle("runtime.control.reject", (ctx) => {
-        const admin = administration()
-        return admin
-          ? Effect.sync(() => {
-              admin.reject(ctx.params.pairingID)
-              return HttpApiSchema.NoContent.make()
-            })
-          : Effect.fail(unavailable())
-      })
-      .handle("runtime.control.devices", () => {
-        const admin = administration()
-        return admin ? Effect.sync(() => admin.devices()) : Effect.fail(unavailable())
-      })
-      .handle("runtime.control.revoke", (ctx) => {
-        const admin = administration()
-        if (!admin) return Effect.fail(unavailable())
-        return Effect.tryPromise({
-          try: () => admin.revoke(ctx.params.grantID, ctx.payload.version),
-          catch: () => new ConflictError({ message: "Device grant version conflict" }),
-        })
-      })
+      .handle("runtime.control.configure", (ctx) =>
+        required().pipe(
+          Effect.flatMap(
+            Effect.fn(function* (admin) {
+              const configure = admin.configure
+              if (!configure) return yield* unavailable()
+              return yield* Effect.tryPromise({
+                try: () => configure(ctx.payload),
+                catch: () => new InvalidRequestError({ message: "Relay configuration could not be saved or applied" }),
+              })
+            }),
+          ),
+        ),
+      )
+      .handle("runtime.control.invite", (ctx) =>
+        required().pipe(
+          Effect.flatMap((admin) =>
+            Effect.tryPromise({
+              try: () => admin.invite(ctx.payload),
+              catch: () => new InvalidRequestError({ message: "Invalid pairing policy or unavailable scope" }),
+            }),
+          ),
+        ),
+      )
+      .handle("runtime.control.pending", () => required().pipe(Effect.map((admin) => admin.pending())))
+      .handle("runtime.control.approve", (ctx) =>
+        required().pipe(
+          Effect.flatMap((admin) =>
+            Effect.tryPromise({
+              try: () => admin.approve(ctx.params.pairingID, ctx.payload.publicKey),
+              catch: () => new ConflictError({ message: "Pairing unavailable or device key changed" }),
+            }),
+          ),
+        ),
+      )
+      .handle("runtime.control.reject", (ctx) =>
+        required().pipe(
+          Effect.map((admin) => {
+            admin.reject(ctx.params.pairingID)
+            return HttpApiSchema.NoContent.make()
+          }),
+        ),
+      )
+      .handle("runtime.control.devices", () => required().pipe(Effect.map((admin) => admin.devices())))
+      .handle("runtime.control.revoke", (ctx) =>
+        required().pipe(
+          Effect.flatMap((admin) =>
+            Effect.tryPromise({
+              try: () => admin.revoke(ctx.params.grantID, ctx.payload.version),
+              catch: () => new ConflictError({ message: "Device grant version conflict" }),
+            }),
+          ),
+        ),
+      )
   }),
 )

@@ -25,9 +25,7 @@ export const AcpCommand = cmd({
       }
       const { DatabaseFile } = await import("@miao/core/database/file")
       const { RuntimeConnect } = await import("@/runtime/connect")
-      const record = await RuntimeConnect.ensure(DatabaseFile.path())
-      const notice = RuntimeConnect.mismatch(record)
-      if (notice) process.stderr.write(`${notice}\n`)
+      const record = await RuntimeConnect.open(DatabaseFile.path())
       return OpenCode.make({
         baseUrl: record.url,
         headers: ServerAuth.headers({ username: "miao", password: record.credential }),

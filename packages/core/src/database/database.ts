@@ -90,11 +90,11 @@ export function participantLayerFromPath(filename: string) {
 
 export const path = DatabaseFile.path
 
-/** MIAO_DATABASE_ROLE=participant is set only by the execution worker before the graph is built. */
+/** Normal invocations share storage; explicit maintenance is exclusive. */
 export const node = makeGlobalNode({
   service: Service,
   layer: Layer.suspend(() =>
-    process.env.MIAO_DATABASE_ROLE === "participant" ? participantLayerFromPath(path()) : layerFromPath(path()),
+    process.env.MIAO_DATABASE_EXCLUSIVE === "1" ? layerFromPath(path()) : sharedLayerFromPath(path()),
   ),
   deps: [],
 })

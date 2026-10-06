@@ -5,7 +5,8 @@ import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { createHash } from "node:crypto"
-import { RuntimeDiscovery } from "@miao/core/runtime/discovery"
+import { readWindow } from "../fixture/window-runtime"
+import { RuntimeRegistration } from "@miao/core/runtime/registration"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { ControlHub } from "@miao/remote-control/hub"
@@ -215,7 +216,7 @@ export async function run() {
     )
     await chmod(configuration, 0o600)
     await grants.close()
-    const runtimeProcess = Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
+    const runtimeProcess = Bun.spawn([process.execPath, "run", "test/runtime/fixture-host.ts"], {
       cwd: path.join(root, "packages/miao"),
       env: environment,
       stdout: "pipe",
@@ -228,12 +229,12 @@ export async function run() {
       .update(await RuntimeOwnership.canonicalStorage(database))
       .digest("hex")
     const deadline = Date.now() + 30_000
-    let record: RuntimeDiscovery.Record | undefined
+    let record: RuntimeRegistration.Record | undefined
     while (Date.now() < deadline) {
       if (state.runtime.exitCode !== null) throw new Error("Fixture Runtime exited before readiness")
-      const candidate = await RuntimeDiscovery.read(database)
+      const candidate = await readWindow(database)
       if (candidate)
-        record = await RuntimeDiscovery.attest(candidate, { version: InstallationVersion, storageID }).catch(
+        record = await RuntimeRegistration.attest(candidate, { version: InstallationVersion, storageID }).catch(
           () => undefined,
         )
       if (record) break

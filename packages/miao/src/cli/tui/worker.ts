@@ -36,9 +36,17 @@ GlobalBus.on("event", (event) => {
   Rpc.emit("global.event", event)
 })
 
+let runtime: Awaited<ReturnType<(typeof import("@/runtime/host"))["RuntimeHost"]["start"]>> | undefined
+
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 
 export const rpc = {
+  async runtime() {
+    const { RuntimeHost } = await import("@/runtime/host")
+    const { DatabaseFile } = await import("@miao/core/database/file")
+    runtime = await RuntimeHost.start(DatabaseFile.path())
+    return runtime.record
+  },
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {
     const headers = { ...input.headers }
     const auth = ServerAuth.header()
@@ -81,8 +89,10 @@ export const rpc = {
     )
   },
   async shutdown() {
-    await InstanceRuntime.disposeAllInstances()
+    await runtime?.stop()
     if (server) await server.stop(true)
+    const { WindowLifecycle } = await import("@/runtime/lifecycle")
+    await WindowLifecycle.disposeCore()
     process.off("unhandledRejection", onUnhandledRejection)
     process.off("uncaughtException", onUncaughtException)
   },

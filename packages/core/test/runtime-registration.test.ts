@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomBytes } from "node:crypto"
 import { RuntimeIdentity } from "../src/runtime/identity"
-import { RuntimeDiscovery } from "../src/runtime/discovery"
+import { RuntimeRegistration } from "../src/runtime/registration"
 
 const directories: string[] = []
 afterEach(async () => {
@@ -21,7 +21,7 @@ function fixture(filename: string, url: string) {
   const credential = randomBytes(48).toString("hex")
   const identity = RuntimeIdentity.create(filename, "test-version", credential)
   identity.bind(url)
-  const record: RuntimeDiscovery.Record = {
+  const record: RuntimeRegistration.Record = {
     url,
     runtimeID: identity.runtimeID,
     version: identity.version,
@@ -36,14 +36,15 @@ describe("Runtime discovery", () => {
   test("persists privately and does not remove another Runtime's record", async () => {
     const filename = await storage()
     const item = fixture(filename, "http://127.0.0.1:4096/")
-    expect(await RuntimeDiscovery.read(filename)).toBeUndefined()
-    await RuntimeDiscovery.publish(filename, item.record)
-    expect(await RuntimeDiscovery.read(filename)).toEqual(item.record)
-    if (process.platform !== "win32") expect((await stat(`${filename}.runtime-info.json`)).mode & 0o777).toBe(0o600)
-    await RuntimeDiscovery.remove(filename, "another-runtime")
-    expect(await RuntimeDiscovery.read(filename)).toEqual(item.record)
-    await RuntimeDiscovery.remove(filename, item.identity.runtimeID)
-    expect(await RuntimeDiscovery.read(filename)).toBeUndefined()
+    expect(await RuntimeRegistration.read(filename, item.identity.runtimeID)).toBeUndefined()
+    await RuntimeRegistration.publish(filename, item.record)
+    expect(await RuntimeRegistration.read(filename, item.identity.runtimeID)).toEqual(item.record)
+    if (process.platform !== "win32")
+      expect((await stat(`${filename}.runtime-${item.identity.runtimeID}.json`)).mode & 0o777).toBe(0o600)
+    await RuntimeRegistration.remove(filename, crypto.randomUUID())
+    expect(await RuntimeRegistration.read(filename, item.identity.runtimeID)).toEqual(item.record)
+    await RuntimeRegistration.remove(filename, item.identity.runtimeID)
+    expect(await RuntimeRegistration.read(filename, item.identity.runtimeID)).toBeUndefined()
   })
 
   test("attests a live listener without disclosing credentials", async () => {
@@ -63,10 +64,10 @@ describe("Runtime discovery", () => {
     state.item = fixture(filename, `http://127.0.0.1:${server.port}/`)
     try {
       const record = state.item.record
-      expect(await RuntimeDiscovery.attest(record, record)).toEqual(record)
+      expect(await RuntimeRegistration.attest(record, record)).toEqual(record)
       expect(state.authorization).toBeNull()
-      await expect(RuntimeDiscovery.attest(record, { ...record, version: "other" })).rejects.toThrow()
-      await expect(RuntimeDiscovery.attest(record, { ...record, storageID: "0".repeat(64) })).rejects.toThrow()
+      await expect(RuntimeRegistration.attest(record, { ...record, version: "other" })).rejects.toThrow()
+      await expect(RuntimeRegistration.attest(record, { ...record, storageID: "0".repeat(64) })).rejects.toThrow()
       expect(state.count).toBe(1)
     } finally {
       await server.stop(true)
@@ -99,7 +100,7 @@ describe("Runtime discovery", () => {
     })
     const item = fixture(await storage(), `http://127.0.0.1:${server.port}/`)
     try {
-      await expect(RuntimeDiscovery.attest(item.record, item.record)).rejects.toThrow()
+      await expect(RuntimeRegistration.attest(item.record, item.record)).rejects.toThrow()
       expect(state.destination).toBe(0)
       expect(state.credentials).toBe(false)
     } finally {
@@ -120,8 +121,8 @@ describe("Runtime discovery", () => {
     })
     try {
       await expect(
-        RuntimeDiscovery.attest({ ...item.record, url: `http://127.0.0.1:${server.port}/` }, item.record),
-      ).rejects.toBeInstanceOf(RuntimeDiscovery.IdentityError)
+        RuntimeRegistration.attest({ ...item.record, url: `http://127.0.0.1:${server.port}/` }, item.record),
+      ).rejects.toBeInstanceOf(RuntimeRegistration.IdentityError)
     } finally {
       await server.stop(true)
     }
@@ -136,15 +137,18 @@ describe("Runtime discovery", () => {
       "http://127.0.0.1:4096/?secret=x",
       "http://u:p@127.0.0.1:4096/",
     ]) {
-      await expect(RuntimeDiscovery.publish(filename, { ...item.record, url })).rejects.toThrow()
+      await expect(RuntimeRegistration.publish(filename, { ...item.record, url })).rejects.toThrow()
     }
-    await writeFile(`${filename}.runtime-info.json`, "x".repeat(4097), { mode: 0o600 })
-    await expect(RuntimeDiscovery.read(filename)).rejects.toThrow()
+    await writeFile(`${filename}.runtime-${item.identity.runtimeID}.json`, "x".repeat(4097), { mode: 0o600 })
+    await expect(RuntimeRegistration.read(filename, item.identity.runtimeID)).rejects.toThrow()
     if (process.platform === "win32") return
-    await RuntimeDiscovery.publish(filename, item.record)
-    await chmod(`${filename}.runtime-info.json`, 0o644)
-    await expect(RuntimeDiscovery.read(filename)).rejects.toThrow()
-    await symlink(`${filename}.runtime-info.json`, `${filename}-alias.runtime-info.json`)
-    await expect(RuntimeDiscovery.read(`${filename}-alias`)).rejects.toThrow()
+    await RuntimeRegistration.publish(filename, item.record)
+    await chmod(`${filename}.runtime-${item.identity.runtimeID}.json`, 0o644)
+    await expect(RuntimeRegistration.read(filename, item.identity.runtimeID)).rejects.toThrow()
+    await symlink(
+      `${filename}.runtime-${item.identity.runtimeID}.json`,
+      `${filename}-alias.runtime-${item.identity.runtimeID}.json`,
+    )
+    await expect(RuntimeRegistration.read(`${filename}-alias`, item.identity.runtimeID)).rejects.toThrow()
   })
 })
