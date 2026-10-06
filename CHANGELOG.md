@@ -12,13 +12,19 @@ to add a section here.
 
 ## [0.1.15] - 2026-10-06
 
+### Added
+
+- **core**: opt-in deferred remote tool catalogs behind `tool_search` with `MIAO_EXPERIMENTAL_TOOL_DISCLOSURE` (#275).
+
 ### Changed
 
+- **tui**: start a new session in place with `/clear` (#272).
 - **runtime**: each CLI/TUI window owns its execution and local API; exit, terminal close, and ACP EOF close its resources (#260, #261, #268).
 - **remote-control**: explicitly enable remote access for the current window; independent windows keep separate identities, permissions, and lifetimes (#265).
 
 ### Fixed
 
+- **core**: skip the end snapshot for steps without published tool calls (#271).
 - **llm**: treat provider streams that end without a terminal frame as retryable failures (#269).
 - **core**: allow concurrent windows to share history while keeping exclusive Session execution ownership and safe database maintenance (#256, #259).
 - **installation**: atomically switch launchers to immutable builds so active windows and their later child processes retain their version (#266).
@@ -26,6 +32,10 @@ to add a section here.
 ### Removed
 
 - **runtime**: detached daemon reuse, service management, idle retention, and execution workers (#268).
+
+### Upgrade behavior
+
+The first launch of 0.1.15 migrates the database and requires existing windows using that database to exit first. Subsequent installations retain active builds; new windows use the new installation.
 
 ## [0.1.14] - 2026-10-06
 
