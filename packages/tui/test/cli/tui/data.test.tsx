@@ -181,6 +181,56 @@ test("refreshes effective catalog data after catalog updates", async () => {
   }
 })
 
+test("writes a catalog update whose location refresh failed", async () => {
+  const events = createEventSource()
+  // A Runtime that is still coming up refuses the mount-time location read, so
+  // the bucket for this location is never created. The update handler has no
+  // catch, so a nested setStore on the absent bucket rejects unhandled and the
+  // TUI exits.
+  const calls = createFetch((url) => {
+    if (url.pathname === "/api/location") return new Response("unavailable", { status: 503 })
+    if (url.pathname === "/api/model")
+      return json({ location: { directory, project: { id: "proj_test", directory } }, data: [] })
+    if (url.pathname === "/api/provider")
+      return json({ location: { directory, project: { id: "proj_test", directory } }, data: [] })
+  }, events)
+  let data!: ReturnType<typeof useData>
+  let ready!: () => void
+  const mounted = new Promise<void>((resolve) => {
+    ready = resolve
+  })
+
+  function Probe() {
+    data = useData()
+    onMount(ready)
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <SDKProvider url="http://test" directory={directory} events={events.source} fetch={calls.fetch}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </SDKProvider>
+    </TestTuiContexts>
+  ))
+
+  try {
+    await mounted
+    emitEvent(events, { id: "evt_catalog_cold", type: "catalog.updated", properties: {} })
+    await wait(() => data.location.model.list({ directory }) !== undefined)
+    await wait(() => data.location.provider.list({ directory }) !== undefined)
+
+    expect(data.location.model.list({ directory })).toEqual([])
+    expect(data.location.provider.list({ directory })).toEqual([])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("refreshes references after updates", async () => {
   const events = createEventSource()
   let requests = 0

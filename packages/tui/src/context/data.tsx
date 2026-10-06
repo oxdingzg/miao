@@ -49,6 +49,14 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       directory: sdk.directory ?? process.cwd(),
     })
 
+    // The refreshes now run concurrently, so the bucket a refresh writes into is
+    // not guaranteed to exist yet: only `location.refresh` used to create it, and
+    // whichever response landed first won. A nested setStore on a missing bucket
+    // throws inside solid's updatePath, and that rejection is fatal to the TUI.
+    const ensureLocation = (key: string) => {
+      if (!store.location[key]) setStore("location", key, {})
+    }
+
     const result = {
       location: {
         default() {
@@ -58,7 +66,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           const response = await sdk.api.location.get({ location: locationQuery(ref) }, {})
           const location = response
           const key = locationKey(location)
-          if (!store.location[key]) setStore("location", key, {})
+          ensureLocation(key)
           if (!ref) setDefaultLocation({ directory: location.directory, workspaceID: location.workspaceID })
         },
         agent: {
@@ -68,6 +76,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.agents.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "agent", result.data)
           },
         },
@@ -78,6 +87,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.commands.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "command", result.data)
           },
         },
@@ -88,6 +98,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.integrations.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "integration", result.data)
           },
         },
@@ -98,6 +109,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.models.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "model", result.data)
           },
         },
@@ -108,6 +120,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.providers.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "provider", result.data)
           },
         },
@@ -118,6 +131,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.references.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "reference", result.data)
           },
         },
@@ -128,6 +142,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           async refresh(ref?: LocationRef) {
             const result = await sdk.api.skills.list({ location: locationQuery(ref) }, {})
             const key = locationKey(result.location)
+            ensureLocation(key)
             setStore("location", key, "skill", result.data)
           },
         },
