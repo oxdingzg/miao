@@ -19,6 +19,10 @@ export class Local extends Schema.Class<Local>("ConfigV2.MCP.Local")({
     description: "Working directory for the MCP server process. Relative paths resolve from the workspace directory.",
   }),
   environment: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
+  call_meta: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+    description:
+      "Identity stamped into `_meta` on every tools/call. `{env:VAR}` values are re-read per call, so credential rotation is picked up without reconnecting.",
+  }),
   disabled: Schema.Boolean.pipe(Schema.optional),
   timeout: Timeout.pipe(Schema.optional),
 }) {}
@@ -35,6 +39,10 @@ export class Remote extends Schema.Class<Remote>("ConfigV2.MCP.Remote")({
   type: Schema.Literal("remote"),
   url: Schema.String,
   headers: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
+  call_meta: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+    description:
+      "Identity stamped into `_meta` on every tools/call. `{env:VAR}` values are re-read per call, so credential rotation is picked up without reconnecting.",
+  }),
   oauth: Schema.Union([OAuth, Schema.Literal(false)]).pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   timeout: Timeout.pipe(Schema.optional),
