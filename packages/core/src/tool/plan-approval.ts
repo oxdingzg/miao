@@ -119,6 +119,9 @@ const layerFor = (model: Model) =>
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source,
+                    // The plan-mode switches are control actions: a bare `*`
+                    // allow rule must not decide (or re-enable) them.
+                    explicit: true,
                   })
                   .pipe(Effect.mapError(() => new ToolFailure({ message: `Permission denied: ${model.action}` })))
 
@@ -172,6 +175,7 @@ const layerFor = (model: Model) =>
             },
             }),
             model.action,
+            { explicit: true },
           ),
         })
         .pipe(Effect.orDie)

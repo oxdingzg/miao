@@ -137,6 +137,7 @@ describe("PlanEnterTool", () => {
       })
       expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
       expect(assertions.map((input) => input.action)).toEqual(["plan_enter"])
+      expect(assertions[0]?.explicit).toBe(true)
       expect(captured?.questions[0]?.options.map((option) => option.label)).toEqual(["Yes", "No"])
       expect(captured?.questions[0]?.header).toBe("Plan Agent")
     }),
@@ -174,6 +175,25 @@ describe("PlanEnterTool", () => {
       expect(settled).toEqual({ type: "error", value: "Permission denied: plan_enter" })
       expect(captured).toBeUndefined()
       expect(yield* session.get(created.id)).toMatchObject({ agent: "build" })
+    }),
+  )
+
+  it.effect("does not let a catch-all allow rule expose a plan switch", () =>
+    Effect.gen(function* () {
+      reset()
+      const registry = yield* ToolRegistry.Service
+      // The build agent defaults carry a specific deny for both switches; a
+      // later catch-all `*: allow` (for example a user `"*": "allow"`) must not
+      // re-enable them, because their actions are explicit.
+      const visible = (
+        yield* toolDefinitions(registry, [
+          { action: "*", resource: "*", effect: "allow" },
+          { action: "plan_enter", resource: "*", effect: "deny" },
+          { action: "plan_exit", resource: "*", effect: "deny" },
+        ])
+      ).map((tool) => tool.name)
+      expect(visible).not.toContain("plan_enter")
+      expect(visible).not.toContain("plan_exit")
     }),
   )
 
