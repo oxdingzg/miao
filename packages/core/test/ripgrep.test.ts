@@ -67,7 +67,10 @@ describe("Ripgrep", () => {
       Effect.promise(() => tmpdir()),
       (tmp) =>
         Effect.gen(function* () {
-          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "file.txt"), "needle\n"))
+          // No match, and enough input that ripgrep must scan the whole file. A
+          // scan that cannot finish inside the 1ms budget makes the timeout path
+          // deterministic instead of racing a fast search on a tiny file.
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "file.txt"), "filler\n".repeat(500_000)))
 
           const error = yield* (yield* Ripgrep.Service)
             .grep({ cwd: tmp.path, pattern: "needle", limit: 10, timeout: 1 })
