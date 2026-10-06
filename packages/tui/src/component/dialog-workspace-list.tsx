@@ -26,7 +26,7 @@ export function DialogWorkspaceList() {
   const [expanded, setExpanded] = createStore<Record<string, boolean>>({})
 
   const current = createMemo(() => {
-    if (route.data.type === "session") return sync.session.get(route.data.sessionID)?.workspaceID
+    if (route.data.type === "session") return sync.session.get(route.data.sessionID)?.location.workspaceID
     return project.workspace.current()
   })
 

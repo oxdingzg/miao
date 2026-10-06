@@ -35,7 +35,7 @@ export const ProjectIcon = (props: {
   const hasPermissions = createMemo(() =>
     dirs().some((directory) => {
       return hasProjectPermissions(serverSync().session.data.permission, (item) => {
-        if (serverSync().session.get(item.sessionID)?.directory !== directory) return false
+        if (serverSync().session.get(item.sessionID)?.location.directory !== directory) return false
         return !permission.autoResponds(item, directory)
       })
     }),
@@ -152,14 +152,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const serverSync = useServerSync()
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
-  const [sessionStore] = serverSync().child(props.session.directory)
+  const [sessionStore] = serverSync().child(props.session.location.directory)
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(
       sessionStore.session,
       serverSync().session.data.permission,
       props.session.id,
       (item) => {
-        return !permission.autoResponds(item, props.session.directory)
+        return !permission.autoResponds(item, props.session.location.directory)
       },
     )
   })
@@ -179,13 +179,13 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
 
   const warm = (span: number, priority: "high" | "low") => {
     const nav = props.navList?.()
-    const list = nav?.some((item) => item.id === props.session.id && item.directory === props.session.directory)
+    const list = nav?.some((item) => item.id === props.session.id && item.location.directory === props.session.location.directory)
       ? nav
       : props.list
 
     props.prefetchSession(props.session, priority)
 
-    const idx = list.findIndex((item) => item.id === props.session.id && item.directory === props.session.directory)
+    const idx = list.findIndex((item) => item.id === props.session.id && item.location.directory === props.session.location.directory)
     if (idx === -1) return
 
     for (let step = 1; step <= span; step++) {

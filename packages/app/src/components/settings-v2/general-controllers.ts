@@ -28,7 +28,7 @@ export function createPermissionScopeController(sessionID: Accessor<string | und
   const directory = createMemo(() => {
     const id = sessionID()
     if (!id) return undefined
-    return serverSync().session.lineage.peek(id)?.session.directory
+    return serverSync().session.lineage.peek(id)?.session.location.directory
   })
 
   return {

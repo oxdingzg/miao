@@ -11,11 +11,11 @@ async function setup() {
   const session = (id: string, title: string, parentID?: string): Session => ({
     id,
     title,
-    slug: id,
     projectID: "project",
-    directory: "/workspace",
+    location: { directory: "/workspace" },
     ...(parentID && { parentID }),
-    version: "0.0.0-test",
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     time: { created: 0, updated: 0 },
   })
   const sessions: Record<string, Session> = {

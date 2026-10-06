@@ -4,28 +4,9 @@ import type { SessionApi, SessionInfo } from "@/utils/server"
 import { withTimestampedFallback } from "./session-title"
 
 export function normalizeSessionInfo(input: SessionInfo | Session): Session {
-  if (!("location" in input)) return input
-  return {
-    id: input.id,
-    slug: input.id,
-    projectID: input.projectID,
-    workspaceID: input.location.workspaceID,
-    directory: input.location.directory,
-    path: input.subpath,
-    parentID: input.parentID,
-    cost: input.cost,
-    tokens: input.tokens,
-    title: withTimestampedFallback(input),
-    agent: input.agent,
-    model: input.model,
-    version: "",
-    time: input.time,
-    revert: input.revert && {
-      messageID: input.revert.messageID,
-      partID: input.revert.partID,
-      snapshot: input.revert.snapshot,
-    },
-  }
+  // The wire and the view model are the same V2 record now; the assertion only
+  // sheds the generated type's readonly modifiers.
+  return { ...input, title: withTimestampedFallback(input) } as Session
 }
 
 export async function listAllSessions(api: Pick<SessionApi, "list">, input: Omit<SessionsListInput, "cursor">) {

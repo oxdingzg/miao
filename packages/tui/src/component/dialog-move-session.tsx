@@ -126,8 +126,8 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
     if (roots.length === 0) return [{ title: "No project directories found", value: undefined }]
 
     const subdirectories = sync.data.session
-      .filter((session) => session.projectID === props.projectID && session.path && ![".", "/"].includes(session.path))
-      .map((session) => session.directory)
+      .filter((session) => session.projectID === props.projectID && session.subpath && ![".", "/"].includes(session.subpath))
+      .map((session) => session.location.directory)
       .filter((directory) => !roots.some((root) => root.directory === directory))
       .filter((directory, index, directories) => directories.indexOf(directory) === index)
       .map((location) => ({

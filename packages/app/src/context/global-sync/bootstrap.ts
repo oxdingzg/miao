@@ -356,7 +356,7 @@ export async function bootstrapDirectory(input: {
                 const current = input.session?.data.permission ?? input.store.permission
                 for (const sessionID of Object.keys(current)) {
                   if (grouped[sessionID]) continue
-                  if (input.session?.get(sessionID)?.directory !== input.directory) continue
+                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
                   if (input.session) input.session.set("permission", sessionID, [])
                   if (!input.session) input.setStore("permission", sessionID, [])
                 }
@@ -391,7 +391,7 @@ export async function bootstrapDirectory(input: {
                 const current = input.session?.data.question ?? input.store.question
                 for (const sessionID of Object.keys(current)) {
                   if (grouped[sessionID]) continue
-                  if (input.session?.get(sessionID)?.directory !== input.directory) continue
+                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
                   if (input.session) input.session.set("question", sessionID, [])
                   if (!input.session) input.setStore("question", sessionID, [])
                 }

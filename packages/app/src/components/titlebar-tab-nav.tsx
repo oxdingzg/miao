@@ -64,13 +64,13 @@ export function TabNavItem(props: {
   const projectName = createMemo(() => {
     const session = props.session()
     if (!session) return
-    return displayName(project() ?? { worktree: session.directory })
+    return displayName(project() ?? { worktree: session.location.directory })
   })
   const previewPath = createMemo(() => {
     const session = props.session()
     if (!session) return
     const home = serverCtx()?.sync.data.path.home
-    return home ? session.directory.replace(home, "~") : session.directory
+    return home ? session.location.directory.replace(home, "~") : session.location.directory
   })
   // Only label the server when multiple servers are connected.
   const serverLabel = createMemo(() => {
@@ -241,7 +241,7 @@ export function TabNavItem(props: {
             {(session) => (
               <SessionTabAvatar
                 project={project()}
-                directory={session.directory}
+                directory={session.location.directory}
                 sessionId={session.id}
                 server={props.server}
               />

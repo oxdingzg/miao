@@ -20,7 +20,6 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
-import { sessionInfo } from "../../context/session-v2-read"
 import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -201,7 +200,7 @@ export function Session() {
   const session = createMemo(() => sync.session.get(route.sessionID))
   const location = createMemo(() => {
     const current = session()
-    return current ? { directory: current.directory, workspaceID: current.workspaceID } : undefined
+    return current ? { directory: current.location.directory, workspaceID: current.location.workspaceID } : undefined
   })
 
   const children = createMemo(() => {
@@ -288,7 +287,7 @@ export function Session() {
     onCleanup(() => sync.session.unpin(sessionID))
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
-      const result = await sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: sessionInfo(x) }))
+      const result = await sdk.api.sessions.get({ sessionID }, {}).then((x) => ({ data: x }))
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
@@ -299,8 +298,8 @@ export function Session() {
         return
       }
 
-      if (result.data.workspaceID !== previousWorkspace) {
-        project.workspace.set(result.data.workspaceID)
+      if (result.data.location.workspaceID !== previousWorkspace) {
+        project.workspace.set(result.data.location.workspaceID)
 
         // Sync all the data for this workspace. Note that this
         // workspace may not exist anymore which is why this is not
@@ -310,7 +309,7 @@ export function Session() {
           await sync.bootstrap({ fatal: false })
         } catch {}
       }
-      editor.reconnect(result.data.directory)
+      editor.reconnect(result.data.location.directory)
       await sync.session.sync(sessionID)
       if (route.sessionID === sessionID && scroll) scroll.scrollBy(100_000)
     })().catch((error) => {
@@ -1287,7 +1286,7 @@ export function Session() {
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt
                     request={permissions()[0]}
-                    directory={sync.session.get(permissions()[0].sessionID)?.directory}
+                    directory={sync.session.get(permissions()[0].sessionID)?.location.directory}
                     onSettled={(request) => sync.dismissPermission(request.sessionID, request.id)}
                   />
                 </Show>
@@ -1295,7 +1294,7 @@ export function Session() {
                   {(request) => (
                     <QuestionPrompt
                       request={request}
-                      directory={sync.session.get(request.sessionID)?.directory}
+                      directory={sync.session.get(request.sessionID)?.location.directory}
                       onSettled={(settled) => sync.dismissQuestion(settled.sessionID, settled.id)}
                     />
                   )}

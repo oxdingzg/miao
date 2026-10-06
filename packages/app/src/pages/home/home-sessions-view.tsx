@@ -192,7 +192,7 @@ function HomeSessionLeading(props: {
       </Show>
       <SessionTabAvatarView
         project={props.record.project}
-        directory={props.record.session.directory}
+        directory={props.record.session.location.directory}
         revealProjectOnHover={props.revealProjectOnHover}
         unread={props.unread}
         loading={props.loading}

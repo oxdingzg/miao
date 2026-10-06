@@ -562,6 +562,7 @@ export type SessionsListOutput = {
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
+    readonly share?: { readonly url: string } | null
     readonly revert?: {
       readonly messageID: string
       readonly partID?: string
@@ -642,6 +643,7 @@ export type SessionsCreateOutput = {
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
+    readonly share?: { readonly url: string } | null
     readonly revert?: {
       readonly messageID: string
       readonly partID?: string
@@ -698,6 +700,7 @@ export type SessionsGetOutput = {
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
+    readonly share?: { readonly url: string } | null
     readonly revert?: {
       readonly messageID: string
       readonly partID?: string
@@ -1160,6 +1163,7 @@ export type SessionsForkOutput = {
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
+    readonly share?: { readonly url: string } | null
     readonly revert?: {
       readonly messageID: string
       readonly partID?: string
@@ -1309,6 +1313,7 @@ export type SessionsChildrenOutput = {
     readonly title: string
     readonly location: { readonly directory: string; readonly workspaceID?: string }
     readonly subpath?: string
+    readonly share?: { readonly url: string } | null
     readonly revert?: {
       readonly messageID: string
       readonly partID?: string
@@ -1377,6 +1382,7 @@ export type SessionsHistoryOutput = {
             readonly title: string
             readonly location: { readonly directory: string; readonly workspaceID?: string }
             readonly subpath?: string
+            readonly share?: { readonly url: string } | null
             readonly revert?: {
               readonly messageID: string
               readonly partID?: string
@@ -2031,6 +2037,7 @@ export type SessionsEventsOutput =
           readonly title: string
           readonly location: { readonly directory: string; readonly workspaceID?: string }
           readonly subpath?: string
+          readonly share?: { readonly url: string } | undefined
           readonly revert?: {
             readonly messageID: string
             readonly partID?: string

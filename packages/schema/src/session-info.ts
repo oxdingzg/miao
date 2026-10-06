@@ -73,5 +73,6 @@ export const Info = Schema.Struct({
   title: Schema.String,
   location: Location.Ref,
   subpath: RelativePath.pipe(optional),
+  share: Schema.optional(Schema.Struct({ url: Schema.String })),
   revert: Revert.State.pipe(optional),
 }).annotate({ identifier: "SessionV2.Info" })

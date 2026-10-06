@@ -9,7 +9,6 @@ import {
   sessionContextToMessages,
 } from "../src/context/session-v2"
 import { promptInputFromParts } from "../src/context/session-v2-write"
-import { sessionInfo } from "../src/context/session-v2-read"
 
 const base = { sessionID: "ses_1", cwd: "/work", root: "/work" }
 
@@ -299,24 +298,3 @@ test("maps prompt parts into the V2 prompt input", () => {
   ).toEqual({ text: "a\n\nb" })
 })
 
-test("maps a V2 session into the V1 session shape", () => {
-  const mapped = sessionInfo({
-    id: "ses_1",
-    projectID: "prj_1",
-    title: "t",
-    cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: 1, updated: 2 },
-    location: { directory: "/work", workspaceID: "ws_1" },
-    subpath: "sub",
-  })
-  expect(mapped).toMatchObject({
-    id: "ses_1",
-    slug: "ses_1",
-    projectID: "prj_1",
-    directory: "/work",
-    workspaceID: "ws_1",
-    path: "sub",
-    version: "",
-  })
-})
