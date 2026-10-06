@@ -1,6 +1,6 @@
 export * as SessionDelegationStore from "./delegation-store"
 
-import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, isNull, sql } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
@@ -8,7 +8,7 @@ import { Hash } from "../util/hash"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import type { SessionSchema } from "./schema"
-import { SessionDelegationTable, SessionNotificationTable } from "./sql"
+import { SessionDelegationTable, SessionNotificationTable, SessionTable } from "./sql"
 
 type DB = Database.Interface["db"]
 export type Info = typeof SessionDelegationTable.$inferSelect
@@ -20,6 +20,18 @@ export const resultID = (id: string) => SessionMessage.ID.make(`msg_delegation_$
  */
 export const progressID = (id: string, seq: number) =>
   SessionMessage.ID.make(`msg_progress_${Hash.sha256(`${id}:${seq}`)}`)
+
+/**
+ * Machine wakeups one human prompt buys: how many times notifications may start
+ * or continue a drain before the Session waits for a person again. It bounds
+ * self-sustaining loops — a monitor whose notices wake a turn that arms another
+ * monitor — which the per-source limits (spawn caps, notification counts,
+ * schedules) cannot, because each of those looks reasonable on its own.
+ *
+ * It is deliberately not the background-subagent limit: that bounds how much
+ * work exists, this bounds how much the machine may spend on its own report.
+ */
+export const WAKE_BUDGET = 32
 
 /**
  * One pending notification for a Session. A notification is durable work the
@@ -234,19 +246,32 @@ export const pendingCount = Effect.fn("SessionDelegationStore.pendingCount")(fun
   return row?.value ?? 0
 })
 
-export const hasNotifications = Effect.fn("SessionDelegationStore.hasNotifications")(function* (
-  db: DB,
-  sessionID: SessionSchema.ID,
-) {
-  const row = yield* db
-    .select({ id: SessionNotificationTable.id })
-    .from(SessionNotificationTable)
-    .where(and(eq(SessionNotificationTable.session_id, sessionID), isNull(SessionNotificationTable.promoted_seq)))
-    .limit(1)
-    .get()
-    .pipe(Effect.orDie)
-  return row !== undefined
-})
+/**
+ * Whether this Session may be woken by a notification now: something is waiting
+ * *and* the allowance to read it is not spent. Every caller that decides
+ * "should the runner make another turn for this" must ask this and not whether a
+ * row merely exists — a runner that sees pending work it may not promote loops
+ * forever on turns that promote nothing.
+ */
+export const hasPromotableNotifications = Effect.fn("SessionDelegationStore.hasPromotableNotifications")(
+  function* (db: DB, sessionID: SessionSchema.ID) {
+    const row = yield* db
+      .select({ id: SessionNotificationTable.id })
+      .from(SessionNotificationTable)
+      .innerJoin(SessionTable, eq(SessionTable.id, SessionNotificationTable.session_id))
+      .where(
+        and(
+          eq(SessionNotificationTable.session_id, sessionID),
+          isNull(SessionNotificationTable.promoted_seq),
+          gt(SessionTable.wake_allowance, 0),
+        ),
+      )
+      .limit(1)
+      .get()
+      .pipe(Effect.orDie)
+    return row !== undefined
+  },
+)
 
 /**
  * Unread delegation outcomes. Progress notes are excluded: they are bounded per
@@ -272,6 +297,13 @@ export const notificationCount = Effect.fn("SessionDelegationStore.notificationC
   return row?.value ?? 0
 })
 
+/**
+ * Promotes at most one notification, spending one unit of the Session's wake
+ * allowance. The update is the guard: it only matches a row whose allowance is
+ * above zero, so two drains racing on the last unit cannot both promote. It
+ * runs before the publish, so a failure after it wastes a unit rather than
+ * letting a Session exceed its budget.
+ */
 export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(function* (
   db: DB,
   events: EventV2.Interface,
@@ -286,6 +318,14 @@ export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(funct
     .get()
     .pipe(Effect.orDie)
   if (!row) return false
+  const charged = yield* db
+    .update(SessionTable)
+    .set({ wake_allowance: sql`${SessionTable.wake_allowance} - 1` })
+    .where(and(eq(SessionTable.id, sessionID), gt(SessionTable.wake_allowance, 0)))
+    .returning({ remaining: SessionTable.wake_allowance })
+    .get()
+    .pipe(Effect.orDie)
+  if (!charged) return false
   yield* events.publish(SessionEvent.Synthetic, {
     sessionID,
     messageID: row.id,
@@ -294,6 +334,39 @@ export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(funct
     metadata: { ...row.metadata, notificationID: row.id },
   })
   return true
+})
+
+/**
+ * Refills the wake allowance. Only a human prompt calls this: a background
+ * subagent that could refill its parent's budget would make the budget
+ * meaningless, and `SessionInput.admit` — which delegation children, messages
+ * between Sessions, schedules and the runner's own loop all go through — is
+ * therefore deliberately not a recharge point.
+ */
+export const recharge = Effect.fn("SessionDelegationStore.recharge")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+) {
+  yield* db
+    .update(SessionTable)
+    .set({ wake_allowance: WAKE_BUDGET })
+    .where(eq(SessionTable.id, sessionID))
+    .run()
+    .pipe(Effect.orDie)
+})
+
+/** Wakeups the machine may still spend on its own before a person speaks again. */
+export const wakeAllowance = Effect.fn("SessionDelegationStore.wakeAllowance")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+) {
+  const row = yield* db
+    .select({ value: SessionTable.wake_allowance })
+    .from(SessionTable)
+    .where(eq(SessionTable.id, sessionID))
+    .get()
+    .pipe(Effect.orDie)
+  return row?.value ?? 0
 })
 
 export const projectNotification = Effect.fn("SessionDelegationStore.projectNotification")(function* (

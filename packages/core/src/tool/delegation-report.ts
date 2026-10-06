@@ -20,7 +20,12 @@ export type Report = (
   input: { readonly text: string },
   context: Context,
 ) => Effect.Effect<
-  { readonly queued: boolean; readonly parentUnread: number; readonly reportsRemaining: number },
+  {
+    readonly queued: boolean
+    readonly parentUnread: number
+    readonly reportsRemaining: number
+    readonly parentWakeBudget: number
+  },
   ToolFailure
 >
 
@@ -35,6 +40,8 @@ export const Output = Schema.Struct({
   queued: Schema.Boolean,
   parentUnread: Schema.Number,
   reportsRemaining: Schema.Number,
+  /** Wakeups the parent may still spend on its own; at zero this note waits for a person. */
+  parentWakeBudget: Schema.Number,
 })
 
 const DESCRIPTION = [
@@ -54,7 +61,9 @@ export const make = (report: Report): AnyTool =>
       {
         type: "text",
         text: [
-          `Report delivered to the parent Session (${output.parentUnread} unread there).`,
+          output.parentWakeBudget > 0
+            ? `Report delivered to the parent Session (${output.parentUnread} unread there).`
+            : "Report queued for the parent Session, but the parent's wake allowance is spent: nothing will promote this note until a person prompts the parent again. Do not send more; finish the task and return your result.",
           output.reportsRemaining > 0
             ? `${output.reportsRemaining} progress reports remain for this task.`
             : "That was the last progress report for this task; finish it to deliver your result.",

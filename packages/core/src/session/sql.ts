@@ -42,6 +42,13 @@ export const SessionTable = sqliteTable(
     summary_diffs: text({ mode: "json" }).$type<Snapshot.LegacyFileDiff[]>(),
     metadata: text({ mode: "json" }).$type<Record<string, unknown>>(),
     cost: real().notNull().default(0),
+    /**
+     * Machine wakeups left before a human has to speak again. This is the
+     * built-in value, which only decides what a Session starts with;
+     * `SessionDelegationStore.WAKE_BUDGET` is the runtime budget a human prompt
+     * refills to, and the store cannot be imported here without a cycle.
+     */
+    wake_allowance: integer().notNull().default(32),
     tokens_input: integer().notNull().default(0),
     tokens_output: integer().notNull().default(0),
     tokens_reasoning: integer().notNull().default(0),
