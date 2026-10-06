@@ -2704,6 +2704,209 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("runs a workflow script that awaits two subagents in order", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const db = (yield* Database.Service).db
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Orchestrate" }), resume: false })
+
+      const textTurn = (id: string, text: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id }),
+        LLMEvent.textDelta({ id, text }),
+        LLMEvent.textEnd({ id }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ]
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-workflow",
+            name: "workflow",
+            input: {
+              script: [
+                'const first = await tools.workflow.agent({ prompt: "WORKFLOW FIRST", description: "first", agent: "build" })',
+                'const second = await tools.workflow.agent({ prompt: "WORKFLOW SECOND", description: "second", agent: "build" })',
+                "return first.text + '|' + second.text",
+              ].join("\n"),
+            },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        textTurn("text-first", "alpha"),
+        textTurn("text-second", "beta"),
+        textTurn("text-final", "Done"),
+      ]
+
+      yield* session.resume(sessionID)
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "workflow")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "workflow",
+        state: { status: "completed", structured: { text: "alpha|beta" } },
+      })
+      const children = yield* db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.parent_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+      expect(children).toHaveLength(2)
+      const structured = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .flatMap((item) =>
+          item.type === "tool" && item.name === "workflow" && item.state.status === "completed"
+            ? [item.state.structured]
+            : [],
+        )
+      expect(structured[0]).toMatchObject({ sessions: expect.arrayContaining(children.map((child) => child.id)) })
+    }),
+  )
+
+  it.effect("runs independent workflow steps together with Promise.all", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Orchestrate" }), resume: false })
+
+      const gate = yield* Deferred.make<void>()
+      const textTurn = (id: string, text: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id }),
+        LLMEvent.textDelta({ id, text }),
+        LLMEvent.textEnd({ id }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ]
+      const gated = (id: string, text: string) =>
+        Stream.unwrap(Deferred.await(gate).pipe(Effect.as(Stream.fromIterable(textTurn(id, text)))))
+      const childRequests = () =>
+        requests.filter((request) =>
+          JSON.stringify(request.messages.filter((message) => message.role === "user")).includes("WORKFLOW PARALLEL"),
+        )
+      let parentTurns = 0
+      responseFor = (request) => {
+        const users = JSON.stringify(request.messages.filter((message) => message.role === "user"))
+        if (users.includes("WORKFLOW PARALLEL A")) return gated("text-a", "alpha")
+        if (users.includes("WORKFLOW PARALLEL B")) return gated("text-b", "beta")
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-workflow-parallel",
+              name: "workflow",
+              input: {
+                script: [
+                  "const [first, second] = await Promise.all([",
+                  '  tools.workflow.agent({ prompt: "WORKFLOW PARALLEL A", description: "a", agent: "build" }),',
+                  '  tools.workflow.agent({ prompt: "WORKFLOW PARALLEL B", description: "b", agent: "build" }),',
+                  "])",
+                  "return [first.text, second.text].join('|')",
+                ].join("\n"),
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        return Stream.fromIterable(textTurn("text-final", "Done"))
+      }
+
+      requests.length = 0
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      // Both steps must be waiting on the provider at the same time: a sequential script
+      // would still be blocked on the first child, so the second request would never arrive.
+      for (let attempt = 0; attempt < 500 && childRequests().length < 2; attempt++) yield* Effect.yieldNow
+      expect(childRequests()).toHaveLength(2)
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(run)
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "workflow")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "workflow",
+        state: { status: "completed", structured: { text: "alpha|beta" } },
+      })
+    }),
+  )
+
+  it.effect("fails the workflow when a step fails instead of returning an empty report", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* (yield* AgentV2.Service).transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Orchestrate" }), resume: false })
+
+      let parentTurns = 0
+      responseFor = (request) => {
+        const users = JSON.stringify(request.messages.filter((message) => message.role === "user"))
+        if (users.includes("WORKFLOW FAILING CHILD"))
+          return Stream.fromIterable([LLMEvent.stepStart({ index: 0 }), LLMEvent.providerError({ message: "child boom" })])
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-workflow-failing",
+              name: "workflow",
+              input: {
+                script:
+                  'const report = await tools.workflow.agent({ prompt: "WORKFLOW FAILING CHILD", description: "child", agent: "build" })\nreturn report.text',
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        return Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-recovered" }),
+          LLMEvent.textDelta({ id: "text-recovered", text: "Recovered" }),
+          LLMEvent.textEnd({ id: "text-recovered" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ])
+      }
+
+      yield* session.resume(sessionID)
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "workflow")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "workflow",
+        state: { status: "error", error: { message: expect.stringContaining("child boom") } },
+      })
+    }),
+  )
+
   it.effect("delivers a message to a peer session and wakes it", () =>
     Effect.gen(function* () {
       yield* setup
