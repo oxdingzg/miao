@@ -6,6 +6,27 @@ import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
 
 const sessionID = "ses_v2_incremental"
+
+// V2 transcript: parts live inline on the message. This helper mirrors the old
+// part-store lookups the tests were written against.
+function partsOf(
+  sync: {
+    data: {
+      message: Record<
+        string,
+        ReadonlyArray<{ id: string; type: string; text?: string; content?: ReadonlyArray<unknown> }>
+      >
+    }
+  },
+  messageID: string,
+): ReadonlyArray<Record<string, unknown>> | undefined {
+  const message = sync.data.message[sessionID]?.find((item) => item.id === messageID)
+  if (!message) return undefined
+  if (message.type === "assistant") return message.content as ReadonlyArray<Record<string, unknown>>
+  if (message.type === "user")
+    return [{ type: "text", id: `${messageID}-text`, text: message.text }]
+  return undefined
+}
 const userID = "msg_v2_incremental_user"
 const messageID = "msg_v2_incremental_assistant"
 const textID = "prt_v2_incremental_text"
@@ -123,7 +144,7 @@ for (const type of ["text", "reasoning"] as const) {
         }),
       )
       await wait(() => mounted.sync.data.session_status[sessionID]?.type === "busy")
-      expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type, text: "你好Swissquote" })
+      expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ type, text: "你好Swissquote" })
       // The ended payload is authoritative even when it is a shorter prefix.
       mounted.emit(
         global(
@@ -147,11 +168,12 @@ for (const type of ["text", "reasoning"] as const) {
         ),
       )
       await wait(() => {
-        const part = mounted.sync.data.part[messageID][0]
+        const part = partsOf(mounted.sync, messageID)![0]
         return (part.type === "text" || part.type === "reasoning") && part.text === "你好Swiss"
       })
-      expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type, text: "你好Swiss" })
-      if (type === "reasoning") expect(mounted.sync.data.part[messageID][0]).toMatchObject({ time: { end: 8 } })
+      expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ type, text: "你好Swiss" })
+      if (type === "reasoning")
+        expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ time: { completed: 8 } })
     } finally {
       app?.renderer.destroy()
     }
@@ -287,7 +309,7 @@ test("a durable-event burst on a long transcript applies incrementally without r
 
     await wait(() => {
       const messages = mounted.sync.data.message[sessionID] ?? []
-      const parts = mounted.sync.data.part[messageID] ?? []
+      const parts = partsOf(mounted.sync, messageID) ?? []
       return (
         messages.length === MAX_RESIDENT &&
         messages[0]?.id !== oldestResident &&
@@ -296,18 +318,26 @@ test("a durable-event burst on a long transcript applies incrementally without r
         parts[0].text === "hello world" &&
         parts[1]?.type === "reasoning" &&
         parts[2]?.type === "tool" &&
-        parts[2].state.status === "completed"
+        (parts[2] as { state?: { status?: string } }).state?.status === "completed"
       )
     })
 
-    const infos = mounted.sync.data.message[sessionID]
+    const infos = mounted.sync.data.message[sessionID] ?? []
     expect(infos.slice(-2).map((message) => message.id)).toEqual([userID, messageID])
-    expect(infos.at(-1)).toMatchObject({ id: messageID, role: "assistant", finish: "stop", cost: 0.01 })
-    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "hello world" })
-    expect(mounted.sync.data.part[messageID][2]).toMatchObject({
+    expect(infos.at(-1)).toMatchObject({ id: messageID, type: "assistant", finish: "stop", cost: 0.01 })
+    expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ type: "text", text: "hello world" })
+    expect(partsOf(mounted.sync, messageID)![2]).toEqual({
       type: "tool",
-      tool: "bash",
-      state: { status: "completed", output: "done" },
+      id: "call_v2_incremental",
+      name: "bash",
+      time: { created: 10_008, ran: 10_009, completed: 10_010 },
+      provider: { executed: true },
+      state: {
+        status: "completed",
+        input: { command: "echo done" },
+        structured: {},
+        content: [{ type: "text", text: "done" }],
+      },
     })
 
     // Every durable event above was folded in place: no context refetch and no

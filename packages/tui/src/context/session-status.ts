@@ -1,4 +1,4 @@
-import type { Message, Part } from "@miao/schema/view-models"
+import type { SessionMessage, TranscriptAssistantMessage } from "@miao/schema/view-models"
 import type { SessionStatus } from "@miao/schema/view-models"
 
 export type SessionPhase = "queued" | "preparing" | "requesting" | "streaming" | "retrying"
@@ -14,10 +14,21 @@ export function statusPhase(status: SessionStatus | undefined): SessionPhase | u
   return status.phase ?? "preparing"
 }
 
-export function waitingForResponse(input: { busy: boolean; blocked: boolean; message?: Message; parts: Part[] }) {
+export function waitingForResponse(input: {
+  busy: boolean
+  blocked: boolean
+  message?: SessionMessage
+  /** The readable assistant content already streamed for `message`. */
+  content?: TranscriptAssistantMessage["content"]
+}) {
   if (!input.busy || input.blocked) return false
-  if (!input.message || input.message.role === "user" || input.message.time.completed !== undefined) return true
-  return !input.parts.some((part) => {
+  if (
+    !input.message ||
+    input.message.type !== "assistant" ||
+    input.message.time.completed !== undefined
+  )
+    return true
+  return !input.content?.some((part) => {
     if (part.type === "text" || part.type === "reasoning") return part.text.trim().length > 0
     return part.type === "tool"
   })

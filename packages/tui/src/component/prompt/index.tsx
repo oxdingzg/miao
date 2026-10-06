@@ -39,7 +39,7 @@ import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import type { AssistantMessage, FilePart, UserMessage } from "@miao/schema/view-models"
+import type { FilePart, TranscriptAssistantMessage, TranscriptUserMessage } from "@miao/schema/view-models"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { createColors, createFrames } from "../../ui/spinner"
@@ -285,7 +285,15 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return undefined
     const messages = sync.data.message[props.sessionID]
     if (!messages) return undefined
-    return messages.findLast((m): m is UserMessage => m.role === "user")
+    return messages.findLast((m): m is TranscriptUserMessage => m.type === "user")
+  })
+  // V2 user messages no longer carry the acting agent; the nearest preceding
+  // assistant does.
+  const lastAssistantAgent = createMemo(() => {
+    if (!props.sessionID) return undefined
+    const messages = sync.data.message[props.sessionID]
+    if (!messages) return undefined
+    return messages.findLast((m): m is TranscriptAssistantMessage => m.type === "assistant")?.agent
   })
 
   // Claude Code shows how long the current turn has been running next to the
@@ -306,14 +314,16 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return
     const session = sync.session.get(props.sessionID)
     const msg = sync.data.message[props.sessionID] ?? []
-    const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
-    if (!last) return
+    const last = msg.findLast(
+      (item): item is TranscriptAssistantMessage => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
+    )
+    if (!last?.tokens) return
 
     const tokens =
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     if (tokens <= 0) return
 
-    const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
+    const model = sync.data.provider.find((item) => item.id === last.model.providerID)?.models[last.model.id]
     const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session?.cost ?? 0
     const native = Currency.native(sync.data.provider, session?.model?.providerID, session?.model?.id)
@@ -364,15 +374,20 @@ export function Prompt(props: PromptProps) {
 
       syncedSessionID = sessionID
 
-      // Only set agent if it's a primary agent (not a subagent)
-      const isPrimaryAgent = local.agent.list().some((x) => x.name === msg.agent)
-      if (msg.agent && isPrimaryAgent) {
+      // Only set agent if it's a primary agent (not a subagent). V2 prompts do
+      // not carry the acting agent/model themselves; the nearest assistant
+      // message does.
+      const agent = lastAssistantAgent()
+      const model = (sync.data.message[props.sessionID ?? ""] ?? [])
+        .findLast((m): m is TranscriptAssistantMessage => m.type === "assistant")?.model
+      const isPrimaryAgent = local.agent.list().some((x) => x.name === agent)
+      if (agent && isPrimaryAgent) {
         // Keep command line --agent if specified.
-        if (!args.agent) local.agent.set(msg.agent)
+        if (!args.agent) local.agent.set(agent)
         // V2 prompts can precede model selection, so their projected model is empty.
-        if (msg.model?.providerID && msg.model.modelID) {
-          local.model.set(msg.model)
-          local.model.variant.set(msg.model.variant)
+        if (model?.providerID && model.id) {
+          local.model.set({ providerID: model.providerID, modelID: model.id })
+          local.model.variant.set(model.variant)
         }
       }
     }
@@ -1323,7 +1338,7 @@ export function Prompt(props: PromptProps) {
   const spinnerDef = createMemo(() => {
     const agent =
       status().type !== "idle"
-        ? (local.agent.list().find((a) => a.name === lastUserMessage()?.agent) ?? local.agent.current())
+        ? (local.agent.list().find((a) => a.name === lastAssistantAgent()) ?? local.agent.current())
         : local.agent.current()
     const color = agent ? local.agent.color(agent.name) : theme.border
     return {

@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@miao/schema/view-models"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
 
 /**
  * How fast a turn produced its output. The span runs from the request being
@@ -16,12 +16,13 @@ export type TurnSpeed = {
   readonly tps: number
 }
 
-export function turnSpeed(message: AssistantMessage): TurnSpeed | undefined {
+export function turnSpeed(message: TranscriptAssistantMessage): TurnSpeed | undefined {
   const completed = message.time.completed
   // A turn still in flight has no duration yet, and one that reported no output
   // has no rate to report either.
-  if (completed === undefined || message.tokens.output <= 0) return
+  const tokens = message.tokens
+  if (completed === undefined || !tokens || tokens.output <= 0) return
   const duration = completed - message.time.created
   if (duration <= 0) return
-  return { output: message.tokens.output, duration, tps: message.tokens.output / (duration / 1000) }
+  return { output: tokens.output, duration, tps: tokens.output / (duration / 1000) }
 }

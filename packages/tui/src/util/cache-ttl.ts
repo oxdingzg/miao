@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@miao/schema/view-models"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
 
 /**
  * How long the prompt cache behind a session has been alive. Providers do not
@@ -28,15 +28,15 @@ export type CacheTtl = {
   readonly state: "fresh" | "aging" | "stale"
 }
 
-export function cacheTtl(messages: ReadonlyArray<AssistantMessage>, now: number): CacheTtl | undefined {
+export function cacheTtl(messages: ReadonlyArray<TranscriptAssistantMessage>, now: number): CacheTtl | undefined {
   // A summary reports on earlier turns rather than issuing its own request, so
   // counting one would restart the clock without the cache being touched.
   const last = messages.findLast(
-    (message) => !message.summary && (message.tokens.cache.read > 0 || message.tokens.cache.write > 0),
+    (message) => message.tokens !== undefined && (message.tokens.cache.read > 0 || message.tokens.cache.write > 0),
   )
   if (!last) return
   const startedAt = last.time.completed ?? last.time.created
-  const ttl = ttlFor(last.providerID)
+  const ttl = ttlFor(last.model.providerID)
   const elapsed = now - startedAt
   return {
     ttl,

@@ -29,6 +29,7 @@ import type { IntegrationInfo } from "@miao/schema/view-models"
 import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import type { Config } from "@miao/schema/view-models"
 import type { TuiTranscriptMessage } from "@miao/plugin/tui"
+import type { TranscriptUserMessage } from "@miao/schema/view-models"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "./project"
 import { useEvent } from "./event"
@@ -40,7 +41,7 @@ import {
   isSessionListV2Event,
   isV2StreamFragmentEvent,
   mergeTranscript,
-  sessionContextToMessages,
+  toolOutputText,
   type OlderHistory,
 } from "./session-v2"
 import { toAgent, toCommand, toProviderCatalog, toProviderList, type ProviderCatalog } from "./v2-adapters"
@@ -72,7 +73,7 @@ function search<T>(items: T[], target: string, key: (item: T) => string) {
   return { found: false, index: left }
 }
 
-function compareMessage(a: Message, b: Message) {
+function compareMessage(a: TuiTranscriptMessage, b: TuiTranscriptMessage) {
   return a.time.created - b.time.created || a.id.localeCompare(b.id)
 }
 
@@ -205,7 +206,6 @@ export const {
         [sessionID: string]: TuiTranscriptMessage[]
       }
       part: {
-        [messageID: string]: Part[]
       }
       lsp: LspStatus[]
       mcp: {
@@ -284,7 +284,6 @@ export const {
         inFlight: syncingSessions.size,
         bytes: {
           message: sizeOf(store.message),
-          part: sizeOf(store.part),
           sessionDiff: sizeOf(store.session_diff),
           todo: sizeOf(store.todo),
           shadow: sizeOf([...sessionMessages.values()]),
@@ -300,7 +299,8 @@ export const {
           let reasoningUnits = 0
           let toolUnits = 0
           for (const message of messages) {
-            for (const part of store.part[message.id] ?? []) {
+            if (message.type !== "assistant") continue
+            for (const part of message.content) {
               if (part.type === "text") {
                 text += 1
                 textUnits += part.text.length
@@ -310,8 +310,8 @@ export const {
                 textUnits += part.text.length
               } else if (part.type === "tool" && part.state.status === "completed") {
                 tool += 1
-                toolUnits += part.state.output.length
-                textUnits += part.state.output.length
+                toolUnits += toolOutputText(part.state).length
+                textUnits += toolOutputText(part.state).length
               }
             }
           }
@@ -406,7 +406,6 @@ export const {
     const MAX_RETAINED_TEXT_UNITS = 2_000_000
 
     const releaseSession = (sessionID: string) => {
-      for (const message of store.message[sessionID] ?? []) setStore("part", message.id, undefined!)
       setStore("message", sessionID, undefined!)
       setStore("session_diff", sessionID, undefined!)
       setStore("todo", sessionID, undefined!)
@@ -434,16 +433,18 @@ export const {
           (store.message[id] ?? []).reduce(
             (count, message) =>
               count +
-              (store.part[message.id] ?? []).reduce(
-                (sum, part) =>
-                  sum +
-                  (part.type === "text" || part.type === "reasoning"
-                    ? part.text.length
-                    : part.type === "tool" && part.state.status === "completed"
-                      ? part.state.output.length
-                      : 0),
-                0,
-              ),
+              (message.type === "assistant"
+                ? message.content.reduce(
+                    (sum, part) =>
+                      sum +
+                      (part.type === "text" || part.type === "reasoning"
+                        ? part.text.length
+                        : part.type === "tool" && part.state.status === "completed"
+                          ? toolOutputText(part.state).length
+                          : 0),
+                    0,
+                  )
+                : 0),
             0,
           ),
         ]),
@@ -453,7 +454,7 @@ export const {
       const candidates = [...sessionMessages.keys()]
         .filter((id) => !pinnedSessions.has(id) && !syncingSessions.has(id))
         .filter((id) => !store.session_status[id] || store.session_status[id].type === "idle")
-        .filter((id) => !Object.values(pendingPrompts.data).some((prompt) => prompt.info.sessionID === id))
+        .filter((id) => !Object.values(pendingPrompts.data).some((prompt) => prompt.sessionID === id))
         .sort((a, b) => (lastViewed.get(a) ?? 0) - (lastViewed.get(b) ?? 0))
       batch(() => {
         for (const id of candidates) {
@@ -477,7 +478,6 @@ export const {
       const evicted = messages.slice(0, messages.length - MAX_RESIDENT_MESSAGES)
       const ids = new Set(evicted.map((message) => message.id))
       batch(() => {
-        for (const message of evicted) setStore("part", message.id, undefined!)
         setStore(
           "message",
           sessionID,
@@ -494,8 +494,8 @@ export const {
     // in-flight re-hydration from clobbering the locally streamed value; the
     // durable `ended` event later replaces it with the authoritative text.
     const appendV2StreamText = (sessionID: string, messageID: string, partID: string, delta: string) => {
-      const parts = store.part[messageID]
-      const part = parts?.find((part) => part.id === partID && (part.type === "text" || part.type === "reasoning"))
+      const current = store.message[sessionID]?.find((item) => item.id === messageID)
+      const part = current?.type === "assistant" ? current.content.find((item) => item.id === partID) : undefined
       const text = streamText.append(
         sessionID,
         messageID,
@@ -513,11 +513,15 @@ export const {
         return
       }
       touchPart(sessionID, partID)
+      const index = store.message[sessionID]?.findIndex((item) => item.id === messageID) ?? -1
+      if (index < 0) return
       setStore(
-        "part",
-        messageID,
+        "message",
+        sessionID,
+        index,
         produce((draft) => {
-          const target = draft.find((part) => part.id === partID)
+          if (draft.type !== "assistant") return
+          const target = draft.content.find((part) => part.id === partID)
           if (target?.type === "text" || target?.type === "reasoning") target.text = text
         }),
       )
@@ -531,26 +535,31 @@ export const {
 
     const endV2StreamText = (sessionID: string, messageID: string, partID: string, text: string, timestamp: number) => {
       streamText.end(sessionID, messageID, partID, text, timestamp)
-      const part = store.part[messageID]?.find((part) => part.id === partID)
+      const index = store.message[sessionID]?.findIndex((item) => item.id === messageID) ?? -1
+      const message = store.message[sessionID]?.[index]
+      const part = message?.type === "assistant" ? message.content.find((item) => item.id === partID) : undefined
       if (!part || (part.type !== "text" && part.type !== "reasoning")) return
       touchPart(sessionID, partID)
       setStore(
-        "part",
-        messageID,
+        "message",
+        sessionID,
+        index,
         produce((draft) => {
-          const target = draft.find((part) => part.id === partID)
+          if (draft.type !== "assistant") return
+          const target = draft.content.find((item) => item.id === partID)
           if (target?.type !== "text" && target?.type !== "reasoning") return
           target.text = text
-          if (target.type === "reasoning") target.time.end = timestamp
+          if (target.type === "reasoning")
+            target.time = { created: target.time?.created ?? draft.time.created, completed: timestamp }
         }),
       )
-      const message = sessionMessages.get(sessionID)?.find((item) => item.id === messageID)
-      if (message?.type !== "assistant") return
-      const content = message.content.find((item) => item.id === partID)
+      const shadow = sessionMessages.get(sessionID)?.find((item) => item.id === messageID)
+      if (shadow?.type !== "assistant") return
+      const content = shadow.content.find((item) => item.id === partID)
       if (content?.type !== "text" && content?.type !== "reasoning") return
       content.text = text
       if (content.type === "reasoning")
-        content.time = { created: content.time?.created ?? message.time.created, completed: timestamp }
+        content.time = { created: content.time?.created ?? shadow.time.created, completed: timestamp }
     }
 
     // A locally streamed part can be longer than the server snapshot a full sync
@@ -560,51 +569,36 @@ export const {
     const mergeStreamedTextIntoShadow = (sessionID: string, source: V2TranscriptMessage[]) => {
       for (const message of source) {
         if (message.type !== "assistant") continue
-        const parts = store.part[message.id]
-        if (!parts) continue
+        const local = (store.message[sessionID] ?? []).find((item) => item.id === message.id)
         for (const content of message.content) {
           if (content.type !== "text" && content.type !== "reasoning") continue
           content.text = streamText.reconcile(sessionID, message.id, content.id, content.text)
           const completed = streamText.completed(sessionID, message.id, content.id)
           if (content.type === "reasoning" && completed !== undefined)
             content.time = { created: content.time?.created ?? message.time.created, completed }
-          const part = parts.find((item) => item.id === content.id)
-          if (completed === undefined && part?.type === content.type && part.text.length > content.text.length)
-            content.text = part.text
+          const localPart =
+            local?.type === "assistant" ? local.content.find((item) => item.id === content.id) : undefined
+          if (
+            completed === undefined &&
+            localPart?.type === content.type &&
+            localPart.text.length > content.text.length
+          )
+            content.text = localPart.text
         }
       }
     }
 
     const projectInput = (
       input: Pick<SessionsInputsOutput["data"][number], "id" | "sessionID" | "prompt" | "timeCreated">,
-    ) => {
-      const session = store.session.find((session) => session.id === input.sessionID)
-      const [message] = sessionContextToMessages({
-        sessionID: input.sessionID,
-        cwd: session?.location.directory ?? "",
-        root: session?.location.directory ?? "",
-        messages: [
-          mutableResponse({
-            id: input.id,
-            type: "user" as const,
-            time: { created: input.timeCreated },
-            text: input.prompt.text,
-            files: input.prompt.files,
-            agents: input.prompt.agents,
-          }),
-        ],
-      })
-      if (message.info.role !== "user") return
+    ): TranscriptUserMessage | undefined => {
+      const prompt = mutableResponse(input.prompt)
       return {
-        ...message,
-        info: {
-          ...message.info,
-          agent: pendingPrompts.data[input.id]?.info.agent ?? session?.agent ?? "",
-          model: pendingPrompts.data[input.id]?.info.model ?? {
-            providerID: session?.model?.providerID ?? "",
-            modelID: session?.model?.id ?? "",
-          },
-        },
+        id: input.id,
+        type: "user",
+        time: { created: input.timeCreated },
+        text: prompt.text,
+        files: prompt.files,
+        agents: prompt.agents,
       }
     }
 
@@ -664,78 +658,22 @@ export const {
       if (!reduction) return false
       sessionMessages.set(sessionID, reduction.messages)
       if (reduction.touched.length === 0) return !MESSAGE_V2_EVENTS.has(event.type)
-      const touched = new Set(reduction.touched)
-      // An assistant projection inherits the last user id as `parentID`, so a
-      // touched assistant also refreshes the user message it belongs to.
-      let parentID: string | undefined
-      for (const message of reduction.messages) {
-        if (message.type === "user") parentID = message.id
-        if (message.type === "assistant" && touched.has(message.id) && parentID) touched.add(parentID)
-      }
-      const session = store.session.find((item) => item.id === sessionID)
-      const cwd = session?.location.directory ?? ""
-      const projected = sessionContextToMessages({
-        sessionID,
-        cwd,
-        root: cwd,
-        messages: reduction.messages,
-        only: touched,
-      })
-      if (projected.length === 0) return true
       batch(() => {
-        for (const message of projected) {
-          // The context projection derives a user's agent/model from preceding
-          // meta messages; a live prompt carries the footer selection instead.
-          if (message.info.role === "user") {
-            const pending = pendingPrompts.data[message.info.id]?.info
-            message.info.agent = pending?.agent ?? session?.agent ?? message.info.agent
-            if (pending?.model) message.info.model = pending.model
-            else if (session?.model)
-              message.info.model = {
-                providerID: session.model.providerID,
-                modelID: session.model.id,
-                variant: session.model.variant,
-              }
-          }
+        for (const id of reduction.touched) {
+          const message = reduction.messages.find((item) => item.id === id)
+          if (!message) continue
           const current = store.message[sessionID] ?? []
-          const index = current.findIndex((item) => item.id === message.info.id)
-          if (index >= 0) setStore("message", sessionID, index, reconcile(message.info))
-          else setStore("message", sessionID, (messages = []) => [...messages, message.info].toSorted(compareMessage))
-          const ended =
-            event.type === "session.next.text.ended"
-              ? event.properties.textID
-              : event.type === "session.next.reasoning.ended"
-                ? event.properties.reasoningID
-                : undefined
-          setStore("part", message.info.id, reconcile(mergeProjectedParts(message.info.id, message.parts, ended)))
+          const index = current.findIndex((item) => item.id === message.id)
+          if (index >= 0) setStore("message", sessionID, index, reconcile(message))
+          else setStore("message", sessionID, (messages = []) => [...messages, message].toSorted(compareMessage))
         }
       })
+      capSessionMessages(sessionID)
       return true
     }
 
     // A durable boundary can project slightly behind a fragment that already
     // reached the store; keep the local text rather than rolling it back.
-    function mergeProjectedParts(messageID: string, parts: Part[], ended?: string): Part[] {
-      const current = store.part[messageID]
-      if (!current) return parts
-      const byID = new Map(current.map((part) => [part.id, part]))
-      return parts.map((part) => {
-        const existing = byID.get(part.id)
-        // A settled part replaces optimistic text even when that local value
-        // is longer and happens to start with the authoritative final text.
-        if (part.id === ended) return part
-        if (!existing) return part
-        if (
-          (part.type === "text" || part.type === "reasoning") &&
-          (existing.type === "text" || existing.type === "reasoning") &&
-          existing.text.length > 0 &&
-          (part.text.length === 0 || existing.text.startsWith(part.text))
-        )
-          return existing
-        return part
-      })
-    }
-
     event.subscribe((event, { workspace }) => {
       if (
         RECOVERED_EVENTS.has(event.type) &&
@@ -848,17 +786,14 @@ export const {
             timeCreated: input.timestamp,
           })
           if (!message) break
-          const info = message.info
           if (event.type === "session.next.prompt.admitted") {
-            pendingPrompts.add({ info, parts: message.parts, state: "admitted", delivery: input.delivery })
+            pendingPrompts.add({ info: message, sessionID: input.sessionID, state: "admitted", delivery: input.delivery })
             pendingPrompts.admit(input.messageID)
             break
           }
           touchMessage(input.sessionID, input.messageID)
-          message.parts.forEach((part) => touchPart(input.sessionID, part.id))
           batch(() => {
-            setStore("message", input.sessionID, (messages = []) => [...messages, info].toSorted(compareMessage))
-            setStore("part", input.messageID, message.parts)
+            setStore("message", input.sessionID, (messages = []) => [...messages, message].toSorted(compareMessage))
             pendingPrompts.remove(input.messageID)
           })
           break
@@ -1181,7 +1116,11 @@ export const {
     // picked after the session started never takes effect. switchModel is a no-op
     // on the server when nothing changed; switchAgent records an event, so it is
     // only sent when the agent differs.
-    async function applySelection(input: { sessionID: string; agent: string; model: UserMessage["model"] }) {
+    async function applySelection(input: {
+      sessionID: string
+      agent: string
+      model: { providerID: string; modelID: string; variant?: string }
+    }) {
       const match = search(store.session, input.sessionID, (s) => s.id)
       const session = match.found ? store.session[match.index] : undefined
       if (input.agent && session?.agent !== input.agent)
@@ -1203,37 +1142,38 @@ export const {
         async send(input: {
           sessionID: string
           agent: string
-          model: UserMessage["model"]
+          model: { providerID: string; modelID: string; variant?: string }
           parts: PromptInfo["parts"]
         }) {
           const id = SessionMessage.ID.create()
           // Sending a prompt is opening the session for live updates even if the
           // route has not synced it yet.
           watchedSessions.add(input.sessionID)
+          const prompt = promptInputFromParts(input.parts)
           pendingPrompts.add({
             info: {
               id,
-              sessionID: input.sessionID,
-              role: "user",
-              agent: input.agent,
-              model: input.model,
+              type: "user",
+              text: prompt.text,
+              ...(prompt.files === undefined
+                ? {}
+                : {
+                    // Prompt-input attachments carry no mime; the projected
+                    // user message requires one.
+                    files: prompt.files.map((file) => ({
+                      ...file,
+                      mime: "application/octet-stream",
+                    })),
+                  }),
               time: { created: Date.now() },
             },
-            parts: input.parts.map((part, index) => ({
-              ...part,
-              id: `${id}-${index}`,
-              messageID: id,
-              sessionID: input.sessionID,
-            })),
+            sessionID: input.sessionID,
             state: "sending",
             delivery: "steer",
           })
           return applySelection(input)
             .then(() =>
-              sdk.api.sessions.prompt(
-                { id, sessionID: input.sessionID, prompt: promptInputFromParts(input.parts) },
-                {},
-              ),
+              sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, {}),
             )
             .then(
               (response) => {
@@ -1309,7 +1249,7 @@ export const {
           // Only receipts present before this read may be removed. A live
           // admission racing the snapshot must survive until the next poll.
           const observed = Object.values(pendingPrompts.data)
-            .filter((entry) => entry.info.sessionID === sessionID && entry.state === "admitted")
+            .filter((entry) => entry.sessionID === sessionID && entry.state === "admitted")
             .map((entry) => entry.info.id)
           const read = async (after?: number): Promise<SessionsInputsOutput["data"]> => {
             const page = await sdk.api.sessions.inputs({ sessionID, after, limit: 100 }, { signal })
@@ -1326,7 +1266,7 @@ export const {
               if (pendingPrompts.data[input.id]?.state === "admitted") return
               const message = projectInput(input)
               if (!message) return
-              pendingPrompts.add({ ...message, state: "admitted", delivery: input.delivery })
+              pendingPrompts.add({ info: message, sessionID, state: "admitted", delivery: input.delivery })
               pendingPrompts.admit(input.id)
             })
             observed.filter((id) => !ids.has(id)).forEach((id) => pendingPrompts.remove(id))
@@ -1342,8 +1282,8 @@ export const {
           const messages = store.message[sessionID] ?? []
           const last = messages.at(-1)
           if (!last) return "idle"
-          if (last.role === "user") return "working"
-          return last.time.completed ? "idle" : "working"
+          if (last.type !== "assistant") return "working"
+          return last.time.completed !== undefined ? "idle" : "working"
         },
         // Keep a session's transcript resident while it is on screen. Called by
         // the session route and by an inline subagent while it is mounted.
@@ -1394,15 +1334,7 @@ export const {
                   ...older.messages,
                   ...mutableResponse(history.data),
                 ])
-                return {
-                  source,
-                  data: sessionContextToMessages({
-                    sessionID,
-                    cwd: session.data!.location.directory,
-                    root: session.data!.location.directory,
-                    messages: source,
-                  }),
-                }
+                return { source, data: source }
               }),
             )
             // A filesystem diff can take seconds. Publish the transcript without
@@ -1449,8 +1381,8 @@ export const {
               const currentMessages = store.message[sessionID] ?? []
               const currentByID = new Map(currentMessages.map((message) => [message.id, message]))
               const infos = (messages.data ?? []).flatMap((message) => {
-                if (!tracker.messages.has(message.info.id)) return [message.info]
-                const current = currentByID.get(message.info.id)
+                if (!tracker.messages.has(message.id)) return [message]
+                const current = currentByID.get(message.id)
                 return current ? [current] : []
               })
               const hydratedIDs = new Set(infos.map((message) => message.id))
@@ -1465,55 +1397,44 @@ export const {
               // transcript feel scroll-locked because older history existed
               // server-side but was never rendered.
               const visibleIDs = new Set(infos.map((message) => message.id))
-              const removed = currentMessages.filter((message) => !visibleIDs.has(message.id))
-              for (const message of messages.data ?? []) {
-                if (!visibleIDs.has(message.info.id)) {
-                  setStore("part", message.info.id, undefined!)
-                  continue
-                }
-                const currentParts = store.part[message.info.id] ?? []
-                const currentByID = new Map(currentParts.map((part) => [part.id, part]))
-                const parts = message.parts.flatMap((raw) => {
-                  const part =
-                    raw.type === "text"
-                      ? { ...raw, text: streamText.reconcile(sessionID, message.info.id, raw.id, raw.text) }
-                      : raw.type === "reasoning"
-                        ? {
-                            ...raw,
-                            text: streamText.reconcile(sessionID, message.info.id, raw.id, raw.text),
-                            time: {
-                              ...raw.time,
-                              end: streamText.completed(sessionID, message.info.id, raw.id) ?? raw.time.end,
-                            },
-                          }
-                        : raw
-                  const current = currentByID.get(part.id)
-                  if (tracker.parts.has(part.id)) return current ? [current] : []
-                  if (
-                    current &&
-                    (part.type === "text" || part.type === "reasoning") &&
-                    (current.type === "text" || current.type === "reasoning") &&
-                    part.text.length === 0 &&
-                    current.text.length > 0
-                  ) {
-                    return [current]
+              const merged = infos.map((message) => {
+                if (message.type !== "assistant") return message
+                const local = currentByID.get(message.id)
+                let touched = false
+                const content = message.content.map((part) => {
+                  if (part.type !== "text" && part.type !== "reasoning") return part
+                  const text = streamText.reconcile(sessionID, message.id, part.id, part.text)
+                  if (text === undefined || text === part.text) {
+                    // A snapshot can arrive with EMPTY text while the store
+                    // already holds streamed content (the server has not caught
+                    // up); keep the local value. A non-empty snapshot is
+                    // authoritative and replaces it.
+                    if (local?.type === "assistant") {
+                      const localPart = local.content.find((item) => item.id === part.id)
+                      if (
+                        localPart &&
+                        (localPart.type === "text" || localPart.type === "reasoning") &&
+                        part.text.length === 0 &&
+                        localPart.text.length > 0
+                      ) {
+                        touched = true
+                        return { ...part, text: localPart.text }
+                      }
+                    }
+                    return part
                   }
-                  return [part]
+                  touched = true
+                  return { ...part, text }
                 })
-                const hydratedIDs = new Set(parts.map((part) => part.id))
-                parts.push(...currentParts.filter((part) => tracker.parts.has(part.id) && !hydratedIDs.has(part.id)))
-                setStore("part", message.info.id, reconcile(parts))
-              }
-              for (const message of removed) setStore("part", message.id, undefined!)
+                return touched ? { ...message, content } : message
+              })
               // Preserve keyed store proxies so <For> keeps existing UI nodes.
               // Replacing every object remounts the entire transcript on
               // each hydration, including completed text and tool output.
-              setStore("message", sessionID, reconcile(infos))
+              if (process.env.MIAO_DEBUG_HYDration === "1") console.log("HYD DEBUG", JSON.stringify(merged))
+              setStore("message", sessionID, reconcile(merged))
             })
-            pendingPrompts.reconcile(
-              sessionID,
-              (messages.data ?? []).map((message) => message.info),
-            )
+            pendingPrompts.reconcile(sessionID, messages.data ?? [])
             // Seed the incremental shadow from the same transcript the store just
             // projected, then carry over text that streamed while this sync ran.
             sessionMessages.set(sessionID, messages.source)

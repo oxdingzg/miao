@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@miao/schema/view-models"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
 
 /**
  * Which way the cache hit rate is moving over recent turns. Any single turn
@@ -13,7 +13,7 @@ const MIN_SAMPLES = 4
 
 export type CacheTrend = "up" | "down" | "flat"
 
-export function cacheTrend(messages: ReadonlyArray<AssistantMessage>, window = 6): CacheTrend | undefined {
+export function cacheTrend(messages: ReadonlyArray<TranscriptAssistantMessage>, window = 6): CacheTrend | undefined {
   const rates = messages
     .slice(-window)
     .map(hitRate)
@@ -27,8 +27,9 @@ export function cacheTrend(messages: ReadonlyArray<AssistantMessage>, window = 6
 }
 
 /** The share of a turn's input that came from the cache, matching the hit rate the sidebar shows. */
-function hitRate(message: AssistantMessage) {
+function hitRate(message: TranscriptAssistantMessage) {
   const tokens = message.tokens
+  if (!tokens) return undefined
   const total = tokens.input + tokens.cache.read + tokens.cache.write
   return total > 0 ? tokens.cache.read / total : undefined
 }

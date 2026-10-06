@@ -187,13 +187,17 @@ export function PermissionPrompt(props: {
   const input = createMemo(() => {
     const tool = props.request.tool
     if (!tool) return {}
-    const parts = sync.data.part[tool.messageID] ?? []
-    for (const part of parts) {
-      if (part.type === "tool" && part.callID === tool.callID && part.state.status !== "pending") {
-        return part.state.input ?? {}
-      }
-    }
-    return {}
+    const message = sync.data.message[tool.messageID ?? ""]?.find(
+      (item) => item.id === (tool.messageID ?? ""),
+    )
+    if (message?.type !== "assistant") return {}
+    const part = message.content.find(
+      (item) => item.type === "tool" && item.id === tool.callID && item.state.status !== "pending",
+    )
+    if (part?.type !== "tool") return {}
+    return typeof part.state.input === "object" && part.state.input !== null
+      ? (part.state.input as Record<string, unknown>)
+      : {}
   })
 
   const { theme } = useTheme()

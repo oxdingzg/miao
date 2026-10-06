@@ -1,4 +1,10 @@
-import type { AssistantMessage, Part, UserMessage } from "@miao/schema/view-models"
+import { toolOutputText } from "../context/session-v2"
+import type {
+  TranscriptAssistantMessage,
+  TranscriptMessage,
+  TranscriptToolPart,
+  TranscriptUserMessage,
+} from "@miao/schema/view-models"
 import type { Provider } from "@miao/schema/view-models"
 import { Locale } from "./locale"
 import * as Model from "./model"
@@ -19,14 +25,9 @@ export type SessionInfo = {
   }
 }
 
-export type MessageWithParts = {
-  info: UserMessage | AssistantMessage
-  parts: Part[]
-}
-
 export function formatTranscript(
   session: SessionInfo,
-  messages: MessageWithParts[],
+  messages: ReadonlyArray<TranscriptMessage>,
   options: TranscriptOptions,
 ): string {
   const providers = Model.index(options.providers)
@@ -37,9 +38,10 @@ export function formatTranscript(
   transcript += `---\n\n`
 
   for (const msg of messages.toSorted(
-    (a, b) => a.info.time.created - b.info.time.created || a.info.id.localeCompare(b.info.id),
+    (a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id),
   )) {
-    transcript += formatMessage(msg.info, msg.parts, options, providers)
+    if (msg.type !== "user" && msg.type !== "assistant") continue
+    transcript += formatMessage(msg, options, providers)
     transcript += `---\n\n`
   }
 
@@ -47,20 +49,24 @@ export function formatTranscript(
 }
 
 export function formatMessage(
-  msg: UserMessage | AssistantMessage,
-  parts: Part[],
+  msg: TranscriptUserMessage | TranscriptAssistantMessage,
   options: TranscriptOptions,
   providers?: Provider[] | ReadonlyMap<string, Provider>,
 ): string {
   let result = ""
 
-  if (msg.role === "user") {
+  if (msg.type === "user") {
     result += `## User\n\n`
-  } else {
-    result += formatAssistantHeader(msg, options.assistantMetadata, providers ?? options.providers)
+    result += `${msg.text}\n\n`
+    for (const file of msg.files ?? []) {
+      result += `**File:** ${file.name ?? file.uri}\n`
+    }
+    if ((msg.files ?? []).length > 0) result += "\n"
+    return result
   }
 
-  for (const part of parts) {
+  result += formatAssistantHeader(msg, options.assistantMetadata, providers ?? options.providers)
+  for (const part of msg.content) {
     result += formatPart(part, options)
   }
 
@@ -68,7 +74,7 @@ export function formatMessage(
 }
 
 export function formatAssistantHeader(
-  msg: AssistantMessage,
+  msg: TranscriptAssistantMessage,
   includeMetadata: boolean,
   providers?: Provider[] | ReadonlyMap<string, Provider>,
 ): string {
@@ -79,13 +85,13 @@ export function formatAssistantHeader(
   const duration =
     msg.time.completed && msg.time.created ? ((msg.time.completed - msg.time.created) / 1000).toFixed(1) + "s" : ""
 
-  const modelName = Model.name(providers, msg.providerID, msg.modelID)
+  const modelName = Model.name(providers, msg.model.providerID, msg.model.id)
 
   return `## Assistant (${Locale.titlecase(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
 }
 
-export function formatPart(part: Part, options: TranscriptOptions): string {
-  if (part.type === "text" && !part.synthetic) {
+export function formatPart(part: TranscriptToolPart | TranscriptAssistantMessage["content"][number], options: TranscriptOptions): string {
+  if (part.type === "text") {
     return `${part.text}\n\n`
   }
 
@@ -97,15 +103,16 @@ export function formatPart(part: Part, options: TranscriptOptions): string {
   }
 
   if (part.type === "tool") {
-    let result = `**Tool: ${part.tool}**\n`
-    if (options.toolDetails && part.state.input) {
+    let result = `**Tool: ${part.name}**\n`
+    if (options.toolDetails && part.state.status !== "pending" && part.state.input) {
       result += `\n**Input:**\n\`\`\`json\n${JSON.stringify(part.state.input, null, 2)}\n\`\`\`\n`
     }
-    if (options.toolDetails && part.state.status === "completed" && part.state.output) {
-      result += `\n**Output:**\n\`\`\`\n${part.state.output}\n\`\`\`\n`
+    const output = toolOutputText(part.state)
+    if (options.toolDetails && output) {
+      result += `\n**Output:**\n\`\`\`\n${output}\n\`\`\`\n`
     }
-    if (options.toolDetails && part.state.status === "error" && part.state.error) {
-      result += `\n**Error:**\n\`\`\`\n${part.state.error}\n\`\`\`\n`
+    if (options.toolDetails && part.state.status === "error" && part.state.error.message) {
+      result += `\n**Error:**\n\`\`\`\n${part.state.error.message}\n\`\`\`\n`
     }
     result += `\n`
     return result

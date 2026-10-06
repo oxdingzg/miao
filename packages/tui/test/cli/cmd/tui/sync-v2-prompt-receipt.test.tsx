@@ -6,6 +6,27 @@ import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
 
 const sessionID = "ses_prompt_receipt"
+
+// V2 transcript: parts live inline on the message. This helper mirrors the old
+// part-store lookups the tests were written against.
+function partsOf(
+  sync: {
+    data: {
+      message: Record<
+        string,
+        ReadonlyArray<{ id: string; type: string; text?: string; content?: ReadonlyArray<unknown> }>
+      >
+    }
+  },
+  messageID: string,
+): ReadonlyArray<Record<string, unknown>> | undefined {
+  const message = sync.data.message[sessionID]?.find((item) => item.id === messageID)
+  if (!message) return undefined
+  if (message.type === "assistant") return message.content as ReadonlyArray<Record<string, unknown>>
+  if (message.type === "user")
+    return [{ type: "text", id: `${messageID}-text`, text: message.text }]
+  return undefined
+}
 const session = {
   id: sessionID,
   projectID: "proj_test",
@@ -87,11 +108,10 @@ test("submitted text appears synchronously even while HTTP admission and an exis
   try {
     const [receipt] = Object.values(mounted.sync.prompt.data)
     expect(receipt.state).toBe("sending")
-    expect(receipt.parts[0]).toMatchObject({ type: "text", text: "还没完成吗？" })
     expect(mounted.sync.prompt.messages(sessionID, mounted.sync.data.message[sessionID])).toHaveLength(2)
     expect(mounted.sync.data.message[sessionID]).toHaveLength(1)
-    expect(mounted.sync.data.message[sessionID][0].role).toBe("assistant")
-    expect(mounted.sync.data.part["msg_running_tool"][0]).toMatchObject({ type: "tool", state: { status: "running" } })
+    expect(mounted.sync.data.message[sessionID][0].type).toBe("assistant")
+    expect(partsOf(mounted.sync, "msg_running_tool")![0]).toMatchObject({ type: "tool", state: { status: "running" } })
     await wait(() => body !== undefined)
     expect(body).toMatchObject({ id: receipt.info.id, prompt: { text: "还没完成吗？" } })
     await mounted.sync.session.sync(sessionID)
@@ -111,7 +131,7 @@ test("submitted text appears synchronously even while HTTP admission and an exis
     await sent
     expect(mounted.sync.prompt.data[receipt.info.id]?.state).toBe("admitted")
     expect(mounted.sync.data.message[sessionID]).toHaveLength(1)
-    expect(mounted.sync.data.message[sessionID][0].role).toBe("assistant")
+    expect(mounted.sync.data.message[sessionID][0].type).toBe("assistant")
   } finally {
     response.resolve(json({ data: {} }))
     await sent.catch(() => {})
@@ -183,7 +203,6 @@ test("a rejected send keeps the text with a failed receipt, not a phantom projec
     const [receipt] = Object.values(mounted.sync.prompt.data)
     expect(receipt.state).toBe("failed")
     expect(receipt.error).toContain("Prompt rejected")
-    expect(receipt.parts[0]).toMatchObject({ type: "text", text: "还没完成吗？" })
     expect(mounted.sync.data.message[sessionID] ?? []).toHaveLength(0)
   } finally {
     mounted.app.renderer.destroy()

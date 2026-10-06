@@ -80,7 +80,6 @@ test("text budget evicts idle history while preserving the displayed session", a
     expect(mounted.sync.data.message.ses_budget_0).toHaveLength(1)
     mounted.sync.session.unpin("ses_budget_1")
     expect(mounted.sync.data.message.ses_budget_1).toBeUndefined()
-    expect(mounted.sync.data.part.ses_budget_1_msg).toBeUndefined()
     expect(mounted.sync.data.message.ses_budget_0).toHaveLength(1)
     await mounted.sync.session.sync("ses_budget_1")
     expect(mounted.sync.data.message.ses_budget_1).toHaveLength(1)

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { formatAssistantHeader, formatMessage, formatPart, formatTranscript } from "../../src/util/transcript"
-import type { AssistantMessage, Part, Provider, UserMessage } from "@miao/schema/view-models"
+import type { Provider, TranscriptAssistantMessage } from "@miao/schema/view-models"
+import { testAssistantMessage, testTextPart, testUserMessage } from "../lib/v2-message"
 
 const providers: Provider[] = [
   {
@@ -63,20 +64,15 @@ const providers: Provider[] = [
 
 describe("transcript", () => {
   describe("formatAssistantHeader", () => {
-    const baseMsg: AssistantMessage = {
+    const baseMsg: TranscriptAssistantMessage = testAssistantMessage({
       id: "msg_123",
-      sessionID: "ses_123",
-      role: "assistant",
       agent: "build",
-      modelID: "claude-sonnet-4-20250514",
-      providerID: "anthropic",
-      mode: "",
-      parentID: "msg_parent",
-      path: { cwd: "/test", root: "/test" },
+      model: { id: "claude-sonnet-4-20250514", providerID: "anthropic" },
       cost: 0.001,
       tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
-      time: { created: 1000000, completed: 1005400 },
-    }
+      created: 1000000,
+      completed: 1005400,
+    })
 
     test("includes metadata when enabled", () => {
       const result = formatAssistantHeader(baseMsg, true)
@@ -95,7 +91,7 @@ describe("transcript", () => {
 
     test("handles missing completed time", () => {
       const msg = { ...baseMsg, time: { created: 1000000 } }
-      const result = formatAssistantHeader(msg as AssistantMessage, true)
+      const result = formatAssistantHeader(msg as TranscriptAssistantMessage, true)
       expect(result).toBe("## Assistant (Build · claude-sonnet-4-20250514)\n\n")
     })
 
@@ -110,71 +106,44 @@ describe("transcript", () => {
     const options = { thinking: true, toolDetails: true, assistantMetadata: true }
 
     test("formats text part", () => {
-      const part: Part = {
-        id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "text",
-        text: "Hello world",
-      }
+      const part = testTextPart("part_1", "Hello world")
       const result = formatPart(part, options)
       expect(result).toBe("Hello world\n\n")
     })
 
-    test("skips synthetic text parts", () => {
-      const part: Part = {
-        id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "text",
-        text: "Synthetic content",
-        synthetic: true,
-      }
-      const result = formatPart(part, options)
-      expect(result).toBe("")
-    })
-
     test("formats reasoning when thinking enabled", () => {
-      const part: Part = {
+      const part = {
+        type: "reasoning" as const,
         id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "reasoning",
         text: "Let me think...",
-        time: { start: 1000 },
+        time: { created: 1000 },
       }
       const result = formatPart(part, options)
       expect(result).toBe("_Thinking:_\n\nLet me think...\n\n")
     })
 
     test("skips reasoning when thinking disabled", () => {
-      const part: Part = {
+      const part = {
+        type: "reasoning" as const,
         id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "reasoning",
         text: "Let me think...",
-        time: { start: 1000 },
+        time: { created: 1000 },
       }
       const result = formatPart(part, { ...options, thinking: false })
       expect(result).toBe("")
     })
 
     test("formats tool part with details", () => {
-      const part: Part = {
+      const part = {
+        type: "tool" as const,
         id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "tool",
-        callID: "call_1",
-        tool: "bash",
+        name: "bash",
+        time: { created: 1000 },
         state: {
-          status: "completed",
+          status: "completed" as const,
           input: { command: "ls" },
-          output: "file1.txt\nfile2.txt",
-          title: "List files",
-          metadata: {},
-          time: { start: 1000, end: 1100 },
+          structured: {},
+          content: [{ type: "text" as const, text: "file1.txt\nfile2.txt" }],
         },
       }
       const result = formatPart(part, options)
@@ -186,20 +155,16 @@ describe("transcript", () => {
     })
 
     test("formats tool output containing triple backticks without breaking markdown", () => {
-      const part: Part = {
+      const part = {
+        type: "tool" as const,
         id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "tool",
-        callID: "call_1",
-        tool: "bash",
+        name: "bash",
+        time: { created: 1000 },
         state: {
-          status: "completed",
+          status: "completed" as const,
           input: { command: "echo '```hello```'" },
-          output: "```hello```",
-          title: "Echo backticks",
-          metadata: {},
-          time: { start: 1000, end: 1100 },
+          structured: {},
+          content: [{ type: "text" as const, text: "```hello```" }],
         },
       }
       const result = formatPart(part, options)
@@ -211,20 +176,16 @@ describe("transcript", () => {
     })
 
     test("formats tool part without details when disabled", () => {
-      const part: Part = {
+      const part = {
+        type: "tool" as const,
         id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "tool",
-        callID: "call_1",
-        tool: "bash",
+        name: "bash",
+        time: { created: 1000 },
         state: {
-          status: "completed",
+          status: "completed" as const,
           input: { command: "ls" },
-          output: "file1.txt",
-          title: "List files",
-          metadata: {},
-          time: { start: 1000, end: 1100 },
+          structured: {},
+          content: [{ type: "text" as const, text: "file1.txt" }],
         },
       }
       const result = formatPart(part, { ...options, toolDetails: false })
@@ -234,18 +195,17 @@ describe("transcript", () => {
     })
 
     test("formats tool error", () => {
-      const part: Part = {
+      const part = {
+        type: "tool" as const,
         id: "part_1",
-        sessionID: "ses_123",
-        messageID: "msg_123",
-        type: "tool",
-        callID: "call_1",
-        tool: "bash",
+        name: "bash",
+        time: { created: 1000 },
         state: {
-          status: "error",
+          status: "error" as const,
           input: { command: "invalid" },
-          error: "Command failed",
-          time: { start: 1000, end: 1100 },
+          content: [],
+          structured: {},
+          error: { type: "unknown" as const, message: "Command failed" },
         },
       }
       const result = formatPart(part, options)
@@ -258,37 +218,29 @@ describe("transcript", () => {
     const options = { thinking: true, toolDetails: true, assistantMetadata: true, providers }
 
     test("formats user message", () => {
-      const msg: UserMessage = {
+      const msg = {
         id: "msg_123",
-        sessionID: "ses_123",
-        role: "user",
-        agent: "build",
-        model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
+        type: "user" as const,
+        text: "Hello",
         time: { created: 1000000 },
       }
-      const parts: Part[] = [{ id: "p1", sessionID: "ses_123", messageID: "msg_123", type: "text", text: "Hello" }]
-      const result = formatMessage(msg, parts, options)
+      const result = formatMessage(msg, options)
       expect(result).toContain("## User")
       expect(result).toContain("Hello")
     })
 
     test("formats assistant message with metadata", () => {
-      const msg: AssistantMessage = {
+      const msg = testAssistantMessage({
         id: "msg_123",
-        sessionID: "ses_123",
-        role: "assistant",
         agent: "build",
-        modelID: "claude-sonnet-4-20250514",
-        providerID: "anthropic",
-        mode: "",
-        parentID: "msg_parent",
-        path: { cwd: "/test", root: "/test" },
+        model: { id: "claude-sonnet-4-20250514", providerID: "anthropic" },
         cost: 0.001,
         tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
-        time: { created: 1000000, completed: 1005400 },
-      }
-      const parts: Part[] = [{ id: "p1", sessionID: "ses_123", messageID: "msg_123", type: "text", text: "Hi there" }]
-      const result = formatMessage(msg, parts, options)
+        created: 1000000,
+        completed: 1005400,
+        content: [testTextPart("p1", "Hi there")],
+      })
+      const result = formatMessage(msg, options)
       expect(result).toContain("## Assistant (Build · Claude Sonnet 4 · 5.4s)")
       expect(result).toContain("Hi there")
     })
@@ -302,34 +254,17 @@ describe("transcript", () => {
         time: { created: 1000000000000, updated: 1000000001000 },
       }
       const messages = [
-        {
-          info: {
-            id: "msg_1",
-            sessionID: "ses_abc123",
-            role: "user" as const,
-            agent: "build",
-            model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
-            time: { created: 1000000000000 },
-          },
-          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Hello" }],
-        },
-        {
-          info: {
-            id: "msg_2",
-            sessionID: "ses_abc123",
-            role: "assistant" as const,
-            agent: "build",
-            modelID: "claude-sonnet-4-20250514",
-            providerID: "anthropic",
-            mode: "",
-            parentID: "msg_1",
-            path: { cwd: "/test", root: "/test" },
-            cost: 0.001,
-            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
-            time: { created: 1000000000100, completed: 1000000000600 },
-          },
-          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Hi!" }],
-        },
+        testUserMessage({ id: "msg_1", text: "Hello", created: 1000000000000 }),
+        testAssistantMessage({
+          id: "msg_2",
+          agent: "build",
+          model: { id: "claude-sonnet-4-20250514", providerID: "anthropic" },
+          cost: 0.001,
+          tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+          created: 1000000000100,
+          completed: 1000000000600,
+          content: [testTextPart("p2", "Hi!")],
+        }),
       ]
       const options = {
         thinking: false,
@@ -350,23 +285,12 @@ describe("transcript", () => {
     })
 
     test("orders messages by creation time and preserves part order", () => {
-      const message = (id: string, created: number, parts: string[]) => ({
-        info: {
+      const message = (id: string, created: number, parts: string[]) =>
+        testUserMessage({
           id,
-          sessionID: "ses_abc123",
-          role: "user" as const,
-          agent: "build",
-          model: { providerID: "anthropic", modelID: "claude" },
-          time: { created },
-        },
-        parts: parts.map((text, index) => ({
-          id: `part_${parts.length - index}`,
-          sessionID: "ses_abc123",
-          messageID: id,
-          type: "text" as const,
-          text,
-        })),
-      })
+          text: parts.join("\n"),
+          created,
+        })
       const result = formatTranscript(
         { id: "ses_abc123", title: "Order", time: { created: 1, updated: 2 } },
         [message("msg_a", 30, ["third"]), message("msg_z", 10, ["first", "second"])],
@@ -384,23 +308,16 @@ describe("transcript", () => {
         time: { created: 1000000000000, updated: 1000000001000 },
       }
       const messages = [
-        {
-          info: {
-            id: "msg_1",
-            sessionID: "ses_abc123",
-            role: "assistant" as const,
-            agent: "build",
-            modelID: "claude-sonnet-4-20250514",
-            providerID: "anthropic",
-            mode: "",
-            parentID: "msg_0",
-            path: { cwd: "/test", root: "/test" },
-            cost: 0.001,
-            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
-            time: { created: 1000000000100, completed: 1000000000600 },
-          },
-          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Response" }],
-        },
+        testAssistantMessage({
+          id: "msg_1",
+          agent: "build",
+          model: { id: "claude-sonnet-4-20250514", providerID: "anthropic" },
+          cost: 0.001,
+          tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+          created: 1000000000100,
+          completed: 1000000000600,
+          content: [testTextPart("p1", "Response")],
+        }),
       ]
 
       const result = formatTranscript(session, messages, {
@@ -419,23 +336,16 @@ describe("transcript", () => {
         time: { created: 1000000000000, updated: 1000000001000 },
       }
       const messages = [
-        {
-          info: {
-            id: "msg_1",
-            sessionID: "ses_abc123",
-            role: "assistant" as const,
-            agent: "build",
-            modelID: "claude-sonnet-4-20250514",
-            providerID: "anthropic",
-            mode: "",
-            parentID: "msg_0",
-            path: { cwd: "/test", root: "/test" },
-            cost: 0.001,
-            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
-            time: { created: 1000000000100, completed: 1000000000600 },
-          },
-          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Response" }],
-        },
+        testAssistantMessage({
+          id: "msg_1",
+          agent: "build",
+          model: { id: "claude-sonnet-4-20250514", providerID: "anthropic" },
+          cost: 0.001,
+          tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+          created: 1000000000100,
+          completed: 1000000000600,
+          content: [testTextPart("p1", "Response")],
+        }),
       ]
       const options = { thinking: false, toolDetails: false, assistantMetadata: false }
 

@@ -37,8 +37,10 @@ describe("reasoningSummary", () => {
 })
 
 describe("reasoningDone", () => {
-  const part = (end?: number) => ({ time: { start: 1, end } })
-  const message = (input: Partial<Pick<AssistantMessage, "time" | "error">> = {}) => ({
+  const part = (end?: number) => ({ time: end === undefined ? { created: 1 } : { created: 1, completed: end } })
+  const message = (
+    input: { error?: { type: "unknown"; message: string }; time?: { created: number; completed?: number } } = {},
+  ) => ({
     time: { created: 1 },
     ...input,
   })
@@ -59,7 +61,7 @@ describe("reasoningDone", () => {
   })
 
   test("ends when an interrupted turn left the message errored or the session idle", () => {
-    expect(reasoningDone(part(), message({ error: { name: "UnknownError", data: { message: "aborted" } } }))).toBe(true)
+    expect(reasoningDone(part(), message({ error: { type: "unknown", message: "UnknownError" } }))).toBe(true)
     expect(reasoningDone(part(), message(), { type: "idle" })).toBe(true)
   })
 })

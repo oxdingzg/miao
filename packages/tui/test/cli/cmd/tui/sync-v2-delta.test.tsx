@@ -5,6 +5,27 @@ import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
 
 const sessionID = "ses_v2_delta"
+
+// V2 transcript: parts live inline on the message. This helper mirrors the old
+// part-store lookups the tests were written against.
+function partsOf(
+  sync: {
+    data: {
+      message: Record<
+        string,
+        ReadonlyArray<{ id: string; type: string; text?: string; content?: ReadonlyArray<unknown> }>
+      >
+    }
+  },
+  messageID: string,
+): ReadonlyArray<Record<string, unknown>> | undefined {
+  const message = sync.data.message[sessionID]?.find((item) => item.id === messageID)
+  if (!message) return undefined
+  if (message.type === "assistant") return message.content as ReadonlyArray<Record<string, unknown>>
+  if (message.type === "user")
+    return [{ type: "text", id: `${messageID}-text`, text: message.text }]
+  return undefined
+}
 const messageID = "msg_v2_delta"
 const textID = "prt_v2_text"
 const reasoningID = "prt_v2_reasoning"
@@ -60,9 +81,9 @@ test("V2 stream deltas append in place instead of re-hydrating", async () => {
     app = mounted.app
 
     await mounted.sync.session.sync(sessionID)
-    await wait(() => mounted.sync.data.part[messageID]?.[0]?.type === "text")
+    await wait(() => partsOf(mounted.sync, messageID)?.[0]?.type === "text")
     const hydrated = contextRequests
-    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "hello" })
+    expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ type: "text", text: "hello" })
 
     mounted.emit(
       global({
@@ -80,14 +101,14 @@ test("V2 stream deltas append in place instead of re-hydrating", async () => {
     )
     await wait(
       () =>
-        mounted.sync.data.part[messageID][0].type === "text" &&
-        mounted.sync.data.part[messageID][0].text === "hello world" &&
-        mounted.sync.data.part[messageID][1].type === "reasoning" &&
-        mounted.sync.data.part[messageID][1].text === "think more",
+        partsOf(mounted.sync, messageID)![0].type === "text" &&
+        partsOf(mounted.sync, messageID)![0].text === "hello world" &&
+        partsOf(mounted.sync, messageID)![1].type === "reasoning" &&
+        partsOf(mounted.sync, messageID)![1].text === "think more",
     )
 
-    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "hello world" })
-    expect(mounted.sync.data.part[messageID][1]).toMatchObject({ type: "reasoning", text: "think more" })
+    expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ type: "text", text: "hello world" })
+    expect(partsOf(mounted.sync, messageID)![1]).toMatchObject({ type: "reasoning", text: "think more" })
     expect(contextRequests).toBe(hydrated)
   } finally {
     app?.renderer.destroy()
@@ -117,7 +138,7 @@ test("V2 stream deltas request a refresh when the part is not projected yet", as
     app = mounted.app
 
     await mounted.sync.session.sync(sessionID)
-    expect(mounted.sync.data.part[messageID]).toBeUndefined()
+    expect(partsOf(mounted.sync, messageID)).toBeUndefined()
 
     // A fragment lands before `session.next.text.started` has hydrated the part.
     mounted.emit(
@@ -139,9 +160,9 @@ test("V2 stream deltas request a refresh when the part is not projected yet", as
         content: [{ type: "text", id: textID, text: "hello world" }],
       },
     ]
-    await wait(() => mounted.sync.data.part[messageID]?.[0]?.type === "text")
+    await wait(() => partsOf(mounted.sync, messageID)?.[0]?.type === "text")
     expect(contextRequests).toBeGreaterThan(1)
-    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "hello world" })
+    expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ type: "text", text: "hello world" })
   } finally {
     app?.renderer.destroy()
   }

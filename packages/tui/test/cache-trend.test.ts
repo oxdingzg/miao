@@ -1,16 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/schema/view-models"
 import { cacheTrend } from "../src/util/cache-trend"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
+import { testAssistantMessage } from "./lib/v2-message"
 
 /** A turn whose input is `read` cached tokens plus `fresh` uncached ones. */
-function turn(read: number, fresh = 100): AssistantMessage {
-  return {
-    role: "assistant",
-    providerID: "acme",
-    modelID: "acme-1",
+function turn(read: number, fresh = 100): TranscriptAssistantMessage {
+  return testAssistantMessage({
+    model: { id: "acme-1", providerID: "acme" },
     tokens: { input: fresh, output: 0, reasoning: 0, cache: { read, write: 0 } },
-    time: { created: 0 },
-  } as unknown as AssistantMessage
+    created: 0,
+  })
 }
 
 /** Turns whose hit rate climbs from `from` to `to`, in equal steps. */

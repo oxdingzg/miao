@@ -46,8 +46,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   }
 
   const state = createMemo(() => {
-    const last = msg().findLast((item): item is TuiTranscriptAssistant => item.role === "assistant" && item.tokens.output > 0)
-    if (!last) {
+    const last = msg().findLast(
+      (item): item is TuiTranscriptAssistant => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
+    )
+    if (!last?.tokens) {
       return {
         tokens: 0,
         percent: null,
@@ -57,7 +59,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 
     const tokens =
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
+    const model = props.api.state.provider.find((item) => item.id === last.model.providerID)?.models[last.model.id]
     const cacheTotal = last.tokens.cache.read + last.tokens.cache.write + last.tokens.input
     return {
       tokens,
@@ -69,13 +71,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // The turn above reports the current context; this reports what caching has
   // earned over the whole session, which is only visible across turns.
   const offPeakProviders = createMemo(() => props.api.kv.get(CachePricing.KV, CachePricing.DEFAULT))
-  const assistants = createMemo(() => msg().filter((item): item is TuiTranscriptAssistant => item.role === "assistant"))
+  const assistants = createMemo(() =>
+    msg().filter((item): item is TuiTranscriptAssistant => item.type === "assistant" && item.tokens !== undefined),
+  )
   const economy = createMemo(() =>
     cacheEconomy(
       assistants(),
       props.api.state.provider,
       (message) =>
-        priceMultiplier(message.time.created, message.providerID, message.modelID, {
+        priceMultiplier(message.time.created, message.model.providerID, message.model.id, {
           providers: offPeakProviders(),
         }),
     ),
@@ -86,7 +90,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const pricing = createMemo(() => {
     const last = assistants().at(-1)
     if (!last) return
-    if (!isTimeOfDayPriced(last.providerID, last.modelID, { providers: offPeakProviders() })) return
+    if (!isTimeOfDayPriced(last.model.providerID, last.model.id, { providers: offPeakProviders() })) return
     return isOffPeak(last.time.created) ? "off-peak" : "peak"
   })
 
@@ -157,16 +161,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const byModel = createMemo(() => {
     const rows = new Map<string, { providerID: string; id: string; turns: number; cost: number; tokens: number }>()
     for (const item of assistants()) {
-      const key = `${item.providerID}\u0000${item.modelID}`
-      const row = rows.get(key) ?? { providerID: item.providerID, id: item.modelID, turns: 0, cost: 0, tokens: 0 }
+      const key = `${item.model.providerID}\u0000${item.model.id}`
+      const row =
+        rows.get(key) ?? { providerID: item.model.providerID, id: item.model.id, turns: 0, cost: 0, tokens: 0 }
       row.turns += 1
-      row.cost += item.cost
-      row.tokens +=
-        item.tokens.input +
-        item.tokens.output +
-        item.tokens.reasoning +
-        item.tokens.cache.read +
-        item.tokens.cache.write
+      row.cost += item.cost ?? 0
+      const tokens = item.tokens
+      if (tokens)
+        row.tokens +=
+          tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
       rows.set(key, row)
     }
     return [...rows.values()].toSorted((a, b) => b.cost - a.cost || b.turns - a.turns)

@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/schema/view-models"
 import { turnSpeed } from "../src/util/turn-speed"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
+import { testAssistantMessage } from "./lib/v2-message"
 
-function turn(output: number, created: number, completed?: number): AssistantMessage {
-  return {
-    role: "assistant",
-    providerID: "acme",
-    modelID: "acme-1",
+function turn(output: number, created: number, completed?: number): TranscriptAssistantMessage {
+  return testAssistantMessage({
+    model: { id: "acme-1", providerID: "acme" },
     tokens: { input: 0, output, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: completed === undefined ? { created } : { created, completed },
-  } as unknown as AssistantMessage
+    created,
+    completed,
+  })
 }
 
 describe("turnSpeed", () => {

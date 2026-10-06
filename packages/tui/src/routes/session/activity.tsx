@@ -6,7 +6,7 @@ import { useTheme } from "../../context/theme"
 import { waitingForResponse, watchSessionStatus, statusPhase, type SessionPhase } from "../../context/session-status"
 import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
-import type { Part, ReasoningPart, ToolPart } from "@miao/schema/view-models"
+import type { AssistantContent, TranscriptReasoningPart, TranscriptToolPart } from "@miao/schema/view-models"
 import { ProviderFailure } from "./provider-failure"
 
 // Claude Code reports a turn as `[running|ran] N shell commands` on one live
@@ -18,7 +18,7 @@ import { ProviderFailure } from "./provider-failure"
 // resort for the cases a name cannot cover: a tool whose input we cannot read.
 const LIVE_LIMIT = 60
 
-const toolInput = (part: ToolPart, key: string) => {
+const toolInput = (part: TranscriptToolPart, key: string) => {
   if (part.state.status !== "running" && part.state.status !== "completed") return undefined
   const value = part.state.input[key]
   return typeof value === "string" && value.length > 0 ? value : undefined
@@ -36,44 +36,46 @@ const TOOL_GROUPS = [
     verb: ["running", "ran"],
     noun: "shell command",
     plural: "shell commands",
-    live: (part: ToolPart) => shorten(toolInput(part, "command")),
+    live: (part: TranscriptToolPart) => shorten(toolInput(part, "command")),
   },
   {
     displays: ["read"],
     verb: ["reading", "read"],
     noun: "file",
     plural: "files",
-    live: (part: ToolPart) => shorten(toolInput(part, "filePath")),
+    live: (part: TranscriptToolPart) => shorten(toolInput(part, "filePath")),
   },
   {
     displays: ["grep", "glob", "websearch"],
     verb: ["searching for", "searched for"],
     noun: "pattern",
     plural: "patterns",
-    live: (part: ToolPart) => shorten(toolInput(part, "pattern") ?? toolInput(part, "query")),
+    live: (part: TranscriptToolPart) => shorten(toolInput(part, "pattern") ?? toolInput(part, "query")),
   },
   {
     displays: ["edit", "write", "apply_patch"],
     verb: ["editing", "edited"],
     noun: "file",
     plural: "files",
-    live: (part: ToolPart) => shorten(toolInput(part, "filePath")),
+    live: (part: TranscriptToolPart) => shorten(toolInput(part, "filePath")),
   },
   {
     displays: ["task"],
     verb: ["delegating to", "delegated to"],
     noun: "subagent",
     plural: "subagents",
-    live: (part: ToolPart) => shorten(toolInput(part, "description")),
+    live: (part: TranscriptToolPart) => shorten(toolInput(part, "description")),
   },
 ]
 
 // Naming one tool is only honest while exactly one is in flight; with several
 // running, one name would hide the others.
-function runningTool(parts: ReadonlyArray<Part>) {
-  const running = parts.filter((part): part is ToolPart => part.type === "tool" && part.state.status === "running")
+function runningTool(parts: ReadonlyArray<AssistantContent>) {
+  const running = parts.filter(
+    (part): part is TranscriptToolPart => part.type === "tool" && part.state.status === "running",
+  )
   if (running.length !== 1) return undefined
-  const group = TOOL_GROUPS.find((group) => group.displays.includes(toolDisplay(running[0].tool)))
+  const group = TOOL_GROUPS.find((group) => group.displays.includes(toolDisplay(running[0].name)))
   if (!group) return undefined
   const detail = group.live(running[0])
   return detail ? { group, text: `${group.verb[0]} ${detail}` } : undefined
@@ -84,14 +86,15 @@ function runningTool(parts: ReadonlyArray<Part>) {
 // read as a healthy twelve-minute turn. Each part records when it last changed,
 // so the newest stamp is the moment output stopped. A turn with no output yet
 // falls back to the prompt that opened it.
-export function lastOutputAt(parts: ReadonlyArray<Part>, fallback: number | undefined) {
+export function lastOutputAt(parts: ReadonlyArray<AssistantContent>, fallback: number | undefined) {
   const times = parts.flatMap((part) => {
     if (part.type === "tool") {
       if (part.state.status === "pending") return []
-      return [part.state.status === "completed" ? part.state.time.end : part.state.time.start]
+      return [part.time?.ran ?? part.time?.created].filter((value): value is number => value !== undefined)
     }
-    if (part.type === "text" || part.type === "reasoning") {
-      const time = part.time?.end ?? part.time?.start
+    if (part.type === "text") return []
+    if (part.type === "reasoning") {
+      const time = part.time?.completed ?? part.time?.created
       return time === undefined ? [] : [time]
     }
     return []
@@ -113,17 +116,17 @@ export function SessionActivity(props: { sessionID: string }) {
   )
   const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
   const message = createMemo(() => messages().at(-1))
-  const parts = createMemo(() => {
+  const content = createMemo(() => {
     const current = message()
-    return current ? (sync.data.part[current.id] ?? []) : []
+    return current?.type === "assistant" ? current.content : []
   })
   const waiting = createMemo(() => {
-    return waitingForResponse({ busy: busy(), blocked: blocked(), message: message(), parts: parts() })
+    return waitingForResponse({ busy: busy(), blocked: blocked(), message: message(), content: content() })
   })
   const turnParts = createMemo(() => {
     const list = messages()
-    const start = list.findLastIndex((entry) => entry.role === "user")
-    return list.slice(start + 1).flatMap((entry) => sync.data.part[entry.id] ?? [])
+    const start = list.findLastIndex((entry) => entry.type === "user")
+    return list.slice(start + 1).flatMap((entry) => (entry.type === "assistant" ? entry.content : []))
   })
   // `working` mirrors Claude Code's live flag: the current step is still
   // streaming, so the summary uses present tense and flips to past between steps.
@@ -131,7 +134,7 @@ export function SessionActivity(props: { sessionID: string }) {
     if (!busy() || blocked()) return undefined
     return turnActivity({ parts: turnParts(), working: !waiting() })
   })
-  const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.role === "user")?.time.created)
+  const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.type === "user")?.time.created)
   const lastOutput = createMemo(() => lastOutputAt(turnParts(), turnStartedAt()))
   const active = createMemo(() => busy() && !blocked())
   // The timestamp the elapsed timer counts from: the phase's own start so the
@@ -200,26 +203,26 @@ function SessionActiveWaiting(props: {
   return <SessionWaiting waiting={props.waiting} elapsed={elapsed()} activity={props.activity} phase={props.phase} />
 }
 
-export function turnActivity(input: { parts: Part[]; working: boolean }) {
+export function turnActivity(input: { parts: AssistantContent[]; working: boolean }) {
   // A running step is part of the turn's work, so count it in the live summary.
   // Completed steps stay counted once the turn settles into past tense.
-  const tools = input.parts.filter((part): part is ToolPart => {
+  const tools = input.parts.filter((part): part is TranscriptToolPart => {
     if (part.type !== "tool") return false
     if (part.state.status === "completed") return true
     return input.working && part.state.status === "running"
   })
-  const reasoning = input.parts.filter((part): part is ReasoningPart => part.type === "reasoning")
-  const thinking = reasoning.some((part) => part.time.end === undefined && part.text.trim().length > 0)
+  const reasoning = input.parts.filter((part): part is TranscriptReasoningPart => part.type === "reasoning")
+  const thinking = reasoning.some((part) => part.time?.completed === undefined && part.text.trim().length > 0)
   const thought = reasoning.reduce((total, part) => {
-    const end = part.time.end
-    return end === undefined ? total : total + Math.max(0, end - part.time.start)
+    const completed = part.time?.completed
+    return completed === undefined ? total : total + Math.max(0, completed - (part.time?.created ?? 0))
   }, 0)
   const live = input.working ? runningTool(input.parts) : undefined
   const segments = [
     thinking ? "Thinking" : thought > 0 ? `Thought for ${Locale.duration(thought)}` : undefined,
     live?.text,
     ...TOOL_GROUPS.filter((group) => group !== live?.group).map((group) => {
-      const count = tools.filter((part) => group.displays.includes(toolDisplay(part.tool))).length
+      const count = tools.filter((part) => group.displays.includes(toolDisplay(part.name))).length
       if (count === 0) return undefined
       return `${input.working ? group.verb[0] : group.verb[1]} ${count} ${count === 1 ? group.noun : group.plural}`
     }),

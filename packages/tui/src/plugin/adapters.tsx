@@ -1,3 +1,4 @@
+import type { Part } from "@miao/schema/view-models"
 import type { TuiDialogSelectOption, TuiPluginApi, TuiSlotProps } from "@miao/plugin/tui"
 import type { TuiConfig } from "../config"
 import type { useEvent } from "../context/event"
@@ -148,7 +149,58 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       },
     },
     part(messageID) {
-      return sync.data.part[messageID] ?? []
+      // The plugin surface still speaks V1 parts; project the V2 transcript
+      // message into that shape. The projection is structurally honest but the
+      // V1 state block carries legacy fields (raw/title/time) that V2 keeps
+      // elsewhere, hence the cast at the return.
+      const project = (): Part[] => {
+      for (const messages of Object.values(sync.data.message)) {
+        const message = messages.find((item) => item.id === messageID)
+        if (!message) continue
+        if (message.type === "user") {
+          return [
+            { id: `${messageID}-text`, sessionID: "", messageID, type: "text" as const, text: message.text },
+            ...(message.files ?? []).map((file, index) => ({
+              id: `${messageID}-file-${index}`,
+              sessionID: "",
+              messageID,
+              type: "file" as const,
+              mime: file.mime,
+              filename: file.name ?? file.uri,
+              url: file.uri,
+            })),
+          ] as Part[]
+        }
+        if (message.type !== "assistant") return []
+        return message.content.map((part): Part => {
+          if (part.type === "text")
+            return { id: part.id, sessionID: "", messageID, type: "text", text: part.text }
+          if (part.type === "reasoning")
+            return {
+              id: part.id,
+              sessionID: "",
+              messageID,
+              type: "reasoning",
+              text: part.text,
+              time: {
+                start: part.time?.created ?? 0,
+                ...(part.time?.completed === undefined ? {} : { end: part.time.completed }),
+              },
+            }
+          return {
+            id: part.id,
+            sessionID: "",
+            messageID,
+            type: "tool" as const,
+            tool: part.name,
+            callID: part.id,
+            state: part.state as unknown as Extract<Part, { type: 'tool' }>["state"],
+          }
+        })
+      }
+      return []
+      }
+      return project() as Part[]
     },
     lsp() {
       return sync.data.lsp.map((item) => ({ id: item.id, root: item.root, status: item.status }))
