@@ -2,10 +2,11 @@ import { expect, test } from "bun:test"
 import { RuntimeLifetime } from "../../src/runtime/lifetime"
 
 test("lingerMs reads the runtime.lingerMs contract", () => {
-  // Absent or unparsable stays with the default warm window.
-  expect(RuntimeLifetime.lingerMs(undefined)).toBe(5 * 60 * 1000)
-  expect(RuntimeLifetime.lingerMs("")).toBe(5 * 60 * 1000)
-  expect(RuntimeLifetime.lingerMs("nonsense")).toBe(5 * 60 * 1000)
+  // Absent or unparsable stays with the lightweight default: exit when the last
+  // client disconnects and nothing else is active.
+  expect(RuntimeLifetime.lingerMs(undefined)).toBe(0)
+  expect(RuntimeLifetime.lingerMs("")).toBe(0)
+  expect(RuntimeLifetime.lingerMs("nonsense")).toBe(0)
   // 0 follows the last client, a positive value is a grace window, and any
   // negative value means never exit automatically.
   expect(RuntimeLifetime.lingerMs("0")).toBe(0)
