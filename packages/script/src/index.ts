@@ -50,7 +50,9 @@ for (const pattern of rootPkg.workspaces.packages) {
   }
 }
 
-const bot = ["actions-user", "opencode", "opencode-agent[bot]"]
+// Keep the opencode entries: miao's history still contains upstream commits by
+// those accounts, and dropping them would leak bot commits into the changelog.
+const bot = ["actions-user", "opencode", "opencode-agent[bot]", "miao-agent[bot]"]
 const teamPath = path.resolve(import.meta.dir, "../../../.github/TEAM_MEMBERS")
 const team = [
   ...(await Bun.file(teamPath)
