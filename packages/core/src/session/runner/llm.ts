@@ -27,6 +27,7 @@ import { Image } from "../../image"
 import { SystemContext } from "../../system-context/index"
 import { OutputLanguage } from "../../system-context/output-language"
 import { Persona } from "../../system-context/persona"
+import { PlanIntent } from "../../system-context/plan-intent"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { Flag } from "../../flag/flag"
 import { SkillGuidance } from "../../skill/guidance"
@@ -647,6 +648,7 @@ const layer = Layer.effect(
               apiID: resolved.info.api.id,
             }),
           system.baseline,
+          PlanIntent.instruction,
           OutputLanguage.instruction,
         ]
           .filter((part): part is string => part !== undefined && part.length > 0)
