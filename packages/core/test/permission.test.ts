@@ -37,7 +37,7 @@ const it = testEffect(
   ),
 )
 
-function setup(rules: PermissionV2.Ruleset = []) {
+function setup(rules: PermissionV2.Ruleset = [], mode?: PermissionV2.Mode) {
   return Effect.gen(function* () {
     const { db } = yield* Database.Service
     yield* db
@@ -60,16 +60,17 @@ function setup(rules: PermissionV2.Ruleset = []) {
       .onConflictDoNothing()
       .run()
       .pipe(Effect.orDie)
-    yield* setRules(rules)
+    yield* setRules(rules, mode)
   })
 }
 
-function setRules(rules: PermissionV2.Ruleset) {
+function setRules(rules: PermissionV2.Ruleset, mode?: PermissionV2.Mode) {
   return Effect.gen(function* () {
     const agents = yield* AgentV2.Service
     yield* agents.transform((editor) =>
       editor.update(AgentV2.ID.make("test"), (agent) => {
         agent.permissions = [...rules]
+        agent.permission_mode = mode
       }),
     )
   })
@@ -331,6 +332,74 @@ describe("PermissionV2", () => {
       yield* service.assert(assertion({ id: PermissionV2.ID.create("per_next"), resources: ["src/next.ts"] }))
       yield* saved.remove(id)
       expect(yield* saved.list()).toEqual([])
+    }),
+  )
+
+  it.effect("auto mode settles safe asks without a prompt", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "edit", resource: "*", effect: "ask" }], "auto")
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(assertion({ action: "edit", resources: ["/project/src/a.ts"] }))).toMatchObject({
+        effect: "allow",
+      })
+      expect(yield* service.list()).toEqual([])
+      expect(
+        yield* service.ask(assertion({ action: "bash", resources: ["git status", "ls -la"] })),
+      ).toMatchObject({ effect: "allow" })
+      expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("auto mode still asks what the classifier cannot prove safe", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "edit", resource: "*", effect: "ask" }], "auto")
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(assertion({ action: "edit", resources: ["/project/.env"] }))).toMatchObject({
+        effect: "ask",
+      })
+      const pending = yield* service.list()
+      expect(pending).toHaveLength(1)
+      yield* service.reply({ requestID: pending[0]!.id, reply: "reject" })
+
+      expect(
+        yield* service.ask(
+          assertion({ id: PermissionV2.ID.create("per_outside"), action: "edit", resources: ["/elsewhere/a.ts"] }),
+        ),
+      ).toMatchObject({ effect: "ask" })
+      yield* service.reply({ requestID: PermissionV2.ID.make("per_outside"), reply: "reject" })
+      expect(
+        yield* service.ask(assertion({ id: PermissionV2.ID.create("per_rm"), action: "bash", resources: ["rm -rf build"] })),
+      ).toMatchObject({ effect: "ask" })
+      yield* service.reply({ requestID: PermissionV2.ID.make("per_rm"), reply: "reject" })
+      expect(
+        yield* service.ask(
+          assertion({
+            id: PermissionV2.ID.create("per_stdin"),
+            action: "bash",
+            resources: ["cat build"],
+            metadata: { command: "cat build", stdin: "x" },
+          }),
+        ),
+      ).toMatchObject({ effect: "ask" })
+    }),
+  )
+
+  it.effect("auto mode never settles denies and default mode keeps asking", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "edit", resource: "*", effect: "deny" }], "auto")
+      const service = yield* PermissionV2.Service
+      const blocked = yield* service
+        .assert(assertion({ action: "edit", resources: ["/project/src/a.ts"] }))
+        .pipe(Effect.flip)
+      expect(blocked).toBeInstanceOf(PermissionV2.BlockedError)
+
+      yield* setRules([{ action: "edit", resource: "*", effect: "ask" }])
+      expect(yield* service.ask(assertion({ action: "edit", resources: ["/project/src/a.ts"] }))).toMatchObject({
+        effect: "ask",
+      })
+      const pending = yield* service.list()
+      expect(pending).toHaveLength(1)
+      yield* service.reply({ requestID: pending[0]!.id, reply: "reject" })
     }),
   )
 })
