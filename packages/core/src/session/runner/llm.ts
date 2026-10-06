@@ -51,6 +51,7 @@ import { WorktreeTool } from "../../tool/worktree"
 import { WorkflowTool } from "../../tool/workflow"
 import { PushNotificationTool } from "../../tool/push-notification"
 import { ToolOutputStore } from "../../tool-output-store"
+import { SessionOwnership } from "../ownership"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
@@ -211,6 +212,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const creation = yield* SessionCreate.Service
+    const ownership = yield* SessionOwnership.Service
     const todos = yield* SessionTodo.Service
     const permission = yield* PermissionV2.Service
     const blob = yield* Blob.Service
@@ -1158,6 +1160,7 @@ const layer = Layer.effect(
         location: parent.location,
         model,
       }))
+      yield* ownership.claim(child.id)
       // Older children were created without a model and fell back to the Location default.
       if (resumed && !resumed.model && model)
         yield* events.publish(SessionEvent.ModelSwitched, {
@@ -1259,6 +1262,7 @@ const layer = Layer.effect(
         return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
       if (target.projectID !== sender.projectID)
         return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
+      yield* ownership.claim(target.id)
       const pending = yield* SessionInput.countPending(db, target.id)
       if (pending >= SendMessageTool.MAX_INBOUND_QUEUE)
         return yield* new ToolFailure({
@@ -1420,6 +1424,7 @@ const layer = Layer.effect(
         /** Reports local drain phases so a client can tell preparation from a dispatched request. */
         readonly phase?: ReportPhase
     }) {
+      yield* ownership.claim(input.sessionID)
       const report: ReportPhase = input.phase ?? (() => Effect.void)
       return yield* Effect.scoped(
         Effect.gen(function* () {
@@ -1717,6 +1722,7 @@ export const node = makeLocationNode({
     Snapshot.node,
     Database.node,
     SessionCreate.node,
+    SessionOwnership.node,
     SessionTodo.node,
     PermissionV2.node,
     Blob.node,

@@ -622,7 +622,7 @@ export function make(options: ClientOptions) {
               location: input?.["location"],
             },
             successStatus: 200,
-            declaredStatuses: [401, 400],
+            declaredStatuses: [409, 401, 400],
             empty: false,
           },
           requestOptions,

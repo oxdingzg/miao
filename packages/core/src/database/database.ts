@@ -12,13 +12,14 @@ const makeDatabase = EffectDrizzleSqlite.makeWithDefaults()
 type DatabaseShape = Effect.Success<typeof makeDatabase>
 
 export interface Interface {
+  readonly storage: string
   db: DatabaseShape
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/storage/Database") {}
 
 /** Owner opens migrate; a participant never migrates and must find a schema at least as new. */
-const open = (options: { migrate: boolean; usage?: RuntimeOwnership.Usage }) =>
+const open = (options: { storage: string; migrate: boolean; usage?: RuntimeOwnership.Usage }) =>
   Layer.effect(
     Service,
     Effect.gen(function* () {
@@ -34,7 +35,7 @@ const open = (options: { migrate: boolean; usage?: RuntimeOwnership.Usage }) =>
       else if (options.migrate) yield* DatabaseMigration.apply(db)
       else yield* DatabaseMigration.verify(db)
 
-      return { db }
+      return { db, storage: options.storage }
     }).pipe(Effect.orDie),
   )
 
@@ -49,7 +50,9 @@ export function layerFromPath(filename: string) {
           ),
         )
   // Ownership must build beneath the native layer, before opening or migrating.
-  return open({ migrate: true }).pipe(Layer.provide(sqliteLayer({ filename }).pipe(Layer.provide(ownership))))
+  return open({ storage: filename, migrate: true }).pipe(
+    Layer.provide(sqliteLayer({ filename }).pipe(Layer.provide(ownership))),
+  )
 }
 
 /** Multiple windows may use a migrated database; migrations require exclusive access. */
@@ -67,7 +70,9 @@ export function sharedLayerFromPath(filename: string) {
         ),
         (owner) => Effect.sync(owner.release),
       )
-      return open({ migrate: true, usage }).pipe(Layer.provide(sqliteLayer({ filename: usage.storage })))
+      return open({ storage: usage.storage, migrate: true, usage }).pipe(
+        Layer.provide(sqliteLayer({ filename: usage.storage })),
+      )
     }),
   )
 }
@@ -80,7 +85,7 @@ export function sharedLayerFromPath(filename: string) {
  * against columns it does not understand.
  */
 export function participantLayerFromPath(filename: string) {
-  return open({ migrate: false }).pipe(Layer.provide(sqliteLayer({ filename })))
+  return open({ storage: filename, migrate: false }).pipe(Layer.provide(sqliteLayer({ filename })))
 }
 
 export const path = DatabaseFile.path
