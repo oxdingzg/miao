@@ -2107,7 +2107,7 @@ function Shell(props: ToolProps) {
   const output = createMemo(() => stripAnsi(stringValue(props.metadata.output) ?? props.output ?? "").trim())
   const preview = createMemo(() =>
     output()
-      .replace(/(?:^|\n)Command exited with code 0\.\s*$/, "")
+      .replace(/(?:^|\n)\[exit code 0\]\s*$/, "")
       .trim(),
   )
   const [expanded, setExpanded] = createSignal(false)

@@ -683,7 +683,7 @@ describe("run session data (V2 events)", () => {
         structured: { exit: 0, truncated: false },
         content: [
           { type: "text", text: "1\n2\n" },
-          { type: "text", text: "Command exited with code 0." },
+          { type: "text", text: "[exit code 0]" },
         ],
         provider: { executed: false },
       }),

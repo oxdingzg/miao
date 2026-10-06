@@ -138,9 +138,8 @@ const modelOutput = (output: Output) => {
     ? `\n\nWarnings:\n${output.warnings.map((warning) => `- ${warning}`).join("\n")}`
     : ""
   const file = output.outputPath === undefined ? "" : `\n\nCaptured output: ${output.outputPath}`
-  if (output.timeout)
-    return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command timed out before completion.${file}`
-  return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command exited with code ${output.exit}.${file}`
+  if (output.timeout) return `${warnings.trimStart()}${warnings ? "\n\n" : ""}[command timed out]${file}`
+  return `${warnings.trimStart()}${warnings ? "\n\n" : ""}[exit code ${output.exit}]${file}`
 }
 
 const isTimeout = (error: AppProcess.AppProcessError) =>
