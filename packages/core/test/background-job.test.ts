@@ -104,3 +104,30 @@ describe("BackgroundJob", () => {
     }),
   )
 })
+
+describe("BackgroundJob teardown", () => {
+  it.live("interrupts running jobs when the registry scope closes", () =>
+    Effect.gen(function* () {
+      let interrupted = false
+      let jobID = ""
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const jobs = yield* BackgroundJob.make
+          const job = yield* jobs.start({
+            type: "test",
+            run: Effect.never.pipe(
+              Effect.onExit(() =>
+                Effect.sync(() => {
+                  interrupted = true
+                }),
+              ),
+            ),
+          })
+          jobID = job.id
+          expect((yield* jobs.get(jobID))?.status).toBe("running")
+        }),
+      )
+      expect(interrupted).toBe(true)
+    }),
+  )
+})
