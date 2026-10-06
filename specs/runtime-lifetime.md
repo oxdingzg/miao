@@ -112,10 +112,11 @@ running owner):
 
 - `runtime.lingerMs` (env `MIAO_RUNTIME_LINGER_MS`): grace after the vector
   becomes empty before draining.
-  - `> 0` (default, proposed 5 minutes): stay warm this long so a returning
-    client reuses the process and its loaded build.
-  - `0`: exit as soon as the last client disconnects and nothing else is active;
-    this is the "follow the visible client" model.
+  - `0` (default): exit as soon as the last client disconnects and nothing else
+    is active; this is the lightweight "follow the visible client" model, so miao
+    keeps no idle process and the next `miao` starts the installed build.
+  - `> 0`: stay warm this long so a returning client reuses the process and its
+    loaded build.
   - `-1`: never exit automatically; run until `miao runtime stop` or a signal.
     This is the supervisor / always-on mode, and the choice when remote control
     or scheduled work must survive indefinitely.

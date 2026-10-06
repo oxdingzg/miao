@@ -238,6 +238,17 @@ export const equivalent = (
   },
 ) => input.delivery === expected.delivery && matchesPrompt(input, expected)
 
+/** Unpromoted input across every Session; the Runtime stays alive while any exists. */
+export const countAllPending = Effect.fn("SessionInput.countAllPending")(function* (db: DatabaseService) {
+  const row = yield* db
+    .select({ value: count() })
+    .from(SessionInputTable)
+    .where(isNull(SessionInputTable.promoted_seq))
+    .get()
+    .pipe(Effect.orDie)
+  return row?.value ?? 0
+})
+
 const matchesPrompt = (input: Admitted, expected: { readonly sessionID: SessionSchema.ID; readonly prompt: Prompt }) =>
   input.sessionID === expected.sessionID &&
   JSON.stringify(encodePrompt(input.prompt)) === JSON.stringify(encodePrompt(expected.prompt))

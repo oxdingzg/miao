@@ -69,6 +69,15 @@ export type Attachment = {
   readonly detach: () => void
 }
 
+export type ReadResult = {
+  // Retained output from the requested cursor to the current end.
+  readonly chunk: string
+  // Absolute output cursor after the chunk.
+  readonly cursor: number
+  readonly status: Info["status"]
+  readonly exitCode?: number
+}
+
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Pty.NotFoundError", {
   ptyID: PtyID,
 }) {}
@@ -85,6 +94,13 @@ export interface Interface {
   readonly remove: (id: PtyID) => Effect.Effect<void, NotFoundError>
   readonly write: (id: PtyID, data: string) => Effect.Effect<void, NotFoundError>
   readonly attach: (id: PtyID, input: AttachInput) => Effect.Effect<Attachment, NotFoundError | ExitedError>
+  /**
+   * Retained output from an absolute cursor to the current end, without
+   * subscribing. Unlike `attach` it also serves a Session whose process has
+   * exited, so a caller can drain a terminal's tail after it ends. Omit the
+   * cursor to read everything still retained.
+   */
+  readonly read: (id: PtyID, cursor?: number) => Effect.Effect<ReadResult, NotFoundError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/Pty") {}
@@ -256,6 +272,26 @@ const layer = Layer.effect(
       if (session.info.status === "running") session.process.write(data)
     })
 
+    // Absolute output cursor to the retained buffer. A cursor older than the
+    // buffer's start still reads whatever survived eviction.
+    const retained = (session: Active, from: number) => {
+      if (!session.buffer || from >= session.cursor) return ""
+      const offset = Math.max(0, from - session.bufferCursor)
+      if (offset >= session.buffer.length) return ""
+      return session.buffer.slice(offset)
+    }
+
+    const read = Effect.fn("Pty.read")(function* (id: PtyID, cursor?: number) {
+      const session = yield* requireSession(id)
+      const from = typeof cursor === "number" && Number.isSafeInteger(cursor) ? Math.max(0, cursor) : 0
+      return {
+        chunk: retained(session, from),
+        cursor: session.cursor,
+        status: session.info.status,
+        ...(session.info.exitCode === undefined ? {} : { exitCode: session.info.exitCode }),
+      }
+    })
+
     const attach = Effect.fn("Pty.attach")(function* (id: PtyID, input: AttachInput) {
       const session = yield* requireSession(id)
       if (session.info.status !== "running") return yield* new ExitedError({ ptyID: id })
@@ -269,7 +305,6 @@ const layer = Layer.effect(
         pending: [],
       }
       session.subscribers.set(token, subscriber)
-      const start = session.bufferCursor
       const end = session.cursor
       const from =
         input.cursor === -1
@@ -277,14 +312,8 @@ const layer = Layer.effect(
           : typeof input.cursor === "number" && Number.isSafeInteger(input.cursor)
             ? Math.max(0, input.cursor)
             : 0
-      const replay = (() => {
-        if (!session.buffer || from >= end) return ""
-        const offset = Math.max(0, from - start)
-        if (offset >= session.buffer.length) return ""
-        return session.buffer.slice(offset)
-      })()
       return {
-        replay,
+        replay: retained(session, from),
         cursor: end,
         write: (data: string) => {
           if (session.info.status === "running") session.process.write(data)
@@ -309,7 +338,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, get, create, update, remove, write, attach })
+    return Service.of({ list, get, create, update, remove, write, attach, read })
   }),
 )
 
