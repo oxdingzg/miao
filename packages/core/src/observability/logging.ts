@@ -1,5 +1,6 @@
-import { Formatter, Logger, type LogLevel } from "effect"
+import { Effect, Formatter, Logger, type LogLevel } from "effect"
 import path from "path"
+import { DiagnosticFiles } from "../diagnostic-files"
 import { Global } from "../global"
 import { runID } from "./shared"
 
@@ -46,12 +47,42 @@ function format(input: unknown) {
   return /^[^\s="\\]+$/.test(value) ? value : JSON.stringify(value)
 }
 
-export function fileLogger(file = path.join(Global.Path.log, "miao.log"), id: string = runID) {
-  // Do not set batchWindow to 0; it causes high idle CPU usage.
-  return Logger.toFile(formatter(id), file, { flag: "a" })
+const MAX_FILE_BYTES = 5 * DiagnosticFiles.MiB
+const LOG_BUDGET = {
+  match: (name: string) => name === "miao.log" || name === "miao.log.previous",
+  maxBytes: 15 * DiagnosticFiles.MiB,
+  maxFiles: 3,
 }
 
-const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
+// Every file logger in this process shares one write chain: the diagnostic
+// lease admits one writer at a time, so concurrent flushes must queue behind
+// each other instead of racing it and dropping their lines.
+let writes: Promise<unknown> = Promise.resolve()
+function flushLines(file: string, lines: ReadonlyArray<string>) {
+  const text = lines.join("\n") + "\n"
+  writes = writes
+    .then(() => DiagnosticFiles.appendAsync(file, text, MAX_FILE_BYTES, LOG_BUDGET))
+    .catch(() => {})
+  return writes
+}
+
+export function fileLogger(file = path.join(Global.Path.log, "miao.log"), id: string = runID) {
+  // Batched like Logger.toFile with its one-second window; do not shrink the
+  // window to 0, it causes high idle CPU usage. Flushing reopens the file
+  // through the diagnostic budget on every batch, so size-based rotation is
+  // safe across the release, source, and preview channels that share one log
+  // directory - a held-open handle would keep writing into a renamed file.
+  return Logger.batched(formatter(id), {
+    window: 1_000,
+    flush: (lines) => Effect.ignore(Effect.promise(() => flushLines(file, lines))),
+  })
+}
+
+export const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
+
+export function printLogs() {
+  return process.env.MIAO_PRINT_LOGS === "1"
+}
 
 export function minimumLogLevel() {
   const value = process.env.MIAO_LOG_LEVEL?.toUpperCase()
@@ -62,10 +93,6 @@ export function minimumLogLevel() {
     ERROR: "Error",
   } as const satisfies Record<string, LogLevel.LogLevel>
   return value && value in levels ? levels[value as keyof typeof levels] : levels.INFO
-}
-
-export function loggers() {
-  return process.env.MIAO_PRINT_LOGS === "1" ? [fileLogger(), stderrLogger] : [fileLogger()]
 }
 
 export * as Logging from "./logging"

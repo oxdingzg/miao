@@ -61,13 +61,13 @@ test("file logger appends concurrent runs with a run on every line", async () =>
   }
   const file = path.join(dir, "opencode.log")
   const write = (runID: string) =>
-    Effect.forEach(
-      Array.from({ length: 50 }, (_, index) => index),
-      (index) => Effect.logInfo(`entry-${index}`),
-    ).pipe(
-      Effect.provide(Logger.layer([fileLogger(file, runID)]).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie)),
-      Effect.scoped,
-    )
+    Effect.gen(function* () {
+      const logger = yield* fileLogger(file, runID)
+      yield* Effect.forEach(
+        Array.from({ length: 50 }, (_, index) => index),
+        (index) => Effect.logInfo(`entry-${index}`),
+      ).pipe(Effect.provide(Logger.layer([logger])))
+    }).pipe(Effect.scoped)
 
   await Effect.runPromise(Effect.all([write("run-a"), write("run-b")], { concurrency: "unbounded" }))
 
@@ -89,15 +89,16 @@ test("file logger flattens nested objects", async () => {
   }
   const file = path.join(dir, "opencode.log")
 
-  await Effect.logInfo("request complete", {
-    request: { method: "GET", timing: { duration: 42 } },
-    tags: ["api", "test"],
-  }).pipe(
-    Effect.annotateLogs({ session: { id: "session-1" } }),
-    Effect.provide(Logger.layer([fileLogger(file, "run-a")]).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie)),
-    Effect.scoped,
-    Effect.runPromise,
-  )
+  await Effect.gen(function* () {
+    const logger = yield* fileLogger(file, "run-a")
+    yield* Effect.logInfo("request complete", {
+      request: { method: "GET", timing: { duration: 42 } },
+      tags: ["api", "test"],
+    }).pipe(
+      Effect.annotateLogs({ session: { id: "session-1" } }),
+      Effect.provide(Logger.layer([logger])),
+    )
+  }).pipe(Effect.scoped, Effect.runPromise)
 
   const line = (await Bun.file(file).text()).trim()
   expect(line).toContain('message="request complete"')

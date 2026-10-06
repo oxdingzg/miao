@@ -10,7 +10,11 @@ import { Otlp } from "./observability/otlp"
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
-    const logs = Logger.layer([...Logging.loggers(), ...Otlp.loggers()], { mergeWithExisting: false }).pipe(
+    // The file logger's batch buffer flushes when this scope closes, so it
+    // must be built inside the layer's own construction scope.
+    const file = yield* Logging.fileLogger()
+    const fileLoggers = Logging.printLogs() ? [file, Logging.stderrLogger] : [file]
+    const logs = Logger.layer([...fileLoggers, ...Otlp.loggers()], { mergeWithExisting: false }).pipe(
       Layer.provide(NodeFileSystem.layer),
       Layer.provide(OtlpSerialization.layerJson),
       Layer.provide(FetchHttpClient.layer),

@@ -9,7 +9,7 @@ already-running binaries retain their existing behavior.
 
 | Artifact                                 | Implemented size/count policy                                                                   | Cleanup                                                             |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Ordinary `miao.log`                      | Append-only Effect file logger; no application-level file or directory byte quota               | No rotation/retention policy in `Logging.fileLogger`                |
+| Ordinary `miao.log`                      | 5 MiB per file, 15 MiB combined budget, at most three managed files (`miao.log` and `.previous`) | Rotation on write through the shared diagnostic lease; managed-file age cleanup uses a seven-day cutoff |
 | TUI theme `tui.log`                      | 1 MiB per file, 2 MiB combined budget, at most two managed files (`tui.log` and `.previous`)    | Rotation on write; managed-file age cleanup uses a seven-day cutoff |
 | `log/monitor/` resource samples          | 1 MiB per file, 32 MiB directory budget, at most 64 managed files including `.previous` backups | Seven-day cutoff; startup cleanup runs even with `MIAO_MONITOR=0`   |
 | Provider wire archive (opt-in)           | Rotation threshold of 32 MiB per file; no aggregate byte or file-count quota                    | Files older than two days pruned at startup and rotation            |
@@ -17,7 +17,7 @@ already-running binaries retain their existing behavior.
 
 There is therefore **no fixed total diagnostic-storage ceiling**. In particular,
 the 2 GiB heap trigger is a process-memory threshold, not a snapshot disk quota.
-The monitor and theme budgets do not bound ordinary logs, heap snapshots or all
+The monitor, theme, and ordinary-log budgets do not bound heap snapshots or all
 wire archives combined.
 
 ## Bounded stores
