@@ -8,7 +8,7 @@ import { InstallationVersion } from "@miao/core/installation/version"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { ClipboardProvider, useClipboard } from "./context/clipboard"
 import { ExitProvider, useExit } from "./context/exit"
-import { EpilogueProvider } from "./context/epilogue"
+import { EpilogueProvider, useEpilogue } from "./context/epilogue"
 import * as Selection from "./util/selection"
 import { createCliRenderer, MouseButton } from "@opentui/core"
 import { RouteProvider, useRoute } from "./context/route"
@@ -24,6 +24,8 @@ import {
   batch,
   Show,
   on,
+  lazy,
+  Suspense,
 } from "solid-js"
 import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider, useTuiStartup } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
@@ -54,12 +56,17 @@ import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogWorkspaceList } from "./component/dialog-workspace-list"
 import { ThemeProvider, useTheme } from "./context/theme"
 import { Home } from "./routes/home"
-import { Session } from "./routes/session"
+// The session route pulls the transcript, editor, syntax, and diff graph — by
+// far the largest slice of the TUI's startup heap. Load it when a session is
+// first shown so the home screen does not pay for it.
+const Session = lazy(() => import("./routes/session").then((module) => ({ default: module.Session })))
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { ToastProvider, useToast } from "./ui/toast"
 import { isDefaultTitle } from "./util/session"
+import { Locale } from "./util/locale"
+import { sessionEpilogue } from "./util/presentation"
 import { KVProvider, useKV } from "./context/kv"
 import * as Model from "./util/model"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
@@ -421,6 +428,25 @@ function App(props: {
     })
   })
   onCleanup(() => props.onSessionChange?.())
+
+  // The session route is lazy-loaded, so its own epilogue effect would not run
+  // until that module resolves. Set it here instead, so exiting right after
+  // opening a session still prints the resume hint.
+  const setEpilogue = useEpilogue()
+  createEffect(() => {
+    if (route.data.type !== "session") {
+      setEpilogue()
+      return
+    }
+    const session = sync.session.get(route.data.sessionID)
+    setEpilogue(
+      sessionEpilogue({
+        title: Locale.truncate(session?.title ?? "", 50),
+        sessionID: session?.id,
+      }),
+    )
+  })
+  onCleanup(() => setEpilogue())
 
   // Renderer frame stats, sampled by the monitor alongside `tui.sync`. `frames`
   // is counted on the main thread between samples, so it measures real activity
@@ -1162,7 +1188,11 @@ function App(props: {
             </Match>
             <Match when={route.data.type === "session"}>
               <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
-                {(_) => <Session />}
+                {(_) => (
+                  <Suspense fallback={<box flexGrow={1} />}>
+                    <Session />
+                  </Suspense>
+                )}
               </Show>
             </Match>
           </Switch>
