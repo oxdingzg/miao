@@ -13,7 +13,7 @@ import * as Client from "effect/unstable/sql/SqlClient"
 import type { Connection } from "effect/unstable/sql/SqlConnection"
 import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
 import * as Statement from "effect/unstable/sql/Statement"
-import { Sqlite } from "./sqlite"
+import { Sqlite, retrySqliteBusy, sqliteReason } from "./sqlite"
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
@@ -69,22 +69,27 @@ const make = (options: Config) =>
       return statement
     }
 
-    const run = (query: string, params: ReadonlyArray<unknown> = []) =>
+    const run = (
+      query: string,
+      params: ReadonlyArray<unknown> = [],
+      attempt = 0,
+    ): Effect.Effect<Array<Record<string, unknown>>, SqlError> =>
       Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
         const statement = prepare(query)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
         try {
           return Effect.succeed(statement.all(...(params as SQLInputValue[])) as Array<Record<string, unknown>>)
         } catch (cause) {
-          return Effect.fail(
-            new SqlError({
-              reason: classifySqliteError(cause, { message: "Failed to execute statement", operation: "execute" }),
-            }),
-          )
+          const error = new SqlError({ reason: sqliteReason(cause, "execute") })
+          return retrySqliteBusy(error, attempt, () => run(query, params, attempt + 1))
         }
       })
 
-    const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
+    const runValues = (
+      query: string,
+      params: ReadonlyArray<unknown> = [],
+      attempt = 0,
+    ): Effect.Effect<ReadonlyArray<ReadonlyArray<unknown>>, SqlError> =>
       Effect.withFiber<ReadonlyArray<ReadonlyArray<unknown>>, SqlError>((fiber) => {
         const statement = prepare(query, true)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
@@ -94,11 +99,8 @@ const make = (options: Config) =>
             statement.all(...(params as SQLInputValue[])) as unknown as ReadonlyArray<ReadonlyArray<unknown>>,
           )
         } catch (cause) {
-          return Effect.fail(
-            new SqlError({
-              reason: classifySqliteError(cause, { message: "Failed to execute statement", operation: "execute" }),
-            }),
-          )
+          const error = new SqlError({ reason: sqliteReason(cause, "execute") })
+          return retrySqliteBusy(error, attempt, () => runValues(query, params, attempt + 1))
         }
       })
 
