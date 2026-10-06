@@ -93,6 +93,9 @@ jobs:
     needs: compute-hash
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -140,24 +143,51 @@ jobs:
 
           cat "$HASH_FILE"
 
-      - name: Commit changes
+      # main requires every change to arrive through a pull request, so the
+      # refreshed hash cannot be pushed to it directly. Push a machine-owned
+      # branch and merge that instead.
+      - name: Land hashes through a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: chore/nix-hashes
         run: |
           set -euo pipefail
 
           HASH_FILE="nix/hashes.json"
 
+          echo "### Nix hashes" >> "$GITHUB_STEP_SUMMARY"
+
           if [ -z "$(git status --short -- "$HASH_FILE")" ]; then
             echo "No changes to commit"
-            echo "### Nix hashes" >> "$GITHUB_STEP_SUMMARY"
             echo "Status: no changes" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           git add "$HASH_FILE"
-          git commit -m "chore: update nix node_modules hashes"
-
+          git commit -m "chore(nix): update node_modules hashes"
           git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-          git push origin HEAD:"$GITHUB_REF_NAME"
+          # Force: the branch belongs to this workflow, so a retry after a
+          # failed run reuses it instead of leaving a branch behind.
+          git push --force origin "HEAD:refs/heads/$BRANCH"
 
-          echo "### Nix hashes" >> "$GITHUB_STEP_SUMMARY"
-          echo "Status: committed $(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          PR="$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')"
+          if [ -z "$PR" ]; then
+            gh pr create \
+              --base "$GITHUB_REF_NAME" \
+              --head "$BRANCH" \
+              --title "chore(nix): update node_modules hashes" \
+              --body "Automated refresh of \`nix/hashes.json\` from [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)." \
+              > /dev/null
+          fi
+
+          # A fresh pull request is not immediately mergeable while GitHub
+          # computes its status, so retry rather than fail on the race.
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$BRANCH" --squash; then break; fi
+            [ "$attempt" = 5 ] && exit 1
+            sleep 10
+          done
+
+          git push origin --delete "$BRANCH" || true
+
+          echo "Status: landed through the pull request for $BRANCH" >> "$GITHUB_STEP_SUMMARY"

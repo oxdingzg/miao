@@ -476,6 +476,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     failUnsettledTools,
     hasActiveAssistant: () => assistantActive,
     hasAssistantStarted: () => assistantMessageID !== undefined,
+    hasToolCalls: () => tools.size > 0,
     toolCalled: (callID: string) => tools.get(callID)?.called === true,
     hasProviderError: () => providerFailed,
     stepSettlement: () => stepSettlement,
