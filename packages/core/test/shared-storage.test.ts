@@ -30,6 +30,22 @@ async function window(filename: string) {
   return child
 }
 
+test("exclusive storage ownership fails shared startup within its retry budget", async () => {
+  await using tmp = await tmpdir()
+  const filename = path.join(tmp.path, "exclusive.db")
+  const owner = await RuntimeOwnership.acquire(filename)
+  try {
+    const started = Date.now()
+    await expect(
+      Effect.runPromise(Database.Service.pipe(Effect.provide(Database.sharedLayerFromPath(filename)), Effect.scoped)),
+    ).rejects.toThrow("close its windows")
+    expect(Date.now() - started).toBeLessThan(10_000)
+    await expect(RuntimeOwnership.acquire(filename)).rejects.toBeInstanceOf(RuntimeOwnership.BusyError)
+  } finally {
+    owner.release()
+  }
+}, 15_000)
+
 test("independent windows share migrated storage and block exclusive maintenance", async () => {
   await using tmp = await tmpdir()
   const filename = path.join(tmp.path, "shared.db")
