@@ -1307,7 +1307,10 @@ const layer = Layer.effect(
         return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
       if (target.projectID !== sender.projectID)
         return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
-      yield* ownership.claim(target.id)
+      // Delivery is admission, not ownership: the message must land in the
+      // target's durable inbox even when another window owns the target.
+      // Claiming here would turn every cross-window send into a conflict and
+      // pin the target's lease to this runtime until it exits.
       const pending = yield* SessionInput.countPending(db, target.id)
       if (pending >= SendMessageTool.MAX_INBOUND_QUEUE)
         return yield* new ToolFailure({
