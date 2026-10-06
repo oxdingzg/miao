@@ -18,9 +18,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # A new push to the same PR cancels its older run. Main pushes do not cancel:
-  # every merged commit should keep a complete status, not a cancelled one.
-  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  # A pull request shares one group per number, so a new push cancels its older
+  # run. A push to main groups by commit SHA, so every merged commit gets its own
+  # run and keeps a complete status instead of being superseded and cancelled.
+  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

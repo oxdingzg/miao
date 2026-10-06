@@ -25,8 +25,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: true
+  # A pull request shares one group per number, so a new push cancels its older
+  # run. A push to main groups by commit SHA, so every merged commit gets its own
+  # run and keeps a complete status instead of being superseded and cancelled.
+  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
