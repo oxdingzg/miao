@@ -185,6 +185,10 @@ test("a durable-event burst on a long transcript applies incrementally without r
     const hydrationAtStart = hydrationCount()
     expect(hydrated).toBe(1)
     expect(mounted.sync.data.message[sessionID]).toHaveLength(SEED_COUNT)
+    // The resident window caps at MAX_RESIDENT_MESSAGES in sync.tsx; the burst
+    // below pushes past it, so the head must roll off while the tail stays.
+    const MAX_RESIDENT = 400
+    const oldestResident = mounted.sync.data.message[sessionID][0]?.id
 
     const events: GlobalEvent["payload"][] = [
       {
@@ -285,7 +289,8 @@ test("a durable-event burst on a long transcript applies incrementally without r
       const messages = mounted.sync.data.message[sessionID] ?? []
       const parts = mounted.sync.data.part[messageID] ?? []
       return (
-        messages.length === SEED_COUNT + 2 &&
+        messages.length === MAX_RESIDENT &&
+        messages[0]?.id !== oldestResident &&
         parts.length === 3 &&
         parts[0]?.type === "text" &&
         parts[0].text === "hello world" &&
@@ -307,6 +312,7 @@ test("a durable-event burst on a long transcript applies incrementally without r
 
     // Every durable event above was folded in place: no context refetch and no
     // additional hydration beyond the initial sync, despite the long transcript.
+    // The resident window stayed capped while the tail kept updating.
     expect(contextRequests).toBe(hydrated)
     expect(hydrationCount()).toBe(hydrationAtStart)
   } finally {
