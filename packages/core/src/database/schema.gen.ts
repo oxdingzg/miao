@@ -199,6 +199,16 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_lease\` (
+          \`session_id\` text PRIMARY KEY,
+          \`epoch\` integer NOT NULL,
+          \`holder\` text NOT NULL,
+          \`build\` text NOT NULL,
+          \`expires_at\` integer NOT NULL,
+          CONSTRAINT \`fk_session_lease_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_message\` (
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,
@@ -303,6 +313,7 @@ export default {
       yield* tx.run(
         `CREATE UNIQUE INDEX \`session_input_session_promoted_seq_idx\` ON \`session_input\` (\`session_id\`,\`promoted_seq\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`session_lease_expires_at_idx\` ON \`session_lease\` (\`expires_at\`);`)
       yield* tx.run(
         `CREATE UNIQUE INDEX \`session_message_session_seq_idx\` ON \`session_message\` (\`session_id\`,\`seq\`);`,
       )
