@@ -1,3 +1,4 @@
+import type { Accessor } from "solid-js"
 import { createEffect, createMemo, onCleanup, Show } from "solid-js"
 import { Spinner, useSecond } from "../../component/spinner"
 import { useSync } from "../../context/sync"
@@ -102,7 +103,6 @@ export function lastOutputAt(parts: ReadonlyArray<Part>, fallback: number | unde
 
 export function SessionActivity(props: { sessionID: string }) {
   const sync = useSync()
-  const seconds = useSecond()
   const status = createMemo(() => sync.data.session_status[props.sessionID])
   const busy = createMemo(() => status()?.type === "busy")
   const phase = createMemo(() => statusPhase(status()))
@@ -134,17 +134,16 @@ export function SessionActivity(props: { sessionID: string }) {
   const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.role === "user")?.time.created)
   const lastOutput = createMemo(() => lastOutputAt(turnParts(), turnStartedAt()))
   const active = createMemo(() => busy() && !blocked())
-  // A start that is not epoch millis would print "NaNd NaNh"; show no timer
-  // rather than a broken one. The shared one-second clock drives the re-read.
-  // Prefer the phase's own start so the timer is TTFT for `requesting`, not the
-  // time since the last streamed output.
-  const elapsed = createMemo(() => {
-    if (!active()) return 0
-    seconds()
+  // The timestamp the elapsed timer counts from: the phase's own start so the
+  // timer is TTFT for `requesting`, not the time since the last streamed
+  // output. A start that is not epoch millis prints "NaNd NaNh", so undefined
+  // means no timer rather than a broken one; the shared one-second clock that
+  // re-reads this lives in SessionActiveWaiting, mounted only while active.
+  const elapsedBase = createMemo(() => {
+    if (!active()) return undefined
     const current = status()
     const since = current?.type === "busy" ? current.since : undefined
-    const value = Date.now() - (since ?? lastOutput() ?? Number.NaN)
-    return Number.isFinite(value) ? Math.max(0, value) : 0
+    return since ?? lastOutput()
   })
 
   createEffect(() => {
@@ -167,11 +166,38 @@ export function SessionActivity(props: { sessionID: string }) {
   return (
     <Show
       when={error()}
-      fallback={<SessionWaiting waiting={waiting()} elapsed={elapsed()} activity={activity()} phase={phase()} />}
+      fallback={
+        <Show
+          when={active()}
+          fallback={<SessionWaiting waiting={waiting()} elapsed={0} activity={activity()} phase={phase()} />}
+        >
+          <SessionActiveWaiting waiting={waiting()} activity={activity()} phase={phase()} base={elapsedBase} />
+        </Show>
+      }
     >
       {(message) => <ProviderFailure message={message()} />}
     </Show>
   )
+}
+
+/**
+ * The waiting line for an active turn. This node owns the shared one-second
+ * clock subscription so an idle session route holds no timer: the clock stops
+ * when the last active turn unmounts this node.
+ */
+function SessionActiveWaiting(props: {
+  waiting: boolean
+  activity?: string
+  phase?: SessionPhase
+  base: Accessor<number | undefined>
+}) {
+  const seconds = useSecond()
+  const elapsed = createMemo(() => {
+    seconds()
+    const value = Date.now() - (props.base() ?? Number.NaN)
+    return Number.isFinite(value) ? Math.max(0, value) : 0
+  })
+  return <SessionWaiting waiting={props.waiting} elapsed={elapsed()} activity={props.activity} phase={props.phase} />
 }
 
 export function turnActivity(input: { parts: Part[]; working: boolean }) {
