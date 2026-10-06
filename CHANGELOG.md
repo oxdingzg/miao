@@ -10,6 +10,18 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-10-06
+
+### Added
+- **runtime**: exit the Runtime once nothing is active (#243) (`10ef87f67`)
+
+### Fixed
+- **tui**: restore the terminal when a fatal error exits (#252) (`2140022d0`)
+- **tui**: load the session route without an empty text placeholder (#251) (`5adf9aa3b`)
+- **tui**: keep the data context alive when a location bucket is missing (#250) (`1ddd2d36f`)
+- **core**: skip rebuilding reference-free structured tool output (#249) (`45cbbe066`)
+- **core**: avoid duplicate credential reads in integration lookups (#246) (`7ea8a0e06`)
+
 ## [0.1.13] - 2026-10-06
 
 ### Added
