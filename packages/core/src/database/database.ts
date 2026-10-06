@@ -17,22 +17,25 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@miao/v2/storage/Database") {}
 
-const layer = Layer.effect(
-  Service,
-  Effect.gen(function* () {
-    const db = yield* makeDatabase
+/** Owner opens migrate; a participant never migrates and must find a schema at least as new. */
+const open = (options: { migrate: boolean }) =>
+  Layer.effect(
+    Service,
+    Effect.gen(function* () {
+      const db = yield* makeDatabase
 
-    yield* db.run("PRAGMA journal_mode = WAL")
-    yield* db.run("PRAGMA synchronous = NORMAL")
-    yield* db.run("PRAGMA busy_timeout = 5000")
-    yield* db.run("PRAGMA cache_size = -64000")
-    yield* db.run("PRAGMA foreign_keys = ON")
-    yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
-    yield* DatabaseMigration.apply(db)
+      yield* db.run("PRAGMA journal_mode = WAL")
+      yield* db.run("PRAGMA synchronous = NORMAL")
+      yield* db.run("PRAGMA busy_timeout = 5000")
+      yield* db.run("PRAGMA cache_size = -64000")
+      yield* db.run("PRAGMA foreign_keys = ON")
+      yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
+      if (options.migrate) yield* DatabaseMigration.apply(db)
+      else yield* DatabaseMigration.verify(db)
 
-    return { db }
-  }).pipe(Effect.orDie),
-)
+      return { db }
+    }).pipe(Effect.orDie),
+  )
 
 export function layerFromPath(filename: string) {
   const ownership =
@@ -45,9 +48,27 @@ export function layerFromPath(filename: string) {
           ),
         )
   // Ownership must build beneath the native layer, before opening or migrating.
-  return layer.pipe(Layer.provide(sqliteLayer({ filename }).pipe(Layer.provide(ownership))))
+  return open({ migrate: true }).pipe(Layer.provide(sqliteLayer({ filename }).pipe(Layer.provide(ownership))))
+}
+
+/**
+ * Opens the same database as a participant rather than its owner: it never takes
+ * the storage lock and never migrates, so a second process (an execution worker)
+ * can commit durable events and projection rows while the owner keeps migrating.
+ * A schema older than this build refuses to open, so a worker never writes
+ * against columns it does not understand.
+ */
+export function participantLayerFromPath(filename: string) {
+  return open({ migrate: false }).pipe(Layer.provide(sqliteLayer({ filename })))
 }
 
 export const path = DatabaseFile.path
 
-export const node = makeGlobalNode({ service: Service, layer: Layer.suspend(() => layerFromPath(path())), deps: [] })
+/** MIAO_DATABASE_ROLE=participant is set only by the execution worker before the graph is built. */
+export const node = makeGlobalNode({
+  service: Service,
+  layer: Layer.suspend(() =>
+    process.env.MIAO_DATABASE_ROLE === "participant" ? participantLayerFromPath(path()) : layerFromPath(path()),
+  ),
+  deps: [],
+})
