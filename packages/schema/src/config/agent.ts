@@ -22,4 +22,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   steps: PositiveInt.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   permissions: Permission.Ruleset.pipe(Schema.optional),
+  permission_mode: Permission.Mode.pipe(Schema.optional).annotate({
+    description: "Auto mode classifies safe asks (workspace edits, read-only commands) as allowed",
+  }),
 }) {}

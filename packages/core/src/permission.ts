@@ -10,8 +10,9 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import { PermissionSaved } from "./permission/saved"
+import { PermissionClassifier } from "./permission/classifier"
 
-export { Effect, Rule, Ruleset } from "@miao/schema/permission"
+export { Effect, Rule, Ruleset, Mode } from "@miao/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
 
 export const ID = Permission.ID
@@ -159,7 +160,7 @@ const layer = Layer.effect(
       const session = yield* sessions.get(sessionID)
       if (!session) return yield* new SessionV2.NotFoundError({ sessionID })
       const agent = yield* agents.resolve(agentID ?? session.agent)
-      return agent?.permissions ?? missingAgentPermissions
+      return { rules: agent?.permissions ?? missingAgentPermissions, mode: agent?.permission_mode ?? "default" }
     })
 
     function actions(input: Pick<AssertInput, "action" | "aliases">) {
@@ -175,14 +176,25 @@ const layer = Layer.effect(
       return rules.filter((rule) => names.some((name) => Wildcard.match(name, rule.action)))
     }
 
+    const classify = EffectRuntime.fn("PermissionV2.classify")(function* (input: AssertInput) {
+      if (input.action === "edit") return PermissionClassifier.edit(input.resources, location.directory)
+      // A bash call carrying stdin runs an unclassified script, so it always asks.
+      if (input.action === "bash" && input.metadata?.stdin === undefined)
+        return yield* EffectRuntime.promise(() => PermissionClassifier.bash(input.resources))
+      return "unknown" as const
+    })
+
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
-      const configuredRules = yield* configured(input.sessionID, input.agent)
-      const rules = input.explicit ? configuredRules.filter((rule) => rule.action !== "*") : configuredRules
+      const { rules: agentRules, mode } = yield* configured(input.sessionID, input.agent)
+      const rules = input.explicit ? agentRules.filter((rule) => rule.action !== "*") : agentRules
       if (denied(actions(input), input.resources, rules)) return { effect: "deny" as const, rules }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(actions(input), resource, all).effect)
-      const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
-      return { effect, rules: all }
+      if (effects.includes("deny")) return { effect: "deny" as const, rules: all }
+      if (!effects.includes("ask")) return { effect: "allow" as const, rules: all }
+      // Auto mode settles asks the classifier proves safe; unknown and deny stay asks.
+      if (mode === "auto" && (yield* classify(input)) === "safe") return { effect: "allow" as const, rules: all }
+      return { effect: "ask" as const, rules: all }
     })
 
     function request(input: AssertInput): Request {
@@ -304,10 +316,11 @@ const layer = Layer.effect(
 
           const rememberedRules = yield* savedRules()
           for (const [id, item] of pending) {
-            const rules = yield* configured(item.request.sessionID, item.agent).pipe(
+            const agentConfig = yield* configured(item.request.sessionID, item.agent).pipe(
               EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
             )
-            if (!rules) continue
+            if (!agentConfig) continue
+            const { rules } = agentConfig
             if (denied(item.actions, item.request.resources, rules)) continue
             const effective = [...rules, ...rememberedRules]
             if (
