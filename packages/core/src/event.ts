@@ -7,7 +7,7 @@ import { and, asc, eq, gt, inArray } from "drizzle-orm"
 import { Database } from "./database/database"
 import { EventSequenceTable, EventTable } from "./event/sql"
 import { Location } from "./location"
-import { makeGlobalNode } from "./effect/app-node"
+import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 import { isDeepStrictEqual } from "node:util"
 import { Durable } from "@miao/schema/durable-event-manifest"
 import { EventManifest } from "@miao/schema/event-manifest"
@@ -684,3 +684,16 @@ export const layerWith = (options?: LayerOptions) =>
 
 const layer = layerWith()
 export const node = makeGlobalNode({ service: Service, layer: layer, deps: [Database.node] })
+
+/**
+ * Re-exports the process instance as part of the Location runtime's own
+ * output. Ambient `serviceOption` reads (tool announcements) only see services
+ * the Location layer outputs, while the hoisted global node only satisfies
+ * declared requirements and never enters that context. The dependency keeps
+ * the instance the hoisted process one.
+ */
+export const locationNode = makeLocationNode({
+  name: "event-v2/location",
+  layer: Layer.effect(Service, Service),
+  deps: [node],
+})
