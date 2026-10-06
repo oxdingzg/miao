@@ -2,7 +2,7 @@ import { EOL } from "node:os"
 import { Effect, Option } from "effect"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
-import { Daemon } from "../../services/daemon"
+import { LocalRuntime } from "../../services/local-runtime"
 
 const methods = new Set(["delete", "get", "head", "options", "patch", "post", "put"])
 
@@ -17,8 +17,8 @@ type OpenApi = {
 export default Runtime.handler(
   Commands.commands.api,
   Effect.fn("cli.api")(function* (input) {
-    const daemon = yield* Daemon.Service
-    const transport = yield* daemon.transport()
+    const runtime = yield* LocalRuntime.Service
+    const transport = yield* runtime.transport()
     const params = Option.getOrElse(input.param, () => ({}))
     const request = yield* resolveRequest(transport, input.request, params)
     const headers = new Headers(transport.headers)

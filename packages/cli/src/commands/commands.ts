@@ -7,7 +7,7 @@ export const Commands = Spec.make(typeof MIAO_CLI_NAME === "string" ? MIAO_CLI_N
   description: "OpenCode 2.0 preview command line interface",
   commands: [
     Spec.make("api", {
-      description: "Make a request to the running server",
+      description: "Make a request to a local API for this invocation",
       params: {
         request: Argument.string("operation | method path").pipe(
           Argument.withDescription("OpenAPI operation ID, or an HTTP method followed by a path"),
@@ -27,25 +27,11 @@ export const Commands = Spec.make(typeof MIAO_CLI_NAME === "string" ? MIAO_CLI_N
       commands: [Spec.make("agents", { description: "List all agents" })],
     }),
     Spec.make("migrate", { description: "Migrate v1 data to v2" }),
-    Spec.make("service", {
-      description: "Manage the background server",
-      commands: [
-        Spec.make("start", { description: "Start the background server" }),
-        Spec.make("restart", { description: "Restart the background server" }),
-        Spec.make("status", { description: "Show background server status" }),
-        Spec.make("stop", { description: "Stop the background server" }),
-        Spec.make("password", {
-          description: "Get or set the server password",
-          params: { value: Argument.string("value").pipe(Argument.optional) },
-        }),
-      ],
-    }),
     Spec.make("serve", {
       description: "Start the v2 API server",
       params: {
         hostname: Flag.string("hostname").pipe(Flag.withDefault("127.0.0.1")),
         port: Flag.integer("port").pipe(Flag.optional),
-        register: Flag.boolean("register").pipe(Flag.withDefault(false)),
       },
     }),
   ],
