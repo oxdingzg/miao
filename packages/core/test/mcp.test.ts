@@ -188,6 +188,18 @@ describe("MCP", () => {
     ),
   )
 
+  it.live("trusts a server's read-only hint and nothing else", () =>
+    withMCP([server()], (registry) =>
+      Effect.gen(function* () {
+        const materialized = yield* registry.materialize()
+
+        expect(materialized.concurrency("mcp__mock__a_b")).toBe("concurrent")
+        // No hint, so the tool fails closed like any other external call.
+        expect(materialized.concurrency("mcp__mock__echo")).toBe("exclusive")
+      }),
+    ),
+  )
+
   test("caps oversized image results", () => {
     const parts = MCP.resultContent({
       content: [{ type: "image", data: "A".repeat(MCP.MAX_RESULT_IMAGE_BASE64_BYTES + 1), mimeType: "image/png" }],

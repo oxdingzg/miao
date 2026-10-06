@@ -47,127 +47,134 @@ const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
-          description:
-            "Read a text file, supported image, or PDF, page through a large UTF-8 text file by line offset, or list a directory page. PDFs return each page's text; pages without a text layer (scans) are returned as page images. Select PDF pages with `pages` (requires poppler). Relative paths resolve from the current location; absolute paths inside it are accepted, while external absolute paths require external_directory approval.",
-          input: Input,
-          output: Output,
-          toModelOutput: ({ input, output }) => {
-            if ("type" in output && output.type === "pdf-pages")
+        [name]: Tool.withConcurrency(
+          Tool.make({
+            description:
+              "Read a text file, supported image, or PDF, page through a large UTF-8 text file by line offset, or list a directory page. PDFs return each page's text; pages without a text layer (scans) are returned as page images. Select PDF pages with `pages` (requires poppler). Relative paths resolve from the current location; absolute paths inside it are accepted, while external absolute paths require external_directory approval.",
+            input: Input,
+            output: Output,
+            toModelOutput: ({ input, output }) => {
+              if ("type" in output && output.type === "pdf-pages")
+                return [
+                  { type: "text", text: output.content },
+                  ...output.images.flatMap((page) => [
+                    { type: "text" as const, text: `\n\n[Page ${page.page} image]` },
+                    {
+                      type: "file" as const,
+                      data: page.content,
+                      mime: page.mime,
+                      name: `${input.path}#page=${page.page}`,
+                    },
+                  ]),
+                ]
+              if (!("encoding" in output) || output.encoding !== "base64" || !SUPPORTED_IMAGE_MIMES.has(output.mime))
+                return []
               return [
-                { type: "text", text: output.content },
-                ...output.images.flatMap((page) => [
-                  { type: "text" as const, text: `\n\n[Page ${page.page} image]` },
-                  {
-                    type: "file" as const,
-                    data: page.content,
-                    mime: page.mime,
-                    name: `${input.path}#page=${page.page}`,
-                  },
-                ]),
+                { type: "text", text: "Image read successfully" },
+                { type: "file", data: output.content, mime: output.mime, name: input.path },
               ]
-            if (!("encoding" in output) || output.encoding !== "base64" || !SUPPORTED_IMAGE_MIMES.has(output.mime))
-              return []
-            return [
-              { type: "text", text: "Image read successfully" },
-              { type: "file", data: output.content, mime: output.mime, name: input.path },
-            ]
-          },
-          execute: (input, context) => {
-            return Effect.gen(function* () {
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
-              const target = yield* mutation.resolve({ path: input.path, kind: "directory" })
-              const external = target.externalDirectory
-              if (external)
+            },
+            execute: (input, context) => {
+              return Effect.gen(function* () {
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                }
+                const target = yield* mutation.resolve({ path: input.path, kind: "directory" })
+                const external = target.externalDirectory
+                if (external)
+                  yield* permission.assert({
+                    ...LocationMutation.externalDirectoryPermission(external),
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                const resource = target.resource
+                const absolute = AbsolutePath.make(target.canonical)
+                const type = yield* reader.inspect(absolute)
                 yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external),
+                  action: name,
+                  resources: [resource],
+                  save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
-              const resource = target.resource
-              const absolute = AbsolutePath.make(target.canonical)
-              const type = yield* reader.inspect(absolute)
-              yield* permission.assert({
-                action: name,
-                resources: [resource],
-                save: ["*"],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-              if (type === "directory" && input.pages !== undefined)
-                return yield* new ReadToolPdf.PagesError({ reason: PAGES_PDF_ONLY })
-              if (type === "directory")
-                return yield* reader.list(absolute, { offset: input.offset, limit: input.limit })
-              const read = yield* reader.read(absolute, resource, { offset: input.offset, limit: input.limit }).pipe(
-                Effect.map((content) => ({ content })),
-                Effect.catchTag("ReadTool.PdfFileError", () => Effect.succeed({ pdf: true as const })),
-              )
-              if ("pdf" in read) {
-                if (input.offset !== undefined || input.limit !== undefined)
-                  return yield* new ReadToolPdf.PagesError({
-                    reason: "offset and limit do not apply to PDF files; select PDF pages with pages instead.",
-                  })
-                const pages = yield* pdf.read(absolute, resource, { pages: input.pages })
-                const images = yield* Effect.forEach(pages.images, (page) =>
-                  image
-                    .normalize(`${resource}#page=${page.page}`, {
-                      uri: `${resource}#page=${page.page}`,
-                      name: `${resource}#page=${page.page}`,
-                      content: page.content,
-                      encoding: "base64",
-                      mime: page.mime,
-                    })
-                    .pipe(
-                      Effect.map((normalized) => ({
-                        page: page.page,
-                        mime: normalized.mime,
-                        content: normalized.content,
-                      })),
-                      Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(page)),
-                    ),
+                if (type === "directory" && input.pages !== undefined)
+                  return yield* new ReadToolPdf.PagesError({ reason: PAGES_PDF_ONLY })
+                if (type === "directory")
+                  return yield* reader.list(absolute, { offset: input.offset, limit: input.limit })
+                const read = yield* reader.read(absolute, resource, { offset: input.offset, limit: input.limit }).pipe(
+                  Effect.map((content) => ({ content })),
+                  Effect.catchTag("ReadTool.PdfFileError", () => Effect.succeed({ pdf: true as const })),
                 )
-                return new ReadToolPdf.Pages({ ...pages, images })
-              }
-              if (input.pages !== undefined) return yield* new ReadToolPdf.PagesError({ reason: PAGES_PDF_ONLY })
-              const content = read.content
-              if ("encoding" in content && content.encoding === "base64" && SUPPORTED_IMAGE_MIMES.has(content.mime)) {
-                return yield* image
-                  .normalize(resource, { ...content, encoding: "base64" })
-                  .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
-              }
-              if ("encoding" in content && content.encoding === "base64")
-                return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
-              const nearby = (yield* instructions.nearby({ sessionID: context.sessionID, path: absolute })).map(
-                (file) => ({ path: file.path, content: file.content }),
+                if ("pdf" in read) {
+                  if (input.offset !== undefined || input.limit !== undefined)
+                    return yield* new ReadToolPdf.PagesError({
+                      reason: "offset and limit do not apply to PDF files; select PDF pages with pages instead.",
+                    })
+                  const pages = yield* pdf.read(absolute, resource, { pages: input.pages })
+                  const images = yield* Effect.forEach(pages.images, (page) =>
+                    image
+                      .normalize(`${resource}#page=${page.page}`, {
+                        uri: `${resource}#page=${page.page}`,
+                        name: `${resource}#page=${page.page}`,
+                        content: page.content,
+                        encoding: "base64",
+                        mime: page.mime,
+                      })
+                      .pipe(
+                        Effect.map((normalized) => ({
+                          page: page.page,
+                          mime: normalized.mime,
+                          content: normalized.content,
+                        })),
+                        Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(page)),
+                      ),
+                  )
+                  return new ReadToolPdf.Pages({ ...pages, images })
+                }
+                if (input.pages !== undefined) return yield* new ReadToolPdf.PagesError({ reason: PAGES_PDF_ONLY })
+                const content = read.content
+                if (
+                  "encoding" in content &&
+                  content.encoding === "base64" &&
+                  SUPPORTED_IMAGE_MIMES.has(content.mime)
+                ) {
+                  return yield* image
+                    .normalize(resource, { ...content, encoding: "base64" })
+                    .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
+                }
+                if ("encoding" in content && content.encoding === "base64")
+                  return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
+                const nearby = (yield* instructions.nearby({ sessionID: context.sessionID, path: absolute })).map(
+                  (file) => ({ path: file.path, content: file.content }),
+                )
+                if (nearby.length === 0) return content
+                if (content instanceof ReadToolFileSystem.TextPage)
+                  return new ReadToolFileSystem.TextPage({ ...content, instructions: nearby })
+                return { ...content, instructions: nearby }
+              }).pipe(
+                Effect.mapError((error) => {
+                  const message =
+                    error instanceof ReadToolFileSystem.BinaryFileError ||
+                    error instanceof ReadToolPdf.DependencyError ||
+                    error instanceof ReadToolPdf.CommandError ||
+                    error instanceof ReadToolPdf.PagesError ||
+                    error instanceof ReadToolPdf.UnreadableError ||
+                    error instanceof ReadToolFileSystem.MediaIngestLimitError ||
+                    error instanceof Image.DecodeError ||
+                    error instanceof Image.SizeError
+                      ? error.message
+                      : `Unable to read ${input.path}`
+                  return new ToolFailure({ message })
+                }),
               )
-              if (nearby.length === 0) return content
-              if (content instanceof ReadToolFileSystem.TextPage)
-                return new ReadToolFileSystem.TextPage({ ...content, instructions: nearby })
-              return { ...content, instructions: nearby }
-            }).pipe(
-              Effect.mapError((error) => {
-                const message =
-                  error instanceof ReadToolFileSystem.BinaryFileError ||
-                  error instanceof ReadToolPdf.DependencyError ||
-                  error instanceof ReadToolPdf.CommandError ||
-                  error instanceof ReadToolPdf.PagesError ||
-                  error instanceof ReadToolPdf.UnreadableError ||
-                  error instanceof ReadToolFileSystem.MediaIngestLimitError ||
-                  error instanceof Image.DecodeError ||
-                  error instanceof Image.SizeError
-                    ? error.message
-                    : `Unable to read ${input.path}`
-                return new ToolFailure({ message })
-              }),
-            )
-          },
-        }),
+            },
+          }),
+          "concurrent",
+        ),
       })
       .pipe(Effect.orDie)
   }),

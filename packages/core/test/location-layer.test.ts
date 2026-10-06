@@ -213,6 +213,54 @@ describe("LocationServiceMap", () => {
     ),
   )
 
+  it.live("classifies every built-in tool's concurrency", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const materialized = yield* (yield* ToolRegistry.Service).materialize()
+
+          // Spelling out the class of every shipped tool is the point: a new
+          // built-in fails here until someone decides whether it may overlap
+          // the rest of its turn, and a class that changes by accident shows up
+          // as a diff rather than as a race. Session-scoped tools are not in
+          // this set; the runner tests cover those.
+          expect(
+            Object.fromEntries(materialized.definitions.map((tool) => [tool.name, materialized.concurrency(tool.name)])),
+          ).toEqual({
+            apply_patch: "exclusive",
+            bash: "exclusive",
+            cron_create: "exclusive",
+            cron_delete: "exclusive",
+            cron_list: "concurrent",
+            edit: "exclusive",
+            glob: "concurrent",
+            grep: "concurrent",
+            lsp: "concurrent",
+            monitor: "exclusive",
+            plan_enter: "exclusive",
+            plan_exit: "exclusive",
+            question: "exclusive",
+            read: "concurrent",
+            schedule_wakeup: "exclusive",
+            skill: "concurrent",
+            todowrite: "exclusive",
+            webfetch: "concurrent",
+            websearch: "concurrent",
+            write: "exclusive",
+          })
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir.path) })),
+          ),
+        ),
+      ),
+    ),
+  )
+
   it.live("rejects an unavailable selected model during location model resolution", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

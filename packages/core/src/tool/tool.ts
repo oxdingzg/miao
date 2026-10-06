@@ -71,6 +71,18 @@ type Config<
   }) => ReadonlyArray<Content>
 }
 
+/**
+ * How a tool's calls in one provider turn relate to each other.
+ *
+ * `exclusive` calls are serialized against every other exclusive call in the
+ * same turn. `concurrent` calls never acquire the permit and never block, so a
+ * concurrent tool can overlap an exclusive one — including observing a file
+ * while an `edit` is halfway through writing it. Declaring a tool concurrent
+ * asserts that overlapping it with anything else is safe; it is not a promise
+ * that the tool only reads.
+ */
+export type Concurrency = "exclusive" | "concurrent"
+
 type Runtime = {
   readonly permission?: string
   readonly permissionAliases?: ReadonlyArray<string>
@@ -81,6 +93,11 @@ type Runtime = {
    * as the plan-mode switches, which a catch-all `allow` must not re-enable.
    */
   readonly permissionExplicit?: boolean
+  /**
+   * Absent means `exclusive`. Undeclared tools — including plugin and MCP
+   * tools, whose internals Core cannot inspect — therefore fail closed.
+   */
+  readonly concurrency?: Concurrency
   readonly definition: (name: string) => ToolDefinition
   readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
 }
@@ -218,12 +235,27 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
   return decorated
 }
 
+/**
+ * Declares how this tool's calls relate to other calls in the same provider
+ * turn. Undeclared tools are exclusive; only declare `concurrent` when the tool
+ * is safe to overlap with any other tool.
+ */
+export const withConcurrency = <Input extends SchemaType<any>, Output extends SchemaType<any>>(
+  tool: Definition<Input, Output>,
+  concurrency: Concurrency,
+) => {
+  const decorated = Object.freeze({}) as Definition<Input, Output>
+  runtimes.set(decorated, { ...runtimeOf(tool), concurrency })
+  return decorated
+}
+
 export const permissions = (tool: AnyTool, name: string) => {
   const runtime = runtimeOf(tool)
   return [runtime.permission ?? name, ...(runtime.permissionAliases ?? [])]
 }
 
 export const permissionExplicit = (tool: AnyTool) => runtimeOf(tool).permissionExplicit === true
+export const concurrency = (tool: AnyTool): Concurrency => runtimeOf(tool).concurrency ?? "exclusive"
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => runtimeOf(tool).settle(call, context)
 
