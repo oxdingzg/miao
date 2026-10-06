@@ -53,7 +53,15 @@ export function createTranscriptWindow<T extends { id: string }>(
     const id = anchor()
     if (id === undefined) return maxStart()
     const index = messages().findIndex((message) => message.id === id)
-    return index < 0 ? maxStart() : Math.max(0, Math.min(index, maxStart()))
+    // Keep the reader anchored to the message they scrolled to, even while the
+    // live tail streams in behind them. Clamping an anchor to `maxStart` drops
+    // it as soon as the anchor falls inside the newest window, and the window
+    // then snaps to the streaming tail on every chunk — the transcript flicker
+    // reported when reading earlier messages during an active drain. An
+    // anchored window may be shorter than `windowSize` near the tail; the
+    // trailing spacer keeps the scroll geometry intact, and returning to the
+    // bottom clears the anchor through `follow`.
+    return index < 0 ? maxStart() : Math.max(0, index)
   })
   const end = createMemo(() => Math.min(total(), start() + windowSize()))
   const top = createMemo(() => start() * estimate())
@@ -61,8 +69,8 @@ export function createTranscriptWindow<T extends { id: string }>(
   const window = createMemo(() => messages().slice(start(), end()))
 
   const moveTo = (index: number) => {
-    const bounded = Math.max(0, Math.min(index, maxStart()))
-    setAnchor(bounded >= maxStart() ? undefined : messages()[bounded]?.id)
+    const bounded = Math.max(0, Math.min(index, total() - 1))
+    setAnchor(messages()[bounded]?.id)
   }
 
   return {
