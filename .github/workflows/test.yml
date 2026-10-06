@@ -4,14 +4,28 @@ on:
   push:
     branches:
       - main
+    # Docs-only changes cannot affect the suite; skip the run entirely instead
+    # of paying for checkout and setup on every one.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "specs/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "specs/**"
+  # The Windows suite runs on the nightly schedule, not per commit (see the
+  # matrix below).
+  schedule:
+    - cron: "23 4 * * *"
   workflow_dispatch:
 
 concurrency:
-  # A new push to main (or a PR) cancels the still-running run of an older commit
-  # instead of queueing behind it.
+  # A new push to the same PR cancels its older run. Main pushes do not cancel:
+  # every merged commit should keep a complete status, not a cancelled one.
   group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -31,12 +45,17 @@ jobs:
             label: linux
             host: ubuntu-latest
             blocking: true
-          # non-blocking until Windows suite is fixed; remaining failures: specs/ci-windows.md
+          # Not a merge gate and still being fixed; see specs/ci-windows.md.
+          # Runs on the nightly schedule and manual dispatch only.
           - name: windows
             label: windows, non-blocking until Windows suite is fixed
             host: windows-2025
             blocking: false
     runs-on: ${{ matrix.settings.host }}
+    # The Windows suite is not a merge gate (see continue-on-error below), and
+    # its setup dominates the run, so keep it off the PR and push paths. It
+    # still runs on the nightly schedule and on manual dispatch.
+    if: ${{ matrix.settings.blocking || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     # The Windows suite has known failures tracked in specs/ci-windows.md. Report them
     # without failing the run so Linux stays the merge gate.
     continue-on-error: ${{ !matrix.settings.blocking }}
@@ -68,10 +87,13 @@ jobs:
       - name: Cache Turbo
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: node_modules/.cache/turbo
-          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-${{ github.sha }}
+          # Turbo 2.x writes its local cache to <repo>/.turbo/cache. Caching
+          # node_modules/.cache/turbo (the pre-2.0 path) silently saved nothing.
+          path: .turbo/cache
+          # No github.sha in the key: the key must be reusable across commits so
+          # an unchanged task can hit an exact match instead of only a prefix.
+          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', 'bun.lock') }}
           restore-keys: |
-            turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
 
       # The windows-2025 image ships without ripgrep, so tests fall back to downloading it
