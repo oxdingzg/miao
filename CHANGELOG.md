@@ -10,6 +10,39 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-06
+
+### Added
+- **core**: bound machine wakeups per human prompt (#242) (`f9eef5fa5`)
+- **script**: add measured latency baseline reports (#239) (`8c41dc605`)
+- **core**: let a running subagent report to its parent (#237) (`973305735`)
+- **runtime**: add the activity vector and idle-linger configuration (#232) (`861ae7533`)
+- **core**: drive a running process through a terminal (#234) (`9b7669592`)
+- **core**: read another session's transcript (#233) (`a6d4ec3a6`)
+- **core**: serialize tool calls by declared concurrency (#230) (`6200473a3`)
+- **core**: add a per-session lease and participant database access (#229) (`58613e008`)
+- **core**: add the workflow tool (#223) (`55009203e`)
+- **core**: add the push_notification tool (#225) (`56fce3a32`)
+- **core**: add cron and schedule_wakeup tools (#224) (`0f71e8b70`)
+- **core**: let the request decide whether a plan is the deliverable (#217) (`706453e08`)
+- **core**: add the monitor tool (#221) (`bffc4b94b`)
+- **core**: add enter_worktree and exit_worktree tools (#218) (`29bb627b3`)
+- **tui**: estimate per-structure sync heap bytes (#214) (`589f3bdc0`)
+
+### Changed
+- **tui**: lazy-load the session route (#215) (`cec1b42d`)
+
+### Fixed
+- **core**: resolve selected session models without scanning the catalog (#244) (`9cb6ef2d`)
+- **llm**: tolerate unknown stream frames and surface in-band provider errors (#241) (`9d5f819d`)
+- **ci**: give every main commit its own workflow run (#238) (`2439800e`)
+- **ci**: cache the real turbo directory and gate workflows by path (#235) (`335d52af`)
+- **tui**: show relay setup in /remote-control (#228) (`30d7f2eb`)
+- **miao**: record uncaught errors so a flash exit leaves a trace (#226) (`5729202b`)
+- **core**: keep responses in the user's language (#219) (`cf3542f0`)
+- **core**: guard plan-mode switches against a catch-all allow (#216) (`472aae72`)
+- **release**: read the Chinese notes mirror from main when publishing (#213) (`5d81d5dc`)
+
 ## [0.1.11] - 2026-10-05
 
 ### Added
