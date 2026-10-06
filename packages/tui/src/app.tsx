@@ -231,6 +231,18 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             destroyRenderer(renderer)
           }),
       )
+      // A fatal error exits through the entry's own handler, so no scoped
+      // finalizer runs and the renderer is left owning raw mode and mouse
+      // tracking. "exit" listeners run synchronously inside `process.exit`,
+      // which is the last point where the terminal can still be restored.
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const restore = () => destroyRenderer(renderer)
+          process.on("exit", restore)
+          return restore
+        }),
+        (restore) => Effect.sync(() => process.off("exit", restore)),
+      )
       // The kitty keyboard protocol encodes every key as CSI sequences and is a
       // known source of CJK IME breakage; allow turning it off to confirm.
       if (Flag.MIAO_DISABLE_KITTY_KEYBOARD) renderer.disableKittyKeyboard()
