@@ -194,6 +194,9 @@ export function makeExternal(config: {
         description: config.description,
         inputSchema: config.inputSchema,
         outputSchema: config.outputSchema,
+        // Never serialized to a provider; lets materialization tell remote
+        // catalogs (MCP, plugins) from resident local tools.
+        metadata: { external: true },
       })
       definitions.set(name, definition)
       return definition

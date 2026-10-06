@@ -45,9 +45,7 @@ export const Flag = {
   MIAO_PACKAGE_MANAGER_AUTO_UPDATE: truthy("MIAO_PACKAGE_MANAGER_AUTO_UPDATE"),
 
   // Experimental
-  MIAO_EXPERIMENTAL_FILEWATCHER: Config.boolean("MIAO_EXPERIMENTAL_FILEWATCHER").pipe(
-    Config.withDefault(false),
-  ),
+  MIAO_EXPERIMENTAL_FILEWATCHER: Config.boolean("MIAO_EXPERIMENTAL_FILEWATCHER").pipe(Config.withDefault(false)),
   MIAO_EXPERIMENTAL_DISABLE_FILEWATCHER: Config.boolean("MIAO_EXPERIMENTAL_DISABLE_FILEWATCHER").pipe(
     Config.withDefault(false),
   ),
@@ -89,6 +87,9 @@ export const Flag = {
   },
   get MIAO_EXPERIMENTAL_CODE_MODE() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_CODE_MODE")
+  },
+  get MIAO_EXPERIMENTAL_TOOL_DISCLOSURE() {
+    return enabledByExperimental("MIAO_EXPERIMENTAL_TOOL_DISCLOSURE")
   },
   get MIAO_EXPERIMENTAL_RESPONSES_WS() {
     // Pooled Responses WebSockets for ChatGPT sign-in; on for source and preview

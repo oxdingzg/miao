@@ -449,4 +449,59 @@ describe("ToolRegistry", () => {
       expect(yield* Fiber.join(settlement)).toMatchObject({ result: { type: "text", value: "echo" } })
     }),
   )
+
+  it.effect("defers external definitions above the disclosure budget behind tool_search", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        local_echo: make(),
+        small_external: Tool.makeExternal({
+          description: "Small external lookup",
+          inputSchema: { type: "object", properties: { query: { type: "string" } } },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "small ok" }]),
+        }),
+        huge_external: Tool.makeExternal({
+          description: `${"huge ".repeat(8_200)}(external)`,
+          inputSchema: { type: "object" },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "huge ok" }]),
+        }),
+      })
+
+      const materialized = yield* service.materialize(undefined, { disclosure: true })
+      const names = materialized.definitions.map((definition) => definition.name)
+      expect(names).toEqual(["local_echo", "small_external", "tool_search"])
+
+      const search = yield* materialized.settle({
+        sessionID,
+        ...identity,
+        call: { type: "tool-call", id: "call-search", name: "tool_search", input: { query: "huge" } },
+      })
+      expect(JSON.stringify(search.result)).toContain("huge_external")
+      expect(JSON.stringify(search.result)).toContain("input_schema")
+
+      const direct = yield* materialized.settle({
+        sessionID,
+        ...identity,
+        call: { type: "tool-call", id: "call-huge", name: "huge_external", input: {} },
+      })
+      expect(JSON.stringify(direct.result)).toContain("huge ok")
+    }),
+  )
+
+  it.effect("keeps every tool resident when external schemas fit the disclosure budget", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        local_echo: make(),
+        small_external: Tool.makeExternal({
+          description: "Small external lookup",
+          inputSchema: { type: "object" },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "small ok" }]),
+        }),
+      })
+
+      const materialized = yield* service.materialize(undefined, { disclosure: true })
+      expect(materialized.definitions.map((definition) => definition.name)).toEqual(["local_echo", "small_external"])
+    }),
+  )
 })
