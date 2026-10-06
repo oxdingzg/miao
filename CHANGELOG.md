@@ -10,6 +10,16 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-10-06
+
+### Added
+
+- **core**: feed configured linter failures back into edit and write tool results (#276).
+
+### Fixed
+
+- **core**: bound storage startup retries by elapsed time and avoid synchronous SQLite waits, so an occupied database reports the close-other-windows error within seconds rather than leaving the terminal blank for minutes (#280).
+
 ## [0.1.15] - 2026-10-06
 
 ### Added
