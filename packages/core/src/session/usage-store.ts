@@ -1,8 +1,10 @@
 export * as SessionUsageStore from "./usage-store"
 
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
 import type { Database } from "../database/database"
+import { ModelV2 } from "../model"
+import { ProviderV2 } from "../provider"
 import { SessionEvent } from "./event"
 import type { SessionSchema } from "./schema"
 import { SessionTable, SessionToolUsageTable, SessionTurnUsageTable } from "./sql"
@@ -90,4 +92,68 @@ export const projectToolSettled = Effect.fn("SessionUsageStore.projectToolSettle
     )
     .run()
     .pipe(Effect.orDie)
+})
+
+/**
+ * Lifetime per-model usage and tool-call counts for one Session, in one pass
+ * each over the two indexed fact tables. `undefined` when nothing has been
+ * recorded, so a caller can leave the field absent instead of shipping an
+ * empty block.
+ */
+export const summary = Effect.fn("SessionUsageStore.summary")(function* (db: DB, sessionID: SessionSchema.ID) {
+  const turns = yield* db
+    .select({
+      providerID: SessionTurnUsageTable.model_provider,
+      id: SessionTurnUsageTable.model_id,
+      variant: SessionTurnUsageTable.variant,
+      turns: sql<number>`count(*)`,
+      cost: sql<number>`coalesce(sum(cost), 0)`,
+      input: sql<number>`coalesce(sum(tokens_input), 0)`,
+      output: sql<number>`coalesce(sum(tokens_output), 0)`,
+      reasoning: sql<number>`coalesce(sum(tokens_reasoning), 0)`,
+      cacheRead: sql<number>`coalesce(sum(tokens_cache_read), 0)`,
+      cacheWrite: sql<number>`coalesce(sum(tokens_cache_write), 0)`,
+      lastTurnAt: sql<number>`max(time_created)`,
+    })
+    .from(SessionTurnUsageTable)
+    .where(eq(SessionTurnUsageTable.session_id, sessionID))
+    .groupBy(
+      SessionTurnUsageTable.model_provider,
+      SessionTurnUsageTable.model_id,
+      SessionTurnUsageTable.variant,
+    )
+    .all()
+    .pipe(Effect.orDie)
+  const tools = yield* db
+    .select({
+      calls: sql<number>`count(*)`,
+      failures: sql<number>`coalesce(sum(case when status = 'failed' then 1 else 0 end), 0)`,
+    })
+    .from(SessionToolUsageTable)
+    .where(eq(SessionToolUsageTable.session_id, sessionID))
+    .get()
+    .pipe(Effect.orDie)
+  const calls = tools?.calls ?? 0
+  if (turns.length === 0 && calls === 0) return undefined
+  const models = turns
+    .map((row) => ({
+      providerID: ProviderV2.ID.make(row.providerID),
+      id: ModelV2.ID.make(row.id),
+      ...(row.variant === null ? {} : { variant: row.variant }),
+      turns: row.turns,
+      cost: row.cost,
+      tokens: {
+        input: row.input,
+        output: row.output,
+        reasoning: row.reasoning,
+        cache: { read: row.cacheRead, write: row.cacheWrite },
+      },
+      lastTurnAt: DateTime.makeUnsafe(row.lastTurnAt),
+    }))
+    .toSorted((a, b) => DateTime.toEpochMillis(b.lastTurnAt) - DateTime.toEpochMillis(a.lastTurnAt))
+  return {
+    turns: models.reduce((total, model) => total + model.turns, 0),
+    tools: { calls, failures: tools?.failures ?? 0 },
+    models,
+  }
 })

@@ -534,6 +534,24 @@ export type SessionsListOutput = {
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly cost: number
+    readonly usage?: {
+      readonly turns: number
+      readonly tools: { readonly calls: number; readonly failures: number }
+      readonly models: ReadonlyArray<{
+        readonly providerID: string
+        readonly id: string
+        readonly variant?: string
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly lastTurnAt: number
+      }>
+    }
     readonly tokens: {
       readonly input: number
       readonly output: number
@@ -596,6 +614,24 @@ export type SessionsCreateOutput = {
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly cost: number
+    readonly usage?: {
+      readonly turns: number
+      readonly tools: { readonly calls: number; readonly failures: number }
+      readonly models: ReadonlyArray<{
+        readonly providerID: string
+        readonly id: string
+        readonly variant?: string
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly lastTurnAt: number
+      }>
+    }
     readonly tokens: {
       readonly input: number
       readonly output: number
@@ -634,6 +670,24 @@ export type SessionsGetOutput = {
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly cost: number
+    readonly usage?: {
+      readonly turns: number
+      readonly tools: { readonly calls: number; readonly failures: number }
+      readonly models: ReadonlyArray<{
+        readonly providerID: string
+        readonly id: string
+        readonly variant?: string
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly lastTurnAt: number
+      }>
+    }
     readonly tokens: {
       readonly input: number
       readonly output: number
@@ -1078,6 +1132,24 @@ export type SessionsForkOutput = {
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly cost: number
+    readonly usage?: {
+      readonly turns: number
+      readonly tools: { readonly calls: number; readonly failures: number }
+      readonly models: ReadonlyArray<{
+        readonly providerID: string
+        readonly id: string
+        readonly variant?: string
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly lastTurnAt: number
+      }>
+    }
     readonly tokens: {
       readonly input: number
       readonly output: number
@@ -1209,6 +1281,24 @@ export type SessionsChildrenOutput = {
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly cost: number
+    readonly usage?: {
+      readonly turns: number
+      readonly tools: { readonly calls: number; readonly failures: number }
+      readonly models: ReadonlyArray<{
+        readonly providerID: string
+        readonly id: string
+        readonly variant?: string
+        readonly turns: number
+        readonly cost: number
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly lastTurnAt: number
+      }>
+    }
     readonly tokens: {
       readonly input: number
       readonly output: number
@@ -1259,6 +1349,24 @@ export type SessionsHistoryOutput = {
             readonly agent?: string
             readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
             readonly cost: number
+            readonly usage?: {
+              readonly turns: number
+              readonly tools: { readonly calls: number; readonly failures: number }
+              readonly models: ReadonlyArray<{
+                readonly providerID: string
+                readonly id: string
+                readonly variant?: string
+                readonly turns: number
+                readonly cost: number
+                readonly tokens: {
+                  readonly input: number
+                  readonly output: number
+                  readonly reasoning: number
+                  readonly cache: { readonly read: number; readonly write: number }
+                }
+                readonly lastTurnAt: number
+              }>
+            }
             readonly tokens: {
               readonly input: number
               readonly output: number
@@ -1895,6 +2003,24 @@ export type SessionsEventsOutput =
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
           readonly cost: number
+          readonly usage?: {
+            readonly turns: number
+            readonly tools: { readonly calls: number; readonly failures: number }
+            readonly models: ReadonlyArray<{
+              readonly providerID: string
+              readonly id: string
+              readonly variant?: string
+              readonly turns: number
+              readonly cost: number
+              readonly tokens: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly lastTurnAt: number
+            }>
+          }
           readonly tokens: {
             readonly input: number
             readonly output: number

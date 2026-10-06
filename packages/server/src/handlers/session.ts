@@ -1,6 +1,8 @@
 import { Image } from "@miao/core/image"
+import { Database } from "@miao/core/database/database"
 import { SessionV2 } from "@miao/core/session"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
+import { SessionUsageStore } from "@miao/core/session/usage-store"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -25,6 +27,7 @@ const legacyNotMigrated = (error: SessionV2.LegacyNotMigratedError) =>
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
+    const db = (yield* Database.Service).db
 
     return handlers
       .handle(
@@ -96,18 +99,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.get",
         Effect.fn(function* (ctx) {
-          return {
-            data: yield* session.get(ctx.params.sessionID).pipe(
-              Effect.catchTag(
-                "Session.NotFoundError",
-                (error) =>
-                  new SessionNotFoundError({
-                    sessionID: error.sessionID,
-                    message: `Session not found: ${error.sessionID}`,
-                  }),
-              ),
+          const info = yield* session.get(ctx.params.sessionID).pipe(
+            Effect.catchTag(
+              "Session.NotFoundError",
+              (error) =>
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session not found: ${error.sessionID}`,
+                }),
             ),
-          }
+          )
+          // One indexed aggregate per read: lifetime facts the loaded
+          // transcript cannot show once it pages.
+          const usage = yield* SessionUsageStore.summary(db, ctx.params.sessionID)
+          return { data: usage === undefined ? info : { ...info, usage } }
         }),
       )
       .handle(

@@ -201,4 +201,52 @@ describe("SessionUsageStore", () => {
       expect(yield* db.select().from(SessionTurnUsageTable).all()).toHaveLength(0)
     }),
   )
+
+  it.effect("summarizes lifetime usage per model with tool counts", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* seed(db)
+      yield* SessionUsageStore.projectStepEnded(db, {
+        id: EventV2.ID.make("evt_sum_1"),
+        type: SessionEvent.Step.Ended.type,
+        data: stepEnded,
+      })
+      yield* SessionUsageStore.projectStepEnded(db, {
+        id: EventV2.ID.make("evt_sum_2"),
+        type: SessionEvent.Step.Ended.type,
+        data: { ...stepEnded, cost: 0.75 },
+      })
+      yield* SessionUsageStore.projectToolCalled(db, {
+        id: EventV2.ID.make("evt_sum_3"),
+        type: SessionEvent.Tool.Called.type,
+        data: {
+          sessionID,
+          timestamp: DateTime.makeUnsafe(4_000),
+          assistantMessageID: SessionMessage.ID.make("msg_assistant"),
+          callID: "call_s",
+          tool: "bash",
+          input: {},
+          provider: { executed: false },
+        },
+      })
+      yield* SessionUsageStore.projectToolSettled(db, {
+        id: EventV2.ID.make("evt_sum_4"),
+        type: SessionEvent.Tool.Failed.type,
+        data: {
+          sessionID,
+          timestamp: DateTime.makeUnsafe(4_100),
+          assistantMessageID: SessionMessage.ID.make("msg_assistant"),
+          callID: "call_s",
+          error: { type: "unknown", message: "boom" },
+          provider: { executed: false },
+        },
+      }, "failed")
+      const summary = yield* SessionUsageStore.summary(db, sessionID)
+      expect(summary?.turns).toBe(2)
+      expect(summary?.tools).toEqual({ calls: 1, failures: 1 })
+      expect(summary?.models).toHaveLength(1)
+      expect(summary?.models[0]).toMatchObject({ providerID: "zhipu", id: "glm-5.3", turns: 2, cost: 1.0 })
+      expect(yield* SessionUsageStore.summary(db, SessionV2.ID.make("ses_none"))).toBeUndefined()
+    }),
+  )
 })

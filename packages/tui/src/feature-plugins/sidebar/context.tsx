@@ -147,6 +147,31 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       .join(" · ")
   })
 
+  // Lifetime turn and tool-call counts come from the server's fact-table
+  // projection on the session record, so they stay honest even when the loaded
+  // transcript is paged. The per-model rows read the transcript instead: they
+  // are live for both runtimes and never wait on a refetch, which is why a
+  // single-model session needs no row of its own — the rows above already say
+  // what that model did.
+  const usage = createMemo(() => session()?.usage)
+  const byModel = createMemo(() => {
+    const rows = new Map<string, { providerID: string; id: string; turns: number; cost: number; tokens: number }>()
+    for (const item of assistants()) {
+      const key = `${item.providerID}\u0000${item.modelID}`
+      const row = rows.get(key) ?? { providerID: item.providerID, id: item.modelID, turns: 0, cost: 0, tokens: 0 }
+      row.turns += 1
+      row.cost += item.cost
+      row.tokens +=
+        item.tokens.input +
+        item.tokens.output +
+        item.tokens.reasoning +
+        item.tokens.cache.read +
+        item.tokens.cache.write
+      rows.set(key, row)
+    }
+    return [...rows.values()].toSorted((a, b) => b.cost - a.cost || b.turns - a.turns)
+  })
+
   // A parent's cost already folds in every descendant step, so the agent rows
   // break down that same spend rather than adding to it.
   const children = createMemo(() => props.api.state.session.children(props.session_id))
@@ -180,6 +205,23 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <text fg={theme().textMuted}>{speed()}</text>
       </Show>
       <text fg={theme().textMuted}>{money(cost())} spent</text>
+      <Show when={usage()}>
+        {(usage) => (
+          <text fg={theme().textMuted}>
+            {usage().turns} turns · {usage().tools.calls} tool calls
+            {usage().tools.failures > 0 ? ` · ${usage().tools.failures} failed` : ""}
+          </text>
+        )}
+      </Show>
+      <Show when={byModel().length > 1}>
+        <For each={byModel()}>
+          {(row) => (
+            <text fg={theme().textMuted}>
+              {row.id} {row.turns}t {money(row.cost, row)}
+            </text>
+          )}
+        </For>
+      </Show>
       <Show when={children().length > 0}>
         <text fg={theme().text}>
           <b>Agents</b> {children().length}
