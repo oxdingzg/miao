@@ -67,10 +67,9 @@ describe("Runtime ownership", () => {
   })
 
   test("normalizes directory symlinks before selecting the lock", async () => {
-    if (process.platform === "win32") return
     const filename = await storage()
     const alias = `${path.dirname(filename)}-alias`
-    await symlink(path.dirname(filename), alias)
+    await symlink(path.dirname(filename), alias, process.platform === "win32" ? "junction" : "dir")
     directories.push(alias)
     await acquire(filename)
     await expect(RuntimeOwnership.acquire(path.join(alias, "session.db"))).rejects.toBeInstanceOf(

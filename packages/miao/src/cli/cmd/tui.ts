@@ -1,26 +1,11 @@
 import { WindowLifecycle } from "@/runtime/lifecycle"
 import { cmd } from "@/cli/cmd/cmd"
-import { Rpc } from "@/util/rpc"
-import { type rpc } from "../tui/worker"
 import path from "path"
-import { fileURLToPath } from "url"
 import { UI } from "@/cli/ui"
 import { errorMessage } from "@miao/tui/util/error"
-import { withTimeout } from "@/util/timeout"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
 import { validateSession } from "../tui/validate-session"
-
-declare global {
-  const MIAO_WORKER_PATH: string
-}
-
-async function target() {
-  if (typeof MIAO_WORKER_PATH !== "undefined") return MIAO_WORKER_PATH
-  const dist = new URL("./cli/tui/worker.js", import.meta.url)
-  if (await Filesystem.exists(fileURLToPath(dist))) return dist
-  return new URL("../tui/worker.ts", import.meta.url)
-}
 
 async function input(value?: string) {
   const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
@@ -180,9 +165,8 @@ export const TuiThreadCommand = cmd({
       }
 
       // Resolve relative --project paths from PWD, then use the real cwd after
-      // chdir so the thread and worker share the same directory key.
+      // chdir so the UI and execution use the same directory key.
       const next = resolveThreadDirectory(args.project)
-      const file = await target()
       try {
         process.chdir(next)
       } catch {
@@ -193,40 +177,40 @@ export const TuiThreadCommand = cmd({
 
       const network = resolveNetworkOptionsNoConfig(args)
       const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
-      const worker = new Worker(file, {
-        env: Object.fromEntries(
-          Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-        ),
-      })
-      const client = Rpc.client<typeof rpc>(worker)
+      const { RuntimeHost } = await import("@/runtime/host")
+      const { DatabaseFile } = await import("@miao/core/database/file")
+      const { Server } = await import("@/server/server")
+      const owned = external ? undefined : await RuntimeHost.start(DatabaseFile.path())
+      const listener = external ? await Server.listen(network) : undefined
       const reload = () => {
-        client.call("reload", undefined).catch(() => {})
+        void (async () => {
+          const { AppRuntime } = await import("@/effect/app-runtime")
+          const { Config } = await import("@/config/config")
+          const { disposeAllInstancesAndEmitGlobalDisposed } = await import("@/server/global-lifecycle")
+          await AppRuntime.runPromise(Config.Service.use((config) => config.invalidate()))
+          await disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true })
+        })().catch(console.error)
       }
       process.on("SIGUSR2", reload)
-
-      let stopped = false
       const stop = async () => {
-        if (stopped) return
-        stopped = true
         process.off("SIGUSR2", reload)
-        await withTimeout(client.call("shutdown", undefined), 5000).catch(() => {})
-        worker.terminate()
+        await owned?.stop()
+        await listener?.stop(true)
       }
 
       const unregister = WindowLifecycle.register(stop)
       try {
         const prompt = await input(args.prompt)
-        // Import the TUI config graph only after the worker is spawned: evaluating it
-        // costs hundreds of milliseconds, and the worker can load the server graph
-        // on its own thread meanwhile.
         const { TuiConfig } = await import("@/config/tui")
         const config = await TuiConfig.get()
 
-        const owned = external ? undefined : await client.call("runtime", undefined)
         const { ServerAuth } = await import("@/server/auth")
         const transport = external
-          ? { url: (await client.call("server", network)).url, headers: ServerAuth.headers() }
-          : { url: owned!.url, headers: ServerAuth.headers({ username: "miao", password: owned!.credential }) }
+          ? { url: listener!.url.href, headers: ServerAuth.headers() }
+          : {
+              url: owned!.record.url,
+              headers: ServerAuth.headers({ username: "miao", password: owned!.record.credential }),
+            }
 
         try {
           await validateSession({
@@ -243,22 +227,22 @@ export const TuiThreadCommand = cmd({
         }
 
         setTimeout(() => {
-          client.call("checkUpgrade", { directory: cwd }).catch(() => {})
+          void (async () => {
+            const { upgrade } = await import("@/cli/upgrade")
+            await upgrade()
+          })().catch(() => {})
         }, 1000).unref?.()
 
-        const { DatabaseFile } = await import("@miao/core/database/file")
         const { Effect } = await import("effect")
         const { run } = await import("../tui/layer")
         const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
         await Effect.runPromise(
           run({
             url: transport.url,
-            runtimeTarget: owned ? { runtimeID: owned.runtimeID, storage: DatabaseFile.path() } : undefined,
+            runtimeTarget: owned ? { runtimeID: owned.record.runtimeID, storage: DatabaseFile.path() } : undefined,
             async onSnapshot() {
               const { writeHeapSnapshot } = await import("node:v8")
-              const tui = writeHeapSnapshot("tui.heapsnapshot")
-              const server = await client.call("snapshot", undefined)
-              return [tui, server]
+              return [writeHeapSnapshot("miao.heapsnapshot")]
             },
             config,
             pluginHost: createLegacyTuiPluginHost(),
@@ -288,4 +272,3 @@ export const TuiThreadCommand = cmd({
     }
   },
 })
-// scratch

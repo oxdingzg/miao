@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "1dea33c5-b940-4d27-aa50-577f0be673c0",
+  "id": "3fec286e-c89c-4a5b-8ed3-c67170ad8c87",
   "prevIds": [
-    "031018c5-0e3d-48c5-b642-6ea54ed5739a"
+    "1dea33c5-b940-4d27-aa50-577f0be673c0"
   ],
   "ddl": [
     {
@@ -72,10 +72,6 @@
     },
     {
       "name": "session_input",
-      "entityType": "tables"
-    },
-    {
-      "name": "session_lease",
       "entityType": "tables"
     },
     {
@@ -1234,56 +1230,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "session_id",
-      "entityType": "columns",
-      "table": "session_lease"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "epoch",
-      "entityType": "columns",
-      "table": "session_lease"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "holder",
-      "entityType": "columns",
-      "table": "session_lease"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "build",
-      "entityType": "columns",
-      "table": "session_lease"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "expires_at",
-      "entityType": "columns",
-      "table": "session_lease"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "session_message"
@@ -2009,21 +1955,6 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_session_lease_session_id_session_id_fk",
-      "entityType": "fks",
-      "table": "session_lease"
-    },
-    {
-      "columns": [
-        "session_id"
-      ],
-      "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
       "name": "fk_session_message_session_id_session_id_fk",
       "entityType": "fks",
       "table": "session_message"
@@ -2252,15 +2183,6 @@
       "nameExplicit": false,
       "name": "session_input_pk",
       "table": "session_input",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "session_id"
-      ],
-      "nameExplicit": false,
-      "name": "session_lease_pk",
-      "table": "session_lease",
       "entityType": "pks"
     },
     {
@@ -2508,20 +2430,6 @@
       "name": "session_input_session_promoted_seq_idx",
       "entityType": "indexes",
       "table": "session_input"
-    },
-    {
-      "columns": [
-        {
-          "value": "expires_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "session_lease_expires_at_idx",
-      "entityType": "indexes",
-      "table": "session_lease"
     },
     {
       "columns": [

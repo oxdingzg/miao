@@ -221,25 +221,3 @@ export const SessionNotificationTable = sqliteTable(
   },
   (table) => [index("session_notification_pending_idx").on(table.session_id, table.promoted_seq, table.admitted_seq)],
 )
-
-/**
- * Cross-process serialized ownership of a Session's execution. One row per
- * Session; every acquisition bumps `epoch`, so a stale holder can never renew
- * or release a lease it lost (compare-and-swap on `epoch` + `holder`).
- * `expires_at` fences a holder that stopped heartbeating, which is how a crashed
- * or blocked execution worker is reclaimed without operator action.
- */
-export const SessionLeaseTable = sqliteTable(
-  "session_lease",
-  {
-    session_id: text()
-      .$type<SessionSchema.ID>()
-      .primaryKey()
-      .references(() => SessionTable.id, { onDelete: "cascade" }),
-    epoch: integer().notNull(),
-    holder: text().notNull(),
-    build: text().notNull(),
-    expires_at: integer().notNull(),
-  },
-  (table) => [index("session_lease_expires_at_idx").on(table.expires_at)],
-)

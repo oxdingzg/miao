@@ -216,17 +216,6 @@ export namespace EffectFlock {
           }),
         )
 
-      // -- retry wrapper (preserves Handle type) --
-
-      const acquireHandle = (lockfile: string, key: string): Effect.Effect<Handle, LockError> =>
-        tryAcquireLockDir(lockfile, key).pipe(
-          Effect.retry({
-            while: (err) => err._tag === "NotAcquired",
-            schedule: retrySchedule,
-          }),
-          Effect.catchTag("NotAcquired", () => Effect.fail(new LockTimeoutError({ key }))),
-        )
-
       // -- release --
 
       const release = (handle: Handle) =>
@@ -256,8 +245,12 @@ export namespace EffectFlock {
 
         const lockfile = path.join(lockDir, Hash.fast(key) + ".lock")
 
-        // acquireRelease: acquire is uninterruptible, release is guaranteed
-        const handle = yield* Effect.acquireRelease(acquireHandle(lockfile, key), (handle) => release(handle))
+        // Protect each atomic attempt and its finalizer registration; retry
+        // delays remain interruptible when the owning window closes.
+        const handle = yield* Effect.acquireRelease(tryAcquireLockDir(lockfile, key), (handle) => release(handle)).pipe(
+          Effect.retry({ while: (error) => error._tag === "NotAcquired", schedule: retrySchedule }),
+          Effect.catchTag("NotAcquired", () => Effect.fail(new LockTimeoutError({ key }))),
+        )
 
         // Heartbeat fiber — scoped, so it's interrupted before release runs
         yield* fs

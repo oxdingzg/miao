@@ -3,7 +3,7 @@ import { spawn } from "child_process"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Fiber } from "effect"
 import { testEffect } from "../lib/effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -118,6 +118,26 @@ const testLayer = AppNodeBuilder.build(EffectFlock.node, [[Global.node, testGlob
 
 describe("util.effect-flock", () => {
   const it = testEffect(testLayer)
+
+  it.live(
+    "cancels a contended acquisition while preserving the active owner",
+    Effect.scoped(
+      Effect.gen(function* () {
+        const flock = yield* EffectFlock.Service
+        const directory = yield* Effect.acquireRelease(
+          Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "eflock-cancel-"))),
+          (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+        )
+        yield* flock.acquire("held", directory)
+        const waiter = yield* Effect.forkScoped(Effect.scoped(flock.acquire("held", directory)))
+        yield* Effect.sleep("100 millis")
+        const started = Date.now()
+        yield* Fiber.interrupt(waiter)
+        expect(Date.now() - started).toBeLessThan(1000)
+        expect(yield* Effect.promise(() => exists(lock(directory, "held")))).toBe(true)
+      }),
+    ),
+  )
 
   it.live(
     "acquire and release via scoped Effect",

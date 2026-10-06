@@ -60,17 +60,12 @@ export function apply(db: Database) {
   )
 }
 
-/**
- * A participant (execution worker) opens the owner's database without migrating.
- * It must refuse a schema older than its own build: a worker writing columns the
- * database does not have would corrupt the store, so it fails instead.
- */
+/** Verify the required schema while retaining shared storage usage. */
 export function verify(db: Database) {
   return lock.withPermit(
     Effect.gen(function* () {
       const table = yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"migration"}`)
-      if (!table)
-        return yield* Effect.die("Database has no migration journal; the owner must migrate before a worker joins")
+      if (!table) return yield* Effect.die("Database has no migration journal; exclusive migration is required")
       const completed = new Set(
         (yield* db.all<{ id: string }>(sql`SELECT id FROM ${sql.identifier("migration")}`)).map((row) => row.id),
       )

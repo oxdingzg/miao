@@ -1,6 +1,7 @@
 # Window-owned local runtime
 
 Each normal `miao` invocation owns its UI, execution, local API and service scopes.
+The TUI and local runtime share one process; there is no execution Worker or daemon.
 Closing its terminal or exiting miao ends that invocation's tasks and remote
 connection. `miao run` cleans up when the command finishes; ACP cleans up on
 stdio EOF. Background tasks, pending inputs and schedules do not keep a window

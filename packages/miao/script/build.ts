@@ -168,7 +168,6 @@ for (const item of targets) {
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 
-  const workerPath = "./src/cli/tui/worker.ts"
   const treeSitterWorkerPath = "opentui-tree-sitter-worker.js"
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
 
@@ -202,19 +201,13 @@ for (const item of targets) {
       [treeSitterWorkerPath]: treeSitterWorker,
       ...(embeddedFileMap ? { "miao-web-ui.gen.ts": embeddedFileMap } : {}),
     },
-    entrypoints: [
-      "./src/index.ts",
-      workerPath,
-      treeSitterWorkerPath,
-      ...(embeddedFileMap ? ["miao-web-ui.gen.ts"] : []),
-    ],
+    entrypoints: ["./src/index.ts", treeSitterWorkerPath, ...(embeddedFileMap ? ["miao-web-ui.gen.ts"] : [])],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       MIAO_VERSION: `'${Script.version}'`,
       MIAO_BUILD_ID: JSON.stringify(crypto.randomUUID()),
       MIAO_MODELS_SNAPSHOT: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
-      MIAO_WORKER_PATH: workerPath,
       // Signals a compiled single-file build, so the sandbox runner can
       // re-execute this binary through the hidden `__sandbox-run` command
       // instead of shipping a separate `miao-run` executable.
