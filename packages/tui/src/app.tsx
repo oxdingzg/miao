@@ -715,10 +715,34 @@ function App(props: {
         category: "Session",
         slashName: "clear",
         run: () => {
-          route.navigate({
-            type: "home",
-          })
           dialog.clear()
+          if (route.data.type !== "session") return
+          const workspace = currentWorktreeWorkspace()
+          const location =
+            workspace?.directory != null
+              ? { directory: workspace.directory, workspaceID: workspace.id }
+              : undefined
+          const model = local.model.current()
+          void sdk.api.sessions
+            .create(
+              {
+                agent: local.agent.current()?.name,
+                model: model
+                  ? { id: model.modelID, providerID: model.providerID, variant: local.model.variant.current() }
+                  : undefined,
+                location,
+              },
+              {},
+            )
+            .then((created) => {
+              const sessionID = created?.id
+              if (!sessionID) {
+                toast.show({ message: "Failed to create session", variant: "error" })
+                return
+              }
+              route.navigate({ type: "session", sessionID })
+            })
+            .catch(() => toast.show({ message: "Failed to create session", variant: "error" }))
         },
       },
       {
