@@ -64,6 +64,24 @@ const settledOutput = (value: ToolOutput | undefined, result: ToolResultValue): 
 }
 
 /** Persist one provider turn without executing tools or starting a continuation turn. */
+/**
+ * Durable progress is an advisory UI hint, but each event rewrites the whole
+ * assistant row, so a chatty tool must not publish per chunk: the first update
+ * for a call goes out immediately and later ones at most every 500ms. The
+ * authoritative state arrives with tool.success regardless.
+ */
+export const PROGRESS_MIN_INTERVAL_MS = 500
+
+/** Per-call admission for durable tool progress events. */
+export const progressGate = () => {
+  const last = new Map<string, number>()
+  return (key: string, now: number) => {
+    if (now - (last.get(key) ?? 0) < PROGRESS_MIN_INTERVAL_MS) return false
+    last.set(key, now)
+    return true
+  }
+}
+
 export const createLLMEventPublisher = (events: EventV2.Interface, input: Input) => {
   const tools = new Map<
     string,
