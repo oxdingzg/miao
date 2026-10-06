@@ -25,3 +25,18 @@ export function remoteControlPins(input = process.env.MIAO_RUNTIME_REMOTE_CONTRO
   if (input === undefined || input.trim() === "") return true
   return !["0", "false", "no", "off"].includes(input.trim().toLowerCase())
 }
+
+const DEFAULT_STARTUP_GRACE_MS = 60_000
+
+/**
+ * A Runtime is spawned by `RuntimeConnect.ensure` and only then does its client
+ * connect, so an empty vector right after start is not "the last client left".
+ * The idle countdown only arms once the Runtime has been active at least once;
+ * a Runtime that is never used still exits after this grace so a stray spawn
+ * cannot leak. Startup configuration, like `lingerMs`.
+ */
+export function startupGraceMs(input = process.env.MIAO_RUNTIME_STARTUP_GRACE_MS) {
+  if (input === undefined || input.trim() === "") return DEFAULT_STARTUP_GRACE_MS
+  const value = Number(input)
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : DEFAULT_STARTUP_GRACE_MS
+}

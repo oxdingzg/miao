@@ -548,3 +548,54 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 120_000)
+
+/** Isolated Runtime environment with no Remote Control, so the activity vector can actually empty. */
+const idleEnvironment = (directory: string, database: string, lingerMs: string) => ({
+  ...process.env,
+  MIAO_DB: database,
+  MIAO_RUNTIME_LINGER_MS: lingerMs,
+  MIAO_RUNTIME_STARTUP_GRACE_MS: "0",
+  MIAO_PURE: "1",
+  MIAO_CONFIG_CONTENT: JSON.stringify({ formatter: false, lsp: false }),
+  MIAO_TEST_HOME: path.join(directory, "home"),
+  MIAO_TEST_MANAGED_CONFIG_DIR: path.join(directory, "managed"),
+  XDG_CONFIG_HOME: path.join(directory, "config"),
+  XDG_CACHE_HOME: path.join(directory, "cache"),
+  XDG_DATA_HOME: path.join(directory, "data"),
+  XDG_STATE_HOME: path.join(directory, "state"),
+})
+
+const startIdleRuntime = (directory: string, database: string, lingerMs: string) =>
+  Bun.spawn([process.execPath, "run", "src/index.ts", "runtime"], {
+    cwd: path.resolve(import.meta.dir, "../.."),
+    env: idleEnvironment(directory, database, lingerMs),
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+
+test("the Runtime exits on its own once nothing is active", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-idle-test-"))
+  const child = startIdleRuntime(directory, path.join(directory, "sessions.db"), "0")
+  try {
+    const exited = await Promise.race([child.exited, Bun.sleep(30_000).then(() => undefined)])
+    if (exited === undefined) throw new Error(`Runtime did not idle-exit: ${await new Response(child.stderr).text()}`)
+    expect(exited).toBe(0)
+  } finally {
+    if (child.exitCode === null) child.kill("SIGTERM")
+    await child.exited
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  }
+}, 60_000)
+
+test("MIAO_RUNTIME_LINGER_MS=-1 never idle-exits", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-linger-test-"))
+  const child = startIdleRuntime(directory, path.join(directory, "sessions.db"), "-1")
+  try {
+    await Bun.sleep(5_000)
+    expect(child.exitCode).toBeNull()
+  } finally {
+    child.kill("SIGTERM")
+    await child.exited
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  }
+}, 60_000)

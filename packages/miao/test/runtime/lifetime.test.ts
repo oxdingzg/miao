@@ -23,3 +23,13 @@ test("remoteControlPins defaults on and reads the env switch", () => {
   expect(RuntimeLifetime.remoteControlPins("false")).toBe(false)
   expect(RuntimeLifetime.remoteControlPins("off")).toBe(false)
 })
+
+test("startupGraceMs protects a just-spawned Runtime and reads the env switch", () => {
+  expect(RuntimeLifetime.startupGraceMs(undefined)).toBe(60_000)
+  expect(RuntimeLifetime.startupGraceMs("")).toBe(60_000)
+  expect(RuntimeLifetime.startupGraceMs("nonsense")).toBe(60_000)
+  expect(RuntimeLifetime.startupGraceMs("0")).toBe(0)
+  expect(RuntimeLifetime.startupGraceMs("5000")).toBe(5000)
+  // A negative grace would disable the guard, so it falls back to the default.
+  expect(RuntimeLifetime.startupGraceMs("-1")).toBe(60_000)
+})

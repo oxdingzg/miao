@@ -22,6 +22,12 @@ export type Listener = {
   hostname: string
   port: number
   url: URL
+  /**
+   * Open HTTP connections. A client's long-lived event stream holds one open, so
+   * this is the "is anyone attached" signal the Runtime lifetime reads. `0` means
+   * no client is connected.
+   */
+  connected: () => Promise<number>
   stop: (close?: boolean) => Promise<void>
 }
 
@@ -43,12 +49,18 @@ type ListenerState = {
   http: ListenerServer
   websockets: WebSocketTracker.Interface
 }
-type EffectListener = Omit<Listener, "stop"> & {
+type EffectListener = {
+  hostname: string
+  port: number
+  url: URL
+  connected: () => Promise<number>
   stop: (close?: boolean) => Effect.Effect<void>
 }
 
 interface ListenerServer {
   readonly closeAll: Effect.Effect<void>
+  /** Open connections on the underlying Node server. */
+  readonly connections: Effect.Effect<number>
 }
 
 class ListenerServerService extends Context.Service<ListenerServerService, ListenerServer>()("@miao/ListenerServer") {}
@@ -76,6 +88,7 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
     hostname: listener.hostname,
     port: listener.port,
     url: listener.url,
+    connected: listener.connected,
     stop: (close?: boolean) => Effect.runPromiseExit(listener.stop(close)).then(() => undefined),
   }
 }
@@ -92,6 +105,7 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
       hostname: opts.hostname,
       port: address.port,
       url: listenerUrl,
+      connected: () => Effect.runPromise(state.http.connections),
       stop: yield* makeStop(state, unpublishMdns, listenerUrl),
     }
   },
@@ -202,6 +216,15 @@ function forceClose(state: ListenerState) {
 function serverLayer(opts: { port: number; hostname: string }) {
   const server = createServer()
   const serverRef = { closeStarted: false, forceStop: false }
+  // Bun's http.Server has no getConnections, so track sockets from the
+  // connection event. A client's long-lived event stream keeps one open.
+  let connections = 0
+  server.on("connection", (socket) => {
+    connections++
+    socket.once("close", () => {
+      connections--
+    })
+  })
   const close = server.close.bind(server)
   // Keep shutdown owned by NodeHttpServer, but honor listener.stop(true) by
   // force-closing active HTTP sockets when its finalizer calls server.close().
@@ -221,6 +244,7 @@ function serverLayer(opts: { port: number; hostname: string }) {
           serverRef.forceStop = true
           if (serverRef.closeStarted) server.closeAllConnections()
         }),
+        connections: Effect.sync(() => connections),
       }),
     ),
   )
