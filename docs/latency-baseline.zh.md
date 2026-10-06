@@ -111,3 +111,37 @@ MIAO_BENCHMARK_CATALOG=1 bun test test/session-model-lookup.test.ts
 该文件还通过真实 Catalog/Integration/Credential 服务验证配置覆盖更新、模型/provider 禁用或移除、凭据创建与撤销、可选鉴权及 SDK settings key。正确性测试不设置墙钟阈值。
 
 下一步需补足运行时精细计时，区分模型目录选择、integration 查找、凭据解析/刷新以及事件循环争用，再评估剩余 resolve 长尾。
+
+## 第三轮：删除同次 integration 调用的重复凭据读取（2026-10-06）
+
+核查发现 `Integration.get` 和 `Integration.connection.active` 在健康的已有凭据路径中，各调用两次 `Credential.list`：第一次判断是否需要 legacy OAuth 迁移，第二次取同一 integration 的凭据用于投影连接。两次调用都执行真实 SQLite SELECT 和凭据 Schema 解码。
+
+修改只复用**同次调用**的首个读取结果：已有凭据时直接返回；缺失凭据时仍尝试迁移并再次读取。没有跨调用缓存，后续调用继续观察凭据更新、删除、重新创建；`connection.resolve` 仍按 ID 独立读取，避免使用之前拿到的失效凭据。环境变量 fallback、旧 OAuth 文件迁移、刷新逻辑保持原路径。
+
+### 真实 tracing 和局部基准
+
+使用原生 Effect tracer 观察真实服务，不替换 DB/文件系统实现。每条 `get → active → resolve` 链路的凭据查询次数如下：
+
+| 操作                                   | 修改前 | 修改后 |
+| -------------------------------------- | -----: | -----: |
+| Credential.list（每次对应一条 SELECT） |      4 |      2 |
+| Credential.get（每次对应一条 SELECT）  |      1 |      1 |
+| 合计                                   |      5 |      3 |
+
+在相同工作站、Bun 1.3.14、隔离的内存 SQLite 中，用一个已存 API key 的 integration 做 10 次预热、100 次链路调用。修改前后分别单独运行同一个 benchmark（不运行其他测试），结果如下：
+
+| 实现   |      p50 |      p90 |      p99 |
+| ------ | -------: | -------: | -------: |
+| 修改前 | 0.425 ms | 0.543 ms | 2.550 ms |
+| 修改后 | 0.276 ms | 0.386 ms | 2.392 ms |
+
+这是约 0.15 ms 的局部中位数差异。凭据查询次数的减少是确定性结果；时间差异仅为这组样本的观察，不代表磁盘数据库、OAuth 刷新或整个任务取得相同改善，也未证明真实使用的秒级长尾已解决。系统资源争用仍需独立测量。
+
+复现：
+
+```sh
+cd packages/core
+MIAO_BENCHMARK_CREDENTIALS=1 bun test test/integration-credential-lookup.test.ts --test-name-pattern benchmarks
+```
+
+正常测试运行不启用性能采样。回归检查涵盖同次调用查询次数、后续凭据更新/撤销/重新创建，以及旧 OAuth 凭据迁移后必要的二次读取；不设置墙钟阈值。
