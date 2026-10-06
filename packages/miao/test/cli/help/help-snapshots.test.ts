@@ -81,6 +81,7 @@ const SUBCOMMANDS = [
   ["session", "list"],
   ["session", "delete"],
   ["db", "path"],
+  ["db", "status"],
   ["db", "backfill"],
   ["db", "compact"],
   ["doctor", "report"],
