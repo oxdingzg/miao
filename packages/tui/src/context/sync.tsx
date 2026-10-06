@@ -77,6 +77,31 @@ function compareMessage(a: Message, b: Message) {
   return a.time.created - b.time.created || a.id.localeCompare(b.id)
 }
 
+// Rough JS heap estimate of a value: string bytes, per-node overhead, and key
+// lengths. Walks nodes only (string length is O(1)), so it is cheap enough to
+// run from the 30s monitor sample. `seen` avoids counting shared references
+// twice within one structure.
+function sizeOf(value: unknown, seen = new Set<object>()): number {
+  if (typeof value === "string") return value.length * 2
+  if (typeof value === "number") return 8
+  if (typeof value === "boolean") return 4
+  if (value === null || value === undefined) return 0
+  if (typeof value !== "object") return 0
+  const object = value as object
+  if (seen.has(object)) return 0
+  seen.add(object)
+  if (Array.isArray(value)) {
+    let total = 24
+    for (const item of value) total += 8 + sizeOf(item, seen)
+    return total
+  }
+  let total = 32
+  for (const key in value as Record<string, unknown>) {
+    total += key.length * 2 + 8 + sizeOf((value as Record<string, unknown>)[key], seen)
+  }
+  return total
+}
+
 // The V2 status omits the display name and root the V1 shape carried; keep the
 // existing store/render shape by projecting the server id.
 function toLspStatus(items: ReadonlyArray<{ id: string; connected: boolean }>): LspStatus[] {
@@ -258,6 +283,14 @@ export const {
         hydration: { ...hydration },
         renderNodes: Renderable.renderablesByNumber.size,
         inFlight: syncingSessions.size,
+        bytes: {
+          message: sizeOf(store.message),
+          part: sizeOf(store.part),
+          sessionDiff: sizeOf(store.session_diff),
+          todo: sizeOf(store.todo),
+          shadow: sizeOf([...sessionMessages.values()]),
+          older: sizeOf([...olderHistory.values()]),
+        },
         sessions: Object.entries(store.message).map(([sessionID, messages]) => {
           // Split retained text by producer so a report can tell whether the
           // footprint is reasoning, completed tool output, or visible prose.
