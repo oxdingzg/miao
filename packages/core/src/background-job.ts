@@ -122,6 +122,10 @@ export const make = Effect.gen(function* () {
     jobs: yield* SynchronizedRef.make(new Map()),
     scope: yield* Scope.Scope,
   }
+  // Teardown must interrupt every running job fiber (and with it the spawned
+  // child process), or an exiting session leaves its background children
+  // orphaned to pid 1.
+  yield* Effect.addFinalizer((exit) => Scope.close(state.scope, exit))
 
   const settle = Effect.fn("BackgroundJob.settle")(function* (
     id: string,

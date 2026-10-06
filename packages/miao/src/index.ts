@@ -23,6 +23,35 @@ const onFatal = (kind: "uncaughtException" | "unhandledRejection", error: unknow
 process.on("uncaughtException", (error) => onFatal("uncaughtException", error))
 process.on("unhandledRejection", (reason) => onFatal("unhandledRejection", reason))
 
+// Ctrl+C, `kill`, or a closing terminal must tear the Effect runtime down
+// gracefully: ManagedRuntime.dispose closes the BackgroundJob registry scope,
+// which interrupts every tracked background job's fiber and with it the child
+// process it spawned. Without this the spawned `bun run` children survived as
+// orphans (ppid=1) after the parent session exited. A second signal still
+// exits immediately.
+let shutdownStarted = false
+for (const [signal, code] of [
+  ["SIGINT", 130],
+  ["SIGTERM", 143],
+  ["SIGHUP", 129],
+] as const) {
+  process.on(signal, () => {
+    if (shutdownStarted) {
+      process.exit(code)
+      return
+    }
+    shutdownStarted = true
+    const force = setTimeout(() => process.exit(code), 5_000)
+    void import("@/effect/app-runtime")
+      .then(({ AppRuntime }) => AppRuntime.dispose())
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(force)
+        process.exit(code)
+      })
+  })
+}
+
 if (process.argv.includes("--build-id")) {
   console.log(InstallationExecutable.buildID)
   process.exit(0)
