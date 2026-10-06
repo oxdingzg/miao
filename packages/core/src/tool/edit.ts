@@ -11,6 +11,7 @@ import { FileDiff } from "@miao/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Effect, Layer, Option, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { Lint } from "../lint"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
 import { EditMatch } from "./edit-match"
@@ -42,6 +43,7 @@ export const Output = Schema.Struct({
   files: Schema.Array(FileDiff.Info),
   replacements: Schema.Number,
   diagnostics: Schema.String.pipe(Schema.optional),
+  lint: Schema.String.pipe(Schema.optional),
 })
 export type Output = typeof Output.Type
 
@@ -77,6 +79,7 @@ export const toModelOutput = (output: Output) =>
     "```",
   ]
     .concat(output.diagnostics ? ["", "LSP errors detected in this file, please fix:", output.diagnostics] : [])
+    .concat(output.lint ? ["", "Lint errors detected in this file, please fix:", output.lint] : [])
     .join("\n")
 
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
@@ -93,6 +96,7 @@ const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
+    const lint = yield* Lint.Service
 
     yield* tools
       .register({
@@ -197,8 +201,12 @@ const layer = Layer.effectDiscard(
                   target.resource,
                   diagnostics[LSPClient.fileURI(target.canonical)] ?? [],
                 )
+                const lintReport = (yield* lint.file(target.canonical))
+                  .map((failure) => `<linter ${failure.name}>\n${failure.message}`)
+                  .join("\n\n")
                 return {
                   ...(report ? { diagnostics: report } : {}),
+                  ...(lintReport.length > 0 ? { lint: lintReport } : {}),
                   files: [
                     {
                       file: result.resource,
@@ -230,6 +238,7 @@ export const node = makeLocationNode({
     PermissionV2.node,
     Format.node,
     LSP.node,
+    Lint.node,
   ],
 })
 

@@ -13,6 +13,7 @@ import { FSUtil } from "../fs-util"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Format } from "../format"
+import { Lint } from "../lint"
 import { FileMutation } from "../file-mutation"
 import { LSP } from "../lsp"
 import { LSPClient } from "../lsp/client"
@@ -42,12 +43,14 @@ export const Output = Schema.Struct({
   existed: Schema.Boolean,
   files: Schema.Array(FileDiff.Info),
   diagnostics: Schema.String.pipe(Schema.optional),
+  lint: Schema.String.pipe(Schema.optional),
 })
 export type Output = typeof Output.Type
 
 export const toModelOutput = (output: Output) =>
   `${output.existed ? "Wrote" : "Created"} file successfully: ${output.resource}` +
-  (output.diagnostics ? `\n\nLSP errors detected in this file, please fix:\n${output.diagnostics}` : "")
+  (output.diagnostics ? `\n\nLSP errors detected in this file, please fix:\n${output.diagnostics}` : "") +
+  (output.lint ? `\n\nLint errors detected in this file, please fix:\n${output.lint}` : "")
 
 /** Deferred V2 write UX integrations remain visible at the model-facing seam. */
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
@@ -62,6 +65,7 @@ const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
+    const lint = yield* Lint.Service
 
     yield* tools
       .register({
@@ -114,6 +118,9 @@ const layer = Layer.effectDiscard(
                   target.resource,
                   diagnostics[LSPClient.fileURI(target.canonical)] ?? [],
                 )
+                const lintReport = (yield* lint.file(target.canonical))
+                  .map((failure) => `<linter ${failure.name}>\n${failure.message}`)
+                  .join("\n\n")
                 const content = (yield* fs.readFileString(target.canonical)).replace(/^\uFEFF/, "")
                 const counts = diffLines(result.previous, content).reduce(
                   (counts, line) => ({
@@ -134,6 +141,7 @@ const layer = Layer.effectDiscard(
                     ...counts,
                   }],
                   ...(report ? { diagnostics: report } : {}),
+                  ...(lintReport.length > 0 ? { lint: lintReport } : {}),
                 }
               }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to write ${input.path}` }))),
           }),
@@ -147,5 +155,14 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/write",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node, Format.node, LSP.node],
+  deps: [
+    ToolRegistry.node,
+    LocationMutation.node,
+    FileMutation.node,
+    FSUtil.node,
+    PermissionV2.node,
+    Format.node,
+    LSP.node,
+    Lint.node,
+  ],
 })
