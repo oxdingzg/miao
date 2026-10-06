@@ -403,4 +403,112 @@ describe("materializeEvent", () => {
       }),
     ),
   )
+
+  it.live("preserves structured output that contains no content references", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const structured = {
+          matches: [{ path: "source.ts", line: 7, preview: "contentRef: true" }],
+          empty: null,
+          flag: { contentRef: true, content: 42 },
+        }
+        const event = success([], structured)
+        const result = yield* materializeEvent(blob, new Map(), event)
+        expect(structuredOf(result)).toBe(structuredOf(event))
+      }),
+    ),
+  )
+
+  it.live("finds nested references and preserves missing-blob behavior without mutating history", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const ref = yield* blob.put({ bytes: encoder.encode("nested text"), mime: "text/plain" })
+        const structured = {
+          results: [
+            { contentRef: true, content: Blob.refUri(ref.hash) },
+            { nested: { contentRef: true, content: Blob.refUri("0".repeat(64)) } },
+          ],
+        }
+        const result = yield* materializeEvent(blob, new Map(), success([], structured))
+        expect(structuredOf(result)).toEqual({ results: [{ content: "nested text" }, { nested: { content: "" } }] })
+        expect(structured.results[0]).toEqual({ contentRef: true, content: Blob.refUri(ref.hash) })
+      }),
+    ),
+  )
+
+  it.live("keeps the previous normalization for non-JSON objects", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const array = Object.assign([1, 2], { toJSON: () => "plugin-value" })
+        const result = yield* materializeEvent(
+          blob,
+          new Map(),
+          success([], { date: new Date(0), bytes: new Uint8Array([1, 2]), array }),
+        )
+        expect(structuredOf(result)).toEqual({ date: {}, bytes: { 0: 1, 1: 2 }, array: [1, 2] })
+      }),
+    ),
+  )
+
+  it.live("handles deeply nested reference-free data without recursive scanning", () =>
+    withBlob((blob) =>
+      Effect.gen(function* () {
+        const structured = Array.from({ length: 10_000 }).reduce<Record<string, unknown>>(
+          (value) => ({ nested: value }),
+          {},
+        )
+        const event = success([], structured)
+        const result = yield* materializeEvent(blob, new Map(), event)
+        expect(structuredOf(result)).toBe(structuredOf(event))
+      }),
+    ),
+  )
+
+  if (process.env.MIAO_BENCHMARK_MATERIALIZE === "1")
+    it.live(
+      "benchmarks structured history materialization",
+      () =>
+        withBlob((blob) =>
+          Effect.gen(function* () {
+            const messages = Array.from({ length: 100 }, () =>
+              assistant([
+                tool({
+                  ...completed([]),
+                  structured: {
+                    matches: Array.from({ length: 100 }, (_, index) => ({
+                      path: `source-${index}.ts`,
+                      line: index,
+                      preview: "matching source",
+                      detail: { kind: "text", truncated: false },
+                    })),
+                  },
+                }),
+              ]),
+            )
+            yield* Effect.forEach(Array.from({ length: 5 }), () => materializeBlobRefs(blob, messages), {
+              discard: true,
+            })
+            const samples = yield* Effect.forEach(Array.from({ length: 20 }), () =>
+              Effect.gen(function* () {
+                const start = performance.now()
+                const result = yield* materializeBlobRefs(blob, messages)
+                expect(result).toHaveLength(100)
+                return performance.now() - start
+              }),
+            )
+            const sorted = samples.toSorted((a, b) => a - b)
+            console.log(
+              JSON.stringify({
+                messages: 100,
+                matches: 10_000,
+                n: samples.length,
+                p50: sorted[9],
+                p90: sorted[17],
+                p99: sorted[19],
+              }),
+            )
+          }),
+        ),
+      30_000,
+    )
 })
