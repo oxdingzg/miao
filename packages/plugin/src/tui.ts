@@ -1,6 +1,5 @@
 import type {
   AgentPart,
-  AssistantMessage,
   FilePart,
   LspStatus,
   McpStatus,
@@ -12,8 +11,9 @@ import type {
   Session,
   SessionStatus,
   TextPart,
-  UserMessage,
   Config,
+  SessionMessage,
+  SessionMessageAssistant,
 } from "@miao/schema/view-models"
 import type { Event } from "@miao/schema/event-view"
 import type { OpenCode } from "@miao/client"
@@ -458,13 +458,13 @@ export type TuiSidebarFileItem = {
 }
 
 /**
- * A transcript message as the TUI holds it. The TUI rebuilds V1 messages from
- * the current session events, and a step reports how long the provider took to
- * start, which V1 has no field for.
+ * A transcript message as the TUI holds it: the V2 session message, meta
+ * messages included. The assistant carries `ttft` — how long the provider took
+ * to start streaming — natively.
  */
-export type TuiTranscriptAssistant = AssistantMessage & { ttft?: number }
+export type TuiTranscriptAssistant = SessionMessageAssistant
 
-export type TuiTranscriptMessage = UserMessage | TuiTranscriptAssistant
+export type TuiTranscriptMessage = SessionMessage
 
 export type TuiHostSlotMap = {
   app: {}

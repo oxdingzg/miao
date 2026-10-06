@@ -1,7 +1,6 @@
 import { createMemo, onMount } from "solid-js"
 import { useSync } from "../../context/sync"
 import { DialogSelect, type DialogSelectOption } from "../../ui/dialog-select"
-import type { TextPart } from "@miao/schema/view-models"
 import { Locale } from "../../util/locale"
 import { DialogMessage } from "./dialog-message"
 import { useDialog } from "../../ui/dialog"
@@ -23,13 +22,10 @@ export function DialogTimeline(props: {
     const messages = sync.data.message[props.sessionID] ?? []
     const result = [] as DialogSelectOption<string>[]
     for (const message of messages) {
-      if (message.role !== "user") continue
-      const part = (sync.data.part[message.id] ?? []).find(
-        (x) => x.type === "text" && !x.synthetic && !x.ignored,
-      ) as TextPart
-      if (!part) continue
+      if (message.type !== "user") continue
+      if (message.type !== "user" || message.text.trim().length === 0) continue
       result.push({
-        title: part.text.replace(/\n/g, " "),
+        title: message.text.replace(/\n/g, " "),
         value: message.id,
         footer: Locale.time(message.time.created),
         onSelect: (dialog) => {

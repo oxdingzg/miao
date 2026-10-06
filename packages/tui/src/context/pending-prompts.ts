@@ -1,9 +1,9 @@
 import { createStore, produce } from "solid-js/store"
-import type { Message, Part, UserMessage } from "@miao/schema/view-models"
+import type { SessionMessage, TranscriptUserMessage } from "@miao/schema/view-models"
 
 export type PendingPrompt = {
-  info: UserMessage
-  parts: Part[]
+  info: TranscriptUserMessage
+  sessionID: string
   state: "sending" | "admitted" | "failed"
   delivery: "steer" | "queue"
   error?: string
@@ -34,12 +34,12 @@ export function createPendingPrompts() {
         }),
       )
     },
-    reconcile(sessionID: string, messages: ReadonlyArray<Message>) {
+    reconcile(sessionID: string, messages: ReadonlyArray<SessionMessage>) {
       const projected = new Set(messages.map((message) => message.id))
       setData(
         produce((draft) => {
           Object.values(draft)
-            .filter((prompt) => prompt.info.sessionID === sessionID && projected.has(prompt.info.id))
+            .filter((prompt) => prompt.sessionID === sessionID && projected.has(prompt.info.id))
             .forEach((prompt) => {
               delete draft[prompt.info.id]
             })
@@ -50,17 +50,17 @@ export function createPendingPrompts() {
       setData(
         produce((draft) => {
           Object.values(draft)
-            .filter((prompt) => prompt.info.sessionID === sessionID)
+            .filter((prompt) => prompt.sessionID === sessionID)
             .forEach((prompt) => {
               delete draft[prompt.info.id]
             })
         }),
       )
     },
-    messages(sessionID: string, projected: ReadonlyArray<Message>): Message[] {
+    messages(sessionID: string, projected: ReadonlyArray<SessionMessage>): SessionMessage[] {
       const ids = new Set(projected.map((message) => message.id))
       const pending = Object.values(data)
-        .filter((prompt) => prompt.info.sessionID === sessionID && !ids.has(prompt.info.id))
+        .filter((prompt) => prompt.sessionID === sessionID && !ids.has(prompt.info.id))
         .map((prompt) => prompt.info)
         .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
       // Projected history is authoritative and already ordered by the server.

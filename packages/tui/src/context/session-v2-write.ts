@@ -1,5 +1,6 @@
 import path from "node:path"
-import type { PromptInput } from "@miao/schema/view-models"
+import type { PromptInput, SessionMessage } from "@miao/schema/view-models"
+import type { PromptInfo } from "../prompt/history"
 
 type PromptPartLike = {
   readonly type: string
@@ -28,4 +29,20 @@ export function promptInputFromParts(parts: ReadonlyArray<PromptPartLike>): Prom
     return [{ uri: part.url, name: part.filename, ...(local && path.isAbsolute(local) ? { path: local } : {}) }]
   })
   return files.length > 0 ? { text, files } : { text }
+}
+
+/** Rebuild the editable prompt from a V2 user message (resend/fork flows). */
+export function promptInfoFromUserMessage(
+  message: Extract<SessionMessage, { type: "user" }>,
+): PromptInfo {
+  const parts: PromptInfo["parts"] = [
+    ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
+    ...(message.files ?? []).map((file) => ({
+      type: "file" as const,
+      mime: file.mime,
+      url: file.uri,
+      filename: file.name,
+    })),
+  ]
+  return { input: message.text, parts }
 }

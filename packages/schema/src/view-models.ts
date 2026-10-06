@@ -67,6 +67,8 @@ type Wire<S> = StripBrand<Schema.Codec.Encoded<S>>
 // Session view model: the V2 record is the wire truth; messages stay on the V1
 // wire until the transcript cutover lands.
 export type Session = Wire<typeof SessionInfo.Info>
+// V1 message wire — the plugin hook surface (`chat.message`,
+// `experimental.chat.messages.transform`, …) still speaks this shape.
 export type Message = Wire<typeof SessionV1.Info>
 export type UserMessage = Wire<typeof SessionV1.User>
 export type AssistantMessage = Wire<typeof SessionV1.Assistant>
@@ -75,6 +77,18 @@ export type ToolPart = Wire<typeof SessionV1.ToolPart>
 export type TextPart = Wire<typeof SessionV1.TextPart>
 export type ReasoningPart = Wire<typeof SessionV1.ReasoningPart>
 export type FilePart = Wire<typeof SessionV1.FilePart>
+
+// Transcript messages are the V2 session messages: user/assistant carry their
+// parts inline, and meta messages (agent/model switch, synthetic, system,
+// shell, compaction) flow through the same list for consumers that need the
+// inherited context.
+export type TranscriptMessage = SessionMessage
+export type TranscriptUserMessage = Extract<SessionMessage, { type: "user" }>
+export type TranscriptAssistantMessage = Extract<SessionMessage, { type: "assistant" }>
+export type AssistantContent = Wire<typeof SessionMessageV2.AssistantContent>
+export type TranscriptToolPart = Extract<AssistantContent, { type: "tool" }>
+export type TranscriptTextPart = Extract<AssistantContent, { type: "text" }>
+export type TranscriptReasoningPart = Extract<AssistantContent, { type: "reasoning" }>
 export type AgentPart = Wire<typeof SessionV1.AgentPart>
 export type FilePartSource = Wire<typeof SessionV1.FilePartSource>
 export type ToolState = Wire<typeof SessionV1.ToolState>

@@ -1,23 +1,32 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/schema/view-models"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
 import { cacheTtl } from "../src/util/cache-ttl"
+import { testAssistantMessage } from "./lib/v2-message"
 
 const MINUTE = 60_000
 
 function turn(
   providerID: string,
   options: { read?: number; write?: number; startedAt?: number; completedAt?: number; summary?: boolean } = {},
-): AssistantMessage {
+): TranscriptAssistantMessage {
   const startedAt = options.startedAt ?? 0
   const completedAt = options.completedAt ?? startedAt
-  return {
-    role: "assistant",
-    providerID,
-    modelID: "some-model",
-    summary: options.summary,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: options.read ?? 0, write: options.write ?? 0 } },
-    time: options.completedAt === undefined ? { created: startedAt } : { created: startedAt, completed: completedAt },
-  } as unknown as AssistantMessage
+  return testAssistantMessage({
+    model: { id: "some-model", providerID },
+    // A summary turn reports on earlier turns and issues no request of its own.
+    ...(options.summary
+      ? {}
+      : {
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: options.read ?? 0, write: options.write ?? 0 },
+          },
+        }),
+    created: startedAt,
+    completed: options.completedAt,
+  })
 }
 
 describe("cacheTtl", () => {

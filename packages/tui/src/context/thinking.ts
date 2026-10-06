@@ -1,5 +1,5 @@
 import { createMemo, type Setter } from "solid-js"
-import type { AssistantMessage, ReasoningPart } from "@miao/schema/view-models"
+import type { TranscriptAssistantMessage, TranscriptReasoningPart } from "@miao/schema/view-models"
 import type { SessionStatus } from "@miao/schema/view-models"
 import { useKV } from "./kv"
 
@@ -25,12 +25,12 @@ export function reasoningSummary(text: string) {
 // repaint the whole screen every frame, so a finished message or an idle
 // session also ends it.
 export function reasoningDone(
-  part: Pick<ReasoningPart, "time">,
-  message: Pick<AssistantMessage, "time" | "error">,
+  part: Pick<TranscriptReasoningPart, "time">,
+  message: Pick<TranscriptAssistantMessage, "time" | "error">,
   status?: SessionStatus,
 ) {
   return (
-    part.time.end !== undefined ||
+    part.time?.completed !== undefined ||
     message.time.completed !== undefined ||
     message.error !== undefined ||
     status?.type === "idle"

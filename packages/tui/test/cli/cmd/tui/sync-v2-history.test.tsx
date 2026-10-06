@@ -5,6 +5,27 @@ import { json, mount, wait } from "./sync-fixture"
 
 const sessionID = "ses_v2_history"
 
+// V2 transcript: parts live inline on the message. This helper mirrors the old
+// part-store lookups the tests were written against.
+function partsOf(
+  sync: {
+    data: {
+      message: Record<
+        string,
+        ReadonlyArray<{ id: string; type: string; text?: string; content?: ReadonlyArray<unknown> }>
+      >
+    }
+  },
+  messageID: string,
+): ReadonlyArray<Record<string, unknown>> | undefined {
+  const message = sync.data.message[sessionID]?.find((item) => item.id === messageID)
+  if (!message) return undefined
+  if (message.type === "assistant") return message.content as ReadonlyArray<Record<string, unknown>>
+  if (message.type === "user")
+    return [{ type: "text", id: `${messageID}-text`, text: message.text }]
+  return undefined
+}
+
 const session = {
   id: sessionID,
   projectID: "proj_test",
@@ -54,11 +75,11 @@ test("V2 hydration keeps compacted history reachable", async () => {
     app = mounted.app
 
     await mounted.sync.session.sync(sessionID)
-    await wait(() => mounted.sync.data.part["msg_older"]?.[0]?.type === "text")
+    await wait(() => partsOf(mounted.sync, "msg_older")?.[0]?.type === "text")
 
     expect(mounted.sync.data.message[sessionID].map((info) => info.id)).toEqual(["msg_older", "msg_active"])
-    expect(mounted.sync.data.part["msg_older"][0]).toMatchObject({ type: "text", text: "before compaction" })
-    expect(mounted.sync.data.part["msg_active"][0]).toMatchObject({ type: "text", text: "after compaction" })
+    expect(partsOf(mounted.sync, "msg_older")![0]).toMatchObject({ type: "text", text: "before compaction" })
+    expect(partsOf(mounted.sync, "msg_active")![0]).toMatchObject({ type: "text", text: "after compaction" })
   } finally {
     app?.renderer.destroy()
   }
@@ -90,10 +111,10 @@ test("V2 loadOlder walks the timeline behind the transcript and stops at the old
     app = mounted.app
 
     await mounted.sync.session.sync(sessionID)
-    await wait(() => mounted.sync.data.part["msg_older"]?.[0]?.type === "text")
+    await wait(() => partsOf(mounted.sync, "msg_older")?.[0]?.type === "text")
 
     expect(await mounted.sync.session.loadOlder(sessionID)).toBe(true)
-    await wait(() => mounted.sync.data.part["msg_oldest"]?.[0]?.type === "text")
+    await wait(() => partsOf(mounted.sync, "msg_oldest")?.[0]?.type === "text")
 
     expect(mounted.sync.data.message[sessionID].map((info) => info.id)).toEqual([
       "msg_oldest",

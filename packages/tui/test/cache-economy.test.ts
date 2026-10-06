@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage } from "@miao/schema/view-models"
 import type { ProviderLike } from "../src/util/currency"
 import { cacheEconomy } from "../src/util/cache-economy"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
+import { testAssistantMessage } from "./lib/v2-message"
 
 // Anthropic-style per-million rates: reads bill at a tenth of input, writes at
 // 1.25x, and a request past 200k tokens pays double for everything.
@@ -15,13 +16,11 @@ function provider(cost?: Record<string, unknown>): ProviderLike {
   return { id: "acme", models: { "acme-1": cost ? { cost } : {} } }
 }
 
-function turn(cache: { read: number; write: number }, modelID = "acme-1", input = 0): AssistantMessage {
-  return {
-    role: "assistant",
-    providerID: "acme",
-    modelID,
+function turn(cache: { read: number; write: number }, modelID = "acme-1", input = 0): TranscriptAssistantMessage {
+  return testAssistantMessage({
+    model: { id: modelID, providerID: "acme" },
     tokens: { input, output: 0, reasoning: 0, cache },
-  } as unknown as AssistantMessage
+  })
 }
 
 describe("cacheEconomy", () => {

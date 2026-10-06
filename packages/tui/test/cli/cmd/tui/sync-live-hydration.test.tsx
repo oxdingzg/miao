@@ -5,6 +5,27 @@ import { tmpdir } from "../../../fixture/fixture"
 import { json, mount, wait } from "./sync-fixture"
 
 const sessionID = "ses_hydration_race"
+
+// V2 transcript: parts live inline on the message. This helper mirrors the old
+// part-store lookups the tests were written against.
+function partsOf(
+  sync: {
+    data: {
+      message: Record<
+        string,
+        ReadonlyArray<{ id: string; type: string; text?: string; content?: ReadonlyArray<unknown> }>
+      >
+    }
+  },
+  messageID: string,
+): ReadonlyArray<Record<string, unknown>> | undefined {
+  const message = sync.data.message[sessionID]?.find((item) => item.id === messageID)
+  if (!message) return undefined
+  if (message.type === "assistant") return message.content as ReadonlyArray<Record<string, unknown>>
+  if (message.type === "user")
+    return [{ type: "text", id: `${messageID}-text`, text: message.text }]
+  return undefined
+}
 const messageID = "msg_hydration_race"
 const partID = "prt_hydration_race"
 const directory = "/tmp/opencode/packages/miao"
@@ -135,12 +156,12 @@ test("stale session hydration does not overwrite live message parts", async () =
         },
       }),
     )
-    await wait(() => sync.data.part[liveID]?.[0]?.type === "text")
+    await wait(() => partsOf(sync, liveID)?.[0]?.type === "text")
 
     resolveHistory(json({ data: [], cursor: {} }))
     await hydrate
 
-    expect(sync.data.part[liveID][0]).toMatchObject({ text: "visible live content" })
+    expect(partsOf(sync, liveID)![0]).toMatchObject({ text: "visible live content" })
   } finally {
     app.renderer.destroy()
   }
@@ -185,7 +206,7 @@ test("orphan live deltas do not suppress hydrated parts", async () => {
     resolveHistory(json({ data: [], cursor: {} }))
     await hydrate
 
-    expect(sync.data.part[messageID][0]).toMatchObject({ text: "hydrated" })
+    expect(partsOf(sync, messageID)![0]).toMatchObject({ text: "hydrated" })
   } finally {
     app.renderer.destroy()
   }
@@ -237,7 +258,7 @@ test("an observed stream survives a behind hydration before its part is projecte
     await wait(() => sync.data.session_status[sessionID]?.type === "busy")
     resolveHistory(json({ data: [], cursor: {} }))
     await hydrate
-    expect(sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "你好🙂" })
+    expect(partsOf(sync, messageID)![0]).toMatchObject({ type: "text", text: "你好🙂" })
   } finally {
     app.renderer.destroy()
   }
@@ -311,7 +332,7 @@ test("a text end during hydration replaces a stale snapshot before its part is p
     snapshot = "你好"
     resolveHistory(json({ data: [], cursor: {} }))
     await hydrate
-    expect(sync.data.part[messageID][0]).toMatchObject({ type: "text", text: "你好" })
+    expect(partsOf(sync, messageID)![0]).toMatchObject({ type: "text", text: "你好" })
   } finally {
     app.renderer.destroy()
   }
@@ -335,7 +356,7 @@ test("hydration does not clear text streamed before it starts", async () => {
 
   try {
     await sync.session.sync(sessionID)
-    await wait(() => sync.data.part[messageID]?.[0]?.type === "text")
+    await wait(() => partsOf(sync, messageID)?.[0]?.type === "text")
     emit(
       global({
         id: "evt_delta",
@@ -349,7 +370,7 @@ test("hydration does not clear text streamed before it starts", async () => {
         },
       }),
     )
-    await wait(() => sync.data.part[messageID]?.[0]?.type === "text" && sync.data.part[messageID][0].text !== "")
+    await wait(() => partsOf(sync, messageID)?.[0]?.type === "text" && partsOf(sync, messageID)![0].text !== "")
 
     const before = contextRequests
     contextData = [assistant(messageID, 1, "", partID)]
@@ -357,7 +378,7 @@ test("hydration does not clear text streamed before it starts", async () => {
     await wait(() => contextRequests > before)
     await Bun.sleep(50)
 
-    expect(sync.data.part[messageID][0]).toMatchObject({ text: "visible streamed content" })
+    expect(partsOf(sync, messageID)![0]).toMatchObject({ text: "visible streamed content" })
   } finally {
     app.renderer.destroy()
   }
@@ -414,7 +435,6 @@ test("live messages merged during hydration keep the whole projected transcript"
     expect(sync.data.message[sessionID]).toHaveLength(101)
     expect(sync.data.message[sessionID].at(-1)?.id).toBe(liveID)
     expect(sync.data.message[sessionID].some((message) => message.id === "msg_000")).toBe(true)
-    expect(sync.data.part.msg_000).toBeDefined()
   } finally {
     app.renderer.destroy()
   }
@@ -438,7 +458,7 @@ test("a message removed during hydration does not regain stale parts", async () 
 
   try {
     await sync.session.sync(sessionID)
-    await wait(() => sync.data.part[messageID]?.[0]?.type === "text")
+    await wait(() => partsOf(sync, messageID)?.[0]?.type === "text")
 
     contextData = []
     emit(global(refresh("evt_removed")))
@@ -446,7 +466,7 @@ test("a message removed during hydration does not regain stale parts", async () 
     await Bun.sleep(50)
 
     expect(sync.data.message[sessionID]).toEqual([])
-    expect(sync.data.part[messageID]).toBeUndefined()
+    expect(partsOf(sync, messageID)).toBeUndefined()
   } finally {
     app.renderer.destroy()
   }
@@ -470,18 +490,27 @@ test("hydration updates keyed transcript objects without remounting unchanged UI
 
   try {
     await sync.session.sync(sessionID)
-    await wait(() => sync.data.part[messageID]?.length === 1)
+    await wait(() => partsOf(sync, messageID)?.length === 1)
     const message = sync.data.message[sessionID][0]
-    const text = sync.data.part[messageID][0]
+    const text = partsOf(sync, messageID)![0]
 
     const before = contextRequests
     contextData = [{ ...assistant(messageID, 1, "after", partID), cost: 1 }]
     emit(global(refresh("evt_identity")))
     await wait(() => contextRequests > before)
-    await wait(() => sync.data.part[messageID]?.[0]?.type === "text" && sync.data.part[messageID][0].text === "after")
+    await wait(() => {
+      const content = partsOf(sync, messageID)
+      const why = {
+        requests: contextRequests,
+        count: sync.data.message[sessionID]?.length,
+        content,
+      }
+      console.log("DEBUG", JSON.stringify(why))
+      return content?.[0]?.type === "text" && content![0].text === "after"
+    })
 
     expect(sync.data.message[sessionID][0]).toBe(message)
-    expect(sync.data.part[messageID][0]).toBe(text)
+    expect(partsOf(sync, messageID)![0]).toBe(text)
     expect(message).toMatchObject({ cost: 1 })
     expect(text).toMatchObject({ text: "after" })
   } finally {
@@ -503,7 +532,7 @@ test("session hydration completes while its diff is still pending", async () => 
   try {
     await mounted.sync.session.sync(sessionID)
     expect(mounted.sync.data.message[sessionID][0].id).toBe(messageID)
-    expect(mounted.sync.data.part[messageID][0]).toMatchObject({ text: "ready" })
+    expect(partsOf(mounted.sync, messageID)![0]).toMatchObject({ text: "ready" })
     expect(mounted.sync.data.session_diff[sessionID]).toBeUndefined()
     pending.resolve(
       json({ data: [{ path: "ready.ts", patch: "patch", status: "modified", additions: 1, deletions: 0 }] }),

@@ -1,19 +1,14 @@
 import { expect, test } from "bun:test"
 import { lastOutputAt, turnActivity } from "../src/routes/session/activity"
-import type { Part } from "@miao/schema/view-models"
+import type { AssistantContent } from "@miao/schema/view-models"
+import { testReasoningPart, testTextPart, testToolPart } from "./lib/v2-message"
 
-const base = { id: "part", sessionID: "ses_test", messageID: "msg_assistant" }
-
-function reasoning(text: string, start: number, end?: number): Part {
-  return { ...base, type: "reasoning", text, time: end === undefined ? { start } : { start, end } }
+function reasoning(text: string, created: number, completed?: number): AssistantContent {
+  return testReasoningPart(`prt_${text}_${created}`, text, { created, completed })
 }
 
-function tool(name: string, status: "completed" | "running" = "completed", input: Record<string, unknown> = {}): Part {
-  const state =
-    status === "completed"
-      ? { status, input, raw: "", output: "", title: "", metadata: {}, time: { start: 1, end: 2 } }
-      : { status, input, raw: "", time: { start: 1 } }
-  return { ...base, type: "tool", tool: name, callID: `call_${name}_${status}`, state } as Part
+function tool(name: string, status: "completed" | "running" = "completed", input: Record<string, unknown> = {}): AssistantContent {
+  return testToolPart(`prt_${name}_${status}`, name, status, { created: 1, completed: status === "completed" ? 2 : undefined, input })
 }
 
 test("counts accumulate across every step of a turn instead of per assistant message", () => {
@@ -82,33 +77,23 @@ test("a long command is shortened to its first line", () => {
 })
 
 test("running tools and text do not count as completed work", () => {
-  const parts: Part[] = [tool("bash", "running"), { ...base, type: "text", text: "hello" }]
+  const parts: AssistantContent[] = [tool("bash", "running"), testTextPart("prt_text", "hello")]
   expect(turnActivity({ parts, working: false })).toBeUndefined()
 })
 
 test("the live timer measures silence since the last output, not the turn", () => {
   // A running tool is silence by definition: nothing else can emit while it
   // holds the turn, so its own start is the moment output stopped.
-  const running = {
-    ...base,
-    type: "tool",
-    tool: "bash",
-    callID: "call_running",
-    state: { status: "running", input: {}, time: { start: 900 } },
-  } as Part
-  expect(lastOutputAt([running], 100)).toBe(900)
+  const running = [
+    testToolPart("prt_running", "bash", "running", { created: 900 }),
+  ] as AssistantContent[]
+  expect(lastOutputAt(running, 100)).toBe(900)
   expect(lastOutputAt([reasoning("open", 5000)], 100)).toBe(5000)
-  expect(lastOutputAt([{ ...base, type: "text", text: "streaming", time: { start: 100, end: 7000 } }], 100)).toBe(7000)
+  expect(lastOutputAt([testTextPart("prt_text", "streaming")], 100)).toBe(100)
 })
 
 test("a turn without any output measures from the prompt that opened it", () => {
-  const pending = {
-    ...base,
-    type: "tool",
-    tool: "bash",
-    callID: "call_pending",
-    state: { status: "pending", input: {}, raw: "" },
-  } as Part
+  const pending = testToolPart("prt_pending", "bash", "pending")
   expect(lastOutputAt([], 42)).toBe(42)
   expect(lastOutputAt([pending], 42)).toBe(42)
   expect(lastOutputAt([], undefined)).toBeUndefined()

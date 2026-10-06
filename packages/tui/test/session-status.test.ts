@@ -1,50 +1,33 @@
 import { expect, test } from "bun:test"
 import { idlePollInterval, statusPhase, waitingForResponse, watchSessionStatus } from "../src/context/session-status"
-import { sessionContextToMessages } from "../src/context/session-v2"
+import { testAssistantMessage, testUserMessage } from "./lib/v2-message"
 
-const [user, assistant] = sessionContextToMessages({
-  sessionID: "ses_test",
-  cwd: "/work",
-  root: "/work",
-  messages: [
-    { id: "msg_user", type: "user", text: "hello", time: { created: 1 } },
-    {
-      id: "msg_assistant",
-      type: "assistant",
-      agent: "build",
-      model: { id: "test", providerID: "test" },
-      time: { created: 2 },
-      content: [],
-    },
-  ],
-})
-const assistantInfo = assistant.info
-if (assistantInfo.role !== "assistant") throw new Error("Expected assistant")
-const part = { id: "part", sessionID: "ses_test", messageID: "msg_assistant" }
+const user = testUserMessage({ id: "msg_user", text: "hello", created: 1 })
+const assistant = testAssistantMessage({ id: "msg_assistant", agent: "build", model: { id: "test", providerID: "test" }, created: 2 })
 
 test("busy execution is visible before the assistant or its first readable frame exists", () => {
-  expect(waitingForResponse({ busy: true, blocked: false, parts: [] })).toBe(true)
-  expect(waitingForResponse({ busy: true, blocked: false, message: user.info, parts: user.parts })).toBe(true)
-  expect(waitingForResponse({ busy: true, blocked: false, message: assistantInfo, parts: [] })).toBe(true)
+  expect(waitingForResponse({ busy: true, blocked: false, content: [] })).toBe(true)
+  expect(waitingForResponse({ busy: true, blocked: false, message: user, content: [] })).toBe(true)
+  expect(waitingForResponse({ busy: true, blocked: false, message: assistant, content: [] })).toBe(true)
   expect(
     waitingForResponse({
       busy: true,
       blocked: false,
-      message: assistantInfo,
-      parts: [{ ...part, type: "reasoning", text: "", time: { start: 2 }, metadata: { itemId: "opaque" } }],
+      message: assistant,
+      content: [{ type: "reasoning", id: "part", text: "" }],
     }),
   ).toBe(true)
 })
 
 test("idle, interrupted and blocked execution do not show a false provider wait", () => {
-  expect(waitingForResponse({ busy: false, blocked: false, message: user.info, parts: user.parts })).toBe(false)
-  expect(waitingForResponse({ busy: true, blocked: true, message: user.info, parts: user.parts })).toBe(false)
+  expect(waitingForResponse({ busy: false, blocked: false, message: user, content: [] })).toBe(false)
+  expect(waitingForResponse({ busy: true, blocked: true, message: user, content: [] })).toBe(false)
   expect(
     waitingForResponse({
       busy: false,
       blocked: false,
-      message: { ...assistantInfo, time: { created: 2, completed: 3 } },
-      parts: [],
+      message: { ...assistant, time: { created: 2, completed: 3 } },
+      content: [],
     }),
   ).toBe(false)
 })
@@ -54,26 +37,24 @@ test("readable text, reasoning or tool progress replaces the initial waiting ind
     waitingForResponse({
       busy: true,
       blocked: false,
-      message: assistantInfo,
-      parts: [{ ...part, type: "text", text: "hello" }],
+      message: assistant,
+      content: [{ type: "text", id: "part", text: "hello" }],
     }),
   ).toBe(false)
   expect(
     waitingForResponse({
       busy: true,
       blocked: false,
-      message: assistantInfo,
-      parts: [{ ...part, type: "reasoning", text: "thinking", time: { start: 2 } }],
+      message: assistant,
+      content: [{ type: "reasoning", id: "part", text: "thinking", time: { created: 2 } }],
     }),
   ).toBe(false)
   expect(
     waitingForResponse({
       busy: true,
       blocked: false,
-      message: assistantInfo,
-      parts: [
-        { ...part, type: "tool", tool: "bash", callID: "call", state: { status: "pending", input: {}, raw: "" } },
-      ],
+      message: assistant,
+      content: [{ type: "tool", id: "call", name: "bash", time: { created: 2 } }] as never,
     }),
   ).toBe(false)
 })
@@ -83,8 +64,8 @@ test("an active continuation shows waiting again after the previous step finishe
     waitingForResponse({
       busy: true,
       blocked: false,
-      message: { ...assistantInfo, time: { created: 2, completed: 3 }, finish: "tool-calls" },
-      parts: [{ ...part, type: "text", text: "previous step" }],
+      message: { ...assistant, time: { created: 2, completed: 3 }, finish: "tool-calls" },
+      content: [{ type: "text", id: "part", text: "previous step" }],
     }),
   ).toBe(true)
 })

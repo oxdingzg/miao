@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@miao/schema/view-models"
+import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
 import type { ProviderLike } from "./currency"
 
 export type CacheEconomy = {
@@ -27,18 +27,19 @@ type CachePrice = {
  * function knowing about any particular provider.
  */
 export function cacheEconomy(
-  messages: ReadonlyArray<AssistantMessage>,
+  messages: ReadonlyArray<TranscriptAssistantMessage>,
   providers: ReadonlyArray<ProviderLike>,
-  multiplier: (message: AssistantMessage) => number = () => 1,
+  multiplier: (message: TranscriptAssistantMessage) => number = () => 1,
 ): CacheEconomy {
   return messages.reduce(
     (total, message) => {
       const tokens = message.tokens
+      if (!tokens) return total
       // The tiers below apply to the request's inclusive input, which is what
       // the runner bills against, so a session that outgrew the base rate is
       // measured at the rate it actually paid.
       const price = priceFor(
-        providers.find((provider) => provider.id === message.providerID)?.models[message.modelID],
+        providers.find((provider) => provider.id === message.model.providerID)?.models[message.model.id],
         tokens.input + tokens.cache.read + tokens.cache.write,
       )
       if (!price) return total

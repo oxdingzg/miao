@@ -23,15 +23,13 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
   receipts.add({
     info: {
       id: "msg_test",
-      sessionID: "ses_test",
-      role: "user",
-      agent: "build",
-      model: { providerID: "test", modelID: "test" },
+      type: "user",
+      text: "hello",
       // The receipt's clock is the wait, so keep it old enough that the status
       // line renders a duration on the first frame rather than "0ms".
       time: { created: Date.now() - 65_000 },
     },
-    parts: [],
+    sessionID: "ses_test",
     state: "sending",
     delivery: "steer",
   })

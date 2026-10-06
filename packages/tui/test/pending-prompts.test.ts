@@ -1,4 +1,4 @@
-import type { Message } from "@miao/schema/view-models"
+import type { SessionMessage } from "@miao/schema/view-models"
 import { expect, test } from "bun:test"
 import type { PendingPrompt } from "../src/context/pending-prompts"
 import { createPendingPrompts } from "../src/context/pending-prompts"
@@ -7,13 +7,11 @@ function prompt(id: string, sessionID = "ses_test"): PendingPrompt {
   return {
     info: {
       id,
-      sessionID,
-      role: "user",
-      agent: "build",
-      model: { providerID: "test", modelID: "model" },
+      type: "user",
+      text: "new question",
       time: { created: 10 },
     },
-    parts: [{ id: `${id}-text`, sessionID, messageID: id, type: "text", text: "new question" }],
+    sessionID,
     state: "sending",
     delivery: "steer",
   }
@@ -21,7 +19,7 @@ function prompt(id: string, sessionID = "ses_test"): PendingPrompt {
 
 test("local receipts are visible immediately without becoming projected history", () => {
   const receipts = createPendingPrompts()
-  const projected: Message[] = []
+  const projected: SessionMessage[] = []
   receipts.add(prompt("msg_one"))
   expect(receipts.messages("ses_test", projected)).toHaveLength(1)
   expect(projected).toHaveLength(0)
@@ -50,7 +48,6 @@ test("failed sends retain their text and an authoritative admission can recover 
   receipts.add(prompt("msg_one"))
   receipts.fail("msg_one", "offline")
   expect(receipts.data.msg_one.state).toBe("failed")
-  expect(receipts.data.msg_one.parts[0]).toMatchObject({ text: "new question" })
   receipts.admit("msg_one")
   expect(receipts.data.msg_one.state).toBe("admitted")
   expect(receipts.data.msg_one.error).toBeUndefined()
@@ -89,13 +86,11 @@ test("unpromoted receipts stay at the transcript tail when the client clock trai
   const projected = [
     {
       id: "msg_server",
-      sessionID: "ses_test",
-      role: "user",
+      type: "user",
+      text: "server question",
       time: { created: 20 },
-      agent: "build",
-      model: { providerID: "test", modelID: "model" },
     },
-  ] as Message[]
+  ] satisfies SessionMessage[]
 
   expect(receipts.messages("ses_test", projected).map((message) => message.id)).toEqual(["msg_server", "msg_local"])
 })
