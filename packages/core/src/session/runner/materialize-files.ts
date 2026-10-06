@@ -175,7 +175,31 @@ const materializeStructured = (
   blob: Blob.Interface,
   structured: Record<string, unknown>,
 ): Effect.Effect<Record<string, unknown>> =>
-  walkStructuredContent(blob, structured).pipe(Effect.map((value) => value as Record<string, unknown>))
+  requiresStructuredWalk(structured)
+    ? walkStructuredContent(blob, structured).pipe(Effect.map((value) => value as Record<string, unknown>))
+    : Effect.succeed(structured)
+
+// Most tool outputs contain no externalized bytes. Scan without allocating an
+// Effect or copying each field; use an explicit stack for deeply nested JSON.
+function requiresStructuredWalk(structured: Record<string, unknown>) {
+  const pending: unknown[] = [structured]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (typeof value !== "object" || value === null) continue
+    // Keep the old normalization for non-JSON objects at plugin boundaries.
+    const prototype = Object.getPrototypeOf(value)
+    if (Array.isArray(value)) {
+      if (prototype !== Array.prototype || Object.hasOwn(value, "toJSON")) return true
+      value.forEach((item) => pending.push(item))
+      continue
+    }
+    if (prototype !== Object.prototype && prototype !== null) return true
+    const record = value as Record<string, unknown>
+    if (record.contentRef === true && typeof record.content === "string") return true
+    Object.values(record).forEach((item) => pending.push(item))
+  }
+  return false
+}
 
 const walkStructuredContent = (blob: Blob.Interface, value: unknown): Effect.Effect<unknown> => {
   if (Array.isArray(value)) return Effect.forEach(value, (item) => walkStructuredContent(blob, item))
