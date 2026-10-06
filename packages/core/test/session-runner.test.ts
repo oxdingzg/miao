@@ -30,7 +30,7 @@ import { EventTable } from "@miao/core/event/sql"
 import { Project } from "@miao/core/project"
 import { ProjectTable } from "@miao/core/project/sql"
 import { QuestionV2 } from "@miao/core/question"
-import { AbsolutePath } from "@miao/core/schema"
+import { AbsolutePath, RelativePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionTodo } from "@miao/core/session/todo"
 import { Snapshot } from "@miao/core/snapshot"
@@ -528,6 +528,30 @@ const itWithSinglePermit = testEffect(
 const bashLocation = mkdtempSync(join(os.tmpdir(), "miao-bash-harness-"))
 const itWithBash = testEffect(
   AppNodeBuilder.build(LayerNode.group([...appNodes, BashTool.node]), appOverrides(location(bashLocation))),
+)
+// Counts tree captures so tests can assert how many the runner performed.
+const snapshotCaptures: string[] = []
+const countingSnapshots = Layer.succeed(
+  Snapshot.Service,
+  Snapshot.Service.of({
+    capture: () =>
+      Effect.sync(() => {
+        const id = Snapshot.ID.make(`snap-${snapshotCaptures.length + 1}`)
+        snapshotCaptures.push(id)
+        return id
+      }),
+    files: () => Effect.succeed([RelativePath.make("files-queried")]),
+    diff: () => Effect.succeed([]),
+    preview: () => Effect.succeed([]),
+    restore: () => Effect.void,
+    checkout: () => Effect.void,
+  }),
+)
+const itCountingSnapshots = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group(appNodes),
+    appOverrides(location("/project")).map(([node, layer]) => (node === Snapshot.node ? [node, countingSnapshots] : [node, layer])),
+  ),
 )
 const sessionID = SessionV2.ID.make("ses_runner_test")
 const otherSessionID = SessionV2.ID.make("ses_runner_other")
@@ -6538,6 +6562,71 @@ describe("SessionRunnerLLM", () => {
 
       expect(ended).toHaveLength(1)
       expect(ended.map((row) => row.data.model)).toEqual(started.map((row) => row.data.model))
+    }),
+  )
+
+  itCountingSnapshots.effect("skips the end snapshot for a step that called no tools", () =>
+    Effect.gen(function* () {
+      yield* setup
+      snapshotCaptures.length = 0
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Answer without tools" }), resume: false })
+      responseStream = Stream.fromIterable(fragmentFixture("text", "text-lazy", ["Done"]).completeEvents)
+
+      yield* session.resume(sessionID)
+
+      expect(snapshotCaptures).toHaveLength(1)
+      const { db } = yield* Database.Service
+      const ended = yield* db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Step.Ended.type, 2)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(ended).toHaveLength(1)
+      expect(ended[0].data.snapshot).toBe("snap-1")
+      expect(ended[0].data.files).toEqual([])
+    }),
+  )
+
+  itCountingSnapshots.effect("captures a tool step's end tree and skips the comparison when it did not change", () =>
+    Effect.gen(function* () {
+      yield* setup
+      snapshotCaptures.length = 0
+      const session = yield* SessionV2.Service
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "snapshot-echo", name: "echo", input: { text: "snapshot" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "snap-reply" }),
+          LLMEvent.textDelta({ id: "snap-reply", text: "Echoed" }),
+          LLMEvent.textEnd({ id: "snap-reply" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo for snapshot" }), resume: false })
+
+      yield* session.resume(sessionID)
+
+      expect(snapshotCaptures).toHaveLength(3)
+      const { db } = yield* Database.Service
+      const ended = yield* db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Step.Ended.type, 2)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(ended).toHaveLength(2)
+      expect(ended[0].data.snapshot).toBe("snap-2")
+      expect(ended[0].data.files).toEqual(["files-queried"])
+      expect(ended[1].data.snapshot).toBe("snap-3")
+      expect(ended[1].data.files).toEqual([])
     }),
   )
 

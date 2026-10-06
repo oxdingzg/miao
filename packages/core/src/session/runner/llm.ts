@@ -951,14 +951,20 @@ const layer = Layer.effect(
             lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             const cacheMissed = SessionRunnerMetrics.cacheMissed(stepSettlement.tokens)
             const endSnapshotStartedAt = Date.now()
-            const endSnapshot = yield* snapshots.capture()
+            // A step that published no tool call cannot have mutated the
+            // worktree, so its end tree is the one it started from; hashing the
+            // project again would only re-measure the same state. A tool step
+            // still captures, and an unchanged tree skips the comparison.
+            const endSnapshot = publisher.hasToolCalls() ? yield* snapshots.capture() : startSnapshot
             const endSnapshotMs = Date.now() - endSnapshotStartedAt
             const filesStartedAt = Date.now()
             const files =
               startSnapshot && endSnapshot
-                ? yield* snapshots
-                    .files({ from: startSnapshot, to: endSnapshot })
-                    .pipe(Effect.catch(() => Effect.succeed(undefined)))
+                ? endSnapshot === startSnapshot
+                  ? []
+                  : yield* snapshots
+                      .files({ from: startSnapshot, to: endSnapshot })
+                      .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
             const filesMs = Date.now() - filesStartedAt
             // The event carries the same figure the log line reports, so the two
