@@ -96,7 +96,7 @@ export const collect = (db: DatabaseService) =>
  * `specs/storage/session-storage-hardening.md`.
  */
 export const sweep = (input: {
-  readonly blob: Blob.Interface
+  readonly blob: { readonly remove: (hash: string) => Effect.Effect<boolean, unknown> }
   readonly directory: string
   readonly referenced: ReadonlySet<string>
   readonly dryRun?: boolean

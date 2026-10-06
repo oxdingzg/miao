@@ -9,6 +9,7 @@ import { FormatError } from "./cli/error"
 import { EOL } from "os"
 import { errorMessage } from "./util/error"
 import { Heap } from "./cli/heap"
+import { Maintenance } from "./cli/maintenance"
 import { Monitor } from "./cli/monitor"
 import { Crash } from "./cli/crash"
 
@@ -123,6 +124,7 @@ async function buildCli(selection: "all" | "default" | readonly string[]) {
       if (opts._[0] === "db" && !["path", "stats", "retention"].includes(String(opts._[1])))
         process.env.MIAO_DATABASE_EXCLUSIVE = "1"
       WindowLifecycle.register(WindowLifecycle.disposeCore)
+      Maintenance.start()
     })
     .usage("")
     .completion("completion", "generate shell completion script")
