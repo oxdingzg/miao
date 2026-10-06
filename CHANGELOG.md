@@ -10,6 +10,22 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-06
+
+### Changed
+
+- **runtime**: each CLI/TUI window owns its execution and local API; exit, terminal close, and ACP EOF close its resources (#260, #261, #268).
+- **remote-control**: explicitly enable remote access for the current window; independent windows keep separate identities, permissions, and lifetimes (#265).
+
+### Fixed
+
+- **core**: allow concurrent windows to share history while keeping exclusive Session execution ownership and safe database maintenance (#256, #259).
+- **installation**: atomically switch launchers to immutable builds so active windows and their later child processes retain their version (#266).
+
+### Removed
+
+- **runtime**: detached daemon reuse, service management, idle retention, and execution workers (#268).
+
 ## [0.1.14] - 2026-10-06
 
 ### Added
