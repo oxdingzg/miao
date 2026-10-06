@@ -17,12 +17,14 @@ const cmd = (...args: string[]) => ChildProcess.make(NODE, args)
 const waitForFile = (file: string) =>
   Effect.promise(async () => {
     while (true) {
-      try {
-        return await fs.readFile(file, "utf8")
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-        await new Promise<void>((resolve) => setTimeout(resolve, 10))
-      }
+      const content = await fs.readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error
+        return undefined
+      })
+      // The output file can exist but still be empty between create and the
+      // first write, so wait for the first non-empty read rather than existence.
+      if (content) return content
+      await new Promise<void>((resolve) => setTimeout(resolve, 10))
     }
   })
 
