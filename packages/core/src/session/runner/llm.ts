@@ -44,6 +44,7 @@ import { BackgroundJob } from "../../background-job"
 import { BackgroundJobTool } from "../../tool/background-job"
 import { SendMessageTool } from "../../tool/send-message"
 import { ListSessionsTool } from "../../tool/list-sessions"
+import { WorktreeTool } from "../../tool/worktree"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
@@ -57,6 +58,7 @@ import { SessionBackgroundJobs } from "../background-jobs"
 import { SessionMessage } from "../message"
 import { SessionPrune } from "../prune"
 import { SessionInput } from "../input"
+import { SessionPlacement } from "../placement"
 import { ToolCallLeak } from "../tool-call-leak"
 import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
@@ -209,6 +211,7 @@ const layer = Layer.effect(
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
     const image = yield* Image.Service
+    const placement = yield* SessionPlacement.Service
     const normalizeToolContent = (content: ToolOutput["content"]) =>
       SessionImageNormalize.toolContent(image, content).pipe(
         Effect.flatMap((normalized) => SessionBlobStorage.externalizeToolContent(blob, normalized)),
@@ -1264,6 +1267,35 @@ const layer = Layer.effect(
       return { sessionID: target.id }
     })
 
+    // A moved Session cannot keep running in the runner that served this call:
+    // `runTurnAttempt` refuses a turn whose Session location no longer matches the
+    // runner's own. `SessionPlacement` admits its reminder as a steer, and the wake
+    // below lets the runner that owns the new directory promote it, so the Session
+    // resumes there rather than stopping with a tool result as its last word.
+    const runEnterWorktree = Effect.fnUntraced(function* (
+      request: { readonly name?: string; readonly copyChanges?: boolean },
+      context: { readonly sessionID: SessionSchema.ID },
+      wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
+    ) {
+      const result = yield* placement
+        .enterWorktree({ sessionID: context.sessionID, name: request.name, copyChanges: request.copyChanges })
+        .pipe(Effect.mapError((error) => new ToolFailure({ message: error.message })))
+      if (wake) yield* wake(context.sessionID)
+      return result
+    })
+
+    const runExitWorktree = Effect.fnUntraced(function* (
+      request: { readonly action: "keep" | "remove" },
+      context: { readonly sessionID: SessionSchema.ID },
+      wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
+    ) {
+      const result = yield* placement
+        .exitWorktree({ sessionID: context.sessionID, action: request.action })
+        .pipe(Effect.mapError((error) => new ToolFailure({ message: error.message })))
+      if (wake) yield* wake(context.sessionID)
+      return result
+    })
+
     // Provider and model-resolution failures are settled on the assistant message as
     // `step.failed`; any other drain failure would otherwise end the drain silently.
     const reportFailure = (sessionID: SessionSchema.ID, cause: Cause.Cause<RunError>) => {
@@ -1353,6 +1385,10 @@ const layer = Layer.effect(
                     Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
                   ),
                 ),
+                ...WorktreeTool.make({
+                  enter: (request, context) => runEnterWorktree(request, context, input.wake),
+                  exit: (request, context) => runExitWorktree(request, context, input.wake),
+                }),
               })
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
@@ -1538,6 +1574,7 @@ export const node = makeLocationNode({
     Blob.node,
     FSUtil.node,
     Image.node,
+    SessionPlacement.node,
   ],
 })
 
