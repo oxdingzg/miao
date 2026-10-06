@@ -1,7 +1,7 @@
 export * as ProjectWorktree from "./worktree"
 
 import path from "path"
-import { eq } from "drizzle-orm"
+import { eq, like, or } from "drizzle-orm"
 import { Context, Effect, Layer, Schema, Scope } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Event as DirectoriesEvent } from "@miao/schema/project-directories"
@@ -19,6 +19,7 @@ import { Slug } from "../util/slug"
 import { ProjectDirectories } from "./directories"
 import { ProjectMetadata } from "./metadata"
 import { ProjectTable } from "./sql"
+import { SessionTable } from "../session/sql"
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -268,6 +269,23 @@ const layer = Layer.effect(
     const remove = Effect.fn("ProjectWorktree.remove")(function* (target: Target, input: DirectoryInput) {
       yield* requireGit(target)
       const directory = yield* canonical(input.directory)
+      // Deleting a worktree whose directory still anchors sessions leaves them
+      // with a dead cwd: tools, snapshots, and every later resume fail. Refuse
+      // while any session row still points into the tree, even when git has
+      // already forgotten the worktree registration.
+      const living = yield* db
+        .select({ id: SessionTable.id, title: SessionTable.title })
+        .from(SessionTable)
+        .where(or(eq(SessionTable.directory, directory), like(SessionTable.directory, `${directory}/%`)))
+        .all()
+        .pipe(Effect.orDie)
+      if (living.length > 0)
+        return yield* new WorktreeError({
+          message:
+            `Cannot remove the worktree at "${directory}": ${living.length} session(s) still live in it ` +
+            `(${living.map((session) => `${session.id} "${session.title}"`).join(", ")}). ` +
+            "Move them out with exit_worktree or delete the sessions first.",
+        })
       const entry = yield* locate(target.checkout, directory)
       if (!entry?.path) {
         if (yield* fs.existsSafe(directory)) {

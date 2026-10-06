@@ -3,7 +3,8 @@ import { $ } from "bun"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, Exit, Fiber, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Option, Stream } from "effect"
+import { eq } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -13,6 +14,8 @@ import { Project } from "@miao/core/project"
 import { ProjectDirectories } from "@miao/core/project/directories"
 import { ProjectTable } from "@miao/core/project/sql"
 import { ProjectWorktree } from "@miao/core/project/worktree"
+import { SessionV2 } from "@miao/core/session"
+import { SessionTable } from "@miao/core/session/sql"
 import { AbsolutePath } from "@miao/core/schema"
 import { WorktreeEvent } from "@miao/schema/worktree-event"
 import { tmpdir } from "./fixture/tmpdir"
@@ -145,6 +148,43 @@ describe("ProjectWorktree", () => {
       expect(yield* Effect.promise(() => fs.readFile(path.join(info.directory, "README.md"), "utf8"))).toBe("hello\n")
       expect(yield* Effect.promise(() => Bun.file(path.join(info.directory, "scratch.txt")).exists())).toBe(false)
       expect(Exit.isFailure(yield* worktrees.reset(target, { directory: repo }).pipe(Effect.exit))).toBe(true)
+    }),
+  )
+
+  it.live("refuses to remove a worktree while sessions live in it", () =>
+    Effect.gen(function* () {
+      const { target } = yield* setup
+      const worktrees = yield* ProjectWorktree.Service
+      const info = yield* worktrees.create(target)
+      yield* waitFor(() => Bun.file(path.join(info.directory, "README.md")).exists())
+      const sessionID = SessionV2.ID.make("ses_worktree_live")
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: projectID,
+          slug: "worktree-live",
+          directory: info.directory,
+          title: "still working here",
+          version: "test",
+          time_created: 1,
+          time_updated: 1,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      const refused = yield* worktrees.remove(target, { directory: info.directory }).pipe(Effect.exit)
+      expect(Exit.isFailure(refused)).toBe(true)
+      if (Exit.isFailure(refused)) {
+        const message = Option.getOrUndefined(Cause.findErrorOption(refused.cause))
+        expect(String(message)).toContain(sessionID)
+        expect(String(message)).toContain("still live in it")
+      }
+      expect(yield* Effect.promise(() => Bun.file(path.join(info.directory, "README.md")).exists())).toBe(true)
+
+      yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      expect(yield* worktrees.remove(target, { directory: info.directory })).toBe(true)
     }),
   )
 })
