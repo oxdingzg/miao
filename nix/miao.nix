@@ -2,7 +2,6 @@
   lib,
   stdenvNoCC,
   callPackage,
-  bun,
   nodejs,
   sysctl,
   makeBinaryWrapper,
@@ -13,6 +12,11 @@
   writableTmpDirAsHomeHook,
   node_modules ? callPackage ./node-modules.nix { },
 }:
+let
+  # `bun build --compile` bakes a module initialization order into the binary,
+  # and nixpkgs' bun produces one that crashes at startup. See ./bun.nix.
+  bun = callPackage ./bun.nix { };
+in
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "miao";
   inherit (node_modules) version src;
@@ -26,13 +30,6 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     models-dev
     writableTmpDirAsHomeHook
   ];
-
-  postPatch = ''
-    # NOTE: Relax Bun version check to be a warning instead of an error
-    substituteInPlace packages/script/src/index.ts \
-      --replace-fail 'throw new Error(`This script requires bun@''${expectedBunVersionRange}' \
-                     'console.warn(`Warning: This script requires bun@''${expectedBunVersionRange}'
-  '';
 
   configurePhase = ''
     runHook preConfigure
