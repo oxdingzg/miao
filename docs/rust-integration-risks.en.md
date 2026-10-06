@@ -117,8 +117,11 @@ Current parity is mostly ASCII; the following produce **different results**, not
 
 1. ~~Solve R1/R2 first~~ -> **solved**: per-platform addon build plus sandbox self-exec (R1), and the
    `native`/`sandbox-linux` CI jobs forcing a Rust build and running the sandbox tests (R2).
-2. ~~Integrate the lowest-risk pieces first~~ -> **not taken**: native `edit`/`apply_patch` were only
-   consumed by the V1 tools, which have been removed; V2's `edit`/`patch` stay TypeScript.
+2. ~~Integrate the lowest-risk pieces first~~ -> **taken differently**: the plan rested on the
+   assumption that native `edit`/`apply_patch` were consumed only by the V1 tools. That assumption did
+   not hold — `packages/core/src/tool/edit-match.ts` and `packages/core/src/patch.ts` call the same
+   `matchEdit` and `deriveNewContentsV2` primitives from the V2 tools, gated on `MIAO_NATIVE` (on by
+   default). The V1 removal took the tools, not the primitives.
 3. **Defer git**: build the async/worker wrapper first (R3) and add a snapshot **full-path** benchmark
    (including add/write-tree); only integrate when it covers the dominant cost.
 4. **Sandbox as an optional capability**: now wired opt-in into the V2 `bash` tool (`MIAO_SANDBOX=1` or

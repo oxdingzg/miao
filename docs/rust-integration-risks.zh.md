@@ -77,7 +77,7 @@
 ## 六、建议的接入顺序与门槛
 
 1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；`native`/`sandbox-linux` CI job 强制构建并运行沙箱测试（R2）。
-2. ~~先接风险最低的~~ → **未采用**：native `edit`/`apply_patch` 只被 V1 工具消费，而这些工具已删除；V2 的 `edit`／`patch` 保持 TypeScript 实现。
+2. ~~先接风险最低的~~ → **换了一种接法**：原计划基于「native `edit`/`apply_patch` 只被 V1 工具消费」这一假设。该假设并不成立 —— V2 工具本身就经 `packages/core/src/tool/edit-match.ts` 与 `packages/core/src/patch.ts` 调用同一套 `matchEdit` 与 `deriveNewContentsV2`，由 `MIAO_NATIVE` 控制（默认开启）。V1 移除的是工具，不是原语。
 3. **git 后置**：先做 async/worker 封装（R3），并补 snapshot **全链路**（含 add/write-tree）基准；只在能覆盖大头时才接。
 4. **sandbox 作为可选能力**：已 opt-in 接入 V2 `bash` 工具（`MIAO_SANDBOX=1` 或 `sandbox.mode`）并可回退；Linux 后端已补；默认开启仍待定。不要用 stderr 解析做 escalation 的唯一依据。
 5. 每一步都以“现有测试全绿 + 新 parity 不 skip + 内存/RSS 基线”作为验收。
