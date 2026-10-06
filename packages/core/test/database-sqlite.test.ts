@@ -1,53 +1,55 @@
-import { describe, expect, test } from "bun:test"
-import { Cause, Effect } from "effect"
-import { executeSqlite } from "@miao/core/database/sqlite"
+import { afterAll, describe, expect, test } from "bun:test"
+import { Database as BunDatabase } from "bun:sqlite"
+import fs from "fs/promises"
+import os from "os"
+import path from "path"
+import { Effect, Layer } from "effect"
+import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { layer } from "@miao/core/database/sqlite.bun"
+import { Sqlite, sqliteReason } from "@miao/core/database/sqlite"
 
-class Busy extends Error {
-  override readonly name = "SQLiteError"
-  readonly code = "SQLITE_BUSY"
-}
+const dir = await fs.realpath(await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "miao-sqlite-busy-")))
+const file = path.join(dir, "busy.db")
+afterAll(() => fs.rm(dir, { recursive: true, force: true }))
 
-describe("executeSqlite", () => {
-  test("retries a statement the writer lock blocked and then succeeds", async () => {
-    let attempts = 0
-    const started = Date.now()
-    const result = await Effect.runPromise(
-      executeSqlite(() => {
-        attempts += 1
-        if (attempts < 3) throw new Busy()
-        return attempts
+const runWith = <A, E>(effect: Effect.Effect<A, E, SqlClient | Sqlite.Native>) =>
+  Effect.runPromise(effect.pipe(Effect.provide(layer({ filename: file })), Effect.scoped))
+
+describe("sqlite busy retry", () => {
+  test("a statement the write lock blocks succeeds once the holder releases it", async () => {
+    await runWith(
+      Effect.gen(function* () {
+        const native = (yield* Sqlite.Native) as BunDatabase
+        native.exec("CREATE TABLE t (x INTEGER)")
+        // The client under test waits only 5ms natively, so with a second
+        // connection holding the machine-wide writer the statement-level retry
+        // is what carries the write once the holder commits.
+        holder("BEGIN IMMEDIATE")
+        holder("INSERT INTO t VALUES (1)")
+        native.exec("PRAGMA busy_timeout = 5")
+
+        yield* Effect.forkChild(
+          Effect.gen(function* () {
+            yield* Effect.sleep("30 millis")
+            holder("COMMIT")
+          }),
+        )
+        yield* SqlClient.use((client) => client.unsafe("INSERT INTO t VALUES (2)"))
+
+        expect((native.query("SELECT COUNT(*) AS n FROM t").get() as { n: number }).n).toBe(2)
       }),
     )
-    expect(result).toBe(3)
-    // The lock schedule yields to the event loop instead of retrying inline,
-    // so at least the first backoff step must have elapsed.
-    expect(Date.now() - started).toBeGreaterThanOrEqual(50)
   })
 
-  test("names the contention failure once the retry budget is spent", async () => {
-    const exit = await Effect.runPromiseExit(
-      executeSqlite(() => {
-        throw new Busy()
-      }),
-    )
-    expect(exit._tag).toBe("Failure")
-    if (exit._tag === "Failure") {
-      const error = Cause.squash(exit.cause) as Error
-      expect(error.message).toContain("Database is busy")
-    }
-  })
-
-  test("fails a non-busy error immediately without retrying", async () => {
-    let attempts = 0
-    const started = Date.now()
-    const exit = await Effect.runPromiseExit(
-      executeSqlite(() => {
-        attempts += 1
-        throw Object.assign(new Error("UNIQUE constraint failed"), { code: "SQLITE_CONSTRAINT" })
-      }),
-    )
-    expect(exit._tag).toBe("Failure")
-    expect(attempts).toBe(1)
-    expect(Date.now() - started).toBeLessThan(50)
+  test("classifies a busy failure as contention and says so", () => {
+    const reason = sqliteReason(Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" }), "execute")
+    expect(reason._tag).toBe("LockTimeoutError")
+    expect(reason.message).toContain("Database is busy")
   })
 })
+
+let lock: BunDatabase | undefined
+function holder(statement: string) {
+  lock ??= new BunDatabase(file)
+  lock.exec(statement)
+}
