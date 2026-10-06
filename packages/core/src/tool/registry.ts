@@ -13,6 +13,7 @@ import { ToolCodeMode } from "./code-mode"
 import {
   definition,
   permissions,
+  permissionExplicit,
   settle,
   validateName,
   type AnyTool,
@@ -271,7 +272,8 @@ const registryLayer = Layer.effect(
             if (registration) registrations.set(name, registration)
           }
         for (const [name, registration] of registrations)
-          if (whollyDisabled(permissions(registration.tool, name), rules)) registrations.delete(name)
+          if (whollyDisabled(permissions(registration.tool, name), rules, permissionExplicit(registration.tool)))
+            registrations.delete(name)
         for (const name of options?.disabledTools ?? []) registrations.delete(name)
         const orderKey = options?.sessionID ?? "@location"
         const ordered = stableToolOrder(advertisedOrder.get(orderKey) ?? [], Array.from(registrations.keys()))
@@ -324,8 +326,11 @@ const layer = Layer.effect(
   Service.use((registry) => Effect.succeed(Tools.Service.of({ register: registry.register }))),
 ).pipe(Layer.provideMerge(registryLayer))
 
-function whollyDisabled(actions: ReadonlyArray<string>, rules: PermissionV2.Ruleset) {
-  const rule = rules.findLast((rule) => actions.some((action) => Wildcard.match(action, rule.action)))
+function whollyDisabled(actions: ReadonlyArray<string>, rules: PermissionV2.Ruleset, explicit = false) {
+  // An explicit action is decided only by rules that name it: a bare `*` rule
+  // must not hide it here any more than it may grant it at execution time.
+  const considered = explicit ? rules.filter((rule) => rule.action !== "*") : rules
+  const rule = considered.findLast((rule) => actions.some((action) => Wildcard.match(action, rule.action)))
   return rule?.resource === "*" && rule.effect === "deny"
 }
 

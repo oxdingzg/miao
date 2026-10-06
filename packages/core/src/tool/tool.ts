@@ -74,6 +74,13 @@ type Config<
 type Runtime = {
   readonly permission?: string
   readonly permissionAliases?: ReadonlyArray<string>
+  /**
+   * Marks the tool's permission action as explicit: a bare `*` action rule can
+   * neither grant nor hide it. Its whole-tool visibility and execution are
+   * decided only by rules that name the action. Used for control actions such
+   * as the plan-mode switches, which a catch-all `allow` must not re-enable.
+   */
+  readonly permissionExplicit?: boolean
   readonly definition: (name: string) => ToolDefinition
   readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
 }
@@ -204,9 +211,10 @@ export const validateName = (name: string) =>
 export const withPermission = <Input extends SchemaType<any>, Output extends SchemaType<any>>(
   tool: Definition<Input, Output>,
   permission: string,
+  options?: { readonly explicit?: boolean },
 ) => {
   const decorated = Object.freeze({}) as Definition<Input, Output>
-  runtimes.set(decorated, { ...runtimeOf(tool), permission })
+  runtimes.set(decorated, { ...runtimeOf(tool), permission, permissionExplicit: options?.explicit })
   return decorated
 }
 
@@ -214,6 +222,8 @@ export const permissions = (tool: AnyTool, name: string) => {
   const runtime = runtimeOf(tool)
   return [runtime.permission ?? name, ...(runtime.permissionAliases ?? [])]
 }
+
+export const permissionExplicit = (tool: AnyTool) => runtimeOf(tool).permissionExplicit === true
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => runtimeOf(tool).settle(call, context)
 
