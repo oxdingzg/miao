@@ -27,6 +27,10 @@ export const Flag = {
   MIAO_DISABLE_PRUNE: truthy("MIAO_DISABLE_PRUNE"),
   MIAO_DISABLE_TERMINAL_TITLE: truthy("MIAO_DISABLE_TERMINAL_TITLE"),
   MIAO_SHOW_TTFD: truthy("MIAO_SHOW_TTFD"),
+  // Per-provider-turn replay log under <data>/model-io/, for debugging provider turns.
+  get MIAO_MODEL_IO() {
+    return truthy("MIAO_MODEL_IO")
+  },
   MIAO_DISABLE_AUTOCOMPACT: truthy("MIAO_DISABLE_AUTOCOMPACT"),
   MIAO_DISABLE_MODELS_FETCH: truthy("MIAO_DISABLE_MODELS_FETCH"),
   MIAO_DISABLE_MOUSE: truthy("MIAO_DISABLE_MOUSE"),

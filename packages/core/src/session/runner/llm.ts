@@ -30,6 +30,7 @@ import { Persona } from "../../system-context/persona"
 import { PlanIntent } from "../../system-context/plan-intent"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { Flag } from "../../flag/flag"
+import { Global } from "../../global"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
@@ -85,6 +86,7 @@ import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { SessionRunnerMetrics } from "./metrics"
+import { SessionRunnerModelIo } from "./model-io"
 import { Snapshot } from "../../snapshot"
 import { Blob } from "../../blob"
 import { FSUtil } from "../../fs-util"
@@ -753,11 +755,13 @@ const layer = Layer.effect(
       let requestStartedAt: number | undefined
       let firstEventAt: number | undefined
       let lastHandledAt: number | undefined
+      const modelIo = SessionRunnerModelIo.collector()
       const providerStream = llm.stream(request).pipe(
         SessionOutputGuard.wrap,
         Stream.runForEach((event) =>
           Effect.gen(function* () {
             const receivedAt = Date.now()
+            modelIo?.events.push(event)
             const stallMs = lastHandledAt === undefined ? 0 : receivedAt - lastHandledAt
             if (stallMs >= STREAM_STALL_MS)
               yield* Effect.logWarning("session.stream.stall", {
@@ -1033,6 +1037,26 @@ const layer = Layer.effect(
             yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
           if (stream._tag === "Success" && !publisher.hasProviderError())
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
+          if (modelIo) {
+            const settlement =
+              stepSettlement && !publisher.hasProviderError()
+                ? { finish: stepSettlement.finish, cost: stepSettlement.cost, tokens: stepSettlement.tokens }
+                : undefined
+            yield* SessionRunnerModelIo.write(Global.Path.data)({
+              sessionID: session.id,
+              model: stepModel,
+              request,
+              events: modelIo.events,
+              settlement,
+              failed:
+                stream._tag === "Failure" || publisher.hasProviderError() || overflowFailure !== undefined,
+              durationMs: Date.now() - attemptStartedAt,
+              ttftMs:
+                requestStartedAt !== undefined && firstEventAt !== undefined
+                  ? firstEventAt - requestStartedAt
+                  : undefined,
+            })
+          }
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
