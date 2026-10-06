@@ -937,6 +937,15 @@ const layer = Layer.effect(
             (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) ||
             (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
           ) {
+            // An interrupt reaching a live provider turn is otherwise invisible:
+            // the drain exits silently, so log the signal and which side of the
+            // turn carried it before the failure is published.
+            yield* Effect.logWarning("session.turn.interrupted", {
+              sessionID: session.id,
+              step: currentStep,
+              streamInterrupted: stream._tag === "Failure" && Cause.hasInterrupts(stream.cause),
+              toolsInterrupted: settled._tag === "Failure" && Cause.hasInterrupts(settled.cause),
+            })
             yield* FiberSet.clear(toolFibers)
             yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
             if (publisher.hasActiveAssistant())
