@@ -62,10 +62,10 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
 
-    install -Dm755 dist/miao-*/bin/miao /bin/miao
+    install -Dm755 dist/miao-*/bin/miao $out/bin/miao
     install -Dm644 schema.json $out/share/miao/schema.json
 
-    wrapProgram /bin/miao \
+    wrapProgram $out/bin/miao \
       --prefix PATH : ${
         lib.makeBinPath (
           [
@@ -82,8 +82,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   postInstall = lib.optionalString (stdenvNoCC.buildPlatform.canExecute stdenvNoCC.hostPlatform) ''
     # trick yargs into also generating zsh completions
     installShellCompletion --cmd miao \
-      --bash <(/bin/miao completion) \
-      --zsh <(SHELL=/bin/zsh /bin/miao completion)
+      --bash <($out/bin/miao completion) \
+      --zsh <(SHELL=/bin/zsh $out/bin/miao completion)
   '';
 
   nativeInstallCheckInputs = [
