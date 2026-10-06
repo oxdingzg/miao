@@ -580,9 +580,7 @@ export const locationLayer = Layer.effect(
         // Location plugins populate and filter the catalog asynchronously during layer startup.
         const defaultModel = session.model ? undefined : yield* catalog.model.default()
         const selected = session.model
-          ? (yield* catalog.model.available()).find(
-              (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
-            )
+          ? yield* catalog.model.getAvailable(session.model.providerID, session.model.id)
           : defaultModel && supported(defaultModel)
             ? defaultModel
             : (yield* catalog.model.available()).find(supported)
