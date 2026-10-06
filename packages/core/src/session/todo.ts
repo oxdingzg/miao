@@ -3,6 +3,7 @@ export * as SessionTodo from "./todo"
 import { asc, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { SessionTodo } from "@miao/schema/session-todo"
+import { SessionOwnership } from "./ownership"
 import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -49,11 +50,13 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const events = yield* EventV2.Service
+    const ownership = yield* SessionOwnership.Service
 
     const update = Effect.fn("SessionTodo.update")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly todos: ReadonlyArray<Info>
     }) {
+      yield* ownership.claim(input.sessionID)
       yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
@@ -96,4 +99,8 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node, Database.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer,
+  deps: [EventV2.node, Database.node, SessionOwnership.node],
+})

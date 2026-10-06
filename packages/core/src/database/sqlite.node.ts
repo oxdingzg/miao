@@ -144,6 +144,8 @@ const make = (options: Config) =>
         acquirer,
         compiler,
         transactionAcquirer,
+        // Reserve the writer before any reads to avoid cross-window WAL snapshot upgrades.
+        beginTransaction: "BEGIN IMMEDIATE",
         spanAttributes: [
           ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
           [ATTR_DB_SYSTEM_NAME, "sqlite"],
@@ -206,7 +208,9 @@ export const layer = (config: Config) => {
 export function openRuntimeLock(filename: string) {
   const native = new DatabaseSync(filename, { timeout: 0 })
   return {
-    exec: (sql: string) => { native.exec(sql) },
+    exec: (sql: string) => {
+      native.exec(sql)
+    },
     close: () => native.close(),
   }
 }

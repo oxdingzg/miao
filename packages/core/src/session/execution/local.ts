@@ -9,6 +9,7 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
 import { Database } from "../../database/database"
+import { SessionOwnership } from "../ownership"
 import { SessionDelegation } from "../delegation"
 
 /** Current-process routing for implicit-local Locations. Future remote placement belongs here. */
@@ -16,6 +17,7 @@ const layer = Layer.effect(
   SessionExecution.Service,
   Effect.gen(function* () {
     const store = yield* SessionStore.Service
+    const ownership = yield* SessionOwnership.Service
     const locations = yield* LocationServiceMap.Service
     const events = yield* EventV2.Service
     const db = (yield* Database.Service).db
@@ -72,14 +74,14 @@ const layer = Layer.effect(
         Effect.catchDefect((defect) => Effect.logWarning("failed to publish session status", { defect })),
       ),
     })
-    wake = coordinator.wake
+    wake = (sessionID) => ownership.claim(sessionID).pipe(Effect.andThen(coordinator.wake(sessionID)))
     setPhase = coordinator.setPhase
     const backgroundLimit = Number(process.env.MIAO_MAX_BACKGROUND_SUBAGENTS ?? 4)
     delegation = yield* SessionDelegation.make({
       db,
       events,
       store,
-      wake: coordinator.wake,
+      wake,
       wait: coordinator.awaitIdle,
       executions: coordinator.executions,
       interruptIf: coordinator.interruptIf,
@@ -92,8 +94,8 @@ const layer = Layer.effect(
       status: coordinator.status,
       interrupt: coordinator.interrupt,
       interruptIf: coordinator.interruptIf,
-      resume: coordinator.run,
-      wake: coordinator.wake,
+      resume: (sessionID) => ownership.claim(sessionID).pipe(Effect.andThen(coordinator.run(sessionID))),
+      wake,
       wait: coordinator.awaitIdle,
     })
   }),
@@ -102,7 +104,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: SessionExecution.Service,
   layer,
-  deps: [SessionStore.node, LocationServiceMap.node, EventV2.node, Database.node],
+  deps: [SessionStore.node, LocationServiceMap.node, EventV2.node, Database.node, SessionOwnership.node],
 })
 
 export * as SessionExecutionLocal from "./local"

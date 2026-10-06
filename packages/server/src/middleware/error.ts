@@ -1,3 +1,5 @@
+import { ConflictError } from "@miao/protocol/errors"
+import { SessionOwnership } from "@miao/core/session/ownership"
 import { NamedError } from "@miao/core/util/error"
 import { ConfigErrorV1 } from "@miao/core/v1/config/error"
 import { Cause, Effect } from "effect"
@@ -16,6 +18,12 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
       if (!defect) return Effect.failCause(cause)
 
       const error = defect.defect
+      if (error instanceof SessionOwnership.BusyError)
+        return Effect.succeed(
+          HttpServerResponse.jsonUnsafe(new ConflictError({ message: error.message, resource: error.sessionID }), {
+            status: 409,
+          }),
+        )
       if (
         ConfigErrorV1.JsonError.isInstance(error) ||
         ConfigErrorV1.InvalidError.isInstance(error) ||

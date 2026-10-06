@@ -13,6 +13,7 @@ import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
+import { SessionOwnership } from "./ownership"
 import { SessionStore } from "./store"
 
 export const EnterResult = Schema.Struct({
@@ -53,6 +54,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const events = yield* EventV2.Service
     const store = yield* SessionStore.Service
+    const ownership = yield* SessionOwnership.Service
     const projects = yield* ProjectV2.Service
     const worktrees = yield* ProjectWorktree.Service
     const move = yield* MoveSession.Service
@@ -95,6 +97,7 @@ const layer = Layer.effect(
       readonly name?: string
       readonly copyChanges?: boolean
     }) {
+      yield* ownership.claim(input.sessionID)
       const session = yield* store.get(input.sessionID)
       if (!session) return yield* new PlacementError({ message: "Unknown Session." })
       const target = yield* placementRoot(AbsolutePath.make(session.location.directory))
@@ -129,6 +132,7 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly action: "keep" | "remove"
     }) {
+      yield* ownership.claim(input.sessionID)
       const session = yield* store.get(input.sessionID)
       if (!session) return yield* new PlacementError({ message: "Unknown Session." })
       const target = yield* placementRoot(AbsolutePath.make(session.location.directory))
@@ -141,10 +145,7 @@ const layer = Layer.effect(
         .pipe(Effect.mapError(asError("Unable to move the Session back")))
       if (removed)
         yield* worktrees
-          .remove(
-            { projectID: target.projectID, checkout: target.checkout, git: true },
-            { directory: target.worktree },
-          )
+          .remove({ projectID: target.projectID, checkout: target.checkout, git: true }, { directory: target.worktree })
           .pipe(Effect.mapError(asError("Unable to remove the worktree")))
       yield* remind(
         input.sessionID,
@@ -161,5 +162,13 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, EventV2.node, SessionStore.node, ProjectV2.node, ProjectWorktree.node, MoveSession.node],
+  deps: [
+    Database.node,
+    EventV2.node,
+    SessionStore.node,
+    ProjectV2.node,
+    ProjectWorktree.node,
+    MoveSession.node,
+    SessionOwnership.node,
+  ],
 })
