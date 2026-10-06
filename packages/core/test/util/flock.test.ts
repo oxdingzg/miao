@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Effect, Fiber } from "effect"
 import fs from "fs/promises"
 import { spawn } from "child_process"
 import path from "path"
@@ -425,4 +426,19 @@ describe("util.flock", () => {
       await fs.chmod(dir, 0o700)
     }
   })
+})
+
+test("closing an Effect scope cancels a contended lock without releasing its owner", async () => {
+  await using directory = await tmpdir()
+  const key = "scope-cancellation"
+  await using owner = await Flock.acquire(key, { dir: directory.path })
+  const waiting = Promise.withResolvers<void>()
+  const fiber = Effect.runFork(
+    Effect.scoped(Flock.effect(key, { dir: directory.path, onWait: () => waiting.resolve() })),
+  )
+  await waiting.promise
+  const started = Date.now()
+  await Effect.runPromise(Fiber.interrupt(fiber))
+  expect(Date.now() - started).toBeLessThan(1000)
+  expect(await exists(lock(directory.path, key))).toBe(true)
 })

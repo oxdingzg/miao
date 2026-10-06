@@ -347,12 +347,26 @@ export namespace Flock {
 
   export const effect = Effect.fn("Flock.effect")(function* (key: string, input: Options = {}) {
     return yield* Effect.acquireRelease(
-      Effect.promise((signal) => Flock.acquire(key, { ...input, signal })).pipe(
+      Effect.callback<Lease>((resume, signal) => {
+        const acquisition = Flock.acquire(key, { ...input, signal }).then(
+          (lock) => {
+            if (signal.aborted) return lock.release()
+            resume(Effect.succeed(lock))
+          },
+          (error: unknown) => {
+            if (!signal.aborted) resume(Effect.die(error))
+          },
+        )
+        // Waiting is cancellable; finish any atomic attempt and release a late
+        // acquisition before the owning scope can finish shutting down.
+        return Effect.promise(() => acquisition)
+      }).pipe(
         Effect.withSpan("Flock.acquire", {
           attributes: { key },
         }),
       ),
       (lock) => Effect.promise(() => lock.release()).pipe(Effect.withSpan("Flock.release")),
+      { interruptible: true },
     ).pipe(Effect.asVoid)
   })
 }

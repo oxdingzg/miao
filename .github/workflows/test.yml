@@ -143,3 +143,26 @@ jobs:
         run: GITHUB_ACTIONS=false bun turbo test --continue
         env:
           MIAO_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+
+  window-runtime-windows:
+    name: window runtime (windows)
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+      - name: Verify storage and session ownership
+        working-directory: packages/core
+        run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts
+      - name: Verify window exit and immutable upgrade
+        working-directory: packages/miao
+        run: bun test test/runtime/window.test.ts test/installation/windows-upgrade.test.ts
