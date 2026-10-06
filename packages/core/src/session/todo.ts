@@ -57,6 +57,8 @@ const layer = Layer.effect(
       readonly todos: ReadonlyArray<Info>
     }) {
       yield* ownership.claim(input.sessionID)
+      const current = yield* get(input.sessionID)
+      if (sameTodos(current, input.todos)) return
       yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
@@ -98,6 +100,21 @@ const layer = Layer.effect(
     return Service.of({ update, get })
   }),
 )
+
+/**
+ * A todowrite that changes nothing still paid a delete+reinsert transaction
+ * and a durable event on every call; rewriting identical rows buys nothing,
+ * so an unchanged list short-circuits before either.
+ */
+function sameTodos(current: ReadonlyArray<Info>, next: ReadonlyArray<Info>) {
+  return (
+    current.length === next.length &&
+    current.every((todo, index) => {
+      const other = next[index]!
+      return todo.content === other.content && todo.status === other.status && todo.priority === other.priority
+    })
+  )
+}
 
 export const node = makeLocationNode({
   service: Service,
