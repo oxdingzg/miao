@@ -17,13 +17,23 @@ export function PromptStatus(props: { prompt: PendingPrompt }) {
   })
   return (
     <box paddingTop={1}>
-      <text fg={props.prompt.state === "failed" ? theme.theme.error : theme.theme.textMuted}>
+      <text
+        fg={
+          props.prompt.state === "failed"
+            ? theme.theme.error
+            : props.prompt.delivery === "queue"
+              ? theme.theme.warning
+              : props.prompt.state === "sending"
+                ? theme.theme.textMuted
+                : theme.theme.primary
+        }
+      >
         {props.prompt.state === "sending"
           ? "SENDING · awaiting receipt"
           : props.prompt.state === "failed"
             ? "SEND FAILED · use prompt history to retry"
             : props.prompt.delivery === "queue"
-              ? `QUEUED · waiting until the session is idle${waited()}`
+              ? `QUEUED · esc cancels the running turn, this one starts next${waited()}`
               : `RECEIVED · waiting for the next safe turn${waited()}`}
       </text>
       <Show when={props.prompt.error}>
