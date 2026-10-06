@@ -6,6 +6,7 @@ import {
   InvalidProviderOutputReason,
   InvalidRequestReason,
   LLMError,
+  TransportReason,
   UnknownProviderReason,
   type ContentPart,
   type LLMRequest,
@@ -106,6 +107,22 @@ export const providerError = (route: string, message: string) =>
     module: "ProviderShared",
     method: "stream",
     reason: new UnknownProviderReason({ message: `${route}: ${message}` }),
+  })
+
+/**
+ * The provider closed the stream without its terminal frame. That is a dropped
+ * or truncated response, not a bad request, so it is retryable — and the Session
+ * runner only replays an attempt while nothing from it has been published, so a
+ * partial answer is never duplicated.
+ */
+export const streamClosed = (route: string) =>
+  new LLMError({
+    module: "ProviderShared",
+    method: "stream",
+    reason: new TransportReason({
+      message: `${route}: provider closed the stream without a terminal frame`,
+      kind: "connection-closed",
+    }),
   })
 
 export const parseJson = (route: string, input: string, message: string) =>

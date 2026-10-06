@@ -651,19 +651,28 @@ describe("OpenAI Chat route", () => {
       const input = LLM.updateRequest(request, {
         tools: [{ name: "lookup", description: "Lookup data", inputSchema: { type: "object" } }],
       })
-      const events = Array.from(
-        yield* LLMClient.stream(input).pipe(Stream.runCollect, Effect.provide(fixedResponse(body))),
+      // A clean stream end without the terminal frame is a truncated response:
+      // the stream fails retryably, the events before the cutoff still arrive,
+      // and no tool call is finalized from the partial input.
+      const seen: unknown[] = []
+      const error = yield* LLMClient.stream(input).pipe(
+        Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+        Effect.provide(fixedResponse(body)),
+        Effect.flip,
       )
-      const error = yield* LLMClient.generate(input).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
+      const generateError = yield* LLMClient.generate(input).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
 
-      expect(events).toEqual([
+      expect(seen).toEqual([
         { type: "step-start", index: 0 },
         { type: "tool-input-start", id: "call_1", name: "lookup", providerMetadata: undefined },
         { type: "tool-input-delta", id: "call_1", name: "lookup", text: '{"query"' },
         { type: "tool-input-delta", id: "call_1", name: "lookup", text: ':"weather"}' },
       ])
-      expect(events.filter(LLMEvent.is.toolCall)).toEqual([])
-      expect(error.message).toContain("Provider stream ended without a terminal finish event")
+      expect(seen.filter(LLMEvent.is.toolCall)).toEqual([])
+      expect(error.message).toContain("closed the stream without a terminal frame")
+      expect(error.reason).toMatchObject({ _tag: "Transport", kind: "connection-closed" })
+      expect(error.retryable).toBe(true)
+      expect(generateError.retryable).toBe(true)
     }),
   )
 
