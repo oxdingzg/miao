@@ -418,21 +418,24 @@ export const locationLayer = Layer.effect(
       yield* credentials.create({ integrationID: id, label: "legacy", value })
     })
 
-    // `adoptLegacy` assumes the caller already knows there are no credentials,
-    // so confirm that with one lookup before calling it one integration at a time.
-    const adoptIfMissing = Effect.fnUntraced(function* (id: ID) {
-      if ((yield* credentials.list(id)).length > 0) return
+    // Reuse the current call's read when credentials already exist. This is
+    // not a cache: the next get/active call still reads the credential store.
+    // A missing credential may be imported from auth.json, so re-read then.
+    const loadCredentials = Effect.fnUntraced(function* (id: ID) {
+      const saved = yield* credentials.list(id)
+      if (saved.length > 0) return saved
       yield* adoptLegacy(id)
+      return yield* credentials.list(id)
     })
 
     return Service.of({
       transform: state.transform,
       reload: state.reload,
       get: Effect.fn("Integration.get")(function* (id) {
-        yield* adoptIfMissing(id)
+        const saved = yield* loadCredentials(id)
         const entry = state.get().integrations.get(id)
         if (!entry) return undefined
-        return project(entry, resolveConnections(entry, yield* credentials.list(id)))
+        return project(entry, resolveConnections(entry, saved))
       }),
       list: Effect.fn("Integration.list")(function* () {
         // The models catalog plugin registers an integration for every provider that
@@ -452,9 +455,9 @@ export const locationLayer = Layer.effect(
       }),
       connection: {
         active: Effect.fn("Integration.connection.active")(function* (id) {
-          yield* adoptIfMissing(id)
+          const saved = yield* loadCredentials(id)
           const entry = state.get().integrations.get(id)
-          return resolveConnections(entry, yield* credentials.list(id))[0]
+          return resolveConnections(entry, saved)[0]
         }),
         resolve: Effect.fn("Integration.connection.resolve")(function* (connection) {
           if (connection.type === "env") {
