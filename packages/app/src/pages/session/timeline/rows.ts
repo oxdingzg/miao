@@ -75,12 +75,14 @@ export namespace Timeline {
           ],
         }
         turns.push(openTurn)
+        turnByUserID.set(message.id, openTurn)
         return
       }
       if (message.type === "user" || (message.type === "synthetic" && message.text.trim())) {
         if (turnByUserID.has(message.id)) return
         openTurn = { user: message, assistants: [] }
         turns.push(openTurn)
+        turnByUserID.set(message.id, openTurn)
         return
       }
       if (message.type === "assistant") {

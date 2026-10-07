@@ -119,10 +119,9 @@ describe("current session timeline rows", () => {
       [],
     )
 
+    // V2-native construction renders the fetched page only; off-page history
+    // arrives through the timeline's older-page loading.
     expect(result.rows.map(TimelineRow.key)).toEqual([
-      "user-message:msg_user_1",
-      "assistant-part:msg_user_1:msg_assistant_1:text:0",
-      "turn-gap:msg_user_2",
       "user-message:msg_user_2",
       "assistant-part:msg_user_2:msg_assistant_2:text:0",
     ])
@@ -143,8 +142,7 @@ describe("current session timeline rows", () => {
     }
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) =>
-        messageID === optimistic.id ? optimistic : normalized.messages.find((message) => message.id === messageID),
+      (messageID) => (messageID === optimistic.id ? [] : (normalized.parts.get(messageID) ?? [])),
       true,
       "busy",
       true,
