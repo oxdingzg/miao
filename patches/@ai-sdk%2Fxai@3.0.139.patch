@@ -1,0 +1,72 @@
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+index e9c991657f3560d20b0d0d19b40204f45e5e985d..9bacd442f9f9cc7b58c954b1d16c156fae34d0a5 100644
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -5,13 +5,7 @@ import { FetchFunction } from '@ai-sdk/provider-utils';
+ 
+ type XaiChatModelId = 'grok-4.7' | 'grok-4.6' | 'grok-4.5' | 'grok-4.3' | 'grok-4.20-0309-reasoning' | 'grok-4.20-0309-non-reasoning' | 'grok-4.20-multi-agent-0309' | 'grok-build-0.1' | (string & {});
+ declare const xaiLanguageModelChatOptions: z.ZodObject<{
+-    reasoningEffort: z.ZodOptional<z.ZodEnum<{
+-        none: "none";
+-        low: "low";
+-        medium: "medium";
+-        high: "high";
+-        xhigh: "xhigh";
+-    }>>;
++    reasoningEffort: z.ZodOptional<z.ZodString>;
+     logprobs: z.ZodOptional<z.ZodBoolean>;
+     topLogprobs: z.ZodOptional<z.ZodNumber>;
+     serviceTier: z.ZodOptional<z.ZodEnum<{
+@@ -82,13 +76,7 @@ type XaiResponsesModelId = 'grok-4.7' | 'grok-4.6' | 'grok-4.5' | 'grok-4.3' | '
+  * @see https://docs.x.ai/docs/api-reference#create-new-response
+  */
+ declare const xaiLanguageModelResponsesOptions: z.ZodObject<{
+-    reasoningEffort: z.ZodOptional<z.ZodEnum<{
+-        none: "none";
+-        low: "low";
+-        medium: "medium";
+-        high: "high";
+-        xhigh: "xhigh";
+-    }>>;
++    reasoningEffort: z.ZodOptional<z.ZodString>;
+     logprobs: z.ZodOptional<z.ZodBoolean>;
+     topLogprobs: z.ZodOptional<z.ZodNumber>;
+     serviceTier: z.ZodOptional<z.ZodEnum<{
+@@ -96,6 +84,7 @@ declare const xaiLanguageModelResponsesOptions: z.ZodObject<{
+         priority: "priority";
+     }>>;
+     store: z.ZodOptional<z.ZodBoolean>;
++    promptCacheKey: z.ZodOptional<z.ZodString>;
+     previousResponseId: z.ZodOptional<z.ZodString>;
+     include: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodEnum<{
+         "file_search_call.results": "file_search_call.results";
+diff --git a/dist/index.js b/dist/index.js
+index d5eb8653c475d406a3b7eab98a908db78acc812a..0d0cecf8f033d6fe42b17f1a75972250e78ad9e9 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -278,6 +278,7 @@ var xaiLanguageModelChatOptions = import_v42.z.object({
+   logprobs: import_v42.z.boolean().optional(),
+   topLogprobs: import_v42.z.number().int().min(0).max(8).optional(),
+   serviceTier: import_v42.z.enum(["default", "priority"]).optional(),
++  promptCacheKey: import_v42.z.string().optional(),
+   /**
+    * Whether to enable parallel function calling during tool use.
+    * When true, the model can call multiple functions in parallel.
+@@ -1861,6 +1862,7 @@ var xaiLanguageModelResponsesOptions = import_v48.z.object({
+    * The ID of the previous response from the model.
+    */
+   previousResponseId: import_v48.z.string().optional(),
++  promptCacheKey: import_v48.z.string().optional(),
+   /**
+    * Specify additional output data to include in the model response.
+    * Example values: 'file_search_call.results'.
+@@ -2288,6 +2290,9 @@ var XaiResponsesLanguageModel = class {
+       ...options.previousResponseId != null && {
+         previous_response_id: options.previousResponseId
+       },
++      ...(options.promptCacheKey != null && {
++        prompt_cache_key: options.promptCacheKey
++      }),
+       ...options.serviceTier != null && {
+         service_tier: options.serviceTier
+       }
