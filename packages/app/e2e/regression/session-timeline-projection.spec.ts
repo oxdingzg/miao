@@ -127,6 +127,10 @@ test.describe("session timeline projection", () => {
       created: 1700000003000,
     })
     await setupTimeline(page, { messages: [user, before, after] })
+    page.on("console", (msg) => {
+      const text = msg.text()
+      if (text.includes("INTERRUPT-DEBUG")) console.log("BROWSER-LOG:", text.substring(0, 200))
+    })
 
     // The structural locator is i18n-independent; the virtualizer may mount
     // rows progressively under parallel workers.
