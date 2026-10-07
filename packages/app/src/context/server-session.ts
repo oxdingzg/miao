@@ -927,23 +927,17 @@ export function createServerSession(
 
     const normalized = normalizeSessionMessages(reduction.sessionID, reduction.messages)
     batch(() => {
+      // Direct store writes: the V1 render DTOs are derived synchronously from
+      // the V2 reduction output without the synthetic event indirection.
       for (const message of normalized.messages) {
         if (!touched.has(message.id)) continue
-        apply({ type: "message.updated", properties: { sessionID: reduction.sessionID, info: message } })
+        const current = data.message[reduction.sessionID] ?? []
+        const index = current.findIndex((item) => item.id === message.id)
+        if (index >= 0) setData("message", reduction.sessionID, index, reconcile(message))
+        else setData("message", reduction.sessionID, (messages = []) => [...messages, message].toSorted(compareMessages))
       }
       for (const messageID of touched) {
-        const next = normalized.parts.get(messageID) ?? []
-        const nextIDs = new Set(next.map((part) => part.id))
-        for (const part of next) {
-          apply({ type: "message.part.updated", properties: { sessionID: reduction.sessionID, part } })
-        }
-        for (const part of data.part[messageID] ?? []) {
-          if (nextIDs.has(part.id)) continue
-          apply({
-            type: "message.part.removed",
-            properties: { sessionID: reduction.sessionID, messageID, partID: part.id },
-          })
-        }
+        setData("part", messageID, reconcile(normalized.parts.get(messageID) ?? []))
       }
     })
   }
