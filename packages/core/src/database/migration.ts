@@ -1,8 +1,9 @@
 export * as DatabaseMigration from "./migration"
 
 import { sql } from "drizzle-orm"
+import { Effect, Schedule, Semaphore } from "effect"
 import { Flock } from "../util/flock"
-import { Effect, Semaphore } from "effect"
+import { RuntimeOwnership } from "../runtime/ownership"
 import type { EffectDrizzleSqlite } from "@miao/effect-drizzle-sqlite"
 import { migrations } from "./migration.gen"
 import schema from "./schema.gen"
@@ -21,12 +22,38 @@ export function initialize(db: Database, usage: { exclusive: () => void; share: 
         ? new Set((yield* db.all<{ id: string }>(sql`SELECT id FROM migration`)).map((row) => row.id))
         : new Set<string>()
       if (!table || migrations.some((migration) => !completed.has(migration.id))) {
-        yield* Effect.sync(usage.exclusive)
+        yield* upgradeExclusive(usage)
         yield* apply(db)
       }
       yield* Effect.sync(usage.share)
       yield* verify(db)
     }),
+  )
+}
+
+// A schema upgrade demands exclusive storage usage. When another miao window is
+// still open it holds shared usage, and failing immediately reads as "a new
+// miao cannot be opened while one is running". Wait for the other window to
+// quit instead — the runtime lock is held only by live connections, so the
+// wait ends on its own; Ctrl+C cancels it.
+function upgradeExclusive(usage: { exclusive: () => void }) {
+  let noticed = false
+  return Effect.try({
+    try: () => usage.exclusive(),
+    catch: (error) => error,
+  }).pipe(
+    Effect.catch((error) => (error instanceof RuntimeOwnership.BusyError ? Effect.fail(error) : Effect.die(error))),
+    Effect.tapError((error) => {
+      if (!(error instanceof RuntimeOwnership.BusyError)) return Effect.void
+      return Effect.sync(() => {
+        if (noticed) return
+        noticed = true
+        process.stderr.write(
+          "miao: this database needs a schema upgrade; waiting for other running miao windows to quit (Ctrl+C to cancel)...\n",
+        )
+      })
+    }),
+    Effect.retry({ schedule: Schedule.spaced("500 millis") }),
   )
 }
 

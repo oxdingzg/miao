@@ -67,30 +67,48 @@ test("independent windows share migrated storage and block exclusive maintenance
   }
 }, 15_000)
 
-test("pending migrations refuse to change a database used by another window", async () => {
+test("pending migrations wait for another window instead of touching its database", async () => {
   await using tmp = await tmpdir()
   const filename = path.join(tmp.path, "migration.db")
   const first = await window(filename)
   const sqlite = await import("bun:sqlite")
   const native = new sqlite.Database(filename)
-  const id = migrations.at(-1)!.id
+  let settled = false
   try {
-    native.query("DELETE FROM migration WHERE id = ?").run(id)
-    await expect(
-      Effect.runPromise(Database.Service.pipe(Effect.provide(Database.sharedLayerFromPath(filename)), Effect.scoped)),
-    ).rejects.toThrow("Close other miao windows")
-    expect(native.query("SELECT id FROM migration WHERE id = ?").get(id)).toBeNull()
-    native.query("INSERT INTO migration (id, time_completed) VALUES (?, ?)").run(id, Date.now())
-    const database = await Effect.runPromise(
+    // The window holds the runtime lock before anything touches the schema.
+    await expect(RuntimeOwnership.acquire(filename)).rejects.toBeInstanceOf(RuntimeOwnership.BusyError)
+    // Strip the whole schema (tables and journal) while the window runs: the
+    // upgrade then has a genuinely pending build to apply, and the running
+    // window is what keeps it from starting.
+    const tables = native
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .all() as Array<{ name: string }>
+    for (const table of tables) native.exec(`DROP TABLE "${table.name}"`)
+    const pending = Effect.runPromise(
       Database.Service.pipe(Effect.provide(Database.sharedLayerFromPath(filename)), Effect.scoped),
+    ).then(
+      (database) => {
+        settled = true
+        return database
+      },
+      (error) => {
+        settled = true
+        throw error
+      },
     )
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    // The rebuild must still be waiting, not failed or applied: the window is
+    // alive.
+    expect(settled).toBe(false)
+    // Quitting the old window lets the wait finish and the upgrade apply.
+    first.kill()
+    await first.exited
+    const database = await pending
     expect(database.db).toBeDefined()
   } finally {
     native.close()
-    first.kill()
-    await first.exited
   }
-}, 15_000)
+}, 20_000)
 
 test("a shared user cannot acquire exclusive access until other processes close", async () => {
   await using tmp = await tmpdir()

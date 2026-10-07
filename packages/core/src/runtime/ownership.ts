@@ -64,7 +64,11 @@ async function usage(storage: string): Promise<Usage> {
     },
     exclusive: () => {
       if (state.exclusive) return
-      native.exec("ROLLBACK")
+      // bun:sqlite autocommits the multi-statement share(), so the fallback
+      // connection may have no active transaction to roll back.
+      try {
+        native.exec("ROLLBACK")
+      } catch {}
       try {
         native.exec("BEGIN EXCLUSIVE")
         state.exclusive = true
