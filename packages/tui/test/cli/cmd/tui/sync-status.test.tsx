@@ -60,3 +60,35 @@ test("busy status heartbeats update status without rehydrating history; idle set
     mounted.app.renderer.destroy()
   }
 })
+
+test("a failing status poll surfaces one error and never strands the parallel input read", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const sessionID = "ses_status_poll_failure"
+  let failing = false
+  const mounted = await mount((url) => {
+    if (
+      failing &&
+      (url.pathname === `/api/session/${sessionID}/status` || url.pathname === `/api/session/${sessionID}/inputs`)
+    )
+      return new Response(null, { status: 500 })
+    return undefined
+  }, tmp.path)
+  try {
+    await mounted.sync.session.sync(sessionID)
+    await mounted.sync.session.syncStatus(sessionID)
+    failing = true
+    // A real server hiccup fails both requests in the same tick. The status
+    // rejection is the only error the poller sees; the parallel input read
+    // must stay handled, since an unhandled rejection exits the whole TUI.
+    const outcome = await mounted.sync.session.syncStatus(sessionID).then(
+      () => "resolved" as const,
+      () => "rejected" as const,
+    )
+    expect(outcome).toBe("rejected")
+    // Let the parallel read settle so an unhandled rejection still fails the run.
+    await Bun.sleep(50)
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
