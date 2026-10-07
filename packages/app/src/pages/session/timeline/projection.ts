@@ -32,7 +32,6 @@ export function createTimelineProjection(input: {
   const projection = createMemo(() =>
     Timeline.constructSessionMessageRows(
       input.sessionMessages(),
-      (messageID) => messageByID().get(messageID) as UserMessage | AssistantMessage | undefined,
       input.parts,
       input.showReasoningSummaries(),
       input.status().type,

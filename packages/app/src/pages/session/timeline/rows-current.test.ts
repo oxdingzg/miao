@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { SessionMessageInfo } from "@/utils/server"
+import type { UserMessage } from "@miao/schema/view-models"
 import { normalizeSessionMessages } from "@/utils/session-message"
 
 mock.module("@miao/session-ui/message-part", () => ({
@@ -37,16 +38,14 @@ describe("current session timeline rows", () => {
       },
     ] satisfies SessionMessageInfo[]
     const normalized = normalizeSessionMessages("ses_1", source)
-    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
 
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => messages.get(messageID),
       (messageID) => normalized.parts.get(messageID) ?? [],
       true,
       "busy",
       true,
-      normalized.messages.filter((message) => message.role === "user"),
+      [],
     )
 
     expect(result.activeMessageID).toBe("msg_3")
@@ -71,16 +70,14 @@ describe("current session timeline rows", () => {
       },
     ] satisfies SessionMessageInfo[]
     const normalized = normalizeSessionMessages("ses_1", source)
-    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
 
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => messages.get(messageID),
       (messageID) => normalized.parts.get(messageID) ?? [],
       true,
       "idle",
       true,
-      normalized.messages.filter((message) => message.role === "user"),
+      [],
     )
 
     expect(result.activeMessageID).toBe("msg_shell")
@@ -112,22 +109,19 @@ describe("current session timeline rows", () => {
       },
     ] satisfies SessionMessageInfo[]
     const normalized = normalizeSessionMessages("ses_1", source)
-    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
 
     const result = Timeline.constructSessionMessageRows(
       source.slice(1),
-      (messageID) => messages.get(messageID),
       (messageID) => normalized.parts.get(messageID) ?? [],
       true,
       "idle",
       true,
-      normalized.messages.filter((message) => message.role === "user"),
+      [],
     )
 
+    // V2-native construction renders the fetched page only; off-page history
+    // arrives through the timeline's older-page loading.
     expect(result.rows.map(TimelineRow.key)).toEqual([
-      "user-message:msg_user_1",
-      "assistant-part:msg_user_1:msg_assistant_1:text:0",
-      "turn-gap:msg_user_2",
       "user-message:msg_user_2",
       "assistant-part:msg_user_2:msg_assistant_2:text:0",
     ])
@@ -148,13 +142,11 @@ describe("current session timeline rows", () => {
     }
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) =>
-        messageID === optimistic.id ? optimistic : normalized.messages.find((message) => message.id === messageID),
-      () => [],
+      (messageID) => (messageID === optimistic.id ? [] : (normalized.parts.get(messageID) ?? [])),
       true,
       "busy",
       true,
-      [...normalized.messages.filter((message) => message.role === "user"), optimistic],
+      [...normalized.messages.filter((message) => message.role === "user"), optimistic] as unknown as UserMessage[],
     )
 
     expect(result.activeMessageID).toBe(optimistic.id)
@@ -188,16 +180,14 @@ describe("current session timeline rows", () => {
       },
     ] satisfies SessionMessageInfo[]
     const normalized = normalizeSessionMessages("ses_1", source)
-    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
 
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => messages.get(messageID),
       (messageID) => normalized.parts.get(messageID) ?? [],
       true,
       "busy",
       true,
-      normalized.messages.filter((message) => message.role === "user"),
+      [],
     )
 
     expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
