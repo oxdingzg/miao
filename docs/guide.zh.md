@@ -9,7 +9,7 @@
 
 miao 是一个开源编程代理，提供终端界面、HTTP 服务与浏览器界面。它把重点放在模型调用周围的工作上：持久化会话、上下文效率、代理协作和可观察的成本。
 
-用它理解仓库、实现改动、排查测试失败，或委派专项调研。连接你偏好的供应商，配置项目工具，并在任务变化时继续补充要求。miao 支持模型选择与 MCP；miao 的运行时建设与可用范围见 [产品概览](../README.zh.md) 和 [对比说明](miao-vs-opencode.zh.md)。
+用它理解仓库、实现改动、排查测试失败，或委派专项调研。连接你偏好的供应商，配置项目工具，并在任务变化时继续补充要求。miao 支持模型选择与 MCP；miao 的运行时建设与可用范围见 [产品概览](../README.zh.md) 和 [工作流对比](agent-comparison.zh.md)。
 
 第一次可以这样提需求：「找到这个错误的原因，做出适当的最小修复，运行相关检查，再解释代码差异。」执行过程中继续补充约束，无需另开对话。
 
@@ -173,7 +173,7 @@ V2 `bash` 工具可以把每条命令放进 OS 沙箱运行：macOS 用 seatbelt
 { "sandbox": { "mode": "workspace-write", "network": true } }
 ```
 
-`MIAO_SANDBOX=1`、`MIAO_SANDBOX_DENY_NETWORK=1` 可覆盖配置。`workspace-write` 不限制读取，只允许写入当前 Location、命令工作目录、临时目录、`writable_roots`，以及被拦截后你批准的路径（命令会带该目录重跑）。网络默认允许，可显式禁止。沙箱已开启但主机没有后端时，`on_unavailable` 默认 `"warn"`，命令不带沙箱运行；设为 `"fail"` 则直接拒绝。平台限制见 [接入说明](miao-vs-opencode.zh.md#原生工具与沙箱适用范围)。
+`MIAO_SANDBOX=1`、`MIAO_SANDBOX_DENY_NETWORK=1` 可覆盖配置。`workspace-write` 不限制读取，只允许写入当前 Location、命令工作目录、临时目录、`writable_roots`，以及被拦截后你批准的路径（命令会带该目录重跑）。网络默认允许，可显式禁止。沙箱已开启但主机没有后端时，`on_unavailable` 默认 `"warn"`，命令不带沙箱运行；设为 `"fail"` 则直接拒绝。平台限制见 [接入说明](native-benchmarks.zh.md#原生工具与沙箱适用范围)。
 
 ### 5.7 成本与缓存遥测
 
@@ -225,7 +225,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 - [V1 退役计划](../specs/v2/v1-retirement.md) 记录了删除过程和剩余兼容面（数据库迁移与非会话旧路由）。
 - [会话存储设计](../specs/storage/session-storage-hardening.md) 记录存储方案。可用 `miao db stats`、`miao db vacuum` 和 JSONL 导出检查、维护本地记录。
 - [代理并发](../specs/v2/agent-concurrency.md) 设计非阻塞子代理与完成即唤醒，避免长任务卡住会话。
-- 崩溃后自动执行恢复与集群所有权尚未实现。OS 沙箱已内置于 V2 `bash` 工具但仍需开启，见 [可用范围](miao-vs-opencode.zh.md)。
+- 崩溃后自动执行恢复与集群所有权尚未实现。OS 沙箱已内置于 V2 `bash` 工具但仍需开启，见 [原生组件与沙箱范围](native-benchmarks.zh.md)。
 
 ## 7. 常见问题（FAQ）
 
@@ -248,7 +248,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 让 provider 用本币单价（`providers.<id>.models.<m>.cost` 用本币）；或用 `/currency` 切换显示货币。
 
 **Q：native（Rust）addon 出问题怎么办？**
-用 `MIAO_NATIVE=0` 禁用它，编辑匹配与补丁派生随即改由 TypeScript 实现接管。addon 同时用于 OS 沙箱 runner。详见[接入对比](miao-vs-opencode.zh.md)。
+用 `MIAO_NATIVE=0` 禁用它，编辑匹配与补丁派生随即改由 TypeScript 实现接管。addon 同时用于 OS 沙箱 runner。详见[原生组件范围](native-benchmarks.zh.md)。
 
 **Q：能持续推进一个有多个待办的任务吗？**
 用 `loop` 配置（§5.8），或外部循环 `miao run --continue "...continue..."`。

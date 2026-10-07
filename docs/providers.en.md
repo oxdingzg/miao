@@ -137,5 +137,5 @@ wins**. The supported action is `provider.use`; `resource` accepts wildcard patt
   policy; `miao models <provider> --verbose` shows what was resolved.
 
 See the [guide](guide.en.md) for configuration precedence and the
-[comparison with opencode](miao-vs-opencode.en.md) for how the provider layer
+[agent workflow comparison](agent-comparison.en.md) for how the provider layer
 evolved.

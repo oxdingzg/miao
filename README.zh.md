@@ -129,7 +129,7 @@ miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对
 | patch Unicode 归一化，20k 行 | 13.06 ms        | 5.21 ms   | 2.5×  |
 | git status，10 个文件        | 12.3 ms         | 1.0 ms    | 11.9× |
 
-这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。表中 edit／patch 加速属于已被删除的 V1 兼容工具；V2 的 edit／patch 是 TypeScript 实现。Rust addon 目前仍为可选的 OS 沙箱 runner 提供支持，进程内 Git 仍属原型。完整数据和可用范围见 [对比说明](docs/miao-vs-opencode.zh.md)。
+这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。V2 的 edit／apply_patch 在 addon 已加载时调用原生匹配与派生，正常安装默认启用；`MIAO_NATIVE=0` 可改用 TypeScript 实现。addon 同时用于可选的 OS 沙箱；进程内 Git 仍属原型。完整数据和可用范围见[组件基准](docs/native-benchmarks.zh.md)。
 
 ## 当前状态与架构
 
@@ -183,7 +183,8 @@ miao 与 mtty 是两个独立项目,任意一个都可以单独使用。在 mtty
 
 - [使用指南](docs/guide.zh.md) · [Usage guide](docs/guide.en.md)
 - [供应商与模型](docs/providers.zh.md) · [远程控制](docs/remote-control.zh.md)
-- [miao 与 opencode 基线对比](docs/miao-vs-opencode.zh.md) —— 测量数据、差异和接入状态
+- [为什么选择 miao](docs/why-miao.zh.md) —— 场景、当前状态与演进方向
+- [开源代理对比](docs/agent-comparison.zh.md) —— 八种工作流、源码证据与边界
 - [发布流程](docs/release.zh.md) —— 版本、构建与发布
 - [运行时设计](CONTEXT.md) · [V2 规格](specs/v2) —— 会话、上下文与客户端契约
 

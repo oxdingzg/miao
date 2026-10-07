@@ -102,4 +102,4 @@ miao models --refresh           # 先从 mtty.dev 刷新目录
 - 鉴权错误会指出修复方式，通常是 `miao auth login <provider>`；保存的 token 过期时重跑 `miao providers login`。
 - 供应商不显示任何模型，通常是缺凭证或被策略禁用；`miao models <provider> --verbose` 会显示解析结果。
 
-配置优先级见[使用指南](guide.zh.md)，供应商层的演进见[与 opencode 的对比](miao-vs-opencode.zh.md)。
+配置优先级见[使用指南](guide.zh.md)，供应商层的演进见[开源代理对比](agent-comparison.zh.md)。

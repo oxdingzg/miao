@@ -3,7 +3,7 @@
 **Language:** [English](rust-integration-risks.en.md) | [中文](rust-integration-risks.zh.md)
 
 This page is only about the pitfalls of actually wiring `crates/miao-native` and `miao-run` into the
-`packages/miao` production paths. For the upside, see [miao vs opencode](miao-vs-opencode.en.md).
+`packages/miao` production paths. For the upside, see [native component benchmarks](native-benchmarks.en.md).
 
 ## 1. Blockers (cannot integrate without solving these)
 
