@@ -120,6 +120,7 @@ test.describe("session timeline projection", () => {
     const user = userMessage()
     const before = assistantMessage([{ id: "prt_before", type: "text", text: "Before" }], {
       id: "msg_1001_before",
+      finish: "aborted",
       error: { name: "MessageAbortedError", data: { message: "Stopped" } },
     })
     const after = assistantMessage([{ id: "prt_after", type: "text", text: "After" }], {

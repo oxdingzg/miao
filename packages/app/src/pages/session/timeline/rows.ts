@@ -147,8 +147,6 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
-    // V2 errors are `{ type: "unknown", message }`; older records kept the
-    // named-error shape with the text under `data.message`. Both mean abort.
     const errorText = (error: unknown): string | undefined => {
       if (!error || typeof error !== "object") return undefined
       const candidate = error as { message?: unknown; data?: { message?: unknown } }
@@ -162,12 +160,15 @@ export namespace Timeline {
         return candidate.data.message
       return undefined
     }
-    const aborted = (message: TurnAssistant) => {
-      const error = message.error as { name?: unknown } | undefined
-      if (error && typeof error.name === "string" && error.name.toLowerCase().includes("abort")) return true
-      return errorText(message.error)?.toLowerCase().includes("abort") ?? false
-    }
-    const interruptedMessageIndex = assistantMessages.findIndex(aborted)
+
+    // An interrupted turn has a non-final assistant with an abort error.
+    // Detection: the V2-native `finish: "aborted"` OR the V1 named error
+    // `MessageAbortedError` (which the mock/e2e fixtures use).
+    const interruptedMessageIndex = assistantMessages.findIndex((message) => {
+      if (message.finish === "aborted") return true
+      const error = message.error as { name?: string } | undefined
+      return error?.name === "MessageAbortedError"
+    })
     const interrupted = interruptedMessageIndex !== -1
     const latestError = assistantMessages.at(-1)?.error
     const error = latestError && latestError.message.toLowerCase().includes("abort") ? undefined : latestError
