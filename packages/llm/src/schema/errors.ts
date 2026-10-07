@@ -31,6 +31,16 @@ export class HttpContext extends Schema.Class<HttpContext>("LLM.HttpContext")({
   rateLimit: Schema.optional(HttpRateLimitDetails),
 }) {}
 
+/**
+ * Providers occasionally answer a capacity blip with a 400/422 or an
+ * unclassified status, which lands in reasons that default to
+ * non-retryable. The capacity phrasing in the body is then the only
+ * recoverable signal, so those reasons retry on it. Errors with a dedicated
+ * reason — rate limit, quota, auth, context overflow — keep their own
+ * semantics and never match this pattern.
+ */
+const capacityMessage = /\boverloaded|\bat capacity\b|temporarily (?:unavailable|overloaded)|\bhigh demand\b/i
+
 export class InvalidRequestReason extends Schema.Class<InvalidRequestReason>("LLM.Error.InvalidRequest")({
   _tag: Schema.tag("InvalidRequest"),
   message: Schema.String,
@@ -40,7 +50,7 @@ export class InvalidRequestReason extends Schema.Class<InvalidRequestReason>("LL
   http: Schema.optional(HttpContext),
 }) {
   get retryable() {
-    return false
+    return capacityMessage.test(this.message)
   }
 }
 
@@ -159,7 +169,7 @@ export class UnknownProviderReason extends Schema.Class<UnknownProviderReason>("
   http: Schema.optional(HttpContext),
 }) {
   get retryable() {
-    return false
+    return capacityMessage.test(this.message)
   }
 }
 
