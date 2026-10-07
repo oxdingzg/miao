@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { FileDiffInfo } from "@/utils/server"
 import type { Message, Part, SessionStatus, Todo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request, QuestionRequest } from "@miao/schema/view-models"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
 
 const msg = (id: string, sessionID: string) =>
@@ -32,7 +32,7 @@ describe("app session cache", () => {
       message: Record<string, Message[] | undefined>
       session_message: Record<string, never[] | undefined>
       part: Record<string, Part[] | undefined>
-      permission: Record<string, PermissionRequest[] | undefined>
+      permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
       part_text_accum_delta: Record<string, string | undefined>
     } = {
@@ -42,7 +42,7 @@ describe("app session cache", () => {
       message: {},
       session_message: {},
       part: { msg_1: [part("prt_1", "ses_1", "msg_1")] },
-      permission: { ses_1: [] as PermissionRequest[] },
+      permission: { ses_1: [] as PermissionV2Request[] },
       question: { ses_1: [] as QuestionRequest[] },
       part_text_accum_delta: { prt_1: "streamed text" },
     }
@@ -68,7 +68,7 @@ describe("app session cache", () => {
       message: Record<string, Message[] | undefined>
       session_message: Record<string, never[] | undefined>
       part: Record<string, Part[] | undefined>
-      permission: Record<string, PermissionRequest[] | undefined>
+      permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
       part_text_accum_delta: Record<string, string | undefined>
     } = {

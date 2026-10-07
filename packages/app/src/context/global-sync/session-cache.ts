@@ -1,5 +1,5 @@
 import type { Message, Part, SessionStatus, Todo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request, QuestionRequest } from "@miao/schema/view-models"
 import type { FileDiffInfo, SessionMessageInfo } from "@/utils/server"
 
 export const SESSION_CACHE_LIMIT = 40
@@ -11,7 +11,7 @@ type SessionCache = {
   message: Record<string, Message[] | undefined>
   session_message: Record<string, SessionMessageInfo[] | undefined>
   part: Record<string, Part[] | undefined>
-  permission: Record<string, PermissionRequest[] | undefined>
+  permission: Record<string, readonly PermissionV2Request[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
   part_text_accum_delta: Record<string, string | undefined>
 }

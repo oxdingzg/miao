@@ -97,20 +97,23 @@ library use), not a legacy surface — keep it.
 The app's network calls are migrated and the identity `server-compat` shim is gone (#40). Note that
 `src/utils/session.ts` and `src/utils/session-message.ts` are current V2→view-model normalizers, not
 legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
-- [ ] Replace `src/context/global-sync/utils.ts` agent/provider/model adapters.
+- [x] Replace `src/context/global-sync/utils.ts` agent/provider/model adapters (V2-only; the V1 rename map is gone).
 - [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`,
       `Project`, `FileNode`, `FileDiffInfo`, `Event` types across app state and rendering.
-- [ ] Retire transitional session events (`session.created/updated/diff/status/idle/error`) in
+- [x] Retire transitional session events (`session.created/updated/diff/status/idle/error`) in
       `src/context/global-sync/event-reducer.ts`, `src/context/server-session.ts`,
       `src/context/notification.tsx`, `src/pages/session/usage-exceeded-dialogs.tsx`.
 - [ ] Retire legacy message event compatibility (`message.updated/removed`, `message.part.*`) in
       `src/context/global-sync/event-reducer.ts` and `src/context/server-session.ts`.
-- [ ] Migrate LSP and reference events in `src/context/global-sync/event-reducer.ts`.
-- [ ] Remove the three compatibility fallbacks in `src/context/server-session.ts`
+      (`server-session` still synthesizes these internally from the V2 reduction; retiring them
+      needs the V2-native reduction redesign.)
+- [x] Migrate LSP and reference events in `src/context/global-sync/event-reducer.ts`.
+- [x] Remove the three compatibility fallbacks in `src/context/server-session.ts`
       (`GET /session/:id`, `/message`, `/message/:mid`).
-- [ ] Replace V1 endpoint mocks (`e2e/utils/mock-server.ts`), the `SessionV1` / legacy fixtures in
-      `e2e/performance/timeline-stability/fixture.ts`, and remaining legacy SDK type fixtures.
-- [ ] Remaining directory config read from `GET /config`.
+- [x] Replace V1 endpoint mocks (`e2e/utils/mock-server.ts`), the `SessionV1` / legacy fixtures in
+      `e2e/performance/timeline-stability/fixture.ts`, and remaining legacy SDK type fixtures
+      (the files are gone).
+- [x] Remaining directory config read from `GET /config`.
 - **Acceptance:** the app renders and mutates with `@miao/client` types only; no legacy types in
   app state; no legacy-route mocks in tests.
 

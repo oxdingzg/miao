@@ -10,7 +10,12 @@ import {
   type SessionsGetOutput,
 } from "@miao/client"
 import type { Vcs } from "@miao/schema/vcs"
-import type { FileContent, Provider, ProviderAuthMethod } from "@miao/schema/view-models"
+import type {
+  FileContent,
+  PermissionV2Request as PermissionV2RequestVM,
+  Provider,
+  ProviderAuthMethod,
+} from "@miao/schema/view-models"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 
@@ -66,7 +71,10 @@ export type McpStatus = McpStatusOutput["data"][string]
 export type McpResource = McpResourcesOutput["data"][string]
 export type CommandInfo = CommandsListOutput["data"][number]
 export type Project = ProjectsListOutput["data"][number]
-export type PermissionV2Request = PermissionsListRequestsOutput["data"][number]
+// Same V2 record as the durable event wire; the list endpoint serves it verbatim.
+// The list endpoint serves the same V2 record as the durable event wire, so
+// app state uses the view-model type for both.
+export type PermissionV2Request = PermissionV2RequestVM
 export type IntegrationMethod = NonNullable<IntegrationsGetOutput["data"]>["methods"][number]
 
 // Disconnecting a provider removes every credential stored for its integration.

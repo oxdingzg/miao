@@ -3,7 +3,8 @@ import type { FileDiffInfo, SessionApi, SessionMessageInfo } from "@/utils/serve
 import { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import type { Message, Part, Session, SessionStatus, Todo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@miao/schema/view-models"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
@@ -205,7 +206,7 @@ export function createServerSession(
     session_status: {} as Record<string, SessionStatus>,
     session_diff: {} as Record<string, FileDiffInfo[]>,
     todo: {} as Record<string, Todo[]>,
-    permission: {} as Record<string, PermissionRequest[]>,
+    permission: {} as Record<string, PermissionV2Request[]>,
     question: {} as Record<string, QuestionRequest[]>,
     message: {} as Record<string, Message[]>,
     session_message: {} as Record<string, SessionMessageInfo[]>,
@@ -1277,8 +1278,8 @@ export function createServerSession(
         )
         return
       }
-      case "permission.asked": {
-        const permission = event.properties as PermissionRequest
+      case "permission.v2.asked": {
+        const permission = event.properties as PermissionV2Request
         const permissions = data.permission[permission.sessionID]
         if (!permissions) {
           setData("permission", permission.sessionID, [permission])
@@ -1294,7 +1295,7 @@ export function createServerSession(
           )
         return
       }
-      case "permission.replied": {
+      case "permission.v2.replied": {
         const props = event.properties as { sessionID: string; requestID: string }
         setData(
           "permission",
@@ -1307,7 +1308,7 @@ export function createServerSession(
         )
         return
       }
-      case "question.asked": {
+      case "question.v2.asked": {
         const question = event.properties as QuestionRequest
         const questions = data.question[question.sessionID]
         if (!questions) {
@@ -1324,8 +1325,8 @@ export function createServerSession(
           )
         return
       }
-      case "question.replied":
-      case "question.rejected": {
+      case "question.v2.replied":
+      case "question.v2.rejected": {
         const props = event.properties as { sessionID: string; requestID: string }
         setData(
           "question",

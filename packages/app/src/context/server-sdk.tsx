@@ -32,33 +32,16 @@ type CurrentDelta = Extract<
 >
 
 export function adaptServerEvent(event: OpenCodeEventEncoded): ServerEvent {
-  if (event.type === "permission.v2.asked") {
-    return {
-      id: event.id,
-      type: "permission.asked",
-      properties: {
-        id: event.data.id,
-        sessionID: event.data.sessionID,
-        permission: event.data.action,
-        patterns: event.data.resources,
-        always: event.data.save ?? [],
-        metadata: event.data.metadata ?? {},
-        tool:
-          event.data.source?.type === "tool"
-            ? { messageID: event.data.source.messageID, callID: event.data.source.callID }
-            : undefined,
-      },
-      current: event,
-    } as ServerEvent
-  }
-  if (event.type === "permission.v2.replied")
-    return { id: event.id, type: "permission.replied", properties: event.data, current: event } as ServerEvent
-  if (event.type === "question.v2.asked")
-    return { id: event.id, type: "question.asked", properties: event.data, current: event } as ServerEvent
-  if (event.type === "question.v2.replied")
-    return { id: event.id, type: "question.replied", properties: event.data, current: event } as ServerEvent
-  if (event.type === "question.v2.rejected")
-    return { id: event.id, type: "question.rejected", properties: event.data, current: event } as ServerEvent
+  // V2 permission/question events flow through unchanged; the app consumes the
+  // V2 request/reply shapes directly.
+  if (
+    event.type === "permission.v2.asked" ||
+    event.type === "permission.v2.replied" ||
+    event.type === "question.v2.asked" ||
+    event.type === "question.v2.replied" ||
+    event.type === "question.v2.rejected"
+  )
+    return { id: event.id, type: event.type, properties: event.data, current: event } as ServerEvent
   return { id: event.id, type: event.type, properties: event.data, current: event } as ServerEvent
 }
 
