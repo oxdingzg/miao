@@ -28,6 +28,7 @@ import { Layer, Option } from "effect"
 import { Api } from "./api"
 import { ServerAuth } from "./auth"
 import { handlers } from "./handlers"
+import { HttpApiAssembly } from "./assembly"
 import { authorizationLayer } from "./middleware/authorization"
 import { schemaErrorLayer } from "./middleware/schema-error"
 import { PtyEnvironment } from "./pty-environment"
@@ -87,4 +88,7 @@ function makeRoutes<AuthError, AuthServices>(auth: Layer.Layer<ServerAuth.Config
 export const routes = createRoutes()
 
 export const webHandler = () =>
-  HttpRouter.toWebHandler(routes.pipe(Layer.provide(HttpServer.layerServices)), { disableLogger: true })
+  HttpRouter.toWebHandler(routes.pipe(Layer.provide(HttpServer.layerServices)), {
+    disableLogger: true,
+    middleware: HttpApiAssembly.defectLogging(),
+  })
