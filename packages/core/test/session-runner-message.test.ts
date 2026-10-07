@@ -465,6 +465,59 @@ Recent work
     ])
   })
 
+  test("strips images from tool results when the model takes text only", () => {
+    const build = (input?: readonly string[]) =>
+      toLLMMessages(
+        [
+          SessionMessage.Assistant.make({
+            id: id("assistant"),
+            type: "assistant",
+            agent: "build",
+            model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+            content: [
+              SessionMessage.AssistantTool.make({
+                type: "tool",
+                id: "render",
+                name: "read",
+                state: SessionMessage.ToolStateCompleted.make({
+                  status: "completed",
+                  input: { path: "render.png" },
+                  content: [
+                    { type: "text", text: "Rendered page" },
+                    { type: "file", uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "render.png" },
+                  ],
+                  structured: {},
+                }),
+                time: { created, completed: created },
+              }),
+            ],
+            time: { created, completed: created },
+          }),
+        ],
+        model,
+        input,
+      )
+
+    // Zhipu's coding endpoint accepts ['text'] content only; sending the image
+    // fails the whole request with HTTP 400 code 1210.
+    const lowered = build(["text"])
+    const result = lowered[1]?.content.at(-1)
+    expect(result?.type).toBe("tool-result")
+    if (result?.type !== "tool-result") return
+    const value = result.result as { type: string; value: readonly unknown[] }
+    expect(value.type).toBe("content")
+    expect(value.value).toEqual([
+      { type: "text", text: "Rendered page" },
+      { type: "text", text: "[image omitted: model does not support image input: render.png]" },
+    ])
+
+    // A vision-capable declaration keeps the image.
+    const kept = build(["image"])
+    const keptResult = kept[1]?.content.at(-1)
+    if (keptResult?.type !== "tool-result") return
+    expect(JSON.stringify(keptResult.result)).toContain("data:image/png;base64")
+  })
+
   test("restores OpenAI encrypted reasoning metadata", () => {
     const messages = toLLMMessages(
       [
