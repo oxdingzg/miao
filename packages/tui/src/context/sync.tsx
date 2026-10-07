@@ -1225,8 +1225,12 @@ export const {
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
           // The pending-input read is independent of the status response, so
-          // both requests share the tick instead of serializing it.
+          // both requests share the tick instead of serializing it. Mark the
+          // read handled immediately: when the status request rejects first,
+          // this promise would otherwise reject with no awaiter attached, and
+          // a fatal unhandled rejection takes the whole TUI down with it.
           const inputsRead = signal?.aborted ? undefined : result.session.syncInputs(sessionID, signal)
+          inputsRead?.catch(() => {})
           const response = await sdk.api.sessions.status({ sessionID }, { signal })
           const busy = response.type !== "idle"
           if (signal?.aborted) return busy ? "busy" : "idle"
