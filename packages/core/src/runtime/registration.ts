@@ -4,7 +4,8 @@ import { RuntimeIdentity } from "./identity"
 import { Challenge, Proof } from "@miao/schema/runtime-identity"
 import { Schema } from "effect"
 import { constants } from "node:fs"
-import { open, rename, unlink } from "node:fs/promises"
+import { open, readdir, rename, unlink } from "node:fs/promises"
+import { basename, dirname } from "node:path"
 import { randomBytes } from "node:crypto"
 
 const Record = Schema.Struct({
@@ -68,6 +69,19 @@ export async function read(storage: string, runtimeID: string): Promise<Record |
   } finally {
     await file.close()
   }
+}
+
+/** Every readable record published for this storage; undecodable entries are skipped. */
+export async function list(storage: string): Promise<Record[]> {
+  const prefix = `${basename(storage)}.runtime-`
+  const entries = await readdir(dirname(storage)).catch(() => [])
+  const records = await Promise.all(
+    entries
+      .filter((entry) => entry.startsWith(prefix) && entry.endsWith(".json"))
+      .sort()
+      .map((entry) => read(storage, entry.slice(prefix.length, -5)).catch(() => undefined)),
+  )
+  return records.filter((record): record is Record => record !== undefined)
 }
 
 /** This request contains no Basic header or discovery secret, even on failure. */

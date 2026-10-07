@@ -178,9 +178,13 @@ export const TuiThreadCommand = cmd({
       const network = resolveNetworkOptionsNoConfig(args)
       const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
       const { RuntimeHost } = await import("@/runtime/host")
+      const { RuntimeAttach } = await import("@/runtime/attach")
       const { DatabaseFile } = await import("@miao/core/database/file")
       const { Server } = await import("@/server/server")
-      const owned = external ? undefined : await RuntimeHost.start(DatabaseFile.path())
+      // Attach first: a live Runtime on this storage means no local database
+      // open, so a pending schema migration never blocks opening this window.
+      const attached = external ? undefined : await RuntimeAttach.discover(DatabaseFile.path())
+      const owned = attached ? undefined : await RuntimeHost.start(DatabaseFile.path())
       const listener = external ? await Server.listen(network) : undefined
       const reload = () => {
         void (async () => {
@@ -207,7 +211,9 @@ export const TuiThreadCommand = cmd({
         const { ServerAuth } = await import("@/server/auth")
         const transport = external
           ? { url: listener!.url.href, headers: ServerAuth.headers() }
-          : {
+          : attached
+            ? { url: attached.url, headers: ServerAuth.headers({ username: "miao", password: attached.credential }) }
+            : {
               url: owned!.record.url,
               headers: ServerAuth.headers({ username: "miao", password: owned!.record.credential }),
             }
