@@ -164,6 +164,7 @@ export namespace Timeline {
     }
     const aborted = (message: TurnAssistant) => {
       const error = message.error as { name?: unknown } | undefined
+            if (error && typeof error.type === "string" && error.type.toLowerCase().includes("abort")) return true
       if (error && typeof error.name === "string" && error.name.toLowerCase().includes("abort")) return true
       return errorText(message.error)?.toLowerCase().includes("abort") ?? false
     }
