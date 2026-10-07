@@ -295,6 +295,29 @@ describe("installation", () => {
           expect(error.stderr).toBe("Windows upgrade failed during download (WebException). Check HTTPS_PROXY.")
         }),
       )
+
+      testEffect(
+        testLayer(
+          () => {
+            throw new Error("Bash installer must not be downloaded")
+          },
+          (cmd) =>
+            cmd === "powershell.exe"
+              ? {
+                  code: 1,
+                  stderr:
+                    "powershell.exe : This script contains malicious content and has been blocked by your antivirus software.\r\n    + CategoryInfo : ParserError\r\n",
+                }
+              : "",
+        ),
+      ).effect("surfaces the PowerShell output when no phase diagnostic is printed", () =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(Installation.use.upgrade("curl", "0.0.35"))
+          expect(error.stderr).toBe(
+            "Windows upgrade could not start PowerShell: powershell.exe : This script contains malicious content and has been blocked by your antivirus software.",
+          )
+        }),
+      )
     })
   })
 })

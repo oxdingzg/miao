@@ -1,6 +1,6 @@
 export * as SessionHeal from "./heal"
 
-import { eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -49,20 +49,25 @@ export const relocateOrphan = Effect.fn("SessionHeal.relocateOrphan")(function* 
   if (checkout === input.directory) return undefined
   if (!(yield* input.fs.existsSafe(checkout))) return undefined
   const timestamp = yield* DateTime.now
+  // Concurrent requests can both see the directory vanish before either writes
+  // the row. Only the update that actually moves it may publish the event and
+  // admit the model notice, or a racing request admits a second identical
+  // reminder the user then sees twice in the transcript.
+  const moved = yield* input.db
+    .update(SessionTable)
+    .set({ directory: checkout, time_updated: DateTime.toEpochMillis(timestamp) })
+    .where(and(eq(SessionTable.id, input.sessionID), eq(SessionTable.directory, input.directory)))
+    .run()
+    .pipe(Effect.orDie)
+  // This driver discards drizzle's run result, so read the connection's last
+  // change count instead: 0 means a racing request relocated the row first.
+  const changed = yield* input.db.get<{ changed: number }>(sql`SELECT changes() AS changed`).pipe(Effect.orDie)
+  if ((changed?.changed ?? 0) === 0) return checkout
   yield* input.events.publish(SessionEvent.Moved, {
     sessionID: input.sessionID,
     location: Location.Ref.make({ directory: checkout }),
     timestamp,
   })
-  // The projector applies the move asynchronously, so concurrent requests can
-  // still read the vanished directory and relocate again; write the row now to
-  // close that window (same values the projector writes).
-  yield* input.db
-    .update(SessionTable)
-    .set({ directory: checkout, time_updated: DateTime.toEpochMillis(timestamp) })
-    .where(eq(SessionTable.id, input.sessionID))
-    .run()
-    .pipe(Effect.orDie)
   // Without a model-visible notice the Session keeps addressing the vanished
   // directory and every path-based call fails until it stumbles onto the move.
   yield* SessionInput.admit(input.db, input.events, {

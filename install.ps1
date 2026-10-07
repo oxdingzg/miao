@@ -31,22 +31,36 @@ function Publish-Miao {
     & $candidate --version | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Executable failed version verification' }
 
-  $buildID = (& $candidate --build-id | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0 -or $buildID -notmatch '^[0-9a-fA-F-]{36}$') { throw 'Invalid build identity' }
-  $retainedDir = Join-Path (Join-Path $directory '.versions') $buildID
-  New-Item -ItemType Directory -Force -Path $retainedDir | Out-Null
-  $retained = Join-Path $retainedDir (Split-Path -Leaf $destination)
-  if (Test-Path -LiteralPath $retained) {
-    if ((Get-FileHash -LiteralPath $candidate).Hash -ne (Get-FileHash -LiteralPath $retained).Hash) { throw 'Conflicting build identity' }
-  } else {
-    New-Item -ItemType HardLink -Path $retained -Target $candidate | Out-Null
-  }
-  $next = Join-Path $stage 'launcher.exe'
-  New-Item -ItemType HardLink -Path $next -Target $retained | Out-Null
-  if (Test-Path -LiteralPath $destination) {
-    $backup = $destination + '.bak-' + [Guid]::NewGuid().ToString('N')
-    [IO.File]::Replace($next, $destination, $backup)
-  } else { [IO.File]::Move($next, $destination) }
+    # Antivirus products briefly lock freshly copied executables, so the publish
+    # steps retry with backoff; retention is idempotent across retries (an
+    # existing retained file is hash-checked).
+    Get-ChildItem -LiteralPath $directory -File -Filter ((Split-Path -Leaf $destination) + '.bak-*') |
+      Remove-Item -Force -ErrorAction SilentlyContinue
+    foreach ($attempt in 1..8) {
+      try {
+        $buildID = (& $candidate --build-id | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $buildID -notmatch '^[0-9a-fA-F-]{36}$') { throw 'Invalid build identity' }
+        $retainedDir = Join-Path (Join-Path $directory '.versions') $buildID
+        New-Item -ItemType Directory -Force -Path $retainedDir | Out-Null
+        $retained = Join-Path $retainedDir (Split-Path -Leaf $destination)
+        if (Test-Path -LiteralPath $retained) {
+          if ((Get-FileHash -LiteralPath $candidate).Hash -ne (Get-FileHash -LiteralPath $retained).Hash) { throw 'Conflicting build identity' }
+        } else {
+          New-Item -ItemType HardLink -Path $retained -Target $candidate | Out-Null
+        }
+        $next = Join-Path $stage 'launcher.exe'
+        Remove-Item -LiteralPath $next -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType HardLink -Path $next -Target $retained | Out-Null
+        if (Test-Path -LiteralPath $destination) {
+          $backup = $destination + '.bak-' + [Guid]::NewGuid().ToString('N')
+          [IO.File]::Replace($next, $destination, $backup)
+        } else { [IO.File]::Move($next, $destination) }
+        break
+      } catch {
+        if ($attempt -ge 8) { throw }
+        Start-Sleep -Milliseconds (300 * $attempt)
+      }
+    }
   } finally { Remove-Item -LiteralPath $stage -Recurse -Force }
 }
 
