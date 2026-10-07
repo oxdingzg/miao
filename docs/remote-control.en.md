@@ -59,9 +59,10 @@ configured separately. See [Security](../SECURITY.md).
 
 ## Migrating from the old IM bridge
 
-The old WeChat/QQ bridges, `miao remote`, the `/remote` dialog and `remote.*`
-configuration are removed. Use `/remote-control` with your Hub and a paired
-client instead. This is device-based remote access, not an IM bot migration;
+The old WeChat/QQ bridges, `miao remote` CLI and `remote.*` configuration are
+removed. `/remote` remains a compatibility alias for the new Remote Control
+dialog, not the old IM bridge. Use `/remote-control` with your Hub and a paired
+client. This is device-based remote access, not an IM bot migration;
 old chat commands and bot accounts do not carry over.
 
 ## Troubleshooting
