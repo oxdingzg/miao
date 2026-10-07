@@ -10,7 +10,11 @@ import { ProjectV2 } from "../project"
 import { ProjectTable } from "../project/sql"
 import { AbsolutePath } from "../schema"
 import { SessionEvent } from "./event"
+import { SessionInput } from "./input"
+import { SessionMessage } from "./message"
+import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
+import { SessionTable } from "./sql"
 
 type DB = Database.Interface["db"]
 
@@ -44,10 +48,33 @@ export const relocateOrphan = Effect.fn("SessionHeal.relocateOrphan")(function* 
   const checkout = AbsolutePath.make(project.worktree)
   if (checkout === input.directory) return undefined
   if (!(yield* input.fs.existsSafe(checkout))) return undefined
+  const timestamp = yield* DateTime.now
   yield* input.events.publish(SessionEvent.Moved, {
     sessionID: input.sessionID,
     location: Location.Ref.make({ directory: checkout }),
-    timestamp: yield* DateTime.now,
+    timestamp,
+  })
+  // The projector applies the move asynchronously, so concurrent requests can
+  // still read the vanished directory and relocate again; write the row now to
+  // close that window (same values the projector writes).
+  yield* input.db
+    .update(SessionTable)
+    .set({ directory: checkout, time_updated: DateTime.toEpochMillis(timestamp) })
+    .where(eq(SessionTable.id, input.sessionID))
+    .run()
+    .pipe(Effect.orDie)
+  // Without a model-visible notice the Session keeps addressing the vanished
+  // directory and every path-based call fails until it stumbles onto the move.
+  yield* SessionInput.admit(input.db, input.events, {
+    id: SessionMessage.ID.create(),
+    sessionID: input.sessionID,
+    prompt: Prompt.make({
+      text:
+        `<system-reminder>The directory this Session worked in ("${input.directory}") no longer exists ` +
+        `— its git worktree was deleted out-of-band. The Session has been moved back to the ` +
+        `project checkout at "${checkout}". Use that directory for every later path.</system-reminder>`,
+    }),
+    delivery: "steer",
   })
   yield* Effect.logWarning("relocated a Session away from its missing directory", {
     sessionID: input.sessionID,
