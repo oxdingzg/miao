@@ -166,8 +166,8 @@ export namespace Timeline {
     // `MessageAbortedError` (which the mock/e2e fixtures use).
     const interruptedMessageIndex = assistantMessages.findIndex((message) => {
       if (message.finish === "aborted") return true
-      const error = message.error as { name?: string } | undefined
-      return error?.name === "MessageAbortedError"
+      const error = message.error as { type?: string; name?: string } | undefined
+      return error?.name === "MessageAbortedError" || error?.type === "MessageAbortedError"
     })
     const interrupted = interruptedMessageIndex !== -1
     const latestError = assistantMessages.at(-1)?.error
