@@ -109,6 +109,15 @@ legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
       `components/prompt-input.tsx`, `components/session/session-context-tab.tsx`,
       `components/session/session-header.tsx`, `pages/home/home-sessions-controller.tsx`,
       `pages/layout/sidebar-items.tsx`, `pages/session.tsx`.
+
+      Scope note: this is an epic, not a cleanup. `utils/session-message.ts`
+      (`normalizeSessionMessages`) carries the rendering contract — agent/model
+      context inheritance from meta messages, shell commands projected as a
+      user+assistant turn pair, compaction parts, parent backfill — and
+      `@miao/session-ui/message-part` renders V1 `Part` shapes, so the retype
+      spans the app timeline AND the session-ui part renderers. Stage it as
+      its own cutover (V2-native turn construction in `rows.ts` first, then
+      session-ui renderers), mirroring how the TUI cut over.
 - [x] Retire transitional session events (`session.created/updated/diff/status/idle/error`) in
       `src/context/global-sync/event-reducer.ts`, `src/context/server-session.ts`,
       `src/context/notification.tsx`, `src/pages/session/usage-exceeded-dialogs.tsx`.
