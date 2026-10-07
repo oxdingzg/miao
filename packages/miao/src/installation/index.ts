@@ -160,10 +160,24 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
             },
           })
           if (result.code !== 0) {
+            const diagnostic = result.stderr
+              .split(/\r?\n/)
+              .find((line) => line.startsWith("Windows upgrade failed during"))
+            if (diagnostic) {
+              return yield* new UpgradeFailedError({ stderr: diagnostic })
+            }
+            // PowerShell may die before the script's own diagnostic (blocked by
+            // antivirus, missing, or denied); surface its first output line so the
+            // cause is not swallowed by the generic advice.
+            const reason = result.stderr
+              .split(/\r?\n/)
+              .find((line) => line.trim())
+              ?.trim()
+              .slice(0, 300)
             return yield* new UpgradeFailedError({
-              stderr:
-                result.stderr.split(/\r?\n/).find((line) => line.startsWith("Windows upgrade failed during")) ??
-                "Windows upgrade could not start PowerShell. Check that Windows PowerShell is available.",
+              stderr: reason
+                ? `Windows upgrade could not start PowerShell: ${reason}`
+                : "Windows upgrade could not start PowerShell. Check that Windows PowerShell is available.",
             })
           }
           return result
