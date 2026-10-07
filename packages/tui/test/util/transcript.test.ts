@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatAssistantHeader, formatMessage, formatPart, formatTranscript } from "../../src/util/transcript"
+import { formatAssistantHeader, formatMessage, formatPart, formatTranscript, systemReminderLine } from "../../src/util/transcript"
 import type { Provider, TranscriptAssistantMessage } from "@miao/schema/view-models"
 import { testAssistantMessage, testTextPart, testUserMessage } from "../lib/v2-message"
 
@@ -356,4 +356,15 @@ describe("transcript", () => {
       expect(result).not.toContain("claude-sonnet-4-20250514")
     })
   })
+})
+
+test("a system-reminder user message folds to one truncated line", () => {
+  expect(systemReminderLine("plain user text")).toBeUndefined()
+  expect(systemReminderLine("<system-reminder>unclosed")).toBeUndefined()
+  expect(systemReminderLine("<system-reminder>The directory no longer exists.</system-reminder>")).toBe(
+    "The directory no longer exists.",
+  )
+  const folded = systemReminderLine(`<system-reminder>${"x".repeat(200)}</system-reminder>`)
+  expect(folded).toHaveLength(96)
+  expect(folded?.endsWith("…")).toBe(true)
 })

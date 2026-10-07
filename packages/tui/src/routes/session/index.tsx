@@ -40,6 +40,7 @@ import { promptInfoFromUserMessage } from "../../context/session-v2-write"
 import type { Provider, SessionStatus } from "@miao/schema/view-models"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
+import { systemReminderLine } from "../../util/transcript"
 import { fileToolSummary, toolDisplay, toolDisplayMetadata, webSearchProviderLabel } from "../../util/tool-display"
 import { Dynamic, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "../../context/sdk"
@@ -1444,6 +1445,7 @@ function UserMessage(props: {
   const ctx = use()
   const local = useLocal()
   const text = createMemo(() => props.message.text)
+  const reminder = createMemo(() => systemReminderLine(text()))
   const sessionMessage = createMemo(() => parseSessionMessage(text()))
   const files = createMemo(() => props.message.files ?? [])
   const { theme } = useTheme()
@@ -1484,17 +1486,24 @@ function UserMessage(props: {
             <Show
               when={command()}
               fallback={
-                <Show when={sessionMessage()} fallback={<text fg={theme.text}>{text()}</text>}>
-                  {(message) => (
-                    <SessionMessageContent
-                      sessionID={message().sessionID}
-                      body={message().body}
-                      title={ctx.sync.session.get(message().sessionID)?.title}
-                      conceal={ctx.conceal()}
-                      compact={Boolean(props.receipt)}
-                    />
-                  )
+                <Show
+                  when={reminder()}
+                  fallback={
+                    <Show when={sessionMessage()} fallback={<text fg={theme.text}>{text()}</text>}>
+                      {(message) => (
+                        <SessionMessageContent
+                          sessionID={message().sessionID}
+                          body={message().body}
+                          title={ctx.sync.session.get(message().sessionID)?.title}
+                          conceal={ctx.conceal()}
+                          compact={Boolean(props.receipt)}
+                        />
+                      )
+                      }
+                    </Show>
                   }
+                >
+                  {(summary) => <text fg={theme.textMuted}>system-reminder · {summary()}</text>}
                 </Show>
               }
             >
