@@ -820,7 +820,7 @@ export const {
               sessionID: request.sessionID,
               requestID: request.id,
               reply: "once",
-            })
+            }).catch((error) => console.error("permission auto-reply failed", { error: errorMessage(error) }))
             break
           }
           const requests = store.permission[request.sessionID]
@@ -1102,7 +1102,7 @@ export const {
             project.workspace.sync(),
           ]).then(() => {
             setStore("status", "complete")
-          })
+          }).catch((error) => console.error("background refresh failed", { error: errorMessage(error) }))
         })
         .catch(async (e) => {
           console.error("tui bootstrap failed", {
@@ -1112,9 +1112,11 @@ export const {
           })
           if (fatal) {
             exit(e)
-          } else {
-            throw e
+            return
           }
+          // A non-fatal bootstrap retry must not resurface as an unhandled
+          // rejection; the sync loops re-run these reads on demand.
+          setStore("status", "partial")
         })
     }
 
@@ -1225,12 +1227,15 @@ export const {
         },
         async syncStatus(sessionID: string, signal?: AbortSignal) {
           // The pending-input read is independent of the status response, so
-          // both requests share the tick instead of serializing it. Mark the
-          // read handled immediately: when the status request rejects first,
-          // this promise would otherwise reject with no awaiter attached, and
-          // a fatal unhandled rejection takes the whole TUI down with it.
-          const inputsRead = signal?.aborted ? undefined : result.session.syncInputs(sessionID, signal)
-          inputsRead?.catch(() => {})
+          // both requests share the tick instead of serializing it. The catch
+          // is attached here so a failure can never surface as an unhandled
+          // rejection when the status call fails first; the next tick re-reads
+          // the inbox.
+          const inputsRead = signal?.aborted
+            ? undefined
+            : result.session.syncInputs(sessionID, signal).catch((error) =>
+                console.error("session input sync failed", { error: errorMessage(error) }),
+              )
           const response = await sdk.api.sessions.status({ sessionID }, { signal })
           const busy = response.type !== "idle"
           if (signal?.aborted) return busy ? "busy" : "idle"
@@ -1253,7 +1258,6 @@ export const {
           if ((previousType === "busy" || previousType === "retry") && response.type === "idle")
             v2Refresh.schedule(sessionID)
           if (signal?.aborted) {
-            inputsRead?.catch(() => {})
             return busy ? "busy" : "idle"
           }
           await inputsRead
@@ -1376,6 +1380,10 @@ export const {
                     { key: "file" },
                   ),
                 )
+              })
+              .catch((error) => {
+                if (diffRequest.signal.aborted) return
+                console.error("session diff refresh failed", { error: errorMessage(error) })
               })
               .catch((error) => {
                 if (!diffRequest.signal.aborted) console.error("Failed to refresh session diff", error)
