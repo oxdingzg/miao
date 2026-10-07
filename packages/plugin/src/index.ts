@@ -253,8 +253,6 @@ export interface Hooks {
   }
   auth?: AuthHook
   provider?: ProviderHook
-   * Modify parameters sent to LLM
-   */
   "permission.ask"?: (input: PermissionV2Request, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
   "tool.execute.before"?: (
     input: { tool: string; sessionID: string; callID: string },
