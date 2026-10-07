@@ -46,8 +46,9 @@ Remote Control 让你从另一台设备操作正在运行的 miao 窗口。任�
 
 ## 从旧 IM 桥接迁移
 
-旧 WeChat/QQ 桥接、`miao remote`、`/remote` 对话框和 `remote.*` 配置均已移除。
-请改用 `/remote-control`、自己的 Hub 与已配对客户端。这是设备级远程访问，不是 IM bot
+旧 WeChat/QQ 桥接、`miao remote` CLI 和 `remote.*` 配置均已移除。
+`/remote` 保留为新 Remote Control 对话框的兼容别名，不再是旧 IM 桥接。
+请使用 `/remote-control`、自己的 Hub 与已配对客户端。这是设备级远程访问，不是 IM bot
 的迁移；旧聊天命令和 bot 账号不会沿用。
 
 ## 排查
