@@ -14,6 +14,7 @@ import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionHeal } from "@miao/core/session/heal"
+import { SessionInputTable } from "@miao/core/session/sql"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionTable } from "@miao/core/session/sql"
 import { tmpdir } from "./fixture/tmpdir"
@@ -60,7 +61,25 @@ function fixture(slug: string) {
         .where(eq(SessionTable.id, id))
         .get()
         .pipe(Effect.orDie)
-    return { root, checkout, missing, db, events, fsService, insertProject, insertSession, sessionDirectory }
+    const steers = (id: SessionV2.ID) =>
+      db
+        .select({ prompt: SessionInputTable.prompt, delivery: SessionInputTable.delivery })
+        .from(SessionInputTable)
+        .where(eq(SessionInputTable.session_id, id))
+        .all()
+        .pipe(Effect.orDie)
+    return {
+      root,
+      checkout,
+      missing,
+      db,
+      events,
+      fsService,
+      insertProject,
+      insertSession,
+      sessionDirectory,
+      steers,
+    }
   })
 }
 
@@ -84,6 +103,13 @@ describe("SessionHeal", () => {
 
       expect(healed).toBe(env.checkout)
       expect((yield* env.sessionDirectory(session))?.directory).toBe(env.checkout)
+      // The move must be visible to the model, or it keeps addressing the
+      // vanished worktree and every path-based call fails.
+      const notices = (yield* env.steers(session)).filter(
+        (steer) => steer.delivery === "steer" && JSON.stringify(steer.prompt).includes("system-reminder"),
+      )
+      expect(notices.length).toBe(1)
+      expect(JSON.stringify(notices[0].prompt)).toContain(env.checkout)
     }),
   )
 
