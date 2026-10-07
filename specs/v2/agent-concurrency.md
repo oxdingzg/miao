@@ -39,9 +39,9 @@ The substrate is in place and does not need a new execution model:
 
 ### 1. Background `task`
 
-`task` gains an optional `background?: boolean` (default `false`).
+`task` accepts an optional `background?: boolean`. Explicit `false` selects foreground; explicit `true` selects background. Current `main` also defaults read-only agents to background when delegation support is available (added after v0.1.20); other omitted cases remain foreground.
 
-- **Foreground (default, unchanged).** Create/resume the child Session, admit the
+- **Foreground.** Create/resume the child Session, admit the
   prompt, run to completion, return the child's final text. This is `runSubagent`
   today, and remains the "next action depends on the result" path.
 - **Background.** Create/resume the child Session, admit the prompt, `wake(child)`, and
@@ -212,7 +212,7 @@ design the long work is delegated:
   `MIAO_MAX_BACKGROUND_SUBAGENTS` fails the call with a clear message; exceeding the global
   cap waits rather than spawning unbounded work.
 - The report is delivered exactly once; a resumed child does not re-notify.
-- Foreground `task` behavior and the existing subagent tests are unchanged.
+- Explicit foreground `task` behavior remains blocking; omitted mode also exercises the read-only background default when supported.
 - Interrupting the parent leaves children running but cancellable via `task_cancel`.
 - **Fail-safe on crash.** If the process dies between child completion and notification,
   the parent is not left waiting forever: the pending handoff is durably recorded and

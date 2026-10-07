@@ -161,6 +161,14 @@ V1 是 miao 从 opencode 继承的会话运行时，V2 是 miao 重写的新内�
 
 日常用 `miao` 正式版，源码迭代用 `miao-dev`，编译验证用 `miao-preview`。源码中的新能力可能尚未包含在已安装的发行版里。
 
+## 本地运行与可选服务
+
+miao 无需项目账号即可本地运行；连接模型时使用你选择的供应商的 API Key 或受支持的 OAuth。
+
+- 模型元数据只读取 mtty.dev 的目录，网站从公开 models.dev 数据和 miao 维护的供应商生成它；运行时不回退到 models.dev。构建带离线快照，可用 `MIAO_MODELS_URL` 或 `MIAO_MODELS_PATH` 指定来源。
+- 会话分享与分享 URL 导入已移除。通过 `miao export` / `miao import` 传递会话文件；旧 `enterprise.url` 配置不会启用分享。
+- Remote Control 使用你部署的 Hub，并为某个窗口显式启用；模型执行仍在本地。见[远程控制](docs/remote-control.zh.md)。
+
 ## 相关项目
 
 | 项目             | 是什么                                                                                                | 链接                                                                                                                                  |
@@ -174,6 +182,7 @@ miao 与 mtty 是两个独立项目,任意一个都可以单独使用。在 mtty
 ## 文档与开发
 
 - [使用指南](docs/guide.zh.md) · [Usage guide](docs/guide.en.md)
+- [供应商与模型](docs/providers.zh.md) · [远程控制](docs/remote-control.zh.md)
 - [miao 与 opencode 基线对比](docs/miao-vs-opencode.zh.md) —— 测量数据、差异和接入状态
 - [发布流程](docs/release.zh.md) —— 版本、构建与发布
 - [运行时设计](CONTEXT.md) · [V2 规格](specs/v2) —— 会话、上下文与客户端契约
