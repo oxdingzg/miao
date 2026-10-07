@@ -132,6 +132,31 @@ migration readers remain deliberately: they are needed for backward-compatible r
 `miao db backfill` / `compact` / `restore`. The legacy JS SDK package and the non-session legacy
 routes are the remaining P5/P7 work.
 
+## Client-side follow-ups
+
+These ride the retirement but live in the clients; tracked in `docs/roadmap.md` (§1.2 for the
+app, §1.3 for the TUI).
+
+**App transcript retype.** The app timeline is a hybrid: `SessionMessageInfo` provides the turn
+skeleton while `Message` / `Part` lookups provide rendered content, fed by the V1-shaped synthetic
+events `server-session.ts` derives from the V2 reduction. Retyping app state onto V2
+`SessionMessage` (parts inline) retires that pipeline; the touched surfaces are
+`server-session.ts` (the whole synthetic-event pipeline), `global-sync/{event-reducer,session-cache,session-trim}.ts`,
+and the consumers `pages/session/timeline/{model,rows}.tsx`, `message-timeline.tsx`,
+`components/dialog-fork.tsx`, `components/prompt-input.tsx`,
+`components/session/session-context-tab.tsx`, `components/session/session-header.tsx`,
+`pages/home/home-sessions-controller.tsx`, `pages/layout/sidebar-items.tsx`, `pages/session.tsx`.
+
+**Plugin hook surface.** The plugin-facing hooks (`chat.message`,
+`experimental.chat.messages.transform`, `permission.asked/replied`) intentionally still speak V1
+`Message` / `Part` / `PermissionRequest` shapes; the TUI app state no longer does. The V1
+view-model aliases stay until the plugin API is versioned (phase 4 of the cutover plan).
+
+**Data-compat removal gate.** `packages/core/src/session/{backfill,v1-read,legacy-tables,compact,restore}.ts`
+and `packages/core/src/v1/*` are deleted only when every active database reports `projected` /
+`compacted` through `miao db status` (no `legacy` / `mixed` sessions remain) and `miao db compact`
+has retired the legacy tables. Until then they remain deliberate.
+
 ## Acceptance for the cutover
 
 - A session driven entirely through `/api/session/*` produces `session_message` rows and no
