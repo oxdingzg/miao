@@ -304,15 +304,6 @@ export interface Hooks {
       metadata: any
     },
   ) => Promise<void>
-  "experimental.chat.messages.transform"?: (
-    input: {},
-    output: {
-      messages: {
-        info: Message
-        parts: Part[]
-      }[]
-    },
-  ) => Promise<void>
   "experimental.chat.system.transform"?: (
     input: { sessionID?: string; model: Model },
     output: {
