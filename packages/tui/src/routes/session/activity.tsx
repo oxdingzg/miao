@@ -6,7 +6,13 @@ import { useTheme } from "../../context/theme"
 import { waitingForResponse, watchSessionStatus, statusPhase, type SessionPhase } from "../../context/session-status"
 import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
-import type { AssistantContent, TranscriptReasoningPart, TranscriptToolPart } from "@miao/schema/view-models"
+import type {
+  AssistantContent,
+  SessionStatus,
+  TranscriptMessage,
+  TranscriptReasoningPart,
+  TranscriptToolPart,
+} from "@miao/schema/view-models"
 import { ProviderFailure } from "./provider-failure"
 
 // Claude Code reports a turn as `[running|ran] N shell commands` on one live
@@ -228,6 +234,94 @@ export function turnActivity(input: { parts: AssistantContent[]; working: boolea
     }),
   ].filter((segment): segment is string => segment !== undefined)
   return segments.length > 0 ? segments.join(", ") : undefined
+}
+
+// Name one tool call the way the live turn line does: present tense while it
+// runs, past tense once it settles. `undefined` for tools without a live name
+// (and for calls that never ran), so callers can fall back to counting.
+export function toolActivity(part: TranscriptToolPart): string | undefined {
+  const group = TOOL_GROUPS.find((candidate) => candidate.displays.includes(toolDisplay(part.name)))
+  const detail = group?.live(part)
+  if (!group || !detail) return undefined
+  return `${part.state.status === "running" ? group.verb[0] : group.verb[1]} ${detail}`
+}
+
+// The inline subagent block's live tail: up to `limit` named tool calls from
+// the child transcript, oldest first, so the newest line sits directly under
+// the running header. Unnamed tools drop out instead of rendering a bare count.
+export function subagentActivity(messages: ReadonlyArray<TranscriptMessage>, limit = 3): string[] {
+  const named = messages.flatMap((message) =>
+    message.type === "assistant"
+      ? message.content.flatMap((part) => {
+          const text = part.type === "tool" ? toolActivity(part) : undefined
+          return text ? [text] : []
+        })
+      : [],
+  )
+  return named.slice(-limit)
+}
+
+// A subagent row is live while its own tool call runs; a background task's call
+// completes immediately, so the child's execution status keeps the row live.
+// An errored call never spins, whatever the child reports.
+export function subagentRunning(
+  status: TranscriptToolPart["state"]["status"],
+  background: boolean | undefined,
+  child: SessionStatus | undefined,
+) {
+  if (status === "running") return true
+  return status === "completed" && background === true && child !== undefined && child.type !== "idle"
+}
+
+// One-line preview of a finished subagent's report for its collapsed row.
+export function subagentResult(output: string | undefined) {
+  const line = output?.split("\n").find((candidate) => candidate.trim().length > 0)
+  if (line === undefined) return undefined
+  const trimmed = line.trim()
+  return trimmed.length > LIVE_LIMIT ? `${trimmed.slice(0, LIVE_LIMIT)}…` : trimmed
+}
+
+// The block `session.subagent.toggle` acts on: the newest running subagent
+// beats an older settled one, and the newest settled block is the fallback.
+export function latestSubagentPartID(messages: ReadonlyArray<TranscriptMessage>): string | undefined {
+  let settled: string | undefined
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.type !== "assistant") continue
+    const content = message.content
+    for (let offset = content.length - 1; offset >= 0; offset -= 1) {
+      const part = content[offset]
+      if (part.type !== "tool" || part.name !== "task") continue
+      if (part.state.status === "running") return part.id
+      settled ??= part.id
+    }
+  }
+  return settled
+}
+
+// Concurrent subagents render one block each with the running ones on top.
+// Only sibling tool parts move, and only among themselves, so prose, reasoning,
+// and ordinary tools keep their place in the timeline.
+export function orderTaskBlocks(content: ReadonlyArray<AssistantContent>): AssistantContent[] {
+  const runningTask = (part: AssistantContent) =>
+    part.type === "tool" && part.name === "task" && part.state.status === "running"
+  const out: AssistantContent[] = []
+  let siblings: AssistantContent[] = []
+  const flush = () => {
+    if (siblings.length === 0) return
+    out.push(...siblings.filter(runningTask), ...siblings.filter((part) => !runningTask(part)))
+    siblings = []
+  }
+  for (const part of content) {
+    if (part.type !== "tool") {
+      flush()
+      out.push(part)
+      continue
+    }
+    siblings.push(part)
+  }
+  flush()
+  return out
 }
 
 export function SessionWaiting(props: { waiting: boolean; elapsed: number; activity?: string; phase?: SessionPhase }) {

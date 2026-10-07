@@ -1208,6 +1208,9 @@ const layer = Layer.effect(
           timestamp: DateTime.makeUnsafe(Date.now()),
           model,
         })
+      // Checkpoint the child Session onto the still-running task part so a
+      // client can stream the child's activity inline before the result lands.
+      if (request.context?.progress) yield* request.context.progress({ structured: { sessionID: child.id } })
       yield* SessionInput.admit(db, events, {
         id: SessionMessage.ID.create(),
         sessionID: child.id,

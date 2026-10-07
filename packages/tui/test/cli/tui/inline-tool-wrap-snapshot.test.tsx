@@ -3,11 +3,9 @@ import { createSignal, For, Show } from "solid-js"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { testRender, type JSX } from "@opentui/solid"
 import {
-  formatCompletedSubagentDetail,
   formatSubagentRetry,
   formatSubagentRunningDetail,
   formatSubagentTitle,
-  formatSubagentToolcalls,
   InlineToolRow,
   FileToolResult,
   parseApplyPatchFiles,
@@ -114,10 +112,10 @@ function TaskRowsFixture() {
         Grep "Task" (2 matches)
       </InlineToolRow>
       <InlineToolRow icon="⠙" complete={true} pending="" separate={true}>
-        Explore Task — Inspect active task spacing
+        {"Explore Task — Inspect active task spacing\n↳ Reading src/a.ts\n↳ Running bun test · 4s\n… ctrl+x enter expand"}
       </InlineToolRow>
       <InlineToolRow icon="✓" complete={true} pending="" separate={true}>
-        {"General Task — Confirm completed task spacing\n↳ 1 toolcall · 501ms"}
+        {"General Task — Confirm completed task spacing\n↳ 501ms · Confirmed the spacing"}
       </InlineToolRow>
       <InlineToolRow icon="→" complete={true} pending="">
         Read src/cli/cmd/tui/routes/session/index.tsx
@@ -136,7 +134,7 @@ function LoadedReadBeforeTaskFixture() {
         <text paddingLeft={3}>↳ Loaded src/cli/cmd/tui/routes/session/tools.tsx</text>
       </box>
       <InlineToolRow icon="✓" complete={true} pending="" separate={true}>
-        {"Explore Task — Inspect active task spacing\n↳ 1 toolcall · 501ms"}
+        {"Explore Task — Inspect active task spacing\n↳ 501ms · Inspected the spacing"}
       </InlineToolRow>
     </box>
   )
@@ -149,7 +147,7 @@ function AssistantSummaryBeforeInlineFixture() {
         <text>▣ Build · Little Frank · 53.1s</text>
       </box>
       <InlineToolRow icon="✓" complete={true} pending="">
-        {"Build Task — Review changes\n↳ 48 toolcalls · 1m 40s"}
+        {"Build Task — Review changes\n↳ 1m 40s · Reviewed the changes"}
       </InlineToolRow>
     </box>
   )
@@ -168,7 +166,7 @@ function AssistantErrorBeforeInlineFixture() {
         <text>Managed inference requires an active Member plan</text>
       </box>
       <InlineToolRow icon="✓" complete={true} pending="">
-        {"Build Task — Review changes\n↳ 48 toolcalls · 1m 40s"}
+        {"Build Task — Review changes\n↳ 1m 40s · Reviewed the changes"}
       </InlineToolRow>
     </box>
   )
@@ -275,14 +273,7 @@ describe("TUI inline tool wrapping", () => {
     ).toEqual([{ message: "valid", range: { start: { line: 2, character: 3 } } }])
   })
 
-  test("formats completed subagent toolcall details", () => {
-    expect(formatCompletedSubagentDetail(0, "501ms")).toBe("501ms")
-    expect(formatCompletedSubagentDetail(1, "501ms")).toBe("1 toolcall · 501ms")
-    expect(formatCompletedSubagentDetail(2, "501ms")).toBe("2 toolcalls · 501ms")
-    expect(formatSubagentToolcalls(0)).toBe("0 toolcalls")
-  })
-
-  test("keeps background state attached to the subagent identity", () => {
+  test("formats the subagent title with its identity and background state", () => {
     expect(formatSubagentTitle("Explore", "Inspect renderer", false)).toBe("Explore Task — Inspect renderer")
     expect(formatSubagentTitle("Explore", "Inspect renderer", true)).toBe(
       "Explore Task (background) — Inspect renderer",

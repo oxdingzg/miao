@@ -3186,6 +3186,76 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("checkpoints the child session onto the running task part", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate this" }), resume: false })
+      const progress = yield* events
+        .subscribe(SessionEvent.Tool.Progress)
+        .pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped)
+      yield* Effect.yieldNow
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-task",
+            name: "task",
+            input: { description: "child", prompt: "Say sub", subagent_type: "build" },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-sub" }),
+          LLMEvent.textDelta({ id: "text-sub", text: "Sub result" }),
+          LLMEvent.textEnd({ id: "text-sub" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      const checkpoints = yield* Fiber.join(progress)
+      const database = yield* Database.Service
+      const child = yield* database.db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.parent_id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      // The checkpoint lands while the call is still running and carries the
+      // child Session id, so a client can stream the child's activity inline.
+      expect(checkpoints).toHaveLength(1)
+      expect(checkpoints[0]).toMatchObject({
+        data: {
+          sessionID,
+          callID: "call-task",
+          structured: { sessionID: child!.id },
+        },
+      })
+    }),
+  )
+
   it.effect("interrupts a subagent that stops producing events", () =>
     Effect.gen(function* () {
       yield* setup

@@ -60,11 +60,12 @@ exports[`TUI inline tool wrapping separates after a multi-line task row 1`] = `
 "✱ Grep "Task" (2 matches)
 
 ⠙ Explore Task — Inspect active task spacing
+  ↳ Reading src/a.ts
+  ↳ Running bun test · 4s
+  … ctrl+x enter expand
 
 ✓ General Task — Confirm completed task spacing
-  ↳ 1 toolcall · 501ms
-
-→ Read src/cli/cmd/tui/routes/session/index.tsx"
+  ↳ 501ms · Confirmed the spacing"
 `;
 
 exports[`TUI inline tool wrapping separates a task row from a preceding inline detail 1`] = `
@@ -72,14 +73,14 @@ exports[`TUI inline tool wrapping separates a task row from a preceding inline d
    ↳ Loaded src/cli/cmd/tui/routes/session/tools.tsx
 
 ✓ Explore Task — Inspect active task spacing
-  ↳ 1 toolcall · 501ms"
+  ↳ 501ms · Inspected the spacing"
 `;
 
 exports[`TUI inline tool wrapping separates an inline row from the previous assistant summary 1`] = `
 "   ▣ Build · Little Frank · 53.1s
 
 ✓ Build Task — Review changes
-  ↳ 48 toolcalls · 1m 40s"
+  ↳ 1m 40s · Reviewed the changes"
 `;
 
 exports[`TUI inline tool wrapping separates an inline row from the previous assistant error 1`] = `
@@ -88,5 +89,5 @@ exports[`TUI inline tool wrapping separates an inline row from the previous assi
 │
 
 ✓ Build Task — Review changes
-  ↳ 48 toolcalls · 1m 40s"
+  ↳ 1m 40s · Reviewed the changes"
 `;
