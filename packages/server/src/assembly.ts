@@ -47,8 +47,24 @@ import { layer as locationLayer } from "./location"
 import { sessionLocationLayer } from "./middleware/session-location"
 import { PtyEnvironment } from "./pty-environment"
 import { RuntimeIdentity } from "@miao/core/runtime/identity"
+import { Logging } from "@miao/core/observability/logging"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
+
+/**
+ * The raw web-handler runtime carries no file logger, and inside a TUI stderr
+ * is the in-app console, so a defect that turns into a bare 500 left no trace
+ * anywhere. With attach-first windows every open window is a client of one
+ * shared Runtime, so one defect 500s them all in the same instant. Persist the
+ * defect to miao.log; typed failures are client-visible and stay out of it.
+ * `file` exists for tests.
+ */
+export const defectLogging =
+  (file?: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.tapDefect(effect, (defect) =>
+      Effect.promise(() => Logging.appendLine("ERROR", "http defect", { cause: defect }, file)),
+    )
 
 const cors = (corsOptions?: CorsOptions) =>
   HttpRouter.middleware(

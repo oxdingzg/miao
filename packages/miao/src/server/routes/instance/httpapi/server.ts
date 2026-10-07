@@ -1,4 +1,4 @@
-import { createRoutes as createAssembly, context as assemblyContext } from "@miao/server/assembly"
+import { createRoutes as createAssembly, context as assemblyContext, HttpApiAssembly } from "@miao/server/assembly"
 import type { CorsOptions } from "@miao/server/cors"
 import type { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { memoMap } from "@miao/core/effect/memo-map"
@@ -27,6 +27,7 @@ export const webHandler = lazy(() =>
   HttpRouter.toWebHandler(routes, {
     disableLogger: true,
     memoMap,
+    middleware: HttpApiAssembly.defectLogging(),
   }),
 )
 

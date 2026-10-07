@@ -66,6 +66,29 @@ function flushLines(file: string, lines: ReadonlyArray<string>) {
   return writes
 }
 
+/**
+ * One structured line for runtimes that do not carry the file logger, such as
+ * the raw HTTP web-handler fork: Effect.log* there reaches the default console
+ * logger, and inside a TUI that output is lost with the process. `file` exists
+ * for tests; production callers append to the shared miao.log.
+ */
+export async function appendLine(
+  level: "WARN" | "ERROR",
+  message: string,
+  fields: Record<string, unknown> = {},
+  file: string = path.join(Global.Path.log, "miao.log"),
+) {
+  const line =
+    [
+      `timestamp=${new Date().toISOString()}`,
+      `level=${level}`,
+      `run=${runID}`,
+      `message=${format(message)}`,
+      ...Object.entries(fields).map(([key, value]) => `${key}=${format(value)}`),
+    ].join(" ") + "\n"
+  await DiagnosticFiles.appendAsync(file, line, MAX_FILE_BYTES, LOG_BUDGET).catch(() => {})
+}
+
 export function fileLogger(file = path.join(Global.Path.log, "miao.log"), id: string = runID) {
   // Batched like Logger.toFile with its one-second window; do not shrink the
   // window to 0, it causes high idle CPU usage. Flushing reopens the file
