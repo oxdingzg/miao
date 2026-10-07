@@ -147,7 +147,26 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
-    const aborted = (message: TurnAssistant) => message.error?.message.toLowerCase().includes("abort") ?? false
+    // V2 errors are `{ type: "unknown", message }`; older records kept the
+    // named-error shape with the text under `data.message`. Both mean abort.
+    const errorText = (error: unknown): string | undefined => {
+      if (!error || typeof error !== "object") return undefined
+      const candidate = error as { message?: unknown; data?: { message?: unknown } }
+      if (typeof candidate.message === "string") return candidate.message
+      if (
+        candidate.data &&
+        typeof candidate.data === "object" &&
+        "message" in candidate.data &&
+        typeof candidate.data.message === "string"
+      )
+        return candidate.data.message
+      return undefined
+    }
+    const aborted = (message: TurnAssistant) => {
+      const error = message.error as { name?: unknown } | undefined
+      if (error && typeof error.name === "string" && error.name.toLowerCase().includes("abort")) return true
+      return errorText(message.error)?.toLowerCase().includes("abort") ?? false
+    }
     const interruptedMessageIndex = assistantMessages.findIndex(aborted)
     const interrupted = interruptedMessageIndex !== -1
     const latestError = assistantMessages.at(-1)?.error
@@ -253,7 +272,7 @@ export namespace Timeline {
       rows.push(
         new TimelineRow.Error({
           userMessageID: userMessage.id,
-          text: unwrapErrorMessage(error.message),
+          text: unwrapErrorMessage(errorText(error) ?? ""),
         }),
       )
     }
