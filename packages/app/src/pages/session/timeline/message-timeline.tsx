@@ -1079,7 +1079,8 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <div data-slot="session-turn-compaction">
+              <div data-slot="session-turn-compaction" data-timeline-label={turnDividerRow().label}
+                data-testid={`timeline-divider-${turnDividerRow().label}`}>
                 <MessageDivider
                   label={language.t(
                     turnDividerRow().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted",
