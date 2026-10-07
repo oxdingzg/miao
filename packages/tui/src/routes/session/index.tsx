@@ -25,7 +25,7 @@ import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
+import { BoxRenderable, ScrollBoxRenderable, type Renderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
   TranscriptAssistantMessage,
@@ -89,7 +89,7 @@ import {
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { stdinPreview } from "../../util/stdin-preview"
-import { createTranscriptWindow } from "../../util/transcript-window"
+import { createScrollAnchoring, createTranscriptWindow, type ScrollAnchorGeometry } from "../../util/transcript-window"
 import { createDiffHighlighter } from "../../util/diff-context-highlight"
 import { shellSegments } from "../../util/shell-highlight"
 import { usePluginRuntime } from "../../plugin/runtime"
@@ -107,6 +107,9 @@ const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
 const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
+// Identifies the leading spacer box among the scrollbox children so scroll
+// anchoring can skip the fixed boxes that never move with the content.
+const TRANSCRIPT_TOP_SPACER = "transcript-top-spacer"
 
 export const alwaysSeparate = new WeakSet<BoxRenderable>()
 
@@ -359,6 +362,19 @@ export function Session() {
   let seeded = false
   let scroll: ScrollBoxRenderable
   let prompt: PromptRef | undefined
+  // Restores the content under the viewport after window moves and prepended
+  // pages, in the frame after the mutation has laid out.
+  const anchoring = createScrollAnchoring<Renderable>({
+    atBottom: () => Boolean(scroll && !scroll.isDestroyed && scroll.scrollTop >= scroll.scrollHeight - scroll.height - 1),
+  })
+  let jumpTo: { target: number; tries: number } | undefined
+  let bottomPin: { tries: number } | undefined
+  // Follow passes since the window last mutated. A mutation surfaces as mixed
+  // stale/fresh layout for a couple of passes, so anchors are only captured
+  // from settled geometry.
+  let followPass = 0
+  let lastMutation = -10
+  const anchoringSettled = () => followPass - lastMutation >= 2
   const bind = (r: PromptRef | undefined) => {
     prompt = r
     promptRef.set(r)
@@ -435,21 +451,23 @@ export function Session() {
   }
 
   function jumpToMessage(id: string) {
-    const move = () => {
-      if (!scroll || scroll.isDestroyed) return
-      const child = scroll.getChildren().find((child) => child.id === id)
-      if (child) scroll.scrollBy(child.y - scroll.y - 1)
+    // Revealing remounts the row at the window start, where everything above
+    // it is the leading spacer: its content offset is exact, so the jump can
+    // be positioned absolutely instead of waiting to measure the row.
+    if (transcript.reveal(id)) {
+      jumpTo = { target: transcript.top() + 1, tries: 0 }
+      return
     }
-    if (transcript.reveal(id)) setTimeout(move, 50)
-    else move()
+    if (!scroll || scroll.isDestroyed) return
+    const child = scroll.getChildren().find((child) => child.id === id)
+    if (child) scroll.scrollBy(child.y - scroll.y - 1)
   }
 
   function toBottom() {
     transcript.reset()
-    setTimeout(() => {
-      if (!scroll || scroll.isDestroyed) return
-      scroll.scrollTo(scroll.scrollHeight)
-    }, 50)
+    anchoring.drop()
+    jumpTo = undefined
+    bottomPin = { tries: 0 }
   }
 
   const local = useLocal()
@@ -1072,20 +1090,15 @@ export function Session() {
     loadingHistory = true
     const sessionID = route.sessionID
     const boundary = transcript.messages()[0]?.id
-    const height = scroll.scrollHeight
+    const captured = anchoringSettled() ? anchoring.capture(anchorGeometry()) : undefined
     const loaded = await sync.session.loadOlder(sessionID).catch(() => false)
-    if (sessionID !== route.sessionID || !loaded) {
-      loadingHistory = false
-      return
-    }
+    loadingHistory = false
+    if (sessionID !== route.sessionID || !loaded) return
     // Anchor the window on the message that was at the top so the prepended
-    // page stays above the reader and only the spacers grow.
+    // page stays above the reader and only the spacers grow; the anchor puts
+    // the exact offset back once the frame lays out, without timers.
     if (boundary) transcript.reveal(boundary)
-    setTimeout(() => {
-      loadingHistory = false
-      if (!scroll || scroll.isDestroyed || sessionID !== route.sessionID) return
-      scroll.scrollBy(scroll.scrollHeight - height)
-    }, 50)
+    if (captured) anchoring.arm(captured)
   }
 
   function loadOlderAtTop() {
@@ -1094,24 +1107,79 @@ export function Session() {
     void loadOlder()
   }
 
+  // Geometry of the scroll content for scroll anchoring. The leading spacer is
+  // identified by id so the fixed boxes before the first message row are
+  // never chosen as anchors.
+  function anchorGeometry(): ScrollAnchorGeometry<Renderable> | undefined {
+    if (!scroll || scroll.isDestroyed || scroll.scrollHeight <= 0) return undefined
+    const rows = scroll.getChildren()
+    const spacer = rows.findIndex((child) => child.id === TRANSCRIPT_TOP_SPACER)
+    return {
+      rows,
+      from: Math.max(1, spacer + 1),
+      contentTop: scroll.content.y,
+      scrollHeight: scroll.scrollHeight,
+    }
+  }
+
+  function applyJump() {
+    const pending = jumpTo
+    if (!pending) return
+    if (!scroll || scroll.isDestroyed) {
+      jumpTo = undefined
+      return
+    }
+    // Wait for the revealed window to lay out, then land the row with an
+    // absolute scroll position; no per-frame measurement needed.
+    if (scroll.scrollHeight <= pending.target && ++pending.tries < 10) return
+    jumpTo = undefined
+    scroll.scrollTo(pending.target)
+  }
+
+  function applyBottom() {
+    const pending = bottomPin
+    if (!pending) return
+    if (!scroll || scroll.isDestroyed) {
+      bottomPin = undefined
+      return
+    }
+    if (scroll.scrollHeight <= 0 && ++pending.tries < 10) return
+    bottomPin = undefined
+    scroll.scrollTo(scroll.scrollHeight)
+  }
+
   // Keep the mounted window around the viewport. Spacers preserve the height of
   // the whole loaded timeline, so the scrollbar and scroll position stay put
   // while only the rows near the reader remain mounted.
-  function followWindow() {
+  function followWindow(shared?: ScrollAnchorGeometry<Renderable>) {
     if (!scroll || scroll.isDestroyed || loadingHistory) return
     // Lifecycle passes run before layout, so the scrollbox may still report no
     // geometry. That is only transient: retry on the next frame instead of
     // giving up, or a transcript that mounted before its first layout would
     // never follow the viewport and every message would stay mounted.
     if (scroll.scrollHeight <= 0) {
-      requestAnimationFrame(followWindow)
+      requestAnimationFrame(() => followWindow())
       return
     }
+    followPass++
+    const geometry = shared ?? anchorGeometry()
+    const before = { start: transcript.start(), top: transcript.top(), bottom: transcript.bottom() }
+    const captured = anchoringSettled() ? anchoring.capture(geometry) : undefined
     transcript.follow({
       scrollTop: scroll.scrollTop,
       viewportHeight: scroll.height,
       mountedHeight: scroll.scrollHeight - transcript.top() - transcript.bottom(),
     })
+    // Compensate only mutations of the window itself; organic content changes
+    // above the viewport keep moving it, as before.
+    if (
+      transcript.start() !== before.start ||
+      transcript.top() !== before.top ||
+      transcript.bottom() !== before.bottom
+    ) {
+      lastMutation = followPass
+      if (captured) anchoring.arm(captured)
+    }
   }
 
   return (
@@ -1143,7 +1211,11 @@ export function Session() {
                   const pass = r.onLifecyclePass
                   r.onLifecyclePass = () => {
                     pass?.call(r)
-                    followWindow()
+                    const geometry = anchorGeometry()
+                    if (geometry) anchoring.apply(geometry, (delta) => scroll?.scrollBy(delta))
+                    applyJump()
+                    applyBottom()
+                    followWindow(geometry)
                   }
                   r.ctx.registerLifecyclePass(r)
                 }}
@@ -1166,7 +1238,7 @@ export function Session() {
                   </box>
                 </Show>
                 <Show when={transcript.top() > 0}>
-                  <box height={transcript.top()} flexShrink={0} />
+                  <box id={TRANSCRIPT_TOP_SPACER} height={transcript.top()} flexShrink={0} />
                 </Show>
                 <For each={transcript.messages()}>
                   {(message, index) => (
