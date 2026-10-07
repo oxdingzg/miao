@@ -15,6 +15,8 @@ import { Lint } from "../lint"
 import { Format } from "../format"
 import { FileMutation } from "../file-mutation"
 import { EditMatch } from "./edit-match"
+import { EditRecovery } from "./edit-recovery"
+import { EditSnapshots } from "./edit-snapshot"
 import { LSP } from "../lsp"
 import { LSPClient } from "../lsp/client"
 import { Diagnostic } from "../lsp/diagnostic"
@@ -42,6 +44,7 @@ export const Input = Schema.Struct({
 export const Output = Schema.Struct({
   files: Schema.Array(FileDiff.Info),
   replacements: Schema.Number,
+  note: Schema.String.pipe(Schema.optional),
   diagnostics: Schema.String.pipe(Schema.optional),
   lint: Schema.String.pipe(Schema.optional),
 })
@@ -78,6 +81,7 @@ export const toModelOutput = (output: Output) =>
     ...previewPatch(output.files[0]?.patch),
     "```",
   ]
+  .concat(output.note ? ["", output.note] : [])
     .concat(output.diagnostics ? ["", "LSP errors detected in this file, please fix:", output.diagnostics] : [])
     .concat(output.lint ? ["", "Lint errors detected in this file, please fix:", output.lint] : [])
     .join("\n")
@@ -97,6 +101,7 @@ const layer = Layer.effectDiscard(
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
     const lint = yield* Lint.Service
+    const snapshots = yield* EditSnapshots.Service
 
     yield* tools
       .register({
@@ -170,7 +175,8 @@ const layer = Layer.effectDiscard(
                   return yield* new ToolFailure({ message: `Unable to edit ${input.path}` })
                 }
                 const source = decodeUtf8(read.value)
-                const planned = plan(source.text, input)
+                const snapshot = yield* snapshots.lookup(target.canonical)
+                const planned = plan(source.text, input, Option.isSome(snapshot) ? snapshot.value : undefined)
                 if (planned instanceof ToolFailure) {
                   yield* approve()
                   return yield* planned
@@ -216,6 +222,7 @@ const layer = Layer.effectDiscard(
                     },
                   ],
                   replacements,
+                  ...(planned.note === undefined ? {} : { note: planned.note }),
                 } satisfies Output
               })
             },
@@ -239,20 +246,29 @@ export const node = makeLocationNode({
     Format.node,
     LSP.node,
     Lint.node,
+    EditSnapshots.node,
   ],
 })
 
 /** The replaced text and match count, or the failure the model should see. */
-function plan(text: string, input: typeof Input.Type) {
+function plan(text: string, input: typeof Input.Type, snapshot?: string) {
   const ending = detectLineEnding(text)
   const newString = convertToLineEnding(input.newString, ending)
   const oldString = convertToLineEnding(input.oldString, ending)
   const replaceAll = input.replaceAll === true
   const matched = EditMatch.match(text, oldString, replaceAll)
-  if (matched._tag === "none")
+  if (matched._tag === "none") {
+    // Recovery is a pure addition to the failure path: it only fires when the
+    // exact and fuzzy matchers both failed, and a refusal keeps the original
+    // failure verbatim.
+    if (snapshot !== undefined) {
+      const outcome = EditRecovery.recover({ snapshot, current: text, oldString, newString })
+      if (outcome._tag === "recovered") return { replaced: outcome.replaced, replacements: 1, note: outcome.note }
+    }
     return new ToolFailure({
       message: "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
     })
+  }
   if (matched._tag === "ambiguous")
     return new ToolFailure({
       message:

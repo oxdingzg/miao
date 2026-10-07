@@ -740,7 +740,7 @@ function App(props: {
                 toast.show({ message: "Failed to create session", variant: "error" })
                 return
               }
-              route.navigate({ type: "session", sessionID })
+              route.navigate({ type: "session", sessionID, fresh: true })
             })
             .catch(() => toast.show({ message: "Failed to create session", variant: "error" }))
         },

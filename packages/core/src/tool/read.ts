@@ -10,6 +10,7 @@ import { LSP } from "../lsp"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
+import { EditSnapshots } from "./edit-snapshot"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { ReadToolPdf } from "./read-pdf"
 import { ToolRegistry } from "./registry"
@@ -46,6 +47,7 @@ const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const instructions = yield* InstructionContext.Service
     const lsp = yield* LSP.Service
+    const snapshots = yield* EditSnapshots.Service
 
     yield* tools
       .register({
@@ -159,6 +161,15 @@ const layer = Layer.effectDiscard(
                     return new ReadToolFileSystem.TextPage({ ...content, instructions: nearby })
                   return { ...content, instructions: nearby }
                 })
+                // The model edits what it just saw, so keep it as the rebase
+                // snapshot for a follow-up edit whose oldString no longer
+                // matches the drifted file.
+                if (
+                  "content" in output &&
+                  typeof output.content === "string" &&
+                  !("encoding" in output && output.encoding === "base64")
+                )
+                  yield* snapshots.register(target.canonical, output.content)
                 // The read succeeded, so prime the language server in the
                 // background: a follow-up edit of this file then skips the
                 // synchronous open-and-diagnostics wait at edit time.
@@ -201,5 +212,6 @@ export const node = makeLocationNode({
     PermissionV2.node,
     InstructionContext.node,
     LSP.node,
+    EditSnapshots.node,
   ],
 })

@@ -2,11 +2,12 @@ import fs from "fs/promises"
 import path from "path"
 import { fileURLToPath } from "url"
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { Config } from "@miao/core/config"
 import { ConfigLSP } from "@miao/core/config/lsp"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
+import { EditSnapshots } from "@miao/core/tool/edit-snapshot"
 import { FileMutation } from "@miao/core/file-mutation"
 import { FSUtil } from "@miao/core/fs-util"
 import { Location } from "@miao/core/location"
@@ -92,17 +93,37 @@ const withTool = <A, E, R>(
   directory: string,
   body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
   lsp?: ConfigLSP.Server,
+  snapshots?: Record<string, string>,
 ) => {
   const activeLocation = Layer.succeed(
     Location.Service,
     Location.Service.of(location({ directory: AbsolutePath.make(directory) })),
   )
-  const replacements: LayerNode.Replacements = [
+  let replacements: LayerNode.Replacements = [
     [FSUtil.node, filesystem],
     [Location.node, activeLocation],
     [PermissionV2.node, permission],
     [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
   ]
+  if (snapshots !== undefined) {
+    const store = new Map(Object.entries(snapshots))
+    replacements = replacements.concat([
+      [
+        EditSnapshots.node,
+        Layer.succeed(
+          EditSnapshots.Service,
+          EditSnapshots.Service.of({
+            register: () => Effect.void,
+            lookup: (file) =>
+              Effect.sync(() => {
+                const text = store.get(file)
+                return text === undefined ? Option.none<string>() : Option.some(text)
+              }),
+          }),
+        ),
+      ],
+    ])
+  }
   return Effect.gen(function* () {
     return yield* body(yield* ToolRegistry.Service)
   }).pipe(
@@ -549,5 +570,30 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
     "Add snapshots / undo after design exists.",
   ]) {
     expect(source).toContain(`TODO: ${todo}`)
+  }
+})
+
+test("recovers an edit whose oldString only exists in the read snapshot", async () => {
+  const tmp = await tmpdir()
+  try {
+    const target = path.join(tmp.path, "recovery.ts")
+    const snapshot = "const before = 1\nconst rate = 0.1\nconst limit = 100\nconst after = 2\n"
+    // Both snapshot lines drifted on disk, so exact and fuzzy matching fail.
+    await fs.writeFile(target, "const before = 1\nconst rate = 0.15\nconst limit = 50\nconst after = 2\n")
+    const result = await Effect.runPromise(
+      withTool(
+        tmp.path,
+        (registry) =>
+          settleTool(registry, call({ path: "recovery.ts", oldString: "const rate = 0.1\nconst limit = 100", newString: "const rate = 0.2\nconst limit = 200" })),
+        undefined,
+        { [target]: snapshot },
+      ),
+    )
+    expect(result.result).toEqual({ type: "text", value: expect.stringContaining("rebased") })
+    expect(await fs.readFile(target, "utf8")).toBe(
+      "const before = 1\nconst rate = 0.2\nconst limit = 200\nconst after = 2\n",
+    )
+  } finally {
+    await tmp[Symbol.asyncDispose]()
   }
 })

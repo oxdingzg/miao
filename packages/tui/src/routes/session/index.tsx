@@ -1232,6 +1232,17 @@ export function Session() {
                 }}
               >
                 <box height={1} />
+                <Show when={route.fresh && displayMessages().length === 0}>
+                  <box paddingLeft={3} flexShrink={0}>
+                    <text>
+                      <span style={{ fg: theme.success }}>✓ </span>
+                      Context cleared — new session started
+                    </text>
+                    <text style={{ fg: theme.textMuted }}>
+                      The previous conversation is still available via /sessions
+                    </text>
+                  </box>
+                </Show>
                 <Show when={transcript.start() > 0}>
                   <box paddingLeft={3} onMouseUp={() => void loadOlder()}>
                     <text fg={theme.textMuted}>↑ Scroll up or click to load earlier messages</text>
