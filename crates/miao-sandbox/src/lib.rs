@@ -7,19 +7,31 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+pub mod win;
+
 pub fn canonical(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Whether this platform has a sandbox backend.
 pub fn supported() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux"))
+    cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    ))
 }
 
 /// Build a seatbelt profile from scratch. Deny-by-default, then explicitly allow
 /// reads everywhere, process execution, and writes only into the given work
 /// directories and the system temp/dev nodes.
-pub fn profile(workdirs: &[PathBuf], allow_paths: &[PathBuf], allow_network: bool, compat: bool) -> String {
+pub fn profile(
+    workdirs: &[PathBuf],
+    allow_paths: &[PathBuf],
+    allow_network: bool,
+    compat: bool,
+) -> String {
     if compat {
         return compat_profile(allow_network);
     }
@@ -54,8 +66,18 @@ pub fn profile(workdirs: &[PathBuf], allow_paths: &[PathBuf], allow_network: boo
 fn compat_profile(allow_network: bool) -> String {
     let mut profile = String::from("(version 1)\n(allow default)\n(deny file-write*\n");
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        for relative in [".ssh", ".aws", ".gnupg", ".netrc", ".docker/config.json", ".config/gh"] {
-            profile.push_str(&format!("  (subpath \"{}\")\n", home.join(relative).display()));
+        for relative in [
+            ".ssh",
+            ".aws",
+            ".gnupg",
+            ".netrc",
+            ".docker/config.json",
+            ".config/gh",
+        ] {
+            profile.push_str(&format!(
+                "  (subpath \"{}\")\n",
+                home.join(relative).display()
+            ));
         }
     }
     profile.push_str(")\n");
@@ -79,11 +101,15 @@ pub fn apply_linux_restrictions(
     allow_paths: &[PathBuf],
     allow_network: bool,
 ) -> Result<(), String> {
-    use landlock::{Access, AccessFs, AccessNet, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr};
+    use landlock::{
+        Access, AccessFs, AccessNet, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
+    };
 
     let abi = AccessFs::from_all(landlock::ABI::V1);
     let read = AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir;
-    let mut builder = Ruleset::default().handle_access(abi).map_err(|error| error.to_string())?;
+    let mut builder = Ruleset::default()
+        .handle_access(abi)
+        .map_err(|error| error.to_string())?;
     if !allow_network {
         // BestEffort drops these on a kernel that predates ABI v4, so this is safe.
         builder = builder
@@ -115,7 +141,11 @@ pub fn apply_linux_restrictions(
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn apply_linux_restrictions(_workdirs: &[PathBuf], _allow_paths: &[PathBuf], _allow_network: bool) -> Result<(), String> {
+pub fn apply_linux_restrictions(
+    _workdirs: &[PathBuf],
+    _allow_paths: &[PathBuf],
+    _allow_network: bool,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -151,6 +181,13 @@ mod tests {
 
     #[test]
     fn reports_platform_support() {
-        assert_eq!(supported(), cfg!(any(target_os = "macos", target_os = "linux")));
+        assert_eq!(
+            supported(),
+            cfg!(any(
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "windows"
+            ))
+        );
     }
 }

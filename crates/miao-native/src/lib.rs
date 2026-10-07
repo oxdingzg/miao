@@ -158,7 +158,10 @@ fn block_anchor(content: &str, find: &str) -> Vec<String> {
 
     let similarity_of = |start_line: usize, end_line: usize| -> f64 {
         let actual_block = end_line - start_line + 1;
-        let lines_to_check = std::cmp::min(search_block.saturating_sub(2), actual_block.saturating_sub(2));
+        let lines_to_check = std::cmp::min(
+            search_block.saturating_sub(2),
+            actual_block.saturating_sub(2),
+        );
         if lines_to_check == 0 {
             return 1.0;
         }
@@ -215,7 +218,11 @@ fn whitespace_normalized(content: &str, find: &str) -> Vec<String> {
         if normalized_line.contains(&normalized_find) {
             let words: Vec<&str> = find.trim().split_whitespace().collect();
             if !words.is_empty() {
-                let pattern = words.iter().map(|word| regex::escape(word)).collect::<Vec<_>>().join(r"\s+");
+                let pattern = words
+                    .iter()
+                    .map(|word| regex::escape(word))
+                    .collect::<Vec<_>>()
+                    .join(r"\s+");
                 if let Ok(re) = Regex::new(&pattern) {
                     if let Some(m) = re.find(line) {
                         out.push(m.as_str().to_string());
@@ -241,7 +248,10 @@ fn whitespace_normalized(content: &str, find: &str) -> Vec<String> {
 fn indentation_flexible(content: &str, find: &str) -> Vec<String> {
     fn remove_indentation(text: &str) -> String {
         let lines: Vec<&str> = text.split('\n').collect();
-        let non_empty: Vec<&&str> = lines.iter().filter(|line| !line.trim().is_empty()).collect();
+        let non_empty: Vec<&&str> = lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
         if non_empty.is_empty() {
             return text.to_string();
         }
@@ -252,7 +262,13 @@ fn indentation_flexible(content: &str, find: &str) -> Vec<String> {
             .unwrap_or(0);
         lines
             .iter()
-            .map(|line| if line.trim().is_empty() { (*line).to_string() } else { line[min_indent.min(line.len())..].to_string() })
+            .map(|line| {
+                if line.trim().is_empty() {
+                    (*line).to_string()
+                } else {
+                    line[min_indent.min(line.len())..].to_string()
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -398,11 +414,19 @@ fn is_disproportionate_match(search: &str, old_string: &str) -> bool {
         return false;
     }
     search.trim().chars().count()
-        > std::cmp::max(old_string.trim().chars().count() + 500, old_string.trim().chars().count() * 4)
+        > std::cmp::max(
+            old_string.trim().chars().count() + 500,
+            old_string.trim().chars().count() * 4,
+        )
 }
 
 /// Pure port of `replace()` in `packages/miao/src/tool/edit.ts`.
-pub fn replace(content: &str, old_string: &str, new_string: &str, replace_all: bool) -> Result<String, EditError> {
+pub fn replace(
+    content: &str,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+) -> Result<String, EditError> {
     if old_string == new_string {
         return Err(EditError::Identical);
     }
@@ -504,8 +528,13 @@ pub fn replace_only(
     new_string: String,
     replace_all: Option<bool>,
 ) -> napi::Result<String> {
-    replace(&content, &old_string, &new_string, replace_all.unwrap_or(false))
-        .map_err(|error| napi::Error::from_reason(error.message()))
+    replace(
+        &content,
+        &old_string,
+        &new_string,
+        replace_all.unwrap_or(false),
+    )
+    .map_err(|error| napi::Error::from_reason(error.message()))
 }
 
 #[napi(js_name = "applyEdit")]
@@ -515,8 +544,13 @@ pub fn apply_edit(
     new_string: String,
     replace_all: Option<bool>,
 ) -> napi::Result<ApplyEditResult> {
-    let result = replace(&content, &old_string, &new_string, replace_all.unwrap_or(false))
-        .map_err(|error| napi::Error::from_reason(error.message()))?;
+    let result = replace(
+        &content,
+        &old_string,
+        &new_string,
+        replace_all.unwrap_or(false),
+    )
+    .map_err(|error| napi::Error::from_reason(error.message()))?;
     let (additions, deletions) = compute_stats(&content, &result);
     Ok(ApplyEditResult {
         content: result,
@@ -568,7 +602,9 @@ fn normalize_unicode(input: &str) -> String {
         match ch {
             '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}' => out.push('\''),
             '\u{201c}' | '\u{201d}' | '\u{201e}' | '\u{201f}' => out.push('"'),
-            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}' => out.push('-'),
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}' => {
+                out.push('-')
+            }
             '\u{2026}' => out.push_str("..."),
             '\u{00a0}' => out.push(' '),
             other => out.push(other),
@@ -586,7 +622,12 @@ fn try_match<F: Fn(&str, &str) -> bool>(
 ) -> i64 {
     if eof && lines.len() >= pattern.len() {
         let from_end = lines.len() - pattern.len();
-        if from_end >= start && pattern.iter().enumerate().all(|(j, p)| compare(lines[from_end + j], p)) {
+        if from_end >= start
+            && pattern
+                .iter()
+                .enumerate()
+                .all(|(j, p)| compare(lines[from_end + j], p))
+        {
             return from_end as i64;
         }
     }
@@ -594,7 +635,11 @@ fn try_match<F: Fn(&str, &str) -> bool>(
         return -1;
     }
     for i in start..=(lines.len() - pattern.len()) {
-        if pattern.iter().enumerate().all(|(j, p)| compare(lines[i + j], p)) {
+        if pattern
+            .iter()
+            .enumerate()
+            .all(|(j, p)| compare(lines[i + j], p))
+        {
             return i as i64;
         }
     }
@@ -609,7 +654,9 @@ fn seek_sequence(lines: &[&str], pattern: &[&str], start: usize, eof: bool) -> i
     if exact != -1 {
         return exact;
     }
-    let rstrip = try_match(lines, pattern, start, eof, |a, b| a.trim_end() == b.trim_end());
+    let rstrip = try_match(lines, pattern, start, eof, |a, b| {
+        a.trim_end() == b.trim_end()
+    });
     if rstrip != -1 {
         return rstrip;
     }
@@ -747,10 +794,18 @@ fn generate_unified_diff(old_content: &str, new_content: &str) -> String {
     }
 }
 
-fn derive_new_contents(chunks: &[PatchChunk], file_path: &str, original_text: &str) -> Result<DeriveResult, String> {
+fn derive_new_contents(
+    chunks: &[PatchChunk],
+    file_path: &str,
+    original_text: &str,
+) -> Result<DeriveResult, String> {
     let (original_bom, text) = split_bom(original_text);
     let mut original_lines: Vec<&str> = text.split('\n').collect();
-    if original_lines.last().map(|line| line.is_empty()).unwrap_or(false) {
+    if original_lines
+        .last()
+        .map(|line| line.is_empty())
+        .unwrap_or(false)
+    {
         original_lines.pop();
     }
 
@@ -798,7 +853,9 @@ fn git_status_entries(path: &str) -> Result<Vec<GitEntry>, String> {
     for item in iter {
         let item = item.map_err(|error| format!("failed to read status entry: {error}"))?;
         let status = match item.summary() {
-            Some(Summary::Modified) | Some(Summary::TypeChange) | Some(Summary::Conflict) => "modified",
+            Some(Summary::Modified) | Some(Summary::TypeChange) | Some(Summary::Conflict) => {
+                "modified"
+            }
             Some(Summary::Added) => "added",
             Some(Summary::Removed) => "deleted",
             Some(Summary::Renamed) => "renamed",
@@ -876,7 +933,10 @@ fn git_blob_impl(path: &str, rev: &str, file: &str) -> Result<GitBlob, String> {
         .object()
         .map_err(|error| format!("failed to read blob for '{file}': {error}"))?;
     match String::from_utf8(object.data.clone()) {
-        Ok(content) => Ok(GitBlob { content, binary: false }),
+        Ok(content) => Ok(GitBlob {
+            content,
+            binary: false,
+        }),
         Err(_) => Ok(GitBlob {
             content: String::new(),
             binary: true,
@@ -909,7 +969,10 @@ impl napi::Task for GitRevParseTask {
 }
 
 #[napi(js_name = "gitRevParseAsync")]
-pub fn git_rev_parse_async(path: String, rev: String) -> napi::bindgen_prelude::AsyncTask<GitRevParseTask> {
+pub fn git_rev_parse_async(
+    path: String,
+    rev: String,
+) -> napi::bindgen_prelude::AsyncTask<GitRevParseTask> {
     napi::bindgen_prelude::AsyncTask::new(GitRevParseTask { path, rev })
 }
 
@@ -939,7 +1002,11 @@ impl napi::Task for GitBlobTask {
 }
 
 #[napi(js_name = "gitBlobAsync")]
-pub fn git_blob_async(path: String, rev: String, file: String) -> napi::bindgen_prelude::AsyncTask<GitBlobTask> {
+pub fn git_blob_async(
+    path: String,
+    rev: String,
+    file: String,
+) -> napi::bindgen_prelude::AsyncTask<GitBlobTask> {
     napi::bindgen_prelude::AsyncTask::new(GitBlobTask { path, rev, file })
 }
 
@@ -994,7 +1061,9 @@ impl napi::Task for GitWorktreeChangesTask {
 }
 
 #[napi(js_name = "gitWorktreeChangesAsync")]
-pub fn git_worktree_changes_async(path: String) -> napi::bindgen_prelude::AsyncTask<GitWorktreeChangesTask> {
+pub fn git_worktree_changes_async(
+    path: String,
+) -> napi::bindgen_prelude::AsyncTask<GitWorktreeChangesTask> {
     napi::bindgen_prelude::AsyncTask::new(GitWorktreeChangesTask { path })
 }
 
@@ -1040,7 +1109,11 @@ impl napi::Task for GitMergeBaseTask {
 }
 
 #[napi(js_name = "gitMergeBaseAsync")]
-pub fn git_merge_base_async(path: String, a: String, b: String) -> napi::bindgen_prelude::AsyncTask<GitMergeBaseTask> {
+pub fn git_merge_base_async(
+    path: String,
+    a: String,
+    b: String,
+) -> napi::bindgen_prelude::AsyncTask<GitMergeBaseTask> {
     napi::bindgen_prelude::AsyncTask::new(GitMergeBaseTask { path, a, b })
 }
 
@@ -1052,7 +1125,12 @@ pub fn detect_line_ending(text: String) -> String {
     for index in 0..bytes.len() {
         match bytes[index] {
             b'\r' => {
-                return if bytes.get(index + 1) == Some(&b'\n') { "crlf" } else { "cr" }.to_string();
+                return if bytes.get(index + 1) == Some(&b'\n') {
+                    "crlf"
+                } else {
+                    "cr"
+                }
+                .to_string();
             }
             b'\n' => return "lf".to_string(),
             _ => {}
@@ -1114,7 +1192,11 @@ fn walk_files_impl(root: &str, hidden: bool, gitignore: bool) -> Result<Vec<Stri
     let mut paths = Vec::new();
     for entry in builder.build() {
         let entry = entry.map_err(|error| format!("failed to walk '{root}': {error}"))?;
-        if !entry.file_type().map(|kind| kind.is_file()).unwrap_or(false) {
+        if !entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false)
+        {
             continue;
         }
         let relative = entry.path().strip_prefix(root).unwrap_or(entry.path());
@@ -1126,8 +1208,14 @@ fn walk_files_impl(root: &str, hidden: bool, gitignore: bool) -> Result<Vec<Stri
 
 #[napi(js_name = "walkFiles")]
 pub fn walk_files(root: String, options: Option<WalkOptions>) -> napi::Result<Vec<String>> {
-    let hidden = options.as_ref().and_then(|item| item.hidden).unwrap_or(false);
-    let gitignore = options.as_ref().and_then(|item| item.gitignore).unwrap_or(true);
+    let hidden = options
+        .as_ref()
+        .and_then(|item| item.hidden)
+        .unwrap_or(false);
+    let gitignore = options
+        .as_ref()
+        .and_then(|item| item.gitignore)
+        .unwrap_or(true);
     walk_files_impl(&root, hidden, gitignore).map_err(napi::Error::from_reason)
 }
 
@@ -1138,7 +1226,11 @@ pub fn sha256_hex(text: String) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
-    hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// BLAKE3 of UTF-8 bytes as lowercase hex, for snapshot content hashing.
@@ -1163,7 +1255,13 @@ fn render_patch(file: &str, old: &str, new: &str) -> String {
     if new.is_empty() {
         out.push_str("deleted file mode 100644\n");
     }
-    out.push_str(&diff.unified_diff().context_radius(3).header(&from, &to).to_string());
+    out.push_str(
+        &diff
+            .unified_diff()
+            .context_radius(3)
+            .header(&from, &to)
+            .to_string(),
+    );
     out
 }
 
@@ -1178,7 +1276,10 @@ fn git_diff_impl(path: &str) -> Result<String, String> {
         let old = git_blob_impl(path, "HEAD", &file);
         let new_bytes = std::fs::read(root.join(&file)).ok();
         let old_binary = matches!(&old, Ok(blob) if blob.binary);
-        let new_binary = new_bytes.as_deref().map(|bytes| std::str::from_utf8(bytes).is_err()).unwrap_or(false);
+        let new_binary = new_bytes
+            .as_deref()
+            .map(|bytes| std::str::from_utf8(bytes).is_err())
+            .unwrap_or(false);
         if old_binary || new_binary {
             out.push_str(&format!("Binary files a/{file} and b/{file} differ\n"));
             continue;
@@ -1269,7 +1370,12 @@ fn node_parts(node: tree_sitter::Node, bytes: &[u8]) -> Vec<ShellPart> {
         }
         if !matches!(
             kind,
-            "command_name" | "command_name_expr" | "word" | "string" | "raw_string" | "concatenation"
+            "command_name"
+                | "command_name_expr"
+                | "word"
+                | "string"
+                | "raw_string"
+                | "concatenation"
         ) {
             continue;
         }
@@ -1343,16 +1449,81 @@ pub fn sandbox_supported() -> bool {
 
 /// Build the macOS seatbelt profile the sandbox runner passes to `sandbox-exec`.
 #[napi(js_name = "sandboxProfile")]
-pub fn sandbox_profile(workdirs: Vec<String>, allow_paths: Vec<String>, allow_network: bool, compat: bool) -> String {
-    miao_sandbox::profile(&path_bufs(workdirs), &path_bufs(allow_paths), allow_network, compat)
+pub fn sandbox_profile(
+    workdirs: Vec<String>,
+    allow_paths: Vec<String>,
+    allow_network: bool,
+    compat: bool,
+) -> String {
+    miao_sandbox::profile(
+        &path_bufs(workdirs),
+        &path_bufs(allow_paths),
+        allow_network,
+        compat,
+    )
 }
 
 /// Apply the platform sandbox to the current process. Linux restricts with
 /// Landlock so spawned children inherit it; other platforms are a no-op.
 #[napi(js_name = "sandboxRestrict")]
-pub fn sandbox_restrict(workdirs: Vec<String>, allow_paths: Vec<String>, allow_network: bool) -> napi::Result<()> {
-    miao_sandbox::apply_linux_restrictions(&path_bufs(workdirs), &path_bufs(allow_paths), allow_network)
-        .map_err(napi::Error::from_reason)
+pub fn sandbox_restrict(
+    workdirs: Vec<String>,
+    allow_paths: Vec<String>,
+    allow_network: bool,
+) -> napi::Result<()> {
+    miao_sandbox::apply_linux_restrictions(
+        &path_bufs(workdirs),
+        &path_bufs(allow_paths),
+        allow_network,
+    )
+    .map_err(napi::Error::from_reason)
+}
+
+/// Windows: spawn the command inside the AppContainer sandbox and wait for it,
+/// with stdio inherited so the child shares this process's console. Mirrors
+/// `miao-run`: fall back to unsandboxed execution when the container cannot be
+/// set up, and return 127 when a sandboxed spawn fails.
+#[napi(js_name = "sandboxSpawn")]
+pub fn sandbox_spawn(
+    workdirs: Vec<String>,
+    allow_paths: Vec<String>,
+    allow_network: bool,
+    command: Vec<String>,
+) -> napi::Result<i32> {
+    #[cfg(target_os = "windows")]
+    {
+        use miao_sandbox::win::WinError;
+        return match miao_sandbox::win::run(
+            &path_bufs(workdirs),
+            &path_bufs(allow_paths),
+            allow_network,
+            &command,
+        ) {
+            Ok(code) => Ok(code),
+            Err(WinError::Unavailable(message)) => {
+                eprintln!("miao: windows sandbox unavailable: {message}");
+                eprintln!("miao: running unsandboxed (no file/network isolation)");
+                let code = std::process::Command::new(&command[0])
+                    .args(&command[1..])
+                    .status()
+                    .ok()
+                    .and_then(|status| status.code())
+                    .unwrap_or(1);
+                Ok(code)
+            }
+            Err(WinError::Start(message)) => {
+                eprintln!("miao: failed to start command: {message}");
+                Ok(127)
+            }
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (workdirs, allow_paths, allow_network, command);
+        Err(napi::Error::from_reason(
+            "sandboxSpawn is only implemented on Windows",
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -1365,7 +1536,10 @@ mod tests {
 
     #[test]
     fn rejects_identical_strings() {
-        assert_eq!(replace("content", "same", "same", false), Err(EditError::Identical));
+        assert_eq!(
+            replace("content", "same", "same", false),
+            Err(EditError::Identical)
+        );
     }
 
     #[test]
@@ -1375,14 +1549,20 @@ mod tests {
 
     #[test]
     fn replaces_simple_text() {
-        assert_eq!(edit("old content here", "old content", "new content"), "new content here");
+        assert_eq!(
+            edit("old content here", "old content", "new content"),
+            "new content here"
+        );
     }
 
     #[test]
     fn replaces_first_visible_line_in_bom_file() {
         let content = "\u{feff}using System;\nclass Test {}\n";
         let result = edit(content, "using System;", "using Up;");
-        assert_eq!(result.strip_prefix('\u{feff}'), Some("using Up;\nclass Test {}\n"));
+        assert_eq!(
+            result.strip_prefix('\u{feff}'),
+            Some("using Up;\nclass Test {}\n")
+        );
     }
 
     #[test]
@@ -1405,7 +1585,10 @@ mod tests {
 
     #[test]
     fn reports_not_found() {
-        assert_eq!(replace("actual content", "not in file", "replacement", false), Err(EditError::NotFound));
+        assert_eq!(
+            replace("actual content", "not in file", "replacement", false),
+            Err(EditError::NotFound)
+        );
     }
 
     #[test]
@@ -1428,19 +1611,28 @@ mod tests {
         ]
         .join("\n");
         let old = ["function configure() {", "  const enabled = true", "}"].join("\n");
-        assert_eq!(replace(&content, &old, "x", false), Err(EditError::NotFound));
+        assert_eq!(
+            replace(&content, &old, "x", false),
+            Err(EditError::NotFound)
+        );
     }
 
     #[test]
     fn rejects_block_anchor_with_unrelated_middle() {
         let content = ["function configure() {", "  removeAllUserData()", "}"].join("\n");
         let old = ["function configure() {", "  const enabled = true", "}"].join("\n");
-        assert_eq!(replace(&content, &old, "x", false), Err(EditError::NotFound));
+        assert_eq!(
+            replace(&content, &old, "x", false),
+            Err(EditError::NotFound)
+        );
     }
 
     #[test]
     fn diff_stats_count_lines() {
-        let (additions, deletions) = compute_stats("line1\nline2\nline3", "line1\nnew line a\nnew line b\nline3");
+        let (additions, deletions) = compute_stats(
+            "line1\nline2\nline3",
+            "line1\nnew line a\nnew line b\nline3",
+        );
         assert_eq!((additions, deletions), (2, 1));
     }
 
@@ -1455,33 +1647,51 @@ mod tests {
 
     #[test]
     fn derive_replaces_exact_lines() {
-        let result = derive_new_contents(&[chunk(&["line2"], &["CHANGED"])], "f.txt", "line1\nline2\nline3\n").unwrap();
+        let result = derive_new_contents(
+            &[chunk(&["line2"], &["CHANGED"])],
+            "f.txt",
+            "line1\nline2\nline3\n",
+        )
+        .unwrap();
         assert_eq!(result.content, "line1\nCHANGED\nline3\n");
     }
 
     #[test]
     fn derive_inserts_when_old_lines_empty() {
-        let result = derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\nline2\n").unwrap();
+        let result =
+            derive_new_contents(&[chunk(&[], &["inserted"])], "f.txt", "line1\nline2\n").unwrap();
         assert_eq!(result.content, "line1\nline2\ninserted\n");
     }
 
     #[test]
     fn derive_matches_with_trimmed_whitespace() {
-        let result = derive_new_contents(&[chunk(&["  line2  "], &["CHANGED"])], "f.txt", "line1\nline2\nline3\n").unwrap();
+        let result = derive_new_contents(
+            &[chunk(&["  line2  "], &["CHANGED"])],
+            "f.txt",
+            "line1\nline2\nline3\n",
+        )
+        .unwrap();
         assert_eq!(result.content, "line1\nCHANGED\nline3\n");
     }
 
     #[test]
     fn derive_matches_normalized_unicode() {
-        let result =
-            derive_new_contents(&[chunk(&["const x = \u{201c}a\u{201d}"], &["const x = 1"])], "f.txt", "const x = \"a\"\n").unwrap();
+        let result = derive_new_contents(
+            &[chunk(&["const x = \u{201c}a\u{201d}"], &["const x = 1"])],
+            "f.txt",
+            "const x = \"a\"\n",
+        )
+        .unwrap();
         assert_eq!(result.content, "const x = 1\n");
     }
 
     #[test]
     fn derive_reports_missing_lines() {
         let result = derive_new_contents(&[chunk(&["missing"], &["x"])], "f.txt", "line1\nline2\n");
-        assert_eq!(result.unwrap_err(), "Failed to find expected lines in f.txt:\nmissing");
+        assert_eq!(
+            result.unwrap_err(),
+            "Failed to find expected lines in f.txt:\nmissing"
+        );
     }
 
     fn git(args: &[&str], cwd: &std::path::Path) -> std::process::Output {
@@ -1497,7 +1707,11 @@ mod tests {
     }
 
     fn temp_repo(name: &str) -> Option<std::path::PathBuf> {
-        if std::process::Command::new("git").arg("--version").output().is_err() {
+        if std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return None;
         }
         let dir = std::env::temp_dir().join(format!("miao-native-{name}-{}", std::process::id()));
@@ -1514,9 +1728,17 @@ mod tests {
 
     #[test]
     fn rev_parse_matches_git() {
-        let Some(dir) = temp_repo("revparse") else { return };
-        let expected = String::from_utf8(git(&["rev-parse", "HEAD"], &dir).stdout).unwrap().trim().to_string();
-        assert_eq!(git_rev_parse_impl(dir.to_str().unwrap(), "HEAD").unwrap(), expected);
+        let Some(dir) = temp_repo("revparse") else {
+            return;
+        };
+        let expected = String::from_utf8(git(&["rev-parse", "HEAD"], &dir).stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(
+            git_rev_parse_impl(dir.to_str().unwrap(), "HEAD").unwrap(),
+            expected
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1537,7 +1759,9 @@ mod tests {
 
     #[test]
     fn worktree_changes_match_git_diff() {
-        let Some(dir) = temp_repo("wtchanges") else { return };
+        let Some(dir) = temp_repo("wtchanges") else {
+            return;
+        };
         std::fs::write(dir.join("file.txt"), "changed\n").unwrap();
         std::fs::write(dir.join("untracked.txt"), "new\n").unwrap();
         let expected = String::from_utf8(git(&["diff", "--name-only"], &dir).stdout).unwrap();
@@ -1547,13 +1771,18 @@ mod tests {
             .map(String::from)
             .collect();
         expected.sort();
-        assert_eq!(git_worktree_changes_impl(dir.to_str().unwrap()).unwrap(), expected);
+        assert_eq!(
+            git_worktree_changes_impl(dir.to_str().unwrap()).unwrap(),
+            expected
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn merge_base_matches_git() {
-        let Some(dir) = temp_repo("mergebase") else { return };
+        let Some(dir) = temp_repo("mergebase") else {
+            return;
+        };
         git(&["checkout", "-qb", "feature"], &dir);
         std::fs::write(dir.join("feature.txt"), "x\n").unwrap();
         git(&["add", "-A"], &dir);
@@ -1563,7 +1792,10 @@ mod tests {
             .unwrap()
             .trim()
             .to_string();
-        assert_eq!(git_merge_base_impl(dir.to_str().unwrap(), "HEAD", "feature").unwrap(), expected);
+        assert_eq!(
+            git_merge_base_impl(dir.to_str().unwrap(), "HEAD", "feature").unwrap(),
+            expected
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1577,8 +1809,14 @@ mod tests {
 
     #[test]
     fn normalizes_line_endings() {
-        assert_eq!(normalize_line_endings("a\r\nb\rc\nd".to_string(), "lf".to_string()), "a\nb\nc\nd");
-        assert_eq!(normalize_line_endings("a\nb".to_string(), "crlf".to_string()), "a\r\nb");
+        assert_eq!(
+            normalize_line_endings("a\r\nb\rc\nd".to_string(), "lf".to_string()),
+            "a\nb\nc\nd"
+        );
+        assert_eq!(
+            normalize_line_endings("a\nb".to_string(), "crlf".to_string()),
+            "a\r\nb"
+        );
     }
 
     #[test]
@@ -1598,8 +1836,13 @@ mod tests {
         std::fs::write(dir.join(".hidden"), "").unwrap();
 
         let root = dir.to_str().unwrap();
-        assert_eq!(walk_files_impl(root, false, false).unwrap(), vec!["a.txt", "sub/b.txt"]);
-        assert!(walk_files_impl(root, true, false).unwrap().contains(&".hidden".to_string()));
+        assert_eq!(
+            walk_files_impl(root, false, false).unwrap(),
+            vec!["a.txt", "sub/b.txt"]
+        );
+        assert!(walk_files_impl(root, true, false)
+            .unwrap()
+            .contains(&".hidden".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1634,7 +1877,10 @@ mod tests {
             "git apply failed: {}",
             String::from_utf8_lossy(&applied.stderr)
         );
-        assert_eq!(std::fs::read_to_string(dir.join("file.txt")).unwrap(), "hello\nCHANGED\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("file.txt")).unwrap(),
+            "hello\nCHANGED\n"
+        );
         assert!(!dir.join("gone.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1642,12 +1888,19 @@ mod tests {
     #[test]
     fn analyzes_bash_commands() {
         let analysis = shell_analyze_impl("cd /tmp && rm -rf foo/bar && echo hi", "bash").unwrap();
-        let tokens: Vec<Vec<String>> = analysis.commands.iter().map(|item| item.tokens.clone()).collect();
+        let tokens: Vec<Vec<String>> = analysis
+            .commands
+            .iter()
+            .map(|item| item.tokens.clone())
+            .collect();
         assert_eq!(tokens[0], vec!["cd", "/tmp"]);
-        assert!(tokens.iter().any(|item| item.first().map(String::as_str) == Some("rm")));
         assert!(tokens
             .iter()
-            .any(|item| item.first().map(String::as_str) == Some("echo") && item.get(1).map(String::as_str) == Some("hi")));
+            .any(|item| item.first().map(String::as_str) == Some("rm")));
+        assert!(tokens
+            .iter()
+            .any(|item| item.first().map(String::as_str) == Some("echo")
+                && item.get(1).map(String::as_str) == Some("hi")));
     }
 
     #[test]
