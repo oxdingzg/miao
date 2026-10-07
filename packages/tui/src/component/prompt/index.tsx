@@ -466,7 +466,13 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
-          void sdk.api.sessions.interrupt({ sessionID: props.sessionID })
+          // A rejected interrupt (server 500, runtime unreachable) must not
+          // kill the TUI: Bun exits the process on an unhandled rejection.
+          void sdk.api.sessions
+            .interrupt({ sessionID: props.sessionID })
+            .catch(() =>
+              toast.show({ message: "Interrupt failed: session runtime unreachable", variant: "error" }),
+            )
           dialog.clear()
         },
       },
