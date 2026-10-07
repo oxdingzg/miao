@@ -25,6 +25,19 @@ export type SessionInfo = {
   }
 }
 
+/**
+ * A `<system-reminder>` user message is model-facing protocol, not human
+ * content. The transcript folds it to one muted line so an injected notice
+ * cannot flood the screen with raw protocol text.
+ */
+export function systemReminderLine(text: string): string | undefined {
+  if (!text.startsWith("<system-reminder>")) return undefined
+  const end = text.indexOf("</system-reminder>")
+  if (end === -1) return undefined
+  const first = text.slice("<system-reminder>".length, end).trim().split("\n")[0] ?? ""
+  return first.length > 96 ? `${first.slice(0, 95)}…` : first
+}
+
 export function formatTranscript(
   session: SessionInfo,
   messages: ReadonlyArray<TranscriptMessage>,

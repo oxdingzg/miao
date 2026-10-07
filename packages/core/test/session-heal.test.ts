@@ -113,6 +113,36 @@ describe("SessionHeal", () => {
     }),
   )
 
+  it.live("does not admit a second notice when a concurrent request already relocated", () =>
+    Effect.gen(function* () {
+      const env = yield* fixture("relocate_once")
+      const project = ProjectV2.ID.make("prj_heal_once")
+      const session = SessionV2.ID.make("ses_heal_once")
+      yield* env.insertProject(project, env.checkout)
+      yield* env.insertSession(session, project, env.missing)
+
+      const input = {
+        db: env.db,
+        events: env.events,
+        fs: env.fsService,
+        sessionID: session,
+        directory: env.missing,
+        projectID: project,
+      }
+      yield* SessionHeal.relocateOrphan(input)
+      // A request that raced the first one re-reads after the row moved and
+      // retries; it must find the Session usable without re-notifying.
+      const healed = yield* SessionHeal.relocateOrphan(input)
+
+      expect(healed).toBe(env.checkout)
+      expect((yield* env.sessionDirectory(session))?.directory).toBe(env.checkout)
+      const notices = (yield* env.steers(session)).filter(
+        (steer) => steer.delivery === "steer" && JSON.stringify(steer.prompt).includes("system-reminder"),
+      )
+      expect(notices.length).toBe(1)
+    }),
+  )
+
   it.live("returns the directory untouched while it still exists", () =>
     Effect.gen(function* () {
       const env = yield* fixture("live")
