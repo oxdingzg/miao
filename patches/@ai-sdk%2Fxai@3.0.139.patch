@@ -1,3 +1,6 @@
+diff --git a/node_modules/@ai-sdk/xai/.bun-tag-c158a5b6d3e1fb44 b/.bun-tag-c158a5b6d3e1fb44
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/index.d.mts b/dist/index.d.mts
 index e9c991657f3560d20b0d0d19b40204f45e5e985d..9bacd442f9f9cc7b58c954b1d16c156fae34d0a5 100644
 --- a/dist/index.d.mts
@@ -61,6 +64,36 @@ index d5eb8653c475d406a3b7eab98a908db78acc812a..0d0cecf8f033d6fe42b17f1a75972250
     * Specify additional output data to include in the model response.
     * Example values: 'file_search_call.results'.
 @@ -2288,6 +2290,9 @@ var XaiResponsesLanguageModel = class {
+       ...options.previousResponseId != null && {
+         previous_response_id: options.previousResponseId
+       },
++      ...(options.promptCacheKey != null && {
++        prompt_cache_key: options.promptCacheKey
++      }),
+       ...options.serviceTier != null && {
+         service_tier: options.serviceTier
+       }
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 1b2481842ca5192d313e4d5bb59979f7b6c47a35..15711e669e16ba21705896f8316c3b8eddeb3114 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -262,6 +262,7 @@ var xaiLanguageModelChatOptions = z2.object({
+   logprobs: z2.boolean().optional(),
+   topLogprobs: z2.number().int().min(0).max(8).optional(),
+   serviceTier: z2.enum(["default", "priority"]).optional(),
++  promptCacheKey: z2.string().optional(),
+   /**
+    * Whether to enable parallel function calling during tool use.
+    * When true, the model can call multiple functions in parallel.
+@@ -1864,6 +1865,7 @@ var xaiLanguageModelResponsesOptions = z8.object({
+    * The ID of the previous response from the model.
+    */
+   previousResponseId: z8.string().optional(),
++  promptCacheKey: z8.string().optional(),
+   /**
+    * Specify additional output data to include in the model response.
+    * Example values: 'file_search_call.results'.
+@@ -2309,6 +2311,9 @@ var XaiResponsesLanguageModel = class {
        ...options.previousResponseId != null && {
          previous_response_id: options.previousResponseId
        },
