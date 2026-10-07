@@ -57,6 +57,7 @@ jobs:
     continue-on-error: ${{ !matrix.settings.blocking }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      PLAYWRIGHT_WORKERS: 2
     defaults:
       run:
         shell: bash
