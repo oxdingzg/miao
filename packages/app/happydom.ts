@@ -1,17 +1,4 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { mock } from "bun:test"
-
-// Bun resolves `solid-js/web` to the server build (dist/server.js) which lacks
-// the `use` export that Solid components need in test environments. Redirect
-// to the client build before any component import triggers the resolution.
-mock.module("solid-js/web", () => {
-  // The client build (web.js) has `use`/`render` but lacks `isServer` and
-  // `delegateEvents` which the server build (server.js) provides. Merge both,
-  // with the client build winning for overlapping exports.
-  const server = require("solid-js/web/dist/server.js")
-  const client = require("solid-js/web/dist/web.js")
-  return Object.assign({}, server, client)
-})
 
 GlobalRegistrator.register()
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { unwrap } from "solid-js/store"
 import type { SessionApi } from "@/utils/server"
 import type { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
@@ -403,13 +404,15 @@ describe("server session", () => {
       },
     })
 
-    expect(ctx.store.data.session_message.child?.at(-1)).toMatchObject({
+    // The client store wraps items in reactive proxies that bun's matchers
+    // cannot subset-match against; compare the raw snapshot instead.
+    expect(unwrap(ctx.store.data.session_message.child?.at(-1))).toMatchObject({
       id: "msg_2_assistant",
       type: "assistant",
       content: [{ type: "text", text: "world" }],
     })
     expect(ctx.store.data.message.child?.map((message) => message.id)).toEqual(["msg_1_user", "msg_2_assistant"])
-    expect(ctx.store.data.part.msg_2_assistant).toMatchObject([{ type: "text", text: "world" }])
+    expect(unwrap(ctx.store.data.part.msg_2_assistant)).toMatchObject([{ type: "text", text: "world" }])
   })
 
   test("resolves lineage by session ID without directory", async () => {
@@ -1580,6 +1583,9 @@ describe("server session", () => {
     guard.active = true
 
     await store.history.loadMore("child")
+    // The guard only covers loadMore: the assertion below reads the store,
+    // and the client store's reactive proxies traverse item properties.
+    guard.active = false
 
     expect(store.data.message.child).toEqual([older, latest])
   })
