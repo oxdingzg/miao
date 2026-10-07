@@ -37,18 +37,24 @@ export function initialize(db: Database, usage: { exclusive: () => void; share: 
 // quit instead — the runtime lock is held only by live connections, so the
 // wait ends on its own; Ctrl+C cancels it.
 function upgradeExclusive(usage: { exclusive: () => void }) {
-  return Effect.suspend(() => {
-    process.stderr.write(
-      "miao: this database needs a schema upgrade; waiting for other running miao windows to quit (Ctrl+C to cancel)...\n",
-    )
-    return Effect.try({
-      try: () => usage.exclusive(),
-      catch: (error) => error,
-    }).pipe(
-      Effect.catch((error) => (error instanceof RuntimeOwnership.BusyError ? Effect.fail(error) : Effect.die(error))),
-      Effect.retry({ schedule: Schedule.spaced("500 millis") }),
-    )
-  })
+  let noticed = false
+  return Effect.try({
+    try: () => usage.exclusive(),
+    catch: (error) => error,
+  }).pipe(
+    Effect.catch((error) => (error instanceof RuntimeOwnership.BusyError ? Effect.fail(error) : Effect.die(error))),
+    Effect.tapError((error) => {
+      if (!(error instanceof RuntimeOwnership.BusyError)) return Effect.void
+      return Effect.sync(() => {
+        if (noticed) return
+        noticed = true
+        process.stderr.write(
+          "miao: this database needs a schema upgrade; waiting for other running miao windows to quit (Ctrl+C to cancel)...\n",
+        )
+      })
+    }),
+    Effect.retry({ schedule: Schedule.spaced("500 millis") }),
+  )
 }
 
 export type Migration = {
