@@ -16,7 +16,7 @@ describe("resumeStreamAfterPageShow", () => {
 })
 
 describe("adaptServerEvent", () => {
-  test("preserves V2 events while adapting permission requests for existing consumers", () => {
+  test("passes V2 permission events through unchanged", () => {
     const current = {
       id: "evt_1",
       type: "permission.v2.asked",
@@ -24,8 +24,8 @@ describe("adaptServerEvent", () => {
     } as unknown as OpenCodeEventEncoded
 
     expect(adaptServerEvent(current)).toMatchObject({
-      type: "permission.asked",
-      properties: { id: "perm_1", sessionID: "ses_1", permission: "read", patterns: ["src/**"] },
+      type: "permission.v2.asked",
+      properties: { id: "perm_1", sessionID: "ses_1", action: "read", resources: ["src/**"] },
       current,
     })
   })
