@@ -2,18 +2,12 @@
 
 [简体中文](agent-comparison.zh.md)
 
-Codex CLI, Gemini CLI, Qwen Code, opencode, Kimi Code, DeepSeek Harness,
-oh-my-pi and miao can all read code, edit files and run commands around a model.
-The differences that affect daily work are often **how tools are scheduled,
-how long-running work is handled, how context is managed, and what happens
-when something fails**—not just the number of models or tools supported.
+All eight projects can read code, edit files and run commands. Compare their
+**tool scheduling, long-running work, context and recovery** to choose for your needs.
 
-This page is maintained by the miao project and includes miao's limitations.
-**Reviewed: 2026-10-07.** It compares the source snapshots cited below, not eight
-released binaries tested side by side. Some snapshots are development or nightly
-code. Support does not mean enabled by default; “not observed” is limited to the
-paths inspected. We have not run all projects on one task set, so there is no
-aggregate score, ranking, or claim that one is universally faster or cheaper.
+**Reviewed: 2026-10-07.** Fixed source snapshots, including development code;
+support does not mean enabled by default. Maintained by the miao project, with
+its limitations included. No aggregate score or speed leaderboard.
 
 ## Start with the workflow you care about
 
@@ -152,6 +146,11 @@ records remain in [Native component benchmarks](native-benchmarks.en.md).
 For operation, see [the guide](guide.en.md).
 
 ## Evidence and versions
+
+This compares the cited source snapshots, not eight released binaries tested
+side by side. Some are development or nightly code. “Not observed” is limited
+to the paths inspected, not a permanent claim of absence. We have not run all
+projects on one task set, so there is no universal faster-or-cheaper claim.
 
 The following links pin the reviewed source rather than following default
 branches. The text summarizes implementation, without rerunning every binary,
