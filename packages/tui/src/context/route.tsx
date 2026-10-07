@@ -12,6 +12,9 @@ export type SessionRoute = {
   type: "session"
   sessionID: string
   prompt?: PromptInfo
+  // Set when arriving from /clear so the empty transcript can show a
+  // confirmation instead of a blank screen; dropped by any later navigation.
+  fresh?: boolean
 }
 
 export type PluginRoute = {
