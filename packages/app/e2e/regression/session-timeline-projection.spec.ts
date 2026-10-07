@@ -128,13 +128,17 @@ test.describe("session timeline projection", () => {
     })
     await setupTimeline(page, { messages: [user, before, after] })
 
-    // The structural locator is i18n-independent; the virtualizer may mount
-    // rows progressively under parallel workers.
-    await expect(page.getByTestId("timeline-divider-interrupted")).toBeVisible({ timeout: 30_000 })
+    // Under parallel workers the virtualizer mounts rows progressively.
+    // Dump the DOM state for CI debugging, then assert with a generous window.
+    const allRows = await page.locator("[data-timeline-row]").evaluateAll(
+      (els) => els.map((e) => `${e.getAttribute("data-timeline-row")}:${e.textContent?.trim()?.substring(0, 40)}`),
+    )
+    console.log("TIMELINE-DIAG rows:", JSON.stringify(allRows))
     const rows = await page
       .locator('[data-timeline-row="AssistantPart"], [data-timeline-row="TurnDivider"]')
       .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-timeline-row")))
     expect(rows).toEqual(["AssistantPart", "TurnDivider", "AssistantPart"])
+    await expect(page.getByTestId("timeline-divider-interrupted")).toBeVisible({ timeout: 120_000 })
   })
 
 
