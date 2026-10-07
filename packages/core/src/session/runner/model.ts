@@ -13,7 +13,7 @@ import * as OpenAIResponses from "@miao/llm/protocols/openai-responses"
 import { Azure, GitHubCopilot } from "@miao/llm/providers"
 import { openAIDefaultOptions } from "@miao/llm/providers/openai"
 import { Auth, type AnyRoute } from "@miao/llm/route"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { AwsCredentials } from "../../aws-credentials"
 import { AzureEntra } from "../../azure-entra"
@@ -26,6 +26,7 @@ import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { ModelVariants } from "../../model-variants"
+import { PluginV2 } from "../../plugin"
 import { resolveBedrockModelID } from "../../plugin/provider/amazon-bedrock"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
@@ -575,16 +576,38 @@ export const locationLayer = Layer.effect(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
     const integrations = yield* Integration.Service
+    const plugins = yield* PluginV2.Service
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
         const resolveStartedAt = Date.now()
-        // Location plugins populate and filter the catalog asynchronously during layer startup.
-        const defaultModel = session.model ? undefined : yield* catalog.model.default()
-        const selected = session.model
-          ? yield* catalog.model.getAvailable(session.model.providerID, session.model.id)
-          : defaultModel && supported(defaultModel)
-            ? defaultModel
-            : (yield* catalog.model.available()).find(supported)
+        const findSelected = () =>
+          Effect.gen(function* () {
+            const defaultModel = session.model ? undefined : yield* catalog.model.default()
+            return session.model
+              ? yield* catalog.model.getAvailable(session.model.providerID, session.model.id)
+              : defaultModel && supported(defaultModel)
+                ? defaultModel
+                : (yield* catalog.model.available()).find(supported)
+          })
+        const findSelectedAfterBoot = () =>
+          Effect.gen(function* () {
+            yield* Deferred.await(plugins.booted).pipe(
+              // Same bound the tool materialization takes: a hung plugin must
+              // not stall every turn in this Location; resolving against the
+              // partial catalog still lets a fully-booted provider through.
+              Effect.timeoutOrElse({
+                duration: "10 seconds",
+                orElse: () => Effect.logWarning("plugin boot still running; resolving against the current catalog"),
+              }),
+            )
+            return yield* findSelected()
+          })
+        // Location plugins populate and filter the catalog asynchronously during layer startup,
+        // so a miss on a Location whose boot has not landed is a cold lookup — a Session just
+        // moved into a fresh worktree — and not evidence that the model is gone. Wait for the
+        // boot once and look again; the miss then only surfaces if the model is really absent,
+        // for which the provider-retry policy remains the outer net.
+        const selected = (yield* findSelected()) ?? (yield* findSelectedAfterBoot())
         if (!selected && session.model)
           return yield* new ModelUnavailableError({
             providerID: session.model.providerID,
@@ -635,4 +658,8 @@ export const locationLayer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer: locationLayer, deps: [Catalog.node, Integration.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer: locationLayer,
+  deps: [Catalog.node, Integration.node, PluginV2.node],
+})

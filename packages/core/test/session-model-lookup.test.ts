@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { DateTime, Effect, Layer } from "effect"
+import { Deferred, DateTime, Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Catalog } from "@miao/core/catalog"
@@ -8,6 +8,7 @@ import { EventV2 } from "@miao/core/event"
 import { Integration } from "@miao/core/integration"
 import { Location } from "@miao/core/location"
 import { ModelV2 } from "@miao/core/model"
+import { PluginV2 } from "@miao/core/plugin"
 import { Policy } from "@miao/core/policy"
 import { ProviderV2 } from "@miao/core/provider"
 import { ProjectV2 } from "@miao/core/project"
@@ -16,6 +17,20 @@ import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { SessionV2 } from "@miao/core/session"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
+
+const preBootedPluginLayer = Layer.effect(
+  PluginV2.Service,
+  Effect.gen(function* () {
+    const booted = yield* Deferred.make<void>()
+    yield* Deferred.succeed(booted, undefined)
+    return PluginV2.Service.of({
+      booted,
+      add: () => Effect.void,
+      remove: () => Effect.void,
+      wait: () => Effect.void,
+    })
+  }),
+)
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -32,6 +47,7 @@ const it = testEffect(
         Location.node,
         Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make("test") }))),
       ],
+      [PluginV2.node, preBootedPluginLayer],
     ],
   ),
 )

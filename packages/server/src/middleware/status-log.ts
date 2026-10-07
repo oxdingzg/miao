@@ -19,4 +19,4 @@ export const statusLogLayer = HttpRouter.middleware<{ handles: unknown }>()((eff
     return response
   }),
   { global: true },
-).layer
+)
