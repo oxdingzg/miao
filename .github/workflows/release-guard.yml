@@ -1,0 +1,42 @@
+name: release-guard
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      # A release PR changes the root package.json version. Past release PRs
+      # were assembled on a shared checkout, and uncommitted work from other
+      # sessions twice rode along (#372 carried a middleware draft, #379 swept
+      # three core files into the 0.1.22 release). Confine a release PR to the
+      # paths a release is allowed to touch and fail loudly on anything else.
+      - name: Confine release PRs to release paths
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          version_base=$(git show "$base:package.json" | jq -r .version)
+          version_head=$(git show "$head:package.json" | jq -r .version)
+          if [ "$version_base" = "$version_head" ]; then
+            echo "Not a release PR (package.json version $version_base unchanged)."
+            exit 0
+          fi
+          echo "Release PR detected: $version_base -> $version_head"
+          violations=$(git diff --name-only "$base" "$head" | grep -vE '^(package\.json|bun\.lock|CHANGELOG\.md|packages/[^/]+/package\.json|docs/releases/.+|docs/release\.(en|zh)\.md)$' || true)
+          if [ -n "$violations" ]; then
+            echo "::error title=Release PR carries unrelated changes::A release PR may only touch workspace manifests, bun.lock, CHANGELOG.md, and release docs. These paths do not belong in it:"
+            printf '%s\n' "$violations"
+            echo
+            echo "Assemble the release PR from a clean checkout or a dedicated worktree so uncommitted work from other sessions cannot ride along."
+            exit 1
+          fi
