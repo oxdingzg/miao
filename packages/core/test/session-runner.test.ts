@@ -969,6 +969,146 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("runs a read-only subagent in the background when the caller leaves it open", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const execution = yield* SessionExecution.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => {
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        })
+        // A read-only subagent, like the built-in explore agent: it can read but
+        // neither edit files nor run the shell.
+        editor.update(AgentV2.ID.make("reader"), (agent) => {
+          agent.mode = "subagent"
+          agent.permissions = [
+            { action: "*", resource: "*", effect: "deny" },
+            { action: "read", resource: "*", effect: "allow" },
+          ]
+        })
+      })
+      const childGate = yield* Deferred.make<void>()
+      const childStarted = yield* Deferred.make<void>()
+      const delivered = yield* Deferred.make<void>()
+      let parentTurns = 0
+      const textTurn = (text: string) =>
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text" }),
+          LLMEvent.textDelta({ id: "text", text }),
+          LLMEvent.textEnd({ id: "text" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ])
+      responseFor = (request) => {
+        if (JSON.stringify(request.messages.filter((m) => m.role === "user")).includes("READONLY CHILD PROMPT"))
+          return Stream.unwrap(
+            Deferred.succeed(childStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(childGate)),
+              Effect.as(textTurn("READONLY CHILD REPORT")),
+            ),
+          )
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "readonly-call",
+              name: "task",
+              input: { description: "ro", prompt: "READONLY CHILD PROMPT", subagent_type: "reader" },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        if (JSON.stringify(request.messages).includes("READONLY CHILD REPORT"))
+          return Stream.unwrap(Deferred.succeed(delivered, undefined).pipe(Effect.as(textTurn("Report received"))))
+        return textTurn("Parent continued independently")
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Explore in the background" }), resume: false })
+      yield* session.resume(sessionID)
+      // The parent did not wait for the child: it ran its own follow-up turn.
+      expect(parentTurns).toBe(2)
+      yield* Deferred.await(childStarted)
+      const tasks = yield* SessionDelegationStore.list(db, sessionID)
+      expect(tasks).toHaveLength(1)
+      expect(tasks[0].status).toBe("running")
+      expect(
+        (yield* session.context(sessionID))
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((part) => part.type === "tool" && part.name === "task"),
+      ).toMatchObject({ state: { status: "completed", structured: { background: true, taskID: tasks[0].id } } })
+      yield* Deferred.succeed(childGate, undefined)
+      yield* Deferred.await(delivered)
+      yield* execution.wait(sessionID)
+      expect((yield* SessionDelegationStore.get(db, sessionID, tasks[0].id))?.result).toBe("READONLY CHILD REPORT")
+    }),
+  )
+
+  it.effect("keeps a read-only subagent in the foreground when background is false", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => {
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        })
+        editor.update(AgentV2.ID.make("reader"), (agent) => {
+          agent.mode = "subagent"
+          agent.permissions = [
+            { action: "*", resource: "*", effect: "deny" },
+            { action: "read", resource: "*", effect: "allow" },
+          ]
+        })
+      })
+      const textTurn = (text: string) =>
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text" }),
+          LLMEvent.textDelta({ id: "text", text }),
+          LLMEvent.textEnd({ id: "text" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ])
+      let parentTurns = 0
+      responseFor = (request) => {
+        if (JSON.stringify(request.messages.filter((m) => m.role === "user")).includes("FOREGROUND CHILD PROMPT"))
+          return textTurn("FOREGROUND CHILD REPORT")
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "foreground-call",
+              name: "task",
+              input: {
+                description: "fg",
+                prompt: "FOREGROUND CHILD PROMPT",
+                subagent_type: "reader",
+                background: false,
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        return textTurn("Done")
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Explore" }), resume: false })
+      yield* session.resume(sessionID)
+      // An explicit `false` pins the blocking foreground path even for a read-only agent.
+      expect(yield* SessionDelegationStore.list(db, sessionID)).toHaveLength(0)
+      expect(
+        (yield* session.context(sessionID))
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((part) => part.type === "tool" && part.name === "task"),
+      ).toMatchObject({ state: { status: "completed", structured: { text: "FOREGROUND CHILD REPORT" } } })
+    }),
+  )
+
   it.effect("carries a running subagent's mid-flight note to its parent without settling the task", () =>
     Effect.gen(function* () {
       yield* setup

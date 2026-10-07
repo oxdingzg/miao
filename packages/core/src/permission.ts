@@ -107,6 +107,18 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
+/**
+ * An agent is read-only when its resolved ruleset denies both file edits and
+ * shell commands, so it cannot race another agent for the same workspace.
+ * `edit` covers the edit, write, and apply_patch tools; `bash` covers the shell.
+ */
+export function readOnly(info: AgentV2.Info): boolean {
+  const rules = info.permissions ?? []
+  return (
+    evaluate("edit", "*", rules).effect === "deny" && evaluate("bash", "*", rules).effect === "deny"
+  )
+}
+
 export interface Interface {
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
