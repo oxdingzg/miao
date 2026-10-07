@@ -1,19 +1,19 @@
 import { For, Show } from "solid-js"
-import type { PermissionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@miao/schema/view-models"
 import { Button } from "@miao/ui/button"
 import { DockPrompt } from "@miao/session-ui/dock-prompt"
 import { Icon } from "@miao/ui/icon"
 import { useLanguage } from "@/context/language"
 
 export function SessionPermissionDock(props: {
-  request: PermissionRequest
+  request: PermissionV2Request
   responding: boolean
   onDecide: (response: "once" | "always" | "reject") => void
 }) {
   const language = useLanguage()
 
   const toolDescription = () => {
-    const key = `settings.permissions.tool.${props.request.permission}.description`
+    const key = `settings.permissions.tool.${props.request.action}.description`
     const value = language.t(key as Parameters<typeof language.t>[0])
     if (value === key) return ""
     return value
@@ -59,11 +59,11 @@ export function SessionPermissionDock(props: {
         </div>
       </Show>
 
-      <Show when={props.request.patterns.length > 0}>
+      <Show when={props.request.resources.length > 0}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-patterns">
-            <For each={props.request.patterns}>
+            <For each={props.request.resources}>
               {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
             </For>
           </div>

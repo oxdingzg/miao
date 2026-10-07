@@ -11,7 +11,8 @@ import type {
 } from "@miao/client"
 import type { CatalogApi, CommandInfo, ProviderAuthResponse, SessionApi } from "@/utils/server"
 import type { Project, ReferenceInfo, Session } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@/utils/server"
 import type { LocationPath } from "@miao/protocol/groups/location"
 import type { Config } from "@miao/schema/view-models"
 import { showToast } from "@/utils/toast"
@@ -214,7 +215,7 @@ export const loadProvidersQuery = (scope: ServerScope, directory: string | null,
           sdk.models.list(location),
           sdk.models.default(location),
         ])
-        return normalizeProviderList(providers.data, models.data, defaultModel.data)
+        return normalizeProviderList(providers.data)
       }),
   })
 
@@ -342,7 +343,7 @@ export async function bootstrapDirectory(input: {
           (async () => {
             return input.api.permissions
               .listRequests({ location: { directory: input.directory } })
-              .then((result) => result.data.map(normalizePermissionRequest))
+              .then((result) => result.data as PermissionV2Request[])
           })().then((permissions) => {
             const ids = permissions.map((permission) => permission.sessionID)
             const grouped = groupBySession(

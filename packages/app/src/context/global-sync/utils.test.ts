@@ -37,30 +37,6 @@ describe("normalizeAgentList", () => {
   })
 })
 
-describe("normalizePermissionRequest", () => {
-  test("adapts the current permission request to app state", () => {
-    expect(
-      normalizePermissionRequest({
-        id: "permission-1",
-        sessionID: "session-1",
-        action: "read",
-        resources: ["README.md"],
-        save: ["*.md"],
-        metadata: { path: "README.md" },
-        source: { type: "tool", messageID: "message-1", callID: "call-1" },
-      }),
-    ).toEqual({
-      id: "permission-1",
-      sessionID: "session-1",
-      permission: "read",
-      patterns: ["README.md"],
-      always: ["*.md"],
-      metadata: { path: "README.md" },
-      tool: { messageID: "message-1", callID: "call-1" },
-    })
-  })
-})
-
 describe("normalizeProviderList", () => {
   test("groups current models into the app provider catalog", () => {
     const result = normalizeProviderList(

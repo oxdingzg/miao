@@ -1,5 +1,5 @@
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@miao/schema/view-models"
 import { cmp } from "./utils"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 
@@ -33,7 +33,7 @@ export function takeRecentSessions(sessions: Session[], limit: number, cutoff: n
 
 export function trimSessions(
   input: Session[],
-  options: { limit: number; permission: Record<string, PermissionRequest[]>; now?: number },
+  options: { limit: number; permission: Record<string, PermissionV2Request[]>; now?: number },
 ) {
   const limit = Math.max(0, options.limit)
   const cutoff = (options.now ?? Date.now()) - SESSION_RECENT_WINDOW

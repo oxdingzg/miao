@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@/utils/server"
 import { trimSessions } from "./session-trim"
 
 const session = (input: { id: string; parentID?: string; created: number; updated?: number; archived?: number }) =>
@@ -44,7 +44,7 @@ describe("trimSessions", () => {
     const result = trimSessions(list, {
       limit: 2,
       permission: {
-        "child-kept-by-permission": [{ id: "perm-1" } as PermissionRequest],
+        "child-kept-by-permission": [{ id: "perm-1", sessionID: "child-kept-by-permission", action: "bash", resources: ["*"] } as PermissionV2Request],
       },
       now,
     })

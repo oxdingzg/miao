@@ -1,7 +1,13 @@
 import type { Agent, Project, Provider } from "@miao/schema/view-models"
 import type { PermissionRequest } from "@miao/schema/view-models"
 import type { Config } from "@miao/schema/view-models"
-import type { AgentsListOutput, ModelsDefaultOutput, ModelsListOutput, ProvidersListOutput } from "@miao/client"
+import type {
+  AgentsListOutput,
+  ModelsDefaultOutput,
+  ModelsListOutput,
+  PermissionsListRequestsOutput,
+  ProvidersListOutput,
+} from "@miao/client"
 import type { PermissionV2Request, Project as CurrentProject, ProviderListResponse } from "@/utils/server"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
 export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/path-key"
@@ -31,18 +37,11 @@ export function normalizeAgentList(input: AgentsListOutput["data"] | Agent[]): A
   }))
 }
 
-export function normalizePermissionRequest(input: PermissionV2Request | PermissionRequest): PermissionRequest {
-  if ("permission" in input) return input
-  return {
-    id: input.id,
-    sessionID: input.sessionID,
-    permission: input.action,
-    patterns: [...input.resources],
-    always: [...(input.save ?? [])],
-    metadata: input.metadata ?? {},
-    tool:
-      input.source?.type === "tool" ? { messageID: input.source.messageID, callID: input.source.callID } : undefined,
-  }
+export function normalizePermissionRequest(
+  input: PermissionsListRequestsOutput["data"][number],
+): PermissionV2Request {
+  // The list endpoint serves the same V2 record the events carry.
+  return input as PermissionV2Request
 }
 
 export function normalizeProviderList(

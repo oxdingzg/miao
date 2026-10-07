@@ -1,6 +1,7 @@
 import type { CommandInfo, FileDiffInfo, McpResource, McpStatus, SessionMessageInfo } from "@/utils/server"
 import type { Agent, LspStatus, Message, Part, ReferenceInfo, Session, SessionStatus, Todo, VcsInfo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request } from "@miao/schema/view-models"
 import type { LocationPath } from "@miao/protocol/groups/location"
 import type { Config } from "@miao/schema/view-models"
 import { NormalizedProviderListResponse } from "@miao/session-ui/context"
@@ -43,7 +44,7 @@ export type State = {
     [sessionID: string]: Todo[]
   }
   permission: {
-    [sessionID: string]: PermissionRequest[]
+    [sessionID: string]: PermissionV2Request[]
   }
   question: {
     [sessionID: string]: QuestionRequest[]

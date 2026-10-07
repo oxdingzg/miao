@@ -1,5 +1,5 @@
 import type { Session } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request, QuestionRequest } from "@miao/schema/view-models"
 
 function sessionTreeRequest<T>(
   session: Session[],
@@ -36,9 +36,9 @@ function sessionTreeRequest<T>(
 
 export function sessionPermissionRequest(
   session: Session[],
-  request: Record<string, PermissionRequest[] | undefined>,
+  request: Record<string, PermissionV2Request[] | undefined>,
   sessionID?: string,
-  include?: (item: PermissionRequest) => boolean,
+  include?: (item: PermissionV2Request) => boolean,
 ) {
   return sessionTreeRequest(session, request, sessionID, include)
 }

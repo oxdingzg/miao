@@ -1,7 +1,6 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { Todo } from "@miao/schema/view-models"
-import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
+import type { PermissionV2Request, QuestionRequest, Todo } from "@miao/schema/view-models"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"
@@ -38,7 +37,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
   })
 
-  const permissionRequest = createMemo((): PermissionRequest | undefined => {
+  const permissionRequest = createMemo((): PermissionV2Request | undefined => {
     return sessionPermissionRequest(sync().data.session, sync().data.permission, params.id, (item) => {
       return !permission.autoResponds(item, sdk().directory)
     })
