@@ -239,10 +239,10 @@ export type AuthOuathResult = AuthOAuthResult
  * - `auth` / `provider` -> `ctx.integration` and `ctx.catalog`
  * - `config` -> the `agent`, `command`, `reference` and `skill` transforms
  *
- * No V2 equivalent (deprecated without replacement): `chat.message`, `chat.params`,
- * `chat.headers`, `permission.ask`, `command.execute.before`, `shell.env`,
- * `experimental.*`, `event` (V2 publishes `session.next.*` events instead of
- * `message.part.updated`) and `dispose` (use the plugin Scope).
+ * The V1-only hooks (`chat.message`, `chat.params`, `chat.headers`,
+ * `permission.ask`, `command.execute.before`, `shell.env`,
+ * `experimental.chat.messages.transform`) have been retired — the V2 event
+ * system (`session.next.*`) replaced them.
  */
 export interface Hooks {
   dispose?: () => Promise<void>
@@ -253,48 +253,12 @@ export interface Hooks {
   }
   auth?: AuthHook
   provider?: ProviderHook
-  /**
-   * Called when a new message is received
-   */
-  "chat.message"?: (
-    input: {
-      sessionID: string
-      agent?: string
-      model?: { providerID: string; modelID: string }
-      messageID?: string
-      variant?: string
-    },
-    output: { message: UserMessage; parts: Part[] },
-  ) => Promise<void>
-  /**
    * Modify parameters sent to LLM
    */
-  "chat.params"?: (
-    input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
-    output: {
-      temperature: number
-      topP: number
-      topK: number
-      maxOutputTokens: number | undefined
-      options: Record<string, any>
-    },
-  ) => Promise<void>
-  "chat.headers"?: (
-    input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
-    output: { headers: Record<string, string> },
-  ) => Promise<void>
   "permission.ask"?: (input: PermissionV2Request, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
-  "command.execute.before"?: (
-    input: { command: string; sessionID: string; arguments: string },
-    output: { parts: Part[] },
-  ) => Promise<void>
   "tool.execute.before"?: (
     input: { tool: string; sessionID: string; callID: string },
     output: { args: any },
-  ) => Promise<void>
-  "shell.env"?: (
-    input: { cwd: string; sessionID?: string; callID?: string },
-    output: { env: Record<string, string> },
   ) => Promise<void>
   "tool.execute.after"?: (
     input: { tool: string; sessionID: string; callID: string; args: any },
