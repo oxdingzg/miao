@@ -1,5 +1,11 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
-import type { SessionMessageInfo } from "@/utils/server"
+import type {
+  SessionMessageAssistant,
+  SessionMessageInfo,
+  SessionMessageShell,
+  SessionMessageSynthetic,
+  SessionMessageUser,
+} from "@/utils/server"
 import { AssistantMessage, Part, SessionStatus, UserMessage } from "@miao/schema/view-models"
 import { groupParts, renderable, type PartGroup } from "@miao/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
@@ -7,6 +13,11 @@ import { uniqueSummaryDiffs } from "./summary-diffs"
 import { compareMessages } from "@/utils/session-message"
 
 export { TimelineRow, type SummaryDiff } from "./timeline-row"
+
+/** Turn-opening V2 records: the shell command runs as its own turn. */
+export type TurnUser = SessionMessageUser | SessionMessageShell | SessionMessageSynthetic
+/** V2 assistant records join the turn that opened before them, in order. */
+export type TurnAssistant = SessionMessageAssistant
 
 export type TimelineRowMap = {
   TurnGap: { userMessageID: string }
@@ -35,51 +46,70 @@ export type TimelineRowMap = {
 export namespace Timeline {
   export function constructSessionMessageRows(
     messages: SessionMessageInfo[],
-    getMessage: (messageID: string) => UserMessage | AssistantMessage | undefined,
     getMessageParts: (messageID: string) => Part[],
     showReasoning: boolean,
     status: SessionStatus["type"],
     inlineComments: boolean,
     projectedUserMessages: UserMessage[],
   ) {
-    const turns: { user: UserMessage; assistants: AssistantMessage[] }[] = []
+    const turns: { user: TurnUser; assistants: TurnAssistant[] }[] = []
     const turnByUserID = new Map<string, (typeof turns)[number]>()
+
+    // V2-native turn construction: turns open on user/synthetic/shell records
+    // and every following assistant joins the open turn in order. No V1
+    // message lookup is involved.
+    let openTurn: (typeof turns)[number] | undefined
     messages.forEach((message) => {
-      const projected = getMessage(message.id)
-      if (message.type === "shell" && projected?.role === "user") {
-        const assistant = getMessage(`${message.id}:assistant`)
-        const turn = { user: projected, assistants: assistant?.role === "assistant" ? [assistant] : [] }
-        turns.push(turn)
-        turnByUserID.set(projected.id, turn)
+      if (message.type === "agent-switched" || message.type === "model-switched") return
+      if (message.type === "shell") {
+        // The shell's output parts live under `${id}:assistant`; a minimal
+        // assistant stub makes the parts lookup render them in this turn.
+        openTurn = {
+          user: message,
+          assistants: [
+            {
+              id: `${message.id}:assistant`,
+              type: "assistant",
+              time: message.time,
+            } as unknown as TurnAssistant,
+          ],
+        }
+        turns.push(openTurn)
         return
       }
-      if (projected?.role === "user") {
-        if (turnByUserID.has(projected.id)) return
-        const turn = { user: projected, assistants: [] }
-        turns.push(turn)
-        turnByUserID.set(projected.id, turn)
+      if (message.type === "user" || (message.type === "synthetic" && message.text.trim())) {
+        if (turnByUserID.has(message.id)) return
+        openTurn = { user: message, assistants: [] }
+        turns.push(openTurn)
         return
       }
-      if (projected?.role !== "assistant") return
-      const existing = turnByUserID.get(projected.parentID)
-      if (existing) {
-        existing.assistants.push(projected)
+      if (message.type === "assistant") {
+        if (!openTurn) return
+        openTurn.assistants.push(message)
         return
       }
-      const user = getMessage(projected.parentID)
-      if (user?.role !== "user") return
-      const turn = { user, assistants: [projected] }
-      turns.push(turn)
-      turnByUserID.set(user.id, turn)
     })
+
+    // Optimistic pending prompts render as turns before the protocol record
+    // arrives; slot them by time so they sit before newer turns.
     projectedUserMessages.forEach((user) => {
       if (turnByUserID.has(user.id)) return
-      const turn = { user, assistants: [] }
+      const turn = {
+        user: {
+          id: user.id,
+          type: "user",
+          text: "",
+        agents: undefined,
+          time: { created: user.time.created },
+        } as unknown as TurnUser,
+        assistants: [] as TurnAssistant[],
+      }
+      turnByUserID.set(user.id, turn)
       const index = turns.findIndex((item) => compareMessages(user, item.user) < 0)
       if (index < 0) turns.push(turn)
-      if (index >= 0) turns.splice(index, 0, turn)
-      turnByUserID.set(user.id, turn)
+      else turns.splice(index, 0, turn)
     })
+
     const activeMessageID = turns.at(-1)?.user.id
     return {
       activeMessageID,
@@ -99,9 +129,9 @@ export namespace Timeline {
   }
 
   export function constructMessageRows(
-    userMessage: UserMessage,
+    userMessage: TurnUser & { summary?: { diffs: SummaryDiff[] } },
     getMessageParts: (messageID: string) => Part[],
-    assistantMessages: AssistantMessage[],
+    assistantMessages: TurnAssistant[],
     index: number,
     showReasoning: boolean,
     status: SessionStatus["type"],
@@ -115,10 +145,11 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
-    const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
+    const aborted = (message: TurnAssistant) => message.error?.message.toLowerCase().includes("abort") ?? false
+    const interruptedMessageIndex = assistantMessages.findIndex(aborted)
     const interrupted = interruptedMessageIndex !== -1
     const latestError = assistantMessages.at(-1)?.error
-    const error = latestError?.name === "MessageAbortedError" ? undefined : latestError
+    const error = latestError && latestError.message.toLowerCase().includes("abort") ? undefined : latestError
 
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
@@ -217,14 +248,10 @@ export namespace Timeline {
     }
 
     if (error) {
-      const detail = error.data
-      const data = detail && "message" in detail ? detail.message : undefined
       rows.push(
         new TimelineRow.Error({
           userMessageID: userMessage.id,
-          text: unwrapErrorMessage(
-            typeof data === "string" ? data : data === undefined || data === null ? "" : String(data),
-          ),
+          text: unwrapErrorMessage(error.message),
         }),
       )
     }
