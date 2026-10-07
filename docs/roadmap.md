@@ -100,11 +100,22 @@ legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
 - [x] Replace `src/context/global-sync/utils.ts` agent/provider/model adapters (V2-only; the V1 rename map is gone).
 - [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`,
       `Project`, `FileNode`, `FileDiffInfo`, `Event` types across app state and rendering.
+      Permissions are done (#338). The transcript is the remaining half: app state is a hybrid
+      (`SessionMessageInfo` skeleton + V1 `Message` / `Part` content lookups fed by the synthetic
+      events in `server-session.ts`); retype it onto V2 `SessionMessage` with parts inline.
+      Consumers: `server-session.ts` (synthetic-event pipeline),
+      `global-sync/{event-reducer,session-cache,session-trim}.ts`,
+      `pages/session/timeline/{model,rows}.tsx`, `message-timeline.tsx`, `components/dialog-fork.tsx`,
+      `components/prompt-input.tsx`, `components/session/session-context-tab.tsx`,
+      `components/session/session-header.tsx`, `pages/home/home-sessions-controller.tsx`,
+      `pages/layout/sidebar-items.tsx`, `pages/session.tsx`.
 - [x] Retire transitional session events (`session.created/updated/diff/status/idle/error`) in
       `src/context/global-sync/event-reducer.ts`, `src/context/server-session.ts`,
       `src/context/notification.tsx`, `src/pages/session/usage-exceeded-dialogs.tsx`.
 - [ ] Retire legacy message event compatibility (`message.updated/removed`, `message.part.*`) in
       `src/context/global-sync/event-reducer.ts` and `src/context/server-session.ts`.
+      (`server-session` still synthesizes these internally from the V2 reduction; retiring them
+      is part of the transcript retype above.)
       (`server-session` still synthesizes these internally from the V2 reduction; retiring them
       needs the V2-native reduction redesign.)
 - [x] Migrate LSP and reference events in `src/context/global-sync/event-reducer.ts`.
