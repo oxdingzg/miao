@@ -642,6 +642,7 @@ function App(props: {
               toast.show({ message: "Failed to fork session", variant: "error" })
             }
           })
+          .catch(() => toast.show({ message: "Failed to fork session", variant: "error" }))
       } else {
         route.navigate({ type: "session", sessionID: match })
       }
@@ -665,6 +666,7 @@ function App(props: {
           toast.show({ message: "Failed to fork session", variant: "error" })
         }
       })
+      .catch(() => toast.show({ message: "Failed to fork session", variant: "error" }))
   })
 
   createEffect(

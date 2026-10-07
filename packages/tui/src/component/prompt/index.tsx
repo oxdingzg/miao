@@ -1111,7 +1111,9 @@ export function Prompt(props: PromptProps) {
 
     if (store.mode === "shell") {
       move.startSubmit()
-      void sdk.api.sessions.shell({ sessionID, command: inputText })
+      void sdk.api.sessions.shell({ sessionID, command: inputText }).catch((error) =>
+        toast.show({ message: errorMessage(error), variant: "error" }),
+      )
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1125,7 +1127,9 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void sdk.api.sessions.command({ sessionID, command: command.slice(1), arguments: args })
+      void sdk.api.sessions.command({ sessionID, command: command.slice(1), arguments: args }).catch((error) =>
+        toast.show({ message: errorMessage(error), variant: "error" }),
+      )
     } else {
       move.startSubmit()
       const parts = [
