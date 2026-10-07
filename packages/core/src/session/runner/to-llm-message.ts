@@ -6,6 +6,7 @@ import {
   type ContentPart,
   type Model,
   type ProviderMetadata,
+  type ToolContent,
 } from "@miao/llm"
 import { fileURLToPath } from "url"
 import { SessionMessage } from "../message"
@@ -34,6 +35,23 @@ const media = (file: FileAttachment, images: boolean, accepted: ReadonlySet<stri
     filename: file.name,
     metadata: file.description === undefined ? undefined : { description: file.description },
   }
+}
+
+// Tool results carry file content too (the read tool attaches images and PDF
+// page images). Apply the same capability rule as user attachments: a model
+// that cannot receive images gets a text placeholder instead. Otherwise a
+// text-only provider (Zhipu's coding endpoint, for one, rejects anything but
+// ['text'] with HTTP 400 code 1210) fails the whole turn.
+const toolContent = (items: readonly ToolContent[], images: boolean): ToolContent[] => {
+  if (images) return [...items]
+  return items.map((item) =>
+    item.type === "file" && item.mime.startsWith("image/")
+      ? {
+          type: "text" as const,
+          text: `[image omitted: model does not support image input${item.name ? `: ${item.name}` : ""}]`,
+        }
+      : item,
+  )
 }
 
 /**
@@ -75,14 +93,21 @@ const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: Provider
     providerMetadata,
   })
 
-const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined) => {
+const toolResult = (
+  tool: SessionMessage.AssistantTool,
+  providerMetadata: ProviderMetadata | undefined,
+  images: boolean,
+) => {
   if (tool.state.status === "completed") {
     // TODO: Materialize remote and managed URIs before provider-history lowering.
     // ToolOutput.toResultValue rejects unresolved URIs rather than treating them as media bytes.
     const result =
       tool.provider?.executed === true && tool.state.result !== undefined
         ? tool.state.result
-        : ToolOutput.toResultValue({ structured: tool.state.structured, content: tool.state.content })
+        : ToolOutput.toResultValue({
+            structured: tool.state.structured,
+            content: toolContent(tool.state.content, images),
+          })
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
@@ -98,7 +123,11 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
       result:
         tool.provider?.executed === true && tool.state.result !== undefined
           ? tool.state.result
-          : { error: tool.state.error, content: tool.state.content, structured: tool.state.structured },
+          : {
+              error: tool.state.error,
+              content: toolContent(tool.state.content, images),
+              structured: tool.state.structured,
+            },
       resultType: "error",
       providerExecuted: tool.provider?.executed,
       providerMetadata,
@@ -125,7 +154,7 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
   })
 }
 
-const assistant = (message: SessionMessage.Assistant, model: Model) => {
+const assistant = (message: SessionMessage.Assistant, model: Model, images: boolean) => {
   const sameModel =
     String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
   const reuseProviderMetadata = sameModel && message.error === undefined
@@ -148,6 +177,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
     const result = toolResult(
       item,
       reuseProviderMetadata ? (item.provider.resultMetadata ?? item.provider.metadata) : undefined,
+      images,
     )
     return [call, result]
   })
@@ -159,7 +189,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   const results = message.content
     .filter((item): item is SessionMessage.AssistantTool => item.type === "tool" && item.provider?.executed !== true)
     .map((item) =>
-      toolResult(item, reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined),
+      toolResult(item, reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined, images),
     )
     .map(Message.tool)
   if (meaningful.length === 0) return results
@@ -204,7 +234,7 @@ function toLLMMessage(message: SessionMessage.Message, model: Model, images: boo
         }),
       ]
     case "assistant":
-      return assistant(message, model)
+      return assistant(message, model, images)
     case "compaction":
       return [
         Message.make({
