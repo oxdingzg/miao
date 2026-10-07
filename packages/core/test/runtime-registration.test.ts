@@ -74,6 +74,24 @@ describe("Runtime discovery", () => {
     }
   })
 
+  test("lists readable records and skips undecodable and foreign entries", async () => {
+    const filename = await storage()
+    const first = fixture(filename, "http://127.0.0.1:4096/")
+    const second = fixture(filename, "http://127.0.0.1:4097/")
+    expect(await RuntimeRegistration.list(filename)).toEqual([])
+    await RuntimeRegistration.publish(filename, first.record)
+    await RuntimeRegistration.publish(filename, second.record)
+    const listed = await RuntimeRegistration.list(filename)
+    expect(listed.map((record) => record.runtimeID).sort()).toEqual(
+      [first.record.runtimeID, second.record.runtimeID].sort(),
+    )
+    // A record published for another storage never matches this one's prefix.
+    const other = fixture(`${filename}-other`, "http://127.0.0.1:4098/")
+    await RuntimeRegistration.publish(`${filename}-other`, other.record)
+    await writeFile(`${filename}.runtime-${crypto.randomUUID()}.json`, '{"protocol":2}', { mode: 0o600 })
+    expect(await RuntimeRegistration.list(filename)).toHaveLength(2)
+  })
+
   test("rejects forged proofs, replayed challenges and replaced Runtime identities", () => {
     const item = fixture("canonical-storage", "http://127.0.0.1:4096/")
     const challenge = randomBytes(32).toString("hex")
