@@ -382,6 +382,7 @@ export function assistantMessage(
     parentID?: string
     completed?: boolean
     error?: AssistantMessage["error"]
+    finish?: string
     created?: number
   } = {},
 ): Extract<TimelineMessage, { info: { role: "assistant" } }> {
@@ -405,6 +406,7 @@ export function assistantMessage(
       tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
       variant: "max",
       ...(input.error ? { error: input.error } : {}),
+      ...(input.finish ? { finish: input.finish } : {}),
     },
     parts: parts.map((part) => ({ ...part, sessionID, messageID: id })),
   } satisfies Extract<TimelineMessage, { info: { role: "assistant" } }>
