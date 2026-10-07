@@ -24,7 +24,6 @@ import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
 import { CommandCodeAuthPlugin } from "./commandcode"
-import { CerebrasPlugin } from "./cerebras"
 import { SnowflakeCortexAuthPlugin } from "./snowflake-cortex"
 import { Effect, Layer, Context } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -88,7 +87,6 @@ function internalPlugins(flags: RuntimeFlags.Info): Array<(input: InternalPlugin
     SnowflakeCortexAuthPlugin,
     XaiAuthPlugin,
     CommandCodeAuthPlugin,
-    CerebrasPlugin,
     // Reports agent state to mtty's terminal (formerly miaotty) when it hosts us.
     MiaottyPlugin,
   ]

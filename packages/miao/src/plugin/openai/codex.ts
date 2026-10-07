@@ -2,7 +2,6 @@ import type { Hooks } from "@miao/plugin"
 import type { InternalPluginInput } from "../auth-store"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
-import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
 import { OpenAIWebSocketPool } from "./ws-pool"
@@ -277,7 +276,6 @@ export async function CodexAuthPlugin(
 ): Promise<Hooks> {
   const issuer = options.issuer ?? ISSUER
   const codexApiEndpoint = options.codexApiEndpoint ?? CODEX_API_ENDPOINT
-  let websocketFetchInstalled = false
   const websocketFetches: Array<ReturnType<typeof OpenAIWebSocketPool.createWebSocketFetch>> = []
 
   return {
@@ -338,7 +336,6 @@ export async function CodexAuthPlugin(
           : undefined
         if (websocketFetch) {
           websocketFetches.push(websocketFetch)
-          websocketFetchInstalled = true
         }
         if (auth.type !== "oauth") return websocketFetch ? { fetch: websocketFetch } : {}
 
@@ -556,21 +553,6 @@ export async function CodexAuthPlugin(
           type: "api",
         },
       ],
-    },
-    "chat.headers": async (input, output) => {
-      if (input.model.providerID !== "openai") return
-      output.headers.originator = "miao"
-      output.headers["User-Agent"] = `miao/${InstallationVersion} (${os.platform()} ${os.release()}; ${os.arch()})`
-      output.headers["session-id"] = input.sessionID
-      // Temporary fetch-layer hack: title generation currently shares the conversation
-      // session ID, so the OpenAI plugin marks it for HTTP fallback until transport
-      // context can be passed directly instead of smuggled through headers.
-      if (websocketFetchInstalled && input.agent === "title") output.headers[OpenAIWebSocketPool.TITLE_HEADER] = "true"
-    },
-    "chat.params": async (input, output) => {
-      if (input.model.providerID !== "openai") return
-      // Match codex cli
-      output.maxOutputTokens = undefined
     },
   }
 }
