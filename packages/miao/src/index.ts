@@ -13,15 +13,9 @@ import { Maintenance } from "./cli/maintenance"
 import { Monitor } from "./cli/monitor"
 import { Crash } from "./cli/crash"
 
-// Bun's default is to print an uncaught error or rejection and exit(1). The
-// TUI's console is the in-app console, so that print is lost and a flash exit
-// leaves no trace. Record it to disk, then keep the exact default semantics.
-const onFatal = (kind: "uncaughtException" | "unhandledRejection", error: unknown) => {
-  Crash.recordCrash(kind, error)
-  process.exit(1)
-}
-process.on("uncaughtException", (error) => onFatal("uncaughtException", error))
-process.on("unhandledRejection", (reason) => onFatal("unhandledRejection", reason))
+// A stray uncaught exception still exits; an unhandled rejection is recorded
+// and survives (see installFatalHandlers).
+Crash.installFatalHandlers()
 
 // Ctrl+C, `kill`, or a closing terminal must tear the Effect runtime down
 // gracefully: ManagedRuntime.dispose closes the BackgroundJob registry scope,
