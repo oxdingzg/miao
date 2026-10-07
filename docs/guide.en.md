@@ -210,7 +210,7 @@ Reopen sessions from the session list or export them with `miao export <sessionI
 
 Ask the agent to delegate a bounded task—such as finding callers of an API or reviewing a migration—to a specialist subagent. The `task` tool returns a child session that can be continued with its session ID. Its separate conversation keeps detailed investigation out of the main context.
 
-V2's `list_sessions` discovers project peers, and `send_message` accepts a session ID or `@slug`. Messages are attributed to their sender, admitted as queued inputs, and subject to the `message` permission and an inbound queue limit. Cross-project targets are rejected. This is process-local coordination, not a cross-machine worker service.
+V2's `list_sessions` discovers project peers, and `send_message` accepts a session ID or `@slug`. Messages are attributed to their sender and durably admitted to the target inbox, subject to the `message` permission and an inbound queue limit. The default `delivery: "steer"` promotes at the next safe turn boundary; explicit `delivery: "queue"` waits until the Session would otherwise become idle. Cross-project targets are rejected. Execution is process-local; durable admission can reach a Session owned by another live local window, but does not provide cross-machine execution or automatic recovery.
 
 ### 5.11 Tune context and cost deliberately
 
@@ -249,7 +249,7 @@ manual toggle still works.
 
 **How do I configure models/providers?**
 `miao providers login` writes credentials; `miao models` lists them; customize under
-`providers` in `miao.jsonc`. Use `miao debug` for provider errors.
+`providers` in `miao.jsonc`. Use `miao debug config` to inspect resolved configuration and `miao debug info` for installation and plugin diagnostics; `miao debug` lists its subcommands.
 
 **How do I use my Command Code subscription?**
 Connect once with `miao auth login commandcode` (a browser-assisted login), or set

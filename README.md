@@ -189,10 +189,10 @@ Use `miao` for releases, `miao-dev` for source iteration, and `miao-preview` for
 
 miao runs locally without a miao or OpenCode account. Connect your chosen model provider directly with its API key or supported OAuth method.
 
-- Model metadata comes from miao's own catalog (mtty.dev), falling back to the public [models.dev](https://models.dev) catalog; miao-maintained providers that models.dev does not list yet (currently Command Code) are merged on top. Builds bundle a snapshot for offline startup. Pin a source with `MIAO_MODELS_URL`, or select an exact catalog with `MIAO_MODELS_PATH`.
+- Model metadata comes only from miao's catalog at mtty.dev. The website builds it from public [models.dev](https://models.dev) data and miao-maintained providers (currently Command Code); the runtime does not fall back to models.dev. Builds bundle a snapshot for offline startup. Pin a source with `MIAO_MODELS_URL`, or select an exact catalog with `MIAO_MODELS_PATH`.
 - [Command Code](https://commandcode.ai) is available as a subscription provider: connect it with `miao auth login commandcode` (browser-assisted) or `CMD_API_KEY`, and its models are discovered from the account at runtime.
 - Release notes and updates come from [oxdingzg/miao releases](https://github.com/oxdingzg/miao/releases).
-- Sharing has no default backend. Configure `enterprise.url` in `miao.json` to enable a compatible server; shared conversation content is sent only to that configured server.
+- Session sharing and share-URL imports have been removed. Use `miao export` / `miao import` for portable session files; legacy `enterprise.url` configuration does not enable sharing.
 - MIAO has no Console account or organization support. `MIAO_CONSOLE_URL` only exposes Console OAuth for the OpenCode provider integration; a custom server can specify `MIAO_CONSOLE_CLIENT_ID`.
 - OpenCode Zen / Go remain optional third-party model providers, with their actual OpenCode service names and endpoints.
 
@@ -207,6 +207,7 @@ miao and mtty are separate projects, and each works without the other. Run miao 
 ## Documentation and development
 
 - [Usage guide](docs/guide.en.md) · [使用指南](docs/guide.zh.md)
+- [Providers and models](docs/providers.en.md) · [Remote Control](docs/remote-control.en.md)
 - [miao vs its opencode baseline](docs/miao-vs-opencode.en.md) — measurements, differences, and integration status
 - [Release workflow](docs/release.en.md) — versions, builds, and publishing
 - [Runtime design](CONTEXT.md) · [V2 specifications](specs/v2) — session, context, and client contracts

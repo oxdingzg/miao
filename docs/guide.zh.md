@@ -201,7 +201,7 @@ V2 在调度执行前先持久化输入。当前任务仍需继续时，执行�
 
 可以要求代理把范围明确的工作交给专项子代理，例如找出一个 API 的所有调用点，或审查数据库迁移。`task` 返回可通过会话 ID 继续的子会话，独立对话让主上下文不必装下全部调查细节。
 
-V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或 `@slug`。消息带发送方标识，以排队输入持久化，并受 `message` 权限和输入队列限额约束。跨项目目标会被拒绝。这是进程内协作能力，不是跨机器工作服务。
+V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或 `@slug`。消息带发送方标识，持久化进入目标收件箱，并受 `message` 权限和输入队列限额约束。默认 `delivery: "steer"` 在下一个安全轮次边界采纳；显式 `delivery: "queue"` 等会话即将空闲时再处理。跨项目目标会被拒绝。执行仍是进程内的；持久化输入可以送达由另一个本地活动窗口持有的会话，但不提供跨机器执行或自动恢复。
 
 ### 5.11 按任务调整上下文与成本
 
@@ -236,7 +236,7 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 子会话（由 task/subagent 派生、`parent_id` 非空）侧边栏被强制隐藏；顶层会话可用。窄终端（宽度 ≤120）auto 模式也不默认显示，但手动 toggle 有效。
 
 **Q：模型/供应商怎么配？**
-`miao providers login` 写凭据；`miao models` 查看；在 `miao.jsonc` 的 `providers` 里自定义。provider 的具体报错可用 `miao debug` 排查。
+`miao providers login` 写凭据；`miao models` 查看；在 `miao.jsonc` 的 `providers` 里自定义。可用 `miao debug config` 查看生效配置，用 `miao debug info` 查看安装与插件信息；`miao debug` 列出子命令。
 
 **Q：怎么用我的 Command Code 订阅？**
 用 `miao auth login commandcode`（浏览器辅助登录）连一次，或把 `CMD_API_KEY` 设成

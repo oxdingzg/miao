@@ -28,15 +28,28 @@ If you need true isolation, run miao inside a Docker container or VM.
 
 ### Server Mode
 
-Normal CLI/TUI clients start a persistent local Runtime automatically. `miao serve` exposes an explicitly configured listener; `miao runtime` manages the local Runtime. Legacy IM bridges have been removed.
+Normal CLI/TUI invocations own a window-scoped Runtime in the same process.
+Its listener binds to `127.0.0.1` on an ephemeral port, does not advertise over
+mDNS, and uses a fresh private credential and Runtime ID. Closing that window
+ends its execution and remote connection. The private `miao runtime access`
+bridge targets an explicit live Runtime ID; it never starts a daemon. See
+[Runtime lifecycle](docs/runtime.md).
 
-The service listens on **127.0.0.1 only** and does not advertise itself over mDNS, so it is reachable from this machine rather than from the network.
+`miao serve` is a separate, explicitly started foreground API server. It defaults
+to `127.0.0.1`, but `--hostname` or server configuration can expose it to a network;
+`--mdns` enables discovery and defaults the hostname to `0.0.0.0` unless overridden.
+Its HTTP Basic authentication is enabled with `MIAO_SERVER_PASSWORD` (and optional
+`MIAO_SERVER_USERNAME`). Without a password the server starts with an unsecured
+listener warning. Access is then available to processes or hosts that can reach
+its configured interface; it is not inherently local-only.
 
-Authentication is HTTP Basic Auth, turned on by setting `MIAO_SERVER_PASSWORD`. Without it the service still starts, and says so itself:
-
-> MIAO_SERVER_PASSWORD 没有设置，本机其它进程可以不经鉴权访问 127.0.0.1 上的服务
-
-That is the exposure to weigh: not a remote attacker, but any other process on your machine. An unauthenticated instance is local-only by construction; set the password when local-only is not good enough. Because the service is opt-in and loopback-bound by design, its behaviour in that configuration is not a vulnerability.
+Remote Control is enabled explicitly for a particular window through
+`/remote-control`. The local Agent makes an outbound connection to a configured
+Hub. Hub login authorizes relay access, while locally approved device keys and
+scoped, expiring grants authorize session operations. Disabling access or closing
+the owner window closes its connection; revoking a device invalidates its grant.
+The Hub relays encrypted frames and does not execute local sessions. Legacy IM
+bridges and `miao remote` have been removed.
 
 ### Out of Scope
 

@@ -1,6 +1,6 @@
 # Background subagents
 
-The `task` tool accepts `background: true`. It immediately returns a durable `taskID` and a child `sessionID`, allowing the parent to continue independent work. Omitting `background` keeps the foreground behavior.
+The `task` tool accepts `background: true`. It immediately returns a durable `taskID` and a child `sessionID`, allowing the parent to continue independent work. Explicit `background: false` waits for the result. On current `main`, omitting it defaults read-only agents to the background when the invocation has delegation support; other agents remain foreground. Without that support the call falls back to foreground. This automatic read-only default was added after v0.1.20; older releases require `background: true`.
 
 - `task_list` lists the current Session's recent tasks (running tasks first).
 - `task_result` reads a task's full durable report without waiting or restarting it.
