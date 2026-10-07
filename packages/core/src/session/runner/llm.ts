@@ -1461,6 +1461,22 @@ const layer = Layer.effect(
         .pipe(Effect.asVoid)
     }
 
+    const STEP_BOUNDARY_TIMEOUT = Duration.seconds(60)
+
+    // Every post-turn check is a fast indexed DB read. A wedged database used
+    // to hang the drain at this boundary forever with nothing in the log; bound
+    // each wait so the stall becomes a published failure instead.
+    const bounded = (what: string) =>
+      <A, E>(effect: Effect.Effect<A, E>) =>
+        Effect.gen(function* () {
+          const result = yield* Effect.timeoutOption(effect, STEP_BOUNDARY_TIMEOUT)
+          if (Option.isNone(result)) {
+            yield* Effect.logWarning("session.drain.stalled", { what, timeoutMs: Duration.toMillis(STEP_BOUNDARY_TIMEOUT) })
+            return yield* Effect.die(new Error(`Drain stalled between steps: ${what} did not finish within 60s`))
+          }
+          return result.value
+        })
+
     const run = Effect.fn("SessionRunner.run")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
@@ -1606,6 +1622,7 @@ const layer = Layer.effect(
           let loopIterations = 0
           let lastTodoSignature: string | undefined
           let loopStalls = 0
+          let finishReason = "idle"
           const exceeded = (session: SessionSchema.Info) =>
             settings.budget !== undefined && session.cost >= settings.budget
           const initial = yield* getSession(input.sessionID)
@@ -1617,7 +1634,8 @@ const layer = Layer.effect(
             })
             return
           }
-          yield* backgroundJobs.recover()
+            yield* Effect.logInfo("session.drain.started", { sessionID: input.sessionID, force: input.force })
+            yield* backgroundJobs.recover()
           yield* failInterruptedTools(input.sessionID)
             const recoveredNotification = yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID)
             let promotion: Promotion | undefined = hasSteer
@@ -1637,6 +1655,7 @@ const layer = Layer.effect(
                 cost: current.cost,
                 budget: settings.budget,
               })
+              finishReason = "budget-exceeded"
               break
             }
             let needsContinuation = true
@@ -1647,11 +1666,14 @@ const layer = Layer.effect(
               promotion = "steer"
                 if (
                   needsContinuation &&
-                  !(yield* SessionInput.hasPending(db, input.sessionID, "steer")) &&
-                  (yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID))
+                  !(yield* bounded("pending steers")(SessionInput.hasPending(db, input.sessionID, "steer"))) &&
+                  (yield* bounded("promotable notifications")(
+                    SessionDelegationStore.hasPromotableNotifications(db, input.sessionID),
+                  ))
                 )
                   promotion = "notification"
-              if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+              if (!needsContinuation)
+                needsContinuation = yield* bounded("pending steers")(SessionInput.hasPending(db, input.sessionID, "steer"))
               // A model behind an OpenAI-compatible server can write its tool
               // call as plain text instead of emitting a structured call. The
               // turn then looks finished ("stop", no tool part) even though the
@@ -1661,7 +1683,7 @@ const layer = Layer.effect(
               // fail the assistant message so the stop is explained instead of
               // silently stalling.
               if (!needsContinuation) {
-                const leak = yield* leakedToolCall(input.sessionID)
+                const leak = yield* bounded("tool-call leak check")(leakedToolCall(input.sessionID))
                 if (leak && leak.attempts < ToolCallLeak.MAX_ATTEMPTS) {
                   yield* Effect.logWarning("session.tool-call-leak", {
                     sessionID: input.sessionID,
@@ -1695,10 +1717,12 @@ const layer = Layer.effect(
                 }
               }
             }
-              const queuedNext = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+              const queuedNext = yield* bounded("queued input")(SessionInput.hasPending(db, input.sessionID, "queue"))
               const notificationNext = queuedNext
                 ? false
-                : yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID)
+                : yield* bounded("promotable notifications")(
+                    SessionDelegationStore.hasPromotableNotifications(db, input.sessionID),
+                  )
               shouldRun = queuedNext || notificationNext
             if (!shouldRun && settings.loop !== undefined) {
               const current = yield* getSession(input.sessionID)
@@ -1736,9 +1760,18 @@ const layer = Layer.effect(
             }
             promotion = shouldRun ? (notificationNext ? "notification" : "queue") : undefined
           }
+          yield* Effect.logInfo("session.drain.finished", { sessionID: input.sessionID, reason: finishReason })
         }),
       )
-    }, (effect, input) => effect.pipe(Effect.tapCause((cause) => reportFailure(input.sessionID, cause))))
+    }, (effect, input) =>
+      effect.pipe(
+        Effect.tapCause((cause) =>
+          Effect.logInfo("session.drain.finished", {
+            sessionID: input.sessionID,
+            reason: Cause.hasInterruptsOnly(cause) ? "interrupted" : "failed",
+          }).pipe(Effect.andThen(reportFailure(input.sessionID, cause))),
+        ),
+      ))
     runDrain = run
 
     return Service.of({
