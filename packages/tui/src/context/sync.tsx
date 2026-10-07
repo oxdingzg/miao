@@ -900,6 +900,17 @@ export const {
           streamText.start(event.properties.sessionID, event.properties.assistantMessageID, event.properties.textID)
           break
         }
+        case "session.next.tool.progress": {
+          // The task tool checkpoints its child Session onto the running call;
+          // that link is the one progress fragment worth applying live, because
+          // the inline subagent block streams the child transcript from it.
+          // Every other progress fragment stays dropped (isV2StreamFragmentEvent).
+          const input = event.properties
+          if (typeof input.structured?.sessionID !== "string") break
+          if (applyV2DurableEvent(input.sessionID, event)) break
+          if (watchedSessions.has(input.sessionID)) v2Refresh.schedule(input.sessionID)
+          break
+        }
         case "session.next.reasoning.started": {
           streamText.start(
             event.properties.sessionID,

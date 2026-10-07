@@ -9,12 +9,12 @@ import {
   Match,
   on,
   onCleanup,
-  onMount,
   Show,
   Switch,
   untrack,
   useContext,
 } from "solid-js"
+import { createStore } from "solid-js/store"
 import path from "node:path"
 import { mkdir, writeFile } from "node:fs/promises"
 import { useRoute, useRouteData } from "../../context/route"
@@ -40,7 +40,7 @@ import { promptInfoFromUserMessage } from "../../context/session-v2-write"
 import type { Provider, SessionStatus } from "@miao/schema/view-models"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
-import { fileToolSummary, toolDisplay, webSearchProviderLabel } from "../../util/tool-display"
+import { fileToolSummary, toolDisplay, toolDisplayMetadata, webSearchProviderLabel } from "../../util/tool-display"
 import { Dynamic, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "../../context/sdk"
 import { useEditorContext } from "../../context/editor"
@@ -67,7 +67,7 @@ import { usePromptRef } from "../../context/prompt"
 import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
-import { SessionActivity } from "./activity"
+import { SessionActivity, latestSubagentPartID, orderTaskBlocks, subagentActivity, subagentResult, subagentRunning } from "./activity"
 import { SessionMessageContent } from "./session-message"
 import { PromptStatus } from "./prompt-status"
 import { providerErrorText } from "./provider-failure"
@@ -109,6 +109,10 @@ const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 
 export const alwaysSeparate = new WeakSet<BoxRenderable>()
+
+// Which inline subagent blocks are expanded, keyed by the task part's id so the
+// state survives route changes and is reachable from the toggle command.
+const [inlineSubagentExpanded, setInlineSubagentExpanded] = createStore<Record<string, boolean>>({})
 
 type RetryAction = Extract<SessionStatus, { type: "retry" }>["action"]
 
@@ -152,6 +156,7 @@ const sessionBindingCommands = [
   "session.copy",
   "session.export",
   "session.child.first",
+  "session.subagent.toggle",
   "session.parent",
   "session.child.next",
   "session.child.previous",
@@ -938,6 +943,17 @@ export function Session() {
       },
     },
     {
+      title: "Toggle inline subagent transcript",
+      value: "session.subagent.toggle",
+      category: "Session",
+      hidden: true,
+      run: () => {
+        const id = latestSubagentPartID(messages())
+        if (id) setInlineSubagentExpanded(id, (value) => !value)
+        dialog.clear()
+      },
+    },
+    {
       title: "Go to parent session",
       value: "session.parent",
       category: "Session",
@@ -1471,16 +1487,19 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
   const tools = createMemo(() => props.message.content.filter((part): part is TranscriptToolPart => part.type === "tool"))
+  // One block per subagent with the running ones on top; only sibling tool
+  // parts reorder among themselves, so the timeline itself stays honest.
+  const content = createMemo(() => orderTaskBlocks(props.message.content))
 
   return (
     <>
-      <For each={props.message.content}>
+      <For each={content()}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
           return (
             <Show when={component()}>
               <Dynamic
-                last={index() === props.message.content.length - 1}
+                last={index() === content().length - 1}
                 component={component()}
                 part={part as any}
                 message={props.message}
@@ -2346,68 +2365,56 @@ function WebSearch(props: ToolProps) {
 
 function Task(props: ToolProps) {
   const { theme } = useTheme()
-  const { navigate } = useRoute()
   const sync = useSync()
   const dialog = useDialog()
+  const expandShortcut = useCommandShortcut("session.subagent.toggle")
 
-  onMount(() => {
-    const sessionID = stringValue(props.metadata.sessionId)
-    if (!sessionID) return
+  // The child Session link arrives while the call is still running: the task
+  // tool checkpoints it into `state.structured` (V2) and the runner repeats it
+  // in the completion output (legacy `metadata.sessionId`).
+  const structured = createMemo(() => toolDisplayMetadata(props.part.state))
+  const sessionID = createMemo(() => stringValue(structured().sessionID) ?? stringValue(props.metadata.sessionId))
+  const background = createMemo(() => structured().background === true || props.metadata.background === true)
+
+  createEffect(() => {
+    const id = sessionID()
+    if (!id) return
     // The subagent transcript is rendered inline, so keep it resident until the
     // tool cell unmounts.
-    sync.session.pin(sessionID)
-    onCleanup(() => sync.session.unpin(sessionID))
-    if (!sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
+    sync.session.pin(id)
+    onCleanup(() => sync.session.unpin(id))
+    if (!sync.data.message[id]?.length) void sync.session.sync(id)
   })
 
-  const sessionID = createMemo(() => stringValue(props.metadata.sessionId))
-  const messages = createMemo(() => sync.data.message[sessionID() ?? ""] ?? [])
-
-  const tools = createMemo(() => {
-    return messages().flatMap((msg) =>
-      (msg.type === "assistant" ? msg.content : [])
-        .filter((part): part is TranscriptToolPart => part.type === "tool")
-        .map((part) => ({ tool: part.name, state: part.state })),
-    )
-  })
-
-  const current = createMemo(() =>
-    tools().findLast((x) => x.state.status === "running" || x.state.status === "completed"),
-  )
-
-  const status = createMemo(() => sync.data.session_status[sessionID() ?? ""])
-  const isRunning = createMemo(() => {
-    const value = status()
-    return (
-      props.part.state.status === "running" ||
-      (props.metadata.background === true && value !== undefined && value.type !== "idle")
-    )
-  })
+  const childMessages = createMemo(() => sync.data.message[sessionID() ?? ""] ?? [])
+  const childStatus = createMemo(() => sync.data.session_status[sessionID() ?? ""])
   const retry = createMemo(() => {
-    const value = status()
-    if (value?.type !== "retry") return
-    return value
+    const value = childStatus()
+    return value?.type === "retry" ? value : undefined
   })
+  const running = createMemo(() => subagentRunning(props.part.state.status, background(), childStatus()))
+  const expanded = createMemo(() => inlineSubagentExpanded[props.part.id] ?? false)
+  const toggle = () => setInlineSubagentExpanded(props.part.id, (value) => !value)
 
   // Claude Code keeps a live elapsed time on the subagent row for the whole run.
   // Tick only while the task is live so an idle row does not repaint every second.
   const [now, setNow] = createSignal(Date.now())
   createEffect(() => {
-    if (!isRunning()) return
+    if (!running()) return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     onCleanup(() => clearInterval(timer))
   })
 
   const duration = createMemo(() => {
-    const first = messages().find((x) => x.type === "user")?.time.created
+    const first = childMessages().find((x) => x.type === "user")?.time.created
     if (first !== undefined) {
-      const completed = messages().findLast((x) => x.type === "assistant")?.time.completed
-      const span = (completed ?? (isRunning() ? now() : first)) - first
+      const completed = childMessages().findLast((x) => x.type === "assistant")?.time.completed
+      const span = (completed ?? (running() ? now() : first)) - first
       // A completed child transcript whose final assistant message never
       // recorded a completion time yields 0ms; the call's own timing below
       // still reports the real duration.
-      if (span > 0 || isRunning()) return span
+      if (span > 0 || running()) return span
     }
     // The child transcript can lag behind the tool call, so fall back to the
     // call's own timing and still report how long the subagent has been running.
@@ -2418,66 +2425,79 @@ function Task(props: ToolProps) {
     return 0
   })
 
-  const content = createMemo(() => {
+  const title = createMemo(() => {
     const description = stringValue(props.input.description)
     if (!description) return ""
-    let content = [
-      formatSubagentTitle(
-        Locale.titlecase(stringValue(props.input.subagent_type) ?? "General"),
-        description,
-        props.metadata.background === true,
-      ),
-    ]
+    return formatSubagentTitle(
+      Locale.titlecase(stringValue(props.input.subagent_type) ?? "General"),
+      description,
+      background(),
+    )
+  })
 
+  // Collapsed, the row carries the live tail (latest tool lines) while running
+  // and a one-line result summary once finished; expanding swaps the tail for
+  // the child transcript itself. An errored row keeps the call icon and lets
+  // InlineTool render the failure.
+  const hint = createMemo(() => (sessionID() && expandShortcut() ? `… ${expandShortcut()} expand` : undefined))
+  const detail = createMemo(() => {
     const retrying = retry()
-    if (isRunning()) {
+    if (running()) {
       const elapsed = duration() > 0 ? ` · ${Locale.duration(duration())}` : ""
-      if (retrying) {
-        content.push(`↳ ${formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))}${elapsed}`)
-      } else if (current()) {
-        const state = current()!.state
-        const lastText =
-          state.status === "running" || state.status === "completed"
-            ? [...state.content].reverse().find((item) => item.type === "text")
-            : undefined
-        const title = lastText?.type === "text" ? Locale.truncate(lastText.text, 60) : undefined
-        content.push(`↳ ${Locale.titlecase(current()!.tool)} ${title ?? ""}${elapsed}`)
-      } else if (tools().length > 0) {
-        content.push(`↳ ${formatSubagentToolcalls(tools().length)}${elapsed}`)
-      } else {
-        content.push(`↳ ${formatSubagentRunningDetail(duration())}`)
-      }
-    } else if (props.part.state.status === "completed") {
-      content.push(`↳ ${formatCompletedSubagentDetail(tools().length, Locale.duration(duration()))}`)
+      if (retrying) return `↳ ${formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))}${elapsed}`
+      if (expanded()) return `↳ ${formatSubagentRunningDetail(duration())}`
+      const activity = subagentActivity(childMessages())
+      const lines = activity.map((line, index) => `↳ ${line}${index === activity.length - 1 ? elapsed : ""}`)
+      if (lines.length === 0) return `↳ ${formatSubagentRunningDetail(duration())}${hint() ? `\n${hint()}` : ""}`
+      return [...lines, ...(hint() ? [hint()] : [])].join("\n")
     }
-
-    return content.join("\n")
+    if (props.part.state.status === "completed") {
+      const result = subagentResult(props.output)
+      return `↳ ${Locale.duration(duration())}${result ? ` · ${result}` : ""}`
+    }
+    return undefined
   })
 
   return (
-    <InlineTool
-      icon={props.part.state.status === "completed" ? "✓" : "│"}
-      separate={true}
-      color={retry() ? theme.error : undefined}
-      spinner={isRunning()}
-      complete={stringValue(props.input.description)}
-      pending="Delegating…"
-      part={props.part}
-      onClick={() => {
-        if (sessionID()) {
-          navigate({ type: "session", sessionID: sessionID()! })
-        }
-        const status = retry()
-        if (status) void DialogAlert.show(dialog, "Retry Error", status.message)
-      }}
-    >
-      {content()}
-    </InlineTool>
+    <>
+      <InlineTool
+        icon={props.part.state.status === "completed" ? "✓" : "│"}
+        separate={true}
+        color={retry() ? theme.error : undefined}
+        spinner={running()}
+        complete={stringValue(props.input.description)}
+        pending="Delegating…"
+        part={props.part}
+        onClick={() => {
+          if (sessionID()) toggle()
+          const status = retry()
+          if (status) void DialogAlert.show(dialog, "Retry Error", status.message)
+        }}
+      >
+        {[title(), detail()].filter(Boolean).join("\n")}
+      </InlineTool>
+      <Show when={expanded() && sessionID()}>
+        <box paddingLeft={3} flexShrink={0}>
+          <For each={childMessages()}>
+            {(message) => (
+              <Switch>
+                <Match when={message.type === "user"}>
+                  <UserMessage index={0} onMouseUp={() => {}} message={message as TranscriptUserMessage} />
+                </Match>
+                <Match when={message.type === "assistant"}>
+                  <AssistantMessage
+                    last={false}
+                    sessionID={sessionID()!}
+                    message={message as TranscriptAssistantMessage}
+                  />
+                </Match>
+              </Switch>
+            )}
+          </For>
+        </box>
+      </Show>
+    </>
   )
-}
-
-export function formatSubagentToolcalls(count: number) {
-  return `${count} toolcall${count === 1 ? "" : "s"}`
 }
 
 export function formatSubagentTitle(agent: string, description: string, background: boolean) {
@@ -2490,11 +2510,6 @@ export function formatSubagentRetry(attempt: number, message: string) {
 
 export function formatSubagentRunningDetail(elapsed: number) {
   return elapsed > 0 ? `Running · ${Locale.duration(elapsed)}` : "Running"
-}
-
-export function formatCompletedSubagentDetail(toolcalls: number, duration: string) {
-  if (toolcalls === 0) return duration
-  return `${formatSubagentToolcalls(toolcalls)} · ${duration}`
 }
 
 type ExecuteCall = { tool: string; status: "running" | "completed" | "error"; input?: Record<string, unknown> }

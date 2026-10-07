@@ -544,3 +544,49 @@ test("session hydration completes while its diff is still pending", async () => 
   }
 })
 
+
+test("a task tool's child-session checkpoint lands on the running part", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const task = {
+    id: messageID,
+    type: "assistant" as const,
+    time: { created: 1 },
+    agent: "build",
+    model: { id: "model", providerID: "test" },
+    content: [
+      {
+        type: "tool" as const,
+        id: "prt_task",
+        name: "task",
+        state: { status: "running" as const, input: { description: "dig" }, structured: {}, content: [] },
+        time: { created: 1 },
+      },
+    ],
+  }
+  const { app, emit, sync } = await mount(routes({ context: () => [task] }), tmp.path)
+
+  try {
+    await sync.session.sync(sessionID)
+    emit(
+      global({
+        id: "evt_task_progress",
+        type: "session.next.tool.progress",
+        properties: {
+          timestamp: 2,
+          sessionID,
+          assistantMessageID: messageID,
+          callID: "prt_task",
+          structured: { sessionID: "ses_child" },
+          content: [],
+        },
+      }),
+    )
+    await wait(() => {
+      const part = partsOf(sync, messageID)?.[0]
+      return (part?.state as { structured?: { sessionID?: string } } | undefined)?.structured?.sessionID === "ses_child"
+    })
+  } finally {
+    app.renderer.destroy()
+  }
+})
