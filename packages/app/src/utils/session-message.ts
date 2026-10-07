@@ -1,16 +1,14 @@
-import type { AssistantMessage, FilePart, Message, Part, ToolPart, UserMessage } from "@miao/schema/view-models"
+import type { AssistantMessage, Message, UserMessage } from "@miao/schema/view-models"
 import type {
   SessionMessageAssistant,
-  SessionMessageAssistantTool,
   SessionMessageInfo,
   SessionMessageShell,
   SessionMessageUser,
 } from "@/utils/server"
-import { Option, Schema } from "effect"
+import { contentParts } from "@/pages/session/timeline/content"
 
 const emptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 const emptyModel: { id: string; providerID: string; variant?: string } = { id: "", providerID: "" }
-const decodeToolInput = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
 export function compareMessages(a: Pick<Message, "id" | "time">, b: Pick<Message, "id" | "time">) {
   const left = messageKey(a)
@@ -20,34 +18,8 @@ export function compareMessages(a: Pick<Message, "id" | "time">, b: Pick<Message
 
 export const messageKey = (message: Pick<Message, "id" | "time">) => message.time.created + message.id
 
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
-function normalizeToolInput(name: string, input: Record<string, unknown>) {
-  if (!["edit", "write"].includes(name) || typeof input.path !== "string" || typeof input.filePath === "string")
-    return input
-  return { ...input, filePath: input.path }
-}
-
-function normalizeToolMetadata(name: string, metadata: Record<string, unknown>) {
-  if (name !== "edit" || !Array.isArray(metadata.files)) return metadata
-  const file = metadata.files.find(record)
-  if (!file || typeof file.file !== "string") return metadata
-  return {
-    ...metadata,
-    filediff: {
-      file: file.file,
-      patch: typeof file.patch === "string" ? file.patch : undefined,
-      additions: typeof file.additions === "number" ? file.additions : 0,
-      deletions: typeof file.deletions === "number" ? file.deletions : 0,
-    },
-  }
-}
-
 export function normalizeSessionMessages(sessionID: string, source: readonly SessionMessageInfo[]) {
   const messages: Message[] = []
-  const parts = new Map<string, Part[]>()
   let agent = ""
   let model = emptyModel
   let parentID: string | undefined
@@ -64,7 +36,6 @@ export function normalizeSessionMessages(sessionID: string, source: readonly Ses
     if (message.type === "user") {
       parentID = message.id
       messages.push(userMessage(sessionID, message, agent, model))
-      parts.set(message.id, userParts(sessionID, message))
       return
     }
     if (message.type === "synthetic" && message.text.trim()) {
@@ -77,13 +48,10 @@ export function normalizeSessionMessages(sessionID: string, source: readonly Ses
         agent,
         model: { providerID: model.providerID, modelID: model.id, variant: model.variant },
       })
-      parts.set(message.id, [textPart(sessionID, message.id, 0, message.text, true)])
       return
     }
     if (message.type === "shell") {
       messages.push(...shellMessages(sessionID, message, agent, model))
-      parts.set(message.id, [textPart(sessionID, message.id, 0, message.command)])
-      parts.set(`${message.id}:assistant`, [shellPart(sessionID, message)])
       parentID = undefined
       return
     }
@@ -101,23 +69,12 @@ export function normalizeSessionMessages(sessionID: string, source: readonly Ses
         }
       }
       messages.push(assistantMessage(sessionID, parentID, message))
-      parts.set(message.id, assistantParts(sessionID, message))
       return
     }
-    if (message.type !== "compaction" || !parentID) return
-    parts.set(parentID, [
-      ...(parts.get(parentID) ?? []),
-      {
-        id: `${message.id}:compaction`,
-        sessionID,
-        messageID: parentID,
-        type: "compaction",
-        auto: message.reason === "auto",
-      },
-    ])
+    // Compaction contributes no message row; its marker is a part on the parent turn.
   })
 
-  return { messages, parts }
+  return { messages, parts: new Map(Object.entries(contentParts(sessionID, source))) }
 }
 
 function shellMessages(
@@ -153,35 +110,6 @@ function shellMessages(
   ]
 }
 
-function shellPart(sessionID: string, message: SessionMessageShell): ToolPart {
-  const input = { command: message.command }
-  const start = message.time.created
-  const state: ToolPart["state"] =
-    message.time.completed === undefined
-      ? { status: "running", input, time: { start } }
-      : {
-          status: "completed",
-          input,
-          output: message.output,
-          title: "Shell",
-          metadata: {},
-          time: { start, end: message.time.completed },
-        }
-  return {
-    id: `${message.id}:tool`,
-    sessionID,
-    messageID: `${message.id}:assistant`,
-    type: "tool",
-    callID: message.callID,
-    tool: "bash",
-    state,
-  }
-}
-
-export function sessionMessagePartID(messageID: string, type: "text" | "reasoning", ordinal: number) {
-  return `${messageID}:${type}:${ordinal}`
-}
-
 function userMessage(
   sessionID: string,
   message: SessionMessageUser,
@@ -196,40 +124,6 @@ function userMessage(
     agent,
     model: { providerID: model.providerID, modelID: model.id, variant: model.variant },
   }
-}
-
-function userParts(sessionID: string, message: SessionMessageUser): Part[] {
-  return [
-    textPart(sessionID, message.id, 0, message.text),
-    ...(message.files ?? []).map(
-      (file, index): FilePart => ({
-        id: `${message.id}:file:${index}`,
-        sessionID,
-        messageID: message.id,
-        type: "file",
-        mime: file.mime,
-        filename: file.name,
-        url: file.uri,
-        source: file.source
-          ? {
-              type: "file",
-              text: { value: file.source.text, start: file.source.start, end: file.source.end },
-              path: file.source.text.startsWith("@") ? file.source.text.slice(1) : (file.name ?? file.source.text),
-            }
-          : undefined,
-      }),
-    ),
-    ...(message.agents ?? []).map(
-      (item, index): Part => ({
-        id: `${message.id}:agent:${index}`,
-        sessionID,
-        messageID: message.id,
-        type: "agent",
-        name: item.name,
-        source: item.source ? { value: item.source.text, start: item.source.start, end: item.source.end } : undefined,
-      }),
-    ),
-  ]
 }
 
 function assistantMessage(sessionID: string, parentID: string, message: SessionMessageAssistant): AssistantMessage {
@@ -254,104 +148,5 @@ function assistantMessage(sessionID: string, parentID: string, message: SessionM
     cost: message.cost ?? 0,
     tokens: message.tokens ?? emptyTokens,
     finish: message.finish,
-  }
-}
-
-function assistantParts(sessionID: string, message: SessionMessageAssistant): Part[] {
-  const ordinals = { text: 0, reasoning: 0 }
-  return message.content.flatMap((content): Part[] => {
-    if (content.type === "text") {
-      const part = textPart(sessionID, message.id, ordinals.text++, content.text)
-      return content.text.trim() ? [part] : []
-    }
-    if (content.type === "reasoning") {
-      const part: Part = {
-        id: sessionMessagePartID(message.id, "reasoning", ordinals.reasoning++),
-        sessionID,
-        messageID: message.id,
-        type: "reasoning",
-        text: content.text,
-        metadata: content.providerMetadata,
-        time: {
-          start: content.time?.created ?? message.time.created,
-          end: content.time?.completed,
-        },
-      }
-      return content.text.trim() ? [part] : []
-    }
-    return [toolPart(sessionID, message.id, content)]
-  })
-}
-
-function textPart(sessionID: string, messageID: string, ordinal: number, text: string, synthetic?: boolean): Part {
-  return {
-    id: sessionMessagePartID(messageID, "text", ordinal),
-    sessionID,
-    messageID,
-    type: "text",
-    text,
-    synthetic,
-  }
-}
-
-function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssistantTool): ToolPart {
-  const start = tool.time.ran ?? tool.time.created
-  const state = (() => {
-    if (tool.state.status === "pending") {
-      const value = Option.getOrUndefined(decodeToolInput(tool.state.input))
-      const input = normalizeToolInput(tool.name, record(value) ? value : {})
-      return { status: "pending" as const, input, raw: tool.state.input }
-    }
-    if (tool.state.status === "running") {
-      return {
-        status: "running" as const,
-        input: normalizeToolInput(tool.name, tool.state.input),
-        metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        time: { start },
-      }
-    }
-    if (tool.state.status === "error") {
-      return {
-        status: "error" as const,
-        input: normalizeToolInput(tool.name, tool.state.input),
-        error: tool.state.error.message,
-        metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        time: { start, end: tool.time.completed ?? start },
-      }
-    }
-    const attachments = tool.state.content.flatMap((item, index): FilePart[] =>
-      item.type === "file"
-        ? [
-            {
-              id: `${tool.id}:file:${index}`,
-              sessionID,
-              messageID,
-              type: "file",
-              mime: item.mime,
-              filename: item.name,
-              url: item.uri,
-            },
-          ]
-        : [],
-    )
-    return {
-      status: "completed" as const,
-      input: normalizeToolInput(tool.name, tool.state.input),
-      output: tool.state.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n"),
-      title: tool.name,
-      metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-      time: { start, end: tool.time.completed ?? start },
-      attachments: attachments.length ? attachments : undefined,
-    }
-  })()
-  return {
-    id: tool.id,
-    sessionID,
-    messageID,
-    type: "tool",
-    callID: tool.id,
-    tool: tool.name,
-    state,
-    metadata: { providerState: tool.provider?.metadata, providerResultState: tool.provider?.resultMetadata },
   }
 }

@@ -8,7 +8,8 @@ const sessionID = "ses_timeline_state_regression"
 const userMessageID = "msg_user_regression"
 const assistantMessageID = "msg_assistant_regression"
 const editPartID = "prt_0001_edit"
-const textPartID = "prt_9999_text"
+// V2 content ids are ordinal-based per message (bridge projection), not fixture-chosen.
+const textPartID = `${assistantMessageID}:text:0`
 const title = "Timeline collapse state regression"
 const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
 
@@ -73,13 +74,26 @@ const editPart = {
   },
 }
 
-const streamedTextPart = {
-  id: textPartID,
-  sessionID,
-  messageID: assistantMessageID,
-  type: "text",
-  text: "Streaming added a later assistant text part.",
-}
+// Streaming later content arrives as V2 text events; the reducer appends the
+// content entry and the bridge projects it at the ordinal part id.
+const streamedTextEvents = (text: string): EventPayload[] => [
+  {
+    directory,
+    payload: {
+      type: "session.next.text.started",
+      properties: { sessionID, assistantMessageID, textID: "txt_streamed", timestamp: 1700000003000 },
+    },
+  },
+  {
+    directory,
+    payload: {
+      type: "session.next.text.ended",
+      properties: { sessionID, assistantMessageID, textID: "txt_streamed", text, timestamp: 1700000003001 },
+    },
+  },
+]
+
+const streamedText = "Streaming added a later assistant text part."
 
 const assistantMessage = {
   info: {
@@ -119,13 +133,7 @@ test.describe("regression: session timeline local row state", () => {
     await wrapper.locator('[data-slot="collapsible-trigger"]').first().click()
     await expectExpanded(wrapper, false)
 
-    events.push({
-      directory,
-      payload: {
-        type: "message.part.updated",
-        properties: { part: streamedTextPart },
-      },
-    })
+    events.push(...streamedTextEvents(streamedText))
 
     await expect(page.locator(`[data-timeline-part-id="${textPartID}"]`).first()).toBeVisible({ timeout: 10_000 })
 
@@ -139,7 +147,7 @@ test.describe("regression: session timeline local row state", () => {
   test("does not remount an edit diff when sibling parts or diff counts update", async ({ page }) => {
     const events: EventPayload[] = []
     await installDiffProbe(page)
-    await mockServer(page, events)
+    await mockServer(page, events, [userMessage, runningEditMessage()])
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
@@ -151,13 +159,7 @@ test.describe("regression: session timeline local row state", () => {
     await expectAppVisible(file)
     await markDiffProbe(page)
 
-    events.push({
-      directory,
-      payload: {
-        type: "message.part.updated",
-        properties: { part: streamedTextPart },
-      },
-    })
+    events.push(...streamedTextEvents(streamedText))
 
     await expect(page.locator(`[data-timeline-part-id="${textPartID}"]`).first()).toBeVisible({ timeout: 10_000 })
     const siblingProbe = await readDiffProbe(page)
@@ -171,11 +173,26 @@ test.describe("regression: session timeline local row state", () => {
     })
 
     await markDiffProbe(page)
+    // V2 has no completed-tool mutation; the diff grows through tool progress
+    // while the edit runs, which exercises the same reconcile path.
     events.push({
       directory,
       payload: {
-        type: "message.part.updated",
-        properties: { part: editPartWithAdditions(2) },
+        type: "session.next.tool.progress",
+        properties: {
+          sessionID,
+          assistantMessageID,
+          callID: editPart.callID,
+          structured: {
+            filediff: {
+              ...editPart.state.metadata.filediff,
+              additions: 2,
+            },
+            diff: editPart.state.metadata.diff,
+          },
+          content: [],
+          timestamp: 1700000003500,
+        },
       },
     })
 
@@ -355,19 +372,23 @@ async function readDiffProbe(page: Page) {
     })
 }
 
-function editPartWithAdditions(additions: number) {
+function runningEditMessage() {
   return {
-    ...editPart,
-    state: {
-      ...editPart.state,
-      metadata: {
-        ...editPart.state.metadata,
-        filediff: {
-          ...editPart.state.metadata.filediff,
-          additions,
+    ...assistantMessage,
+    parts: [
+      {
+        ...editPart,
+        state: {
+          status: "running",
+          input: editPart.state.input,
+          metadata: {
+            filediff: editPart.state.metadata.filediff,
+            diff: editPart.state.metadata.diff,
+          },
+          time: { start: 1700000001000 },
         },
       },
-    },
+    ],
   }
 }
 

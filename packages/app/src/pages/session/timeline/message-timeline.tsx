@@ -52,6 +52,7 @@ import { normalize } from "@miao/session-ui/session-diff"
 import { useFileComponent } from "@miao/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { createSessionContent } from "./content"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { sessionPhaseLabelKey } from "@miao/session-ui/session-status-label"
@@ -309,13 +310,17 @@ export function MessageTimeline(props: {
     return sync().data.message[id] ?? emptyMessages
   })
   const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? language.t("command.session.new"))
-  const getMsgParts = (msgId: string) => sync().data.part[msgId] ?? emptyParts
+  // Stage 2 bridge (specs/v2/app-timeline-v2.md): timeline part content derives
+  // from the V2 session_message records instead of the projected data.part store.
+  const sessionContent = createSessionContent(sessionID, (id) => sync().data.session_message[id])
+  const parentContent = createSessionContent(parentID, (id) => sync().data.session_message[id])
+  const getMsgParts = (msgId: string) => sessionContent(msgId) ?? emptyParts
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
   const childTaskDescription = createMemo(() => {
     const id = sessionID()
     if (!id) return
     return parentMessages()
-      .flatMap((message) => getMsgParts(message.id))
+      .flatMap((message) => parentContent(message.id))
       .map((part) => taskDescription(part, id))
       .findLast((value): value is string => !!value)
   })
