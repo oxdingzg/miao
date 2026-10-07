@@ -2,7 +2,7 @@
 
 **语言 / Language:** [中文](rust-integration-risks.zh.md) | [English](rust-integration-risks.en.md)
 
-本文只谈“把 `crates/miao-native` 和 `miao-run` 真正接进 `packages/miao` 生产路径”会踩的坑。收益见 [miao vs opencode](miao-vs-opencode.zh.md)，这里说风险。
+本文只谈“把 `crates/miao-native` 和 `miao-run` 真正接进 `packages/miao` 生产路径”会踩的坑。收益见 [native component benchmarks](native-benchmarks.zh.md)，这里说风险。
 
 ## 一、阻断项（不解决就没法接）
 
