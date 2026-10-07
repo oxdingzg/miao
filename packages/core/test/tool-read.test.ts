@@ -7,6 +7,7 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { FileSystem } from "@miao/core/filesystem"
 import { FSUtil } from "@miao/core/fs-util"
+import { LSP } from "@miao/core/lsp"
 import { Location } from "@miao/core/location"
 import { Image } from "@miao/core/image"
 import { PermissionV2 } from "@miao/core/permission"
@@ -89,6 +90,29 @@ const pdf = Layer.succeed(
   }),
 )
 let allow = true
+// The read tool warms the language server for files it reads. The layer graph
+// is built once per file, so the spy delegates to a hook each test points at
+// its own recorder instead of rebuilding the graph.
+let lspWarm: ((file: string, mode?: "document" | "full") => Effect.Effect<void>) | undefined
+const lspSpy = Layer.succeed(
+  LSP.Service,
+  LSP.Service.of({
+    status: () => Effect.succeed([]),
+    diagnostics: () => Effect.succeed({}),
+    touchFile: () => Effect.void,
+    warm: (file, mode) => lspWarm?.(file, mode) ?? Effect.void,
+    hasClients: () => Effect.succeed(false),
+    definition: () => Effect.die("unused"),
+    references: () => Effect.die("unused"),
+    hover: () => Effect.die("unused"),
+    documentSymbol: () => Effect.die("unused"),
+    workspaceSymbol: () => Effect.die("unused"),
+    implementation: () => Effect.die("unused"),
+    prepareCallHierarchy: () => Effect.die("unused"),
+    incomingCalls: () => Effect.die("unused"),
+    outgoingCalls: () => Effect.die("unused"),
+  }),
+)
 const permission = Layer.succeed(
   PermissionV2.Service,
   PermissionV2.Service.of({
@@ -161,7 +185,7 @@ const unavailableImage = Layer.succeed(
   Image.Service.of({ normalize: () => Effect.fail(new Image.ResizerUnavailableError()) }),
 )
 const readLayer = (imageLayer: Layer.Layer<Image.Service>) =>
-  AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ReadTool.node]), [
+  AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ReadTool.node, LSP.node]), [
     [ReadToolFileSystem.node, reader],
     [ReadToolPdf.node, pdf],
     [PermissionV2.node, permission],
@@ -172,6 +196,7 @@ const readLayer = (imageLayer: Layer.Layer<Image.Service>) =>
     [Location.node, locationLayer],
     [Global.node, Global.layerWith({ data: Global.Path.data })],
     [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [LSP.node, lspSpy],
   ])
 const it = testEffect(readLayer(imageLayer))
 const itWithoutResizer = testEffect(readLayer(unavailableImage))
@@ -781,6 +806,29 @@ describe("ReadTool", () => {
           call: { type: "tool-call", id: "call-direct-binary", name: "read", input: { path: "late-binary" } },
         }),
       ).toEqual({ type: "error", value: "Cannot read binary file: late-binary" })
+    }),
+  )
+
+  it.effect("warms the language server for a file it reads", () =>
+    Effect.gen(function* () {
+      // The layer graph is built once for the file, so the spy delegates to a
+      // hook that each test can point at its own recorder.
+      const warmed: string[] = []
+      lspWarm = (file) =>
+        Effect.sync(() => {
+          warmed.push(file)
+        })
+      const registry = yield* ToolRegistry.Service
+
+      // The reader is fake here; the point is the LSP warm the successful read
+      // kicks off for the file it visited.
+      yield* settleTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-warm", name: "read", input: { path: "warm-probe.ts" } },
+      })
+
+      expect(warmed).toEqual([path.join(process.cwd(), "warm-probe.ts")])
     }),
   )
 })
