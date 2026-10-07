@@ -1139,6 +1139,8 @@ const layer = Layer.effect(
         readonly agents?: typeof Prompt.Type.agents
         readonly taskId?: string
         readonly background?: boolean
+        /** Let a read-only subagent default to the background when `background` is unset. */
+        readonly autoBackground?: boolean
         readonly context?: Tool.Context
       },
       delegation?: SessionDelegation.API,
@@ -1154,11 +1156,14 @@ const layer = Layer.effect(
       // Inherit the active turn, including a sampled model that changed after resolution.
       const parentAgent = yield* agents.select(parent.agent)
       const model = request.model ?? selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : (parent.model ?? parentAgent.info?.model))
-      if (request.background === true) {
-        if (!delegation || !request.context)
-          return yield* new ToolFailure({
-            message: "Background subagents are unavailable in this execution entry point.",
-          })
+      // An explicit choice always wins. Otherwise a read-only subagent defaults
+      // to the background so it cannot block the parent's turn. When the entry
+      // point carries no delegation capability, fall back to the blocking
+      // foreground path instead of failing.
+      const background =
+        request.background === true ||
+        (request.background === undefined && request.autoBackground === true && PermissionV2.readOnly(selection.info))
+      if (background && delegation !== undefined && request.context !== undefined) {
         if (request.taskId && (!resumed || resumed.parentID !== parentSessionID))
           return yield* new ToolFailure({ message: "Background task can only resume a child owned by this Session." })
         yield* permission.assert({
@@ -1524,7 +1529,7 @@ const layer = Layer.effect(
                       ),
                     }),
                 task: TaskTool.make((request) =>
-                    runSubagent(input.sessionID, request, input.delegation).pipe(
+                    runSubagent(input.sessionID, { ...request, autoBackground: true }, input.delegation).pipe(
                     Effect.mapError((error) =>
                       error instanceof ToolFailure ? error : new ToolFailure({ message: "Subagent task failed" }),
                     ),

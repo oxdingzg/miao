@@ -3,6 +3,7 @@ import { Effect, Exit, Scope } from "effect"
 import { AgentV2 } from "@miao/core/agent"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { Location } from "@miao/core/location"
+import { PermissionV2 } from "@miao/core/permission"
 import { AgentPlugin } from "@miao/core/plugin/agent"
 import { AbsolutePath } from "@miao/core/schema"
 import { location } from "./fixture/location"
@@ -126,6 +127,30 @@ describe("AgentV2", () => {
       for (const item of agents) {
         expect(item.permissions.some((rule) => rule.action === "bash" && rule.effect !== "deny")).toBe(false)
       }
+    }),
+  )
+
+  it.effect("classifies the built-in subagents that may never touch the workspace", () =>
+    Effect.gen(function* () {
+      const agent = yield* AgentV2.Service
+      yield* AgentPlugin.Plugin.effect(
+        host({
+          agent: agentHost(agent),
+        }),
+      ).pipe(
+        Effect.provideService(
+          Location.Service,
+          Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
+        ),
+      )
+
+      const readOnly = (yield* agent.all()).filter(PermissionV2.readOnly).map((item) => String(item.id))
+      // explore reads but neither edits nor runs the shell, so it may run in the
+      // background; the agents that change the workspace must keep blocking.
+      expect(readOnly).toContain("explore")
+      expect(readOnly).not.toContain("general")
+      expect(readOnly).not.toContain("build")
+      expect(readOnly).not.toContain("plan")
     }),
   )
 
