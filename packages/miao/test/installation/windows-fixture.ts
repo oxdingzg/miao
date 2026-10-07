@@ -9,6 +9,8 @@ export async function verifyWindowsUpgrade(filename = "miao.exe") {
   const directory = await mkdtemp(path.join(tmpdir(), "miao-upgrade-"))
   const installation = path.join(directory, "安装 with spaces", "Programs", "Miao")
   await mkdir(installation, { recursive: true })
+  // A stage a crashed or blocked run left behind must be swept by the next run.
+  await mkdir(path.join(installation, ".miao-upgrade-stale"), { recursive: true })
   const executable = path.join(installation, filename)
   assert.equal(isDirectInstall(executable), true)
   const launcher = filename === "miao-bin.exe" ? path.join(installation, "miao.exe") : undefined
@@ -63,6 +65,11 @@ Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
   await old.stdout.getReader().read()
   try {
     assert.deepEqual(await upgrade("1.2.3"), { code: 0, stderr: "" })
+    assert.equal(
+      (await readdir(installation)).some((name) => name.startsWith(".miao-upgrade-")),
+      false,
+      "the leftover stage directory is swept",
+    )
     assert.equal(old.exitCode, null, "the original process must still be running")
     const current = await Bun.file(executable).arrayBuffer()
     assert.equal((await readdir(installation)).filter((name) => name.startsWith(`${filename}.bak-`)).length, 1)

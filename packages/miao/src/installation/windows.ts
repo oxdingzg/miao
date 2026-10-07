@@ -46,6 +46,7 @@ $phase = 'prepare'
 $stage = $null
 $backup = $null
 $lock = $null
+$replaced = $false
 try {
   $version = $env:MIAO_UPGRADE_VERSION
   if ($version -notmatch '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$') { throw 'Invalid release version' }
@@ -53,6 +54,10 @@ try {
   $directory = Split-Path -Parent $destination
   $phase = 'lock'
   $lock = [IO.File]::Open((Join-Path $directory '.miao-upgrade.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  # A previous run leaves its stage behind when a locked file (antivirus, a
+  # still-running child) blocks removal. The lock proves no other installer is
+  # active, so sweep those leftover stages before creating this run's.
+  Get-ChildItem -LiteralPath $directory -Directory -Filter '.miao-upgrade-*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   $stage = Join-Path $directory ('.miao-upgrade-' + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $stage | Out-Null
   $asset = 'miao-windows-arm64.zip'
@@ -89,17 +94,28 @@ try {
     $backup = $destination + '.bak-' + [Guid]::NewGuid().ToString('N')
     [IO.File]::Replace($next, $destination, $backup)
   } else { [IO.File]::Move($next, $destination) }
+  $replaced = $true
   [Console]::Out.WriteLine('Installed ' + $version + '; previous executable: ' + $backup)
 } catch {
   # Avoid exposing credentials embedded in proxy URLs or arbitrary child output.
   $cause = $_.Exception
   while ($cause.InnerException) { $cause = $cause.InnerException }
-  [Console]::Error.WriteLine('Windows upgrade failed during ' + $phase + ' (' + $cause.GetType().Name + ', HRESULT=' + ('0x{0:X8}' -f $cause.HResult) + '). ' +
+  $detail = '(' + $cause.GetType().Name + ', HRESULT=' + ('0x{0:X8}' -f $cause.HResult) + ')'
+  if ($replaced) {
+    # The new build is already in place, so a later step only failed to tidy up.
+    # Report it as installed rather than a failure that leaves the user thinking
+    # they are still on the old version.
+    [Console]::Out.WriteLine('Installed ' + $version + '; post-install step failed during ' + $phase + ' ' + $detail + '.')
+    exit 0
+  }
+  [Console]::Error.WriteLine('Windows upgrade failed during ' + $phase + ' ' + $detail + '. ' +
     $(if ($phase -eq 'download') { 'Check HTTPS_PROXY or Windows system proxy settings and GitHub connectivity.' } else { 'The previous executable was preserved; check permissions, antivirus locks, and the release archive.' }))
   exit 1
 } finally {
-  $client.Dispose()
-  if ($lock) { $lock.Dispose() }
+  # Cleanup must never change the exit code: a throwing dispose would otherwise
+  # turn a successful install into a reported failure.
+  try { $client.Dispose() } catch { }
+  try { if ($lock) { $lock.Dispose() } } catch { }
   if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
 }
 `
