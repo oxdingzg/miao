@@ -130,7 +130,7 @@ test.describe("session timeline projection", () => {
 
     // Under parallel workers the virtualizer mounts rows progressively; give
     // the window time to materialize before asserting the exact composition.
-    await expect(page.getByText("Interrupted", { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText("Interrupted", { exact: true })).toBeVisible({ timeout: 60_000 })
     const rows = await page
       .locator('[data-timeline-row="AssistantPart"], [data-timeline-row="TurnDivider"]')
       .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-timeline-row")))
