@@ -3,7 +3,7 @@ export * as SessionPrune from "./prune"
 import { Message, type ContentPart, type ToolResultValue } from "@miao/llm"
 import { Token } from "../util/token"
 
-const CLEARED: ToolResultValue = { type: "text", value: "[older tool output cleared to save context]" }
+const CLEARED: ToolResultValue = { type: "text", value: "[older tool output archived by context management]" }
 
 /** Token budget of the most recent tool output kept verbatim. */
 export const PROTECT_TOKENS = 40_000
