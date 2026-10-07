@@ -25,4 +25,21 @@ export function recordCrash(kind: "uncaughtException" | "unhandledRejection", er
   process.stderr.write(`${kind}: ${detail.formatted}\n`)
 }
 
+/**
+ * Bun's default is to print an uncaught error or rejection and exit(1). The
+ * TUI's console is the in-app console, so that print is lost and a flash exit
+ * leaves no trace: record both to disk instead. An uncaught exception leaves
+ * the process in an unknown state and still exits. An unhandled rejection is
+ * a missed error handler, not a corrupt process, so after recording it the
+ * process keeps running — one dangling promise must not take down a
+ * long-running TUI or the server its windows attach to.
+ */
+export function installFatalHandlers() {
+  process.on("uncaughtException", (error) => {
+    recordCrash("uncaughtException", error)
+    process.exit(1)
+  })
+  process.on("unhandledRejection", (reason) => recordCrash("unhandledRejection", reason))
+}
+
 export * as Crash from "./crash"
