@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { $ } from "bun"
+import { Database as Sqlite } from "bun:sqlite"
 import { fileURLToPath } from "url"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
@@ -27,6 +28,7 @@ import { SessionTable } from "@miao/core/session/sql"
 import sessionMetadataMigration from "@miao/core/database/migration/20260511173437_session-metadata"
 import type { SqlClient as SqlClientService } from "effect/unstable/sql/SqlClient"
 import { Database } from "@miao/core/database/database"
+import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionV1 } from "@miao/core/v1/session"
 import { tmpdir } from "./fixture/tmpdir"
@@ -113,6 +115,36 @@ describe("DatabaseMigration", () => {
       ),
     )
   })
+
+  test("waits for a running window to quit before upgrading the schema", async () => {
+    await using tmp = await tmpdir()
+    const filename = path.join(tmp.path, "upgrade.sqlite")
+    const journal = new Sqlite(filename)
+    // An empty database file: initialization must take the exclusive path to
+    // build the schema.
+
+    // Another "window" holding the storage, the way the first running miao
+    // does: its runtime lock is held exclusively until the window quits.
+    const holder = await RuntimeOwnership.use(filename)
+
+    const upgraded = Effect.runPromise(Effect.scoped(Layer.build(Database.sharedLayerFromPath(filename))))
+
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    // The schema build must still be waiting, not failed or done: the other
+    // window holds the runtime lock.
+    const during = journal
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'")
+      .all() as Array<{ name: string }>
+    expect(during).toHaveLength(0)
+    holder.release()
+    await upgraded
+
+    const completed = journal
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'")
+      .all() as Array<{ name: string }>
+    expect(completed).toHaveLength(1)
+    journal.close()
+  }, 20_000)
 
   test("enables incremental auto-vacuum on a new database", async () => {
     await using tmp = await tmpdir()
