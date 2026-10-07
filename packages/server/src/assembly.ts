@@ -40,6 +40,7 @@ import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "./cors"
 import { authorizationLayer } from "./middleware/authorization"
 import { schemaErrorLayer } from "./middleware/schema-error"
 import { errorLayer } from "./middleware/error"
+import { statusLogLayer } from "./middleware/status-log"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
 import { layer as locationLayer } from "./location"
@@ -80,7 +81,7 @@ const apiRoutes = (auth: AssemblyOptions["auth"], runtime: AssemblyOptions["runt
   HttpApiBuilder.layer(Api).pipe(
     Layer.provide(handlers),
     Layer.provide(runtime ? Layer.succeed(RuntimeIdentity.Service)(runtime) : Layer.empty),
-    Layer.provide([authorizationLayer.pipe(Layer.provide(auth ?? ServerAuth.Config.layer)), schemaErrorLayer]),
+    Layer.provide([statusLogLayer, authorizationLayer.pipe(Layer.provide(auth ?? ServerAuth.Config.layer)), schemaErrorLayer, errorLayer]),
   )
 
 type RouteRequirements =
