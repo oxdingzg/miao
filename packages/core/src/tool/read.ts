@@ -6,6 +6,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { Image } from "../image"
 import { InstructionContext } from "../instruction-context"
+import { LSP } from "../lsp"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
@@ -44,6 +45,7 @@ const layer = Layer.effectDiscard(
     const pdf = yield* ReadToolPdf.Service
     const permission = yield* PermissionV2.Service
     const instructions = yield* InstructionContext.Service
+    const lsp = yield* LSP.Service
 
     yield* tools
       .register({
@@ -136,25 +138,32 @@ const layer = Layer.effectDiscard(
                   return new ReadToolPdf.Pages({ ...pages, images })
                 }
                 if (input.pages !== undefined) return yield* new ReadToolPdf.PagesError({ reason: PAGES_PDF_ONLY })
-                const content = read.content
-                if (
-                  "encoding" in content &&
-                  content.encoding === "base64" &&
-                  SUPPORTED_IMAGE_MIMES.has(content.mime)
-                ) {
-                  return yield* image
-                    .normalize(resource, { ...content, encoding: "base64" })
-                    .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
-                }
-                if ("encoding" in content && content.encoding === "base64")
-                  return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
-                const nearby = (yield* instructions.nearby({ sessionID: context.sessionID, path: absolute })).map(
-                  (file) => ({ path: file.path, content: file.content }),
-                )
-                if (nearby.length === 0) return content
-                if (content instanceof ReadToolFileSystem.TextPage)
-                  return new ReadToolFileSystem.TextPage({ ...content, instructions: nearby })
-                return { ...content, instructions: nearby }
+                const output = yield* Effect.gen(function* () {
+                  const content = read.content
+                  if (
+                    "encoding" in content &&
+                    content.encoding === "base64" &&
+                    SUPPORTED_IMAGE_MIMES.has(content.mime)
+                  ) {
+                    return yield* image
+                      .normalize(resource, { ...content, encoding: "base64" })
+                      .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
+                  }
+                  if ("encoding" in content && content.encoding === "base64")
+                    return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
+                  const nearby = (yield* instructions.nearby({ sessionID: context.sessionID, path: absolute })).map(
+                    (file) => ({ path: file.path, content: file.content }),
+                  )
+                  if (nearby.length === 0) return content
+                  if (content instanceof ReadToolFileSystem.TextPage)
+                    return new ReadToolFileSystem.TextPage({ ...content, instructions: nearby })
+                  return { ...content, instructions: nearby }
+                })
+                // The read succeeded, so prime the language server in the
+                // background: a follow-up edit of this file then skips the
+                // synchronous open-and-diagnostics wait at edit time.
+                yield* lsp.warm(target.canonical, "document")
+                return output
               }).pipe(
                 Effect.mapError((error) => {
                   const message =
@@ -191,5 +200,6 @@ export const node = makeLocationNode({
     Image.node,
     PermissionV2.node,
     InstructionContext.node,
+    LSP.node,
   ],
 })

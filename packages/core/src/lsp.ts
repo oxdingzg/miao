@@ -2,7 +2,7 @@ export * as LSP from "./lsp"
 
 import path from "path"
 import { spawn } from "node:child_process"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema, Scope } from "effect"
 import { Config } from "./config"
 import { Location } from "./location"
 import { FSUtil } from "./fs-util"
@@ -32,6 +32,8 @@ export interface Interface {
   readonly diagnostics: () => Effect.Effect<Record<string, ReadonlyArray<Diagnostic>>>
   /** Opens or refreshes a file in every matching server and waits briefly for diagnostics. */
   readonly touchFile: (file: string, mode?: "document" | "full") => Effect.Effect<void>
+  /** Starts a background {@link touchFile} for a file that was only read; returns immediately. */
+  readonly warm: (file: string, mode?: "document" | "full") => Effect.Effect<void>
   /** Whether any configured server advertises the file's extension. */
   readonly hasClients: (file: string) => Effect.Effect<boolean>
   readonly definition: (input: LocationInput) => Effect.Effect<ReadonlyArray<unknown>, RequestUnavailableError>
@@ -116,6 +118,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const location = yield* Location.Service
     const fs = yield* FSUtil.Service
+    const scope = yield* Scope.Scope
 
     const entries = yield* config.entries()
     let configured: Config.Info["lsp"]
@@ -327,6 +330,13 @@ const layer = Layer.effect(
       }
     })
 
+    // Fire-and-forget warm-up for a file a tool merely read: primes the
+    // connection and its diagnostics so a follow-up edit's synchronous touch is
+    // already served. Runs in the LSP node's own scope, so it never outlives
+    // the location and never fails the reader that started it.
+    const warm = (file: string, mode?: "document" | "full") =>
+      touchFile(file, mode).pipe(Effect.ignoreCause, Effect.forkIn(scope), Effect.asVoid)
+
     const definition = locationRequest("textDocument/definition")
     const references = locationRequest("textDocument/references")
     const hover = locationRequest("textDocument/hover")
@@ -377,6 +387,7 @@ const layer = Layer.effect(
         ),
       diagnostics: () => Effect.sync(() => Object.fromEntries(diagnosticsByURI)),
       touchFile,
+      warm,
       hasClients: Effect.fn("LSP.hasClients")(function* (file: string) {
         const extension = path.extname(file)
         return [...servers.values()].some((server) => server.extensions.includes(extension))
