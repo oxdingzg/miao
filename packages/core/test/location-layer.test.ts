@@ -264,7 +264,7 @@ describe("LocationServiceMap", () => {
             terminal_start: "exclusive",
             terminal_stop: "exclusive",
             terminal_write: "exclusive",
-            todowrite: "exclusive",
+            todowrite: "concurrent",
             webfetch: "concurrent",
             websearch: "concurrent",
             write: "exclusive",
