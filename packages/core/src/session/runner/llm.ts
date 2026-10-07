@@ -16,6 +16,7 @@ import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, 
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
+import { ContextNotice } from "../context-notice"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -254,6 +255,9 @@ const layer = Layer.effect(
     // cleared when compaction rewrites the history so the next decision sees the
     // smaller window rather than the pre-compaction size.
     const lastPromptTokens = new Map<string, number>()
+    // Highest context band already announced per session; reset when
+    // compaction rewrites the history so the smaller window re-arms notices.
+    const lastContextNotice = new Map<string, number>()
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
@@ -695,6 +699,7 @@ const layer = Layer.effect(
         if (compacted) {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
           lastPromptTokens.delete(session.id)
+          lastContextNotice.delete(session.id)
         }
         yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
@@ -712,8 +717,27 @@ const layer = Layer.effect(
       ) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
         lastPromptTokens.delete(session.id)
+        lastContextNotice.delete(session.id)
         yield* recordCompaction(session.id, "threshold", Date.now() - compactCheckedAt)
         return yield* Effect.die(continueAfterCompaction(currentStep))
+      }
+      // Models guess "nearly exhausted" from routine pruning markers without a
+      // real number (observed live); surface the provider-reported usage once
+      // per 10% band from 70% so the model works from facts.
+      const contextNotice = ContextNotice.notice({
+        observedTokens: lastPromptTokens.get(session.id) ?? 0,
+        context: model.route.defaults.limits?.context ?? 0,
+        announced: lastContextNotice.get(session.id) ?? 0,
+      })
+      if (contextNotice?.announce) {
+        lastContextNotice.set(session.id, contextNotice.band)
+        yield* events.publish(SessionEvent.Synthetic, {
+          sessionID: session.id,
+          timestamp: yield* DateTime.now,
+          messageID: SessionMessage.ID.create(),
+          text: `Context status: about ${contextNotice.percent}% of the model context window is in use (${contextNotice.observed} of ${contextNotice.context} tokens). Older tool outputs are archived automatically and compaction runs near the limit — keep working normally, no action is required.`,
+          metadata: { [ContextNotice.MARKER]: true },
+        })
       }
       const compactMs = Date.now() - compactStartedAt
       const startSnapshotStartedAt = Date.now()
@@ -913,6 +937,7 @@ const layer = Layer.effect(
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             yield* recordCompaction(session.id, "recovery")
             lastPromptTokens.delete(session.id)
+            lastContextNotice.delete(session.id)
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
           if (overflowFailure) yield* publish(overflowFailure)
