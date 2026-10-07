@@ -169,7 +169,7 @@ for (const scenario of ["completion", "interruption"] as const) {
     await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0)
     await expect(page.locator('[data-timeline-row="bottom-spacer"]')).toBeVisible()
     if (scenario === "interruption")
-      await expect(page.getByText("Provider turn interrupted", { exact: true })).toBeVisible()
+      await expect(page.getByTestId("timeline-divider-interrupted")).toBeVisible()
     expect(
       await page.evaluate(() => {
         const state = (window as Window & { __historyRootProbe?: { hidden: boolean; stop: boolean } })

@@ -128,15 +128,21 @@ test.describe("session timeline projection", () => {
     })
     await setupTimeline(page, { messages: [user, before, after] })
 
-    // The structural locator is i18n-independent; the virtualizer may mount
-    // rows progressively under parallel workers.
-    await expect(page.getByTestId("timeline-divider-interrupted")).toBeVisible({ timeout: 30_000 })
-    const rows = await page
-      .locator('[data-timeline-row="AssistantPart"], [data-timeline-row="TurnDivider"]')
-      .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-timeline-row")))
-    expect(rows).toEqual(["AssistantPart", "TurnDivider", "AssistantPart"])
+    // The virtualizer mounts rows progressively under parallel workers, so the
+    // exact composition is asserted through a retrying poll instead of a
+    // one-shot snapshot that races the mount. The structural locator is
+    // i18n-independent; once the composition holds, the divider is mounted.
+    await expect
+      .poll(
+        () =>
+          page
+            .locator('[data-timeline-row="AssistantPart"], [data-timeline-row="TurnDivider"]')
+            .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-timeline-row"))),
+        { timeout: 15_000 },
+      )
+      .toEqual(["AssistantPart", "TurnDivider", "AssistantPart"])
+    await expect(page.getByTestId("timeline-divider-interrupted")).toBeVisible()
   })
-
 
   test("renders user image, file attachment, file reference, and agent reference", async ({ page }) => {
     const rich: Message = {

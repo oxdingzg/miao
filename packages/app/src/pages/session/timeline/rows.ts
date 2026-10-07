@@ -162,15 +162,24 @@ export namespace Timeline {
         return candidate.data.message
       return undefined
     }
+    // An interruption rides on the aborted assistant message. V2 records carry
+    // `finish: "aborted"` or an error whose type or text reads as
+    // abort/interrupt: the schema types live `error.type` as the literal
+    // "unknown", so the signal hides in the error text ("Provider turn
+    // interrupted"), while mock and legacy records reuse the error name as the
+    // type ("MessageAbortedError") or nest the text under `data.message`.
     const aborted = (message: TurnAssistant) => {
-      const error = message.error as { name?: unknown } | undefined
-      if (error && typeof error.name === "string" && error.name.toLowerCase().includes("abort")) return true
-      return errorText(message.error)?.toLowerCase().includes("abort") ?? false
+      if (message.finish === "aborted") return true
+      const error = message.error
+      if (!error || typeof error !== "object") return false
+      const shaped = error as { name?: unknown; type?: unknown }
+      const kind = typeof shaped.type === "string" ? shaped.type : typeof shaped.name === "string" ? shaped.name : ""
+      return /abort|interrupt/.test(`${kind} ${errorText(error) ?? ""}`.toLowerCase())
     }
     const interruptedMessageIndex = assistantMessages.findIndex(aborted)
     const interrupted = interruptedMessageIndex !== -1
-    const latestError = assistantMessages.at(-1)?.error
-    const error = latestError && latestError.message.toLowerCase().includes("abort") ? undefined : latestError
+    const lastMessage = assistantMessages.at(-1)
+    const error = lastMessage && aborted(lastMessage) ? undefined : lastMessage?.error
 
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)

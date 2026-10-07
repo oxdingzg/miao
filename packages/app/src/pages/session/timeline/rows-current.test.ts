@@ -192,4 +192,72 @@ describe("current session timeline rows", () => {
 
     expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
   })
+
+  test("renders the interrupted divider for every abort signal shape", () => {
+    const signals: Array<Record<string, unknown>> = [
+      { finish: "aborted" },
+      { error: { type: "unknown", message: "Provider turn interrupted" } },
+      { error: { type: "MessageAbortedError", message: "Stopped" } },
+      { error: { name: "MessageAbortedError", data: { message: "Stopped" } } },
+    ]
+    for (const signal of signals) {
+      const source = [
+        { id: "msg_1", type: "user", text: "go", time: { created: 1 } },
+        {
+          id: "msg_2",
+          type: "assistant",
+          agent: "build",
+          model: { id: "model", providerID: "provider" },
+          content: [],
+          time: { created: 2, completed: 3 },
+          ...signal,
+        },
+        {
+          id: "msg_3",
+          type: "assistant",
+          agent: "build",
+          model: { id: "model", providerID: "provider" },
+          content: [],
+          time: { created: 4, completed: 5 },
+        },
+      ] as SessionMessageInfo[]
+
+      const result = Timeline.constructSessionMessageRows(source, () => [], true, "idle", true, [])
+
+      expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "TurnDivider"])
+    }
+  })
+
+  test("suppresses the error row only when the final message is the aborted one", () => {
+    const abortedLast = [
+      { id: "msg_1", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_2",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [],
+        error: { type: "unknown", message: "Provider turn interrupted" },
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const failedLast = [
+      { id: "msg_1", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_2",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [],
+        error: { type: "unknown", message: "Provider rate limited" },
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const aborted = Timeline.constructSessionMessageRows(abortedLast, () => [], true, "idle", true, [])
+    const failed = Timeline.constructSessionMessageRows(failedLast, () => [], true, "idle", true, [])
+
+    expect(aborted.rows.map((row) => row._tag)).toEqual(["UserMessage", "TurnDivider"])
+    expect(failed.rows.map((row) => row._tag)).toEqual(["UserMessage", "Error"])
+  })
 })
