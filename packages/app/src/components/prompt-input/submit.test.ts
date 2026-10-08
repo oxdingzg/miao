@@ -16,9 +16,10 @@ const optimistic: Array<{
   directory?: string
   sessionID?: string
   message: {
-    agent: string
-    model: { providerID: string; modelID: string }
-    variant?: string
+    id: string
+    text: string
+    time: { created: number }
+    type: "user"
   }
 }> = []
 const optimisticSeeded: boolean[] = []
@@ -215,7 +216,7 @@ beforeAll(async () => {
           add: (value: {
             directory?: string
             sessionID?: string
-            message: { agent: string; model: { providerID: string; modelID: string; variant?: string } }
+            message: { id: string; text: string; time: { created: number }; type: "user" }
           }) => {
             optimistic.push(value)
             optimisticSeeded.push(
@@ -475,10 +476,11 @@ describe("prompt submit worktree selection", () => {
 
     expect(optimistic).toHaveLength(1)
     expect(optimistic[0]).toMatchObject({
-      message: {
-        agent: "agent",
-        model: { providerID: "provider", modelID: "model", variant: "high" },
-      },
+      message: { text: "ls", type: "user" },
+    })
+    expect(selections).toContainEqual({
+      sessionID: "session-1",
+      model: { id: "model", providerID: "provider", variant: "high" },
     })
     expect(sentPrompts).toEqual(["/repo/main"])
     expect(selections).toContainEqual({
@@ -554,9 +556,11 @@ describe("prompt submit worktree selection", () => {
     await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
 
     expect(optimistic[0]).toMatchObject({
-      message: {
-        model: { providerID: "draft-provider", modelID: "draft-model", variant: "draft-variant" },
-      },
+      message: { type: "user" },
+    })
+    expect(selections).toContainEqual({
+      sessionID: "session-1",
+      model: { id: "draft-model", providerID: "draft-provider", variant: "draft-variant" },
     })
   })
 

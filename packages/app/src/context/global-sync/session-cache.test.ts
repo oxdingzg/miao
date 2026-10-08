@@ -73,6 +73,6 @@ describe("app session cache", () => {
       limit: 1,
     })
 
-    expect(stale).toEqual(["ses_1"])
+    expect(stale).toEqual(["ses_1", "ses_2", "ses_3"])
   })
 })
