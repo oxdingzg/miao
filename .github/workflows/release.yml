@@ -94,10 +94,9 @@ jobs:
           release="v${{ needs.version.outputs.version }}"
           repo="${{ needs.version.outputs.repo }}"
           notes=$(gh release view "$release" --repo "$repo" --json body -q .body)
-          # Release bodies are English, with a 简体中文 link to the mirror at
-          # docs/releases/<tag>.zh.md. The helper fails if the mirror is missing.
+          # Read the curated English/Chinese pair, not the shorter draft changelog.
+          # The helper fails if either versioned document is missing.
           printf '%s' "$notes" | GH_REPO="$repo" bun script/release-notes.ts "$release" > body.md
-          printf '\n---\n\n%s\n' 'Windows binaries are currently unsigned.' >> body.md
           gh release edit "$release" --repo "$repo" --draft=false --notes-file body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
