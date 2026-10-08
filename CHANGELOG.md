@@ -10,6 +10,20 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-10-08
+
+### Fixed
+- **ci**: enforce scoped checks and preserve reproducible environments (#444) (`aa948d4f0`)
+- **core**: coalesce scheduled machine continuations (#450) (`0dfbd394b`)
+- **tui**: retry prompt transport failures with stable admission IDs (#448) (`1146febe9`)
+- **core**: admit monitor notices before waking idle sessions (#447) (`0c6f58749`)
+- **tui**: stabilize adaptive transcript viewport coverage (#445) (`fc76ca35d`)
+- **app**: finish the stage 3 record-native timeline cutover (#428) (`1e3fd96dd`)
+- **llm**: preserve nested response errors and retry transient streams (#440) (`e62131853`)
+- **tui**: support control home and end input navigation (#439) (`9b5959d74`)
+- **miao**: recognize standalone Windows upgrades (#437) (`2462ac553`)
+- **tui**: refresh the Todo panel on live todo.updated events (#429) (`20d240284`)
+
 ## [0.1.25] - 2026-10-08
 
 ### Added
