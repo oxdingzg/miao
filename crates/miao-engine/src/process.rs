@@ -52,6 +52,7 @@ struct Runner {
     temp: PathBuf,
     argv: Vec<String>,
     allow_network: bool,
+    timeout_ms: u64,
 }
 
 /// The binary calls this before constructing Tokio: Linux confinement must be
@@ -99,10 +100,120 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+#[cfg(unix)]
+static GUARDIAN_TERMINATE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(unix)]
+extern "C" fn guardian_signal(_: libc::c_int) {
+    GUARDIAN_TERMINATE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A small synchronous guardian retains a private stdin lifeline. Parent hard
+/// exit closes the pipe and kills the entire ordinary process group, even when
+/// Rust destructors cannot run. User command stdin remains /dev/null.
+#[cfg(unix)]
+pub fn guardian(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if payload.len() > 65536 {
+        return Err("guardian payload exceeds limit".into());
+    }
+    let spec: Runner = serde_json::from_str(payload)?;
+    let group = unsafe { libc::getpgrp() };
+    if group != unsafe { libc::getpid() } {
+        return Err("guardian requires its own process group".into());
+    }
+    struct FailureGuard {
+        group: i32,
+    }
+    impl Drop for FailureGuard {
+        fn drop(&mut self) {
+            unsafe {
+                libc::kill(-self.group, libc::SIGKILL);
+            }
+        }
+    }
+    let _guard = FailureGuard { group };
+    unsafe {
+        libc::signal(
+            libc::SIGTERM,
+            guardian_signal as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGINT,
+            guardian_signal as *const () as libc::sighandler_t,
+        );
+    }
+    let mut child = std::process::Command::new(std::env::current_exe()?)
+        .args(["__sandbox-run", payload])
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+    let deadline =
+        std::time::Instant::now() + Duration::from_millis(spec.timeout_ms.saturating_add(1000));
+    let mut terminated = None;
+    let mut completed = None;
+    loop {
+        let mut fd = libc::pollfd {
+            fd: 0,
+            events: libc::POLLIN | libc::POLLHUP,
+            revents: 0,
+        };
+        let polled = unsafe { libc::poll(&mut fd, 1, 25) };
+        if polled < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        if fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            unsafe {
+                libc::kill(-group, libc::SIGKILL);
+            }
+            return Err("guardian lost its owner".into());
+        }
+        if fd.revents & libc::POLLIN != 0 {
+            let mut byte = 0u8;
+            if unsafe { libc::read(0, (&mut byte as *mut u8).cast(), 1) } <= 0 {
+                unsafe {
+                    libc::kill(-group, libc::SIGKILL);
+                }
+                return Err("guardian lost its owner".into());
+            }
+        }
+        if completed.is_none() {
+            completed = child.try_wait()?;
+        }
+        if terminated.is_none()
+            && (completed.is_some()
+                || GUARDIAN_TERMINATE.load(std::sync::atomic::Ordering::Relaxed)
+                || std::time::Instant::now() >= deadline)
+        {
+            terminated = Some(std::time::Instant::now());
+            unsafe {
+                libc::kill(-group, libc::SIGTERM);
+            }
+        }
+        if terminated.is_some_and(|time| time.elapsed() >= Duration::from_millis(150)) {
+            if let Some(status) = completed {
+                use std::os::unix::process::ExitStatusExt;
+                // The engine remains responsible for the final SIGKILL sweep.
+                // Parent-loss detection above remains active during grace.
+                std::process::exit(status.code().unwrap_or(128 + status.signal().unwrap_or(1)));
+            }
+            unsafe {
+                libc::kill(-group, libc::SIGKILL);
+            }
+            return Err("guardian deadline exceeded".into());
+        }
+    }
+}
+#[cfg(not(unix))]
+pub fn guardian(_: &str) -> Result<(), Box<dyn std::error::Error>> {
+    Err("process guardian unsupported".into())
+}
+
 struct Group {
     child: Child,
     pid: u32,
     armed: bool,
+    _lifeline: Option<tokio::process::ChildStdin>,
 }
 impl Group {
     #[cfg(unix)]
@@ -150,13 +261,14 @@ pub(crate) async fn execute(
         temp: temp.path().into(),
         argv: input.argv,
         allow_network,
+        timeout_ms: input.timeout_ms,
     };
     let mut command = Command::new(runner);
     command
-        .arg("__sandbox-run")
+        .arg("__process-guardian")
         .arg(serde_json::to_string(&spec).map_err(|_| ToolError::InvalidInput)?)
         .env_clear()
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -175,13 +287,15 @@ pub(crate) async fn execute(
         use std::os::unix::process::CommandExt;
         command.as_std_mut().process_group(0);
     }
-    let child = command.spawn()?;
+    let mut child = command.spawn()?;
+    let lifeline = child.stdin.take();
     let mut group = Group {
         pid: child
             .id()
             .ok_or_else(|| ToolError::Io(std::io::Error::other("child has no pid")))?,
         child,
         armed: true,
+        _lifeline: lifeline,
     };
     let mut readers = JoinSet::new();
     if let Some(stdout) = group.child.stdout.take() {

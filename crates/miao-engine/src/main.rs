@@ -79,12 +79,20 @@ fn yes() -> bool {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() == Some("__sandbox-run") {
+    let mode = args.next();
+    if matches!(
+        mode.as_deref(),
+        Some("__sandbox-run" | "__process-guardian")
+    ) {
         let payload = args.next().ok_or("sandbox payload missing")?;
         if args.next().is_some() {
             return Err("unexpected sandbox arguments".into());
         }
-        return miao_engine::process::sandbox_runner(&payload);
+        return if mode.as_deref() == Some("__process-guardian") {
+            miao_engine::process::guardian(&payload)
+        } else {
+            miao_engine::process::sandbox_runner(&payload)
+        };
     }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
