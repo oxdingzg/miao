@@ -114,3 +114,31 @@ The owner-only `POST /api/runtime/control/configuration` endpoint accepts a root
 Without `MIAO_REMOTE_CONTROL_CONFIG`, the Runtime uses a private `.remote-control` sidecar directory next to its session database. A disabled Runtime still exposes its stable public host identity to its local administrator, allowing account registration before connecting. Existing private environment-selected configurations continue to load. Credentials never appear in status responses, and failed validation or an unsafe target does not replace a working configuration.
 
 The generated local SDK exposes `client["server.runtime"].configure`. This is the backend path for the setup wizard; the account-login and channel-selection UI are delivered separately. Loopback plaintext is allowed only by an already private test configuration or an explicit test-only manager option, never by the public configuration payload.
+
+
+## Desktop Hub selection
+
+The desktop Remote Control dialog offers **使用默认 Hub** and **指定其他 Hub** before
+account login when a private default is configured. Without a default, it prompts
+for the Hub address. Provider discovery selects the available GitHub/Google login
+methods advertised by that Hub; network errors and malformed discovery responses
+are shown as errors instead of falling back to a password form. A legacy Hub that
+returns HTTP 404 for provider discovery can still use password login.
+
+Store the operator default outside the checkout in
+`$XDG_CONFIG_HOME/miao/remote-control/client.json` (normally
+`$HOME/.config/miao/remote-control/client.json`), with owner-only permissions
+(`0600` on Unix):
+
+```json
+{
+  "defaultHubURL": "https://relay.example.invalid"
+}
+```
+
+`MIAO_REMOTE_CONTROL_SETTINGS` overrides the settings file path, and
+`MIAO_HUB_URL` overrides the default URL. The file accepts only `defaultHubURL`,
+a root HTTPS origin without credentials, query, fragment, or path. Account
+credentials do not belong in this file. Selecting a default does not log in,
+register a host, or grant a phone access: complete desktop account login and
+locally approve the device grant before opening a remote session.

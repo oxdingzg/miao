@@ -17,8 +17,11 @@ export async function read(filename: string, environmentHub?: string): Promise<S
   if (!file) return {}
   try {
     const stat = await file.stat()
-    if (!stat.isFile() || stat.size > 16384 ||
-        (process.platform !== "win32" && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.())))
+    if (
+      !stat.isFile() ||
+      stat.size > 16384 ||
+      (process.platform !== "win32" && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()))
+    )
       throw new Error("Remote Control client settings must be an owner-only regular file")
     const decoded = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Settings)), {
       onExcessProperty: "error",

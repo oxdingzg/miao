@@ -158,19 +158,42 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                 description: "登录中继账号并登记这台电脑，无需重启会话",
                 onSelect: () =>
                   void (async () => {
-                    const defaults = await local.settings?.() ?? {}
+                    const defaults = (await local.settings?.()) ?? {}
                     const configuredHub = defaults.defaultHubURL ?? process.env.MIAO_HUB_URL
-                    const choice = configuredHub ? await new Promise<"default" | "custom" | undefined>((resolve) => {
-                      dialog.replace(() => <DialogSelect title="选择 Hub" options={[
-                        { value: "default", title: "使用默认 Hub", description: configuredHub, onSelect: () => resolve("default") },
-                        { value: "custom", title: "指定其他 Hub", description: "登录你选择的公共或自建中继", onSelect: () => resolve("custom") },
-                      ]} />, () => resolve(undefined))
-                    }) : "custom"
+                    const choice = configuredHub
+                      ? await new Promise<"default" | "custom" | undefined>((resolve) => {
+                          dialog.replace(
+                            () => (
+                              <DialogSelect
+                                title="选择 Hub"
+                                options={[
+                                  {
+                                    value: "default",
+                                    title: "使用默认 Hub",
+                                    description: configuredHub,
+                                    onSelect: () => resolve("default"),
+                                  },
+                                  {
+                                    value: "custom",
+                                    title: "指定其他 Hub",
+                                    description: "登录你选择的公共或自建中继",
+                                    onSelect: () => resolve("custom"),
+                                  },
+                                ]}
+                              />
+                            ),
+                            () => resolve(undefined),
+                          )
+                        })
+                      : "custom"
                     if (!choice) return reopen()
-                    const hubURL = choice === "default" ? configuredHub : await DialogPrompt.show(dialog, "中继地址", {
-                      placeholder: "https://hub.example.com",
-                      value: configuredHub ?? "",
-                    })
+                    const hubURL =
+                      choice === "default"
+                        ? configuredHub
+                        : await DialogPrompt.show(dialog, "中继地址", {
+                            placeholder: "https://hub.example.com",
+                            value: configuredHub ?? "",
+                          })
                     if (!hubURL) return reopen()
                     const discovered = await local.providers({ hubURL })
                     const social = discovered.providers.filter(
@@ -203,7 +226,13 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                     const connecting = local.setup({ hubURL, email, password, name, runtime })
                     password = null
                     await connect(connecting)
-                  })().catch((error: unknown) => DialogAlert.show(dialog, "Hub 登录未完成", error instanceof Error ? error.message : "请检查 Hub 配置并重试")),
+                  })().catch((error: unknown) =>
+                    DialogAlert.show(
+                      dialog,
+                      "Hub 登录未完成",
+                      error instanceof Error ? error.message : "请检查 Hub 配置并重试",
+                    ),
+                  ),
               },
             ]
           : []),

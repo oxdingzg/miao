@@ -32,7 +32,9 @@ export async function providers(input: {
     credentials: "omit",
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(10000),
-  }).catch(() => { throw new Error("Hub login methods could not be discovered; check the connection and retry") })
+  }).catch(() => {
+    throw new Error("Hub login methods could not be discovered; check the connection and retry")
+  })
   if (response.status === 404) return { providers: [] }
   if (!response.ok) throw new Error("Hub login methods could not be discovered; check the connection and retry")
   const body: unknown = await response.json().catch(() => undefined)
@@ -56,7 +58,10 @@ export async function connect(input: {
   const request = relayRequest(origin, input.fetch ?? fetch)
   let login: string | undefined
   try {
-    const signedIn = await request("/api/auth/sign-in/email", undefined, { email: input.email, password: input.password })
+    const signedIn = await request("/api/auth/sign-in/email", undefined, {
+      email: input.email,
+      password: input.password,
+    })
     login = signedIn.headers.get("set-auth-token") ?? undefined
     if (!signedIn.ok || !login) throw new Error("Relay login failed")
     const accessResponse = await request("/api/auth/token", login)
