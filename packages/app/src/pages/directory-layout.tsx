@@ -61,7 +61,7 @@ export function DirectoryDataProvider(
     <Show when={directory()} keyed>
       {(directory) => (
         <DataProvider
-          data={{ ...sync().data, message: sync().data.session_message }}
+          data={{ ...sync().data }}
           directory={directory}
           sessionID={params.id}
           onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}

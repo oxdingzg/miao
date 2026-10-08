@@ -349,7 +349,7 @@ export function MessageTimeline(props: {
   // the V1 view-model map only feeds non-render lookups.
   const recordByID = createMemo(() => {
     const id = sessionID()
-    return new Map((id ? (sync().data.session_message[id] ?? []) : []).map((message) => [message.id, message] as const))
+    return new Map((id ? (sync().data.message[id] ?? []) : []).map((message) => [message.id, message] as const))
   })
   const messageLastRowIndex = projection.messageLastRowIndex
   const messageRowIndex = projection.messageRowIndex
