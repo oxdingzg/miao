@@ -300,4 +300,4 @@ bun --cwd packages/miao test
 
 ## License
 
-MIT. See [LICENSE](../LICENSE).
+MIT. See [LICENSE](../LICENSE) and [project origins and licensing](attribution.en.md).

@@ -3,7 +3,7 @@
 [English](why-miao.en.md)
 
 **如果你希望任务执行时还能补充要求、看清上下文和费用变化，并在终端里管理并行工作，miao
-值得试用。** 它延续 opencode 的开源编程工作流，把重点放在模型周围的执行、上下文和交互上。
+值得试用。** miao 把重点放在模型周围的执行、上下文和交互上。
 模型选择、MCP、LSP 与子代理不是 miao 独有；差异在于这些能力如何组合、哪些状态可见，以及
 失败时留下怎样的记录。
 
@@ -103,3 +103,5 @@ miao 可以单独运行；在 mtty 中，它上报工作、等待输入、完成
 源码依据：[会话执行](../packages/core/src/session/runner/llm.ts)、[输入准入](../packages/core/src/session/input.ts)、
 [输出治理](../packages/core/src/tool-output-store.ts)、[压缩](../packages/core/src/session/compaction.ts)、
 [编辑恢复](edit-recovery.md)、[read/LSP](../packages/core/src/tool/read.ts)、[权限与隔离](../SECURITY.zh.md)。
+
+项目来源与许可说明见[项目来源与许可](attribution.zh.md)。

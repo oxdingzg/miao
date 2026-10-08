@@ -198,4 +198,10 @@ cd packages/miao
 bun typecheck
 ```
 
-miao 采用 MIT 许可证。详见 [LICENSE](LICENSE)。
+## 致谢与许可
+
+miao 衍生自 [opencode](https://github.com/anomalyco/opencode)，项目中相当一部分代码来自其 MIT 授权的实现。感谢 opencode 作者与贡献者提供的基础。miao 作为单独的项目维护，有自己的开发方向与发布版本。
+
+miao 采用 MIT 许可证。[LICENSE](LICENSE) 保留 miao 作者和 opencode 的版权声明，以及 MIT 授权声明。分发软件副本或其中的实质性部分时，请一并保留这些声明。第三方组件继续适用各自的许可证和声明。
+
+项目来源及可选服务的关系见[项目来源与许可](docs/attribution.zh.md)。

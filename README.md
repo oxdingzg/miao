@@ -223,4 +223,10 @@ cd packages/miao
 bun typecheck
 ```
 
-miao is released under the MIT License. See [LICENSE](LICENSE).
+## Acknowledgements and license
+
+miao is derived from [opencode](https://github.com/anomalyco/opencode), whose MIT-licensed code provides a substantial part of this project. We thank the opencode authors and contributors for that foundation. miao is maintained as a separate project, with its own development direction and releases.
+
+miao is released under the MIT License. [LICENSE](LICENSE) preserves both the miao authors’ and opencode’s copyright notices and the MIT permission notice. Keep these notices with copies or substantial portions of the software. Third-party components retain their respective licenses and notices.
+
+See [project origins and licensing](docs/attribution.en.md) for source attribution and the relationship to optional services.
