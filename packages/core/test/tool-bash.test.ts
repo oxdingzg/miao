@@ -458,6 +458,74 @@ describe("BashTool", () => {
     ),
   )
 
+  it.live("warns on foreground open-ended waits without blocking the run", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          settleTool(registry, call({ command: "gh pr checks 12 --watch" }, "call-blocking-wait")),
+        ).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(runs).toHaveLength(1)
+              expect(settled.output?.structured).toMatchObject({ exit: 0 })
+              expect(settled.output?.content[1]).toMatchObject({
+                type: "text",
+                text: expect.stringMatching(/Warnings:[\s\S]*open-ended wait[\s\S]*gh run watch/),
+              })
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+  )
+
+  it.live("does not warn on ordinary foreground commands", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) => settleTool(registry, call({ command: "echo hi" }, "call-plain"))).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(settled.output?.structured).not.toHaveProperty("warnings")
+              expect(settled.output?.content[1]).toMatchObject({
+                type: "text",
+                text: expect.not.stringContaining("Warnings:"),
+              })
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+  )
+
+  it.live("does not advise background open-ended waits", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          settleTool(registry, call({ command: "gh pr checks 12 --watch", run_in_background: true }, "call-bg-wait")),
+        ).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(settled.output?.structured).toMatchObject({ jobID: expect.any(String) })
+              expect(settled.output?.content[0]).toMatchObject({
+                type: "text",
+                text: expect.stringContaining("started in the background"),
+              })
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+  )
+
   it.live("keeps non-zero exits useful", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

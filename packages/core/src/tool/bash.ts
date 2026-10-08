@@ -181,6 +181,30 @@ const blockedWarning = (denied: readonly string[], unmapped: readonly string[], 
     .join(" ")
 
 /**
+ * Foreground commands that wait indefinitely hold the turn until the timeout
+ * and read as a stuck session. The advisory does not block the run: it points
+ * at the background/notification pattern and at the GitHub run-level watch,
+ * whose checks-list race produces false "all passed" verdicts.
+ */
+const BLOCKING_WAIT_PATTERNS: readonly RegExp[] = [
+  /(?:^|\s)--watch(?:\s|$)/,
+  /(?:^|[;&|]\s*)watch\s/,
+  /\b(?:gh|kubectl)\s+(?:run\s+|pr\s+)?watch\b/,
+  /\btail\b[^|;&]*\s-[fF](?:\s|$)/,
+  /\b(?:while|until|for)\b[\s\S]*\bsleep\b/,
+]
+
+const blockingWaitWarning = (command: string) => {
+  if (!BLOCKING_WAIT_PATTERNS.some((pattern) => pattern.test(command))) return undefined
+  return [
+    "This command looks like an open-ended wait (--watch, watch, tail -f, or a polling loop); in the foreground it holds the session until the timeout.",
+    "Prefer run_in_background or the monitor tool, then end the turn: the completion notification wakes the session.",
+    "For GitHub runs, watch the run id (`gh run watch <id> --exit-status`) instead of `gh pr checks --watch`, which can report all checks passed before a fresh run's jobs register.",
+    "Advisory only; nothing was changed.",
+  ].join(" ")
+}
+
+/**
  * Minimal V2 core shell boundary. Keep parity debt visible without pulling the
  * legacy shell runtime into core.
  */
@@ -578,10 +602,14 @@ const executionLayer = Layer.effect(
               agent: context.agent,
               source,
             })
-          const warnings = (yield* externalCommandDirectories(fs, input.command, target.canonical)).map(
+          const scanned = (yield* externalCommandDirectories(fs, input.command, target.canonical)).map(
             (directory) =>
               `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
           )
+          // The blocking-wait advisory is only meaningful in the foreground: a
+          // background run does not hold the turn, so there is nothing to unblock.
+          const blocking = input.run_in_background === true ? undefined : blockingWaitWarning(input.command)
+          const warnings = blocking === undefined ? scanned : [...scanned, blocking]
           const exact = permissionResources(input.command, input.stdin)
           // A plain command is approved per command it runs, and "always"
           // saves prefix rules such as `git status *`, as V1 did. With stdin
