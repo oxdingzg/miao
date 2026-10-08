@@ -44,7 +44,7 @@ pub async fn assemble(
             let decision = policy.evaluate(prepared.name(), prepared.resource(), prepared.access());
             if decision == Decision::Allow {
                 let resource = prepared.resource().to_owned();
-                let data = tools.execute_prepared(prepared, cancel).await?;
+                let data = tools.execute_prepared(prepared, policy, cancel).await?;
                 let text = data["text"].as_str().ok_or(ToolError::InvalidFile)?;
                 system.push_str("\n\n<project-instructions source=\"AGENTS.md\">\n");
                 system.push_str(text);

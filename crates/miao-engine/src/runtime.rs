@@ -435,7 +435,7 @@ async fn execute(
                             inner.store.mark_dispatched(session, run, id).await?;
                             match inner
                                 .tools
-                                .execute_prepared(prepared, cancel.child_token())
+                                .execute_prepared(prepared, &inner.policy, cancel.child_token())
                                 .await
                             {
                                 Ok(output) => (output, false),

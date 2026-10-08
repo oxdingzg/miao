@@ -64,12 +64,14 @@ impl Default for Config {
     }
 }
 
+#[derive(Clone)]
 struct Matcher {
     tool: GlobMatcher,
     path: GlobMatcher,
     decision: Decision,
 }
 
+#[derive(Clone)]
 pub struct Policy {
     config: Config,
     revision: String,

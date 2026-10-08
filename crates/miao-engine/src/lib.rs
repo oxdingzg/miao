@@ -9,5 +9,6 @@ pub mod process;
 pub mod protocol;
 pub mod provider;
 pub mod runtime;
+mod search;
 pub mod store;
 pub mod tools;

@@ -1,8 +1,9 @@
 use crate::{
     file_mutation::{apply, Mutation},
-    permission::{digest, Access},
+    permission::{digest, Access, Policy},
     process,
     protocol::ToolDefinition,
+    search,
 };
 use cap_std::{ambient_authority, fs::Dir};
 use serde::Deserialize;
@@ -169,6 +170,7 @@ impl Tools {
                 }
                 parsed.path
             }
+            "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
             "run_command" if self.process_enabled => process::Input::parse(input.clone())?.cwd,
             "write_file" | "edit_file" if self.writes => {
                 Mutation::parse(name, input.clone())?.path().to_owned()
@@ -194,7 +196,9 @@ impl Tools {
         if self.protected.contains(&path) {
             return Err(ToolError::ProtectedResource);
         }
-        if name == "run_command" && !tokio::fs::metadata(&path).await?.is_dir() {
+        if matches!(name, "run_command" | "glob" | "grep")
+            && !tokio::fs::metadata(&path).await?.is_dir()
+        {
             return Err(ToolError::InvalidInput);
         }
         let relative = path
@@ -220,6 +224,7 @@ impl Tools {
     pub(crate) async fn execute_prepared(
         &self,
         prepared: Prepared,
+        policy: &Policy,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
         if prepared.access() == Access::Execute {
@@ -269,12 +274,41 @@ impl Tools {
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
         }
-        let _lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().read_owned()=>guard};
+        let read_lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().read_owned()=>guard};
         let current = self
             .prepare(prepared.name(), prepared.input().clone())
             .await?;
         if current.path != prepared.path || current.resource != prepared.resource {
             return Err(ToolError::ResourceChanged);
+        }
+        if prepared.name == "glob" || prepared.name == "grep" {
+            let directory = self.directory.clone();
+            let workspace = self.root.clone();
+            let protected = self.protected.clone();
+            let policy = policy.clone();
+            let relative = prepared
+                .path
+                .strip_prefix(&self.root)
+                .map_err(|_| ToolError::OutsideWorkspace)?
+                .to_owned();
+            let query = search::Query::parse(&prepared.name, prepared.input)?;
+            return tokio::task::spawn_blocking(move || {
+                let _lease = read_lease;
+                search::apply(
+                    search::Scope {
+                        root: &directory,
+                        workspace: &workspace,
+                        policy: &policy,
+                        protected: &protected,
+                    },
+                    &relative,
+                    &prepared.name,
+                    query,
+                    &cancel,
+                )
+            })
+            .await
+            .map_err(|_| ToolError::Io(std::io::Error::other("search worker failed")))?;
         }
         self.execute(&prepared.name, prepared.input, cancel).await
     }
@@ -289,6 +323,10 @@ impl Tools {
             description:"List immediate entries of a workspace directory. Does not recurse or follow symlinks; output is bounded.".into(),
             input_schema:json!({"type":"object","properties":{"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100}},"additionalProperties":false}),
         }];
+        definitions.extend([
+            ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
+            ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
+        ]);
         if self.writes {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
