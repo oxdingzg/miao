@@ -459,6 +459,13 @@ export class Reply {
   #error: unknown
   #reset = false
   #seq = 0
+  #stallMs = 0
+
+  /** Holds the stream open between the content deltas and the finish line. */
+  stall(ms: number) {
+    this.#stallMs = ms
+    return this
+  }
 
   #id() {
     this.#seq += 1
@@ -549,6 +556,15 @@ export class Reply {
   }
 
   item(): Item {
+    if (this.#stallMs > 0) {
+      return {
+        type: "sse",
+        head: [this.#head[0], ...this.#tail],
+        tail: this.#finish ? [finishLine(this.#finish, this.#usage)] : [],
+        wait: new Promise((resolve) => setTimeout(resolve, this.#stallMs)),
+        hang: false,
+      }
+    }
     return {
       type: "sse",
       head: this.#head,

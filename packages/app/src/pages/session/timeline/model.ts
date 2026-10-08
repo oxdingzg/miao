@@ -1,10 +1,10 @@
-import type { Message, UserMessage } from "@miao/schema/view-models"
+import type { SessionMessageInfo, SessionMessageUser } from "@miao/session-ui/content"
 import { createMemo, createResource, onCleanup, untrack, type Accessor } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { same } from "@/utils/same"
 
-const emptyUserMessages: UserMessage[] = []
+const emptyUserMessages: SessionMessageUser[] = []
 const sessionFreshness = 15_000
 
 export function createTimelineModel(input: {
@@ -79,6 +79,19 @@ export function createTimelineModel(input: {
   return {
     history: { loadOlder, loading, more },
     lastUserMessage: createMemo(() => visibleUserMessages().at(-1)),
+    lastAttribution: createMemo(() => {
+      const list = messages()
+      let agent: string | undefined
+      let model: { id: string; providerID: string; variant?: string } | undefined
+      for (let index = list.length - 1; index >= 0; index--) {
+        const record = list[index]
+        if (record.type === "agent-switched") agent ??= record.agent
+        if (record.type === "model-switched") model ??= record.model
+        if (agent && model) break
+      }
+      if (!agent || !model) return undefined
+      return { agent, model }
+    }),
     messages,
     ready,
     resource,
@@ -94,15 +107,15 @@ export function createTimelineModel(input: {
   }
 }
 
-export function selectUserMessages(messages: Message[]) {
-  return messages.filter((message): message is UserMessage => message.role === "user")
+export function selectUserMessages(messages: SessionMessageInfo[]) {
+  return messages.filter((message): message is SessionMessageUser => message.type === "user")
 }
 
-export function isTimelineReady(messages: Message[] | undefined, loading: boolean) {
-  return messages !== undefined && (messages.some((message) => message.role === "user") || !loading)
+export function isTimelineReady(messages: SessionMessageInfo[] | undefined, loading: boolean) {
+  return messages !== undefined && (messages.some((message) => message.type === "user") || !loading)
 }
 
-export function selectVisibleUserMessages(messages: UserMessage[], revertMessageID?: string) {
+export function selectVisibleUserMessages(messages: SessionMessageUser[], revertMessageID?: string) {
   if (!revertMessageID) return messages
   const boundary = messages.findIndex((message) => message.id === revertMessageID)
   return boundary < 0 ? messages : messages.slice(0, boundary)

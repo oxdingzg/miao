@@ -204,15 +204,21 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     }
     if (!settled) return
     if (part.type === "text") {
+      // A settled part can still be empty: the durable stream appends a tool
+      // part before the text fragment flush records the content, so the text
+      // is empty for a few passes first. Consuming the dedupe key on the empty
+      // form would drop the text forever; wait for content instead.
+      if (!part.text.trim()) return
       if (!once(`${part.messageID}:${part.id}`)) return
       if (input.emit("text", { part })) return
-      if (part.text.trim()) input.print.text(part.text.trim())
+      input.print.text(part.text.trim())
       return
     }
     if (part.type === "reasoning" && input.thinking) {
+      if (!part.text.trim()) return
       if (!once(`${part.messageID}:${part.id}`)) return
       if (input.emit("reasoning", { part })) return
-      if (part.text.trim()) input.print.reasoning(part.text.trim())
+      input.print.reasoning(part.text.trim())
     }
   }
 
