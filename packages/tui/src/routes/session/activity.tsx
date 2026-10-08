@@ -26,7 +26,8 @@ const LIVE_LIMIT = 60
 
 const toolInput = (part: TranscriptToolPart, key: string) => {
   if (part.state.status !== "running" && part.state.status !== "completed") return undefined
-  const value = part.state.input[key]
+  // V2 file tools name their target `path` where the labels read `filePath`.
+  const value = part.state.input[key] ?? (key === "filePath" ? part.state.input.path : undefined)
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
 

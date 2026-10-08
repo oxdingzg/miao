@@ -35,7 +35,7 @@ import type {
   TranscriptReasoningPart,
 } from "@miao/schema/view-models"
 import { toolOutputText } from "../../context/session-v2"
-import { promptInfoFromUserMessage } from "../../context/session-v2-write"
+import { promptInfoFromUserMessage, toolInput, toolMetadata } from "../../context/session-v2-write"
 
 import type { Provider, SessionStatus } from "@miao/schema/view-models"
 import { useLocal } from "../../context/local"
@@ -1834,10 +1834,16 @@ function ToolPart(props: { last: boolean; part: TranscriptToolPart; message: Tra
 
   const toolprops = {
     get metadata() {
-      return state.status === "pending" ? {} : ((state as { metadata?: Record<string, unknown> }).metadata ?? {})
+      if (state.status === "pending" || state.status === "running") return {}
+      // V2 tool state carries results in `structured`; the renderers read the
+      // V1 `metadata` shape (diffs, diagnostics, summaries).
+      return toolMetadata(props.part.name, state.structured)
     },
     get input() {
-      return typeof state.input === "object" && state.input !== null ? (state.input as Record<string, unknown>) : {}
+      // V2 file tools name their target `path`; the renderers read `filePath`.
+      return typeof state.input === "object" && state.input !== null
+        ? toolInput(props.part.name, state.input)
+        : {}
     },
     get output() {
       return state.status === "completed" ? toolOutputText(state) : undefined
