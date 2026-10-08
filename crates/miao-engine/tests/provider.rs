@@ -66,6 +66,7 @@ async fn endpoint(
 
 fn history() -> ModelRequest {
     ModelRequest {
+        system: String::new(),
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"hi"}]),

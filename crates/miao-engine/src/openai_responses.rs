@@ -39,7 +39,7 @@ impl Provider for OpenAIResponses {
     ) -> Result<Reply, ProviderError> {
         let input = items(&request.messages, &self.model)?;
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.input_schema})).collect();
-        let body = json!({"model":self.model,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
+        let body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
         let request = self
             .client
             .post(&self.endpoint)

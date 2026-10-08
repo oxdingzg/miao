@@ -1,7 +1,7 @@
 use crate::{
     approval::{now_ms, Approval, Response},
-    permission::{input_digest, Decision},
-    protocol::{Admission, Delivery, Error, Event, Input, Message},
+    permission::{context_digest, input_digest, Decision},
+    protocol::{Admission, ContextBundle, Delivery, Error, Event, Input, Message},
 };
 use fs2::FileExt;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -92,11 +92,11 @@ impl Store {
                     ));
                 }
                 let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-                if version > 3 {
+                if version > 4 {
                     return Err(Error::Invalid("unsupported database schema version".into()));
                 }
 
-                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=3; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=4; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -108,7 +108,8 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_approval(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),run_id TEXT NOT NULL REFERENCES engine_run(id),call_id TEXT NOT NULL REFERENCES engine_tool(id),binding TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL);
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_pending_approval ON engine_approval(call_id) WHERE state='pending';
                     CREATE TABLE IF NOT EXISTS engine_lineage(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),parent_session_id TEXT NOT NULL REFERENCES engine_session(id),message_seq INTEGER NOT NULL);
-                    CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);")?;
+                    CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);
+                    CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));")?;
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -233,6 +234,36 @@ impl Store {
         }).await
     }
 
+    /// Persist exactly what the provider will observe, independent of mutable
+    /// files. Identical baseline/sources reuse the current epoch and cache body.
+    pub async fn select_context(&self, session: &str, bundle: ContextBundle) -> Result<u64, Error> {
+        if bundle.system.len() > 65536
+            || bundle.sources.len() > 16
+            || serde_json::to_vec(&bundle.sources)?.len() > 65536
+            || context_digest(&bundle.system, &bundle.sources)? != bundle.fingerprint
+        {
+            return Err(Error::Invalid("invalid context bundle".into()));
+        }
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx=conn.transaction()?;
+            let previous:Option<(u64,String)>=tx.query_row("SELECT epoch,fingerprint FROM engine_context WHERE session_id=?1 ORDER BY epoch DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if let Some((epoch,fingerprint))=&previous {if fingerprint==&bundle.fingerprint{return Ok(*epoch);}}
+            let epoch=previous.map(|(epoch,_)|epoch+1).unwrap_or(1);
+            let event=append(&tx,&session,"context.changed",json!({"epoch":epoch,"fingerprint":bundle.fingerprint,"sources":bundle.sources}))?;
+            tx.execute("INSERT INTO engine_context VALUES(?1,?2,?3,?4,?5,?6)",params![session,epoch,bundle.fingerprint,bundle.system,serde_json::to_string(&bundle.sources)?,event.seq])?;
+            tx.commit()?;Ok(epoch)
+        }).await
+    }
+
+    pub async fn context(&self, session: &str, epoch: Option<u64>) -> Result<Option<Value>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let row:Option<(u64,String,String,String,u64)>=conn.query_row("SELECT epoch,fingerprint,system,sources,selected_seq FROM engine_context WHERE session_id=?1 AND (?2 IS NULL OR epoch=?2) ORDER BY epoch DESC LIMIT 1",params![session,epoch],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?;
+            row.map(|(epoch,fingerprint,system,sources,seq)|Ok(json!({"epoch":epoch,"fingerprint":fingerprint,"system":system,"sources":serde_json::from_str::<Value>(&sources)?,"selected_seq":seq}))).transpose()
+        }).await
+    }
+
     /// One read transaction captures a replay cursor and its projections. This
     /// is a bounded resync view, not an unbounded transcript dump.
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
@@ -254,7 +285,9 @@ impl Store {
                 let rows=stmt.query_map([&session],|r|r.get::<_,String>(0))?;
                 rows.map(|r|Ok(serde_json::from_str::<Value>(&r?)?)).collect::<Result<Vec<_>,Error>>()?
             };
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals});
+            let context:Option<(u64,String,String)>=tx.query_row("SELECT epoch,fingerprint,sources FROM engine_context WHERE session_id=?1 ORDER BY epoch DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+            let context=context.map(|(epoch,fingerprint,sources)|Ok::<_,Error>(json!({"epoch":epoch,"fingerprint":fingerprint,"sources":serde_json::from_str::<Value>(&sources)?}))).transpose()?;
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -294,6 +327,11 @@ impl Store {
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             for message in messages {
                 project_message(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone())?;
+            }
+            let context:Option<(u64,String,String,String)>=tx.query_row("SELECT epoch,fingerprint,system,sources FROM engine_context WHERE session_id=?1 AND selected_seq<=?2 ORDER BY epoch DESC LIMIT 1",params![parent,seq],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
+            if let Some((parent_epoch,fingerprint,system,sources))=context {
+                let event=append(&tx,&target,"context.inherited",json!({"epoch":1,"parent_session_id":parent,"parent_epoch":parent_epoch,"fingerprint":fingerprint}))?;
+                tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
             tx.commit()?;
             Ok(json!({"session_id":target,"parent_session_id":parent,"message_seq":seq,"duplicate":false}))

@@ -1,4 +1,5 @@
 pub mod approval;
+pub mod context;
 pub mod export;
 mod file_mutation;
 pub mod openai_chat;

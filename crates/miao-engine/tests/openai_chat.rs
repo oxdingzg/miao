@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 fn request() -> ModelRequest {
     ModelRequest {
+        system: String::new(),
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"read file"}]),

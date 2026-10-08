@@ -180,3 +180,9 @@ pub fn input_digest(
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
+
+pub fn context_digest(system: &str, sources: &[Value]) -> Result<String, Error> {
+    Ok(digest(&serde_json::to_vec(
+        &serde_json::json!({"version":1,"system":system,"sources":sources}),
+    )?))
+}

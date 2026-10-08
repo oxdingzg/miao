@@ -2,7 +2,7 @@
 
 独立入口，使用显式指定的独立 SQLite 数据库。当前实现提供 durable inbox、事务事件/消息投影、
 受监督的 Session 执行、Anthropic Messages / OpenAI Chat / OpenAI Responses 流式 adapters、受控 `read_file` / `list_files`、审批受控的 `write_file` / `edit_file`、stdio 和 committed JSONL 导出。
-这是 M0 可运行骨架，尚未达到替代现有 miao 的完整能力门槛。
+这是 M0/M1 增量实现，尚未达到替代现有 miao 的完整能力门槛。
 
 ## 运行
 
@@ -147,5 +147,27 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 52 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 60 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
+
+
+## Session 快照、分支与 Context Epoch
+
+```jsonl
+{"id":20,"method":"snapshot","params":{"session_id":"s"}}
+{"id":21,"method":"fork","params":{"session_id":"s","target_session_id":"branch"}}
+{"id":22,"method":"context","params":{"session_id":"s","epoch":1}}
+```
+
+snapshot 在一个事务里返回 committed cursor、Location、messages（含 seq）、pending previews、active_run、pending approvals 与当前 context metadata。
+投影上限 1000 条/2 MiB、总快照 4 MiB；超限显式失败，可使用 events 分页，不默默丢历史。
+
+fork 使用 target_session_id 对账 exact retry。活动 parent 需显式 message_seq，且不能选 unresolved tool-call 边界。
+它只复制闭合 conversation prefix、Location 和对应 Context Epoch；不复制 inbox、审批、任务、外部副作用或文件，不自动唤醒。
+分支目前共享同一 Location filesystem；不是独立 worktree，不提供文件回滚。
+
+每个 provider turn 边界装配稳定 baseline 与 workspace AGENTS.md。自动加载遵守 read policy、workspace/保护资源边界与大小限制；
+ask/deny 来源不会未经授权进入 system。Context Epoch 存准确的 system、source metadata 和 fingerprint；不把会变动的文件路径当成历史内容。
+内容与来源未变则复用 epoch；变化追加不可变 epoch，provider.started 关联它；fork 按 message checkpoint 继承当时的 epoch。
+system 不嵌入 Session/run 的易变 ID，三个 adapters 分别映射到其原生 system/instructions 输入。
+当前只实现 workspace producer；祖先/用户 instructions、skills/references/persona、完整上下文选择与压缩仍待接入。

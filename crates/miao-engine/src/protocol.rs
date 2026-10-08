@@ -91,6 +91,14 @@ pub struct ToolDefinition {
 /// auth, Session identity or provider-specific transport options.
 #[derive(Debug, Clone)]
 pub struct ModelRequest {
+    pub system: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextBundle {
+    pub system: String,
+    pub fingerprint: String,
+    pub sources: Vec<Value>,
 }

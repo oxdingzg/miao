@@ -20,6 +20,7 @@ fn stream(output: Value, status: &str) -> String {
 }
 fn request() -> ModelRequest {
     ModelRequest {
+        system: String::new(),
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"hello"}]),
@@ -66,6 +67,7 @@ async fn responses_runtime_preserves_opaque_reasoning_and_function_outputs() {
     server.await.unwrap();
     let first = requests.recv().await.unwrap();
     assert_eq!(first["store"], false);
+    assert!(first["instructions"].as_str().unwrap().contains("miao"));
     assert_eq!(first["include"][0], "reasoning.encrypted_content");
     assert_eq!(first["tools"][0]["name"], "read_file");
     let next = requests.recv().await.unwrap();

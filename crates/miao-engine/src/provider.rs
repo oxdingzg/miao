@@ -98,7 +98,7 @@ impl Provider for Anthropic {
         }
         let request=self.client.post(&self.endpoint)
             .header("x-api-key",&self.key).header("anthropic-version","2023-06-01")
-            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"tools":request.tools}))
+            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"system":request.system,"tools":request.tools}))
             .build().map_err(|_|ProviderError::Transport)?;
         let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await

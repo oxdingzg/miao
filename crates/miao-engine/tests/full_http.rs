@@ -91,6 +91,15 @@ async fn both_wire_adapters_drive_real_http_tool_dispatch_and_durable_continuati
         server.await.unwrap();
         let first = requests.recv().await.unwrap();
         assert_eq!(first["tools"].as_array().unwrap().len(), 2);
+        if protocol == "anthropic" {
+            assert!(first["system"].as_str().unwrap().contains("miao"));
+        } else {
+            assert_eq!(first["messages"][0]["role"], "system");
+            assert!(first["messages"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("miao"));
+        }
         let second = requests.recv().await.unwrap();
         if protocol == "anthropic" {
             assert_eq!(second["messages"][2]["content"][0]["tool_use_id"], "call");
@@ -99,8 +108,14 @@ async fn both_wire_adapters_drive_real_http_tool_dispatch_and_durable_continuati
                 .unwrap()
                 .contains("hello from workspace"));
         } else {
-            assert_eq!(second["messages"][2]["tool_call_id"], "call");
-            assert!(second["messages"][2]["content"]
+            let result = second["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|message| message["role"] == "tool")
+                .unwrap();
+            assert_eq!(result["tool_call_id"], "call");
+            assert!(result["content"]
                 .as_str()
                 .unwrap()
                 .contains("hello from workspace"));

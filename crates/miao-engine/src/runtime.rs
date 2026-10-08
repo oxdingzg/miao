@@ -333,18 +333,33 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
+        let bundle =
+            match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
+            {
+                Ok(bundle) => bundle,
+                Err(ToolError::Interrupted) => return Ok(()),
+                Err(error) => {
+                    return Err(Error::Invalid(format!("context assembly failed: {error}")))
+                }
+            };
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+        let system = bundle.system.clone();
+        let context_epoch = inner.store.select_context(session, bundle).await?;
         inner
             .store
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision()}),
             )
             .await?;
         let history = inner.store.history(session).await?;
         let (send, mut receive) = mpsc::channel(64);
         let response = inner.provider.stream(
             ModelRequest {
+                system,
                 messages: history,
                 tools: inner.tools.definitions(),
             },

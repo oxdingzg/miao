@@ -37,7 +37,10 @@ impl Provider for OpenAIChat {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
-        let messages = messages(&request.messages)?;
+        let mut messages = messages(&request.messages)?;
+        if !request.system.is_empty() {
+            messages.insert(0, json!({"role":"system","content":request.system}));
+        }
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","function":{"name":tool.name,"description":tool.description,"parameters":tool.input_schema}})).collect();
         let body = json!({"model":self.model,"messages":messages,"tools":tools,"stream":true,"stream_options":{"include_usage":true},"n":1});
         let request = self
