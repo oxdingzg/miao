@@ -1,6 +1,6 @@
 use miao_engine::{
     protocol::{Message, ModelRequest},
-    provider::{Anthropic, Provider, ProviderError, SseDecoder},
+    provider::{Anthropic, Frame, Provider, ProviderError, SseDecoder},
 };
 use serde_json::json;
 use std::sync::{
@@ -85,7 +85,7 @@ fn sse_framing_handles_bytewise_utf8_crlf_and_multiline_json() {
     for byte in "event: text\r\ndata: {\r\ndata: \"text\":\"你好\"}\r\n\r\n".as_bytes() {
         values.extend(decoder.push(&[*byte]).unwrap());
     }
-    assert_eq!(values, vec![json!({"text":"你好"})]);
+    assert_eq!(values, vec![Frame::Json(json!({"text":"你好"}))]);
     assert!(decoder.push(&vec![b'x'; 1024 * 1024 + 1]).is_err());
 }
 

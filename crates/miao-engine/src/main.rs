@@ -1,6 +1,7 @@
 use miao_engine::{
+    openai_chat::OpenAIChat,
     protocol::{Error, Input},
-    provider::Anthropic,
+    provider::{Anthropic, Provider},
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -88,13 +89,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--endpoint URL]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nANTHROPIC_API_KEY is required. This experimental entry point uses its own explicit database.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat] [--endpoint URL]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();
     let (flags, remainder) = args[1..].as_chunks::<2>();
     for flag in flags {
-        if !["--db", "--workspace", "--model", "--endpoint"].contains(&flag[0].as_str())
+        if !["--db", "--workspace", "--model", "--endpoint", "--provider"]
+            .contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
         {
             return Err("unknown or duplicate option".into());
@@ -108,12 +110,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get("--workspace")
         .ok_or("--workspace is required")?;
     let model = options.get("--model").ok_or("--model is required")?;
-    let endpoint = options
-        .get("--endpoint")
-        .cloned()
-        .unwrap_or_else(|| "https://api.anthropic.com/v1/messages".into());
-    let key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| "ANTHROPIC_API_KEY is required")?;
-    let provider = Arc::new(Anthropic::new(endpoint, key, model.clone())?);
+    let provider: Arc<dyn Provider> = match options
+        .get("--provider")
+        .map(String::as_str)
+        .unwrap_or("anthropic")
+    {
+        "anthropic" => {
+            let endpoint = options
+                .get("--endpoint")
+                .cloned()
+                .unwrap_or_else(|| "https://api.anthropic.com/v1/messages".into());
+            let key =
+                std::env::var("ANTHROPIC_API_KEY").map_err(|_| "ANTHROPIC_API_KEY is required")?;
+            Arc::new(Anthropic::new(endpoint, key, model.clone())?)
+        }
+        "openai-chat" => {
+            let endpoint = options
+                .get("--endpoint")
+                .cloned()
+                .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".into());
+            let key = std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is required")?;
+            Arc::new(OpenAIChat::new(endpoint, key, model.clone())?)
+        }
+        _ => return Err("unknown provider; use anthropic or openai-chat".into()),
+    };
     let runtime = Runtime::new(
         Store::open(db).await?,
         provider,

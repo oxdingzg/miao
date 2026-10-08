@@ -66,48 +66,65 @@ impl Provider for Anthropic {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
-        // Only pre-output failures may retry. A single attempt ceiling and time
-        // budget covers both connection/HTTP failures; no nested retry policy.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-        for attempt in 0..3 {
-            let request = self.client.post(&self.endpoint)
-                .header("x-api-key", &self.key).header("anthropic-version", "2023-06-01")
-                 .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":request.messages,"tools":request.tools}));
-            let response = tokio::select! {
-                _ = cancel.cancelled() => return Err(ProviderError::Interrupted),
-                r = tokio::time::timeout_at(deadline,request.send()) => match r {
-                    Ok(Ok(r)) => Ok(r),
-                    _ => Err(ProviderError::Transport),
-                },
-            };
-            let error = match response {
-                Ok(response) if response.status().is_success() => {
-                    // Once a successful body begins, no transparent replay: a
-                    // hosted action/semantic block might already have started.
-                    return read_stream(response, progress, cancel).await;
-                }
-                Ok(response) => ProviderError::Http(response.status().as_u16()),
-                Err(error) => error,
-            };
-            let retryable = matches!(
-                error,
-                ProviderError::Transport | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
-            );
-            if !retryable || attempt == 2 || tokio::time::Instant::now() >= deadline {
-                return Err(error);
-            }
-            let retry = json!({"kind":"provider.retry","attempt":attempt+1});
-            tokio::select! {
-                _ = cancel.cancelled() => return Err(ProviderError::Interrupted),
-                _ = progress.send(retry) => {},
-            }
-            tokio::select! {
-                _ = cancel.cancelled() => return Err(ProviderError::Interrupted),
-                _ = tokio::time::sleep(Duration::from_millis(250 * (1 << attempt))) => {},
-            }
-        }
-        unreachable!()
+        let request=self.client.post(&self.endpoint)
+            .header("x-api-key",&self.key).header("anthropic-version","2023-06-01")
+            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":request.messages,"tools":request.tools}))
+            .build().map_err(|_|ProviderError::Transport)?;
+        let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
+        read_stream(response, progress, cancel, StreamState::default()).await
     }
+}
+
+pub(crate) async fn request_with_retry(
+    client: &reqwest::Client,
+    request: reqwest::Request,
+    progress: &mpsc::Sender<Value>,
+    cancel: &CancellationToken,
+) -> Result<reqwest::Response, ProviderError> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    for attempt in 0..3 {
+        let request = request
+            .try_clone()
+            .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
+        let response = tokio::select! {
+            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            result=tokio::time::timeout_at(deadline,client.execute(request))=>match result {Ok(Ok(response))=>Ok(response),_=>Err(ProviderError::Transport)},
+        };
+        let error = match response {
+            Ok(response) if response.status().is_success() => return Ok(response),
+            Ok(response) => ProviderError::Http(response.status().as_u16()),
+            Err(error) => error,
+        };
+        if !matches!(
+            error,
+            ProviderError::Transport | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
+        ) || attempt == 2
+            || tokio::time::Instant::now() >= deadline
+        {
+            return Err(error);
+        }
+        tokio::select! {
+            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            result=progress.send(json!({"kind":"provider.retry","attempt":attempt+1}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+        }
+        tokio::select! {
+            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            _=tokio::time::sleep(Duration::from_millis(250*(1<<attempt)))=>{},
+        }
+    }
+    unreachable!()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Frame {
+    Json(Value),
+    Done,
+}
+
+pub(crate) trait Parser {
+    fn frame(&mut self, frame: &Frame) -> Result<(), ProviderError>;
+    fn terminal(&self) -> bool;
+    fn finish(self) -> Result<Reply, ProviderError>;
 }
 
 /// Byte-oriented framing preserves UTF-8 split across network chunks. Both
@@ -119,7 +136,7 @@ pub struct SseDecoder {
 }
 
 impl SseDecoder {
-    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Value>, ProviderError> {
+    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Frame>, ProviderError> {
         let mut values = Vec::new();
         for byte in bytes {
             if *byte != b'\n' {
@@ -135,10 +152,16 @@ impl SseDecoder {
                 .trim_end_matches('\r');
             if text.is_empty() {
                 if !self.data.is_empty() {
-                    values.push(
-                        serde_json::from_str(self.data.trim_end_matches('\n'))
-                            .map_err(|_| ProviderError::Stream("invalid SSE JSON".into()))?,
-                    );
+                    let data = self.data.trim_end_matches('\n');
+                    let frame = if data == "[DONE]" {
+                        Frame::Done
+                    } else {
+                        Frame::Json(
+                            serde_json::from_str(data)
+                                .map_err(|_| ProviderError::Stream("invalid SSE JSON".into()))?,
+                        )
+                    };
+                    values.push(frame);
                     self.data.clear();
                 }
                 continue;
@@ -282,36 +305,57 @@ impl StreamState {
     }
 }
 
-async fn read_stream(
+impl Parser for StreamState {
+    fn frame(&mut self, frame: &Frame) -> Result<(), ProviderError> {
+        match frame {
+            Frame::Json(event) => self.event(event),
+            Frame::Done => Err(ProviderError::Stream(
+                "unexpected DONE in Anthropic stream".into(),
+            )),
+        }
+    }
+    fn terminal(&self) -> bool {
+        self.stopped
+    }
+    fn finish(self) -> Result<Reply, ProviderError> {
+        StreamState::finish(self)
+    }
+}
+
+pub(crate) async fn read_stream<P: Parser>(
     response: reqwest::Response,
     progress: mpsc::Sender<Value>,
     cancel: CancellationToken,
+    mut parser: P,
 ) -> Result<Reply, ProviderError> {
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
-    let mut state = StreamState::default();
     let mut total = 0;
     loop {
         let chunk = tokio::select! {
-            _ = cancel.cancelled() => return Err(ProviderError::Interrupted),
-            result=tokio::time::timeout(Duration::from_secs(120),bytes.next()) => result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
+            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            result=tokio::time::timeout(Duration::from_secs(120),bytes.next())=>result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
         };
         let Some(chunk) = chunk else {
-            return state.finish();
+            return parser.finish();
         };
         let chunk = chunk.map_err(|_| ProviderError::Transport)?;
         total += chunk.len();
         if total > 8 * 1024 * 1024 {
             return Err(ProviderError::Stream("message exceeds 8 MiB".into()));
         }
-        for event in decoder.push(&chunk)? {
-            state.event(&event)?;
+        for frame in decoder.push(&chunk)? {
+            parser.frame(&frame)?;
+            let notice = match frame {
+                Frame::Json(event) => event,
+                Frame::Done => json!({"kind":"stream.done"}),
+            };
             tokio::select! {
-                _ = cancel.cancelled() => return Err(ProviderError::Interrupted),
-                sent=progress.send(event) => if sent.is_err() { return Err(ProviderError::Interrupted); },
+                _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+                result=progress.send(notice)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }
-            if state.stopped {
-                return state.finish();
+            if parser.terminal() {
+                return parser.finish();
             }
         }
     }
