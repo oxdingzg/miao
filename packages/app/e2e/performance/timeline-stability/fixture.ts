@@ -1,6 +1,7 @@
 import { base64Encode } from "@miao/core/util/encode"
+import { OpenCodeEvent, type OpenCodeEventEncoded } from "@miao/protocol/groups/event"
 import { Event } from "@miao/schema/event"
-import type { EventView } from "@miao/schema/event-view"
+import { SessionMessage } from "@miao/schema/session-message"
 import { SessionStatusEvent } from "@miao/schema/session-status-event"
 import { SessionV1 } from "@miao/schema/session-v1"
 import type {
@@ -27,28 +28,43 @@ export const assistantID = "msg_1001_timeline_assistant"
 export const title = "Timeline visual stability"
 export const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
 
-type GlobalEvent = { directory: string; payload: EventView.Event }
-
 type TimelinePayload = Extract<
-  GlobalEvent["payload"],
+  OpenCodeEventEncoded,
   {
     type:
-      | "message.updated"
-      | "message.removed"
-      | "message.part.updated"
-      | "message.part.removed"
-      | "message.part.delta"
-      | "session.status"
+      | "session.next.status"
+      | "session.next.step.ended"
+      | "session.next.step.failed"
+      | "session.next.text.started"
+      | "session.next.text.delta"
+      | "session.next.text.ended"
+      | "session.next.reasoning.started"
+      | "session.next.reasoning.delta"
+      | "session.next.reasoning.ended"
+      | "session.next.tool.input.started"
+      | "session.next.tool.input.delta"
+      | "session.next.tool.input.ended"
+      | "session.next.tool.called"
+      | "session.next.tool.progress"
+      | "session.next.tool.success"
+      | "session.next.tool.failed"
   }
 >
 
-type DeepReadonly<Value> = Value extends readonly unknown[]
-  ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> }
-  : Value extends object
-    ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> }
-    : Value
+// Removal events have no V2 producer; the app keeps the legacy bridge alive
+// for pre-V2 servers, and reducer-hardening scenarios exercise it explicitly.
+// Settled-tool re-delivery goes through the same bridge.
+type LegacyPayloadType = "message.removed" | "message.part.removed" | "message.part.updated"
+type LegacyEvent = {
+  directory: string
+  payload: {
+    id: string
+    type: LegacyPayloadType
+    properties: { sessionID: string; messageID: string; partID?: string }
+  }
+}
 
-export type TimelineEvent = DeepReadonly<Omit<GlobalEvent, "payload"> & { payload: TimelinePayload }>
+export type TimelineEvent = TimelinePayload | LegacyEvent
 export type EventPayload = TimelineEvent
 export type ToolStatus = ToolState["status"]
 export type TimelineMessage = { info: UserMessage; parts: Part[] } | { info: AssistantMessage; parts: Part[] }
@@ -75,16 +91,29 @@ const decodeOptions = { errors: "all", onExcessProperty: "error" } as const
 const decodeMessage = Schema.decodeUnknownSync(SessionV1.WithParts)
 const decodePart = Schema.decodeUnknownSync(SessionV1.Part)
 const decodeStatus = Schema.decodeUnknownSync(SessionStatusEvent.Info)
-const timelineEventSchema = Schema.Union([
-  eventSchema("message.updated", SessionV1.Event.MessageUpdated.data),
-  eventSchema("message.removed", SessionV1.Event.MessageRemoved.data),
-  eventSchema("message.part.updated", SessionV1.Event.PartUpdated.data),
-  eventSchema("message.part.removed", SessionV1.Event.PartRemoved.data),
-  eventSchema("message.part.delta", SessionV1.Event.PartDelta.data),
-  eventSchema("session.status", SessionStatusEvent.Status.data),
+const decodeV2Event = Schema.decodeUnknownSync(OpenCodeEvent)
+const encodeV2Event = Schema.encodeSync(OpenCodeEvent)
+const decodeV2Record = Schema.decodeUnknownSync(SessionMessage.Message)
+const legacyEventSchema = Schema.Union([
+  eventSchema("message.removed", Schema.Struct({ sessionID: Schema.String, messageID: Schema.String })),
+  eventSchema(
+    "message.part.removed",
+    Schema.Struct({ sessionID: Schema.String, messageID: Schema.String, partID: Schema.String }),
+  ),
+  eventSchema(
+    "message.part.updated",
+    Schema.Struct({ sessionID: Schema.String, messageID: Schema.String, part: SessionV1.Part }),
+  ),
 ])
-const decodeEvent = Schema.decodeUnknownSync(timelineEventSchema)
+const decodeLegacyEvent = Schema.decodeUnknownSync(legacyEventSchema)
+
 let eventSequence = 0
+// Live producer state: the fixture derives the next V2 event batch from what the
+// records already show, mirroring the real server's tool state machine.
+const seededToolStatus = new Map<string, ToolStatus>()
+const liveToolStatus = new Map<string, ToolStatus>()
+const streamedParts = new Set<string>()
+let timestampSequence = 0
 
 export async function setupTimeline(
   page: Page,
@@ -106,12 +135,15 @@ export async function setupTimeline(
     ...(input.seedHistory ? historyMessages(18) : []),
     ...(input.messages ?? [userMessage(), assistantMessage()]),
   ])
+  const records = messages.map(toRecord)
+  records.forEach((record) => decodeV2Record(record, decodeOptions))
+  resetProducerState(messages)
   const active = messages.findLast((message) => message.info.role === "assistant")
   const initialStatus = decodeStatus(
     active?.info.role === "assistant" && active.info.time.completed === undefined ? { type: "busy" } : { type: "idle" },
     decodeOptions,
   )
-  const transport = await installSseTransport<EventPayload>(page, {
+  const transport = await installSseTransport<TimelineEvent>(page, {
     server: `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`,
     retry: input.eventRetry ?? 20,
   })
@@ -122,7 +154,7 @@ export async function setupTimeline(
     sessions,
     sessionStatus: { [sessionID]: initialStatus },
     pageMessages: () => ({
-      items: messages,
+      items: records,
     }),
   })
   await page.addInitScript((settings) => {
@@ -167,18 +199,20 @@ export async function setupTimeline(
     await devtools.send("Emulation.setCPUThrottlingRate", { rate: input.cpuRate })
   }
 
+  const sendEvent = async (input: TimelineEvent | readonly TimelineEvent[], delay = 0) => {
+    for (const item of Array.isArray(input) ? input : [input]) {
+      const valid = validateTimelineEvent(item)
+      await transport.send(valid, { marker: describeEvent(valid) })
+    }
+    if (delay) await page.waitForTimeout(delay)
+  }
+
   return {
     transport,
-    async send(event: TimelineEvent, delay = 0) {
-      const valid = validateTimelineEvent(event)
-      await transport.send(valid, { marker: describeEvent(valid) })
-      if (delay) await page.waitForTimeout(delay)
-    },
-    async sendAll(sequence: { event: TimelineEvent; delay: number }[]) {
+    send: sendEvent,
+    async sendAll(sequence: { event: TimelineEvent | readonly TimelineEvent[]; delay: number }[]) {
       for (const item of sequence) {
-        const valid = validateTimelineEvent(item.event)
-        await transport.send(valid, { marker: describeEvent(valid) })
-        await page.waitForTimeout(item.delay)
+        await sendEvent(item.event, item.delay)
       }
     },
     async settle(frames = 3) {
@@ -204,40 +238,61 @@ export async function setupTimeline(
   }
 }
 
-function describeEvent(event: EventPayload) {
-  if (event.payload.type === "message.part.updated") {
-    const part = event.payload.properties.part
-    return [
-      event.payload.type,
-      part.id,
-      part.type === "tool" ? part.tool : part.type,
-      part.type === "tool" ? part.state.status : undefined,
-    ]
-      .filter(Boolean)
-      .join(":")
-  }
-  if (event.payload.type === "session.status") {
-    const status = event.payload.properties.status
-    return [event.payload.type, status.type, status.type === "retry" ? status.attempt : undefined]
-      .filter((value) => value !== undefined)
-      .join(":")
-  }
-  return event.payload.type
-}
-
-export function event<const Type extends TimelinePayload["type"]>(
-  type: Type,
-  properties: Extract<TimelinePayload, { type: Type }>["properties"],
-): TimelineEvent
-export function event(type: TimelinePayload["type"], properties: TimelinePayload["properties"]): TimelineEvent {
-  return validateTimelineEvent({
-    directory,
-    payload: { id: `evt_timeline_${String(++eventSequence).padStart(4, "0")}`, type, properties },
+function resetProducerState(messages: readonly TimelineMessage[]) {
+  seededToolStatus.clear()
+  liveToolStatus.clear()
+  streamedParts.clear()
+  timestampSequence = 0
+  messages.forEach((message) => {
+    if (message.info.role !== "assistant") return
+    message.parts.forEach((part) => {
+      if (part.type === "tool") {
+        seededToolStatus.set(part.id, part.state.status)
+        liveToolStatus.set(part.id, part.state.status)
+      }
+      if (part.type === "text" || part.type === "reasoning") streamedParts.add(part.id)
+    })
   })
 }
 
+function nextTimestamp() {
+  return 1700000002000 + ++timestampSequence * 100
+}
+
+function describeEvent(event: EventPayload) {
+  if ("payload" in event) return event.payload.type
+  const data: Record<string, unknown> = event.data
+  const subject = [data.callID, data.textID, data.reasoningID, data.assistantMessageID, data.sessionID].find(
+    (value) => typeof value === "string",
+  )
+  return [event.type, subject].filter(Boolean).join(":")
+}
+
+export function event<const Type extends LegacyPayloadType>(
+  type: Type,
+  properties: { sessionID: string; messageID: string; partID?: string },
+): LegacyEvent {
+  return {
+    directory,
+    payload: { id: `evt_timeline_${String(++eventSequence).padStart(4, "0")}`, type, properties },
+  }
+}
+
+export function v2Event<const Type extends TimelinePayload["type"]>(
+  type: Type,
+  data: Extract<TimelinePayload, { type: Type }>["data"],
+): TimelinePayload {
+  const value = { id: `evt_timeline_${String(++eventSequence).padStart(4, "0")}`, type, location: { directory }, data }
+  return encodeV2Event(decodeV2Event(value, decodeOptions)) as TimelinePayload
+}
+
 export function validateTimelineEvent(input: unknown): TimelineEvent {
-  return decodeEvent(input, decodeOptions)
+  if (input && typeof input === "object" && "payload" in input) return decodeLegacyEvent(input) as LegacyEvent
+  return v2EventUntyped(input)
+}
+
+function v2EventUntyped(input: unknown): TimelinePayload {
+  return encodeV2Event(decodeV2Event(input, decodeOptions)) as TimelinePayload
 }
 
 export function validateTimelineMessages(input: readonly TimelineMessage[]): TimelineMessage[] {
@@ -324,28 +379,187 @@ export function historyMessages(count: number): TimelineMessage[] {
   }).flat()
 }
 
-export function partUpdated(part: Part | PartSeed<"assistant">) {
+export function partUpdated(part: Part | PartSeed<"assistant">): TimelineEvent[] {
   const owned = "messageID" in part ? part : { ...part, sessionID, messageID: assistantID }
   decodePart(owned, decodeOptions)
-  return event("message.part.updated", {
-    sessionID,
-    part: owned,
-    time: 1700000002000,
-  })
+  if (owned.type === "text") return textEvents(owned.id, owned.text ?? "", owned.messageID)
+  if (owned.type === "reasoning") return reasoningEvents(owned.id, owned.text ?? "", owned.messageID)
+  if (owned.type === "tool") return toolEvents(owned)
+  return []
+}
+
+function textEvents(partID: string, text: string, messageID: string): TimelineEvent[] {
+  const events: TimelineEvent[] = []
+  if (!streamedParts.has(partID)) {
+    streamedParts.add(partID)
+    events.push(
+      v2Event("session.next.text.started", {
+        sessionID,
+        timestamp: nextTimestamp(),
+        assistantMessageID: messageID,
+        textID: partID,
+      }),
+    )
+  }
+  events.push(
+    v2Event("session.next.text.ended", {
+      sessionID,
+      timestamp: nextTimestamp(),
+      assistantMessageID: messageID,
+      textID: partID,
+      text,
+    }),
+  )
+  return events
+}
+
+function reasoningEvents(partID: string, text: string, messageID: string): TimelineEvent[] {
+  const events: TimelineEvent[] = []
+  if (!streamedParts.has(partID)) {
+    streamedParts.add(partID)
+    events.push(
+      v2Event("session.next.reasoning.started", {
+        sessionID,
+        timestamp: nextTimestamp(),
+        assistantMessageID: messageID,
+        reasoningID: partID,
+      }),
+    )
+  }
+  events.push(
+    v2Event("session.next.reasoning.ended", {
+      sessionID,
+      timestamp: nextTimestamp(),
+      assistantMessageID: messageID,
+      reasoningID: partID,
+      text,
+    }),
+  )
+  return events
+}
+
+/**
+ * Re-deliver a settled part through the legacy part bridge: V2 producers never
+ * mutate a settled tool, but pre-V2 servers re-deliver `message.part.updated`,
+ * which the app mirrors into the V2 records.
+ */
+function legacyPartUpdated(part: Extract<Part, { type: "tool" }>): LegacyEvent {
+  return {
+    directory,
+    payload: {
+      id: `evt_timeline_${String(++eventSequence).padStart(4, "0")}`,
+      type: "message.part.updated",
+      properties: { sessionID, messageID: part.messageID, part },
+    },
+  }
+}
+
+function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
+  const state = part.state
+  if (state.status === "pending") return []
+  const base = { sessionID, assistantMessageID: part.messageID, callID: part.id }
+  const known = liveToolStatus.has(part.id)
+  const started = () =>
+    v2Event("session.next.tool.input.started", {
+      ...base,
+      timestamp: nextTimestamp(),
+      name: part.tool,
+    })
+  const called = (input: Record<string, unknown>) =>
+    v2Event("session.next.tool.called", {
+      ...base,
+      timestamp: nextTimestamp(),
+      tool: part.tool,
+      input,
+      provider: { executed: false },
+    })
+  const current = liveToolStatus.get(part.id) ?? "pending"
+  if (state.status === "running") {
+    if (current === "running")
+      return [
+        v2Event("session.next.tool.progress", {
+          ...base,
+          timestamp: nextTimestamp(),
+          structured: state.metadata ?? {},
+          content: [],
+        }),
+      ]
+    liveToolStatus.set(part.id, "running")
+    if (known) return [called(state.input)]
+    return [started(), called(state.input)]
+  }
+  if (state.status === "error") {
+    if (current === "error") {
+      // A settled tool can only change content through the legacy part bridge
+      // (a pre-V2 server re-delivering the part); V2 has no such mutation.
+      return [legacyPartUpdated(part)]
+    }
+    if (current === "completed") return []
+    liveToolStatus.set(part.id, "error")
+    const failed = v2Event("session.next.tool.failed", {
+      ...base,
+      timestamp: nextTimestamp(),
+      error: { type: "unknown", message: state.error ?? "Tool failed" },
+      provider: { executed: false },
+    })
+    return known ? [failed] : [started(), failed]
+  }
+  if (current === "completed") {
+    // Settled output updates re-deliver through the legacy part bridge.
+    return [legacyPartUpdated(part)]
+  }
+  liveToolStatus.set(part.id, "completed")
+  const success = () =>
+    v2Event("session.next.tool.success", {
+      ...base,
+      timestamp: nextTimestamp(),
+      structured: state.metadata ?? {},
+      content: [{ type: "text", text: state.output }],
+      provider: { executed: false },
+    })
+  if (current === "running") return [success()]
+  if (known) return [called(state.input), success()]
+  return [started(), called(state.input), success()]
 }
 
 export function partDelta(partID: string, delta: string, messageID = assistantID) {
-  return event("message.part.delta", { sessionID, messageID, partID, field: "text", delta })
-}
-
-export function messageUpdated(info: Message) {
-  return event("message.updated", { sessionID, info })
-}
-
-export function status(type: SessionStatus["type"], attempt = 1) {
-  return event("session.status", {
+  return v2Event("session.next.text.delta", {
     sessionID,
-    status: type === "retry" ? { type, attempt, message: "Rate limited", next: 1700000010000 } : { type },
+    timestamp: nextTimestamp(),
+    assistantMessageID: messageID,
+    textID: partID,
+    delta,
+  })
+}
+
+export function messageUpdated(info: AssistantMessage): TimelineEvent[] {
+  if (info.error) {
+    return [
+      v2Event("session.next.step.failed", {
+        sessionID,
+        timestamp: nextTimestamp(),
+        assistantMessageID: info.id,
+        error: errorMessage(info.error),
+      }),
+    ]
+  }
+  return [
+    v2Event("session.next.step.ended", {
+      sessionID,
+      timestamp: info.time.completed ?? nextTimestamp(),
+      assistantMessageID: info.id,
+      finish: "stop",
+      cost: info.cost ?? 0,
+      tokens: info.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    }),
+  ]
+}
+
+export function status(type: SessionStatus["type"], attempt = 1, message = "Rate limited"): TimelineEvent {
+  return v2Event("session.next.status", {
+    sessionID,
+    timestamp: nextTimestamp(),
+    status: type === "retry" ? { type, attempt, message, next: 1700000010000 } : { type },
   })
 }
 
@@ -519,6 +733,15 @@ export function completedAssistantInfo(info: AssistantMessage): AssistantMessage
   return { ...info, time: { ...info.time, completed: 1700000003000 } }
 }
 
+/**
+ * The timeline DOM derives text and reasoning part ids from the record content
+ * ordinal, not the content id (`${messageID}:${type}:${ordinal}`). Tool parts
+ * keep their call/content id.
+ */
+export function sessionPartID(messageID: string, type: "text" | "reasoning", ordinal: number) {
+  return `${messageID}:${type}:${ordinal}`
+}
+
 export function project() {
   return {
     id: projectID,
@@ -544,15 +767,114 @@ export function session(input: Partial<Session> = {}): Session {
 }
 
 function eventSchema<
-  const Type extends TimelinePayload["type"],
+  const Type extends LegacyPayloadType,
   const Properties extends Schema.Codec<unknown, unknown>,
 >(type: Type, properties: Properties) {
   return Schema.Struct({
     directory: Schema.String,
-    project: Schema.optional(Schema.String),
-    workspace: Schema.optional(Schema.String),
     payload: Schema.Struct({ id: Event.ID, type: Schema.Literal(type), properties }),
   })
+}
+
+/**
+ * Project a seed message into the V2 `SessionMessage` record the app stores.
+ * Tool content keeps the seed part id (the timeline addresses tools by it);
+ * text and reasoning carry the id too so live deltas can target seeded content.
+ */
+function toRecord(message: TimelineMessage): SessionMessage.Message {
+  if (message.info.role === "user") {
+    return {
+      id: message.info.id,
+      type: "user",
+      time: { created: message.info.time.created },
+      text: message.parts
+        .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
+        .join("\n"),
+    }
+  }
+  const info = message.info
+  return {
+    id: info.id,
+    type: "assistant",
+    time: info.time,
+    agent: info.agent ?? "build",
+    model: { id: info.modelID ?? model.modelID, providerID: info.providerID ?? model.providerID },
+    ...(info.cost !== undefined ? { cost: info.cost } : {}),
+    ...(info.tokens ? { tokens: info.tokens } : {}),
+    // `aborted` matters: the interrupted-turn divider keys on finish.
+    ...(info.finish === "stop" || info.finish === "tool-calls" || info.finish === "aborted"
+      ? { finish: info.finish }
+      : {}),
+    ...(info.error ? { error: errorMessage(info.error) } : {}),
+    content: message.parts.flatMap((part) => {
+      if (part.type === "text") return [{ type: "text", id: part.id, text: part.text ?? "" }]
+      if (part.type === "reasoning")
+        return [
+          {
+            type: "reasoning",
+            id: part.id,
+            text: part.text ?? "",
+            time: { created: part.time?.start ?? info.time.created },
+          },
+        ]
+      if (part.type !== "tool") return []
+      return [toolContent(part, info.time.created ?? 1700000001000)]
+    }),
+  }
+}
+
+function errorMessage(error: AssistantMessage["error"]): { type: string; message: string } {
+  const data = error?.data
+  const message =
+    !!data && typeof data === "object" && typeof data.message === "string" ? data.message : (error?.name ?? "failed")
+  return { type: "unknown", message }
+}
+
+function toolContent(part: Extract<Part, { type: "tool" }>, created: number): SessionMessage.AssistantContent {
+  const state = part.state
+  const start = state.status === "pending" ? created : state.time.start
+  const base = {
+    type: "tool" as const,
+    id: part.id,
+    name: part.tool,
+    time: {
+      created: start,
+      ...(state.status !== "pending" && state.time.start !== undefined ? { ran: state.time.start } : {}),
+      ...(state.status === "completed" || state.status === "error" ? { completed: state.time.end } : {}),
+    },
+  }
+  if (state.status === "pending")
+    return { ...base, state: { status: "pending", input: JSON.stringify(state.input ?? {}) } }
+  if (state.status === "running")
+    return {
+      ...base,
+      state: {
+        status: "running",
+        input: state.input,
+        structured: state.metadata ?? {},
+        content: [],
+      },
+    }
+  if (state.status === "error")
+    return {
+      ...base,
+      state: {
+        status: "error",
+        input: state.input,
+        structured: state.metadata ?? {},
+        content: [],
+        error: { type: "unknown", message: state.error ?? "Tool failed" },
+      },
+    }
+  return {
+    ...base,
+    state: {
+      status: "completed",
+      input: state.input,
+      structured: state.metadata ?? {},
+      content: [{ type: "text", text: state.output }],
+    },
+  }
 }
 
 function provider() {

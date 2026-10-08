@@ -7,8 +7,10 @@ import {
   visualPlan,
 } from "../../utils/visual-stability"
 import {
+  assistantID,
   assistantMessage,
   partUpdated,
+  sessionPartID,
   setupTimeline,
   shell,
   textPart,
@@ -18,12 +20,13 @@ import {
 
 test("does not reverse visible rows when the user wheels during shell remeasurement", async ({ page }, testInfo) => {
   const shellID = "prt_wheel_01_shell"
-  const followingID = "prt_wheel_02_following"
+  const followingSeedID = "prt_wheel_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       ...history(12),
       userMessage(),
-      assistantMessage([shell(shellID, "running"), textPart(followingID, "Following wheel interaction")], {
+      assistantMessage([shell(shellID, "running"), textPart(followingSeedID, "Following wheel interaction")], {
         completed: false,
       }),
     ],
@@ -84,12 +87,13 @@ test("keeps moving upward while drag-selecting above the timeline", async ({ pag
 
 test("does not pull a keyboard-scrolled user during shell remeasurement", async ({ page }, testInfo) => {
   const shellID = "prt_keyboard_01_shell"
-  const followingID = "prt_keyboard_02_following"
+  const followingSeedID = "prt_keyboard_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       ...history(12),
       userMessage(),
-      assistantMessage([shell(shellID, "running"), textPart(followingID, "Following keyboard interaction")], {
+      assistantMessage([shell(shellID, "running"), textPart(followingSeedID, "Following keyboard interaction")], {
         completed: false,
       }),
     ],
@@ -222,12 +226,13 @@ test("does not claim keyboard scrolling owned by a nested scrollable", async ({ 
 
 test("jump to latest lands on stable final rows after offscreen growth", async ({ page }, testInfo) => {
   const shellID = "prt_jump_01_shell"
-  const followingID = "prt_jump_02_following"
+  const followingSeedID = "prt_jump_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       ...history(20),
       userMessage(),
-      assistantMessage([shell(shellID, "running"), textPart(followingID, "Latest visible row")], { completed: false }),
+      assistantMessage([shell(shellID, "running"), textPart(followingSeedID, "Latest visible row")], { completed: false }),
     ],
     settings: { shellToolPartsExpanded: true },
     cpuRate: 4,
@@ -265,11 +270,12 @@ test("jump to latest lands on stable final rows after offscreen growth", async (
 
 test("handles a single row taller than the viewport", async ({ page }, testInfo) => {
   const shellID = "prt_tall_01_shell"
-  const followingID = "prt_tall_02_following"
+  const followingSeedID = "prt_tall_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
-      assistantMessage([shell(shellID, "running"), textPart(followingID, "After tall row")], { completed: false }),
+      assistantMessage([shell(shellID, "running"), textPart(followingSeedID, "After tall row")], { completed: false }),
     ],
     settings: { shellToolPartsExpanded: true },
     viewport: { width: 900, height: 360 },

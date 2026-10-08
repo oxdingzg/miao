@@ -6,15 +6,29 @@ import {
   stopVisualProbe,
   visualPlan,
 } from "../../utils/visual-stability"
-import { assistantMessage, setupTimeline, shell, textPart, toolPart, userMessage, waitForVisualSettle } from "./fixture"
+import {
+  assistantID,
+  assistantMessage,
+  sessionPartID,
+  setupTimeline,
+  shell,
+  textPart,
+  toolPart,
+  userMessage,
+  waitForVisualSettle,
+} from "./fixture"
 
 test("expands and collapses a long completed shell without overlap", async ({ page }, testInfo) => {
   const shellID = "prt_interaction_01_shell"
-  const followingID = "prt_interaction_02_following"
+  const followingSeedID = "prt_interaction_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   await setupTimeline(page, {
     messages: [
       userMessage(),
-      assistantMessage([shell(shellID, "completed", lines(50)), textPart(followingID, "Following shell expansion")]),
+      assistantMessage([
+        shell(shellID, "completed", lines(50)),
+        textPart(followingSeedID, "Following shell expansion"),
+      ]),
     ],
     settings: { shellToolPartsExpanded: false },
     cpuRate: 4,
@@ -60,7 +74,8 @@ test("expands and collapses a completed context group without overlap", async ({
     "prt_interaction_04_list",
   ]
   const group = `[data-timeline-part-ids="${ids.join(",")}"]`
-  const followingID = "prt_interaction_context_following"
+  const followingSeedID = "prt_interaction_context_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   await setupTimeline(page, {
     messages: [
       userMessage(),
@@ -69,7 +84,7 @@ test("expands and collapses a completed context group without overlap", async ({
         toolPart(ids[1]!, "glob", "completed", { path: ".", pattern: "**/*.ts" }),
         toolPart(ids[2]!, "grep", "completed", { path: ".", pattern: "stable" }),
         toolPart(ids[3]!, "list", "completed", { path: "src" }),
-        textPart(followingID, "Following context expansion"),
+        textPart(followingSeedID, "Following context expansion"),
       ]),
     ],
     cpuRate: 4,
@@ -115,7 +130,8 @@ test("expands and collapses a completed context group without overlap", async ({
 
 test("expands and collapses an edit diff without moving twice", async ({ page }, testInfo) => {
   const editID = "prt_interaction_edit"
-  const followingID = "prt_interaction_edit_following"
+  const followingSeedID = "prt_interaction_edit_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   await setupTimeline(page, {
     messages: [
       userMessage(),
@@ -137,7 +153,7 @@ test("expands and collapses an edit diff without moving twice", async ({ page },
             },
           },
         ),
-        textPart(followingID, "Following edit expansion"),
+        textPart(followingSeedID, "Following edit expansion"),
       ]),
     ],
     settings: { editToolPartsExpanded: false },
@@ -173,7 +189,10 @@ test("expands and collapses an edit diff without moving twice", async ({ page },
   )
 })
 
-test("shows all and expands historical diff summary without overlap", async ({ page }, testInfo) => {
+// The V2 user record has no summary carrier, so the DiffSummary row cannot
+// render for record-loaded sessions; revisit with the Stage 3 consumer migration
+// (specs/v2/app-timeline-v2.md) when summary gets a V2 data path.
+test.fixme("shows all and expands historical diff summary without overlap", async ({ page }, testInfo) => {
   const firstUser = userMessage(undefined, {
     summary: {
       diffs: Array.from({ length: 12 }, (_, index) => ({
