@@ -241,3 +241,121 @@ async fn runtime_reloads_instructions_at_boundaries_without_session_id_in_cache_
     assert_eq!(steps[1].data["context_epoch"], 2);
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn explicit_sources_preserve_order_policy_and_fingerprints() {
+    use miao_engine::context::Source;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("AGENTS.md"), "root rules").unwrap();
+    std::fs::write(dir.path().join("persona.md"), "persona rules").unwrap();
+    std::fs::write(dir.path().join("team.md"), "team rules").unwrap();
+    let tools = Tools::new(dir.path())
+        .await
+        .unwrap()
+        .with_context_sources(vec![
+            Source {
+                label: "persona".into(),
+                path: "persona.md".into(),
+            },
+            Source {
+                label: "team".into(),
+                path: "team.md".into(),
+            },
+            Source {
+                label: "missing".into(),
+                path: "missing.md".into(),
+            },
+        ])
+        .unwrap();
+    let policy = Policy::new(Config::default()).unwrap();
+    let first = assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(first.system.find("root rules").unwrap() < first.system.find("persona rules").unwrap());
+    assert!(first.system.find("persona rules").unwrap() < first.system.find("team rules").unwrap());
+    assert_eq!(first.sources[3]["status"], "missing");
+    std::fs::write(dir.path().join("team.md"), "changed rules").unwrap();
+    let next = assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_ne!(first.fingerprint, next.fingerprint);
+    assert_eq!(first.sources[1]["sha256"], next.sources[1]["sha256"]);
+    for decision in [Decision::Ask, Decision::Deny] {
+        let policy = Policy::new(Config {
+            rules: vec![
+                Rule {
+                    tool: "read_file".into(),
+                    path: "AGENTS.md".into(),
+                    decision,
+                },
+                Rule {
+                    tool: "read_file".into(),
+                    path: "persona.md".into(),
+                    decision,
+                },
+            ],
+            ..Config::default()
+        })
+        .unwrap();
+        let selected = assemble(&tools, &policy, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(!selected.system.contains("root rules"));
+        assert!(!selected.system.contains("persona rules"));
+        assert!(selected.system.contains("changed rules"));
+        assert_eq!(selected.sources[1]["status"], "skipped");
+    }
+}
+
+#[tokio::test]
+async fn explicit_sources_reject_ambiguous_paths_and_total_context_overflow() {
+    use miao_engine::{context::Source, tools::ToolError};
+    let dir = tempfile::tempdir().unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+    for path in [
+        "../private",
+        "/absolute",
+        "a/../b",
+        "a/./b",
+        "AGENTS.md",
+        "a\\b",
+    ] {
+        assert!(tools
+            .clone()
+            .with_context_sources(vec![Source {
+                label: "extra".into(),
+                path: path.into()
+            }])
+            .is_err());
+    }
+    assert!(tools
+        .clone()
+        .with_context_sources(vec![Source {
+            label: "invalid\"label".into(),
+            path: "a.md".into()
+        }])
+        .is_err());
+    std::fs::write(dir.path().join("AGENTS.md"), "r".repeat(32768)).unwrap();
+    std::fs::write(dir.path().join("extra.md"), "x".repeat(32768)).unwrap();
+    let tools = tools
+        .with_context_sources(vec![Source {
+            label: "extra".into(),
+            path: "extra.md".into(),
+        }])
+        .unwrap();
+    assert!(matches!(
+        assemble(
+            &tools,
+            &Policy::new(Config::default()).unwrap(),
+            CancellationToken::new()
+        )
+        .await,
+        Err(ToolError::ContextBudget)
+    ));
+    let token = CancellationToken::new();
+    token.cancel();
+    assert!(matches!(
+        assemble(&tools, &Policy::new(Config::default()).unwrap(), token).await,
+        Err(ToolError::Interrupted)
+    ));
+}

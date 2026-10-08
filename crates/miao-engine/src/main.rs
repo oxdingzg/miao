@@ -199,6 +199,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--provider",
             "--policy",
             "--mcp-config",
+            "--context-config",
             "--credential-db",
             "--credential-id",
             "--credential-integration",
@@ -340,6 +341,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("process-enabled credential sources must be outside workspace".into());
         }
         tools = tools.with_protected_resource(path);
+    }
+    if let Some(path) = options.get("--context-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("Context host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("Context config exceeds 64 KiB".into());
+        }
+        let sources = serde_json::from_slice::<Vec<miao_engine::context::Source>>(&bytes)
+            .map_err(|_| "invalid Context host config")?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_context_sources(sources)?;
     }
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {

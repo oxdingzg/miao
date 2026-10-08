@@ -27,6 +27,8 @@ pub enum ToolError {
     Unsupported,
     #[error("external tool: {0}")]
     External(String),
+    #[error("context exceeds 64 KiB budget")]
+    ContextBudget,
     #[error("path is outside the configured workspace")]
     OutsideWorkspace,
     #[error("file must be regular UTF-8 text of at most 32768 bytes")]
@@ -98,6 +100,7 @@ pub struct Tools {
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
+    context_sources: Arc<Vec<crate::context::Source>>,
 }
 
 impl Tools {
@@ -125,6 +128,7 @@ impl Tools {
             runner: None,
             protected: vec![],
             mcp: None,
+            context_sources: Arc::new(vec![]),
         })
     }
 
@@ -137,6 +141,18 @@ impl Tools {
         self.process_network = network;
         self
     }
+    pub fn with_context_sources(
+        mut self,
+        sources: Vec<crate::context::Source>,
+    ) -> Result<Self, ToolError> {
+        crate::context::validate(&sources)?;
+        self.context_sources = Arc::new(sources);
+        Ok(self)
+    }
+    pub(crate) fn context_sources(&self) -> std::slice::Iter<'_, crate::context::Source> {
+        self.context_sources.iter()
+    }
+
     pub fn with_mcp(mut self, registry: Arc<mcp::Registry>) -> Self {
         self.mcp = Some(registry);
         self

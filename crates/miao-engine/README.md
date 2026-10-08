@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 85 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 87 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -252,3 +252,20 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
   尚无完整跨进程归属保证。
 
 目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
+
+
+## 显式 workspace Context Sources
+
+`--context-config /absolute/path/context.json` 选择附加 instruction/persona 文件：
+
+```json
+[{"label":"persona","path":"docs/persona.md"},{"label":"team-rules","path":"docs/team-rules.md"}]
+```
+
+配置位于 workspace 之外，内容路径必须是 workspace 相对路径。最多 16 个附加 source；
+label 使用限 64 字符的 ASCII 字母/数字/`_.-`，路径不能有空、`.`、`..` segment。
+默认先加载 `AGENTS.md`，再按配置顺序加载 sources；每项均复用 scoped `read_file` 与文件级 policy，
+ask/deny 项不读内容，missing/skipped 也写入 provenance。每文件最多 32 KiB，最终 system 最多 64 KiB；
+超预算显式失败。provider boundary 重读并通过不可变 Context Epoch 保存完整 system、source hashes 与选择顺序。
+
+这提供显式选择的 workspace producers；尚未实现 ambient user/ancestor discovery、完整 skill/reference catalog 或按任务自动选择。
