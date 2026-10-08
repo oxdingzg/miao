@@ -10,6 +10,10 @@ type Shell = Extract<SessionMessageInfo, { type: "shell" }>
 type ToolState = Extract<Assistant["content"][number], { type: "tool" }>["state"]
 type ToolContent = Extract<ToolState, { status: "completed" }>["content"]
 
+function record(value: unknown): value is Record<string, JsonValue> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
 export type V2SessionReduction = {
   sessionID: string
   messages: SessionMessageInfo[]
@@ -174,6 +178,23 @@ export function createV2SessionReducer() {
           finish: "error",
           error: event.data.error,
           time: { ...item.time, completed: event.data.timestamp },
+          // An interrupted turn never settles its in-flight tools; leave them
+          // pending and the timeline shows a spinner forever.
+          content: item.content.map((content) => {
+            if (content.type !== "tool" || content.state.status !== "pending") return content
+            const parsed: unknown = JSON.parse(content.state.input || "{}")
+            return {
+              ...content,
+              state: {
+                status: "error",
+                input: record(parsed) ? parsed : {},
+                structured: {},
+                content: [],
+                error: { type: "unknown", message: "Interrupted" },
+                time: { created: content.time.created, ran: content.time.created, completed: event.data.timestamp },
+              },
+            }
+          }),
         }))
       case "session.next.text.started":
         return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({

@@ -217,6 +217,46 @@ describe("v2 session reducer", () => {
       ],
     })
   })
+
+  test("settles pending tools as failed when the step fails", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+    }
+
+    apply({
+      ...base,
+      id: "evt_step",
+      type: "session.next.step.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", agent: "build", model },
+    })
+    apply({
+      ...base,
+      id: "evt_pending",
+      type: "session.next.tool.input.started",
+      data: { ...stamp, assistantMessageID: "msg_assistant", callID: "call_pending", name: "read" },
+    })
+    apply({
+      ...base,
+      id: "evt_fail",
+      type: "session.next.step.failed",
+      data: { ...stamp, assistantMessageID: "msg_assistant", error: { type: "unknown", message: "aborted" } },
+    })
+
+    expect(messages[0]).toMatchObject({
+      type: "assistant",
+      finish: "error",
+      content: [
+        {
+          type: "tool",
+          id: "call_pending",
+          state: { status: "error", error: { type: "unknown", message: "Interrupted" } },
+        },
+      ],
+    })
+  })
 })
 
  test("updates the original command message through preparation and failure", () => {
