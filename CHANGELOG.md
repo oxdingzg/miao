@@ -10,6 +10,23 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-10-08
+
+### Added
+- **script**: add windows local install script (#432) (`74e6ffc09`)
+
+### Changed
+- **session-ui**: read the session records via the Data contract (#418) (`0f462d596`)
+- **session-ui**: host the V2 record content projection (#416) (`37e37f1da`)
+
+### Fixed
+- **tui**: esc always interrupts the running turn — queued prompts survive and advance (#431) (`eb54fd78e`)
+- **tui**: consume the mtty clipboard file once (#434) (`806e3576c`)
+- **app**: render the timeline from the V2 record contract (#427) (`707772e4b`)
+- **tui**: keep the transcript pinned to the tail while streaming (#424) (`ff9b8a150`)
+- **runtime**: every window starts and owns its Runtime (#421) (`36411618f`)
+- **app**: open the tab context menu from the keyboard (#417) (`57184b583`)
+
 ## [0.1.24] - 2026-10-08
 
 ### Added
