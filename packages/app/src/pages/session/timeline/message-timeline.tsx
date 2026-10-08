@@ -345,6 +345,12 @@ export function MessageTimeline(props: {
   const assistantMessagesByParent = projection.assistantMessagesByParent
   const lastAssistantGroupKey = projection.lastAssistantGroupKey
   const messageByID = projection.messageByID
+  // Row refs and render components consume V2 records (SessionMessageInfo);
+  // the V1 view-model map only feeds non-render lookups.
+  const recordByID = createMemo(() => {
+    const id = sessionID()
+    return new Map((id ? (sync().data.session_message[id] ?? []) : []).map((message) => [message.id, message] as const))
+  })
   const messageLastRowIndex = projection.messageLastRowIndex
   const messageRowIndex = projection.messageRowIndex
   const timelineRowByKey = projection.rowByKey
@@ -934,7 +940,7 @@ export function MessageTimeline(props: {
     const message = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return
-      return messageByID().get(group.ref.messageID)
+      return recordByID().get(group.ref.messageID)
     })
     const part = createMemo(() => {
       const group = row().group
@@ -1052,8 +1058,8 @@ export function MessageTimeline(props: {
       case "UserMessage": {
         const userMessageRow = row as Accessor<TimelineRowByTag<"UserMessage">>
         const message = createMemo(() => {
-          const m = messageByID().get(userMessageRow().userMessageID)
-          if (m?.role === "user") return m
+          const m = recordByID().get(userMessageRow().userMessageID)
+          if (m?.type === "user") return m
         })
         const messageComments = createMemo(() => {
           if (!settings.general.newLayoutDesigns()) return []
@@ -1066,6 +1072,7 @@ export function MessageTimeline(props: {
                 <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
                   <div data-slot="session-turn-message-content" aria-live="off">
                     <Message
+                      sessionID={sessionID() ?? ""}
                       message={message()}
                       parts={getMsgParts(userMessageRow().userMessageID)}
                       actions={props.actions}
