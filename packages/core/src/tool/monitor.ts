@@ -12,6 +12,7 @@ import { PermissionV2 } from "../permission"
 import { AppProcess } from "../process"
 import { PositiveInt } from "../schema"
 import { SessionEvent } from "../session/event"
+import { SessionExecution } from "../session/execution"
 import { SessionMessage } from "../session/message"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -138,7 +139,8 @@ const layer = Layer.effectDiscard(
             Effect.gen(function* () {
               const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
               const events = yield* Effect.serviceOption(EventV2.Service)
-              if (Option.isNone(jobs) || Option.isNone(events))
+              const execution = yield* Effect.serviceOption(SessionExecution.Service)
+              if (Option.isNone(jobs) || Option.isNone(events) || Option.isNone(execution))
                 return yield* new ToolFailure({
                   message: "Background monitoring is not available in this runtime.",
                 })
@@ -159,14 +161,22 @@ const layer = Layer.effectDiscard(
               }
               const announce = (text: string, metadata: Record<string, unknown>) =>
                 Effect.gen(function* () {
-                  yield* events.value.publish(SessionEvent.Synthetic, {
+                  yield* events.value.publish(SessionEvent.NotificationAdmitted, {
                     sessionID: context.sessionID,
                     messageID: SessionMessage.ID.create(),
                     timestamp: yield* DateTime.now,
                     text,
                     metadata,
                   })
-                }).pipe(Effect.ignore)
+                  // Recording text alone does not wake an idle Session. Admission
+                  // precedes the advisory wake so the runner sees durable work.
+                  yield* execution.value.wake(context.sessionID)
+                }).pipe(
+                  Effect.tapCause((cause) =>
+                    Effect.logWarning("Failed to deliver monitor notification", { sessionID: context.sessionID, id, cause }),
+                  ),
+                  Effect.ignore,
+                )
               // Runs after the tool call has already returned, so a command that
               // cannot start is reported by the job and a final notice rather
               // than failing the call.
