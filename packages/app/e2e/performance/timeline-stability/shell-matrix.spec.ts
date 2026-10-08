@@ -7,6 +7,8 @@ import {
   visualPlan,
 } from "../../utils/visual-stability"
 import {
+  assistantID,
+  sessionPartID,
   assistantMessage,
   partUpdated,
   setupTimeline,
@@ -53,11 +55,12 @@ const profiles = [
 for (const profile of profiles) {
   test(`keeps rows stable for shell ${profile.name}`, async ({ page }, testInfo) => {
     const shellID = `prt_matrix_${profiles.indexOf(profile)}_01_shell`
-    const followingID = `prt_matrix_${profiles.indexOf(profile)}_02_following`
+    const followingSeedID = "prt_matrix_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
     const timeline = await setupTimeline(page, {
       messages: [
         userMessage(),
-        assistantMessage([shell(shellID, "running"), textPart(followingID, "Following shell row")], {
+        assistantMessage([shell(shellID, "running"), textPart(followingSeedID, "Following shell row")], {
           completed: false,
         }),
       ],
@@ -108,11 +111,12 @@ for (const profile of profiles) {
 
 test("keeps following row stable when a collapsed shell receives 50 lines", async ({ page }, testInfo) => {
   const shellID = "prt_matrix_collapsed_01_shell"
-  const followingID = "prt_matrix_collapsed_02_following"
+  const followingSeedID = "prt_matrix_collapsed_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
-      assistantMessage([shell(shellID, "running"), textPart(followingID, "Following collapsed shell")], {
+      assistantMessage([shell(shellID, "running"), textPart(followingSeedID, "Following collapsed shell")], {
         completed: false,
       }),
     ],
@@ -152,11 +156,12 @@ test("keeps following row stable when a collapsed shell receives 50 lines", asyn
 
 test("keeps rows stable when a running shell becomes an error", async ({ page }, testInfo) => {
   const shellID = "prt_matrix_error_01_shell"
-  const followingID = "prt_matrix_error_02_following"
+  const followingSeedID = "prt_matrix_error_02_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
-      assistantMessage([shell(shellID, "running", lines(10)), textPart(followingID, "Following failed shell")], {
+      assistantMessage([shell(shellID, "running", lines(10)), textPart(followingSeedID, "Following failed shell")], {
         completed: false,
       }),
     ],
@@ -208,7 +213,8 @@ test("keeps rows stable when a running shell becomes an error", async ({ page },
 
 test("keeps rows stable when later text arrives before shell output", async ({ page }, testInfo) => {
   const shellID = "prt_late_text_01_shell"
-  const followingID = "prt_late_text_02_following"
+  // Live-inserted text takes the first text ordinal of the assistant record.
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [userMessage(), assistantMessage([shell(shellID, "running")], { completed: false })],
     settings: { shellToolPartsExpanded: true },
@@ -224,7 +230,7 @@ test("keeps rows stable when later text arrives before shell output", async ({ p
     },
   })
   await startVisualProbe(page, regions)
-  await timeline.send(partUpdated(textPart(followingID, "Later assistant content arrived before shell output.")), 240)
+  await timeline.send(partUpdated(textPart("prt_late_text_02_following", "Later assistant content arrived before shell output.")), 240)
   await timeline.send(partUpdated(shell(shellID, "running", lines(20))), 300)
   await timeline.send(partUpdated(shell(shellID, "completed", lines(20))), 600)
   const trace = await stopVisualProbe<keyof typeof regions>(page)

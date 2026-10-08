@@ -11,6 +11,7 @@ import {
   assistantMessage,
   event,
   partUpdated,
+  sessionPartID,
   setupTimeline,
   textPart,
   toolPart,
@@ -27,11 +28,12 @@ const inputs = {
 
 test("appends context operations while the group is expanded", async ({ page }, testInfo) => {
   const firstID = "prt_append_01_read"
-  const followingID = "prt_append_99_following"
+  const followingSeedID = "prt_append_99_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
-      assistantMessage([toolPart(firstID, "read", "running", inputs.read), textPart(followingID, "Following append")], {
+      assistantMessage([toolPart(firstID, "read", "running", inputs.read), textPart(followingSeedID, "Following append")], {
         completed: false,
       }),
     ],
@@ -72,10 +74,11 @@ test("appends context operations while the group is expanded", async ({ page }, 
       { perMarker: true },
     ),
   )
+  // V2 appends tools after the trailing text, so the new operations form a
+  // second group instead of joining the seeded one.
+  await expect(page.locator('[data-timeline-part-ids="prt_append_01_read"]')).toBeVisible()
   await expect(
-    page.locator(
-      '[data-timeline-part-ids="prt_append_01_read,prt_append_02_glob,prt_append_03_grep,prt_append_04_list"]',
-    ),
+    page.locator('[data-timeline-part-ids="prt_append_02_glob,prt_append_03_grep,prt_append_04_list"]'),
   ).toBeVisible()
   await expect(
     page.locator('[data-timeline-part-ids^="prt_append_01_read"] [data-slot="collapsible-trigger"]'),
@@ -84,31 +87,34 @@ test("appends context operations while the group is expanded", async ({ page }, 
 
 test("splits and merges context groups when a middle text part changes", async ({ page }, testInfo) => {
   const textID = "prt_split_02_text"
-  const followingID = "prt_split_99_following"
+  // V2 has no part removal: the boundary text seeds empty (so the groups start
+  // merged), streaming text into it splits them, and clearing it merges again.
+  const followingID = sessionPartID(assistantID, "text", 1)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
-      assistantMessage([
-        toolPart("prt_split_01_read", "read", "completed", inputs.read),
-        textPart(textID, "Boundary"),
-        toolPart("prt_split_03_glob", "glob", "completed", inputs.glob),
-        textPart(followingID, "Following split groups"),
-      ]),
+      assistantMessage(
+        [
+          toolPart("prt_split_01_read", "read", "completed", inputs.read),
+          textPart(textID, ""),
+          toolPart("prt_split_03_glob", "glob", "completed", inputs.glob),
+          textPart("prt_split_99_following", "Following split groups"),
+        ],
+        { completed: false },
+      ),
     ],
     cpuRate: 4,
   })
+  await expect(page.locator('[data-timeline-part-ids="prt_split_01_read,prt_split_03_glob"]')).toBeVisible()
   const regions = defineVisualRegions({
     following: { selector: `[data-timeline-part-id="${followingID}"]`, closest: '[data-timeline-row="AssistantPart"]' },
   })
   await startVisualProbe(page, regions)
-  await timeline.send(
-    event("message.part.removed", { sessionID: "ses_timeline_stability", messageID: assistantID, partID: textID }),
-    500,
-  )
-  await expect(page.locator('[data-timeline-part-ids="prt_split_01_read,prt_split_03_glob"]')).toBeVisible()
-  await timeline.send(partUpdated(textPart(textID, "Boundary restored")), 500)
+  await timeline.send(partUpdated(textPart(textID, "Boundary restored. ".repeat(6))), 500)
   await expect(page.locator('[data-timeline-part-ids="prt_split_01_read"]')).toBeVisible()
   await expect(page.locator('[data-timeline-part-ids="prt_split_03_glob"]')).toBeVisible()
+  await timeline.send(partUpdated(textPart(textID, "")), 500)
+  await expect(page.locator('[data-timeline-part-ids="prt_split_01_read,prt_split_03_glob"]')).toBeVisible()
   const trace = await stopVisualProbe<keyof typeof regions>(page)
   await reportVisualStability(
     testInfo,
@@ -134,7 +140,10 @@ test("removing the first context member replaces the group once without overlapp
   page,
 }, testInfo) => {
   const ids = ["prt_key_01_read", "prt_key_02_glob", "prt_key_03_grep"]
-  const followingID = "prt_key_99_following"
+  // Legacy-bridge coverage: the V2 producer never removes parts, but the app
+  // keeps honoring removal events from pre-V2 servers.
+  const followingSeedID = "prt_key_99_following"
+  const followingID = sessionPartID(assistantID, "text", 0)
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(),
@@ -142,7 +151,7 @@ test("removing the first context member replaces the group once without overlapp
         toolPart(ids[0]!, "read", "completed", inputs.read),
         toolPart(ids[1]!, "glob", "completed", inputs.glob),
         toolPart(ids[2]!, "grep", "completed", inputs.grep),
-        textPart(followingID, "Following replaced group"),
+        textPart(followingSeedID, "Following replaced group"),
       ]),
     ],
     cpuRate: 4,

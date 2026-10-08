@@ -8,12 +8,14 @@ import {
   visualPlan,
 } from "../../utils/visual-stability"
 import {
+  assistantID,
   assistantMessage,
   completedAssistantInfo,
   messageUpdated,
   partDelta,
   partUpdated,
   reasoningPart,
+  sessionPartID,
   setupTimeline,
   shell,
   status,
@@ -27,8 +29,9 @@ test.describe("timeline visual lifecycle stability", () => {
     test.setTimeout(180_000)
     const ids = ["prt_parallel_01_empty", "prt_parallel_02_short", "prt_parallel_03_long"] as const
     const initial = ids.map((id) => shell(id, "running"))
-    const followingID = "prt_parallel_04_following"
-    const assistant = assistantMessage([...initial, textPart(followingID, "Following all parallel shells.")], {
+    const followingSeedID = "prt_parallel_04_following"
+    const followingID = sessionPartID(assistantID, "text", 0)
+    const assistant = assistantMessage([...initial, textPart(followingSeedID, "Following all parallel shells.")], {
       completed: false,
     })
     const timeline = await setupTimeline(page, {
@@ -84,7 +87,10 @@ test.describe("timeline visual lifecycle stability", () => {
         { perMarker: true },
       ),
     )
-    await expect(page.locator(`[data-timeline-part-id="${ids[2]}"] [data-slot="bash-pre"]`)).toContainText("line 50")
+    // Completed shell previews cap at 10 lines behind the bash expander.
+    const longShell = page.locator(`[data-timeline-part-id="${ids[2]}"]`)
+    await longShell.locator('[data-slot="bash-expand"]').click()
+    await expect(longShell.locator('[data-slot="bash-pre"]')).toContainText("line 50")
 
     const short = page.locator(`[data-timeline-part-id="${ids[1]}"]`)
     await short.locator('[data-slot="collapsible-trigger"]').click()
@@ -96,8 +102,12 @@ test.describe("timeline visual lifecycle stability", () => {
   test("replaces thinking with streamed reasoning and text without a blank visible turn", async ({
     page,
   }, testInfo) => {
-    const reasoningID = "prt_reasoning_visible"
-    const textID = "prt_streamed_text"
+    // Events address parts by their seed id; the DOM ids come from the record
+    // content ordinal (`${messageID}:${type}:${ordinal}`).
+    const reasoningEventID = "prt_reasoning_visible"
+    const textEventID = "prt_streamed_text"
+    const reasoningID = sessionPartID(assistantID, "reasoning", 0)
+    const textID = sessionPartID(assistantID, "text", 0)
     const assistant = assistantMessage([], { completed: false })
     const timeline = await setupTimeline(page, {
       messages: [userMessage(), assistant],
@@ -116,15 +126,15 @@ test.describe("timeline visual lifecycle stability", () => {
       text: { selector: `[data-timeline-part-id="${textID}"]`, closest: '[data-timeline-row="AssistantPart"]' },
     })
     await startVisualProbe(page, regions)
-    await timeline.send(partUpdated(reasoningPart(reasoningID, "")), 100)
+    await timeline.send(partUpdated(reasoningPart(reasoningEventID, "")), 100)
     await expect(page.locator(`[data-timeline-part-id="${reasoningID}"]`)).toHaveCount(0)
-    await timeline.send(partUpdated(reasoningPart(reasoningID, "## Planning\n\nChecking the visible timeline.")), 160)
+    await timeline.send(partUpdated(reasoningPart(reasoningEventID, "## Planning\n\nChecking the visible timeline.")), 160)
     await timeline.waitForPart(reasoningID)
     await expect(page.locator('[data-timeline-row="Thinking"]')).toHaveCount(0)
-    await timeline.send(partUpdated(textPart(textID, "Starting")), 100)
-    await timeline.send(partDelta(textID, " **stable"), 90)
-    await timeline.send(partDelta(textID, " output** with `code` and [a link"), 130)
-    await timeline.send(partDelta(textID, "](https://example.com)."), 220)
+    await timeline.send(partUpdated(textPart(textEventID, "Starting")), 100)
+    await timeline.send(partDelta(textEventID, " **stable"), 90)
+    await timeline.send(partDelta(textEventID, " output** with `code` and [a link"), 130)
+    await timeline.send(partDelta(textEventID, "](https://example.com)."), 220)
     await timeline.send(messageUpdated(completedAssistantInfo(assistant.info)), 120)
     await timeline.send(status("idle"), 500)
     const trace = await stopVisualProbe<keyof typeof regions>(page)
