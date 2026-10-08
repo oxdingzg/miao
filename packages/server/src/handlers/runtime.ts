@@ -48,6 +48,20 @@ export const RuntimeHandler = HttpApiBuilder.group(Api, "server.runtime", (handl
           ),
         ),
       )
+      .handle("runtime.control.setSessionEnabled", (ctx) =>
+        required().pipe(
+          Effect.flatMap(
+            Effect.fn(function* (admin) {
+              const setSessionEnabled = admin.setSessionEnabled
+              if (!setSessionEnabled) return yield* unavailable()
+              return yield* Effect.tryPromise({
+                try: () => setSessionEnabled(ctx.params.sessionID, ctx.payload.enabled),
+                catch: () => new InvalidRequestError({ message: "Session unavailable in this Runtime" }),
+              })
+            }),
+          ),
+        ),
+      )
       .handle("runtime.control.configure", (ctx) =>
         required().pipe(
           Effect.flatMap(

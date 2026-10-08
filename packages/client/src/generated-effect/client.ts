@@ -1213,24 +1213,35 @@ type Endpoint28_3Input = { readonly enabled: Endpoint28_3Request["payload"]["ena
 const Endpoint28_3 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_3Input) =>
   raw["runtime.control.setEnabled"]({ payload: { enabled: input["enabled"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint28_4Request = Parameters<RawClient["server.runtime"]["runtime.control.configure"]>[0]
+type Endpoint28_4Request = Parameters<RawClient["server.runtime"]["runtime.control.setSessionEnabled"]>[0]
 type Endpoint28_4Input = {
-  readonly hubURL: Endpoint28_4Request["payload"]["hubURL"]
-  readonly hostToken: Endpoint28_4Request["payload"]["hostToken"]
+  readonly sessionID: Endpoint28_4Request["params"]["sessionID"]
+  readonly enabled: Endpoint28_4Request["payload"]["enabled"]
 }
 const Endpoint28_4 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_4Input) =>
+  raw["runtime.control.setSessionEnabled"]({
+    params: { sessionID: input["sessionID"] },
+    payload: { enabled: input["enabled"] },
+  }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint28_5Request = Parameters<RawClient["server.runtime"]["runtime.control.configure"]>[0]
+type Endpoint28_5Input = {
+  readonly hubURL: Endpoint28_5Request["payload"]["hubURL"]
+  readonly hostToken: Endpoint28_5Request["payload"]["hostToken"]
+}
+const Endpoint28_5 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_5Input) =>
   raw["runtime.control.configure"]({ payload: { hubURL: input["hubURL"], hostToken: input["hostToken"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-type Endpoint28_5Request = Parameters<RawClient["server.runtime"]["runtime.control.invite"]>[0]
-type Endpoint28_5Input = {
-  readonly permissions: Endpoint28_5Request["payload"]["permissions"]
-  readonly projectIDs: Endpoint28_5Request["payload"]["projectIDs"]
-  readonly sessionIDs: Endpoint28_5Request["payload"]["sessionIDs"]
-  readonly expiresAt: Endpoint28_5Request["payload"]["expiresAt"]
+type Endpoint28_6Request = Parameters<RawClient["server.runtime"]["runtime.control.invite"]>[0]
+type Endpoint28_6Input = {
+  readonly permissions: Endpoint28_6Request["payload"]["permissions"]
+  readonly projectIDs: Endpoint28_6Request["payload"]["projectIDs"]
+  readonly sessionIDs: Endpoint28_6Request["payload"]["sessionIDs"]
+  readonly expiresAt: Endpoint28_6Request["payload"]["expiresAt"]
 }
-const Endpoint28_5 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_5Input) =>
+const Endpoint28_6 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_6Input) =>
   raw["runtime.control.invite"]({
     payload: {
       permissions: input["permissions"],
@@ -1240,34 +1251,34 @@ const Endpoint28_5 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_5I
     },
   }).pipe(Effect.mapError(mapClientError))
 
-const Endpoint28_6 = (raw: RawClient["server.runtime"]) => () =>
+const Endpoint28_7 = (raw: RawClient["server.runtime"]) => () =>
   raw["runtime.control.pending"]({}).pipe(Effect.mapError(mapClientError))
 
-type Endpoint28_7Request = Parameters<RawClient["server.runtime"]["runtime.control.approve"]>[0]
-type Endpoint28_7Input = {
-  readonly pairingID: Endpoint28_7Request["params"]["pairingID"]
-  readonly publicKey: Endpoint28_7Request["payload"]["publicKey"]
+type Endpoint28_8Request = Parameters<RawClient["server.runtime"]["runtime.control.approve"]>[0]
+type Endpoint28_8Input = {
+  readonly pairingID: Endpoint28_8Request["params"]["pairingID"]
+  readonly publicKey: Endpoint28_8Request["payload"]["publicKey"]
 }
-const Endpoint28_7 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_7Input) =>
+const Endpoint28_8 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_8Input) =>
   raw["runtime.control.approve"]({
     params: { pairingID: input["pairingID"] },
     payload: { publicKey: input["publicKey"] },
   }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint28_8Request = Parameters<RawClient["server.runtime"]["runtime.control.reject"]>[0]
-type Endpoint28_8Input = { readonly pairingID: Endpoint28_8Request["params"]["pairingID"] }
-const Endpoint28_8 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_8Input) =>
+type Endpoint28_9Request = Parameters<RawClient["server.runtime"]["runtime.control.reject"]>[0]
+type Endpoint28_9Input = { readonly pairingID: Endpoint28_9Request["params"]["pairingID"] }
+const Endpoint28_9 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_9Input) =>
   raw["runtime.control.reject"]({ params: { pairingID: input["pairingID"] } }).pipe(Effect.mapError(mapClientError))
 
-const Endpoint28_9 = (raw: RawClient["server.runtime"]) => () =>
+const Endpoint28_10 = (raw: RawClient["server.runtime"]) => () =>
   raw["runtime.control.devices"]({}).pipe(Effect.mapError(mapClientError))
 
-type Endpoint28_10Request = Parameters<RawClient["server.runtime"]["runtime.control.revoke"]>[0]
-type Endpoint28_10Input = {
-  readonly grantID: Endpoint28_10Request["params"]["grantID"]
-  readonly version: Endpoint28_10Request["payload"]["version"]
+type Endpoint28_11Request = Parameters<RawClient["server.runtime"]["runtime.control.revoke"]>[0]
+type Endpoint28_11Input = {
+  readonly grantID: Endpoint28_11Request["params"]["grantID"]
+  readonly version: Endpoint28_11Request["payload"]["version"]
 }
-const Endpoint28_10 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_10Input) =>
+const Endpoint28_11 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_11Input) =>
   raw["runtime.control.revoke"]({ params: { grantID: input["grantID"] }, payload: { version: input["version"] } }).pipe(
     Effect.mapError(mapClientError),
   )
@@ -1277,13 +1288,14 @@ const adaptGroup28 = (raw: RawClient["server.runtime"]) => ({
   stop: Endpoint28_1(raw),
   get: Endpoint28_2(raw),
   setEnabled: Endpoint28_3(raw),
-  configure: Endpoint28_4(raw),
-  invite: Endpoint28_5(raw),
-  pending: Endpoint28_6(raw),
-  approve: Endpoint28_7(raw),
-  reject: Endpoint28_8(raw),
-  devices: Endpoint28_9(raw),
-  revoke: Endpoint28_10(raw),
+  setSessionEnabled: Endpoint28_4(raw),
+  configure: Endpoint28_5(raw),
+  invite: Endpoint28_6(raw),
+  pending: Endpoint28_7(raw),
+  approve: Endpoint28_8(raw),
+  reject: Endpoint28_9(raw),
+  devices: Endpoint28_10(raw),
+  revoke: Endpoint28_11(raw),
 })
 
 const adaptClient = (raw: RawClient) => ({

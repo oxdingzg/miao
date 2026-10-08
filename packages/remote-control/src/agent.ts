@@ -78,6 +78,8 @@ export type Options = {
   readonly grants: DeviceGrants.Store
   readonly methods: Partial<Record<Method, Handler>>
   readonly projectForSession: (sessionID: string) => Promise<string | undefined>
+  /** Local publication gate, rechecked after awaits and before encrypted disclosure. */
+  readonly sessionEnabled?: (sessionID: string) => boolean
   readonly allowLoopbackHTTP?: boolean
   readonly pairing?: ReturnType<typeof ControlPairing.make>
 }
@@ -367,7 +369,13 @@ async function authorize(options: Options, peer: Peer, request: Request): Promis
   }
   const check = () => {
     const current = options.grants.get(grant.id, peer.key!)
-    if (peer.abort.signal.aborted || !current || current.version !== grant.version) throw new RequestError("forbidden")
+    if (
+      peer.abort.signal.aborted ||
+      !current ||
+      current.version !== grant.version ||
+      (request.sessionID && options.sessionEnabled && !options.sessionEnabled(request.sessionID))
+    )
+      throw new RequestError("forbidden")
   }
   check()
   return { grant, signal: peer.abort.signal, authorize: check }

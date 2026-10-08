@@ -18,6 +18,7 @@ async function fixture(
   permissions: ReadonlyArray<DeviceGrants.Permission> = ["read", "prompt"],
   projectForSession: ControlAgent.Options["projectForSession"] = async (id) =>
     id === "session-one" ? "project-one" : "project-other",
+  sessionEnabled?: ControlAgent.Options["sessionEnabled"],
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-agent-"))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
@@ -44,6 +45,7 @@ async function fixture(
     runtimeID,
     grants,
     methods,
+    sessionEnabled,
     projectForSession,
     allowLoopbackHTTP: true,
     pairing,
@@ -113,6 +115,45 @@ function closed(ws: WebSocket) {
 }
 
 describe("outbound authorized encrypted Agent", () => {
+  test("local publication gates existing project grants and pending encrypted replies", async () => {
+    const visible = new Set<string>()
+    let release!: () => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let calls = 0
+    const f = await fixture(
+      {
+        "session.get": async () => {
+          calls++
+          entered()
+          await blocked
+          return { title: "must remain local" }
+        },
+      },
+      ["read"],
+      async () => "project-one",
+      (id) => visible.has(id),
+    )
+    const peer = await client(f)
+    await peer.send(peer.request())
+    expect(await peer.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    expect(calls).toBe(0)
+    visible.add("session-one")
+    await peer.send(peer.request())
+    await started
+    visible.delete("session-one")
+    release()
+    expect(await peer.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    visible.add("session-one")
+    await peer.send(peer.request())
+    expect(await peer.receive()).toMatchObject({ type: "result", data: { title: "must remain local" } })
+    expect(calls).toBe(2)
+  })
   test("selection changes require their own capability, operation IDs and session scope", async () => {
     const calls: ControlAgent.Request[] = []
     const handler: ControlAgent.Handler = async (request) => {

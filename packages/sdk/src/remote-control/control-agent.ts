@@ -15,6 +15,7 @@ import { RemoteAccess } from "@miao/schema/remote-access"
 import type { RuntimeAdministration } from "@miao/core/runtime/administration"
 import { RuntimeControlMethods } from "./control-methods"
 import { Database } from "@miao/core/database/database"
+import { Session } from "@miao/schema/session"
 import { SessionOwnership } from "@miao/core/session/ownership"
 import { ServerAuth } from "@miao/server/auth"
 
@@ -57,12 +58,22 @@ export async function start(input: {
       notifications: ReturnType<typeof PushSender.make>
     }
   } = { stopped: false, tail: Promise.resolve() }
+  const published = new Set<string>()
   const live = RuntimeControlLive.make()
   const allowLoopbackHTTP = input.allowLoopbackHTTP ?? initial?.allowLoopbackHTTP ?? false
   const owned = (sessionID: string) =>
     input.run(SessionOwnership.Service.use((ownership) => ownership.owned(sessionID)))
+  const accessible = async (sessionID: string) => (await owned(sessionID)) && published.has(sessionID)
+  const publish = async (sessionID: string) => {
+    const session = await client.sessions.get({ sessionID })
+    await input.run(
+      SessionOwnership.Service.use((ownership) => ownership.claim(Schema.decodeUnknownSync(Session.ID)(session.id))),
+    )
+    if (state.stopped) throw new Error("Remote Control stopped")
+    published.add(sessionID)
+  }
   const projectForSession = async (sessionID: string, signal?: AbortSignal) =>
-    (await owned(sessionID))
+    (await accessible(sessionID))
       ? (await client.sessions.get({ sessionID }, { signal }).catch(() => undefined))?.projectID
       : undefined
   const activate = async (configuration: typeof Configuration.Type) => {
@@ -88,7 +99,8 @@ export async function start(input: {
       runtimeID: input.runtimeID,
       grants,
       pairing,
-      methods: RuntimeControlMethods.make({ client, live, owned, run: input.run }),
+      methods: RuntimeControlMethods.make({ client, live, owned: accessible, sessionCreated: publish, run: input.run }),
+      sessionEnabled: (sessionID) => published.has(sessionID),
       projectForSession,
     })
     const notifications = PushSender.make({
@@ -97,12 +109,14 @@ export async function start(input: {
       runtimeID: input.runtimeID,
       grants,
       connected: () => agent.connected(),
+      sessionEnabled: (sessionID) => published.has(sessionID),
       allowLoopbackHTTP: configuration.allowLoopbackHTTP,
       projectForSession,
     })
     state.active = { agent, pairing, configuration, notifications }
   }
   const status = (): RemoteAccess.Status => ({
+    sessionIDs: [...published],
     enabled: !state.stopped && state.active !== undefined,
     connected: !state.stopped && (state.active?.agent.connected() ?? false),
     hostID: grants.hostID,
@@ -123,6 +137,16 @@ export async function start(input: {
   }
   const administration: RuntimeAdministration.Interface = {
     status,
+    setSessionEnabled: (sessionID, enabled) => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped) throw new Error("Remote Control stopped")
+        if (enabled) await publish(sessionID)
+        if (!enabled) published.delete(sessionID)
+        return status()
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
     setEnabled: (enabled) => {
       const operation = state.tail.then(async () => {
         if (state.stopped) throw new Error("Remote Control stopped")
@@ -170,11 +194,11 @@ export async function start(input: {
       return operation
     },
     invite: async (policy) => {
+      if (state.stopped || !state.active) throw new Error("Remote Control stopped")
       const projects = await client.projects.list()
       if (policy.projectIDs.some((id) => !projects.data.some((project) => project.id === id)))
         throw new Error("Unknown project scope")
-      if ((await Promise.all(policy.sessionIDs.map(owned))).some((owns) => !owns))
-        throw new Error("This window does not own the requested Session")
+      for (const sessionID of policy.sessionIDs) await publish(sessionID)
       if (state.stopped || !state.active) throw new Error("Remote Control stopped")
       return state.active.pairing.issue(policy)
     },
@@ -199,6 +223,7 @@ export async function start(input: {
       state.stopped = true
       await state.tail
       await disconnect()
+      published.clear()
       await grants.close()
     },
   }
