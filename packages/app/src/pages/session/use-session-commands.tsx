@@ -17,7 +17,8 @@ import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from
 import { findLast } from "@miao/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
-import { Message, Part, UserMessage } from "@miao/schema/view-models"
+import { Part } from "@miao/schema/view-models"
+import type { SessionMessageUser } from "@miao/session-ui/content"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { createSessionOwnership } from "./session-ownership"
@@ -25,7 +26,7 @@ import { useLocal } from "@/context/local"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
-  setActiveMessage: (message: UserMessage | undefined) => void
+  setActiveMessage: (message: SessionMessageUser | undefined) => void
   focusInput: () => void
   review?: () => boolean
   fileBrowser?: () => boolean

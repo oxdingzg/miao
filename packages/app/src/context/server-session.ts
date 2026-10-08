@@ -8,11 +8,9 @@ import type { PermissionV2Request } from "@miao/schema/view-models"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
-import { legacyContents, mergeLegacyDelta, mergeLegacyPart, removeLegacyPart } from "@/context/legacy-part-record"
 import { sessionNotFoundError } from "@/utils/server-errors"
 import { rootSession } from "@/utils/session-route"
 import { normalizeSessionInfo } from "@/utils/session"
-import { compareMessages, messageKey, normalizeSessionMessages } from "@/utils/session-message"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 import { createV2SessionReducer, type V2SessionReduction } from "./server-session-v2-reducer"
 import type { SessionMessageUser } from "@miao/session-ui/content"
@@ -47,29 +45,6 @@ type MessagePage = {
   complete: boolean
 }
 
-function legacyMessageSource(items: { info: Message; parts: Part[] }[]): SessionMessageInfo[] {
-  return items
-    .slice()
-    .sort((a, b) => compareMessages(a.info, b.info))
-    .map((item) => {
-      if (item.info.role === "user") {
-        return {
-          id: item.info.id,
-          type: "user" as const,
-          text: item.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
-          time: item.info.time,
-        }
-      }
-      return {
-        id: item.info.id,
-        type: "assistant" as const,
-        agent: item.info.agent ?? item.info.mode,
-        model: { id: item.info.modelID, providerID: item.info.providerID, variant: item.info.variant },
-        content: legacyContents(item.parts),
-        time: item.info.time,
-      }
-    })
-}
 
 // Most markers describe the current HTTP attempt; deltaParts persists non-durable stream state across retries.
 type MessageLoadState = { touchedSource: Set<string> }
@@ -422,18 +397,7 @@ export function createServerSession(
         complete: response.data.length === 0,
       }
     }
-    const response = await (options?.retry ?? retry)(() => {
-      onAttempt?.()
-      if (!("session" in client)) throw new Error("V2 Message API is required")
-      return client.session.messages({ sessionID, limit, before })
-    })
-    const items = (response.data ?? []).filter((item) => !!item?.info?.id)
-    return {
-      source: legacyMessageSource(items),
-      sourceMode: before ? ("older" as const) : ("latest" as const),
-      cursor: response.response.headers.get("x-next-cursor") ?? undefined,
-      complete: !response.response.headers.get("x-next-cursor"),
-    }
+    throw new Error("V2 Message API is required")
   }
 
   const applyMessagePage = (sessionID: string, page: MessagePage, load: MessageLoadState | undefined) => {

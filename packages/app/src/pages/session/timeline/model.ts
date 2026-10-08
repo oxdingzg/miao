@@ -79,6 +79,19 @@ export function createTimelineModel(input: {
   return {
     history: { loadOlder, loading, more },
     lastUserMessage: createMemo(() => visibleUserMessages().at(-1)),
+    lastAttribution: createMemo(() => {
+      const list = messages()
+      let agent: string | undefined
+      let model: { id: string; providerID: string; variant?: string } | undefined
+      for (let index = list.length - 1; index >= 0; index--) {
+        const record = list[index]
+        if (record.type === "agent-switched") agent ??= record.agent
+        if (record.type === "model-switched") model ??= record.model
+        if (agent && model) break
+      }
+      if (!agent || !model) return undefined
+      return { agent, model }
+    }),
     messages,
     ready,
     resource,

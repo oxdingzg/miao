@@ -1,5 +1,5 @@
-import type { AssistantMessage, Message, Part, SessionStatus, UserMessage } from "@miao/schema/view-models"
-import type { SessionMessageInfo } from "@/utils/server"
+import type { Part, SessionStatus } from "@miao/schema/view-models"
+import type { SessionMessageAssistant, SessionMessageInfo, SessionMessageUser } from "@/utils/server"
 import { createMemo, type Accessor } from "solid-js"
 import { reuseTimelineRows } from "./row-reconciliation"
 import { Timeline, TimelineRow } from "./rows"
@@ -7,36 +7,43 @@ import { Timeline, TimelineRow } from "./rows"
 export { reuseTimelineRows } from "./row-reconciliation"
 
 export function createTimelineProjection(input: {
-  messages: Accessor<Message[]>
-  userMessages: Accessor<UserMessage[]>
-  sessionMessages: Accessor<SessionMessageInfo[]>
+  records: Accessor<SessionMessageInfo[]>
+  projectedUserMessages: Accessor<SessionMessageUser[]>
   parts: (messageID: string) => Part[]
   status: Accessor<SessionStatus>
   showReasoningSummaries: Accessor<boolean>
   inlineComments: Accessor<boolean>
 }) {
-  const messageByID = createMemo(() => new Map(input.messages().map((message) => [message.id, message] as const)))
-  const assistantMessagesByParent = createMemo(() => {
-    const result = new Map<string, AssistantMessage[]>()
-    input.messages().forEach((message) => {
-      if (message.role !== "assistant") return
-      const messages = result.get(message.parentID)
-      if (messages) {
-        messages.push(message)
+  const messageByID = createMemo(() => new Map(input.records().map((message) => [message.id, message] as const)))
+  // V2 records carry no parentID: assistants join the turn opened by the
+  // preceding user/synthetic record, in order (same grouping as rows.ts).
+  const assistantsByTurn = createMemo(() => {
+    const result = new Map<string, SessionMessageAssistant[]>()
+    let open: string | undefined
+    input.records().forEach((message) => {
+      if (message.type === "user" || message.type === "synthetic") {
+        open = message.id
         return
       }
-      result.set(message.parentID, [message])
+      if (message.type === "shell") {
+        open = undefined
+        return
+      }
+      if (message.type !== "assistant" || !open) return
+      const list = result.get(open)
+      if (list) list.push(message)
+      else result.set(open, [message])
     })
     return result
   })
   const projection = createMemo(() =>
     Timeline.constructSessionMessageRows(
-      input.sessionMessages(),
+      input.records(),
       input.parts,
       input.showReasoningSummaries(),
       input.status().type,
       input.inlineComments(),
-      input.userMessages(),
+      input.projectedUserMessages(),
     ),
   )
   const activeMessageID = createMemo(() => projection().activeMessageID)
@@ -69,7 +76,7 @@ export function createTimelineProjection(input: {
 
   return {
     activeMessageID,
-    assistantMessagesByParent,
+    assistantsByTurn,
     lastAssistantGroupKey,
     messageByID,
     messageRowIndex,
