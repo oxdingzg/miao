@@ -277,18 +277,22 @@ export const errorText = (error: unknown) => {
 
 /**
  * `framing` step for Server-Sent Events. Decodes UTF-8, runs the SSE channel
- * decoder, and drops empty / `[DONE]` keep-alive events so the downstream
- * `decodeChunk` sees one JSON string per element. The SSE channel emits a
- * `Retry` control event on its error channel; we drop it here (we don't
- * implement client-driven retries) so the public error channel stays
- * `LLMError`.
+ * decoder, and drops empty keep-alive events so the downstream `decodeChunk`
+ * sees one JSON string per element. The OpenAI `[DONE]` sentinel ends the
+ * response, so the stream stops there: some servers and proxies hold the
+ * connection open after the sentinel, and waiting for EOF would stall the
+ * turn until the socket dies. Protocols whose servers never send the sentinel
+ * simply end at EOF as before. The SSE channel emits a `Retry` control event
+ * on its error channel; we drop it here (we don't implement client-driven
+ * retries) so the public error channel stays `LLMError`.
  */
 export const sseFraming = (bytes: Stream.Stream<Uint8Array, LLMError>): Stream.Stream<string, LLMError> =>
   bytes.pipe(
     Stream.decodeText(),
     Stream.pipeThroughChannel(Sse.decode()),
     Stream.catchTag("Retry", () => Stream.empty),
-    Stream.filter((event) => event.data.length > 0 && event.data !== "[DONE]"),
+    Stream.takeUntil((event) => event.data === "[DONE]", { excludeLast: true }),
+    Stream.filter((event) => event.data.length > 0),
     Stream.map((event) => event.data),
   )
 

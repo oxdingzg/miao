@@ -577,6 +577,26 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
+  it.effect(
+    "ends the stream at the [DONE] sentinel even when the connection stays open",
+    () =>
+      Effect.gen(function* () {
+        const body = sseEvents(deltaChunk({ role: "assistant", content: "Hello" }), deltaChunk({}, "stop"))
+        // No close(): a server or proxy that holds the connection after the
+        // sentinel must not stall the turn until the socket dies.
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(body))
+          },
+        })
+        const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(stream)))
+
+        expect(response.text).toBe("Hello")
+        expect(response.events.at(-1)).toMatchObject({ type: "finish", reason: "stop" })
+      }),
+    2000,
+  )
+
   it.effect("parses OpenAI-compatible reasoning content deltas", () =>
     Effect.gen(function* () {
       const body = sseEvents(
