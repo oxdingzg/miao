@@ -109,6 +109,24 @@ event branches) lands without touching package boundaries. The
 legacy-bridge e2e scenarios (#401/#403) retire with the V1 event
 branches; the settled-tool expansion contracts move to V2-native
 sequences (expand while running, assert across completion).
+
+Surgery map (measured on main, packages/app/src/context/server-session.ts):
+the five V1 cases span `session.status`, `message.updated`,
+`message.removed`, `message.part.updated`, `message.part.removed`,
+`message.part.delta` in the event `apply` switch. They are entangled
+with shared load bookkeeping — `messageLoads` (touched/removed/cleared
+sets), `orphanParts`, `pendingParts`, `optimistic`, `deltaBases`,
+`part_text_accum_delta`, `removedMessages` — some of which the V2
+paths also use, so the cut deletes the cases plus the V1-only helpers
+(`legacy-part-record.ts`, `indexLegacyMessage`, `cleanMessage`,
+`normalizeSessionMessages`, `compareMessages`/`messageKey`) and the
+`part`/`part_text_accum_delta` store writes in one pass, keeping the
+load state the V2 reducer still consumes. The e2e fixture keeps its
+V2 send helpers and loses `legacyPartUpdated` and the removal events;
+the tool-state settled-re-delivery cases re-sequence to V2-native
+(expand while running, assert across completion), the removal
+scenarios drop, and collapse-state's diff-count update half drops with
+its sibling-streaming half retained.
 - Store-surgery order once those land: delete `data.part` writes and
   readers → merge `session_message` into `data.message`
   (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the
