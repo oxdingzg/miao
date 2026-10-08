@@ -185,8 +185,17 @@ impl Parser for ResponsesState {
                 | "response.reasoning_summary_text.delta"
                 | "response.reasoning_summary_text.done"
                 | "response.reasoning_text.delta"
-                | "response.reasoning_text.done",
+                | "response.reasoning_text.done"
+                | "response.queued",
             ) => {}
+            // Unrecognized but sequenced checkpoint events do not invalidate a
+            // completed response; the completed output array is the authority.
+            Some(other)
+                if other.starts_with("response.") && event.get("sequence_number").is_some() =>
+            {
+                let _ = other;
+            }
+
             _ => return Err(ProviderError::Stream("unsupported Responses event".into())),
         }
         Ok(())

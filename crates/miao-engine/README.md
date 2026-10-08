@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 122 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 123 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -406,6 +406,8 @@ GEMINI_API_KEY=... miao-engine serve --db /path/to/engine.db --workspace /path/t
 `v1beta/models/MODEL_ID:streamGenerateContent?alt=sse`，可显式配置完整兼容 endpoint；模型必须显式指定。
 
 text/functionCall parts 与 late usageMetadata 经过公共 bounded SSE decoder、pre-body retry 与 cancel 控制。
+在 `response.completed` 之前出现的未登记 `response.*` sequenced checkpoint 事件会被跳过而不是拒绝完成响应；
+completed 的 output array 是唯一权威，非 `response.*` 前缀的未知事件仍显式失败。
 只接受单一 candidate、STOP finishReason；截断、blocked/未知 parts、partial/malformed args、重复 wire call id 显式失败，
 收到 200 body 后不透明重放。每 reply 投影最多 512 KiB，最多 128 function calls。
 

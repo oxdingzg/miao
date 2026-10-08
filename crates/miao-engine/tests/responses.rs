@@ -182,3 +182,108 @@ async fn opaque_history_cannot_silently_cross_protocol_or_model() {
         ));
     }
 }
+
+#[tokio::test]
+async fn sequenced_unknown_checkpoint_events_are_skipped_and_genuine_failures_stay_explicit() {
+    use miao_engine::{
+        credential::{Credential, Source},
+        openai_responses::Profile,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+    let request = ModelRequest {
+        system: "s".into(),
+        messages: vec![Message {
+            role: "user".into(),
+            content: json!([{"type":"text","text":"task"}]),
+        }],
+        tools: vec![],
+    };
+    for (events, accepts) in [
+        (
+            json!([
+                {"type":"response.created","response":{"id":"resp"},"sequence_number":0},
+                {"type":"response.checkpoint.unknown","sequence_number":1},
+                {"type":"response.completed","sequence_number":2,"response":{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"total_tokens":2}}}
+            ]),
+            true,
+        ),
+        (
+            json!([
+                {"type":"response.created","response":{"id":"resp"},"sequence_number":0},
+                {"type":"hosted.mystery","sequence_number":1},
+                {"type":"response.completed","sequence_number":2,"response":{"status":"completed","output":[]},"usage":{}}
+            ]),
+            false,
+        ),
+    ] {
+        let sse = events
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        let writer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut data = vec![];
+            let end = loop {
+                let mut bytes = [0; 4096];
+                let read = socket.read(&mut bytes).await.unwrap();
+                assert!(read > 0);
+                data.extend_from_slice(&bytes[..read]);
+                if let Some(at) = data.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                    break at + 4;
+                }
+            };
+            let head = String::from_utf8(data[..end].to_vec()).unwrap();
+            let size = head
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(|value| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap();
+            while data.len() < end + size {
+                let mut bytes = [0; 4096];
+                let read = socket.read(&mut bytes).await.unwrap();
+                assert!(read > 0);
+                data.extend_from_slice(&bytes[..read]);
+            }
+            let body = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                sse.len()
+            );
+            let _ = socket.write_all(body.as_bytes()).await;
+            let _ = socket.write_all(sse.as_bytes()).await;
+        });
+        let provider = OpenAIResponses::with_source(
+            url,
+            Source::Static(Credential::key("fake-key".into())),
+            "model".into(),
+            Profile::Api,
+        )
+        .unwrap();
+        let (send, mut receive) = mpsc::channel(32);
+        let result = provider
+            .stream(request.clone(), send, CancellationToken::new())
+            .await;
+        writer.await.unwrap();
+        while receive.recv().await.is_some() {}
+        if accepts {
+            assert!(result
+                .unwrap()
+                .content
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|block| block["text"] == "ok"));
+        } else {
+            assert!(matches!(result.unwrap_err(), ProviderError::Stream(_)));
+        }
+    }
+}
