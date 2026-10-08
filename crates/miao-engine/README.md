@@ -18,7 +18,7 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 `serve` 默认选择 Anthropic，读取 `ANTHROPIC_API_KEY`，endpoint 为 `https://api.anthropic.com/v1/messages`。
 使用 `--provider openai-chat` 读取 `OPENAI_API_KEY`，endpoint 为 `https://api.openai.com/v1/chat/completions`；
 使用 `--provider openai-responses` 同样读取 `OPENAI_API_KEY`，默认 endpoint 为 `https://api.openai.com/v1/responses`。
-这两种都是 API-key 接入，尚不支持 ChatGPT OAuth/Codex 的账户路由与凭据刷新。
+这两种都是 API-key 接入，尚不支持订阅账户 OAuth、账户路由与凭据刷新。
 `--endpoint URL` 可显式指定兼容 endpoint。provider stream 没有独立配置 Session、工具或数据库的权力。
 版本读取根 `package.json`，不把 crate 内部版本用作产品版本。
 

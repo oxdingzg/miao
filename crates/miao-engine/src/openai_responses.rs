@@ -8,7 +8,7 @@ use std::{collections::HashSet, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-/// API-key Responses adapter. ChatGPT/Codex OAuth, account routing and refresh
+/// API-key Responses adapter. Subscription OAuth, account routing and refresh
 /// are a separate credential integration, not implicit endpoint substitution.
 pub struct OpenAIResponses {
     client: reqwest::Client,
