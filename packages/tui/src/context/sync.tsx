@@ -896,6 +896,17 @@ export const {
           break
         }
 
+        case "todo.updated": {
+          // The sidebar's Todo panel reads the store, and a session's todo list
+          // is fetched from the server only once, during the first full sync —
+          // live events are the only mid-run refresh. Store the new list and
+          // stamp the clock, so a full sync that started before this event
+          // cannot roll the panel back with its older snapshot.
+          todoLiveAt.set(event.properties.sessionID, performance.now())
+          setStore("todo", event.properties.sessionID, event.properties.todos)
+          break
+        }
+
         case "session.next.text.started": {
           streamText.start(event.properties.sessionID, event.properties.assistantMessageID, event.properties.textID)
           break
