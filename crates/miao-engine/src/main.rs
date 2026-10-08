@@ -61,20 +61,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("miao-engine {}", env!("MIAO_ENGINE_VERSION"));
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("export") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--db", "--session", "--after"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("unknown or duplicate export option".into());
+            }
+        }
+        if !remainder.is_empty() {
+            return Err("missing export option value".into());
+        }
+        let db = options.remove("--db").ok_or("--db is required")?;
+        let session = options.remove("--session").ok_or("--session is required")?;
+        let after = options
+            .remove("--after")
+            .map(|v| v.parse::<u64>())
+            .transpose()?
+            .unwrap_or(0);
+        tokio::task::spawn_blocking(move || {
+            miao_engine::export::committed_events(db, &session, after, std::io::stdout().lock())
+        })
+        .await??;
+        return Ok(());
+    }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--endpoint URL]\nANTHROPIC_API_KEY is required. This experimental entry point uses its own explicit database.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--endpoint URL]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nANTHROPIC_API_KEY is required. This experimental entry point uses its own explicit database.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();
-    let mut flags = args[1..].chunks_exact(2);
-    for flag in &mut flags {
+    let (flags, remainder) = args[1..].as_chunks::<2>();
+    for flag in flags {
         if !["--db", "--workspace", "--model", "--endpoint"].contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
         {
             return Err("unknown or duplicate option".into());
         }
     }
-    if !flags.remainder().is_empty() {
+    if !remainder.is_empty() {
         return Err("missing option value".into());
     }
     let db = options.get("--db").ok_or("--db is required")?;

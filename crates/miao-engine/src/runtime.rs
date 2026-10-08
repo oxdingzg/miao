@@ -72,9 +72,9 @@ impl Runtime {
         }
         let session = input.session_id.clone();
         let admission = self.inner.store.admit(input).await?;
-        // Exact retries never restart completed/failed provider work. Explicit
-        // resume is separate; a lost wake leaves a durable pending inbox.
-        if resume && !admission.duplicate {
+        // An exact retry may repair a lost advisory wake for pending input,
+        // but never restarts promoted/completed provider work.
+        if resume && admission.pending {
             self.wake(&session, false).await?;
         }
         Ok(admission)

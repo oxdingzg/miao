@@ -38,6 +38,7 @@ pub struct Admission {
     pub input_id: String,
     pub admitted_seq: u64,
     pub duplicate: bool,
+    pub pending: bool,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1,0 +1,91 @@
+# miao-engine（实验性 Rust M0 引擎）
+
+独立入口，使用显式指定的独立 SQLite 数据库。当前实现提供 durable inbox、事务事件/消息投影、
+受监督的 Session 执行、Anthropic Messages 流式 adapter、受控 `read_file`、stdio 和 committed JSONL 导出。
+这是 M0 可运行骨架，尚未达到替代现有 miao 的完整能力门槛。
+
+## 运行
+
+在构建环境执行：
+
+```sh
+cargo build --manifest-path crates/miao-engine/Cargo.toml
+./crates/miao-engine/target/debug/miao-engine --version
+./crates/miao-engine/target/debug/miao-engine serve \
+  --db ./engine-local.db --workspace ./example --model YOUR_MODEL
+```
+
+`serve` 读取 `ANTHROPIC_API_KEY`；默认 endpoint 为 `https://api.anthropic.com/v1/messages`。
+`--endpoint URL` 可显式指定兼容 endpoint。provider stream 没有独立配置 Session、工具或数据库的权力。
+版本读取根 `package.json`，不把 crate 内部版本用作产品版本。
+
+## stdio 协议 v0
+
+一行一个 JSON 对象。请求带字符串/数字 `id`，响应带同一个 `id` 与 `result` 或 `error`。
+通知不带请求 id。当前只支持本地 stdio，不声明 ACP 或现有 miao HttpApi 兼容。
+
+```jsonl
+{"id":1,"method":"subscribe","params":{"session_id":"s","after":0}}
+{"id":2,"method":"admit","params":{"input":{"session_id":"s","input_id":"p1","prompt":"Read README.md and summarize it","delivery":"steer"},"resume":true}}
+{"id":3,"method":"events","params":{"session_id":"s","after":0}}
+{"id":4,"method":"cancel","params":{"session_id":"s"}}
+{"id":5,"method":"shutdown"}
+```
+
+其他方法：`resume`（显式启动既有历史的续跑）、`unsubscribe`（停止指定 Session 通知）。
+`admit.resume=false` 仅 durable admission。`cancel` ack 表示已接受取消，真正停止由 `run.finished` 记录。
+`events` 每页最多 100 条，使用最后 `seq` 继续分页。
+
+- `event` 通知是 SQLite 已提交的 canonical event，包含 Session 与 cursor。
+- `progress` 通知是临时 provider frame，不承诺 crash 后保留；完整消息提交后可用 events 重建。
+- 慢进度消费者可能收到 `resync`；stdio 输出队列满时终止连接，重新启动/重连后读取 committed events。
+- 订阅轮询 durable cursor，不依赖临时通知进行 replay→live 交接，没有双源 handoff 丢事件窗口。
+
+## SQLite 与 JSONL
+
+SQLite WAL/FULL 是唯一 durable authority。inbox、canonical events、message projections、执行记录、
+工具 dispatch/settlement 状态在专用 SQLite worker 上写入，控制 executor 不做 blocking SQLite IO。
+OS lease 由同一 worker 持有；同路径第二个 runtime 不能启动。独立 engine application ID/schema version
+阻止误用现有 miao 数据库或不支持的未来 schema。
+
+JSONL 从 committed snapshot 导出，无需 provider key，可与活跃 runtime 并行读取：
+
+```sh
+./crates/miao-engine/target/debug/miao-engine export \
+  --db ./engine-local.db --session s --after 0 > session.jsonl
+```
+
+export 不创建缺失数据库、不改变执行状态、不承担第二份权威日志。read transaction 固定高水位；
+非常慢的外部导出会延长 SQLite snapshot/WAL 保留，长期分析优先从导出文件读取。
+
+## 执行不变量
+
+- 相同 input id 按 Session、prompt、delivery 全量 exact retry；冲突不生成额外 admission。
+- pending exact retry 可以修复丢失 advisory wake；promoted exact retry 不重播 provider work。
+- steer 在安全 provider-turn 边界批量提升，queue 仅在执行将 idle 时提升一条；新输入重置 turn allowance。
+- 同 Session 串行执行，跨 Session 可并行；M0 上限为 64 attached Sessions、8 active executions、每次输入 allowance 25 provider turns。
+- actor 控制循环能在 provider 等待期间响应 cancel；tasks 在 shutdown 被取消并 join。
+- 完整 assistant/tool-call projection 与 dispatch intents 同事务；tool settlement 与 tool-result projection 同事务。
+- startup 不自动续跑；未结算 dispatch 标为 unknown，补错误 tool-result 修复历史，不重做外部操作。
+- pre-response transport/429/特定 5xx 有最多 3 次、60 秒总预算的 retry；200 body 开始后不透明重播。
+- provider SSE 支持 bytewise UTF-8、CRLF、多行 data；frame 1 MiB/message 8 MiB 上限。
+- 半截工具 JSON、缺少 terminal、未知 hosted/thinking blocks 和不可支持的 finish reason 均明确失败，不 dispatch 不完整工具。
+
+## 验证
+
+```sh
+cargo fmt --manifest-path crates/miao-engine/Cargo.toml --check
+cargo test --manifest-path crates/miao-engine/Cargo.toml
+cargo clippy --manifest-path crates/miao-engine/Cargo.toml --all-targets -- -D warnings
+```
+
+测试包括真实本地 HTTP fixture adapter、200 断流不重试、工具参数截断、capacity retry、
+workspace 越界/大文件、exact retry/lost wake、cancel/跨 Session、unknown 恢复、原子 settlement、
+stdio 请求和只读导出高水位。测试不消费 live provider credentials；不把 fixture 通过称为真实模型质量验收。
+
+## 后续能力（当前未实现）
+
+完整 coding tools/写权限/OS sandbox、后台进程与任务、ACP/HTTP/TUI adapters、其他 provider、
+OAuth credential broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
+`read_file` 当前是 canonical containment 的只读工具，最多 32 KiB UTF-8；不宣称能抵抗 workspace 内的恶意并发路径替换。
+M0 的 read-only workflow 不开放 shell/文件写入；这些能力要在权限与 OS enforcement 闭环后加入。

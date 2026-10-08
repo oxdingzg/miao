@@ -52,7 +52,20 @@ impl Store {
                     }
                 })?;
                 let conn = Connection::open(&canonical)?;
-                conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                let app_id: u32 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
+                let engine:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='engine_session' AND type='table')",[],|r|r.get(0))?;
+                let existing:u32=conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",[],|r|r.get(0))?;
+                if (app_id != 0 && app_id != 0x4d494145) || (!engine && existing != 0) {
+                    return Err(Error::Invalid(
+                        "not a miao-engine database; use a separate path".into(),
+                    ));
+                }
+                let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+                if version > 1 {
+                    return Err(Error::Invalid("unsupported database schema version".into()));
+                }
+
+                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=1; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -104,18 +117,18 @@ impl Store {
         }
         self.call(move |conn| {
             let tx = conn.transaction()?;
-            let existing: Option<(String, String, String, u64)> = tx
+            let existing: Option<(String, String, String, u64, String)> = tx
                 .query_row(
-                    "SELECT session_id,prompt,delivery,admitted_seq FROM engine_input WHERE id=?1",
+                    "SELECT session_id,prompt,delivery,admitted_seq,state FROM engine_input WHERE id=?1",
                     [&input.input_id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
                 )
                 .optional()?;
             let delivery = match input.delivery {
                 Delivery::Steer => "steer",
                 Delivery::Queue => "queue",
             };
-            if let Some((session, prompt, mode, seq)) = existing {
+            if let Some((session, prompt, mode, seq, state)) = existing {
                 if session != input.session_id || prompt != input.prompt || mode != delivery {
                     return Err(Error::Conflict);
                 }
@@ -123,6 +136,7 @@ impl Store {
                     input_id: input.input_id,
                     admitted_seq: seq,
                     duplicate: true,
+                    pending: state == "pending",
                 });
             }
             tx.execute(
@@ -150,6 +164,7 @@ impl Store {
                 input_id: input.input_id,
                 admitted_seq: event.seq,
                 duplicate: false,
+                pending: true,
             })
         })
         .await
