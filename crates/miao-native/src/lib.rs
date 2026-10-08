@@ -1921,6 +1921,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&["init", "-q"], &dir);
+        // Windows runners ship core.autocrlf=true, which rewrites LF to CRLF on
+        // `git apply` and breaks the byte-exact assertions below. The repos are
+        // byte-exact fixtures, so pin the conversion off.
+        git(&["config", "core.autocrlf", "false"], &dir);
         std::fs::write(dir.join("file.txt"), "hello\nworld\n").unwrap();
         std::fs::write(dir.join("gone.txt"), "remove me\n").unwrap();
         std::fs::write(dir.join("bin.dat"), [0u8, 1, 2, 255, 254]).unwrap();
