@@ -77,6 +77,8 @@ import type {
   SessionsDiffOutput,
   SessionsInputsInput,
   SessionsInputsOutput,
+  SessionsInputCancelInput,
+  SessionsInputCancelOutput,
   SessionsStatusInput,
   SessionsStatusOutput,
   SessionsChildrenInput,
@@ -871,6 +873,17 @@ export function make(options: ClientOptions) {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/inputs`,
             query: { limit: input["limit"], after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 410, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      inputCancel: (input: SessionsInputCancelInput, requestOptions?: RequestOptions) =>
+        request<SessionsInputCancelOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/input/${encodeURIComponent(input.messageID)}`,
             successStatus: 200,
             declaredStatuses: [404, 400, 410, 409, 401],
             empty: false,

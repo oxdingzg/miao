@@ -172,15 +172,27 @@ export function SessionActivity(props: { sessionID: string }) {
     const status = sync.data.session_status[props.sessionID]
     return status?.type === "retry" ? status.message : sync.data.session_error[props.sessionID]
   })
+  // The esc hint names the next esc action, matching the prompt footer: one
+  // esc cancels the newest waiting prompt, and only an empty queue interrupts.
+  const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
+  const esc = createMemo(() => (waitingCount() > 0 ? `cancel waiting (${waitingCount()})` : "interrupt"))
   return (
     <Show
       when={error()}
       fallback={
         <Show
           when={active()}
-          fallback={<SessionWaiting waiting={waiting()} elapsed={0} activity={activity()} phase={phase()} />}
+          fallback={
+            <SessionWaiting waiting={waiting()} elapsed={0} activity={activity()} phase={phase()} esc={esc()} />
+          }
         >
-          <SessionActiveWaiting waiting={waiting()} activity={activity()} phase={phase()} base={elapsedBase} />
+          <SessionActiveWaiting
+            waiting={waiting()}
+            activity={activity()}
+            phase={phase()}
+            base={elapsedBase}
+            esc={esc()}
+          />
         </Show>
       }
     >
@@ -199,6 +211,7 @@ function SessionActiveWaiting(props: {
   activity?: string
   phase?: SessionPhase
   base: Accessor<number | undefined>
+  esc?: string
 }) {
   const seconds = useSecond()
   const elapsed = createMemo(() => {
@@ -206,7 +219,15 @@ function SessionActiveWaiting(props: {
     const value = Date.now() - (props.base() ?? Number.NaN)
     return Number.isFinite(value) ? Math.max(0, value) : 0
   })
-  return <SessionWaiting waiting={props.waiting} elapsed={elapsed()} activity={props.activity} phase={props.phase} />
+  return (
+    <SessionWaiting
+      waiting={props.waiting}
+      elapsed={elapsed()}
+      activity={props.activity}
+      phase={props.phase}
+      esc={props.esc}
+    />
+  )
 }
 
 export function turnActivity(input: { parts: AssistantContent[]; working: boolean }) {
@@ -324,7 +345,13 @@ export function orderTaskBlocks(content: ReadonlyArray<AssistantContent>): Assis
   return out
 }
 
-export function SessionWaiting(props: { waiting: boolean; elapsed: number; activity?: string; phase?: SessionPhase }) {
+export function SessionWaiting(props: {
+  waiting: boolean
+  elapsed: number
+  activity?: string
+  phase?: SessionPhase
+  esc?: string
+}) {
   const { theme } = useTheme()
   // Claude Code keeps the elapsed time on the live status line whether the turn
   // is still reading its first token or already running tools.
@@ -333,7 +360,7 @@ export function SessionWaiting(props: { waiting: boolean; elapsed: number; activ
       return props.elapsed > 0 ? `${props.activity} · ${Locale.duration(props.elapsed)}` : props.activity
     }
     if (!props.waiting) return undefined
-    return waitingText(props.phase, props.elapsed)
+    return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt")
   })
   return (
     <Show when={text()}>
@@ -349,7 +376,7 @@ export function SessionWaiting(props: { waiting: boolean; elapsed: number; activ
 // Name what is actually being waited on. `requesting` is a dispatched request
 // awaiting the first token (TTFT); `preparing` and `queued` have not reached the
 // provider yet, which is the distinction the old single label could not make.
-function waitingText(phase: SessionPhase | undefined, elapsed: number) {
+function waitingText(phase: SessionPhase | undefined, elapsed: number, esc: string) {
   const label =
     phase === "queued"
       ? "Queued · waiting for a free slot"
@@ -360,6 +387,6 @@ function waitingText(phase: SessionPhase | undefined, elapsed: number) {
           : phase === "retrying"
             ? "Retrying"
             : "Waiting for model response"
-  const suffix = elapsed >= 30000 ? " · no readable output yet; esc interrupt" : ""
+  const suffix = elapsed >= 30000 ? ` · no readable output yet; esc ${esc}` : ""
   return `${label} · ${Locale.duration(elapsed)}${suffix}`
 }

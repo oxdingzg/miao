@@ -553,6 +553,12 @@ const layer = Layer.effectDiscard(
         })
       }),
     )
+    yield* events.project(SessionEvent.PromptCancelled, (event) =>
+      SessionInput.projectCancelled(db, {
+        id: event.data.messageID,
+        sessionID: event.data.sessionID,
+      }),
+    )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
     yield* events.project(SessionEvent.DelegationStarted, (event) => SessionDelegationStore.projectStarted(db, event))
     yield* events.project(SessionEvent.DelegationEnded, (event) => SessionDelegationStore.projectEnded(db, event))

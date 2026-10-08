@@ -33,8 +33,8 @@ export function PromptStatus(props: { prompt: PendingPrompt }) {
           : props.prompt.state === "failed"
             ? "SEND FAILED · use prompt history to retry"
             : props.prompt.delivery === "queue"
-              ? `QUEUED · esc cancels the running turn, this one starts next${waited()}`
-              : `RECEIVED · waiting for the next safe turn${waited()}`}
+              ? `QUEUED · starts when the current work finishes · esc removes waiting prompts, newest first${waited()}`
+              : `RECEIVED · joins at the next safe turn · esc removes waiting prompts, newest first${waited()}`}
       </text>
       <Show when={props.prompt.error}>
         <text fg={theme.theme.error}>{props.prompt.error}</text>

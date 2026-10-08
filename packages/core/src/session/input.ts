@@ -229,6 +229,41 @@ export const countPending = Effect.fn("SessionInput.countPending")(function* (
   return row?.value ?? 0
 })
 
+// Cancel is itself durable so a replay can never resurrect a cancelled prompt
+// from its PromptAdmitted record: the projector, not this call, deletes the row.
+export const cancel = Effect.fn("SessionInput.cancel")(function* (
+  db: DatabaseService,
+  events: EventV2.Interface,
+  input: { sessionID: SessionSchema.ID; id: SessionMessage.ID },
+) {
+  const existing = yield* find(db, input.id)
+  if (existing === undefined || existing.sessionID !== input.sessionID || existing.promotedSeq !== undefined)
+    return false
+  yield* events.publish(SessionEvent.PromptCancelled, {
+    sessionID: input.sessionID,
+    timestamp: yield* DateTime.now,
+    messageID: input.id,
+  })
+  return true
+})
+
+export const projectCancelled = Effect.fn("SessionInput.projectCancelled")(function* (
+  db: DatabaseService,
+  input: { id: SessionMessage.ID; sessionID: SessionSchema.ID },
+) {
+  yield* db
+    .delete(SessionInputTable)
+    .where(
+      and(
+        eq(SessionInputTable.id, input.id),
+        eq(SessionInputTable.session_id, input.sessionID),
+        isNull(SessionInputTable.promoted_seq),
+      ),
+    )
+    .run()
+    .pipe(Effect.orDie)
+})
+
 export const equivalent = (
   input: Admitted,
   expected: {

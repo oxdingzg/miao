@@ -92,7 +92,7 @@ export const Definitions = {
   session_fork: keybind("none", "Fork session from message"),
   session_rename: keybind("ctrl+r", "Rename session"),
   session_delete: keybind("ctrl+d", "Delete session"),
-  session_interrupt: keybind("escape", "Interrupt current session"),
+  session_interrupt: keybind("escape", "Cancel newest waiting prompt, or interrupt"),
   session_background: keybind("ctrl+b", "Background synchronous subagents"),
   session_compact: keybind("<leader>c", "Compact the session"),
   session_toggle_timestamps: keybind("none", "Toggle message timestamps"),
