@@ -11,3 +11,4 @@ name = "miao_sandbox"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4"
+libc = "0.2"

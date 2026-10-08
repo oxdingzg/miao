@@ -24,6 +24,7 @@ type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 pub struct Store {
     work: mpsc::Sender<Work>,
     runtime_owner: Arc<AtomicBool>,
+    path: Arc<std::path::PathBuf>,
 }
 
 pub(crate) struct RuntimeLease {
@@ -106,11 +107,11 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_location(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),root TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_approval(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),run_id TEXT NOT NULL REFERENCES engine_run(id),call_id TEXT NOT NULL REFERENCES engine_tool(id),binding TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL);
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_pending_approval ON engine_approval(call_id) WHERE state='pending';")?;
-                Ok((conn, lease))
+                Ok((conn, lease, canonical))
             })();
             match opened {
-                Ok((mut conn, _lease)) => {
-                    if ready.send(Ok(())).is_err() {
+                Ok((mut conn, _lease, canonical)) => {
+                    if ready.send(Ok(canonical)).is_err() {
                         return;
                     }
                     while let Some(job) = receive.blocking_recv() {
@@ -122,11 +123,16 @@ impl Store {
                 }
             }
         });
-        started.await.map_err(|_| Error::Closed)??;
+        let path = started.await.map_err(|_| Error::Closed)??;
         Ok(Self {
             work,
             runtime_owner: Arc::new(AtomicBool::new(false)),
+            path: Arc::new(path),
         })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     async fn call<T: Send + 'static>(

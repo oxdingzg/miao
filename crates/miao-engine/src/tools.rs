@@ -1,6 +1,7 @@
 use crate::{
     file_mutation::{apply, Mutation},
     permission::{digest, Access},
+    process,
     protocol::ToolDefinition,
 };
 use cap_std::{ambient_authority, fs::Dir};
@@ -28,6 +29,8 @@ pub enum ToolError {
     InvalidFile,
     #[error("resource changed after authorization")]
     ResourceChanged,
+    #[error("engine storage is a protected resource")]
+    ProtectedResource,
     #[error("file content changed or expected fingerprint does not match")]
     StaleFile,
     #[error("old_string is absent or ambiguous; use an exact match or replace_all")]
@@ -74,7 +77,9 @@ impl Prepared {
         &self.resource
     }
     pub fn access(&self) -> Access {
-        if self.name == "write_file" || self.name == "edit_file" {
+        if self.name == "run_command" {
+            Access::Execute
+        } else if self.name == "write_file" || self.name == "edit_file" {
             Access::Write
         } else {
             Access::Read
@@ -88,6 +93,10 @@ pub struct Tools {
     directory: Arc<Dir>,
     gate: Arc<RwLock<()>>,
     writes: bool,
+    process_enabled: bool,
+    process_network: bool,
+    runner: Option<Arc<PathBuf>>,
+    protected: Vec<PathBuf>,
 }
 
 impl Tools {
@@ -109,7 +118,31 @@ impl Tools {
             directory: Arc::new(directory),
             gate: Arc::new(RwLock::new(())),
             writes: false,
+            process_enabled: false,
+            process_network: false,
+            runner: None,
+            protected: vec![],
         })
+    }
+
+    pub fn with_process_runner(mut self, path: PathBuf) -> Self {
+        self.runner = Some(Arc::new(path));
+        self
+    }
+    pub(crate) fn with_process(mut self, enabled: bool, network: bool) -> Self {
+        self.process_enabled = enabled && self.runner.is_some() && miao_sandbox::supported();
+        self.process_network = network;
+        self
+    }
+    pub(crate) fn protect_store(mut self, path: &Path) -> Self {
+        self.protected.push(path.to_owned());
+        self.protected.push(path.with_extension("engine-lock"));
+        for suffix in ["-wal", "-shm"] {
+            let mut name = path.as_os_str().to_owned();
+            name.push(suffix);
+            self.protected.push(name.into());
+        }
+        self
     }
 
     pub(crate) fn with_writes(mut self, enabled: bool) -> Self {
@@ -136,6 +169,7 @@ impl Tools {
                 }
                 parsed.path
             }
+            "run_command" if self.process_enabled => process::Input::parse(input.clone())?.cwd,
             "write_file" | "edit_file" if self.writes => {
                 Mutation::parse(name, input.clone())?.path().to_owned()
             }
@@ -157,6 +191,12 @@ impl Tools {
         } else {
             self.contained(&path).await?
         };
+        if self.protected.contains(&path) {
+            return Err(ToolError::ProtectedResource);
+        }
+        if name == "run_command" && !tokio::fs::metadata(&path).await?.is_dir() {
+            return Err(ToolError::InvalidInput);
+        }
         let relative = path
             .strip_prefix(&self.root)
             .map_err(|_| ToolError::OutsideWorkspace)?;
@@ -182,6 +222,26 @@ impl Tools {
         prepared: Prepared,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
+        if prepared.access() == Access::Execute {
+            let _lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().write_owned()=>guard};
+            let current = self
+                .prepare(prepared.name(), prepared.input().clone())
+                .await?;
+            if current.path != prepared.path || current.resource != prepared.resource {
+                return Err(ToolError::ResourceChanged);
+            }
+            let runner = self.runner.as_deref().ok_or(ToolError::Unsupported)?;
+            let input = process::Input::parse(prepared.input)?;
+            return process::execute(
+                runner,
+                &self.root,
+                &prepared.path,
+                input,
+                self.process_network,
+                cancel,
+            )
+            .await;
+        }
         if prepared.access() == Access::Write {
             let lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().write_owned()=>guard};
             let current = self
@@ -234,6 +294,9 @@ impl Tools {
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
                 ToolDefinition{name:"edit_file".into(),description:"Conditionally replace an exact text match using the SHA-256 from read_file. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
             ]);
+        }
+        if self.process_enabled {
+            definitions.push(ToolDefinition{name:"run_command".into(),description:"Run an explicit argv in a workspace-write sandbox. Timeout 1..120000 ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000}},"required":["argv"],"additionalProperties":false})});
         }
         definitions
     }

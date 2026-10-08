@@ -62,7 +62,19 @@ impl Runtime {
         tools: Tools,
         policy: Policy,
     ) -> Result<Self, Error> {
-        let tools = tools.with_writes(policy.writes_enabled());
+        if policy.process_enabled()
+            && store
+                .path()
+                .starts_with(std::path::Path::new(tools.location()))
+        {
+            return Err(Error::Invalid(
+                "process-enabled runtime requires its database outside the workspace".into(),
+            ));
+        }
+        let tools = tools
+            .with_writes(policy.writes_enabled())
+            .with_process(policy.process_enabled(), policy.process_network())
+            .protect_store(store.path());
         let lease = store.claim_runtime()?;
         store.recover().await?;
         let (progress, _) = broadcast::channel(256);
@@ -428,6 +440,9 @@ async fn execute(
         }
         // Boundary reload always follows committed tool results. Steers promote
         // before continuation; queue only when this task would otherwise idle.
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
         let promoted = inner.store.promote(session, !reply.needs_tools).await?;
         if !reply.needs_tools && promoted.is_empty() {
             return Ok(());

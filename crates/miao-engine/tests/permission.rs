@@ -134,3 +134,43 @@ fn invalid_patterns_and_limits_are_rejected_at_startup() {
     })
     .is_err());
 }
+
+#[test]
+fn process_authority_requires_explicit_mode_and_capability() {
+    let rule = Rule {
+        tool: "*".into(),
+        path: "**".into(),
+        decision: Decision::Allow,
+    };
+    let readonly = Policy::new(Config {
+        allow_process: true,
+        rules: vec![rule.clone()],
+        ..Config::default()
+    })
+    .unwrap();
+    assert_eq!(
+        readonly.evaluate("run_command", ".", Access::Execute),
+        Decision::Deny
+    );
+    let workspace = Policy::new(Config {
+        mode: Mode::Workspace,
+        rules: vec![rule],
+        ..Config::default()
+    })
+    .unwrap();
+    assert_eq!(
+        workspace.evaluate("run_command", ".", Access::Execute),
+        Decision::Deny
+    );
+    let process = Policy::new(Config {
+        mode: Mode::Workspace,
+        allow_process: true,
+        ..Config::default()
+    })
+    .unwrap();
+    assert_eq!(
+        process.evaluate("run_command", ".", Access::Execute),
+        Decision::Ask
+    );
+    assert!(!process.process_network());
+}

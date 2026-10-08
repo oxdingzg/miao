@@ -24,6 +24,7 @@ pub enum Mode {
 pub enum Access {
     Read,
     Write,
+    Execute,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +41,10 @@ pub struct Config {
     #[serde(default)]
     pub mode: Mode,
     #[serde(default)]
+    pub allow_process: bool,
+    #[serde(default)]
+    pub process_network: bool,
+    #[serde(default)]
     pub rules: Vec<Rule>,
     #[serde(default = "approval_timeout")]
     pub approval_timeout_ms: u64,
@@ -51,6 +56,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             mode: Mode::ReadOnly,
+            allow_process: false,
+            process_network: false,
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
         }
@@ -116,6 +123,13 @@ impl Policy {
     pub fn timeout_ms(&self) -> u64 {
         self.config.approval_timeout_ms
     }
+    pub fn process_enabled(&self) -> bool {
+        self.config.mode == Mode::Workspace && self.config.allow_process
+    }
+    pub fn process_network(&self) -> bool {
+        self.config.process_network
+    }
+
     pub fn writes_enabled(&self) -> bool {
         self.config.mode == Mode::Workspace
     }
@@ -123,7 +137,9 @@ impl Policy {
     /// The mode is an upper bound. Explicit deny dominates ask and allow;
     /// absent matching rules, reads allow and workspace writes ask.
     pub fn evaluate(&self, tool: &str, path: &str, access: Access) -> Decision {
-        if access == Access::Write && self.config.mode == Mode::ReadOnly {
+        if (access == Access::Execute && !self.process_enabled())
+            || (access == Access::Write && self.config.mode == Mode::ReadOnly)
+        {
             return Decision::Deny;
         }
         if path.starts_with('/') || path.split('/').any(|p| p == "..") {

@@ -95,10 +95,10 @@ stdio 请求和只读导出高水位。测试不消费 live provider credentials
 
 ## 后续能力（当前未实现）
 
-完整 coding tools/进程沙箱、后台进程与任务、ACP/HTTP/TUI adapters、Gemini/Bedrock 等其他 provider、
+完整 coding tools/PTY、后台进程与任务、Windows 进程 enforcement、ACP/HTTP/TUI adapters、Gemini/Bedrock 等其他 provider、
 OAuth credential broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
 `read_file` 当前是 canonical containment 的只读工具，最多 32 KiB UTF-8；`list_files` 仅列立即子项，最多 500 个，不递归不跟随子项 symlink；不宣称能抵抗 workspace 内的恶意并发路径替换。
-默认 read_only 不暴露写入工具；workspace 模式暴露 write_file/edit_file 并默认逐次审批，或使用显式 allow/deny 路径规则。进程执行仍待接入。
+默认 read_only 不暴露写入工具；workspace 模式暴露 write_file/edit_file 并默认逐次审批，或使用显式 allow/deny 路径规则。显式开启 allow_process 后可使用前台沙箱进程；其数据库必须位于 workspace 外。
 
 
 ## 权限配置与条件文件提交
@@ -124,3 +124,28 @@ OAuth credential broker、LSP/媒体、Context Epoch/compaction、MCP/TS compati
 - 当前 registry 的写入串行、读取共享；既有文件对其他 runtime/非协作外部 writer 的指纹复核是乐观检查，不宣称通用原子 CAS。
 - 已开始的文件提交必须 join/settle，不会因取消丢弃；失败/取消前后的外部副作用仍以 durable dispatch/settlement 核对。
 - Unix 同步父目录；Windows 文件/目录 durability 与整个平台运行仍需专门验收。
+
+
+## 前台进程与沙箱
+
+配置 `mode=workspace` 且 `allow_process=true` 才暴露 run_command；默认 ask。
+`process_network=false` 默认禁止网络，不接受模型在工具参数里提权。模式/能力/规则形成同一个 policy revision。
+
+```json
+{"mode":"workspace","allow_process":true,"process_network":false,"rules":[]}
+```
+
+run_command 接受显式 argv、workspace 内 cwd、1..120000ms timeout；没有隐式 shell。
+stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通进程组并 join/reap 管道读者，记录终止原因。
+前台工具不宣称支持脱离进程组的恶意 daemon 生命周期；后台任务/cgroup/Job ownership 后续接入。
+
+- macOS：seatbelt workspace-write profile；路径按字符串转义，不能插入策略语法；网络策略限制通信而非要求 socket 对象创建失败。
+- Linux：fresh runner 在 Tokio 初始化前应用 Landlock ABI v3 的完整 filesystem rights；禁网时附加继承的 seccomp socket filter。
+- 不支持或无法应用 enforcement 时失败，不回退成裸进程。Windows 当前不暴露该能力。
+- 两者目前都允许全局读取；workspace-write 不是秘密读取隔离。macOS 兼容系统 temp/dev 写许可，Linux 仅 workspace/job temp 与 /dev/null；差异按实际 profile 描述。
+- launcher 清空环境，只传 PATH/HOME/locale/TERM 与 job temp，不向子命令传 provider keys。
+- 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
+- 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
+
+验证状态：macOS arm64 与 Linux x86_64，engine 52 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。

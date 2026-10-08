@@ -62,8 +62,22 @@ fn yes() -> bool {
     true
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("__sandbox-run") {
+        let payload = args.next().ok_or("sandbox payload missing")?;
+        if args.next().is_some() {
+            return Err("unexpected sandbox arguments".into());
+        }
+        return miao_engine::process::sandbox_runner(&payload);
+    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run())
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args == ["--version"] {
         println!("miao-engine {}", env!("MIAO_ENGINE_VERSION"));
@@ -168,7 +182,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = Runtime::with_policy(
         Store::open(db).await?,
         provider,
-        Tools::new(workspace).await?,
+        Tools::new(workspace)
+            .await?
+            .with_process_runner(std::env::current_exe()?),
         Policy::new(config)?,
     )
     .await?;

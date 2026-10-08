@@ -4,6 +4,7 @@ mod file_mutation;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod permission;
+pub mod process;
 pub mod protocol;
 pub mod provider;
 pub mod runtime;
