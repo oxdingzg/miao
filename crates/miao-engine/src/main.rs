@@ -40,6 +40,17 @@ enum Command {
     Cancel {
         session_id: String,
     },
+    Compact {
+        session_id: String,
+        compaction_id: String,
+        through_message_seq: u64,
+        summary: String,
+    },
+    History {
+        session_id: String,
+        #[serde(default)]
+        selected: bool,
+    },
     Job {
         session_id: String,
         job_id: String,
@@ -374,6 +385,8 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         Command::Admit{input,resume}=>runtime.admit(input,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
+                        Command::Compact{session_id,compaction_id,through_message_seq,summary}=>runtime.store().compact(&session_id,&compaction_id,through_message_seq,summary).await,
+                        Command::History{session_id,selected}=>{let history=if selected {runtime.store().selected_history(&session_id).await}else{runtime.store().history(&session_id).await};history.and_then(|value|serde_json::to_value(value).map_err(Error::from))},
                         Command::Job{session_id,job_id}=>runtime.store().job(&session_id,&job_id).await.map(|v|v.unwrap_or(Value::Null)),
                         Command::Jobs{session_id}=>runtime.store().jobs(&session_id).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::CancelJob{session_id,job_id}=>runtime.cancel_job(&session_id,&job_id).await.map(|accepted|json!({"accepted":accepted})),

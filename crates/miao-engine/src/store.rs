@@ -92,11 +92,11 @@ impl Store {
                     ));
                 }
                 let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-                if version > 5 {
+                if version > 6 {
                     return Err(Error::Invalid("unsupported database schema version".into()));
                 }
 
-                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=5; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=6; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -110,7 +110,8 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_lineage(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),parent_session_id TEXT NOT NULL REFERENCES engine_session(id),message_seq INTEGER NOT NULL);
                     CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
-                    CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);")?;
+                    CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
+                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);")?;
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -139,7 +140,7 @@ impl Store {
         &self.path
     }
 
-    async fn call<T: Send + 'static>(
+    pub(crate) async fn call<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
@@ -407,13 +408,22 @@ impl Store {
             tx.execute("INSERT INTO engine_lineage VALUES(?1,?2,?3)",params![target,parent,seq])?;
             tx.execute("INSERT INTO engine_location SELECT ?1,root FROM engine_location WHERE session_id=?2",params![target,parent])?;
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
+            let mut message_map=std::collections::HashMap::new();
             for message in messages {
-                project_message(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone())?;
+                let copied=project_message(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone())?;
+                if let Some(source)=message["seq"].as_u64(){message_map.insert(source,copied.seq);}
             }
             let context:Option<(u64,String,String,String)>=tx.query_row("SELECT epoch,fingerprint,system,sources FROM engine_context WHERE session_id=?1 AND selected_seq<=?2 ORDER BY epoch DESC LIMIT 1",params![parent,seq],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
             if let Some((parent_epoch,fingerprint,system,sources))=context {
                 let event=append(&tx,&target,"context.inherited",json!({"epoch":1,"parent_session_id":parent,"parent_epoch":parent_epoch,"fingerprint":fingerprint}))?;
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
+            }
+            let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+            let checkpoint:Option<(u64,String)>=tx.query_row("SELECT through_seq,summary FROM engine_compaction WHERE session_id=?1 AND created_seq<=?2 AND through_seq<=?3 ORDER BY created_seq DESC LIMIT 1",params![parent,source_watermark,seq],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if let Some((through,summary))=checkpoint {
+                let through=*message_map.get(&through).ok_or_else(||Error::Invalid("fork checkpoint missing".into()))?;
+                let id=uuid::Uuid::new_v4().to_string();let event=append(&tx,&target,"history.compacted",json!({"compaction_id":id,"through_message_seq":through,"summary":summary,"inherited":true}))?;
+                tx.execute("INSERT INTO engine_compaction VALUES(?1,?2,?3,?4,?5)",params![id,target,through,summary,event.seq])?;
             }
             tx.commit()?;
             Ok(json!({"session_id":target,"parent_session_id":parent,"message_seq":seq,"duplicate":false}))
@@ -728,7 +738,12 @@ impl Store {
     }
 }
 
-fn append(tx: &Transaction<'_>, session: &str, kind: &str, data: Value) -> Result<Event, Error> {
+pub(crate) fn append(
+    tx: &Transaction<'_>,
+    session: &str,
+    kind: &str,
+    data: Value,
+) -> Result<Event, Error> {
     let seq: u64 = tx.query_row(
         "UPDATE engine_session SET next_seq=next_seq+1 WHERE id=?1 RETURNING next_seq",
         [session],
@@ -813,7 +828,11 @@ fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(),
     Ok(())
 }
 
-fn projected(tx: &Transaction<'_>, session: &str, cursor: u64) -> Result<Vec<Value>, Error> {
+pub(crate) fn projected(
+    tx: &Transaction<'_>,
+    session: &str,
+    cursor: u64,
+) -> Result<Vec<Value>, Error> {
     let mut stmt=tx.prepare("SELECT seq,role,content FROM engine_message WHERE session_id=?1 AND seq<=?2 ORDER BY seq LIMIT 1001")?;
     let mut rows = stmt.query(params![session, cursor])?;
     let mut messages = Vec::new();
@@ -831,38 +850,46 @@ fn projected(tx: &Transaction<'_>, session: &str, cursor: u64) -> Result<Vec<Val
     Ok(messages)
 }
 
-fn closed_prefix(messages: &[Value]) -> Result<(), Error> {
+pub(crate) fn closed_prefix(messages: &[Value]) -> Result<(), Error> {
     let mut pending = std::collections::HashSet::new();
     for message in messages {
-        for block in message["content"]
-            .as_array()
-            .ok_or_else(|| Error::Invalid("projected content".into()))?
-        {
-            match block["type"].as_str() {
-                Some("tool_use") => {
-                    let id = block["id"]
-                        .as_str()
-                        .ok_or_else(|| Error::Invalid("tool id".into()))?;
-                    if !pending.insert(id.to_owned()) {
-                        return Err(Error::Invalid("duplicate unresolved tool id".into()));
-                    }
-                }
-                Some("tool_result") => {
-                    let id = block["tool_use_id"]
-                        .as_str()
-                        .ok_or_else(|| Error::Invalid("tool result id".into()))?;
-                    if !pending.remove(id) {
-                        return Err(Error::Invalid("unmatched tool result".into()));
-                    }
-                }
-                _ => {}
-            }
-        }
+        track_tools(&mut pending, &message["content"])?;
     }
     if !pending.is_empty() {
-        return Err(Error::Invalid(
-            "fork boundary has unresolved tool calls".into(),
-        ));
+        return Err(Error::Invalid("boundary has unresolved tool calls".into()));
+    }
+    Ok(())
+}
+
+pub(crate) fn track_tools(
+    pending: &mut std::collections::HashSet<String>,
+    content: &Value,
+) -> Result<(), Error> {
+    for block in content
+        .as_array()
+        .ok_or_else(|| Error::Invalid("projected content".into()))?
+    {
+        match block["type"].as_str() {
+            Some("tool_use") => {
+                let id = block["id"]
+                    .as_str()
+                    .ok_or_else(|| Error::Invalid("tool id".into()))?;
+                if !pending.insert(id.to_owned()) || pending.len() > 256 {
+                    return Err(Error::Invalid(
+                        "duplicate or excessive unresolved tool ids".into(),
+                    ));
+                }
+            }
+            Some("tool_result") => {
+                let id = block["tool_use_id"]
+                    .as_str()
+                    .ok_or_else(|| Error::Invalid("tool result id".into()))?;
+                if !pending.remove(id) {
+                    return Err(Error::Invalid("unmatched tool result".into()));
+                }
+            }
+            _ => {}
+        }
     }
     Ok(())
 }

@@ -386,7 +386,7 @@ async fn execute(
                 json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision()}),
             )
             .await?;
-        let history = inner.store.history(session).await?;
+        let history = inner.store.selected_history(session).await?;
         let (send, mut receive) = mpsc::channel(64);
         let response = inner.provider.stream(
             ModelRequest {

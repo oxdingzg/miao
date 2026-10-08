@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 75 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 79 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -213,3 +213,18 @@ start_job 的完整 argv/cwd/timeout 仍经权限和绑定审批；返回 durabl
 - background 是显式外部 writer，不持有 foreground registry 的全程文件锁；条件编辑对它仍是乐观指纹检查。
 - guardian 保持私有 pipe lifeline；engine 硬退出关闭它，普通进程组被回收。用户命令 stdin 仍为空，不能接触控制管道。
 - 恶意 setsid/独立 daemon 仍需后续 cgroup/Job ownership；当前不是全平台持久进程托管服务。
+
+
+## 历史选择与显式压缩 checkpoint
+
+```jsonl
+{"id":40,"method":"history","params":{"session_id":"s","selected":true}}
+{"id":41,"method":"compact","params":{"session_id":"s","compaction_id":"CHECKPOINT_ID","through_message_seq":42,"summary":"已完成的工作、约束与后续目标摘要。"}}
+```
+
+compact 是本地 controller 的显式投影操作：Session 必须 idle，边界必须是闭合的完成 assistant message。
+相同 checkpoint id 对账 Session/cutoff/summary；冲突失败，不向后倒退。raw messages/events 不删除。
+provider 使用 summary+tail 的 selected_history，仍保留 opaque/tool records 的完整未压缩 tail；过大窗口显式报 budget 错误。
+验证通过流式检查，允许把已超过选择预算的旧前缀压成 checkpoint；摘要最多 32 KiB。
+default fork 继承当前有效 checkpoint 并映射 message cursor；显式历史 fork 只继承该点已经存在的 checkpoint。
+这不是自动 LLM 摘要或任务质量承诺；自动策略、模型角色路由与上下文质量评测仍需后续实现。
