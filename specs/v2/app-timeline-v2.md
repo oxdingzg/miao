@@ -82,6 +82,17 @@ Execution inventory (verified on main after #401/#403/#404/#408):
   (context computation over V1 `Message[]`), the session retry flow
   (`session.tsx` `extractPromptFromParts`), and
   `use-session-commands`.
+  Verified dependency surface (main, post #408): `getSessionContext`
+  reads only tokens/providerID/modelID and its consumers use
+  usage/total/counts plus `ctx.message.id` and `ctx.message.tokens.*`,
+  all present on the V2 assistant record — a records variant of the
+  metrics helper plus a `role`-to-`type` swap covers both context
+  consumers. `estimateSessionContextBreakdown` reads `msg.id`, `role`,
+  and projected parts, so it takes the same records-plus-
+  `contentParts` treatment. `RawMessage` in session-context-tab renders
+  the per-message V1 shape and needs a records-driven variant. The
+  session retry flow and `use-session-commands` are mechanical:
+  `extractPromptFromParts` over the `contentParts` projection.
 - Store-surgery order once those land: delete `data.part` writes and
   readers → merge `session_message` into `data.message`
   (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the
