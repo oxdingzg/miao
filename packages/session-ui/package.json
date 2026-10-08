@@ -28,7 +28,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "bun test src --only-failures"
+    "test": "bun test --conditions=browser --preload ./happydom.ts --only-failures ./src"
   },
   "devDependencies": {
     "@tsconfig/node22": "catalog:",
@@ -36,7 +36,8 @@
     "@types/luxon": "catalog:",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@happy-dom/global-registrator": "20.12.0"
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
