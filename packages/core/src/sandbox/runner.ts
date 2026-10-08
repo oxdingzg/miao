@@ -29,12 +29,13 @@ export interface Runner {
   readonly prefix: readonly string[]
 }
 
-export type Backend = "seatbelt" | "landlock"
+export type Backend = "seatbelt" | "landlock" | "appcontainer"
 
 /** The kernel mechanism this platform sandboxes with, if any. */
 export function backend(): Backend | undefined {
   if (process.platform === "darwin") return existsSync("/usr/bin/sandbox-exec") ? "seatbelt" : undefined
   if (process.platform === "linux") return "landlock"
+  if (process.platform === "win32") return "appcontainer"
   return undefined
 }
 
@@ -56,7 +57,10 @@ export function resolve(): Runner | undefined {
   // preloads) that the sandboxed project ships.
   return {
     program: InstallationExecutable.executable,
-    prefix: ["--config=/dev/null", path.join(import.meta.dir, "main.ts")],
+    prefix: [
+      `--config=${process.platform === "win32" ? path.join(import.meta.dir, "empty-bunfig.toml") : "/dev/null"}`,
+      path.join(import.meta.dir, "main.ts"),
+    ],
   }
 }
 

@@ -643,14 +643,15 @@ pub fn run(
     unsafe {
         DeleteProcThreadAttributeList(attr_list);
     }
-    if create.is_err() {
+    if let Err(error) = create {
         grants.restore();
         unsafe {
             let _ = CloseHandle(job);
         }
-        return Err(WinError::Start(
-            windows::core::Error::from_win32().message().to_string(),
-        ));
+        return Err(WinError::Start(format!(
+            "CreateProcessW: {}",
+            error.message()
+        )));
     }
     let job_assigned = unsafe { AssignProcessToJobObject(job, process_info.hProcess) };
     if job_assigned.is_err() {
