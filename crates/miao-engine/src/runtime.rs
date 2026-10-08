@@ -228,6 +228,7 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = 25;
+    let mut repeats = HashMap::<String, u32>::new();
     loop {
         if allowance == 0 {
             return Err(Error::Invalid("provider turn allowance exceeded".into()));
@@ -316,10 +317,28 @@ async fn execute(
                     Err(ToolError::Interrupted) => return Ok(()),
                     Err(error) => (json!({"error":error.to_string()}), true),
                 };
+                let signature = serde_json::to_string(
+                    &json!({"name":name,"input":block["input"],"output":output,"is_error":is_error}),
+                )?;
                 inner
                     .store
                     .tool_result(session, run, id, output, is_error)
                     .await?;
+                let repeat = repeats.entry(signature).or_default();
+                *repeat += 1;
+                if *repeat >= 3 {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "loop.detected",
+                            json!({"run_id":run,"name":name,"repeats":repeat}),
+                        )
+                        .await?;
+                    return Err(Error::Invalid(
+                        "repeated identical tool input/result without new user input".into(),
+                    ));
+                }
             }
         }
         // Boundary reload always follows committed tool results. Steers promote
@@ -330,6 +349,7 @@ async fn execute(
         }
         if !promoted.is_empty() {
             allowance = 25;
+            repeats.clear();
         }
         step += 1;
     }

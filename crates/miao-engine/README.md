@@ -68,6 +68,8 @@ export 不创建缺失数据库、不改变执行状态、不承担第二份权�
 - steer 在安全 provider-turn 边界批量提升，queue 仅在执行将 idle 时提升一条；新输入重置 turn allowance。
 - 同 Session 串行执行，跨 Session 可并行；M0 上限为 64 attached Sessions、8 active executions、每次输入 allowance 25 provider turns。
 - actor 控制循环能在 provider 等待期间响应 cancel；tasks 在 shutdown 被取消并 join。
+- 相同工具名/input/result 累计 3 次且没有新用户输入时记录 `loop.detected` 并停止；新输入重置计数。该检测不宣称识别所有语义循环。
+- provider panic 仅 reconcile 当前 Session；慢临时进度消费者不阻塞执行，其他 Session 不受该故障影响。
 - 完整 assistant/tool-call projection 与 dispatch intents 同事务；tool settlement 与 tool-result projection 同事务。
 - startup 不自动续跑；未结算 dispatch 标为 unknown，补错误 tool-result 修复历史，不重做外部操作。
 - pre-response transport/429/特定 5xx 有最多 3 次、60 秒总预算的 retry；200 body 开始后不透明重播。
