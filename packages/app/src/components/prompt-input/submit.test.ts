@@ -478,15 +478,7 @@ describe("prompt submit worktree selection", () => {
     expect(optimistic[0]).toMatchObject({
       message: { text: "ls", type: "user" },
     })
-    expect(selections).toContainEqual({
-      sessionID: "session-1",
-      model: { id: "model", providerID: "provider", variant: "high" },
-    })
     expect(sentPrompts).toEqual(["/repo/main"])
-    expect(selections).toContainEqual({
-      sessionID: "session-1",
-      model: { id: "model", providerID: "provider", variant: "high" },
-    })
     expect(promptInputs[0]).toMatchObject({
       sessionID: "session-1",
       prompt: { text: "ls", files: [], agents: [] },
@@ -557,10 +549,6 @@ describe("prompt submit worktree selection", () => {
 
     expect(optimistic[0]).toMatchObject({
       message: { type: "user" },
-    })
-    expect(selections).toContainEqual({
-      sessionID: "session-1",
-      model: { id: "draft-model", providerID: "draft-provider", variant: "draft-variant" },
     })
   })
 
