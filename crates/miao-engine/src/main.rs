@@ -1,7 +1,8 @@
 use miao_engine::{
     approval::Response,
+    credential::{Credential, Source},
     openai_chat::OpenAIChat,
-    openai_responses::OpenAIResponses,
+    openai_responses::{OpenAIResponses, Profile},
     permission::{Config, Policy},
     protocol::{Error, Input},
     provider::{Anthropic, Provider},
@@ -97,6 +98,36 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("miao-engine {}", env!("MIAO_ENGINE_VERSION"));
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("credentials") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--credential-db", "--auth-file"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("invalid credential-list options".into());
+            }
+        }
+        if !remainder.is_empty() || options.len() != 1 {
+            return Err("select exactly one credential source".into());
+        }
+        let list = if let Some(path) = options.remove("--credential-db") {
+            tokio::task::spawn_blocking(move || {
+                miao_engine::credential::list_database(std::path::Path::new(&path))
+            })
+            .await??
+        } else {
+            let path = options.remove("--auth-file").ok_or("source missing")?;
+            tokio::task::spawn_blocking(move || {
+                miao_engine::credential::list_legacy(std::path::Path::new(&path))
+            })
+            .await??
+        };
+        for entry in list {
+            println!("{}", serde_json::to_string(&entry)?);
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("export") {
         let (flags, remainder) = args[1..].as_chunks::<2>();
         let mut options = HashMap::new();
@@ -124,7 +155,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();
@@ -137,6 +168,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--endpoint",
             "--provider",
             "--policy",
+            "--credential-db",
+            "--credential-id",
+            "--credential-integration",
+            "--auth-file",
         ]
         .contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
@@ -152,37 +187,109 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .get("--workspace")
         .ok_or("--workspace is required")?;
     let model = options.get("--model").ok_or("--model is required")?;
-    let provider: Arc<dyn Provider> = match options
+    let provider_name = options
         .get("--provider")
         .map(String::as_str)
-        .unwrap_or("anthropic")
-    {
+        .unwrap_or("anthropic");
+    let integration = options
+        .get("--credential-integration")
+        .cloned()
+        .unwrap_or_else(|| {
+            if provider_name == "anthropic" {
+                "anthropic".into()
+            } else {
+                "openai".into()
+            }
+        });
+    if options.contains_key("--credential-db") && options.contains_key("--auth-file") {
+        return Err("select only one credential source".into());
+    }
+    let source = if let Some(path) = options.get("--credential-db") {
+        Source::Database {
+            path: tokio::fs::canonicalize(path).await?,
+            id: options
+                .get("--credential-id")
+                .ok_or("--credential-id is required")?
+                .clone(),
+            integration,
+        }
+    } else if let Some(path) = options.get("--auth-file") {
+        if options.contains_key("--credential-id") {
+            return Err("credential-id requires credential-db".into());
+        }
+        Source::Legacy {
+            path: tokio::fs::canonicalize(path).await?,
+            integration,
+        }
+    } else {
+        if options.contains_key("--credential-id")
+            || options.contains_key("--credential-integration")
+        {
+            return Err("credential selection requires a file/database source".into());
+        }
+        if provider_name == "subscription-responses" {
+            Source::Static(Credential::token(
+                std::env::var("OPENAI_ACCESS_TOKEN")
+                    .map_err(|_| "OPENAI_ACCESS_TOKEN is required")?,
+                std::env::var("OPENAI_ACCOUNT_ID").ok(),
+            ))
+        } else {
+            let name = if provider_name == "anthropic" {
+                "ANTHROPIC_API_KEY"
+            } else {
+                "OPENAI_API_KEY"
+            };
+            Source::Static(Credential::key(
+                std::env::var(name)
+                    .map_err(|_| "API key or explicit credential source is required")?,
+            ))
+        }
+    };
+    source.load().await?;
+    let provider: Arc<dyn Provider> = match provider_name {
         "anthropic" => {
             let endpoint = options
                 .get("--endpoint")
                 .cloned()
                 .unwrap_or_else(|| "https://api.anthropic.com/v1/messages".into());
-            let key =
-                std::env::var("ANTHROPIC_API_KEY").map_err(|_| "ANTHROPIC_API_KEY is required")?;
-            Arc::new(Anthropic::new(endpoint, key, model.clone())?)
+            Arc::new(Anthropic::with_source(
+                endpoint,
+                source.clone(),
+                model.clone(),
+            )?)
         }
         "openai-chat" => {
             let endpoint = options
                 .get("--endpoint")
                 .cloned()
                 .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".into());
-            let key = std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is required")?;
-            Arc::new(OpenAIChat::new(endpoint, key, model.clone())?)
+            Arc::new(OpenAIChat::with_source(
+                endpoint,
+                source.clone(),
+                model.clone(),
+            )?)
         }
-        "openai-responses" => {
-            let endpoint = options
-                .get("--endpoint")
-                .cloned()
-                .unwrap_or_else(|| "https://api.openai.com/v1/responses".into());
-            let key = std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is required")?;
-            Arc::new(OpenAIResponses::new(endpoint, key, model.clone())?)
+        "openai-responses" | "subscription-responses" => {
+            let subscription = provider_name == "subscription-responses";
+            let endpoint = options.get("--endpoint").cloned().unwrap_or_else(|| {
+                if subscription {
+                    "https://chatgpt.com/backend-api/codex/responses".into()
+                } else {
+                    "https://api.openai.com/v1/responses".into()
+                }
+            });
+            Arc::new(OpenAIResponses::with_source(
+                endpoint,
+                source.clone(),
+                model.clone(),
+                if subscription {
+                    Profile::Subscription
+                } else {
+                    Profile::Api
+                },
+            )?)
         }
-        _ => return Err("unknown provider; use anthropic, openai-chat or openai-responses".into()),
+        _ => return Err("unknown provider".into()),
     };
     let config = if let Some(path) = options.get("--policy") {
         let bytes = tokio::fs::read(path).await?;
@@ -193,15 +300,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Config::default()
     };
-    let runtime = Runtime::with_policy(
-        Store::open(db).await?,
-        provider,
-        Tools::new(workspace)
-            .await?
-            .with_process_runner(std::env::current_exe()?),
-        Policy::new(config)?,
-    )
-    .await?;
+    let policy = Policy::new(config)?;
+    let mut tools = Tools::new(workspace)
+        .await?
+        .with_process_runner(std::env::current_exe()?);
+    if let Some(path) = source.path() {
+        if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("process-enabled credential sources must be outside workspace".into());
+        }
+        tools = tools.with_protected_resource(path);
+    }
+    let runtime = Runtime::with_policy(Store::open(db).await?, provider, tools, policy).await?;
     let result = serve(&runtime).await;
     runtime.shutdown().await;
     result?;

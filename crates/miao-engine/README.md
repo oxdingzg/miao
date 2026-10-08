@@ -18,7 +18,7 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 `serve` 默认选择 Anthropic，读取 `ANTHROPIC_API_KEY`，endpoint 为 `https://api.anthropic.com/v1/messages`。
 使用 `--provider openai-chat` 读取 `OPENAI_API_KEY`，endpoint 为 `https://api.openai.com/v1/chat/completions`；
 使用 `--provider openai-responses` 同样读取 `OPENAI_API_KEY`，默认 endpoint 为 `https://api.openai.com/v1/responses`。
-这两种都是 API-key 接入，尚不支持订阅账户 OAuth、账户路由与凭据刷新。
+公开 API profile 接受 key credential；订阅 profile 通过 subscription-responses 使用现有 OAuth snapshot 与账户路由。独立登录/refresh 暂未实现，已有 broker 保持唯一刷新写者。
 `--endpoint URL` 可显式指定兼容 endpoint。provider stream 没有独立配置 Session、工具或数据库的权力。
 版本读取根 `package.json`，不把 crate 内部版本用作产品版本。
 
@@ -96,7 +96,7 @@ stdio 请求和只读导出高水位。测试不消费 live provider credentials
 ## 后续能力（当前未实现）
 
 完整 coding tools/PTY、后台进程与任务、Windows 进程 enforcement、ACP/HTTP/TUI adapters、Gemini/Bedrock 等其他 provider、
-OAuth credential broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
+独立 OAuth refresh broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
 `read_file` 当前是 canonical containment 的只读工具，最多 32 KiB UTF-8；`list_files` 仅列立即子项，最多 500 个，不递归不跟随子项 symlink；不宣称能抵抗 workspace 内的恶意并发路径替换。
 默认 read_only 不暴露写入工具；workspace 模式暴露 write_file/edit_file 并默认逐次审批，或使用显式 allow/deny 路径规则。显式开启 allow_process 后可使用前台沙箱进程；其数据库必须位于 workspace 外。
 
@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 60 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 70 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -171,3 +171,24 @@ ask/deny 来源不会未经授权进入 system。Context Epoch 存准确的 syst
 内容与来源未变则复用 epoch；变化追加不可变 epoch，provider.started 关联它；fork 按 message checkpoint 继承当时的 epoch。
 system 不嵌入 Session/run 的易变 ID，三个 adapters 分别映射到其原生 system/instructions 输入。
 当前只实现 workspace producer；祖先/用户 instructions、skills/references/persona、完整上下文选择与压缩仍待接入。
+
+
+## 只读凭据兼容与订阅 profile
+
+```sh
+miao-engine credentials --credential-db /path/to/miao.db
+miao-engine credentials --auth-file /path/to/auth.json
+miao-engine serve --db /path/to/engine.db --workspace /path/to/project --model MODEL \
+  --provider subscription-responses --credential-db /path/to/miao.db \
+  --credential-id cred_ID --credential-integration openai
+```
+
+- discovery 只输出 id/integration/label/kind/expiry，不序列化 token、refresh 或账户字段。
+- source 只读解析现有 credential 表或 legacy auth.json，不创建缺失库、不迁移、不写回。
+- 显式 credential-id 还需匹配 integration，协议兼容服务可用 credential-integration 明确绑定；不猜测跨 provider 凭据。
+- 每个 provider turn 重新读取 source，可跟随既有 broker 的 token 轮换；过期 snapshot 明确失败，不竞争刷新。
+- 默认环境变量来源继续可用；订阅 profile 使用 OPENAI_ACCESS_TOKEN 与可选 OPENAI_ACCOUNT_ID。
+- API-key/OAuth 类型与所选 profile 不兼容时，发请求前拒绝；redirect 关闭，不把 token 发向跳转地址。
+- 凭据文件/DB 作为 protected resources 排除于 leaf 工具与自动 context；进程启用时 source 必须在 workspace 外。
+- workspace-write 不提供全局秘密读取隔离；已明确批准的任意进程仍具有 profile 描述的读取能力。
+- 当前只读 bridge 并非完整 credential broker：device login、独立 refresh/rotation 锁、跨 broker 迁移与 live 账户任务验收仍待完成。

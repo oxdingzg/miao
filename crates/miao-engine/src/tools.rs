@@ -135,6 +135,9 @@ impl Tools {
         self.process_network = network;
         self
     }
+    pub fn with_protected_resource(self, path: &Path) -> Self {
+        self.protect_store(path)
+    }
     pub(crate) fn protect_store(mut self, path: &Path) -> Self {
         self.protected.push(path.to_owned());
         self.protected.push(path.with_extension("engine-lock"));

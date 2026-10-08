@@ -1,4 +1,5 @@
 use crate::{
+    credential::{Credential, Kind, Source},
     protocol::{Message, ModelRequest},
     provider::{read_stream, request_with_retry, Frame, Parser, Provider, ProviderError, Reply},
 };
@@ -10,43 +11,85 @@ use tokio_util::sync::CancellationToken;
 
 /// API-key Responses adapter. Subscription OAuth, account routing and refresh
 /// are a separate credential integration, not implicit endpoint substitution.
+#[derive(Clone, Copy)]
+pub enum Profile {
+    Api,
+    Subscription,
+}
+
 pub struct OpenAIResponses {
+    profile: Profile,
     client: reqwest::Client,
     endpoint: String,
-    key: String,
+    source: Source,
     model: String,
 }
 impl OpenAIResponses {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
+        Self::with_source(
+            endpoint,
+            Source::Static(Credential::key(key)),
+            model,
+            Profile::Api,
+        )
+    }
+    pub fn with_source(
+        endpoint: String,
+        source: Source,
+        model: String,
+        profile: Profile,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,
             endpoint,
-            key,
+            source,
             model,
+            profile,
         })
     }
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn protected_resources(&self) -> Vec<std::path::PathBuf> {
+        self.source
+            .path()
+            .map(|path| vec![path.to_owned()])
+            .unwrap_or_default()
+    }
     async fn stream(
         &self,
         request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        let credential = self.source.load().await?;
+        if !matches!(
+            (self.profile, credential.kind()),
+            (Profile::Api, Kind::Key) | (Profile::Subscription, Kind::OAuth)
+        ) {
+            return Err(ProviderError::AuthProfile);
+        }
         let input = items(&request.messages, &self.model)?;
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.input_schema})).collect();
         let body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
-        let request = self
+        let mut builder = self
             .client
             .post(&self.endpoint)
-            .bearer_auth(&self.key)
-            .json(&body)
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+            .bearer_auth(credential.secret())
+            .json(&body);
+        if matches!(self.profile, Profile::Subscription) {
+            builder = builder.header("originator", "miao").header(
+                reqwest::header::USER_AGENT,
+                format!("miao-engine/{}", env!("MIAO_ENGINE_VERSION")),
+            );
+            if let Some(account) = credential.account() {
+                builder = builder.header("ChatGPT-Account-Id", account);
+            }
+        }
+        let request = builder.build().map_err(|_| ProviderError::Transport)?;
         let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
         read_stream(
             response,

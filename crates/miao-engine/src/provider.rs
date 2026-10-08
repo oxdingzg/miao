@@ -1,4 +1,7 @@
-use crate::protocol::ModelRequest;
+use crate::{
+    credential::{Credential, Kind, Source},
+    protocol::ModelRequest,
+};
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
@@ -12,6 +15,10 @@ pub enum ProviderError {
     Interrupted,
     #[error("provider transport failed")]
     Transport,
+    #[error("credential: {0}")]
+    Auth(#[from] crate::credential::Error),
+    #[error("credential type is incompatible with the selected authentication profile")]
+    AuthProfile,
     #[error("provider HTTP {0}")]
     Http(u16),
     #[error("invalid provider stream: {0}")]
@@ -29,6 +36,9 @@ pub struct Reply {
 /// feeds the execution task, not a potentially slow external subscriber.
 #[async_trait]
 pub trait Provider: Send + Sync {
+    fn protected_resources(&self) -> Vec<std::path::PathBuf> {
+        vec![]
+    }
     async fn stream(
         &self,
         request: ModelRequest,
@@ -40,19 +50,27 @@ pub trait Provider: Send + Sync {
 pub struct Anthropic {
     client: reqwest::Client,
     endpoint: String,
-    key: String,
+    source: Source,
     model: String,
 }
 
 impl Anthropic {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
+        Self::with_source(endpoint, Source::Static(Credential::key(key)), model)
+    }
+
+    pub fn with_source(
+        endpoint: String,
+        source: Source,
+        model: String,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,
             endpoint,
-            key,
+            source,
             model,
         })
     }
@@ -60,12 +78,22 @@ impl Anthropic {
 
 #[async_trait]
 impl Provider for Anthropic {
+    fn protected_resources(&self) -> Vec<std::path::PathBuf> {
+        self.source
+            .path()
+            .map(|path| vec![path.to_owned()])
+            .unwrap_or_default()
+    }
     async fn stream(
         &self,
         request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        let credential = self.source.load().await?;
+        if credential.kind() != Kind::Key {
+            return Err(ProviderError::AuthProfile);
+        }
         let mut messages = request.messages;
         for message in &mut messages {
             let blocks = message
@@ -97,7 +125,7 @@ impl Provider for Anthropic {
             }
         }
         let request=self.client.post(&self.endpoint)
-            .header("x-api-key",&self.key).header("anthropic-version","2023-06-01")
+            .header("x-api-key",credential.header()?).header("anthropic-version","2023-06-01")
             .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"system":request.system,"tools":request.tools}))
             .build().map_err(|_|ProviderError::Transport)?;
         let response = request_with_retry(&self.client, request, &progress, &cancel).await?;

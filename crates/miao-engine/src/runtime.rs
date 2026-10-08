@@ -71,10 +71,20 @@ impl Runtime {
                 "process-enabled runtime requires its database outside the workspace".into(),
             ));
         }
-        let tools = tools
+        let mut tools = tools
             .with_writes(policy.writes_enabled())
             .with_process(policy.process_enabled(), policy.process_network())
             .protect_store(store.path());
+        for path in provider.protected_resources() {
+            let path = tokio::fs::canonicalize(path).await?;
+            if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location()))
+            {
+                return Err(Error::Invalid(
+                    "process credential resources must be outside workspace".into(),
+                ));
+            }
+            tools = tools.with_protected_resource(&path);
+        }
         let lease = store.claim_runtime()?;
         store.recover().await?;
         let (progress, _) = broadcast::channel(256);

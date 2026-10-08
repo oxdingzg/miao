@@ -1,4 +1,5 @@
 use crate::{
+    credential::{Credential, Kind, Source},
     protocol::{Message, ModelRequest},
     provider::{read_stream, request_with_retry, Frame, Parser, Provider, ProviderError, Reply},
 };
@@ -11,19 +12,26 @@ use tokio_util::sync::CancellationToken;
 pub struct OpenAIChat {
     client: reqwest::Client,
     endpoint: String,
-    key: String,
+    source: Source,
     model: String,
 }
 
 impl OpenAIChat {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
+        Self::with_source(endpoint, Source::Static(Credential::key(key)), model)
+    }
+    pub fn with_source(
+        endpoint: String,
+        source: Source,
+        model: String,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,
             endpoint,
-            key,
+            source,
             model,
         })
     }
@@ -31,12 +39,22 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn protected_resources(&self) -> Vec<std::path::PathBuf> {
+        self.source
+            .path()
+            .map(|path| vec![path.to_owned()])
+            .unwrap_or_default()
+    }
     async fn stream(
         &self,
         request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        let credential = self.source.load().await?;
+        if credential.kind() != Kind::Key {
+            return Err(ProviderError::AuthProfile);
+        }
         let mut messages = messages(&request.messages)?;
         if !request.system.is_empty() {
             messages.insert(0, json!({"role":"system","content":request.system}));
@@ -46,7 +64,7 @@ impl Provider for OpenAIChat {
         let request = self
             .client
             .post(&self.endpoint)
-            .bearer_auth(&self.key)
+            .bearer_auth(credential.secret())
             .json(&body)
             .build()
             .map_err(|_| ProviderError::Transport)?;
