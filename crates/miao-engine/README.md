@@ -1,7 +1,7 @@
 # miao-engine（实验性 Rust M0 引擎）
 
 独立入口，使用显式指定的独立 SQLite 数据库。当前实现提供 durable inbox、事务事件/消息投影、
-受监督的 Session 执行、Anthropic Messages / OpenAI Chat 流式 adapters、受控 `read_file` / `list_files`、stdio 和 committed JSONL 导出。
+受监督的 Session 执行、Anthropic Messages / OpenAI Chat / OpenAI Responses 流式 adapters、受控 `read_file` / `list_files`、stdio 和 committed JSONL 导出。
 这是 M0 可运行骨架，尚未达到替代现有 miao 的完整能力门槛。
 
 ## 运行
@@ -17,7 +17,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 `serve` 默认选择 Anthropic，读取 `ANTHROPIC_API_KEY`，endpoint 为 `https://api.anthropic.com/v1/messages`。
 使用 `--provider openai-chat` 读取 `OPENAI_API_KEY`，endpoint 为 `https://api.openai.com/v1/chat/completions`；
-这是 API-key Chat Completions 接入，尚不支持 ChatGPT OAuth/Codex Responses。
+使用 `--provider openai-responses` 同样读取 `OPENAI_API_KEY`，默认 endpoint 为 `https://api.openai.com/v1/responses`。
+这两种都是 API-key 接入，尚不支持 ChatGPT OAuth/Codex 的账户路由与凭据刷新。
 `--endpoint URL` 可显式指定兼容 endpoint。provider stream 没有独立配置 Session、工具或数据库的权力。
 版本读取根 `package.json`，不把 crate 内部版本用作产品版本。
 
@@ -72,6 +73,7 @@ export 不创建缺失数据库、不改变执行状态、不承担第二份权�
 - pre-response transport/429/特定 5xx 有最多 3 次、60 秒总预算的 retry；200 body 开始后不透明重播。
 - provider SSE 支持 bytewise UTF-8、CRLF、多行 data；frame 1 MiB/message 8 MiB 上限。
 - 半截工具 JSON、缺少 terminal、未知 hosted/thinking blocks 和不可支持的 finish reason 均明确失败，不 dispatch 不完整工具。
+- Responses 以 response.completed 的完整 output 结算，并原样保留 encrypted reasoning item；opaque blocks 只回送相同协议/模型，跨协议或模型显式拒绝，不静默丢弃。
 
 ## 验证
 
@@ -81,14 +83,14 @@ cargo test --manifest-path crates/miao-engine/Cargo.toml
 cargo clippy --manifest-path crates/miao-engine/Cargo.toml --all-targets -- -D warnings
 ```
 
-测试包括两种协议的真实本地 HTTP fixture→runtime→文件工具→后续模型轮次闭环，Chat usage/DONE/工具参数分片与拒绝处理，
+测试包括三种协议的真实本地 HTTP fixture→runtime→文件工具→后续模型轮次闭环，Chat usage/DONE/工具参数分片与拒绝处理，
 真实本地 HTTP fixture adapter、200 断流不重试、工具参数截断、capacity retry、
 workspace 越界/大文件、exact retry/lost wake、cancel/跨 Session、unknown 恢复、原子 settlement、
 stdio 请求和只读导出高水位。测试不消费 live provider credentials；不把 fixture 通过称为真实模型质量验收。
 
 ## 后续能力（当前未实现）
 
-完整 coding tools/写权限/OS sandbox、后台进程与任务、ACP/HTTP/TUI adapters、Responses/Gemini 等其他 provider、
+完整 coding tools/写权限/OS sandbox、后台进程与任务、ACP/HTTP/TUI adapters、Gemini/Bedrock 等其他 provider、
 OAuth credential broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
 `read_file` 当前是 canonical containment 的只读工具，最多 32 KiB UTF-8；`list_files` 仅列立即子项，最多 500 个，不递归不跟随子项 symlink；不宣称能抵抗 workspace 内的恶意并发路径替换。
 M0 的 read-only workflow 不开放 shell/文件写入；这些能力要在权限与 OS enforcement 闭环后加入。

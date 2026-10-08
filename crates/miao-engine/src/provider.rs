@@ -66,9 +66,39 @@ impl Provider for Anthropic {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        let mut messages = request.messages;
+        for message in &mut messages {
+            let blocks = message
+                .content
+                .as_array_mut()
+                .ok_or_else(|| ProviderError::Stream("unsupported Anthropic history".into()))?;
+            for block in blocks {
+                if !matches!(
+                    (message.role.as_str(), block["type"].as_str()),
+                    ("user" | "assistant", Some("text"))
+                        | ("assistant", Some("tool_use"))
+                        | ("user", Some("tool_result"))
+                ) {
+                    return Err(ProviderError::Stream(
+                        "opaque or incompatible Anthropic history".into(),
+                    ));
+                }
+                if block
+                    .get("annotations")
+                    .is_some_and(|v| v.as_array().is_none_or(|a| !a.is_empty()))
+                {
+                    return Err(ProviderError::Stream(
+                        "annotated text is not portable to Anthropic".into(),
+                    ));
+                }
+                if let Some(object) = block.as_object_mut() {
+                    object.remove("annotations");
+                }
+            }
+        }
         let request=self.client.post(&self.endpoint)
             .header("x-api-key",&self.key).header("anthropic-version","2023-06-01")
-            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":request.messages,"tools":request.tools}))
+            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"tools":request.tools}))
             .build().map_err(|_|ProviderError::Transport)?;
         let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
