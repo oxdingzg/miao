@@ -113,7 +113,7 @@ export function SessionContextTab() {
     () => {
       const id = params.id
       if (!id) return emptyMessages
-      return sync().data.session_message[id] ?? []
+      return sync().data.message[id] ?? []
     },
     emptyMessages,
     { equals: same },

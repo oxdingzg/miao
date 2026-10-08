@@ -115,7 +115,7 @@ export function createHomeSessionsController(home: HomeController) {
               .sync(record.session.id)
               .then(() =>
                 Promise.all(
-                  Object.values(contentParts(record.session.id, ctx.sync.session.data.session_message[record.session.id] ?? []))
+                  Object.values(contentParts(record.session.id, ctx.sync.session.data.message[record.session.id] ?? []))
                     .flat()
                     .flatMap((part) => {
                       if (part.type !== "text" || !part.text) return []

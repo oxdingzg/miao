@@ -406,7 +406,7 @@ describe("server session", () => {
 
     // The client store wraps items in reactive proxies that bun's matchers
     // cannot subset-match against; compare the raw snapshot instead.
-    expect(unwrap(ctx.store.data.session_message.child?.at(-1))).toMatchObject({
+    expect(unwrap(ctx.store.data.message.child?.at(-1))).toMatchObject({
       id: "msg_2_assistant",
       type: "assistant",
       content: [{ type: "text", text: "world" }],
@@ -465,7 +465,7 @@ describe("server session", () => {
     await store.sync("root")
 
     expect(requests).toEqual([{ sessionID: "root", limit: 20, order: "desc" }])
-    expect(store.data.session_message.root.map((message) => message.id)).toEqual([user.id, assistant.id])
+    expect(store.data.message.root.map((message) => message.id)).toEqual([user.id, assistant.id])
     expect(store.data.message.root.map((message) => message.id)).toEqual([user.id, assistant.id])
   })
 

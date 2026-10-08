@@ -1702,7 +1702,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   )
   const text = () => (part().text ?? "").trim()
   const isLastTextPart = createMemo(() => {
-    const last = (data.store.part?.[props.message.id] ?? [])
+    const messageID = props.message.id
+    const siblings = contentParts(part().sessionID, [props.message])[messageID] ?? []
+    const last = siblings
       .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
       .at(-1)
     return last?.id === part().id

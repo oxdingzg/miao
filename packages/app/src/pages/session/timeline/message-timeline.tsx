@@ -285,8 +285,8 @@ export function MessageTimeline(props: {
     const id = sessionID()
     if (!id) return []
     const visible = new Set(props.userMessages.map((message) => message.id))
-    const boundary = sessionMessages().find((message) => message.role === "user" && !visible.has(message.id))?.id
-    const messages = sync().data.session_message[id] ?? []
+    const boundary = sessionMessages().find((message) => message.type === "user" && !visible.has(message.id))?.id
+    const messages = sync().data.message[id] ?? []
     if (!boundary) return messages
     const index = messages.findIndex((message) => message.id === boundary)
     return index < 0 ? messages : messages.slice(0, index)
@@ -312,8 +312,8 @@ export function MessageTimeline(props: {
   const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? language.t("command.session.new"))
   // Stage 2 bridge (specs/v2/app-timeline-v2.md): timeline part content derives
   // from the V2 session_message records instead of the projected data.part store.
-  const sessionContent = createSessionContent(sessionID, (id) => sync().data.session_message[id])
-  const parentContent = createSessionContent(parentID, (id) => sync().data.session_message[id])
+  const sessionContent = createSessionContent(sessionID, (id) => sync().data.message[id])
+  const parentContent = createSessionContent(parentID, (id) => sync().data.message[id])
   const getMsgParts = (msgId: string) => sessionContent(msgId) ?? emptyParts
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
   const childTaskDescription = createMemo(() => {

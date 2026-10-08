@@ -258,7 +258,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (boundary < 0) return
     const message = messages[boundary - 1]
     if (!message) return
-    const parts = contentParts(sessionID, sync().data.session_message[sessionID] ?? [])[message.id]
+    const parts = contentParts(sessionID, sync().data.message[sessionID] ?? [])[message.id]
 
     if (sync().data.session_working(sessionID)) {
       await session.interrupt({ sessionID }).catch(() => {})

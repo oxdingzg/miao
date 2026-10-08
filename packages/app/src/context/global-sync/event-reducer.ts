@@ -68,9 +68,6 @@ export function cleanupDroppedSessionCaches(
     ...Object.keys(store.permission),
     ...Object.keys(store.question),
     ...Object.keys(store.session_status),
-    ...Object.values(store.part)
-      .map((parts) => parts?.find((part) => !!part?.sessionID)?.sessionID)
-      .filter((sessionID): sessionID is string => !!sessionID),
   ].filter((sessionID, index, list) => !keep.has(sessionID) && list.indexOf(sessionID) === index)
   if (stale.length === 0) return
   for (const sessionID of stale) {
@@ -100,102 +97,6 @@ export function applyDirectoryEvent(input: {
   const event = input.event
   const limit = Math.max(input.store.limit, input.retainedLimit ?? 0)
   switch (event.type) {
-    case "message.updated": {
-      const info = clean((event.properties as { info: Message }).info)
-      const messages = input.store.message[info.sessionID]
-      if (!messages) {
-        input.setStore("message", info.sessionID, [info])
-        break
-      }
-      const result = Binary.search(messages, messageKey(info), messageKey)
-      if (result.found) {
-        input.setStore("message", info.sessionID, result.index, reconcile(info))
-        break
-      }
-      input.setStore(
-        "message",
-        info.sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 0, info)
-        }),
-      )
-      break
-    }
-
-    case "message.removed": {
-      const props = event.properties as { sessionID: string; messageID: string }
-      input.setStore(
-        produce((draft) => {
-          const messages = draft.message[props.sessionID]
-          if (messages) {
-            const index = messages.findIndex((message) => message.id === props.messageID)
-            if (index >= 0) messages.splice(index, 1)
-          }
-          const parts = draft.part[props.messageID]
-          if (parts) {
-            for (const part of parts) {
-              delete draft.part_text_accum_delta[part.id]
-            }
-          }
-          delete draft.part[props.messageID]
-        }),
-      )
-      break
-    }
-
-    case "message.part.updated": {
-      const part = (event.properties as { part: Part }).part
-      if (SKIP_PARTS.has(part.type)) break
-      input.setStore(
-        produce((draft) => {
-          delete draft.part_text_accum_delta[part.id]
-        }),
-      )
-      const parts = input.store.part[part.messageID]
-      if (!parts) {
-        input.setStore("part", part.messageID, [part])
-        break
-      }
-      const result = Binary.search(parts, part.id, (item) => item.id)
-      if (result.found) {
-        input.setStore("part", part.messageID, result.index, reconcile(part))
-        break
-      }
-      input.setStore(
-        "part",
-        part.messageID,
-        produce((draft) => {
-          draft.splice(result.index, 0, part)
-        }),
-      )
-      break
-    }
-
-    case "message.part.removed": {
-      const props = event.properties as { messageID: string; partID: string }
-      input.setStore(
-        produce((draft) => {
-          delete draft.part_text_accum_delta[props.partID]
-        }),
-      )
-      const parts = input.store.part[props.messageID]
-      if (!parts) break
-      const result = Binary.search(parts, props.partID, (part) => part.id)
-      if (result.found) {
-        input.setStore(
-          produce((draft) => {
-            const list = draft.part[props.messageID]
-            if (!list) return
-            const next = Binary.search(list, props.partID, (part) => part.id)
-            if (!next.found) return
-            list.splice(next.index, 1)
-            if (list.length === 0) delete draft.part[props.messageID]
-          }),
-        )
-      }
-      break
-    }
-
     case "server.instance.disposed": {
       input.push(input.directory)
       return

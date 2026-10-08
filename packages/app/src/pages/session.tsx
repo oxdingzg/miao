@@ -1671,7 +1671,7 @@ export default function Page() {
   const draft = (id: string) => {
     const directory = params.id
     if (!directory) return []
-    return extractPromptFromParts(contentParts(directory, sync().data.session_message[directory] ?? [])[id] ?? [], {
+    return extractPromptFromParts(contentParts(directory, sync().data.message[directory] ?? [])[id] ?? [], {
       directory: sdk().directory,
       attachmentName: language.t("common.attachment"),
     })
