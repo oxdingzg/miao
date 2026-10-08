@@ -24,7 +24,8 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             "recall",
             "session_state",
             "todowrite",
-            "goal"
+            "goal",
+            "question"
         ]
     );
     let result = tools

@@ -12,6 +12,7 @@ pub mod permission;
 pub mod process;
 pub mod protocol;
 pub mod provider;
+pub mod question;
 pub mod recall;
 pub mod runtime;
 mod search;

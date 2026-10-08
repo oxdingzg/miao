@@ -221,6 +221,10 @@ impl Tools {
                 }
                 parsed.path
             }
+            "question" => {
+                crate::question::Input::parse(input.clone())?;
+                ".".into()
+            }
             "session_state" => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -280,7 +284,9 @@ impl Tools {
             .components()
             .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
             .collect::<Result<Vec<_>, _>>()?;
-        let resource = if name == "session_state" || name == "todowrite" || name == "goal" {
+        let resource = if name == "question" {
+            "@session/question".into()
+        } else if name == "session_state" || name == "todowrite" || name == "goal" {
             format!("@session/state/{name}")
         } else if name == "recall" {
             "@session/history".into()
@@ -460,6 +466,7 @@ impl Tools {
             ToolDefinition{name:"todowrite".into(),description:"Replace this Session's durable todo list (max 128). Optional expected_revision=0 for first write, or the revision from session_state, prevents stale updates.".into(),input_schema:json!({"type":"object","properties":{"todos":{"type":"array","maxItems":128,"items":{"type":"object","properties":{"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]},"priority":{"type":"string","enum":["high","medium","low"]}},"required":["content","status","priority"],"additionalProperties":false}},"expected_revision":{"type":"integer","minimum":0}},"required":["todos"],"additionalProperties":false})},
             ToolDefinition{name:"goal".into(),description:"Record this Session's durable objective/status/evidence/budget. done and blocked require evidence. Optional expected_revision protects against stale writes; evidence is recorded, not independently verified.".into(),input_schema:json!({"type":"object","properties":{"objective":{"type":"string"},"status":{"type":"string","enum":["active","paused","blocked","done"]},"evidence":{"type":"string"},"budget":{"type":"string"},"expected_revision":{"type":"integer","minimum":0}},"required":["objective","status"],"additionalProperties":false})},
         ]);
+        definitions.push(ToolDefinition{name:"question".into(),description:"Ask 1..4 bounded choice questions. Answers arrive through the authenticated local controller. Waiting is interruptible; no automatic replay after crash. multiSelect permits multiple labels; custom permits a typed answer.".into(),input_schema:json!({"type":"object","properties":{"questions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"],"additionalProperties":false}},"multiSelect":{"type":"boolean","default":false},"custom":{"type":"boolean","default":true}},"required":["question","options"],"additionalProperties":false}},"timeout_ms":{"type":"integer","minimum":1,"maximum":600000,"default":60000}},"required":["questions"],"additionalProperties":false})});
         if self.writes {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},

@@ -102,6 +102,7 @@ impl Runtime {
         let lease = store.claim_runtime()?;
         store.recover().await?;
         store.recover_jobs().await?;
+        store.recover_questions().await?;
         let (progress, _) = broadcast::channel(256);
         Ok(Self {
             inner: Arc::new(Inner {
@@ -149,6 +150,25 @@ impl Runtime {
             .await
             .map_err(|_| Error::Closed)?;
         receive.await.map_err(|_| Error::Closed)?
+    }
+
+    pub async fn answer_question(
+        &self,
+        controller: &Controller,
+        session: &str,
+        answer: crate::question::Answer,
+    ) -> Result<(), Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid("question controller mismatch".into()));
+        }
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Invalid("question Location mismatch".into()));
+        }
+        self.inner.store.answer_question(session, answer).await
     }
 
     pub fn store(&self) -> &Store {
@@ -498,6 +518,19 @@ async fn execute(
                             let prepared_external =
                                 prepared.access() == crate::permission::Access::External;
                             let executed = match name {
+                                "question" => match ask_question(
+                                    inner,
+                                    session,
+                                    run,
+                                    id,
+                                    &prepared,
+                                    cancel.child_token(),
+                                )
+                                .await?
+                                {
+                                    Some(value) => Ok(value),
+                                    None => Err(ToolError::Interrupted),
+                                },
                                 "session_state" => Ok(inner.store.state(session).await?),
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
@@ -559,7 +592,8 @@ async fn execute(
                             };
                             match executed {
                                 Ok(output) => {
-                                    let is_error = prepared_external && output["isError"] == true;
+                                    let is_error = (prepared_external && output["isError"] == true)
+                                        || (name == "question" && output["state"] != "answered");
                                     (output, is_error)
                                 }
                                 Err(ToolError::Interrupted) => return Ok(()),
@@ -606,6 +640,42 @@ async fn execute(
             repeats.clear();
         }
         step += 1;
+    }
+}
+
+async fn ask_question(
+    inner: &Inner,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: &Prepared,
+    cancel: CancellationToken,
+) -> Result<Option<Value>, Error> {
+    let input = crate::question::Input::parse(prepared.input().clone())
+        .map_err(|_| Error::Invalid("invalid question input".into()))?;
+    let timeout = input.timeout_ms;
+    let request = inner
+        .store
+        .request_question(session, run, call, inner.tools.location(), input)
+        .await?;
+    let id = request["question_id"]
+        .as_str()
+        .ok_or_else(|| Error::Invalid("question id missing".into()))?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout);
+    loop {
+        if cancel.is_cancelled() {
+            return Ok(None);
+        }
+        if let Some(resolved) = inner.store.question_resolution(session, id).await? {
+            return Ok(Some(resolved));
+        }
+        if tokio::time::Instant::now() >= deadline
+            || now_ms() >= request["expires_at_ms"].as_u64().unwrap_or(0)
+        {
+            inner.store.expire_question(session, id).await?;
+            continue;
+        }
+        tokio::select! {_=cancel.cancelled()=>return Ok(None),_=tokio::time::sleep(std::time::Duration::from_millis(25))=>{}}
     }
 }
 

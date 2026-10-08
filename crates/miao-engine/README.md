@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 95 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 101 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -311,4 +311,23 @@ snapshot 包含同一 cursor 的状态；默认 fork 继承当前状态，显式
 compaction 保留状态；恢复不重放状态工具，`session_state` 可核对已提交值。
 每个 provider boundary 在同一 SQLite read transaction 内选择 history 与 state；允许读取状态时，以独立 user-role 动态前缀注入当前值。
 此投影不写入 raw transcript，不改变稳定 system/Context Epoch；`provider.started.state_selection` 记录选用 revision 和 fingerprint。
-`session_state` read policy 为 ask/deny 时跳过注入。history+state 总预算仍为 2 MiB；cron/question/通知仍待后续实现。
+`session_state` read policy 为 ask/deny 时跳过注入。history+state 总预算仍为 2 MiB；cron/通知仍待后续实现。
+
+
+## Durable choice question
+
+model `question` 接受 1..4 个问题，每题 2..4 个唯一选项；支持 `multiSelect` 与默认启用的 `custom` typed answer。
+header 最多 12 字符，完整 request/answer 各最多 32 KiB；timeout 默认 60 秒，上限 10 分钟。
+通过 `questions` 或 snapshot 查询 pending requests，使用 controller 身份绑定的 `answer_question` 答复：
+
+```jsonl
+{"id":70,"method":"questions","params":{"session_id":"s"}}
+{"id":71,"method":"answer_question","params":{"session_id":"s","answer":{"question_id":"RUN/CALL","input_hash":"HASH_FROM_REQUEST","answers":[["OPTION_LABEL"]]}}}
+```
+
+请求要求已有 active/dispatched `question` intent；location/input hash、Session/run/call 绑定，answer 必须符合选项、
+单选/多选与 custom 规则。答复写入 SQLite event ledger 后 runner 才读到结果；完全相同的 answer 重试对账，
+不同或已取消/过期的迟到答复拒绝。正常取消、shutdown 与恢复关闭 pending 请求，不自动重新提问或启动 provider。
+恢复还清理历史 orphaned question，最多 256 项；fork 不继承 pending 交互请求。
+模型只有 question tool，没有 controller 的答复权限；read policy 可通过 `@session/question` 拒绝请求。
+目前 adapter 输出结构化请求和答复，尚无 TUI question UI、选项 preview 或远程 controller authentication。

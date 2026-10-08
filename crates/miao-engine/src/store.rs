@@ -371,7 +371,8 @@ impl Store {
             let context:Option<(u64,String,String)>=tx.query_row("SELECT epoch,fingerprint,sources FROM engine_context WHERE session_id=?1 ORDER BY epoch DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let context=context.map(|(epoch,fingerprint,sources)|Ok::<_,Error>(json!({"epoch":epoch,"fingerprint":fingerprint,"sources":serde_json::from_str::<Value>(&sources)?}))).transpose()?;
             let state=crate::state::projection(&tx,&session,cursor)?;
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state});
+            let questions=crate::question::pending(&tx,&session)?;
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -786,6 +787,7 @@ fn project_message(
 }
 
 fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(), Error> {
+    crate::question::reconcile(tx, session, run)?;
     let inputs: Vec<(String, String)> = {
         let mut stmt=tx.prepare("SELECT input,state FROM engine_tool WHERE run_id=?1 AND state IN ('planned','dispatched')")?;
         let rows = stmt.query_map([run], |r| Ok((r.get(0)?, r.get(1)?)))?;

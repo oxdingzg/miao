@@ -54,6 +54,13 @@ enum Command {
         #[serde(default)]
         before_message_seq: Option<u64>,
     },
+    Questions {
+        session_id: String,
+    },
+    AnswerQuestion {
+        session_id: String,
+        answer: miao_engine::question::Answer,
+    },
     State {
         session_id: String,
     },
@@ -445,6 +452,8 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
                         Command::Compact{session_id,compaction_id,through_message_seq,summary}=>runtime.store().compact(&session_id,&compaction_id,through_message_seq,summary).await,
                         Command::Recall{session_id,query,limit,before_message_seq}=>runtime.store().recall(&session_id,miao_engine::recall::Query{query,limit,before_message_seq}).await,
+                        Command::Questions{session_id}=>runtime.store().questions(&session_id).await.and_then(|value|serde_json::to_value(value).map_err(Error::from)),
+                        Command::AnswerQuestion{session_id,answer}=>runtime.answer_question(&controller,&session_id,answer).await.map(|_|json!({"accepted":true})),
                         Command::State{session_id}=>runtime.store().state(&session_id).await,
                         Command::UpdateState{session_id,operation_id,tool,input}=>match miao_engine::state::Mutation::parse(&tool,input){Ok(mutation)=>runtime.store().update_state(&session_id,&operation_id,mutation).await,Err(_)=>Err(Error::Invalid("invalid Session state update".into()))},
                         Command::History{session_id,selected}=>{let history=if selected {runtime.store().selected_history(&session_id).await}else{runtime.store().history(&session_id).await};history.and_then(|value|serde_json::to_value(value).map_err(Error::from))},
