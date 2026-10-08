@@ -1,4 +1,5 @@
 /** @jsxImportSource @opentui/solid */
+import { TextareaRenderable } from "@opentui/core"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { createBindingLookup } from "@opentui/keymap/extras"
 import { testRender, useRenderer } from "@opentui/solid"
@@ -16,6 +17,52 @@ function createResolvedKeymapConfig(input: TuiKeybind.KeybindOverrides = {}) {
     }),
     leader_timeout: 2000,
   }
+}
+
+for (const kittyKeyboard of [false, true]) {
+  test(`input boundary keys move and select across wrapped multiline text (kitty=${kittyKeyboard})`, async () => {
+    let input: TextareaRenderable | undefined
+    const text = "这是一段很长的输入，用来验证自动换行后的首尾跳转。".repeat(4) + "\n第二行文字"
+
+    function Harness() {
+      const renderer = useRenderer()
+      const keymap = createDefaultOpenTuiKeymap(renderer)
+      const off = registerOpencodeKeymap(keymap, renderer, createResolvedKeymapConfig())
+      onCleanup(off)
+      return <textarea ref={(value) => (input = value)} focused width={24} height={6} initialValue={text} />
+    }
+
+    const app = await testRender(() => <Harness />, { kittyKeyboard, width: 30, height: 10 })
+    try {
+      await app.renderOnce()
+      const editor = input!
+      for (const [home, end, modifiers] of [
+        ["HOME", "END", {}],
+        ["HOME", "END", { ctrl: true }],
+        ["ARROW_LEFT", "ARROW_RIGHT", { super: true }],
+      ] as const) {
+        editor.gotoBufferEnd()
+        const endOffset = editor.cursorOffset
+        app.mockInput.pressKey(home, modifiers)
+        await app.renderOnce()
+        expect(editor.cursorOffset).toBe(0)
+        app.mockInput.pressKey(end, modifiers)
+        await app.renderOnce()
+        expect(editor.cursorOffset).toBe(endOffset)
+        app.mockInput.pressKey(home, { ...modifiers, shift: true })
+        await app.renderOnce()
+        expect(editor.getSelectedText()).toBe(text)
+        app.mockInput.pressKey(home, modifiers)
+        await app.renderOnce()
+        app.mockInput.pressKey(end, { ...modifiers, shift: true })
+        await app.renderOnce()
+        expect(editor.getSelectedText()).toBe(text)
+        expect(editor.plainText).toBe(text)
+      }
+    } finally {
+      app.renderer.destroy()
+    }
+  })
 }
 
 test("legacy page key aliases compile as page keys", async () => {
