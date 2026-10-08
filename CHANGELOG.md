@@ -4,9 +4,10 @@ All notable changes to **miao** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and miao adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Releases are tagged `vX.Y.Z`. GitHub release notes are generated from Conventional
-Commits by `script/changelog.ts`; run `bun script/changelog.ts --version X.Y.Z --write`
-to add a section here.
+Releases are tagged `vX.Y.Z`. This changelog summarizes Conventional Commits;
+run `bun script/changelog.ts --version X.Y.Z --write` to add a section here.
+Published release bodies use the curated English and Simplified Chinese pair
+at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required.
 
 ## [Unreleased]
 

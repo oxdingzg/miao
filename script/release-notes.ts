@@ -1,15 +1,11 @@
 #!/usr/bin/env bun
 
-// Release bodies are English and always link to the Simplified Chinese mirror
-// at `docs/releases/<tag>.zh.md`. This reads the generated notes on stdin, adds
-// the `[简体中文]` link under the first heading, and writes the result to
-// stdout. It exits non-zero when the mirror is missing, so a release cannot
-// ship without its Chinese notes.
+// Release bodies use the curated English document, paired with a Simplified
+// Chinese document. Generated commit summaries on stdin are deliberately not
+// the release body: they omit the verification and upgrade details in the pair.
+// Both documents must exist before publication.
 //
-// The mirror is linked on `main` (not the tag) because miao's notes are
-// generated after the tag is cut, so older tags do not contain the file.
-//
-// Usage: bun script/release-notes.ts <tag> < notes.md > body.md
+// Usage: bun script/release-notes.ts <tag> < generated.md > body.md
 
 export const repoDefault = "oxdingzg/miao"
 
@@ -38,6 +34,13 @@ if (import.meta.main) {
     console.error(`missing Chinese release notes: ${mirror}`)
     process.exit(1)
   }
-  const notes = await Bun.stdin.text()
-  process.stdout.write(addChineseLink(notes, tag, repo))
+  const english = `docs/releases/${tag}.md`
+  if (!(await Bun.file(english).exists())) {
+    console.error(`missing English release notes: ${english}`)
+    process.exit(1)
+  }
+  // Drain the producer so a pipefail-enabled publishing pipeline cannot see a
+  // broken pipe merely because the curated notes take precedence.
+  await Bun.stdin.text()
+  process.stdout.write(addChineseLink(await Bun.file(english).text(), tag, repo))
 }
