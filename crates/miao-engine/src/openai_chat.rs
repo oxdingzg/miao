@@ -39,6 +39,12 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn identity(&self) -> Option<crate::provider::Identity> {
+        Some(crate::provider::Identity {
+            protocol: "openai-chat".into(),
+            model: self.model.clone(),
+        })
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         self.source
             .path()

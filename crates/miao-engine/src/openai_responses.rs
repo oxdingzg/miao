@@ -53,6 +53,12 @@ impl OpenAIResponses {
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn identity(&self) -> Option<crate::provider::Identity> {
+        Some(crate::provider::Identity {
+            protocol: "openai-responses".into(),
+            model: self.model.clone(),
+        })
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         self.source
             .path()

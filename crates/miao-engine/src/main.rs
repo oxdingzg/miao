@@ -1,11 +1,9 @@
 use miao_engine::{
     approval::Response,
     credential::{Credential, Source},
-    openai_chat::OpenAIChat,
-    openai_responses::{OpenAIResponses, Profile},
     permission::{Config, Policy},
     protocol::{Error, Input},
-    provider::{Anthropic, Provider},
+    provider::Provider,
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -249,6 +247,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--workspace",
             "--model",
             "--endpoint",
+            "--fallback-model",
+            "--fallback-endpoint",
             "--provider",
             "--policy",
             "--mcp-config",
@@ -346,58 +346,39 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     source.load().await?;
-    let provider: Arc<dyn Provider> = match provider_name {
-        "anthropic" => {
-            let endpoint = options
-                .get("--endpoint")
-                .cloned()
-                .unwrap_or_else(|| "https://api.anthropic.com/v1/messages".into());
-            Arc::new(Anthropic::with_source(
-                endpoint,
-                source.clone(),
-                model.clone(),
-            )?)
-        }
-        "gemini" => {
-            let endpoint=options.get("--endpoint").cloned().unwrap_or_else(||format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent",model.strip_prefix("models/").unwrap_or(model)));
-            Arc::new(miao_engine::gemini::Gemini::with_source(
-                endpoint,
-                source.clone(),
-                model.clone(),
-            )?)
-        }
-        "openai-chat" => {
-            let endpoint = options
-                .get("--endpoint")
-                .cloned()
-                .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".into());
-            Arc::new(OpenAIChat::with_source(
-                endpoint,
-                source.clone(),
-                model.clone(),
-            )?)
-        }
-        "openai-responses" | "subscription-responses" => {
-            let subscription = provider_name == "subscription-responses";
-            let endpoint = options.get("--endpoint").cloned().unwrap_or_else(|| {
-                if subscription {
-                    "https://chatgpt.com/backend-api/codex/responses".into()
-                } else {
-                    "https://api.openai.com/v1/responses".into()
-                }
-            });
-            Arc::new(OpenAIResponses::with_source(
-                endpoint,
-                source.clone(),
-                model.clone(),
-                if subscription {
-                    Profile::Subscription
-                } else {
-                    Profile::Api
-                },
-            )?)
-        }
-        _ => return Err("unknown provider".into()),
+    if options.contains_key("--fallback-endpoint") && !options.contains_key("--fallback-model") {
+        return Err("fallback-endpoint requires fallback-model".into());
+    }
+    if provider_name == "gemini"
+        && options.contains_key("--fallback-model")
+        && options.contains_key("--endpoint")
+        && !options.contains_key("--fallback-endpoint")
+    {
+        return Err("custom Gemini endpoint requires an explicit fallback-endpoint".into());
+    }
+    let provider = miao_engine::routing::build(
+        provider_name,
+        options.get("--endpoint").map(String::as_str),
+        source.clone(),
+        model.clone(),
+    )?;
+    let provider: Arc<dyn Provider> = if let Some(model) = options.get("--fallback-model") {
+        let endpoint = options.get("--fallback-endpoint").or_else(|| {
+            if provider_name == "gemini" {
+                None
+            } else {
+                options.get("--endpoint")
+            }
+        });
+        let fallback = miao_engine::routing::build(
+            provider_name,
+            endpoint.map(String::as_str),
+            source.clone(),
+            model.clone(),
+        )?;
+        Arc::new(miao_engine::routing::Fallback::new(provider, fallback)?)
+    } else {
+        provider
     };
     let config = if let Some(path) = options.get("--policy") {
         let bytes = tokio::fs::read(path).await?;

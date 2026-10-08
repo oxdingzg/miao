@@ -5,7 +5,14 @@ use crate::{
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -15,6 +22,14 @@ pub enum ProviderError {
     Interrupted,
     #[error("provider transport failed")]
     Transport,
+    #[error("provider response transport failed; outcome is not replayable")]
+    ResponseTransport,
+    #[error("{source}")]
+    Routed {
+        selection: Value,
+        #[source]
+        source: Box<ProviderError>,
+    },
     #[error("credential: {0}")]
     Auth(#[from] crate::credential::Error),
     #[error("credential type is incompatible with the selected authentication profile")]
@@ -23,6 +38,73 @@ pub enum ProviderError {
     Http(u16),
     #[error("invalid provider stream: {0}")]
     Stream(String),
+}
+
+impl ProviderError {
+    pub(crate) fn can_fallback(&self) -> bool {
+        matches!(
+            self,
+            Self::Transport | Self::Http(429 | 500 | 502 | 503 | 504 | 529)
+        )
+    }
+    pub fn routing(&self) -> Option<&Value> {
+        match self {
+            Self::Routed { selection, .. } => Some(selection),
+            _ => None,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Identity {
+    pub protocol: String,
+    pub model: String,
+}
+
+pub(crate) struct Budget {
+    pub deadline: tokio::time::Instant,
+    attempts: AtomicUsize,
+}
+impl Budget {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            deadline: tokio::time::Instant::now() + Duration::from_secs(60),
+            attempts: AtomicUsize::new(0),
+        })
+    }
+    pub fn used(&self) -> usize {
+        self.attempts.load(Ordering::Relaxed)
+    }
+    fn take(&self) -> bool {
+        // Keep the declared MSRV across newer atomics API renames.
+        loop {
+            let used = self.used();
+            if used >= 3 {
+                return false;
+            }
+            if self
+                .attempts
+                .compare_exchange(used, used + 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    }
+}
+#[derive(Clone)]
+struct RetryScope {
+    budget: Arc<Budget>,
+    limit: usize,
+}
+tokio::task_local! {static RETRY_SCOPE:RetryScope;}
+pub(crate) async fn scoped<F: std::future::Future<Output = Result<Reply, ProviderError>>>(
+    budget: Arc<Budget>,
+    limit: usize,
+    future: F,
+) -> Result<Reply, ProviderError> {
+    RETRY_SCOPE
+        .scope(RetryScope { budget, limit }, future)
+        .await
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +118,9 @@ pub struct Reply {
 /// feeds the execution task, not a potentially slow external subscriber.
 #[async_trait]
 pub trait Provider: Send + Sync {
+    fn identity(&self) -> Option<Identity> {
+        None
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         vec![]
     }
@@ -78,6 +163,12 @@ impl Anthropic {
 
 #[async_trait]
 impl Provider for Anthropic {
+    fn identity(&self) -> Option<Identity> {
+        Some(Identity {
+            protocol: "anthropic-messages".into(),
+            model: self.model.clone(),
+        })
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         self.source
             .path()
@@ -139,8 +230,17 @@ pub(crate) async fn request_with_retry(
     progress: &mpsc::Sender<Value>,
     cancel: &CancellationToken,
 ) -> Result<reqwest::Response, ProviderError> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-    for attempt in 0..3 {
+    let scope = RETRY_SCOPE
+        .try_with(Clone::clone)
+        .unwrap_or_else(|_| RetryScope {
+            budget: Budget::new(),
+            limit: 3,
+        });
+    let deadline = scope.budget.deadline;
+    for attempt in 0..scope.limit {
+        if tokio::time::Instant::now() >= deadline || !scope.budget.take() {
+            return Err(ProviderError::Transport);
+        }
         let request = request
             .try_clone()
             .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
@@ -156,7 +256,8 @@ pub(crate) async fn request_with_retry(
         if !matches!(
             error,
             ProviderError::Transport | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
-        ) || attempt == 2
+        ) || attempt + 1 >= scope.limit
+            || scope.budget.used() >= 3
             || tokio::time::Instant::now() >= deadline
         {
             return Err(error);
@@ -397,7 +498,7 @@ pub(crate) async fn read_stream<P: Parser>(
         let Some(chunk) = chunk else {
             return parser.finish();
         };
-        let chunk = chunk.map_err(|_| ProviderError::Transport)?;
+        let chunk = chunk.map_err(|_| ProviderError::ResponseTransport)?;
         total += chunk.len();
         if total > 8 * 1024 * 1024 {
             return Err(ProviderError::Stream("message exceeds 8 MiB".into()));

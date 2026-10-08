@@ -492,7 +492,7 @@ async fn execute(
                     .record(
                         session,
                         "provider.failed",
-                        json!({"run_id":run,"step":step,"message":error.to_string()}),
+                        json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()}),
                     )
                     .await?;
                 return Err(Error::Invalid(error.to_string()));

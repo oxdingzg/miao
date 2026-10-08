@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 118 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 122 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -418,3 +418,23 @@ function calls 使用独立 engine tool id，wire id/name/args 与完整 native 
 当前验证为真实 HTTP fixture 的原生 wire/profile/runtime 路径；尚无 Gemini 实际账户验收。
 Vertex、Interactions、multimodal/hosted tools、streaming partial-function arguments 与 Google OAuth broker 仍未实现。
 官方行为说明：[thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)。
+
+
+## 显式 pre-response fallback
+
+`serve --fallback-model MODEL_ID [--fallback-endpoint URL]` 配置同一 provider/profile/credential source 的 secondary。
+也可用 `routing::Fallback` 组合 native providers；其 protected credential resources 会合并。
+自定义 Gemini primary endpoint 时必须显式给出 fallback endpoint，保证新模型的 URI 由 host 选择。
+
+整个 provider turn 共享三次 HTTP attempt / 60 秒 pre-response 预算：有可切换 secondary 时 primary 一次、secondary 最多两次。
+只对未接受 response 的 transport failure 或 HTTP 429/500/502/503/504/529 切换；
+响应 body transport failure、截断/语义错误、auth/history 问题不切换。body idle timeout 仍遵循原有 stream 规则。
+
+读取 projected history 的 opaque protocol/model binding：只匹配 secondary 时直接 pin 到 secondary；
+只匹配 primary 且 secondary 不兼容时保留 primary 的三次预算；mixed/未知 binding 明确失败。
+不删除、不转换 signatures/reasoning state，也不在接受响应后重新请求另一个模型。
+各并发 turn 的预算独立，resolver 不持有 Session/store，也不另起工具循环。
+
+启用该 wrapper 后 `usage` 为 `{reported: VENDOR_USAGE, routing: SELECTION}`；失败事件也保存 routing metadata。
+selection 包含 protocol/model、primary/fallback、opaque_pinned、fallback 原因与 attempt 数，不包含 endpoint 或 credentials。
+当前尚无完整 purpose-role catalog、自动模型发现或质量/价格路由。
