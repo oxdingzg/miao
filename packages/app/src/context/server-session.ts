@@ -8,6 +8,7 @@ import type { PermissionV2Request } from "@miao/schema/view-models"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
+import { legacyContents, mergeLegacyDelta, mergeLegacyPart, removeLegacyPart } from "@/context/legacy-part-record"
 import { sessionNotFoundError } from "@/utils/server-errors"
 import { rootSession } from "@/utils/session-route"
 import { normalizeSessionInfo } from "@/utils/session"
@@ -71,7 +72,7 @@ function legacyMessageSource(items: { info: Message; parts: Part[] }[]): Session
         type: "assistant" as const,
         agent: item.info.agent ?? item.info.mode,
         model: { id: item.info.modelID, providerID: item.info.providerID, variant: item.info.variant },
-        content: [],
+        content: legacyContents(item.parts),
         time: item.info.time,
       }
     })
@@ -1179,6 +1180,7 @@ export function createServerSession(
         const parts = data.part[part.messageID]
         if (!parts) {
           setData("part", part.messageID, [part])
+          setData("session_message", part.sessionID, (messages) => mergeLegacyPart(messages, part))
           return
         }
         const result = Binary.search(parts, part.id, (item) => item.id)
@@ -1189,6 +1191,7 @@ export function createServerSession(
             next.splice(result.index, 0, part)
             return next
           })
+        setData("session_message", part.sessionID, (messages) => mergeLegacyPart(messages, part))
         return
       }
       case "message.part.removed": {
@@ -1216,6 +1219,7 @@ export function createServerSession(
         }
         trackPartChange(props.sessionID, props.messageID, props.partID)
         clearOptimisticPart(props.sessionID, props.messageID, props.partID)
+        setData("session_message", props.sessionID, (messages) => removeLegacyPart(messages, props.messageID, props.partID))
         setData(
           produce((draft) => {
             delete draft.part_text_accum_delta[props.partID]
@@ -1269,6 +1273,11 @@ export function createServerSession(
             const field = props.field as keyof typeof part
             ;(part[field] as string) = ((part[field] as string | undefined) ?? "") + props.delta
           }),
+        )
+        setData(
+          "session_message",
+          props.sessionID,
+          (messages) => mergeLegacyDelta(messages, props.messageID, props.partID, props.field, props.delta),
         )
         return
       }

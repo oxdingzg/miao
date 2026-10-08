@@ -53,7 +53,9 @@ const editPart = {
   sessionID,
   messageID: assistantMessageID,
   type: "tool",
-  callID: "call_edit_regression",
+  // V2 records address tool content by callID; keep it equal to the part id so
+  // seeded records and live tool events resolve to the same content entry.
+  callID: editPartID,
   tool: "edit",
   state: {
     status: "completed",
@@ -147,7 +149,7 @@ test.describe("regression: session timeline local row state", () => {
   test("does not remount an edit diff when sibling parts or diff counts update", async ({ page }) => {
     const events: EventPayload[] = []
     await installDiffProbe(page)
-    await mockServer(page, events, [userMessage, runningEditMessage()])
+    await mockServer(page, events, [userMessage, completedEditMessage()])
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
@@ -173,25 +175,29 @@ test.describe("regression: session timeline local row state", () => {
     })
 
     await markDiffProbe(page)
-    // V2 has no completed-tool mutation; the diff grows through tool progress
-    // while the edit runs, which exercises the same reconcile path.
+    // The V2 producer never mutates a settled tool; the diff-count update
+    // arrives through the legacy part bridge (pre-V2 servers), which mirrors
+    // into the V2 records.
     events.push({
       directory,
       payload: {
-        type: "session.next.tool.progress",
+        type: "message.part.updated",
         properties: {
           sessionID,
-          assistantMessageID,
-          callID: editPart.callID,
-          structured: {
-            filediff: {
-              ...editPart.state.metadata.filediff,
-              additions: 2,
+          messageID: assistantMessageID,
+          part: {
+            ...editPart,
+            state: {
+              ...editPart.state,
+              metadata: {
+                filediff: {
+                  ...editPart.state.metadata.filediff,
+                  additions: 2,
+                },
+                diff: editPart.state.metadata.diff,
+              },
             },
-            diff: editPart.state.metadata.diff,
           },
-          content: [],
-          timestamp: 1700000003500,
         },
       },
     })
@@ -372,24 +378,8 @@ async function readDiffProbe(page: Page) {
     })
 }
 
-function runningEditMessage() {
-  return {
-    ...assistantMessage,
-    parts: [
-      {
-        ...editPart,
-        state: {
-          status: "running",
-          input: editPart.state.input,
-          metadata: {
-            filediff: editPart.state.metadata.filediff,
-            diff: editPart.state.metadata.diff,
-          },
-          time: { start: 1700000001000 },
-        },
-      },
-    ],
-  }
+function completedEditMessage() {
+  return { ...assistantMessage, parts: [editPart] }
 }
 
 function readExpanded(element: Element) {
