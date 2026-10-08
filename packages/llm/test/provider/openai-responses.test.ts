@@ -1339,7 +1339,9 @@ describe("OpenAI Responses route", () => {
       // sometimes-generic provider message. The bare message alone meant
       // production errors like rate limits were indistinguishable from
       // unrelated stream failures.
-      expect(response.events).toEqual([{ type: "provider-error", message: "rate_limit_exceeded: Slow down" }])
+      expect(response.events).toEqual([
+        { type: "provider-error", message: "rate_limit_exceeded: Slow down", retryable: true },
+      ])
     }),
   )
 
@@ -1349,7 +1351,7 @@ describe("OpenAI Responses route", () => {
         Effect.provide(fixedResponse(sseEvents({ type: "error", code: "internal_error" }))),
       )
 
-      expect(response.events).toEqual([{ type: "provider-error", message: "internal_error" }])
+      expect(response.events).toEqual([{ type: "provider-error", message: "internal_error", retryable: true }])
     }),
   )
 
@@ -1359,7 +1361,7 @@ describe("OpenAI Responses route", () => {
         Effect.provide(fixedResponse(sseEvents({ type: "error", code: "internal_error", message: "" }))),
       )
 
-      expect(response.events).toEqual([{ type: "provider-error", message: "internal_error" }])
+      expect(response.events).toEqual([{ type: "provider-error", message: "internal_error", retryable: true }])
     }),
   )
 
@@ -1383,7 +1385,9 @@ describe("OpenAI Responses route", () => {
         ),
       )
 
-      expect(response.events).toEqual([{ type: "provider-error", message: "server_error: Upstream model unavailable" }])
+      expect(response.events).toEqual([
+        { type: "provider-error", message: "server_error: Upstream model unavailable", retryable: true },
+      ])
     }),
   )
 
@@ -1441,6 +1445,29 @@ describe("OpenAI Responses route", () => {
       expect(response.events).toEqual([{ type: "provider-error", message: "OpenAI Responses stream error" }])
     }),
   )
+
+  for (const payload of [
+    { code: "internal_error", message: "Upstream unavailable" },
+    { code: "invalid_request_error", message: "Invalid previous response" },
+    { code: "context_length_exceeded", message: "prompt too long" },
+    { code: null, message: "Request rejected" },
+  ]) {
+    it.effect(`preserves nested WebSocket error details (${payload.code})`, () =>
+      Effect.gen(function* () {
+        const response = yield* LLMClient.generate(request).pipe(
+          Effect.provide(fixedResponse(sseEvents({ type: "error", error: payload }))),
+        )
+        expect(response.events).toEqual([
+          {
+            type: "provider-error",
+            message: payload.code ? `${payload.code}: ${payload.message}` : payload.message,
+            ...(payload.code === "internal_error" ? { retryable: true } : {}),
+            ...(payload.code === "context_length_exceeded" ? { classification: "context-overflow" } : {}),
+          },
+        ])
+      }),
+    )
+  }
 
   it.effect("falls back to a stable default when response.failed has no error payload", () =>
     Effect.gen(function* () {

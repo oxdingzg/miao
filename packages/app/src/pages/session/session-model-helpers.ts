@@ -1,10 +1,13 @@
-import type { UserMessage } from "@miao/schema/view-models"
-
 type Local = {
   session: {
     reset(): void
-    restore(msg: UserMessage): void
+    restore(msg: { sessionID: string; agent: string; model: { providerID: string; modelID: string; variant?: string | null } }): void
   }
+}
+
+type Attribution = {
+  agent: string
+  model: { id: string; providerID: string; variant?: string }
 }
 
 type ModelSelection = {
@@ -29,8 +32,21 @@ export const resetSessionModel = (local: Local) => {
   local.session.reset()
 }
 
-export const syncSessionModel = (local: Local, msg: UserMessage) => {
-  local.session.restore(msg)
+export const syncSessionModel = (
+  local: Local,
+  sessionID: string | undefined,
+  attribution: Attribution | undefined,
+) => {
+  if (!sessionID || !attribution) return
+  local.session.restore({
+    sessionID,
+    agent: attribution.agent,
+    model: {
+      providerID: attribution.model.providerID,
+      modelID: attribution.model.id,
+      variant: attribution.model.variant,
+    },
+  })
 }
 
 export const syncPromptModel = (local: ModelSelection, prompt: PromptState) => {

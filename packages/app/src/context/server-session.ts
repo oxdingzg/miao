@@ -8,13 +8,12 @@ import type { PermissionV2Request } from "@miao/schema/view-models"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { message as cleanMessage } from "@/utils/diffs"
-import { legacyContents, mergeLegacyDelta, mergeLegacyPart, removeLegacyPart } from "@/context/legacy-part-record"
 import { sessionNotFoundError } from "@/utils/server-errors"
 import { rootSession } from "@/utils/session-route"
 import { normalizeSessionInfo } from "@/utils/session"
-import { compareMessages, messageKey, normalizeSessionMessages } from "@/utils/session-message"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 import { createV2SessionReducer, type V2SessionReduction } from "./server-session-v2-reducer"
+import type { SessionMessageUser } from "@miao/session-ui/content"
 import type { ServerApi } from "@/utils/server"
 
 type MessageApi = ServerApi["messages"]
@@ -37,93 +36,25 @@ function needsOlderTurnRoot(source: readonly SessionMessageInfo[]) {
   return boundary?.type === "assistant"
 }
 
-type OptimisticItem = {
-  message: Message
-  parts: Part[]
-  confirmedParts?: Part[]
-  confirmedMessage?: boolean
-}
+type OptimisticItem = { message: SessionMessageUser }
 
 type MessagePage = {
-  session: Message[]
-  part: { id: string; part: Part[] }[]
-  source?: SessionMessageInfo[]
-  sourceMode?: "latest" | "older"
-  projectSource?: boolean
+  source: SessionMessageInfo[]
+  sourceMode: "latest" | "older"
   cursor?: string
   complete: boolean
 }
 
-function legacyMessageSource(items: { info: Message; parts: Part[] }[]): SessionMessageInfo[] {
-  return items
-    .slice()
-    .sort((a, b) => compareMessages(a.info, b.info))
-    .map((item) => {
-      if (item.info.role === "user") {
-        return {
-          id: item.info.id,
-          type: "user" as const,
-          text: item.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
-          time: item.info.time,
-        }
-      }
-      return {
-        id: item.info.id,
-        type: "assistant" as const,
-        agent: item.info.agent ?? item.info.mode,
-        model: { id: item.info.modelID, providerID: item.info.providerID, variant: item.info.variant },
-        content: legacyContents(item.parts),
-        time: item.info.time,
-      }
-    })
-}
 
 // Most markers describe the current HTTP attempt; deltaParts persists non-durable stream state across retries.
-type MessageLoadState = {
-  touchedMessages: Set<string>
-  removedMessages: Set<string>
-  retainedMessages: Set<string>
-  touchedParts: Map<string, Set<string>>
-  deltaParts: Map<string, Set<string>>
-  carriedDeltaParts: Map<string, Set<string>>
-  removedParts: Map<string, Set<string>>
-  optimisticParts: Map<string, Set<string>>
-  orphanParents: Set<string>
-  clearedMessageParts: Set<string>
-  touchedSource: Set<string>
-}
+type MessageLoadState = { touchedSource: Set<string> }
 
-type MessageLoadBaseline = Pick<
-  MessageLoadState,
-  "touchedMessages" | "retainedMessages" | "touchedParts" | "clearedMessageParts"
->
 
-function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
-  if (items.length === 0) return { ...page, observed: [] as { messageID: string; parts: Part[] }[] }
-  const session = [...page.session]
-  const part = new Map(page.part.map((item) => [item.id, item.part]))
-  const observed: { messageID: string; parts: Part[] }[] = []
-  for (const item of items) {
-    const result = Binary.search(session, messageKey(item.message), messageKey)
-    const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
-    const current = part.get(item.message.id)
-    const confirmed = found ? item.parts.filter((part) => current?.some((value) => value.id === part.id)) : []
-    if (found) observed.push({ messageID: item.message.id, parts: confirmed })
-    part.set(
-      item.message.id,
-      merge(
-        found ? (current ?? []) : merge(item.confirmedParts ?? [], current ?? []),
-        item.parts.filter((part) => !confirmed.includes(part)),
-      ),
-    )
-  }
-  return {
-    ...page,
-    session,
-    part: [...part.entries()].sort((a, b) => cmp(a[0], b[0])).map(([id, parts]) => ({ id, part: parts })),
-    observed,
-  }
+function mergePendingRecords(source: SessionMessageInfo[], items: OptimisticItem[]) {
+  if (items.length === 0) return source
+  const incoming = new Map(source.map((message) => [message.id, message]))
+  const kept = source.filter((message) => !incoming.has(message.id))
+  return [...kept, ...source]
 }
 
 function runInflight(map: Map<string, Promise<void>>, key: string, task: () => Promise<void>) {
@@ -209,10 +140,7 @@ export function createServerSession(
     todo: {} as Record<string, Todo[]>,
     permission: {} as Record<string, PermissionV2Request[]>,
     question: {} as Record<string, QuestionRequest[]>,
-    message: {} as Record<string, Message[]>,
-    session_message: {} as Record<string, SessionMessageInfo[]>,
-    part: {} as Record<string, Part[]>,
-    part_text_accum_delta: {} as Record<string, string>,
+    message: {} as Record<string, SessionMessageInfo[]>,
     session_working(id: string) {
       return (this.session_status[id]?.type ?? "idle") !== "idle"
     },
@@ -259,16 +187,6 @@ export function createServerSession(
     loading: {} as Record<string, boolean | undefined>,
     at: {} as Record<string, number | undefined>,
   })
-
-  const indexLegacyMessage = (message: Message) => {
-    const current = data.session_message[message.sessionID] ?? []
-    if (current.some((item) => item.id === message.id)) return
-    setData(
-      "session_message",
-      message.sessionID,
-      reconcile([...current, ...legacyMessageSource([{ info: message, parts: [] }])]),
-    )
-  }
 
   const remember = (session: Session) => {
     setData("info", session.id, reconcile(session))
@@ -376,119 +294,11 @@ export function createServerSession(
     if (items.size === 0) optimistic.delete(sessionID)
   }
 
-  const clearOptimisticPart = (sessionID: string, messageID: string, partID: string) => {
-    const items = optimistic.get(sessionID)
-    const item = items?.get(messageID)
-    if (!items || !item) return
-    const parts = item.parts.filter((part) => part.id !== partID)
-    const confirmedParts = item.confirmedParts?.filter((part) => part.id !== partID)
-    if (parts.length === 0) {
-      clearOptimistic(sessionID, messageID)
-      return
-    }
-    items.set(messageID, { ...item, parts, confirmedParts, confirmedMessage: true })
+  const resetMessageLoad = (sessionID: string, load?: MessageLoadState) => {
+    const state: MessageLoadState = { touchedSource: new Set() }
+    if (load) state.touchedSource = load.touchedSource
+    return state
   }
-
-  const confirmOptimisticPart = (sessionID: string, messageID: string, part: Part) => {
-    const items = optimistic.get(sessionID)
-    const item = items?.get(messageID)
-    if (!items || !item) return
-    const parts = item.parts.filter((value) => value.id !== part.id)
-    if (parts.length === 0) {
-      clearOptimistic(sessionID, messageID)
-      return
-    }
-    items.set(messageID, {
-      ...item,
-      parts,
-      confirmedParts: merge(item.confirmedParts ?? [], [part]),
-      confirmedMessage: true,
-    })
-  }
-
-  const confirmOptimistic = (sessionID: string, messageID: string, confirmedParts: Part[]) => {
-    const items = optimistic.get(sessionID)
-    const item = items?.get(messageID)
-    if (!items || !item) return
-    const confirmed = new Set(confirmedParts.map((part) => part.id))
-    const parts = item.parts.filter((part) => !confirmed.has(part.id))
-    if (parts.length === 0) {
-      clearOptimistic(sessionID, messageID)
-      return
-    }
-    items.set(messageID, {
-      ...item,
-      parts,
-      confirmedParts: merge(item.confirmedParts ?? [], confirmedParts),
-      confirmedMessage: true,
-    })
-  }
-
-  const trackPartChange = (sessionID: string, messageID: string, partID: string) => {
-    const load = messageLoads.get(sessionID)
-    if (!load) return
-    // A part event keeps an existing parent when the fetched page omits it without overriding fetched metadata.
-    const messages = data.message[sessionID]
-    if (messages?.some((message) => message.id === messageID)) load.retainedMessages.add(messageID)
-    const parts = load.touchedParts.get(messageID)
-    if (parts) {
-      parts.add(partID)
-      return
-    }
-    load.touchedParts.set(messageID, new Set([partID]))
-  }
-
-  const resetMessageLoad = (sessionID: string, load: MessageLoadState, baseline?: MessageLoadBaseline) => {
-    load.touchedMessages.clear()
-    load.retainedMessages.clear()
-    load.touchedParts.clear()
-    load.carriedDeltaParts.clear()
-    load.clearedMessageParts.clear()
-    for (const messageID of load.removedMessages) {
-      load.touchedMessages.add(messageID)
-      load.clearedMessageParts.add(messageID)
-    }
-    for (const [messageID, parts] of load.deltaParts) {
-      load.touchedParts.set(messageID, new Set(parts))
-      load.carriedDeltaParts.set(messageID, new Set(parts))
-      const messages = data.message[sessionID]
-      if (messages?.some((message) => message.id === messageID)) load.retainedMessages.add(messageID)
-    }
-    for (const [messageID, parts] of load.removedParts) {
-      const touched = load.touchedParts.get(messageID) ?? new Set<string>()
-      parts.forEach((partID) => touched.add(partID))
-      load.touchedParts.set(messageID, touched)
-      const messages = data.message[sessionID]
-      if (messages?.some((message) => message.id === messageID)) load.retainedMessages.add(messageID)
-    }
-    for (const [messageID, parts] of load.optimisticParts) {
-      load.removedMessages.delete(messageID)
-      load.clearedMessageParts.add(messageID)
-      load.touchedMessages.add(messageID)
-      const touched = load.touchedParts.get(messageID) ?? new Set<string>()
-      parts.forEach((partID) => touched.add(partID))
-      load.touchedParts.set(messageID, touched)
-    }
-    baseline?.touchedMessages.forEach((messageID) => load.touchedMessages.add(messageID))
-    baseline?.retainedMessages.forEach((messageID) => load.retainedMessages.add(messageID))
-    baseline?.clearedMessageParts.forEach((messageID) => load.clearedMessageParts.add(messageID))
-    baseline?.touchedParts.forEach((parts, messageID) => {
-      const touched = load.touchedParts.get(messageID) ?? new Set<string>()
-      parts.forEach((partID) => touched.add(partID))
-      load.touchedParts.set(messageID, touched)
-    })
-  }
-
-  const messageLoadBaseline = (load: MessageLoadState, exclude: string): MessageLoadBaseline => ({
-    touchedMessages: new Set([...load.touchedMessages].filter((messageID) => messageID !== exclude)),
-    retainedMessages: new Set([...load.retainedMessages].filter((messageID) => messageID !== exclude)),
-    touchedParts: new Map(
-      [...load.touchedParts]
-        .filter(([messageID]) => messageID !== exclude)
-        .map(([messageID, parts]) => [messageID, new Set(parts)]),
-    ),
-    clearedMessageParts: new Set([...load.clearedMessageParts].filter((messageID) => messageID !== exclude)),
-  })
 
   const evict = (sessionIDs: string[]) => {
     if (sessionIDs.length === 0) return
@@ -574,187 +384,37 @@ export function createServerSession(
         })
       const first = await request(before)
       const pages = [first]
-      while (pages.at(-1)?.cursor.next && needsOlderTurnRoot(pages.flatMap((page) => page.data).toReversed())) {
+      while (pages.at(-1)?.cursor.next && pages.at(-1)!.data.at(-1)?.type !== "user") {
         const response = await request(pages.at(-1)!.cursor.next ?? undefined)
         pages.push(response)
         if (!response.data.length) break
       }
       const response = pages.at(-1)!
-      const source = pages.flatMap((page) => page.data).toReversed()
-      const normalized = normalizeSessionMessages(sessionID, source)
       return {
-        session: normalized.messages.sort(compareMessages),
-        part: [...normalized.parts.entries()].map(([id, part]) => ({ id, part })).sort((a, b) => cmp(a.id, b.id)),
-        source,
+        source: pages.flatMap((page) => page.data).toReversed(),
         sourceMode: before ? ("older" as const) : ("latest" as const),
-        projectSource: true,
         cursor: response.cursor.next ?? undefined,
         complete: response.data.length === 0,
       }
     }
-    const response = await (options?.retry ?? retry)(() => {
-      onAttempt?.()
-      if (!("session" in client)) throw new Error("V2 Message API is required")
-      return client.session.messages({ sessionID, limit, before })
-    })
-    const items = (response.data ?? []).filter((item) => !!item?.info?.id)
-    return {
-      session: items.map((item) => cleanMessage(item.info)).sort(compareMessages),
-      part: items.map((item) => ({
-        id: item.info.id,
-        part: item.parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id)),
-      })),
-      source: legacyMessageSource(items),
-      sourceMode: before ? ("older" as const) : ("latest" as const),
-      cursor: response.response.headers.get("x-next-cursor") ?? undefined,
-      complete: !response.response.headers.get("x-next-cursor"),
-    }
+    throw new Error("V2 Message API is required")
   }
 
-  const fetchMessage = async (sessionID: string, messageID: string, onAttempt?: () => void) => {
-    if (sessionApi) {
-      const response = await (options?.retry ?? retry)(() => {
-        onAttempt?.()
-        return sessionApi.message({ sessionID, messageID })
-      })
-      const normalized = normalizeSessionMessages(sessionID, [response])
-      const message = normalized.messages[0]
-      if (!message) throw new Error(`Message not found: ${messageID}`)
-      return { message, parts: normalized.parts.get(messageID) ?? [] }
-    }
-    const response = await (options?.retry ?? retry)(() => {
-      onAttempt?.()
-      if (!("session" in client)) throw new Error("V2 Session API is required")
-      return client.session.message({ sessionID, messageID })
-    })
-    if (!response.data?.info?.id) throw new Error(`Message not found: ${messageID}`)
-    return {
-      message: cleanMessage(response.data.info),
-      parts: response.data.parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id)),
-    }
-  }
-
-  const replaceMessages = (sessionID: string, messages: Message[]) => {
-    const messageIDs = new Set(messages.map((message) => message.id))
-    const dropped = (data.message[sessionID] ?? []).filter((message) => !messageIDs.has(message.id))
-    setData("message", sessionID, reconcile(messages, { key: "id" }))
-    setData(
-      produce((draft) => {
-        for (const message of dropped) deleteMessageParts(draft, message.id)
-      }),
+  const applyMessagePage = (sessionID: string, page: MessagePage, load: MessageLoadState | undefined) => {
+    const incomingIDs = new Map(page.source.map((message) => [message.id, message]))
+    const pending = optimistic.get(sessionID)
+    if (pending) for (const id of [...pending.keys()]) if (incomingIDs.has(id)) pending.delete(id)
+    const existing = data.message[sessionID] ?? []
+    const current = existing.filter((message) => !incomingIDs.has(message.id))
+    const live = new Map(existing.map((message) => [message.id, message]))
+    const source = (page.sourceMode === "older" ? [...page.source, ...current] : [...current, ...page.source]).map(
+      (message) => (load?.touchedSource.has(message.id) ? (live.get(message.id) ?? message) : message),
     )
-    return messageIDs
-  }
-
-  const replaceParts = (
-    sessionID: string,
-    items: MessagePage["part"],
-    messageIDs: Set<string>,
-    load?: MessageLoadState,
-  ) => {
-    for (const item of items) {
-      if (!messageIDs.has(item.id)) continue
-      const fetched = load?.clearedMessageParts.has(item.id)
-        ? []
-        : item.part.filter((part) => !SKIP_PARTS.has(part.type))
-      const fetchedIDs = new Set(fetched.map((part) => part.id))
-      const pending = pendingParts.get(sessionID)?.get(item.id)
-      const touched = new Set([...(load?.touchedParts.get(item.id) ?? []), ...(pending ?? [])])
-      for (const part of fetched) {
-        const accumulated = data.part_text_accum_delta[part.id]
-        const base = deltaBases.get(part.id)?.base
-        const preserveDelta =
-          base !== undefined &&
-          accumulated !== undefined &&
-          "text" in part &&
-          typeof part.text === "string" &&
-          part.text.startsWith(base) &&
-          accumulated.startsWith(part.text) &&
-          accumulated !== part.text
-        if (preserveDelta) touched.add(part.id)
-        if (load?.carriedDeltaParts.get(item.id)?.has(part.id) && !preserveDelta) touched.delete(part.id)
-      }
-      for (const partID of load?.carriedDeltaParts.get(item.id) ?? []) {
-        if (!fetchedIDs.has(partID)) touched.delete(partID)
-      }
-      const parts = reconcileFetched(fetched, data.part[item.id] ?? [], { touched })
-      if (!parts.length) {
-        orphanParts.get(sessionID)?.delete(item.id)
-        setData(produce((draft) => deleteMessageParts(draft, item.id)))
-        continue
-      }
-      const partIDs = new Set(parts.map((part) => part.id))
-      setData(
-        "part_text_accum_delta",
-        produce((draft) => {
-          for (const part of data.part[item.id] ?? []) {
-            if (!partIDs.has(part.id) || !touched.has(part.id)) {
-              delete draft[part.id]
-              deltaBases.delete(part.id)
-            }
-          }
-        }),
-      )
-      setData("part", item.id, reconcile(parts, { key: "id" }))
-      orphanParts.get(sessionID)?.delete(item.id)
-    }
-  }
-
-  const applyMessagePage = (
-    sessionID: string,
-    page: MessagePage,
-    load: MessageLoadState | undefined,
-    preserveUnfetched: boolean | ((message: Message) => boolean),
-    cleanupOrphans: boolean,
-  ) => {
-    const source = page.source
-      ? (() => {
-          const incoming = new Map(page.source.map((message) => [message.id, message]))
-          const existing = data.session_message[sessionID] ?? []
-          const current = existing.filter((message) => !incoming.has(message.id))
-          const live = new Map(existing.map((message) => [message.id, message]))
-          return (page.sourceMode === "older" ? [...page.source, ...current] : [...current, ...page.source]).map(
-            (message) => (load?.touchedSource.has(message.id) ? (live.get(message.id) ?? message) : message),
-          )
-        })()
-      : undefined
-    const projected =
-      page.projectSource && source
-        ? (() => {
-            const normalized = normalizeSessionMessages(sessionID, source)
-            return {
-              ...page,
-              session: normalized.messages.sort(compareMessages),
-              part: [...normalized.parts.entries()].map(([id, part]) => ({ id, part })).sort((a, b) => cmp(a.id, b.id)),
-            }
-          })()
-        : page
-    const merged = mergeOptimisticPage(projected, [...(optimistic.get(sessionID)?.values() ?? [])])
-    merged.observed.forEach((item) => {
-      if (!load?.clearedMessageParts.has(item.messageID)) confirmOptimistic(sessionID, item.messageID, item.parts)
-    })
-    const touchedMessages = new Set([...(load?.touchedMessages ?? []), ...(removedMessages.get(sessionID) ?? [])])
-    const messages = reconcileFetched(merged.session, data.message[sessionID] ?? [], {
-      touched: touchedMessages,
-      retained: load?.retainedMessages,
-      removed: load?.removedMessages,
-      preserveUnfetched,
-      compare: compareMessages,
-    })
     batch(() => {
-      if (source) setData("session_message", sessionID, reconcile(source))
-      const messageIDs = replaceMessages(sessionID, messages)
-      replaceParts(sessionID, merged.part, messageIDs, load)
-      const orphans = orphanParts.get(sessionID)
-      if (cleanupOrphans && page.complete && orphans) {
-        for (const messageID of orphans) {
-          if (!messageIDs.has(messageID)) setData(produce((draft) => deleteMessageParts(draft, messageID)))
-        }
-        orphanParts.delete(sessionID)
-      }
-      setMeta("limit", sessionID, messages.length)
-      setMeta("cursor", sessionID, merged.cursor)
-      setMeta("complete", sessionID, merged.complete)
+      setData("message", sessionID, reconcile(source))
+      setMeta("limit", sessionID, source.length)
+      setMeta("cursor", sessionID, page.cursor)
+      setMeta("complete", sessionID, page.complete)
       setMeta("at", sessionID, Date.now())
     })
   }
@@ -762,101 +422,17 @@ export function createServerSession(
   const loadMessages = async (sessionID: string, limit: number, before?: string, mode?: "replace" | "prepend") => {
     if (meta.loading[sessionID]) return
     const active = generation(sessionID)
-    const load: MessageLoadState = {
-      touchedMessages: new Set(),
-      removedMessages: new Set(),
-      retainedMessages: new Set(),
-      touchedParts: new Map(),
-      deltaParts: new Map(),
-      carriedDeltaParts: new Map(),
-      removedParts: new Map(),
-      optimisticParts: new Map(),
-      orphanParents: new Set(),
-      clearedMessageParts: new Set(),
-      touchedSource: new Set(),
-    }
+    const load = resetMessageLoad(sessionID, messageLoads.get(sessionID))
     messageLoads.set(sessionID, load)
-    setMeta("loading", sessionID, true)
     let applied = false
     try {
-      const page = await fetchMessages(sessionID, limit, before, () => resetMessageLoad(sessionID, load))
-      const first = page.session.reduce<Message | undefined>(
-        (oldest, message) => (!oldest || compareMessages(message, oldest) < 0 ? message : oldest),
-        undefined,
+      const page = await fetchMessages(sessionID, limit, mode === "prepend" ? before : undefined, () =>
+        resetMessageLoad(sessionID, load),
       )
       if (generations.get(sessionID) !== active) return
-
-      const parents = [] as Awaited<ReturnType<typeof fetchMessage>>[]
-      if (mode !== "prepend") {
-        const users = new Set([
-          ...page.session.filter((message) => message.role === "user").map((message) => message.id),
-          ...(data.message[sessionID] ?? [])
-            .filter((message) => {
-              if (message.role !== "user") return false
-              const item = optimistic.get(sessionID)?.get(message.id)
-              return load.touchedMessages.has(message.id) && (!item || item.confirmedMessage === true)
-            })
-            .map((message) => message.id),
-        ])
-        const parentIDs = [
-          ...new Set(
-            page.session.flatMap((message) =>
-              message.role === "assistant" && !users.has(message.parentID) ? [message.parentID] : [],
-            ),
-          ),
-        ]
-        for (const parentID of parentIDs) {
-          if (generations.get(sessionID) !== active) break
-          const parent = await fetchMessage(sessionID, parentID, () =>
-            resetMessageLoad(sessionID, load, messageLoadBaseline(load, parentID)),
-          ).catch((error) => {
-            const cause = error instanceof Error && typeof error.cause === "object" ? error.cause : undefined
-            if (cause && "status" in cause && cause.status === 404) {
-              load.removedMessages.add(parentID)
-              return
-            }
-            throw error
-          })
-          if (!parent) continue
-          if (parent.message.role !== "user") throw new Error(`Assistant parent is not a user message: ${parentID}`)
-          parents.push(parent)
-        }
-      }
-      if (generations.get(sessionID) !== active) return
-      const result =
-        mode === "prepend"
-          ? page
-          : {
-              ...page,
-              session: merge(
-                page.session,
-                parents.map((parent) => parent.message),
-              ).sort(compareMessages),
-              part: merge(
-                page.part,
-                parents.map((parent) => ({ id: parent.message.id, part: parent.parts })),
-              ),
-            }
-      const preserveUnfetched =
-        mode === "prepend" ||
-        (!result.complete && (!first || ((message: Message) => compareMessages(message, first) < 0)))
-      applyMessagePage(
-        sessionID,
-        result,
-        messageLoads.get(sessionID) === load ? load : undefined,
-        preserveUnfetched,
-        mode !== "prepend",
-      )
+      applyMessagePage(sessionID, page, messageLoads.get(sessionID) === load ? load : undefined)
       applied = true
     } finally {
-      if (!applied && generations.get(sessionID) === active && messageLoads.get(sessionID) === load) {
-        for (const messageID of load.orphanParents) {
-          if (!orphanParts.get(sessionID)?.has(messageID)) continue
-          setData(produce((draft) => deleteMessageParts(draft, messageID)))
-          orphanParts.get(sessionID)?.delete(messageID)
-        }
-        if (orphanParts.get(sessionID)?.size === 0) orphanParts.delete(sessionID)
-      }
       if (messageLoads.get(sessionID) === load) messageLoads.delete(sessionID)
       if (generations.get(sessionID) === active) setMeta("loading", sessionID, false)
     }
@@ -911,43 +487,14 @@ export function createServerSession(
 
   const projectV2 = (reduction: V2SessionReduction) => {
     reduction.touched.forEach((messageID) => messageLoads.get(reduction.sessionID)?.touchedSource.add(messageID))
-    setData("session_message", reduction.sessionID, reconcile(reduction.messages))
-    if (reduction.touched.length === 0) return
-
-    const touched = new Set(reduction.touched)
-    let parentID: string | undefined
-    for (const message of reduction.messages) {
-      if (message.type === "user" || (message.type === "synthetic" && message.text.trim())) parentID = message.id
-      if (message.type === "shell") {
-        if (touched.has(message.id)) touched.add(`${message.id}:assistant`)
-        parentID = undefined
-      }
-      if (message.type === "assistant" && touched.has(message.id) && parentID) touched.add(parentID)
-      if (message.type === "compaction" && touched.has(message.id) && parentID) touched.add(parentID)
-    }
-
-    const normalized = normalizeSessionMessages(reduction.sessionID, reduction.messages)
-    batch(() => {
-      // Direct store writes: the V1 render DTOs are derived synchronously from
-      // the V2 reduction output without the synthetic event indirection.
-      for (const message of normalized.messages) {
-        if (!touched.has(message.id)) continue
-        const current = data.message[reduction.sessionID] ?? []
-        const index = current.findIndex((item) => item.id === message.id)
-        if (index >= 0) setData("message", reduction.sessionID, index, reconcile(message))
-        else setData("message", reduction.sessionID, (messages = []) => [...messages, message].toSorted(compareMessages))
-      }
-      for (const messageID of touched) {
-        setData("part", messageID, reconcile(normalized.parts.get(messageID) ?? []))
-      }
-    })
+    setData("message", reduction.sessionID, reconcile(reduction.messages))
   }
 
   const applyV2 = (event: OpenCodeEventEncoded) => {
     if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
     const sessionID = event.data.sessionID
     if (event.type === "session.next.status") setData("session_status", sessionID, reconcile(event.data.status))
-    const reduction = v2.reduce(data.session_message[sessionID] ?? [], event)
+    const reduction = v2.reduce(data.message[sessionID] ?? [], event)
     if (reduction) projectV2(reduction)
 
     const info = data.info[sessionID]
@@ -1065,222 +612,6 @@ export function createServerSession(
         }
         return
       }
-      case "session.status": {
-        const props = event.properties as { sessionID: string; status: SessionStatus }
-        setData("session_status", props.sessionID, reconcile(props.status))
-        return
-      }
-      case "message.updated": {
-        const info = cleanMessage((event.properties as { info: Message }).info)
-        indexLegacyMessage(info)
-        const load = messageLoads.get(info.sessionID)
-        load?.touchedMessages.add(info.id)
-        load?.removedMessages.delete(info.id)
-        const items = optimistic.get(info.sessionID)
-        const item = items?.get(info.id)
-        if (items && item) {
-          if (item.parts.length === 0) clearOptimistic(info.sessionID, info.id)
-          if (item.parts.length > 0) items.set(info.id, { ...item, confirmedMessage: true })
-        }
-        const orphans = orphanParts.get(info.sessionID)
-        orphans?.delete(info.id)
-        if (orphans?.size === 0) orphanParts.delete(info.sessionID)
-        const removedMessagesForSession = removedMessages.get(info.sessionID)
-        removedMessagesForSession?.delete(info.id)
-        if (removedMessagesForSession?.size === 0) removedMessages.delete(info.sessionID)
-        const messages = data.message[info.sessionID]
-        if (!messages) {
-          setData("message", info.sessionID, [info])
-          return
-        }
-        const result = Binary.search(messages, messageKey(info), messageKey)
-        if (result.found) setData("message", info.sessionID, result.index, reconcile(info))
-        if (!result.found)
-          setData("message", info.sessionID, (value = []) => {
-            const next = value.slice()
-            next.splice(result.index, 0, info)
-            return next
-          })
-        return
-      }
-      case "message.removed": {
-        const props = event.properties as { sessionID: string; messageID: string }
-        setData("session_message", props.sessionID, (messages) =>
-          messages?.filter((message) => message.id !== props.messageID),
-        )
-        const load = messageLoads.get(props.sessionID)
-        load?.touchedMessages.add(props.messageID)
-        load?.removedMessages.add(props.messageID)
-        load?.clearedMessageParts.add(props.messageID)
-        load?.deltaParts.delete(props.messageID)
-        load?.carriedDeltaParts.delete(props.messageID)
-        load?.removedParts.delete(props.messageID)
-        load?.optimisticParts.delete(props.messageID)
-        pendingParts.get(props.sessionID)?.delete(props.messageID)
-        if (pendingParts.get(props.sessionID)?.size === 0) pendingParts.delete(props.sessionID)
-        const removedMessagesForSession = removedMessages.get(props.sessionID) ?? new Set<string>()
-        removedMessagesForSession.add(props.messageID)
-        removedMessages.set(props.sessionID, removedMessagesForSession)
-        clearOptimistic(props.sessionID, props.messageID)
-        setData(
-          produce((draft) => {
-            const messages = draft.message[props.sessionID]
-            if (messages) {
-              const index = messages.findIndex((message) => message.id === props.messageID)
-              if (index >= 0) messages.splice(index, 1)
-            }
-            deleteMessageParts(draft, props.messageID)
-          }),
-        )
-        return
-      }
-      case "message.part.updated": {
-        const part = (event.properties as { part: Part }).part
-        if (SKIP_PARTS.has(part.type)) return
-        const messages = data.message[part.sessionID]
-        const load = messageLoads.get(part.sessionID)
-        const missing = !messages?.some((message) => message.id === part.messageID)
-        // Outside a page load, accepting a part without its ordered parent event would create an unbounded orphan.
-        if (
-          missing &&
-          (!load ||
-            load.clearedMessageParts.has(part.messageID) ||
-            removedMessages.get(part.sessionID)?.has(part.messageID))
-        )
-          return
-        if (missing) {
-          const orphans = orphanParts.get(part.sessionID) ?? new Set<string>()
-          orphans.add(part.messageID)
-          orphanParts.set(part.sessionID, orphans)
-          load?.orphanParents.add(part.messageID)
-        }
-        const deltas = load?.deltaParts.get(part.messageID)
-        deltas?.delete(part.id)
-        if (deltas?.size === 0) load?.deltaParts.delete(part.messageID)
-        const carried = load?.carriedDeltaParts.get(part.messageID)
-        carried?.delete(part.id)
-        if (carried?.size === 0) load?.carriedDeltaParts.delete(part.messageID)
-        const removed = load?.removedParts.get(part.messageID)
-        removed?.delete(part.id)
-        if (removed?.size === 0) load?.removedParts.delete(part.messageID)
-        const pending = pendingParts.get(part.sessionID)?.get(part.messageID)
-        pending?.delete(part.id)
-        if (pending?.size === 0) pendingParts.get(part.sessionID)?.delete(part.messageID)
-        if (pendingParts.get(part.sessionID)?.size === 0) pendingParts.delete(part.sessionID)
-        const optimistic = load?.optimisticParts.get(part.messageID)
-        optimistic?.delete(part.id)
-        if (optimistic?.size === 0) load?.optimisticParts.delete(part.messageID)
-        deltaBases.delete(part.id)
-        trackPartChange(part.sessionID, part.messageID, part.id)
-        confirmOptimisticPart(part.sessionID, part.messageID, part)
-        setData(
-          "part_text_accum_delta",
-          produce((draft) => void delete draft[part.id]),
-        )
-        const parts = data.part[part.messageID]
-        if (!parts) {
-          setData("part", part.messageID, [part])
-          setData("session_message", part.sessionID, (messages) => mergeLegacyPart(messages, part))
-          return
-        }
-        const result = Binary.search(parts, part.id, (item) => item.id)
-        if (result.found) setData("part", part.messageID, result.index, reconcile(part))
-        if (!result.found)
-          setData("part", part.messageID, (value = []) => {
-            const next = value.slice()
-            next.splice(result.index, 0, part)
-            return next
-          })
-        setData("session_message", part.sessionID, (messages) => mergeLegacyPart(messages, part))
-        return
-      }
-      case "message.part.removed": {
-        const props = event.properties as { sessionID: string; messageID: string; partID: string }
-        // Part removal is event-only on the server, so its tombstone lasts until a later update or eviction.
-        const pending = pendingParts.get(props.sessionID) ?? new Map<string, Set<string>>()
-        const parts = pending.get(props.messageID) ?? new Set<string>()
-        parts.add(props.partID)
-        pending.set(props.messageID, parts)
-        pendingParts.set(props.sessionID, pending)
-        const deltas = messageLoads.get(props.sessionID)?.deltaParts.get(props.messageID)
-        deltas?.delete(props.partID)
-        if (deltas?.size === 0) messageLoads.get(props.sessionID)?.deltaParts.delete(props.messageID)
-        const load = messageLoads.get(props.sessionID)
-        const carried = load?.carriedDeltaParts.get(props.messageID)
-        carried?.delete(props.partID)
-        if (carried?.size === 0) load?.carriedDeltaParts.delete(props.messageID)
-        if (load) {
-          const parts = load.removedParts.get(props.messageID) ?? new Set<string>()
-          parts.add(props.partID)
-          load.removedParts.set(props.messageID, parts)
-          const optimistic = load.optimisticParts.get(props.messageID)
-          optimistic?.delete(props.partID)
-          if (optimistic?.size === 0) load.optimisticParts.delete(props.messageID)
-        }
-        trackPartChange(props.sessionID, props.messageID, props.partID)
-        clearOptimisticPart(props.sessionID, props.messageID, props.partID)
-        setData("session_message", props.sessionID, (messages) => removeLegacyPart(messages, props.messageID, props.partID))
-        setData(
-          produce((draft) => {
-            delete draft.part_text_accum_delta[props.partID]
-            deltaBases.delete(props.partID)
-            const parts = draft.part[props.messageID]
-            if (!parts) return
-            const result = Binary.search(parts, props.partID, (part) => part.id)
-            if (result.found) parts.splice(result.index, 1)
-            if (parts.length === 0) delete draft.part[props.messageID]
-          }),
-        )
-        return
-      }
-      case "message.part.delta": {
-        const props = event.properties as {
-          sessionID: string
-          messageID: string
-          partID: string
-          field: string
-          delta: string
-        }
-        const parts = data.part[props.messageID]
-        if (!parts) return
-        const result = Binary.search(parts, props.partID, (part) => part.id)
-        if (!result.found) return
-        trackPartChange(props.sessionID, props.messageID, props.partID)
-        const load = messageLoads.get(props.sessionID)
-        if (load) {
-          const parts = load.deltaParts.get(props.messageID) ?? new Set<string>()
-          parts.add(props.partID)
-          load.deltaParts.set(props.messageID, parts)
-          const carried = load.carriedDeltaParts.get(props.messageID)
-          carried?.delete(props.partID)
-          if (carried?.size === 0) load.carriedDeltaParts.delete(props.messageID)
-        }
-        const field = props.field as keyof (typeof parts)[number]
-        const current = parts[result.index]?.[field]
-        if (!deltaBases.has(props.partID) && typeof current === "string")
-          deltaBases.set(props.partID, { base: current, sessionID: props.sessionID })
-        setData(
-          "part_text_accum_delta",
-          props.partID,
-          (value) => (value ?? (typeof current === "string" ? current : "")) + props.delta,
-        )
-        setData(
-          "part",
-          props.messageID,
-          produce((draft) => {
-            if (!draft) return
-            const part = draft[result.index]
-            const field = props.field as keyof typeof part
-            ;(part[field] as string) = ((part[field] as string | undefined) ?? "") + props.delta
-          }),
-        )
-        setData(
-          "session_message",
-          props.sessionID,
-          (messages) => mergeLegacyDelta(messages, props.messageID, props.partID, props.field, props.delta),
-        )
-        return
-      }
       case "permission.v2.asked": {
         const permission = event.properties as PermissionV2Request
         const permissions = data.permission[permission.sessionID]
@@ -1370,62 +701,23 @@ export function createServerSession(
       return Date.now() - (meta.at[sessionID] ?? 0) <= ttl
     },
     optimistic: {
-      add(input: { sessionID: string; message: Message; parts: Part[] }) {
-        const parts = input.parts
-          .filter((part) => !!part?.id && !SKIP_PARTS.has(part.type))
-          .sort((a, b) => cmp(a.id, b.id))
-        const load = messageLoads.get(input.sessionID)
-        if (load?.clearedMessageParts.has(input.message.id)) {
-          const touched = load.touchedParts.get(input.message.id) ?? new Set<string>()
-          parts.forEach((part) => touched.add(part.id))
-          load.touchedParts.set(input.message.id, touched)
-        }
-        if (load) {
-          load.removedMessages.delete(input.message.id)
-          load.optimisticParts.set(input.message.id, new Set(parts.map((part) => part.id)))
-        }
+      add(input: { sessionID: string; message: SessionMessageUser }) {
         const items = optimistic.get(input.sessionID)
-        const removedMessagesForSession = removedMessages.get(input.sessionID)
-        removedMessagesForSession?.delete(input.message.id)
-        if (removedMessagesForSession?.size === 0) removedMessages.delete(input.sessionID)
-        if (items) items.set(input.message.id, { ...input, parts, confirmedParts: [] })
-        if (!items)
-          optimistic.set(input.sessionID, new Map([[input.message.id, { ...input, parts, confirmedParts: [] }]]))
-        setData("message", input.sessionID, (messages = []) => merge(messages, [input.message]).sort(compareMessages))
-        setData(
-          "part_text_accum_delta",
-          produce((draft) => {
-            for (const part of [...(data.part[input.message.id] ?? []), ...parts]) {
-              delete draft[part.id]
-              deltaBases.delete(part.id)
-            }
-          }),
+        if (items) items.set(input.message.id, { message: input.message })
+        else optimistic.set(input.sessionID, new Map([[input.message.id, { message: input.message }]]))
+        setData("message", input.sessionID, (messages = []) =>
+          [...messages.filter((message) => message.id !== input.message.id), input.message].sort(
+            (a, b) => a.time.created - b.time.created || (a.id < b.id ? -1 : 1),
+          ),
         )
-        setData("part", input.message.id, parts)
       },
       remove(input: { sessionID: string; messageID: string }) {
-        const item = optimistic.get(input.sessionID)?.get(input.messageID)
-        if (!item) return
-        messageLoads.get(input.sessionID)?.optimisticParts.delete(input.messageID)
-        clearOptimistic(input.sessionID, input.messageID)
-        if (item.confirmedMessage) {
-          const partIDs = new Set(item.parts.map((part) => part.id))
-          setData(
-            produce((draft) => {
-              for (const part of item.parts) {
-                delete draft.part_text_accum_delta[part.id]
-                deltaBases.delete(part.id)
-              }
-              const parts = draft.part[input.messageID]
-              if (!parts) return
-              draft.part[input.messageID] = parts.filter((part) => !partIDs.has(part.id))
-              if (draft.part[input.messageID]?.length === 0) delete draft.part[input.messageID]
-            }),
-          )
-          return
-        }
-        setData("message", input.sessionID, (messages) => messages?.filter((message) => message.id !== input.messageID))
-        setData(produce((draft) => deleteMessageParts(draft, input.messageID)))
+        const items = optimistic.get(input.sessionID)
+        if (!items?.delete(input.messageID)) return
+        if (items.size === 0) optimistic.delete(input.sessionID)
+        setData("message", input.sessionID, (messages = []) =>
+          messages.filter((message) => message.id !== input.messageID),
+        )
       },
     },
     async todo(sessionID: string, request?: { force?: boolean }) {

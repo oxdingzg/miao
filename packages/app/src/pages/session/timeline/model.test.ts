@@ -1,13 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage, Message, UserMessage } from "@miao/schema/view-models"
+import type { SessionMessageAssistant, SessionMessageInfo, SessionMessageUser } from "@miao/session-ui/content"
 import { isTimelineReady, loadOlderTimeline, selectUserMessages, selectVisibleUserMessages } from "./model"
 
-const user = (id: string) => ({ id, role: "user" }) as UserMessage
-const assistant = (id: string) => ({ id, role: "assistant" }) as AssistantMessage
+const user = (id: string): SessionMessageUser => ({ id, type: "user", text: id, time: { created: 1 } })
+const assistant = (id: string): SessionMessageAssistant => ({
+  id,
+  type: "assistant",
+  agent: "build",
+  model: { id: "model", providerID: "provider" },
+  content: [],
+  time: { created: 1 },
+})
 
 describe("timeline model", () => {
   test("selects users and applies the revert boundary", () => {
-    const messages: Message[] = [user("msg_z"), assistant("msg_a"), user("msg_b"), user("msg_c")]
+    const messages: SessionMessageInfo[] = [user("msg_z"), assistant("msg_a"), user("msg_b"), user("msg_c")]
     const users = selectUserMessages(messages)
 
     expect(users.map((message) => message.id)).toEqual(["msg_z", "msg_b", "msg_c"])

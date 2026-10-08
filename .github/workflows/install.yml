@@ -10,6 +10,11 @@ on:
       - install
       - install.ps1
       - .github/workflows/install.yml
+  pull_request:
+    paths:
+      - install
+      - install.ps1
+      - .github/workflows/install.yml
   workflow_dispatch:
 
 permissions:
@@ -55,6 +60,10 @@ jobs:
         run: Get-Content -Raw ./install.ps1 | Invoke-Expression
       - name: Install a pinned version through parameters
         run: |
-          & ([scriptblock]::Create((Get-Content -Raw ./install.ps1))) -Version 0.0.32
+          # Older releases predate the immutable installer's --build-id contract.
+          # Remove the launcher so the pinned install exercises installation even
+          # while this known-compatible version is also the latest release.
+          Remove-Item "$HOME\.miao\bin\miao.exe" -Force
+          & ([scriptblock]::Create((Get-Content -Raw ./install.ps1))) -Version 0.1.25
           $installed = (& "$HOME\.miao\bin\miao.exe" --version | Out-String).Trim()
-          if ($installed -ne "0.0.32") { throw "expected 0.0.32, got $installed" }
+          if ($installed -ne "0.1.25") { throw "expected 0.1.25, got $installed" }

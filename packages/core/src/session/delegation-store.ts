@@ -63,12 +63,50 @@ const insertNotification = (
     .run()
     .pipe(Effect.orDie)
 
+export const projectNotificationAdmitted = Effect.fn("SessionDelegationStore.projectNotificationAdmitted")(function* (
+  db: DB,
+  event: SessionEvent.NotificationAdmitted,
+) {
+  if (!event.durable) return yield* Effect.die("Notification admission requires a durable sequence")
+  yield* insertNotification(db, {
+    sessionID: event.data.sessionID,
+    id: event.data.messageID,
+    text: event.data.text,
+    metadata: event.data.metadata ?? {},
+    admittedSeq: event.durable.seq,
+    timeCreated: DateTime.toEpochMillis(event.data.timestamp),
+  })
+})
+
 /**
  * Whether a notification is a subagent progress note. Metadata is the only
  * place a notification carries its kind, so this reads into the JSON column
  * rather than adding a column for one flag.
  */
 const progressFlag = sql`json_extract(${SessionNotificationTable.metadata}, '$.backgroundTask.progress')`
+
+/** Coalesce recurring ticks while the previous tick is still unread. */
+export const pendingSchedule = Effect.fn("SessionDelegationStore.pendingSchedule")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+  scheduleID: string,
+) {
+  return yield* db
+    .select({ id: SessionNotificationTable.id })
+    .from(SessionNotificationTable)
+    .where(and(
+      eq(SessionNotificationTable.session_id, sessionID),
+      isNull(SessionNotificationTable.promoted_seq),
+      sql`json_extract(${SessionNotificationTable.metadata}, '$.scheduleID') = ${scheduleID}`,
+    ))
+    .get()
+    .pipe(Effect.orDie)
+})
+
+// Scheduled continuations wait for idle; monitor/delegation reports may steer
+// at an intermediate tool boundary. A queue-only tick must not pull the next
+// queued tick into a turn merely because a monitor notice arrived beside it.
+const queuedFlag = sql`json_extract(${SessionNotificationTable.metadata}, '$.delivery')`
 
 export const get = Effect.fn("SessionDelegationStore.get")(function* (db: DB, sessionID: SessionSchema.ID, id: string) {
   return yield* db
@@ -254,7 +292,7 @@ export const pendingCount = Effect.fn("SessionDelegationStore.pendingCount")(fun
  * forever on turns that promote nothing.
  */
 export const hasPromotableNotifications = Effect.fn("SessionDelegationStore.hasPromotableNotifications")(
-  function* (db: DB, sessionID: SessionSchema.ID) {
+  function* (db: DB, sessionID: SessionSchema.ID, includeQueued = true) {
     const row = yield* db
       .select({ id: SessionNotificationTable.id })
       .from(SessionNotificationTable)
@@ -264,6 +302,7 @@ export const hasPromotableNotifications = Effect.fn("SessionDelegationStore.hasP
           eq(SessionNotificationTable.session_id, sessionID),
           isNull(SessionNotificationTable.promoted_seq),
           gt(SessionTable.wake_allowance, 0),
+          includeQueued ? undefined : sql`COALESCE(${queuedFlag}, 'steer') != 'queue'`,
         ),
       )
       .limit(1)
@@ -308,11 +347,16 @@ export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(funct
   db: DB,
   events: EventV2.Interface,
   sessionID: SessionSchema.ID,
+  includeQueued = true,
 ) {
   const row = yield* db
     .select()
     .from(SessionNotificationTable)
-    .where(and(eq(SessionNotificationTable.session_id, sessionID), isNull(SessionNotificationTable.promoted_seq)))
+    .where(and(
+      eq(SessionNotificationTable.session_id, sessionID),
+      isNull(SessionNotificationTable.promoted_seq),
+      includeQueued ? undefined : sql`COALESCE(${queuedFlag}, 'steer') != 'queue'`,
+    ))
     .orderBy(asc(SessionNotificationTable.admitted_seq))
     .limit(1)
     .get()

@@ -565,6 +565,9 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.DelegationReported, (event) =>
       SessionDelegationStore.projectReported(db, event),
     )
+    yield* events.project(SessionEvent.NotificationAdmitted, (event) =>
+      SessionDelegationStore.projectNotificationAdmitted(db, event),
+    )
     yield* events.project(SessionEvent.Synthetic, (event) =>
       SessionDelegationStore.projectNotification(db, event).pipe(Effect.andThen(run(db, event))),
     )

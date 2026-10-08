@@ -139,6 +139,7 @@ export function createTranscriptWindow<T extends { id: string }>(
   const [holdEnd, setHoldEnd] = createSignal<number>()
   let lastScrollTop: number | undefined
   let idleFrames = 0
+  let coverageFloor = minWindow
 
   const total = createMemo(() => messages().length)
   const maxStart = createMemo(() => Math.max(0, total() - windowSize()))
@@ -177,6 +178,7 @@ export function createTranscriptWindow<T extends { id: string }>(
     bottom,
     messages: window,
     reset: () => {
+      coverageFloor = minWindow
       setAnchor(undefined)
       setHoldEnd(undefined)
     },
@@ -218,13 +220,14 @@ export function createTranscriptWindow<T extends { id: string }>(
         setHoldEnd(undefined)
         if (adaptive && metrics.viewportHeight > 0) {
           const rows = average > 0 ? average : estimate()
-          const desired = Math.max(
-            minWindow,
-            Math.min(maxWindow, Math.ceil((metrics.viewportHeight + 2 * margin) / rows)),
-          )
-          // Re-size only past a dead band, so the layout/measure feedback loop
-          // cannot oscillate every frame.
-          if (Math.abs(desired - windowSize()) > Math.max(2, windowSize() * 0.25)) setSize(desired)
+          const target = metrics.viewportHeight + 2 * margin
+          // A tall-history/short-tail mix can alternate between an underfilled
+          // small window and a tall larger window forever. Remember the count
+          // needed for coverage rather than shrinking back to the failed size.
+          const underfilled = content < target && windowSize() < maxWindow
+          if (underfilled) coverageFloor = Math.max(coverageFloor, Math.min(maxWindow, windowSize() + step()))
+          const desired = Math.max(coverageFloor, Math.min(maxWindow, Math.ceil(target / rows)))
+          if (underfilled || Math.abs(desired - windowSize()) > Math.max(2, windowSize() * 0.25)) setSize(desired)
         }
         lastScrollTop = metrics.scrollTop
         idleFrames = 0

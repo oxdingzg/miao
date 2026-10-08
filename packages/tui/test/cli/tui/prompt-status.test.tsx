@@ -54,6 +54,10 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
       await app.renderOnce()
     }
     expect(app.captureCharFrame()).toContain("SENDING · awaiting receipt")
+    receipts.retry("msg_test", 1, "Transport: Connection refused")
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("RETRYING · awaiting receipt · retry 1/3")
+    expect(app.captureCharFrame()).toContain("Connection refused")
     receipts.fail("msg_test", "Network unavailable")
     await app.renderOnce()
     expect(app.captureCharFrame()).toContain("SEND FAILED")
@@ -61,7 +65,9 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
     receipts.admit("msg_test")
     await app.renderOnce()
     expect(app.captureCharFrame()).toContain("RECEIVED · joins at the next safe turn")
-    expect(app.captureCharFrame()).toMatch(/RECEIVED · joins at the next safe turn · esc removes waiting prompts, newest first · \d/)
+    expect(app.captureCharFrame()).toMatch(
+      /RECEIVED · joins at the next safe turn · esc removes waiting prompts, newest first · \d/,
+    )
     expect(app.captureCharFrame()).not.toContain("SEND FAILED")
   } finally {
     app.renderer.destroy()

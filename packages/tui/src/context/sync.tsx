@@ -52,7 +52,8 @@ import { createPendingPrompts } from "./pending-prompts"
 import { promptInputFromParts } from "./session-v2-write"
 import { SessionMessage } from "@miao/core/session/message"
 import type { PromptInfo } from "../prompt/history"
-import { errorMessage } from "../util/error"
+import { errorData, errorMessage } from "../util/error"
+import { retryPromptSend } from "./prompt-send"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -1144,18 +1145,21 @@ export const {
       sessionID: string
       agent: string
       model: { providerID: string; modelID: string; variant?: string }
-    }) {
+    }, signal: AbortSignal, retry: boolean) {
       const match = search(store.session, input.sessionID, (s) => s.id)
-      const session = match.found ? store.session[match.index] : undefined
+      // A lost agent-switch receipt must not append the switch a second time.
+      const session = retry
+        ? await sdk.api.sessions.get({ sessionID: input.sessionID }, { signal })
+        : match.found ? store.session[match.index] : undefined
       if (input.agent && session?.agent !== input.agent)
-        await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, {})
+        await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, { signal })
       if (!input.model.providerID || !input.model.modelID) return
       await sdk.api.sessions.switchModel(
         {
           sessionID: input.sessionID,
           model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.model.variant },
         },
-        {},
+        { signal },
       )
     }
 
@@ -1195,10 +1199,23 @@ export const {
             state: "sending",
             delivery: "steer",
           })
-          return applySelection(input)
-            .then(() =>
-              sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, {}),
-            )
+          let selected = false
+          return retryPromptSend({
+            send: async (signal, attempt) => {
+              if (!selected) {
+                await applySelection(input, signal, attempt > 0)
+                selected = true
+              }
+              return sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, { signal })
+            },
+            // An event receipt or removal/reconciliation is authoritative even
+            // if the HTTP reply is lost. Never resend a cleared local intent.
+            received: () => !pendingPrompts.data[id] || pendingPrompts.data[id].state === "admitted",
+            retry: (error, attempt) => {
+              pendingPrompts.retry(id, attempt, errorMessage(error))
+              console.warn("session prompt transport retry", { sessionID: input.sessionID, messageID: id, attempt, error: errorData(error) })
+            },
+          })
             .then(
               (response) => {
                 pendingPrompts.admit(id)
@@ -1207,6 +1224,7 @@ export const {
               },
               (error: unknown) => {
                 pendingPrompts.fail(id, errorMessage(error))
+                console.error("session prompt send failed", { sessionID: input.sessionID, messageID: id, error: errorData(error) })
                 throw error
               },
             )

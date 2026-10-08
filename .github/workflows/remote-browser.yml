@@ -27,6 +27,8 @@ jobs:
         with:
           node-version: "24.15"
       - uses: ./.github/actions/setup-bun
+        with:
+          node-version: "24.15"
       - name: Install Chromium
         working-directory: packages/remote-control
         run: bunx playwright install --with-deps chromium

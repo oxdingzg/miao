@@ -1,4 +1,4 @@
-import type { Session, Part } from "@miao/schema/view-models"
+import type { Session } from "@miao/schema/view-models"
 import type { SessionMessageInfo } from "../content"
 import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import type { SessionStatus } from "@miao/schema/view-models"
@@ -37,12 +37,6 @@ type Data = {
   }
   message: {
     [sessionID: string]: SessionMessageInfo[]
-  }
-  part: {
-    [messageID: string]: Part[]
-  }
-  part_text_accum_delta?: {
-    [partID: string]: string
   }
 }
 
