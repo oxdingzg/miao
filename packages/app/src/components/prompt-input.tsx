@@ -311,9 +311,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const hasUserPrompt = createMemo(() => {
     const sessionID = props.controls.session.id
     if (!sessionID) return false
-    const messages = sync().data.message[sessionID]
+    const messages = sync().data.session_message[sessionID]
     if (!messages) return false
-    return messages.some((m) => m.role === "user")
+    return messages.some((m) => m.type === "user")
   })
 
   const history = props.history ?? createPersistedPromptInputHistory()
