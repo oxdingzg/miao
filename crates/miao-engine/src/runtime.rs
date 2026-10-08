@@ -1,5 +1,5 @@
 use crate::{
-    protocol::{Admission, Error, Input},
+    protocol::{Admission, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::Store,
     tools::{ToolError, Tools},
@@ -246,7 +246,14 @@ async fn execute(
             .await?;
         let history = inner.store.history(session).await?;
         let (send, mut receive) = mpsc::channel(64);
-        let response = inner.provider.stream(history, send, cancel.child_token());
+        let response = inner.provider.stream(
+            ModelRequest {
+                messages: history,
+                tools: inner.tools.definitions(),
+            },
+            send,
+            cancel.child_token(),
+        );
         tokio::pin!(response);
         let reply = loop {
             tokio::select! {

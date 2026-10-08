@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use miao_engine::{
-    protocol::{Delivery, Input, Message},
+    protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
@@ -22,7 +22,7 @@ struct Gate {
 impl Provider for Gate {
     async fn stream(
         &self,
-        _: Vec<Message>,
+        _: ModelRequest,
         _: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {

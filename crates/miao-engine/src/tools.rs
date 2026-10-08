@@ -1,3 +1,4 @@
+use crate::protocol::ToolDefinition;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -26,6 +27,21 @@ struct ReadInput {
     path: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListInput {
+    #[serde(default = "root_path")]
+    path: String,
+    #[serde(default = "list_limit")]
+    limit: usize,
+}
+fn root_path() -> String {
+    ".".into()
+}
+fn list_limit() -> usize {
+    100
+}
+
 #[derive(Clone)]
 pub struct Tools {
     root: PathBuf,
@@ -40,41 +56,77 @@ impl Tools {
         Ok(Self { root })
     }
 
-    /// M0 only exposes read_file. No shell or filesystem mutation is silently
-    /// authorized. Canonical containment handles ordinary traversal/symlinks,
-    /// not adversarial concurrent filesystem replacement (OS isolation is M1).
+    pub fn definitions(&self) -> Vec<ToolDefinition> {
+        vec![ToolDefinition {
+            name:"read_file".into(),
+            description:"Read a UTF-8 file under the configured workspace. Maximum 32768 bytes.".into(),
+            input_schema:json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        },ToolDefinition {
+            name:"list_files".into(),
+            description:"List immediate entries of a workspace directory. Does not recurse or follow symlinks; output is bounded.".into(),
+            input_schema:json!({"type":"object","properties":{"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100}},"additionalProperties":false}),
+        }]
+    }
+
+    async fn contained(&self, path: &str) -> Result<PathBuf, ToolError> {
+        let path = tokio::fs::canonicalize(self.root.join(path)).await?;
+        if !path.starts_with(&self.root) {
+            return Err(ToolError::OutsideWorkspace);
+        }
+        Ok(path)
+    }
+
+    /// Read-only tools use canonical containment, not an OS sandbox. They do
+    /// not promise safety against adversarial concurrent path replacement.
     pub async fn execute(
         &self,
         name: &str,
         input: Value,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
-        if name != "read_file" {
-            return Err(ToolError::Unsupported);
-        }
-        let input: ReadInput =
-            serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
-        let read = async {
-            let path = tokio::fs::canonicalize(self.root.join(&input.path)).await?;
-            if !path.starts_with(&self.root) {
-                return Err(ToolError::OutsideWorkspace);
+        let task = async {
+            match name {
+                "read_file" => {
+                    let input: ReadInput =
+                        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+                    let path = self.contained(&input.path).await?;
+                    let file = tokio::fs::File::open(&path).await?;
+                    let metadata = file.metadata().await?;
+                    if !metadata.is_file() || metadata.len() > 32768 {
+                        return Err(ToolError::InvalidFile);
+                    }
+                    let mut bytes = Vec::new();
+                    file.take(32769).read_to_end(&mut bytes).await?;
+                    if bytes.len() > 32768 {
+                        return Err(ToolError::InvalidFile);
+                    }
+                    let text = String::from_utf8(bytes).map_err(|_| ToolError::InvalidFile)?;
+                    Ok(json!({"text":text}))
+                }
+                "list_files" => {
+                    let input: ListInput =
+                        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+                    if !(1..=500).contains(&input.limit) {
+                        return Err(ToolError::InvalidInput);
+                    }
+                    let path = self.contained(&input.path).await?;
+                    let mut directory = tokio::fs::read_dir(path).await?;
+                    let mut entries = Vec::new();
+                    let mut truncated = false;
+                    while let Some(entry) = directory.next_entry().await? {
+                        if entries.len() == input.limit {
+                            truncated = true;
+                            break;
+                        }
+                        let kind = entry.file_type().await?;
+                        entries.push(json!({"name":entry.file_name().to_string_lossy(),"kind":if kind.is_symlink(){"symlink"}else if kind.is_dir(){"directory"}else if kind.is_file(){"file"}else{"other"}}));
+                    }
+                    entries.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                    Ok(json!({"entries":entries,"truncated":truncated}))
+                }
+                _ => Err(ToolError::Unsupported),
             }
-            let file = tokio::fs::File::open(&path).await?;
-            let metadata = file.metadata().await?;
-            if !metadata.is_file() || metadata.len() > 32768 {
-                return Err(ToolError::InvalidFile);
-            }
-            let mut bytes = Vec::new();
-            file.take(32769).read_to_end(&mut bytes).await?;
-            if bytes.len() > 32768 {
-                return Err(ToolError::InvalidFile);
-            }
-            let text = String::from_utf8(bytes).map_err(|_| ToolError::InvalidFile)?;
-            Ok(json!({"text":text}))
         };
-        tokio::select! {
-            _ = cancel.cancelled() => Err(ToolError::Interrupted),
-            result=read => result,
-        }
+        tokio::select! {_=cancel.cancelled()=>Err(ToolError::Interrupted),result=task=>result}
     }
 }

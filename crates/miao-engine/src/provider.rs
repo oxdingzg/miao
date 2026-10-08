@@ -1,4 +1,4 @@
-use crate::protocol::Message;
+use crate::protocol::ModelRequest;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
@@ -31,7 +31,7 @@ pub struct Reply {
 pub trait Provider: Send + Sync {
     async fn stream(
         &self,
-        history: Vec<Message>,
+        request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError>;
@@ -62,7 +62,7 @@ impl Anthropic {
 impl Provider for Anthropic {
     async fn stream(
         &self,
-        history: Vec<Message>,
+        request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
@@ -72,8 +72,7 @@ impl Provider for Anthropic {
         for attempt in 0..3 {
             let request = self.client.post(&self.endpoint)
                 .header("x-api-key", &self.key).header("anthropic-version", "2023-06-01")
-                .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":history,
-                    "tools":[{"name":"read_file","description":"Read a UTF-8 file under the configured workspace. Maximum 32768 bytes.","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}]}));
+                 .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":request.messages,"tools":request.tools}));
             let response = tokio::select! {
                 _ = cancel.cancelled() => return Err(ProviderError::Interrupted),
                 r = tokio::time::timeout_at(deadline,request.send()) => match r {

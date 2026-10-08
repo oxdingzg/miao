@@ -1,5 +1,5 @@
 use miao_engine::{
-    protocol::Message,
+    protocol::{Message, ModelRequest},
     provider::{Anthropic, Provider, ProviderError, SseDecoder},
 };
 use serde_json::json;
@@ -64,11 +64,18 @@ async fn endpoint(
     (url, count, task)
 }
 
-fn history() -> Vec<Message> {
-    vec![Message {
-        role: "user".into(),
-        content: json!([{"type":"text","text":"hi"}]),
-    }]
+fn history() -> ModelRequest {
+    ModelRequest {
+        messages: vec![Message {
+            role: "user".into(),
+            content: json!([{"type":"text","text":"hi"}]),
+        }],
+        tools: vec![miao_engine::protocol::ToolDefinition {
+            name: "read_file".into(),
+            description: "Read a file".into(),
+            input_schema: json!({"type":"object","properties":{"path":{"type":"string"}}}),
+        }],
+    }
 }
 
 #[test]

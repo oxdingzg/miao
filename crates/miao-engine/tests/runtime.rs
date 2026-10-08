@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use miao_engine::{
-    protocol::{Delivery, Input, Message},
+    protocol::{Delivery, Input, Message, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
@@ -20,10 +20,11 @@ struct Scripted {
 impl Provider for Scripted {
     async fn stream(
         &self,
-        history: Vec<Message>,
+        request: ModelRequest,
         _progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        let history = request.messages;
         self.calls.send(history.clone()).await.unwrap();
         if history.len() == 1 {
             tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),_=self.release.notified()=>{}}

@@ -70,3 +70,18 @@ impl Error {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+}
+
+/// The core contract carries messages and capabilities, not provider URLs,
+/// auth, Session identity or provider-specific transport options.
+#[derive(Debug, Clone)]
+pub struct ModelRequest {
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolDefinition>,
+}
