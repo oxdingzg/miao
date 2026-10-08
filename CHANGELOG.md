@@ -10,6 +10,23 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-10-08
+
+### Added
+- **tui**: cancel newest waiting prompt on esc before interrupting (#407) (`51cda7165`)
+- **core**: warn on foreground open-ended wait commands (#406) (`d1ec4e5c1`)
+- **core**: add the background-waits built-in skill (#405) (`dd065a91a`)
+
+### Changed
+- **app**: read the context surfaces from V2 session records (#412) (`9afc6c4a8`)
+- **app**: read session records directly in stage-3 consumers (#408) (`3b6120293`)
+
+### Fixed
+- **tui**: render cancelled todos with a distinct glyph (#411) (`b6850de51`)
+- **tui**: derive tool part props from V2 structured state (#413) (`3c13f5289`)
+- **app**: settle pending tools as failed when a V2 step fails (#404) (`12d59bc4a`)
+- **app**: keep legacy part events in sync with the V2 session_message records (#401) (`694017725`)
+
 ## [0.1.23] - 2026-10-07
 
 ### Added
