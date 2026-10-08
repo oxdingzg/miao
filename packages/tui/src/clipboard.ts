@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process"
-import { readFile, rm } from "node:fs/promises"
+import { readFile, rm, stat } from "node:fs/promises"
 import { platform, release, tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -46,14 +46,32 @@ if (image.isNil()) throw new Error("could not encode the clipboard image")
 image.writeToFileAtomically(${JSON.stringify(file)}, true)`
 }
 
-export async function read() {
-  // The mtty host writes an image paste here, so a TUI does not need osascript
-  // to reach the macOS pasteboard (mtty ADR 0036).
-  const hostFile = process.env.MTTY_CLIPBOARD_FILE
-  if (hostFile) {
-    const data = await readFile(hostFile).catch(() => undefined)
-    if (data?.length) return { data: data.toString("base64"), mime: "image/png" }
+// The mtty host writes an image paste here (ADR 0036) right before it sends
+// the empty bracketed paste that leads to a clipboard read, so a TUI does not
+// need osascript to reach the macOS pasteboard. Serve the file only while it
+// is fresh and consume it after reading: an empty paste that did not come from
+// the host writer (Windows Terminal surfaces an image-only clipboard that way)
+// would otherwise re-serve the previous paste forever, which showed up as
+// every paste attaching the same old screenshot.
+const HOST_CLIPBOARD_MAX_AGE_MS = 10_000
+
+export async function readHostClipboardImage(hostFile: string | undefined) {
+  if (!hostFile) return undefined
+  const info = await stat(hostFile).catch(() => undefined)
+  if (!info) return undefined
+  if (Date.now() - info.mtimeMs > HOST_CLIPBOARD_MAX_AGE_MS) {
+    await rm(hostFile, { force: true }).catch(() => {})
+    return undefined
   }
+  const data = await readFile(hostFile).catch(() => undefined)
+  await rm(hostFile, { force: true }).catch(() => {})
+  if (data?.length) return { data: data.toString("base64"), mime: "image/png" }
+  return undefined
+}
+
+export async function read() {
+  const hosted = await readHostClipboardImage(process.env.MTTY_CLIPBOARD_FILE)
+  if (hosted) return hosted
 
   if (platform() === "darwin") {
     const file = path.join(tmpdir(), "miao-clipboard.png")
