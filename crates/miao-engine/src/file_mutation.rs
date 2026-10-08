@@ -151,9 +151,20 @@ pub(crate) fn apply(root: &Dir, relative: &Path, mutation: Mutation) -> Result<V
     } else {
         parent.rename(&staged.name, &parent, name)?;
     }
+    // Dir may be an O_PATH capability on Linux; open a readable directory FD
+    // for fsync instead. After publication an fsync failure is a durability
+    // warning about an applied write, never a pre-effect retryable failure.
     #[cfg(unix)]
-    parent.try_clone()?.into_std_file().sync_all()?;
-    Ok(json!({"sha256":digest(text.as_bytes()),"bytes":text.len()}))
+    let durability_error = parent
+        .open(".")
+        .and_then(|file| file.sync_all())
+        .err()
+        .map(|error| error.to_string());
+    #[cfg(not(unix))]
+    let durability_error: Option<String> = None;
+    Ok(
+        json!({"sha256":digest(text.as_bytes()),"bytes":text.len(),"applied":true,"durability":if durability_error.is_some(){"unknown"}else if cfg!(unix){"synced"}else{"file_synced"},"durability_error":durability_error}),
+    )
 }
 
 fn read(

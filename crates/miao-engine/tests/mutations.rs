@@ -178,6 +178,9 @@ async fn workspace_write_waits_for_approval_then_commits_with_fingerprint() {
     )
     .unwrap();
     assert_eq!(result["sha256"], digest(b"hello\n"));
+    assert_eq!(result["applied"], true);
+    #[cfg(unix)]
+    assert_eq!(result["durability"], "synced", "{result}");
     assert_eq!(staged_files(dir.path()), 0);
     runtime.shutdown().await;
 }
