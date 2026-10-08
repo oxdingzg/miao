@@ -32,6 +32,12 @@ describe("SkillPlugin.Plugin", () => {
           content: expect.stringContaining("contact sheets"),
         }),
       )
+      expect(yield* skill.list()).toContainEqual(
+        expect.objectContaining({
+          name: "background-waits",
+          content: expect.stringContaining("watch the run"),
+        }),
+      )
     }),
   )
 })
