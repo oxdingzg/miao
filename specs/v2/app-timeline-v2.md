@@ -127,6 +127,18 @@ the tool-state settled-re-delivery cases re-sequence to V2-native
 (expand while running, assert across completion), the removal
 scenarios drop, and collapse-state's diff-count update half drops with
 its sibling-streaming half retained.
+
+Second entanglement, one layer up: `fetchMessages`/`applyMessagePage`
+shape a `MessagePage` as `{session, part, source, sourceMode,
+projectSource}` and the optimistic prompt flow books V1 parts through
+`optimistic`/`confirmOptimistic`/`mergeOptimisticPage`/`replaceParts`.
+The store cut therefore rewrites the page contract to
+`{source, sourceMode, cursor, complete}` (records only), replaces the
+optimistic parts booking with a records-native pending-user insert,
+and deletes `replaceMessages`/`replaceParts`/`reconcileFetched`
+(parts)/`deleteMessageParts`/`mergeOptimisticPage`/`SKIP_PARTS` with
+it. Sequence the optimistic-flow rewrite FIRST inside the same change:
+the send path is the one behavior the e2e suites cannot mock around.
 - Store-surgery order once those land: delete `data.part` writes and
   readers → merge `session_message` into `data.message`
   (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the
