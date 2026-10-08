@@ -534,14 +534,12 @@ export function partDelta(partID: string, delta: string, messageID = assistantID
 
 export function messageUpdated(info: AssistantMessage): TimelineEvent[] {
   if (info.error) {
-    const data = info.error.data
-    const message = !!data && typeof data === "object" && typeof data.message === "string" ? data.message : info.error.name
     return [
       v2Event("session.next.step.failed", {
         sessionID,
         timestamp: nextTimestamp(),
         assistantMessageID: info.id,
-        error: { type: "unknown", message },
+        error: errorMessage(info.error),
       }),
     ]
   }
@@ -803,8 +801,11 @@ function toRecord(message: TimelineMessage): SessionMessage.Message {
     model: { id: info.modelID ?? model.modelID, providerID: info.providerID ?? model.providerID },
     ...(info.cost !== undefined ? { cost: info.cost } : {}),
     ...(info.tokens ? { tokens: info.tokens } : {}),
-    ...(info.finish === "stop" || info.finish === "tool-calls" ? { finish: info.finish } : {}),
-    ...(info.error ? { error: { type: "unknown", message: errorMessage(info.error) } } : {}),
+    // `aborted` matters: the interrupted-turn divider keys on finish.
+    ...(info.finish === "stop" || info.finish === "tool-calls" || info.finish === "aborted"
+      ? { finish: info.finish }
+      : {}),
+    ...(info.error ? { error: errorMessage(info.error) } : {}),
     content: message.parts.flatMap((part) => {
       if (part.type === "text") return [{ type: "text", id: part.id, text: part.text ?? "" }]
       if (part.type === "reasoning")
@@ -822,9 +823,11 @@ function toRecord(message: TimelineMessage): SessionMessage.Message {
   }
 }
 
-function errorMessage(error: AssistantMessage["error"]) {
+function errorMessage(error: AssistantMessage["error"]): { type: string; message: string } {
   const data = error?.data
-  return !!data && typeof data === "object" && typeof data.message === "string" ? data.message : (error?.name ?? "failed")
+  const message =
+    !!data && typeof data === "object" && typeof data.message === "string" ? data.message : (error?.name ?? "failed")
+  return { type: "unknown", message }
 }
 
 function toolContent(part: Extract<Part, { type: "tool" }>, created: number): SessionMessage.AssistantContent {
