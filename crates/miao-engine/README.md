@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 87 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 91 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -269,3 +269,19 @@ ask/deny 项不读内容，missing/skipped 也写入 provenance。每文件最�
 超预算显式失败。provider boundary 重读并通过不可变 Context Epoch 保存完整 system、source hashes 与选择顺序。
 
 这提供显式选择的 workspace producers；尚未实现 ambient user/ancestor discovery、完整 skill/reference catalog 或按任务自动选择。
+
+
+## Session 内 raw-history recall
+
+```jsonl
+{"id":50,"method":"recall","params":{"session_id":"s","query":"旧错误信息","limit":10}}
+```
+
+model tool `recall` 自动绑定当前 Session，不接受目标 Session ID；权限 resource 为 `@session/history`，
+复用 leaf policy 和 durable tool intent。host stdio adapter 可显式选择 Session。
+查询是 case-sensitive literal substring（最多 512 UTF-8 bytes）；每页最多 20 个 matches，
+扫描最多 1000 messages/2 MiB。按 message seq 倒序，返回角色、seq、UTF-8 安全的有界 preview。
+未扫描完返回 `next_before_message_seq`；即使 matches 为空也必须根据 `exhausted` 判断是否还有历史。
+单条 message 超过 2 MiB 时不载入内容，显式返回 `skipped_oversized_message_seqs` 并推进 cursor；原始记录仍保留。
+检索 raw messages 中的 text/tool input/result，不检索生成的 summary 或 opaque provider continuation。
+检索不会修改 transcript、checkpoint 或自动调度执行。

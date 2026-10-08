@@ -46,6 +46,14 @@ enum Command {
         through_message_seq: u64,
         summary: String,
     },
+    Recall {
+        session_id: String,
+        query: String,
+        #[serde(default = "recall_limit")]
+        limit: usize,
+        #[serde(default)]
+        before_message_seq: Option<u64>,
+    },
     History {
         session_id: String,
         #[serde(default)]
@@ -94,6 +102,9 @@ enum Command {
         response: Response,
     },
     Shutdown,
+}
+fn recall_limit() -> usize {
+    10
 }
 fn yes() -> bool {
     true
@@ -424,6 +435,7 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
                         Command::Compact{session_id,compaction_id,through_message_seq,summary}=>runtime.store().compact(&session_id,&compaction_id,through_message_seq,summary).await,
+                        Command::Recall{session_id,query,limit,before_message_seq}=>runtime.store().recall(&session_id,miao_engine::recall::Query{query,limit,before_message_seq}).await,
                         Command::History{session_id,selected}=>{let history=if selected {runtime.store().selected_history(&session_id).await}else{runtime.store().history(&session_id).await};history.and_then(|value|serde_json::to_value(value).map_err(Error::from))},
                         Command::Job{session_id,job_id}=>runtime.store().job(&session_id,&job_id).await.map(|v|v.unwrap_or(Value::Null)),
                         Command::Jobs{session_id}=>runtime.store().jobs(&session_id).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),

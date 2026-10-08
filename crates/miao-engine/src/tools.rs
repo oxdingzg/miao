@@ -221,6 +221,10 @@ impl Tools {
                 }
                 parsed.path
             }
+            "recall" => {
+                crate::recall::Query::parse(input.clone())?;
+                ".".into()
+            }
             "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
@@ -264,7 +268,9 @@ impl Tools {
             .components()
             .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
             .collect::<Result<Vec<_>, _>>()?;
-        let resource = if name == "job_status" || name == "cancel_job" {
+        let resource = if name == "recall" {
+            "@session/history".into()
+        } else if name == "job_status" || name == "cancel_job" {
             format!(
                 "@jobs/{}",
                 crate::jobs::Selector::parse(input.clone())?.job_id
@@ -432,6 +438,7 @@ impl Tools {
             ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
             ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
         ]);
+        definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Bounded scan pages may contain no matches; follow next_before_message_seq until exhausted.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":512},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"required":["query"],"additionalProperties":false})});
         if self.writes {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},

@@ -473,6 +473,12 @@ async fn execute(
                             let prepared_external =
                                 prepared.access() == crate::permission::Access::External;
                             let executed = match name {
+                                "recall" => {
+                                    match crate::recall::Query::parse(prepared.input().clone()) {
+                                        Ok(query) => Ok(inner.store.recall(session, query).await?),
+                                        Err(error) => Err(error),
+                                    }
+                                }
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
                                 }
