@@ -156,7 +156,7 @@ fn main() -> ExitCode {
                 if let Some(report) = &options.deny_report {
                     write_report(report, &[], code);
                 }
-                ExitCode::from(code as u8)
+                std::process::exit(code)
             }
             Err(WinError::Unavailable(message)) => {
                 eprintln!("miao-run: windows sandbox unavailable: {message}");
@@ -170,7 +170,7 @@ fn main() -> ExitCode {
                 if let Some(report) = &options.deny_report {
                     write_report(report, &[], code);
                 }
-                ExitCode::from(code as u8)
+                std::process::exit(code)
             }
             Err(WinError::Start(message)) => {
                 eprintln!("miao-run: failed to start command: {message}");

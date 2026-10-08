@@ -95,6 +95,30 @@ fn write_inside_workdir_allowed() {
 }
 
 #[test]
+fn stdio_and_command_exit_are_preserved() {
+    let wd = unique("stdio");
+    std::fs::create_dir_all(&wd).unwrap();
+    require_sandbox!(&wd);
+    let out = run(&[
+        "--workdir",
+        &wd.to_string_lossy(),
+        "--",
+        "cmd",
+        "/c",
+        "echo stdout-marker& echo stderr-marker 1>&2& exit /b 23",
+    ]);
+    assert_eq!(out.code, 23, "command exit status lost: {}", out.combined);
+    assert!(
+        out.combined.contains("stdout-marker"),
+        "stdout pipe not inherited"
+    );
+    assert!(
+        out.combined.contains("stderr-marker"),
+        "stderr pipe not inherited"
+    );
+}
+
+#[test]
 fn powershell_can_create_and_reopen_nested_workdir_files() {
     let wd = unique("nested");
     std::fs::create_dir_all(&wd).unwrap();

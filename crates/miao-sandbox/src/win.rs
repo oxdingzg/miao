@@ -23,6 +23,9 @@ use windows::Win32::Security::{
 use windows::Win32::Storage::FileSystem::{
     DELETE, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
 };
+use windows::Win32::System::Console::{
+    GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+};
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
     SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -32,8 +35,8 @@ use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
     InitializeProcThreadAttributeList, ResumeThread, TerminateProcess, UpdateProcThreadAttribute,
     WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
-    EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION,
-    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
+    EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 
 pub enum WinError {
@@ -307,14 +310,14 @@ pub fn run(
     // 5. Build process + attribute list with the AppContainer capabilities.
     let mut attr_size: usize = 0;
     unsafe {
-        let _ = InitializeProcThreadAttributeList(None, 1, None, &mut attr_size);
+        let _ = InitializeProcThreadAttributeList(None, 2, None, &mut attr_size);
     }
     let mut attr_buffer = vec![0u8; attr_size];
     let attr_list = windows::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST(
         attr_buffer.as_mut_ptr() as *mut c_void,
     );
     unsafe {
-        InitializeProcThreadAttributeList(Some(attr_list), 1, None, &mut attr_size)
+        InitializeProcThreadAttributeList(Some(attr_list), 2, None, &mut attr_size)
             .map_err(|_| last_error("InitializeProcThreadAttributeList"))?;
         UpdateProcThreadAttribute(
             attr_list,
@@ -331,6 +334,37 @@ pub fn run(
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.lpAttributeList = attr_list;
+    // Console defaults do not carry a redirected stdio transport reliably.
+    // Preserve the runner's pipes so managed shells initialize correctly and
+    // callers receive the command's output instead of an empty result.
+    startup.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
+    unsafe {
+        startup.StartupInfo.hStdInput =
+            GetStdHandle(STD_INPUT_HANDLE).map_err(|_| last_error("GetStdHandle(stdin)"))?;
+        startup.StartupInfo.hStdOutput =
+            GetStdHandle(STD_OUTPUT_HANDLE).map_err(|_| last_error("GetStdHandle(stdout)"))?;
+        startup.StartupInfo.hStdError =
+            GetStdHandle(STD_ERROR_HANDLE).map_err(|_| last_error("GetStdHandle(stderr)"))?;
+    }
+
+    // Inherit only stdio, never unrelated handles owned by the runner process.
+    let handles = [
+        startup.StartupInfo.hStdInput,
+        startup.StartupInfo.hStdOutput,
+        startup.StartupInfo.hStdError,
+    ];
+    unsafe {
+        UpdateProcThreadAttribute(
+            attr_list,
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+            Some(handles.as_ptr() as *const c_void),
+            std::mem::size_of_val(&handles),
+            None,
+            None,
+        )
+        .map_err(|_| last_error("UpdateProcThreadAttribute(handles)"))?;
+    }
 
     let cmdline: Vec<u16> = command
         .iter()
@@ -360,7 +394,7 @@ pub fn run(
             Some(PWSTR(cmdline.as_mut_ptr())),
             None,
             None,
-            false,
+            true,
             EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
             None,
             cwd_ptr,
