@@ -78,7 +78,9 @@ impl Prepared {
         &self.resource
     }
     pub fn access(&self) -> Access {
-        if self.name == "run_command" {
+        if self.name == "start_job" {
+            Access::Background
+        } else if self.name == "run_command" {
             Access::Execute
         } else if self.name == "write_file" || self.name == "edit_file" {
             Access::Write
@@ -95,6 +97,7 @@ pub struct Tools {
     gate: Arc<RwLock<()>>,
     writes: bool,
     process_enabled: bool,
+    background_enabled: bool,
     process_network: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
@@ -120,6 +123,7 @@ impl Tools {
             gate: Arc::new(RwLock::new(())),
             writes: false,
             process_enabled: false,
+            background_enabled: false,
             process_network: false,
             runner: None,
             protected: vec![],
@@ -135,6 +139,11 @@ impl Tools {
         self.process_network = network;
         self
     }
+    pub(crate) fn with_background(mut self, enabled: bool) -> Self {
+        self.background_enabled = enabled && self.process_enabled;
+        self
+    }
+
     pub fn with_protected_resource(self, path: &Path) -> Self {
         self.protect_store(path)
     }
@@ -174,6 +183,11 @@ impl Tools {
                 parsed.path
             }
             "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
+            "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
+            "job_status" | "cancel_job" if self.background_enabled => {
+                crate::jobs::Selector::parse(input.clone())?;
+                ".".into()
+            }
             "run_command" if self.process_enabled => process::Input::parse(input.clone())?.cwd,
             "write_file" | "edit_file" if self.writes => {
                 Mutation::parse(name, input.clone())?.path().to_owned()
@@ -199,7 +213,7 @@ impl Tools {
         if self.protected.contains(&path) {
             return Err(ToolError::ProtectedResource);
         }
-        if matches!(name, "run_command" | "glob" | "grep")
+        if matches!(name, "run_command" | "start_job" | "glob" | "grep")
             && !tokio::fs::metadata(&path).await?.is_dir()
         {
             return Err(ToolError::InvalidInput);
@@ -211,7 +225,12 @@ impl Tools {
             .components()
             .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
             .collect::<Result<Vec<_>, _>>()?;
-        let resource = if parts.is_empty() {
+        let resource = if name == "job_status" || name == "cancel_job" {
+            format!(
+                "@jobs/{}",
+                crate::jobs::Selector::parse(input.clone())?.job_id
+            )
+        } else if parts.is_empty() {
             ".".into()
         } else {
             parts.join("/")
@@ -222,6 +241,32 @@ impl Tools {
             path,
             resource,
         })
+    }
+
+    pub(crate) async fn execute_background(
+        &self,
+        prepared: Prepared,
+        cancel: CancellationToken,
+    ) -> Result<Value, ToolError> {
+        if !self.background_enabled || prepared.name != "start_job" {
+            return Err(ToolError::Unsupported);
+        }
+        let current = self
+            .prepare(prepared.name(), prepared.input().clone())
+            .await?;
+        if current.path != prepared.path || current.resource != prepared.resource {
+            return Err(ToolError::ResourceChanged);
+        }
+        let runner = self.runner.as_deref().ok_or(ToolError::Unsupported)?;
+        process::execute(
+            runner,
+            &self.root,
+            &prepared.path,
+            process::Input::parse(prepared.input)?,
+            self.process_network,
+            cancel,
+        )
+        .await
     }
 
     pub(crate) async fn execute_prepared(
@@ -338,6 +383,19 @@ impl Tools {
         }
         if self.process_enabled {
             definitions.push(ToolDefinition{name:"run_command".into(),description:"Run an explicit argv in a workspace-write sandbox. Timeout 1..120000 ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000}},"required":["argv"],"additionalProperties":false})});
+        }
+        if self.background_enabled {
+            let mut start = definitions
+                .iter()
+                .find(|tool| tool.name == "run_command")
+                .expect("background requires process")
+                .clone();
+            start.name = "start_job".into();
+            start.description="Admit a sandboxed foreground-sized command as a background job. Returns queued job_id; the job survives turn cancel, but runtime shutdown cancels it. Existing-file edits must account for external-writer races.".into();
+            definitions.push(start);
+            for name in ["job_status", "cancel_job"] {
+                definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
+            }
         }
         definitions
     }

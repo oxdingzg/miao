@@ -92,11 +92,11 @@ impl Store {
                     ));
                 }
                 let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-                if version > 4 {
+                if version > 5 {
                     return Err(Error::Invalid("unsupported database schema version".into()));
                 }
 
-                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=4; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=5; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -109,7 +109,8 @@ impl Store {
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_pending_approval ON engine_approval(call_id) WHERE state='pending';
                     CREATE TABLE IF NOT EXISTS engine_lineage(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),parent_session_id TEXT NOT NULL REFERENCES engine_session(id),message_seq INTEGER NOT NULL);
                     CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);
-                    CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));")?;
+                    CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
+                    CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);")?;
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -231,6 +232,87 @@ impl Store {
             }
             tx.commit()?;
             Ok(events)
+        }).await
+    }
+
+    pub async fn create_job(
+        &self,
+        session: &str,
+        run: &str,
+        call: &str,
+        input: Value,
+    ) -> Result<Value, Error> {
+        let (session, run, call) = (session.to_owned(), run.to_owned(), call.to_owned());
+        self.call(move |conn| {
+            let tx=conn.transaction()?;let request=format!("{run}/{call}");
+            let existing:Option<(String,String,String)>=tx.query_row("SELECT id,state,input FROM engine_job WHERE request_key=?1 AND session_id=?2",params![request,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+            if let Some((id,state,original))=existing {if serde_json::from_str::<Value>(&original)?!=input{return Err(Error::Conflict);}return Ok(json!({"job_id":id,"state":state,"duplicate":true}));}
+            let original:Option<String>=tx.query_row("SELECT t.input FROM engine_tool t JOIN engine_run r ON r.id=t.run_id WHERE t.id=?1 AND t.name='start_job' AND t.state='dispatched' AND r.session_id=?2 AND r.state='running'",params![request,session],|r|r.get(0)).optional()?;
+            let original=original.ok_or_else(||Error::Invalid("job admission requires its dispatched tool intent".into()))?;
+            if serde_json::from_str::<Value>(&original)?["input"]!=input{return Err(Error::Conflict);}
+            let id=uuid::Uuid::new_v4().to_string();tx.execute("INSERT INTO engine_job VALUES(?1,?2,?3,'queued',?4,NULL)",params![id,session,request,serde_json::to_string(&input)?])?;
+            append(&tx,&session,"job.admitted",json!({"job_id":id,"request_key":request}))?;tx.commit()?;Ok(json!({"job_id":id,"state":"queued","duplicate":false}))
+        }).await
+    }
+
+    pub async fn job(&self, session: &str, id: &str) -> Result<Option<Value>, Error> {
+        let (session, id) = (session.to_owned(), id.to_owned());
+        self.call(move |conn| {
+            let row:Option<(String,Option<String>)>=conn.query_row("SELECT state,result FROM engine_job WHERE id=?1 AND session_id=?2",params![id,session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            row.map(|(state,result)|Ok(json!({"job_id":id,"state":state,"result":result.map(|v|serde_json::from_str::<Value>(&v)).transpose()?}))).transpose()
+        }).await
+    }
+
+    pub async fn jobs(&self, session: &str) -> Result<Vec<Value>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id,state FROM engine_job WHERE session_id=?1 ORDER BY rowid DESC LIMIT 100",
+            )?;
+            let rows = stmt.query_map([session], |r| {
+                Ok(json!({"job_id":r.get::<_,String>(0)?,"state":r.get::<_,String>(1)?}))
+            })?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    pub async fn start_job(&self, session: &str, id: &str) -> Result<Event, Error> {
+        let (session, id) = (session.to_owned(), id.to_owned());
+        self.call(move |conn| {
+            let tx=conn.transaction()?;if tx.execute("UPDATE engine_job SET state='running' WHERE id=?1 AND session_id=?2 AND state='queued'",params![id,session])?!=1{return Err(Error::Invalid("job is not queued".into()));}
+            let event=append(&tx,&session,"job.started",json!({"job_id":id}))?;tx.commit()?;Ok(event)
+        }).await
+    }
+
+    pub async fn finish_job(
+        &self,
+        session: &str,
+        id: &str,
+        state: &str,
+        result: Value,
+    ) -> Result<Event, Error> {
+        let (session, id, state) = (session.to_owned(), id.to_owned(), state.to_owned());
+        if !["completed", "failed", "cancelled", "interrupted", "unknown"].contains(&state.as_str())
+        {
+            return Err(Error::Invalid("invalid terminal job state".into()));
+        }
+        self.call(move |conn| {
+            let tx=conn.transaction()?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
+            let event=append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;tx.commit()?;Ok(event)
+        }).await
+    }
+
+    pub async fn recover_jobs(&self) -> Result<(), Error> {
+        self.call(|conn| {
+            let tx=conn.transaction()?;
+            let jobs:Vec<(String,String,String)>={let mut stmt=tx.prepare("SELECT id,session_id,state FROM engine_job WHERE state IN ('queued','running')")?;let rows=stmt.query_map([],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;rows.collect::<Result<_,_>>()?};
+            for (id,session,state) in jobs {
+                let terminal=if state=="queued"{"interrupted"}else{"unknown"};let result=json!({"error":"runtime ownership lost; no automatic replay"});
+                tx.execute("UPDATE engine_job SET state=?2,result=?3 WHERE id=?1",params![id,terminal,serde_json::to_string(&result)?])?;
+                append(&tx,&session,"job.finished",json!({"job_id":id,"state":terminal,"recovered":true}))?;
+            }
+            tx.commit()?;Ok(())
         }).await
     }
 

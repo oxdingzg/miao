@@ -40,6 +40,17 @@ enum Command {
     Cancel {
         session_id: String,
     },
+    Job {
+        session_id: String,
+        job_id: String,
+    },
+    Jobs {
+        session_id: String,
+    },
+    CancelJob {
+        session_id: String,
+        job_id: String,
+    },
     Context {
         session_id: String,
         #[serde(default)]
@@ -363,6 +374,9 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         Command::Admit{input,resume}=>runtime.admit(input,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
+                        Command::Job{session_id,job_id}=>runtime.store().job(&session_id,&job_id).await.map(|v|v.unwrap_or(Value::Null)),
+                        Command::Jobs{session_id}=>runtime.store().jobs(&session_id).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
+                        Command::CancelJob{session_id,job_id}=>runtime.cancel_job(&session_id,&job_id).await.map(|accepted|json!({"accepted":accepted})),
                         Command::Context{session_id,epoch}=>runtime.store().context(&session_id,epoch).await.map(|v|v.unwrap_or(Value::Null)),
                         Command::Snapshot{session_id}=>runtime.store().snapshot(&session_id).await,
                         Command::Fork{session_id,target_session_id,message_seq}=>runtime.fork(&session_id,&target_session_id,message_seq).await,

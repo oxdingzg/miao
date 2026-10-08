@@ -31,6 +31,8 @@ struct Inner {
     provider: Arc<dyn Provider>,
     tools: Tools,
     actors: Mutex<HashMap<String, Actor>>,
+    jobs: Mutex<HashMap<String, Background>>,
+    job_slots: Arc<Semaphore>,
     slots: Arc<Semaphore>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
@@ -38,6 +40,12 @@ struct Inner {
 
 struct Actor {
     commands: mpsc::Sender<Command>,
+    join: JoinHandle<()>,
+}
+
+struct Background {
+    session: String,
+    cancel: CancellationToken,
     join: JoinHandle<()>,
 }
 
@@ -74,6 +82,7 @@ impl Runtime {
         let mut tools = tools
             .with_writes(policy.writes_enabled())
             .with_process(policy.process_enabled(), policy.process_network())
+            .with_background(policy.background_enabled())
             .protect_store(store.path());
         for path in provider.protected_resources() {
             let path = tokio::fs::canonicalize(path).await?;
@@ -87,6 +96,7 @@ impl Runtime {
         }
         let lease = store.claim_runtime()?;
         store.recover().await?;
+        store.recover_jobs().await?;
         let (progress, _) = broadcast::channel(256);
         Ok(Self {
             inner: Arc::new(Inner {
@@ -97,6 +107,8 @@ impl Runtime {
                 provider,
                 tools,
                 actors: Mutex::new(HashMap::new()),
+                jobs: Mutex::new(HashMap::new()),
+                job_slots: Arc::new(Semaphore::new(2)),
                 slots: Arc::new(Semaphore::new(8)),
                 stop: CancellationToken::new(),
                 progress,
@@ -235,11 +247,20 @@ impl Runtime {
         result.await.map_err(|_| Error::Closed)
     }
 
+    pub async fn cancel_job(&self, session: &str, id: &str) -> Result<bool, Error> {
+        cancel_background(&self.inner, session, id).await
+    }
+
     pub async fn shutdown(&self) {
         self.inner.stop.cancel();
         let actors = std::mem::take(&mut *self.inner.actors.lock().await);
         for (_, actor) in actors {
             let _ = actor.join.await;
+        }
+        let jobs = std::mem::take(&mut *self.inner.jobs.lock().await);
+        for (_, job) in jobs {
+            job.cancel.cancel();
+            let _ = job.join.await;
         }
     }
 }
@@ -329,7 +350,7 @@ async fn drain(
 async fn execute(
     session: &str,
     run: &str,
-    inner: &Inner,
+    inner: &Arc<Inner>,
     cancel: CancellationToken,
 ) -> Result<(), Error> {
     let mut step = 0;
@@ -443,11 +464,42 @@ async fn execute(
                             (json!({"error":"permission denied"}), true)
                         } else {
                             inner.store.mark_dispatched(session, run, id).await?;
-                            match inner
-                                .tools
-                                .execute_prepared(prepared, &inner.policy, cancel.child_token())
-                                .await
-                            {
+                            let executed = match name {
+                                "start_job" => {
+                                    start_background(inner, session, run, id, prepared).await
+                                }
+                                "job_status" => {
+                                    match crate::jobs::Selector::parse(prepared.input().clone()) {
+                                        Ok(selector) => Ok(inner
+                                            .store
+                                            .job(session, &selector.job_id)
+                                            .await?
+                                            .unwrap_or(
+                                                json!({"error":"job not found in this Session"}),
+                                            )),
+                                        Err(error) => Err(error),
+                                    }
+                                }
+                                "cancel_job" => {
+                                    match crate::jobs::Selector::parse(prepared.input().clone()) {
+                                        Ok(selector) => Ok(
+                                            json!({"accepted":cancel_background(inner,session,&selector.job_id).await?}),
+                                        ),
+                                        Err(error) => Err(error),
+                                    }
+                                }
+                                _ => {
+                                    inner
+                                        .tools
+                                        .execute_prepared(
+                                            prepared,
+                                            &inner.policy,
+                                            cancel.child_token(),
+                                        )
+                                        .await
+                                }
+                            };
+                            match executed {
                                 Ok(output) => (output, false),
                                 Err(ToolError::Interrupted) => return Ok(()),
                                 Err(error) => (json!({"error":error.to_string()}), true),
@@ -497,7 +549,7 @@ async fn execute(
 }
 
 async fn authorize(
-    inner: &Inner,
+    inner: &Arc<Inner>,
     session: &str,
     run: &str,
     call: &str,
@@ -570,4 +622,143 @@ async fn authorize(
         }
         tokio::select! {_=cancel.cancelled()=>return Ok(false),_=tokio::time::sleep(std::time::Duration::from_millis(25))=>{}}
     }
+}
+
+async fn cancel_background(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
+    let token = {
+        let jobs = inner.jobs.lock().await;
+        match jobs.get(id) {
+            Some(job) => {
+                if job.session != session {
+                    return Err(Error::Invalid("job belongs to another Session".into()));
+                }
+                Some(job.cancel.clone())
+            }
+            None => None,
+        }
+    };
+    let Some(token) = token else {
+        return Ok(false);
+    };
+    if inner
+        .store
+        .job(session, id)
+        .await?
+        .is_none_or(|job| !matches!(job["state"].as_str(), Some("queued" | "running")))
+    {
+        return Ok(false);
+    }
+    token.cancel();
+    Ok(true)
+}
+
+async fn start_background(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: Prepared,
+) -> Result<Value, ToolError> {
+    if inner.stop.is_cancelled() {
+        return Err(ToolError::Interrupted);
+    }
+    let mut jobs = inner.jobs.lock().await;
+    if jobs.len() >= 32 {
+        return Err(ToolError::InvalidInput);
+    }
+    let admission = inner
+        .store
+        .create_job(session, run, call, prepared.input().clone())
+        .await
+        .map_err(|error| ToolError::Io(std::io::Error::other(error.to_string())))?;
+    if admission["duplicate"] == true {
+        return Ok(admission);
+    }
+    let id = admission["job_id"]
+        .as_str()
+        .ok_or(ToolError::InvalidInput)?
+        .to_owned();
+    let token = inner.stop.child_token();
+    let task_token = token.clone();
+    let owner = session.to_owned();
+    let task_owner = owner.clone();
+    let task_id = id.clone();
+    let task_inner = inner.clone();
+    let join = tokio::spawn(async move {
+        let work_inner = task_inner.clone();
+        let work_owner = task_owner.clone();
+        let work_id = task_id.clone();
+        let work = tokio::spawn(async move {
+            background(work_inner, &work_owner, &work_id, prepared, task_token).await
+        });
+        let result = match work.await {
+            Ok(result) => result,
+            Err(_) => task_inner
+                .store
+                .finish_job(
+                    &task_owner,
+                    &task_id,
+                    "unknown",
+                    json!({"error":"job execution task panicked"}),
+                )
+                .await
+                .map(|_| ()),
+        };
+        if let Err(error) = result {
+            let _=task_inner.progress.send(json!({"session_id":task_owner,"kind":"job.error","job_id":task_id,"message":error.to_string()}));
+        }
+        task_inner.jobs.lock().await.remove(&task_id);
+    });
+    jobs.insert(
+        id,
+        Background {
+            session: owner,
+            cancel: token,
+            join,
+        },
+    );
+    Ok(admission)
+}
+
+async fn background(
+    inner: Arc<Inner>,
+    session: &str,
+    id: &str,
+    prepared: Prepared,
+    cancel: CancellationToken,
+) -> Result<(), Error> {
+    let permit = tokio::select! {_=cancel.cancelled()=>None,slot=inner.job_slots.clone().acquire_owned()=>Some(slot.map_err(|_|Error::Closed)?)};
+    let Some(_permit) = permit else {
+        inner
+            .store
+            .finish_job(
+                session,
+                id,
+                "cancelled",
+                json!({"reason":"cancelled_before_dispatch"}),
+            )
+            .await?;
+        return Ok(());
+    };
+    inner.store.start_job(session, id).await?;
+    let result = inner
+        .tools
+        .execute_background(prepared, cancel.clone())
+        .await;
+    let (state, output) = match result {
+        Ok(output) => {
+            let state = if output["reason"] == "cancelled" {
+                "cancelled"
+            } else if output["reason"] == "completed" && output["exit_code"] == 0 {
+                "completed"
+            } else {
+                "failed"
+            };
+            (state, output)
+        }
+        Err(ToolError::Interrupted) => ("cancelled", json!({"reason":"cancelled_before_dispatch"})),
+        Err(error) => ("failed", json!({"error":error.to_string()})),
+    };
+    inner.store.finish_job(session, id, state, output).await?;
+    Ok(())
 }

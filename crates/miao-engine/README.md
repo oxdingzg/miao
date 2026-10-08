@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 70 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 75 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -192,3 +192,24 @@ miao-engine serve --db /path/to/engine.db --workspace /path/to/project --model M
 - 凭据文件/DB 作为 protected resources 排除于 leaf 工具与自动 context；进程启用时 source 必须在 workspace 外。
 - workspace-write 不提供全局秘密读取隔离；已明确批准的任意进程仍具有 profile 描述的读取能力。
 - 当前只读 bridge 并非完整 credential broker：device login、独立 refresh/rotation 锁、跨 broker 迁移与 live 账户任务验收仍待完成。
+
+
+## Durable 后台任务
+
+`mode=workspace, allow_process=true, allow_background=true` 才暴露 start_job/job_status/cancel_job。
+start_job 的完整 argv/cwd/timeout 仍经权限和绑定审批；返回 durable queued job_id，不等同已执行成功。
+当前每 runtime 最多 32 活跃/排队 jobs、2 个执行槽，命令仍使用前台大小/120s 超时与 bounded output。
+
+```jsonl
+{"id":30,"method":"jobs","params":{"session_id":"s"}}
+{"id":31,"method":"job","params":{"session_id":"s","job_id":"JOB_ID"}}
+{"id":32,"method":"cancel_job","params":{"session_id":"s","job_id":"JOB_ID"}}
+```
+
+- turn cancel 不取消已受理的 background job；job cancel/runtime shutdown 才控制其生命周期。
+- queued/running/terminal/result 持久化；恢复把 queued 标 interrupted、running 标 unknown，不自动重跑。
+- 同一 dispatched tool intent 的 job admission exact retry 不生成第二个任务，且输入必须一致。
+- model job control 绑定当前 Session，不因知道 UUID 就能查询/取消另一个 Session 的任务。
+- background 是显式外部 writer，不持有 foreground registry 的全程文件锁；条件编辑对它仍是乐观指纹检查。
+- guardian 保持私有 pipe lifeline；engine 硬退出关闭它，普通进程组被回收。用户命令 stdin 仍为空，不能接触控制管道。
+- 恶意 setsid/独立 daemon 仍需后续 cgroup/Job ownership；当前不是全平台持久进程托管服务。

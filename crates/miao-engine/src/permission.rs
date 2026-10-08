@@ -25,6 +25,7 @@ pub enum Access {
     Read,
     Write,
     Execute,
+    Background,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +44,8 @@ pub struct Config {
     #[serde(default)]
     pub allow_process: bool,
     #[serde(default)]
+    pub allow_background: bool,
+    #[serde(default)]
     pub process_network: bool,
     #[serde(default)]
     pub rules: Vec<Rule>,
@@ -57,6 +60,7 @@ impl Default for Config {
         Self {
             mode: Mode::ReadOnly,
             allow_process: false,
+            allow_background: false,
             process_network: false,
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
@@ -128,6 +132,10 @@ impl Policy {
     pub fn process_enabled(&self) -> bool {
         self.config.mode == Mode::Workspace && self.config.allow_process
     }
+    pub fn background_enabled(&self) -> bool {
+        self.process_enabled() && self.config.allow_background
+    }
+
     pub fn process_network(&self) -> bool {
         self.config.process_network
     }
@@ -140,6 +148,7 @@ impl Policy {
     /// absent matching rules, reads allow and workspace writes ask.
     pub fn evaluate(&self, tool: &str, path: &str, access: Access) -> Decision {
         if (access == Access::Execute && !self.process_enabled())
+            || (access == Access::Background && !self.background_enabled())
             || (access == Access::Write && self.config.mode == Mode::ReadOnly)
         {
             return Decision::Deny;

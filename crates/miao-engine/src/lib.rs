@@ -3,6 +3,7 @@ pub mod context;
 pub mod credential;
 pub mod export;
 mod file_mutation;
+mod jobs;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod permission;
