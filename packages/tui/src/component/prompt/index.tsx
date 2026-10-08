@@ -467,29 +467,11 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
-          // One esc only cancels the newest waiting prompt, like Claude Code;
-          // the running turn is only interrupted once nothing is waiting, so a
-          // burst of queued prompts can be walked back one at a time.
-          const newest = waitingPrompts().at(-1)
-          if (newest) {
-            void sdk.api.sessions
-              .inputCancel({ sessionID: props.sessionID, messageID: newest.info.id })
-              .then((response) => {
-                if (!response.cancelled) return
-                sync.prompt.remove(newest.info.id)
-                // Take the text back into an empty composer so a cancelled
-                // prompt stays editable instead of lost. Attachments do not
-                // survive the round trip and stay cancelled.
-                if (store.prompt.input === "" && newest.info.text && !newest.info.files?.length)
-                  input.setText(newest.info.text)
-              })
-              .catch(() =>
-                toast.show({ message: "Cancel failed: session runtime unreachable", variant: "error" }),
-              )
-            dialog.clear()
-            return
-          }
-
+          // Esc interrupts the running turn; queued prompts survive it and the
+          // queue advances on its own — Claude Code's user esc sends
+          // `{ subtype: "interrupt" }` without cancel_queued, and the
+          // interrupt response reports what is still_queued.
+          //
           // A rejected interrupt (server 500, runtime unreachable) must not
           // kill the TUI: Bun exits the process on an unhandled rejection.
           void sdk.api.sessions
@@ -1643,11 +1625,7 @@ export function Prompt(props: PromptProps) {
                 </Show>
                 <text fg={theme.text}>
                   esc{" "}
-                  <span style={{ fg: theme.textMuted }}>
-                    {waitingPrompts().length > 0
-                      ? `cancel waiting (${waitingPrompts().length})`
-                      : "interrupt"}
-                  </span>
+                  <span style={{ fg: theme.textMuted }}>interrupt</span>
                 </text>
               </box>
             </Match>
