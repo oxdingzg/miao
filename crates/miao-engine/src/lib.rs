@@ -5,6 +5,7 @@ pub mod export;
 mod file_mutation;
 mod history;
 mod jobs;
+pub mod mcp;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod permission;

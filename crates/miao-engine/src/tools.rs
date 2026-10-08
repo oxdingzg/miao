@@ -1,5 +1,6 @@
 use crate::{
     file_mutation::{apply, Mutation},
+    mcp,
     permission::{digest, Access, Policy},
     process,
     protocol::ToolDefinition,
@@ -24,6 +25,8 @@ pub enum ToolError {
     InvalidInput,
     #[error("tool is not available")]
     Unsupported,
+    #[error("external tool: {0}")]
+    External(String),
     #[error("path is outside the configured workspace")]
     OutsideWorkspace,
     #[error("file must be regular UTF-8 text of at most 32768 bytes")]
@@ -66,6 +69,7 @@ pub struct Prepared {
     input: Value,
     path: PathBuf,
     resource: String,
+    access: Access,
 }
 impl Prepared {
     pub fn name(&self) -> &str {
@@ -78,15 +82,7 @@ impl Prepared {
         &self.resource
     }
     pub fn access(&self) -> Access {
-        if self.name == "start_job" {
-            Access::Background
-        } else if self.name == "run_command" {
-            Access::Execute
-        } else if self.name == "write_file" || self.name == "edit_file" {
-            Access::Write
-        } else {
-            Access::Read
-        }
+        self.access
     }
 }
 
@@ -101,6 +97,7 @@ pub struct Tools {
     process_network: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
+    mcp: Option<Arc<mcp::Registry>>,
 }
 
 impl Tools {
@@ -127,6 +124,7 @@ impl Tools {
             process_network: false,
             runner: None,
             protected: vec![],
+            mcp: None,
         })
     }
 
@@ -139,6 +137,19 @@ impl Tools {
         self.process_network = network;
         self
     }
+    pub fn with_mcp(mut self, registry: Arc<mcp::Registry>) -> Self {
+        self.mcp = Some(registry);
+        self
+    }
+    pub(crate) fn has_mcp(&self) -> bool {
+        self.mcp.is_some()
+    }
+    pub(crate) async fn shutdown_extensions(&self) {
+        if let Some(registry) = &self.mcp {
+            registry.shutdown().await;
+        }
+    }
+
     pub(crate) fn with_background(mut self, enabled: bool) -> Self {
         self.background_enabled = enabled && self.process_enabled;
         self
@@ -168,6 +179,18 @@ impl Tools {
     }
 
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
+        if let Some(registry) = &self.mcp {
+            if let Some(resource) = registry.resource(name) {
+                registry.validate(name, &input)?;
+                return Ok(Prepared {
+                    name: name.into(),
+                    input,
+                    path: self.root.clone(),
+                    resource,
+                    access: Access::External,
+                });
+            }
+        }
         let path = match name {
             "read_file" => {
                 serde_json::from_value::<ReadInput>(input.clone())
@@ -235,7 +258,17 @@ impl Tools {
         } else {
             parts.join("/")
         };
+        let access = if name == "start_job" {
+            Access::Background
+        } else if name == "run_command" {
+            Access::Execute
+        } else if name == "write_file" || name == "edit_file" {
+            Access::Write
+        } else {
+            Access::Read
+        };
         Ok(Prepared {
+            access,
             name: name.into(),
             input,
             path,
@@ -275,6 +308,14 @@ impl Tools {
         policy: &Policy,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
+        if prepared.access() == Access::External {
+            return self
+                .mcp
+                .as_ref()
+                .ok_or(ToolError::Unsupported)?
+                .call(&prepared.name, prepared.input, cancel)
+                .await;
+        }
         if prepared.access() == Access::Execute {
             let _lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().write_owned()=>guard};
             let current = self
@@ -396,6 +437,9 @@ impl Tools {
             for name in ["job_status", "cancel_job"] {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
+        }
+        if let Some(registry) = &self.mcp {
+            definitions.extend(registry.definitions());
         }
         definitions
     }

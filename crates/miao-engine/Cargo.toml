@@ -14,6 +14,8 @@ async-trait = "0.1"
 cap-std = "3"
 cap-fs-ext = "3"
 regex = "1"
+jsonschema = { version = "0.33", default-features = false }
+rmcp = { version = "3.5", default-features = false, features = ["client", "transport-async-rw"] }
 fs2 = "0.4"
 globset = "0.4"
 sha2 = "0.10"

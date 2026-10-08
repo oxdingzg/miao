@@ -79,6 +79,11 @@ impl Runtime {
                 "process-enabled runtime requires its database outside the workspace".into(),
             ));
         }
+        if tools.has_mcp() && !policy.mcp_enabled() {
+            return Err(Error::Invalid(
+                "MCP services require explicit workspace external authority".into(),
+            ));
+        }
         let mut tools = tools
             .with_writes(policy.writes_enabled())
             .with_process(policy.process_enabled(), policy.process_network())
@@ -262,6 +267,7 @@ impl Runtime {
             job.cancel.cancel();
             let _ = job.join.await;
         }
+        self.inner.tools.shutdown_extensions().await;
     }
 }
 
@@ -464,6 +470,8 @@ async fn execute(
                             (json!({"error":"permission denied"}), true)
                         } else {
                             inner.store.mark_dispatched(session, run, id).await?;
+                            let prepared_external =
+                                prepared.access() == crate::permission::Access::External;
                             let executed = match name {
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
@@ -500,7 +508,10 @@ async fn execute(
                                 }
                             };
                             match executed {
-                                Ok(output) => (output, false),
+                                Ok(output) => {
+                                    let is_error = prepared_external && output["isError"] == true;
+                                    (output, is_error)
+                                }
                                 Err(ToolError::Interrupted) => return Ok(()),
                                 Err(error) => (json!({"error":error.to_string()}), true),
                             }

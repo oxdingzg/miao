@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 79 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 85 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -228,3 +228,27 @@ provider 使用 summary+tail 的 selected_history，仍保留 opaque/tool record
 验证通过流式检查，允许把已超过选择预算的旧前缀压成 checkpoint；摘要最多 32 KiB。
 default fork 继承当前有效 checkpoint 并映射 message cursor；显式历史 fork 只继承该点已经存在的 checkpoint。
 这不是自动 LLM 摘要或任务质量承诺；自动策略、模型角色路由与上下文质量评测仍需后续实现。
+
+
+## MCP stdio client（显式外部 authority）
+
+通过 `--mcp-config /absolute/path/servers.json` 指定 workspace 之外的 host 配置：
+
+```json
+[{"name":"local_service","argv":["/absolute/path/to/server","--stdio"],"env":{}}]
+```
+
+permission policy 必须设置 `mode: "workspace"`、`allow_mcp: true`。启动 server 是 host 配置行为；
+MCP server 是拥有自身 filesystem/network authority 的可信外部服务，不适用 `run_command` 的 workspace sandbox。
+每次工具调用仍经过已有 durable intent 与绑定审批；默认 ask，可用 `mcp_*` tool matcher 和
+`@mcp/local_service/**` resource matcher 配置规则。`readOnlyHint` 不授予权限。
+
+- catalog 在初始化时固定：最多 8 servers、每 server 4 页/128 tools；alias 稳定、限 64 字符且包含原名指纹。
+- schema 最多 32 KiB，JSON Schema 校验在授权及派发之前完成；description 最多 4 KiB。
+- 初始化/catalog 每请求 15 秒，call 60 秒，wire frame 256 KiB，返回结果 64 KiB。
+- input/task continuation 显式失败；断连/超时不自动重放，不能断言外部副作用未发生。
+- cancel 停止本地等待，已派发调用可能仍在 server 执行；Session 恢复沿用 unknown intent 边界。
+- 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程
+  尚无完整跨进程归属保证。
+
+目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
