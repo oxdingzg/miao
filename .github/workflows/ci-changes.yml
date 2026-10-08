@@ -1,0 +1,29 @@
+name: ci-changes
+on:
+  workflow_call:
+    outputs:
+      code:
+        value: ${{ jobs.changes.outputs.code }}
+      windows:
+        value: ${{ jobs.changes.outputs.windows }}
+permissions:
+  contents: read
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+      windows: ${{ steps.paths.outputs.windows }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Check change classification
+        run: python3 .github/scripts/test_ci_changes.py
+      - id: paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 .github/scripts/ci-changes.py >> "$GITHUB_OUTPUT"
