@@ -27,6 +27,7 @@ pub enum Access {
     Execute,
     Background,
     External,
+    SessionState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,11 +178,13 @@ impl Policy {
                 result = Some(matcher.decision);
             }
         }
-        result.unwrap_or(if access == Access::Read {
-            Decision::Allow
-        } else {
-            Decision::Ask
-        })
+        result.unwrap_or(
+            if access == Access::Read || access == Access::SessionState {
+                Decision::Allow
+            } else {
+                Decision::Ask
+            },
+        )
     }
 }
 

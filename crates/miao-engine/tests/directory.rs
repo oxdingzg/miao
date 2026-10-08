@@ -16,7 +16,16 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             .iter()
             .map(|t| t.name.as_str())
             .collect::<Vec<_>>(),
-        vec!["read_file", "list_files", "glob", "grep", "recall"]
+        vec![
+            "read_file",
+            "list_files",
+            "glob",
+            "grep",
+            "recall",
+            "session_state",
+            "todowrite",
+            "goal"
+        ]
     );
     let result = tools
         .execute("list_files", json!({}), CancellationToken::new())

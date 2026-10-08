@@ -473,6 +473,25 @@ async fn execute(
                             let prepared_external =
                                 prepared.access() == crate::permission::Access::External;
                             let executed = match name {
+                                "session_state" => Ok(inner.store.state(session).await?),
+                                "todowrite" | "goal" => match crate::state::Mutation::parse(
+                                    name,
+                                    prepared.input().clone(),
+                                ) {
+                                    Ok(mutation) => match inner
+                                        .store
+                                        .update_state(session, &format!("{run}:{id}"), mutation)
+                                        .await
+                                    {
+                                        Ok(value) => Ok(value),
+                                        Err(Error::Conflict) => Err(ToolError::External(
+                                            "Session state revision conflict; reload session_state"
+                                                .into(),
+                                        )),
+                                        Err(error) => return Err(error),
+                                    },
+                                    Err(error) => Err(error),
+                                },
                                 "recall" => {
                                     match crate::recall::Query::parse(prepared.input().clone()) {
                                         Ok(query) => Ok(inner.store.recall(session, query).await?),

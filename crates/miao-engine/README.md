@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 91 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 94 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -285,3 +285,28 @@ model tool `recall` 自动绑定当前 Session，不接受目标 Session ID；�
 单条 message 超过 2 MiB 时不载入内容，显式返回 `skipped_oversized_message_seqs` 并推进 cursor；原始记录仍保留。
 检索 raw messages 中的 text/tool input/result，不检索生成的 summary 或 opaque provider continuation。
 检索不会修改 transcript、checkpoint 或自动调度执行。
+
+
+## Durable Session state：todos / goal
+
+`session_state`、`todowrite`、`goal` model tools 自动绑定当前 Session；host adapter 提供：
+
+```jsonl
+{"id":60,"method":"state","params":{"session_id":"s"}}
+{"id":61,"method":"update_state","params":{"session_id":"s","operation_id":"todo-edit-1","tool":"todowrite","input":{"todos":[{"content":"验证改动","status":"in_progress","priority":"high"}],"expected_revision":0}}}
+```
+
+SQLite event ledger 是唯一状态来源，没有额外 JSON 文件或第二份可变 store。每次更新在同一事务内
+检查 `expected_revision` 并提交 `session.state.updated`；revision 是该提交的 event seq。
+`expected_revision: 0` 表示尚无此类状态；省略 revision 采用 serialized last-write 行为。
+相同 Session/operation id 对账 kind/value/expected revision，精确重试返回原提交；冲突不写事件。
+model operation id 绑定 run/call；state revision 冲突返回显式工具错误，需重新读取状态。
+
+最多 128 todos，内容非空且每项最多 2 KiB，总值最多 32 KiB；goal objective 最多 8 KiB，
+evidence 最多 8 KiB，budget 最多 2 KiB。done/blocked 要求非空 evidence；引擎记录声明，不独立验证声明真实性。
+状态操作使用 SessionState capability，filesystem read-only mode 仍可更新自己的 todo/goal；
+规则可通过 `@session/state/**` 显式拒绝。不会由此授予 filesystem 写入或跨 Session authority。
+
+snapshot 包含同一 cursor 的状态；默认 fork 继承当前状态，显式历史 fork 只继承边界前状态，并生成 target revision。
+compaction 保留状态；恢复不重放状态工具，`session_state` 可核对已提交值。
+目前尚未把 todo/goal 自动注入 provider 的动态上下文；需要显式读取，cron/question/通知仍待后续实现。

@@ -15,5 +15,6 @@ pub mod provider;
 pub mod recall;
 pub mod runtime;
 mod search;
+pub mod state;
 pub mod store;
 pub mod tools;
