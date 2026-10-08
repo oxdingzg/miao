@@ -175,3 +175,145 @@ async fn state_validation_and_policy_do_not_confer_filesystem_authority() {
     let value: Value = json!({"objective":"work","status":"active"});
     assert!(Mutation::parse("goal", value).is_ok());
 }
+
+struct Capture {
+    send: tokio::sync::mpsc::Sender<miao_engine::protocol::ModelRequest>,
+}
+#[async_trait::async_trait]
+impl miao_engine::provider::Provider for Capture {
+    async fn stream(
+        &self,
+        request: miao_engine::protocol::ModelRequest,
+        _: tokio::sync::mpsc::Sender<Value>,
+        _: tokio_util::sync::CancellationToken,
+    ) -> Result<miao_engine::provider::Reply, miao_engine::provider::ProviderError> {
+        self.send.send(request).await.unwrap();
+        Ok(miao_engine::provider::Reply {
+            content: json!([{"type":"text","text":"done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+async fn finished(store: &Store, count: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if store
+                .events("s", 0, 100)
+                .await
+                .unwrap()
+                .iter()
+                .filter(|event| event.kind == "run.finished")
+                .count()
+                >= count
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+#[tokio::test]
+async fn dynamic_state_survives_compaction_and_reloads_without_changing_system_epoch() {
+    for decision in [Decision::Allow, Decision::Ask, Decision::Deny] {
+        let dir = tempfile::tempdir().unwrap();
+        let store = setup(&dir.path().join("engine.db")).await;
+        let revision = store
+            .update_state("s", "state1", todos("current-task", 0))
+            .await
+            .unwrap()["revision"]
+            .as_u64()
+            .unwrap();
+        let boundary = store
+            .message("s", "assistant", json!([{"type":"text","text":"old work"}]))
+            .await
+            .unwrap();
+        store
+            .compact("s", "compact", boundary.seq, "old summary".into())
+            .await
+            .unwrap();
+        let (send, mut receive) = tokio::sync::mpsc::channel(4);
+        let runtime = miao_engine::runtime::Runtime::with_policy(
+            store.clone(),
+            std::sync::Arc::new(Capture { send }),
+            Tools::new(dir.path()).await.unwrap(),
+            Policy::new(Config {
+                rules: vec![Rule {
+                    tool: "session_state".into(),
+                    path: "@session/state/**".into(),
+                    decision,
+                }],
+                ..Config::default()
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        runtime
+            .admit(
+                Input {
+                    session_id: "s".into(),
+                    input_id: "two".into(),
+                    prompt: "continue".into(),
+                    delivery: Delivery::Steer,
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        let first = receive.recv().await.unwrap();
+        finished(&store, 1).await;
+        let first_text = serde_json::to_string(&first.messages).unwrap();
+        assert_eq!(
+            first_text.contains("current-task"),
+            decision == Decision::Allow
+        );
+        store
+            .update_state("s", "state2", todos("changed-task", revision))
+            .await
+            .unwrap();
+        runtime
+            .admit(
+                Input {
+                    session_id: "s".into(),
+                    input_id: "three".into(),
+                    prompt: "continue again".into(),
+                    delivery: Delivery::Steer,
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        let second = receive.recv().await.unwrap();
+        finished(&store, 2).await;
+        assert_eq!(first.system, second.system);
+        let second_text = serde_json::to_string(&second.messages).unwrap();
+        assert_eq!(
+            second_text.contains("changed-task"),
+            decision == Decision::Allow
+        );
+        assert!(!second_text.contains("current-task"));
+        assert_eq!(store.context("s", None).await.unwrap().unwrap()["epoch"], 1);
+        assert!(!serde_json::to_string(&store.history("s").await.unwrap())
+            .unwrap()
+            .contains("<session-state>"));
+        let events = store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "provider.started")
+            .collect::<Vec<_>>();
+        if decision == Decision::Allow {
+            assert_ne!(
+                events[0].data["state_selection"]["fingerprint"],
+                events[1].data["state_selection"]["fingerprint"]
+            );
+        } else {
+            assert_eq!(events[0].data["state_selection"]["status"], "skipped");
+        }
+        runtime.shutdown().await;
+    }
+}

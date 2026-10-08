@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 94 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 95 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -309,4 +309,6 @@ evidence 最多 8 KiB，budget 最多 2 KiB。done/blocked 要求非空 evidence
 
 snapshot 包含同一 cursor 的状态；默认 fork 继承当前状态，显式历史 fork 只继承边界前状态，并生成 target revision。
 compaction 保留状态；恢复不重放状态工具，`session_state` 可核对已提交值。
-目前尚未把 todo/goal 自动注入 provider 的动态上下文；需要显式读取，cron/question/通知仍待后续实现。
+每个 provider boundary 在同一 SQLite read transaction 内选择 history 与 state；允许读取状态时，以独立 user-role 动态前缀注入当前值。
+此投影不写入 raw transcript，不改变稳定 system/Context Epoch；`provider.started.state_selection` 记录选用 revision 和 fingerprint。
+`session_state` read policy 为 ask/deny 时跳过注入。history+state 总预算仍为 2 MiB；cron/question/通知仍待后续实现。

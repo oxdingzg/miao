@@ -43,6 +43,15 @@ impl Store {
     /// Oversized windows fail explicitly rather than silently dropping tools or
     /// opaque reasoning. Automatic summarization is a separate policy/quality step.
     pub async fn selected_history(&self, session: &str) -> Result<Vec<Message>, Error> {
+        self.selected_input(session)
+            .await
+            .map(|(messages, _)| messages)
+    }
+
+    pub(crate) async fn selected_input(
+        &self,
+        session: &str,
+    ) -> Result<(Vec<Message>, Value), Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=conn.transaction()?;
@@ -58,7 +67,8 @@ impl Store {
                 let content:String=row.get(1)?;bytes+=content.len();if bytes>2*1024*1024||selected.len()>=1000{return Err(Error::Invalid("selected history exceeds budget; compact at a closed boundary".into()));}
                 selected.push(Message{role:row.get(0)?,content:serde_json::from_str(&content)?});
             }
-            Ok(selected)
+            let state=crate::state::projection(&tx,&session,i64::MAX as u64)?;
+            Ok((selected,state))
         }).await
     }
 }

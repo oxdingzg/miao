@@ -384,15 +384,40 @@ async fn execute(
         }
         let system = bundle.system.clone();
         let context_epoch = inner.store.select_context(session, bundle).await?;
+        let (mut history, state) = inner.store.selected_input(session).await?;
+        let state_allowed = inner.policy.evaluate(
+            "session_state",
+            "@session/state/session_state",
+            crate::permission::Access::Read,
+        ) == Decision::Allow;
+        let state_selection = if state_allowed {
+            if !state["todos"].is_null() || !state["goal"].is_null() {
+                let text=format!("<session-state>\n{}\n</session-state>\nCurrent durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",serde_json::to_string(&state)?);
+                if serde_json::to_vec(&history)?.len() + text.len() > 2 * 1024 * 1024 {
+                    return Err(Error::Invalid(
+                        "selected input including Session state exceeds budget".into(),
+                    ));
+                }
+                history.insert(
+                    0,
+                    crate::protocol::Message {
+                        role: "user".into(),
+                        content: json!([{"type":"text","text":text}]),
+                    },
+                );
+            }
+            json!({"status":"selected","todos_revision":state["todos"]["revision"],"goal_revision":state["goal"]["revision"],"fingerprint":crate::permission::digest(&serde_json::to_vec(&state)?)})
+        } else {
+            json!({"status":"skipped","reason":"state_read_policy"})
+        };
         inner
             .store
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision()}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection}),
             )
             .await?;
-        let history = inner.store.selected_history(session).await?;
         let (send, mut receive) = mpsc::channel(64);
         let response = inner.provider.stream(
             ModelRequest {
