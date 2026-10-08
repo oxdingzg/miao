@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
 import { contentParts, createSessionContent, sessionMessagePartID } from "./content"
-import type {
-  SessionMessageAssistant,
-  SessionMessageAssistantTool,
-  SessionMessageInfo,
-} from "@/utils/server"
+import type { SessionMessageAssistant, SessionMessageAssistantTool, SessionMessageInfo } from "./content"
 
 const sessionID = "ses_content"
 type AssistantContent = SessionMessageAssistant["content"]

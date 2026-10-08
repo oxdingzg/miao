@@ -1,6 +1,6 @@
 import type { Session } from "@miao/schema/view-models"
 import { preloadMarkdown } from "@miao/session-ui/markdown-cache"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 import { DateTime } from "luxon"
