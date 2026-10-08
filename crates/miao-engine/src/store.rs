@@ -295,6 +295,65 @@ impl Store {
         }).await
     }
 
+    pub async fn record(&self, session: &str, kind: &str, data: Value) -> Result<Event, Error> {
+        let (session, kind) = (session.to_owned(), kind.to_owned());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let event = append(&tx, &session, &kind, data)?;
+            tx.commit()?;
+            Ok(event)
+        })
+        .await
+    }
+
+    /// Assistant projection and every tool dispatch intent commit together.
+    /// The opaque engine key is scoped by run; provider IDs remain in history.
+    pub async fn assistant_reply(
+        &self,
+        session: &str,
+        run: &str,
+        content: Value,
+    ) -> Result<Event, Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            let tx=conn.transaction()?;
+            let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",params![run,session],|r|r.get(0))?;
+            if !active { return Err(Error::Invalid("run is not active".into())); }
+            for block in content.as_array().ok_or_else(||Error::Invalid("assistant content".into()))? {
+                if block["type"]!="tool_use" { continue; }
+                let id=block["id"].as_str().filter(|s|!s.is_empty()).ok_or_else(||Error::Invalid("tool id".into()))?;
+                let name=block["name"].as_str().ok_or_else(||Error::Invalid("tool name".into()))?;
+                let key=format!("{run}/{id}");
+                tx.execute("INSERT INTO engine_tool VALUES(?1,?2,?3,?4,'dispatched')",params![key,run,name,serde_json::to_string(&json!({"provider_id":id,"input":block["input"]}))?])?;
+                append(&tx,&session,"tool.dispatched",json!({"run_id":run,"call_id":key,"provider_id":id,"name":name}))?;
+            }
+            let event=project_message(&tx,&session,"assistant",content)?;
+            tx.commit()?;
+            Ok(event)
+        }).await
+    }
+
+    pub async fn tool_result(
+        &self,
+        session: &str,
+        run: &str,
+        provider_id: &str,
+        result: Value,
+        is_error: bool,
+    ) -> Result<Event, Error> {
+        let (session, run, id) = (session.to_owned(), run.to_owned(), provider_id.to_owned());
+        self.call(move |conn| {
+            let tx=conn.transaction()?;
+            let key=format!("{run}/{id}");
+            let changed=tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state='dispatched' AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
+            if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
+            append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"is_error":is_error}))?;
+            let event=project_message(&tx,&session,"user",json!([{"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error}]))?;
+            tx.commit()?;
+            Ok(event)
+        }).await
+    }
+
     pub async fn finish_run(&self, session: &str, run: &str, reason: &str) -> Result<Event, Error> {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
@@ -306,6 +365,7 @@ impl Store {
             if changed != 1 {
                 return Err(Error::Invalid("run is not active".into()));
             }
+            reconcile_tools(&tx, &session, &run)?;
             // An interrupted dispatched tool is unknown, not retryable.
             tx.execute(
                 "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
@@ -325,16 +385,22 @@ impl Store {
 
     /// Startup reconciliation never resumes provider work or repeats tools.
     pub async fn recover(&self) -> Result<Vec<Event>, Error> {
-        self.call(|conn| {
+        self.recover_session(None).await
+    }
+
+    pub async fn recover_session(&self, session: Option<&str>) -> Result<Vec<Event>, Error> {
+        let session = session.map(str::to_owned);
+        self.call(move |conn| {
             let tx = conn.transaction()?;
             let runs: Vec<(String, String)> = {
                 let mut stmt =
-                    tx.prepare("SELECT id,session_id FROM engine_run WHERE state='running'")?;
-                let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                    tx.prepare("SELECT id,session_id FROM engine_run WHERE state='running' AND (?1 IS NULL OR session_id=?1)")?;
+                let rows = stmt.query_map([session], |r| Ok((r.get(0)?, r.get(1)?)))?;
                 rows.collect::<Result<_, _>>()?
             };
             let mut events = Vec::new();
             for (run, session) in runs {
+                reconcile_tools(&tx, &session, &run)?;
                 tx.execute(
                     "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
                     [&run],
@@ -373,4 +439,43 @@ fn append(tx: &Transaction<'_>, session: &str, kind: &str, data: Value) -> Resul
         kind: kind.into(),
         data,
     })
+}
+
+fn project_message(
+    tx: &Transaction<'_>,
+    session: &str,
+    role: &str,
+    content: Value,
+) -> Result<Event, Error> {
+    let event = append(
+        tx,
+        session,
+        "message.committed",
+        json!({"role":role,"content":content}),
+    )?;
+    tx.execute(
+        "INSERT INTO engine_message VALUES(?1,?2,?3,?4)",
+        params![session, event.seq, role, serde_json::to_string(&content)?],
+    )?;
+    Ok(event)
+}
+
+fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(), Error> {
+    let inputs: Vec<String> = {
+        let mut stmt =
+            tx.prepare("SELECT input FROM engine_tool WHERE run_id=?1 AND state='dispatched'")?;
+        let rows = stmt.query_map([run], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut results = Vec::new();
+    for input in inputs {
+        let data: Value = serde_json::from_str(&input)?;
+        if let Some(id) = data["provider_id"].as_str() {
+            results.push(json!({"type":"tool_result","tool_use_id":id,"content":"Execution interrupted; outcome unknown. Do not automatically repeat side effects.","is_error":true}));
+        }
+    }
+    if !results.is_empty() {
+        project_message(tx, session, "user", Value::Array(results))?;
+    }
+    Ok(())
 }
