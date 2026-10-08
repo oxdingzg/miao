@@ -51,9 +51,10 @@ type TimelinePayload = Extract<
   }
 >
 
-// Removal events have no V2 producer; the app keeps the legacy bridge alive for
-// pre-V2 servers, and reducer-hardening scenarios exercise it explicitly.
-type LegacyPayloadType = "message.removed" | "message.part.removed"
+// Removal events have no V2 producer; the app keeps the legacy bridge alive
+// for pre-V2 servers, and reducer-hardening scenarios exercise it explicitly.
+// Settled-tool re-delivery goes through the same bridge.
+type LegacyPayloadType = "message.removed" | "message.part.removed" | "message.part.updated"
 type LegacyEvent = {
   directory: string
   payload: {
@@ -98,6 +99,10 @@ const legacyEventSchema = Schema.Union([
   eventSchema(
     "message.part.removed",
     Schema.Struct({ sessionID: Schema.String, messageID: Schema.String, partID: Schema.String }),
+  ),
+  eventSchema(
+    "message.part.updated",
+    Schema.Struct({ sessionID: Schema.String, messageID: Schema.String, part: SessionV1.Part }),
   ),
 ])
 const decodeLegacyEvent = Schema.decodeUnknownSync(legacyEventSchema)
@@ -433,6 +438,22 @@ function reasoningEvents(partID: string, text: string, messageID: string): Timel
   return events
 }
 
+/**
+ * Re-deliver a settled part through the legacy part bridge: V2 producers never
+ * mutate a settled tool, but pre-V2 servers re-deliver `message.part.updated`,
+ * which the app mirrors into the V2 records.
+ */
+function legacyPartUpdated(part: Extract<Part, { type: "tool" }>): LegacyEvent {
+  return {
+    directory,
+    payload: {
+      id: `evt_timeline_${String(++eventSequence).padStart(4, "0")}`,
+      type: "message.part.updated",
+      properties: { sessionID, messageID: part.messageID, part },
+    },
+  }
+}
+
 function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
   const state = part.state
   if (state.status === "pending") return []
@@ -468,7 +489,12 @@ function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
     return [started(), called(state.input)]
   }
   if (state.status === "error") {
-    if (current === "error" || current === "completed") return []
+    if (current === "error") {
+      // A settled tool can only change content through the legacy part bridge
+      // (a pre-V2 server re-delivering the part); V2 has no such mutation.
+      return [legacyPartUpdated(part)]
+    }
+    if (current === "completed") return []
     liveToolStatus.set(part.id, "error")
     const failed = v2Event("session.next.tool.failed", {
       ...base,
@@ -478,7 +504,10 @@ function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
     })
     return known ? [failed] : [started(), failed]
   }
-  if (current === "completed") return []
+  if (current === "completed") {
+    // Settled output updates re-deliver through the legacy part bridge.
+    return [legacyPartUpdated(part)]
+  }
   liveToolStatus.set(part.id, "completed")
   const success = () =>
     v2Event("session.next.tool.success", {
