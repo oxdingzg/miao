@@ -127,6 +127,28 @@ fn stdio_and_command_exit_are_preserved() {
 }
 
 #[test]
+fn cmd_command_payload_preserves_quoted_paths() {
+    let wd = unique("quoted-command").join("workspace with spaces");
+    std::fs::create_dir_all(&wd).unwrap();
+    require_sandbox!(&wd);
+    let file = wd.join("result with spaces.txt");
+    let out = run(&[
+        "--workdir",
+        &wd.to_string_lossy(),
+        "--",
+        "cmd",
+        "/d",
+        "/s",
+        "/c",
+        &format!("echo quoted-marker > \"{}\"", file.to_string_lossy()),
+    ]);
+    assert_eq!(out.code, 0, "cmd quoted payload failed: {}", out.combined);
+    assert!(std::fs::read_to_string(file)
+        .unwrap()
+        .contains("quoted-marker"));
+}
+
+#[test]
 fn powershell_can_create_and_reopen_nested_workdir_files() {
     let wd = unique("nested");
     std::fs::create_dir_all(&wd).unwrap();

@@ -11,7 +11,8 @@ use std::path::Path;
 
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, GetLastError, LocalFree, HANDLE, HLOCAL, WIN32_ERROR,
+    CloseHandle, DuplicateHandle, GetLastError, LocalFree, DUPLICATE_SAME_ACCESS, HANDLE, HLOCAL,
+    WIN32_ERROR,
 };
 use windows::Win32::Security::Authorization::{
     ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SetEntriesInAclW,
@@ -36,12 +37,12 @@ use windows::Win32::System::JobObjects::{
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows::Win32::System::Threading::{
-    CreateMutexW, CreateProcessW, DeleteProcThreadAttributeList, GetCurrentThreadId,
-    GetExitCodeProcess, InitializeProcThreadAttributeList, ReleaseMutex, ResumeThread,
-    TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED,
-    CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-    STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    CreateMutexW, CreateProcessW, DeleteProcThreadAttributeList, GetCurrentProcess,
+    GetCurrentThreadId, GetExitCodeProcess, InitializeProcThreadAttributeList, ReleaseMutex,
+    ResumeThread, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, INFINITE,
+    PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 
 use windows::Win32::System::StationsAndDesktops::{
@@ -58,6 +59,49 @@ pub enum WinError {
     Unavailable(String),
     /// Sandbox was applied but the command could not be started.
     Start(String),
+}
+
+fn command_line(command: &[String]) -> String {
+    let is_cmd = command
+        .first()
+        .and_then(|program| Path::new(program).file_name())
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("cmd") || name.eq_ignore_ascii_case("cmd.exe")
+        });
+    if is_cmd {
+        if let Some(index) = command
+            .iter()
+            .position(|arg| arg.eq_ignore_ascii_case("/c") || arg.eq_ignore_ascii_case("/k"))
+        {
+            if let Some(script) = command.get(index + 1) {
+                // cmd parses its command payload itself, not as UCRT argv.
+                // Backslash-escaping embedded quotes turns quoted paths into
+                // invalid filenames. Keep script quotes inside one outer pair.
+                let prefix = command[..=index]
+                    .iter()
+                    .map(|arg| quote_arg(arg))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let tail = command[index + 2..]
+                    .iter()
+                    .map(|arg| quote_arg(arg))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let payload = if tail.is_empty() {
+                    script.clone()
+                } else {
+                    format!("{script} {tail}")
+                };
+                return format!("{prefix} \"{payload}\"");
+            }
+        }
+    }
+    command
+        .iter()
+        .map(|arg| quote_arg(arg))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -107,6 +151,55 @@ struct AclGrant {
     target: AclTarget,
     sid: PSID,
     old_sd: *mut c_void,
+}
+
+#[derive(Default)]
+struct StdioHandles(Vec<HANDLE>);
+impl Drop for StdioHandles {
+    fn drop(&mut self) {
+        for handle in self.0.drain(..) {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+        }
+    }
+}
+fn inherited_stdio() -> Result<StdioHandles, WinError> {
+    use std::os::windows::io::AsRawHandle;
+    let mut handles = StdioHandles::default();
+    for kind in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        let original = unsafe { GetStdHandle(kind) }
+            .ok()
+            .filter(|handle| !handle.is_invalid());
+        let fallback = if original.is_none() {
+            Some(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open("NUL")
+                    .map_err(|error| WinError::Start(format!("open null stdio: {error}")))?,
+            )
+        } else {
+            None
+        };
+        let original =
+            original.unwrap_or_else(|| HANDLE(fallback.as_ref().unwrap().as_raw_handle()));
+        let mut duplicate = HANDLE::default();
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                original,
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                true,
+                DUPLICATE_SAME_ACCESS,
+            )
+            .map_err(|error| WinError::Start(format!("duplicate stdio: {}", error.message())))?;
+        }
+        handles.0.push(duplicate);
+    }
+    Ok(handles)
 }
 
 struct AclLock(HANDLE);
@@ -576,14 +669,13 @@ pub fn run(
     // Preserve the runner's pipes so managed shells initialize correctly and
     // callers receive the command's output instead of an empty result.
     startup.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
-    unsafe {
-        startup.StartupInfo.hStdInput =
-            GetStdHandle(STD_INPUT_HANDLE).map_err(|_| last_error("GetStdHandle(stdin)"))?;
-        startup.StartupInfo.hStdOutput =
-            GetStdHandle(STD_OUTPUT_HANDLE).map_err(|_| last_error("GetStdHandle(stdout)"))?;
-        startup.StartupInfo.hStdError =
-            GetStdHandle(STD_ERROR_HANDLE).map_err(|_| last_error("GetStdHandle(stderr)"))?;
-    }
+    // Hosts such as Bun make their own standard handles non-inheritable.
+    // HANDLE_LIST requires inheritable handles: duplicate them rather than
+    // mutating the host's originals, and keep only the copies alive for spawn.
+    let stdio = inherited_stdio()?;
+    startup.StartupInfo.hStdInput = stdio.0[0];
+    startup.StartupInfo.hStdOutput = stdio.0[1];
+    startup.StartupInfo.hStdError = stdio.0[2];
 
     // Inherit only stdio, never unrelated handles owned by the runner process.
     let handles = [
@@ -604,11 +696,7 @@ pub fn run(
         .map_err(|_| last_error("UpdateProcThreadAttribute(handles)"))?;
     }
 
-    let cmdline: Vec<u16> = command
-        .iter()
-        .map(|arg| quote_arg(arg))
-        .collect::<Vec<_>>()
-        .join(" ")
+    let cmdline: Vec<u16> = command_line(command)
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
