@@ -10,7 +10,9 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, LocalFree, HANDLE, HLOCAL, WIN32_ERROR,
+};
 use windows::Win32::Security::Authorization::{
     ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SetEntriesInAclW,
     SetNamedSecurityInfoW, SetSecurityInfo, EXPLICIT_ACCESS_W, GRANT_ACCESS, REVOKE_ACCESS,
@@ -18,11 +20,12 @@ use windows::Win32::Security::Authorization::{
 };
 use windows::Win32::Security::Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile};
 use windows::Win32::Security::{
-    FreeSid, ACL, DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES,
-    SID_AND_ATTRIBUTES,
+    FreeSid, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL,
+    DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES,
+    SECURITY_DESCRIPTOR, SID_AND_ATTRIBUTES,
 };
 use windows::Win32::Storage::FileSystem::{
-    DELETE, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+    DELETE, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_TRAVERSE,
 };
 use windows::Win32::System::Console::{
     GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
@@ -73,7 +76,31 @@ fn last_error(context: &str) -> WinError {
 
 enum AclTarget {
     Path(Vec<u16>),
+    Discovery(Vec<u16>),
     Window(HANDLE),
+}
+
+// This older API is intentional for non-inherited ancestor discovery: unlike
+// SetNamedSecurityInfo it does not recursively rewrite descendant ACLs.
+#[link(name = "advapi32")]
+extern "system" {
+    #[link_name = "SetFileSecurityW"]
+    fn set_file_security(path: *const u16, information: u32, descriptor: *const c_void) -> i32;
+}
+fn set_discovery_acl(path: &[u16], acl: *const ACL) -> WIN32_ERROR {
+    let mut descriptor = SECURITY_DESCRIPTOR::default();
+    let pointer = PSECURITY_DESCRIPTOR((&mut descriptor as *mut SECURITY_DESCRIPTOR).cast());
+    unsafe {
+        if InitializeSecurityDescriptor(pointer, 1).is_err()
+            || SetSecurityDescriptorDacl(pointer, true, Some(acl), false).is_err()
+        {
+            return GetLastError();
+        }
+        if set_file_security(path.as_ptr(), DACL_SECURITY_INFORMATION.0, pointer.0) == 0 {
+            return GetLastError();
+        }
+    }
+    WIN32_ERROR(0)
 }
 
 struct AclGrant {
@@ -116,7 +143,7 @@ impl Drop for AclGrant {
             let mut current: *mut ACL = std::ptr::null_mut();
             let status = unsafe {
                 match &self.target {
-                    AclTarget::Path(path) => GetNamedSecurityInfoW(
+                    AclTarget::Path(path) | AclTarget::Discovery(path) => GetNamedSecurityInfoW(
                         PCWSTR(path.as_ptr()),
                         SE_FILE_OBJECT,
                         DACL_SECURITY_INFORMATION,
@@ -162,6 +189,9 @@ impl Drop for AclGrant {
                             Some(revoked as *const ACL),
                             None,
                         ),
+                        AclTarget::Discovery(path) => {
+                            set_discovery_acl(path, revoked as *const ACL)
+                        }
                         AclTarget::Window(handle) => SetSecurityInfo(
                             *handle,
                             SE_WINDOW_OBJECT,
@@ -229,7 +259,7 @@ fn grant_acl(
     let mut old_sd = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
     let status = unsafe {
         match &target {
-            AclTarget::Path(path) => GetNamedSecurityInfoW(
+            AclTarget::Path(path) | AclTarget::Discovery(path) => GetNamedSecurityInfoW(
                 PCWSTR(path.as_ptr()),
                 SE_FILE_OBJECT,
                 DACL_SECURITY_INFORMATION,
@@ -288,6 +318,7 @@ fn grant_acl(
                 Some(new_dacl as *const ACL),
                 None,
             ),
+            AclTarget::Discovery(path) => set_discovery_acl(path, new_dacl as *const ACL),
             AclTarget::Window(handle) => SetSecurityInfo(
                 *handle,
                 SE_WINDOW_OBJECT,
@@ -326,6 +357,33 @@ fn grant_modify(path: &Path, sid: PSID, grants: &mut Grants) -> Result<(), WinEr
         windows::Win32::Security::SUB_CONTAINERS_AND_OBJECTS_INHERIT,
         grants,
     )
+}
+
+fn grant_path_discovery(path: &Path, sid: PSID, grants: &mut Grants) {
+    // GetLongPathNameW (used by managed shells for 8.3 aliases) must list/read
+    // attributes on ancestors. These grants are directory-only, not inherited:
+    // they permit canonicalization without sibling file-content or write access.
+    // Protected system ancestors can already be readable and need no new ACE;
+    // setup may not have WRITE_DAC there, so an optional grant is best-effort.
+    for parent in path
+        .ancestors()
+        .skip(1)
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        let _ = grant_acl(
+            AclTarget::Discovery(
+                parent
+                    .as_os_str()
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect(),
+            ),
+            sid,
+            (FILE_GENERIC_READ | FILE_TRAVERSE).0,
+            windows::Win32::Security::NO_INHERITANCE,
+            grants,
+        );
+    }
 }
 
 fn grant_console_objects(grants: &mut Grants, sid: PSID) -> Result<(), WinError> {
@@ -433,6 +491,7 @@ pub fn run(
     let result = (|| -> Result<(), WinError> {
         for dir in workdirs.iter().chain(allow_paths.iter()) {
             grant_modify(dir, sid, &mut grants)?;
+            grant_path_discovery(dir, sid, &mut grants);
         }
         grant_console_objects(&mut grants, sid)
     })();

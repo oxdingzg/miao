@@ -157,6 +157,64 @@ fn powershell_can_create_and_reopen_nested_workdir_files() {
 }
 
 #[test]
+fn short_aliases_resolve_without_granting_sibling_file_access() {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+    let root = unique("short-alias");
+    let wd = root.join("allowed");
+    let secret = root.join("secret.txt");
+    std::fs::create_dir_all(&wd).unwrap();
+    std::fs::write(&secret, "outside-data").unwrap();
+    let path: Vec<u16> = wd
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut buffer = vec![0u16; 32_768];
+    let length = unsafe { GetShortPathNameW(PCWSTR(path.as_ptr()), Some(&mut buffer)) } as usize;
+    assert!(
+        length > 0 && length < buffer.len(),
+        "short-path resolution failed"
+    );
+    let short = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]));
+    assert!(
+        short.to_string_lossy().contains('~'),
+        "fixture needs an 8.3 ancestor"
+    );
+    require_sandbox!(&short);
+    let output = short.join("written.txt");
+    let script = format!("$ErrorActionPreference='Stop'; Set-Content -LiteralPath '{}' -Value success; Get-Content -LiteralPath '{}'", output.to_string_lossy(), output.to_string_lossy());
+    let out = run(&[
+        "--workdir",
+        &short.to_string_lossy(),
+        "--",
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        &script,
+    ]);
+    assert_eq!(
+        out.code, 0,
+        "managed short-path access failed: {}",
+        out.combined
+    );
+    assert!(out.combined.contains("success"));
+    let denied = run(&[
+        "--workdir",
+        &short.to_string_lossy(),
+        "--",
+        "cmd",
+        "/c",
+        &format!("type {}", secret.to_string_lossy()),
+    ]);
+    assert_ne!(
+        denied.code, 0,
+        "ancestor discovery allowed sibling file contents"
+    );
+}
+
+#[test]
 fn overlapping_invocations_keep_each_others_workspace_access() {
     let wd = unique("shared-leases");
     std::fs::create_dir_all(&wd).unwrap();
