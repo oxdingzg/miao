@@ -12,6 +12,9 @@ to add a section here.
 
 ## [0.1.26] - 2026-10-08
 
+### Added
+- **sandbox**: add windows appcontainer backend (#435) (`4b416d09a`)
+
 ### Fixed
 - **ci**: enforce scoped checks and preserve reproducible environments (#444) (`aa948d4f0`)
 - **core**: coalesce scheduled machine continuations (#450) (`0dfbd394b`)
