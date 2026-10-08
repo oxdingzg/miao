@@ -6441,6 +6441,55 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("retries transient in-band provider errors before publishing assistant output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover a stream error" }), resume: false })
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.fromIterable([
+                LLMEvent.stepStart({ index: 0 }),
+                LLMEvent.providerError({ message: "internal_error: Try again", retryable: true }),
+              ])
+            : Stream.fromIterable(fragmentFixture("text", "text-recovered", ["Recovered"]).completeEvents),
+        ),
+      )
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+      expect(attempts).toBe(2)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Recover a stream error" },
+        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
+      ])
+      expect(yield* session.context(sessionID)).toHaveLength(2)
+    }),
+  )
+
+  it.effect("does not retry transient in-band errors after durable assistant output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Preserve partial output" }), resume: false })
+      requests.length = 0
+      response = [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id: "text-partial" }),
+        LLMEvent.textDelta({ id: "text-partial", text: "Partial" }),
+        LLMEvent.providerError({ message: "internal_error: Try again", retryable: true }),
+      ]
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(1)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Preserve partial output" },
+        { type: "assistant", finish: "error", content: [{ type: "text", text: "Partial" }] },
+      ])
+    }),
+  )
+
   it.effect("does not recover context overflow after durable assistant output", () =>
     Effect.gen(function* () {
       yield* setup
