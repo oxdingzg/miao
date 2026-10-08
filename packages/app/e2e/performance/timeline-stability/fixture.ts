@@ -473,6 +473,14 @@ function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
       input,
       provider: { executed: false },
     })
+  const success = () =>
+    v2Event("session.next.tool.success", {
+      ...base,
+      timestamp: nextTimestamp(),
+      structured: state.metadata ?? {},
+      content: [{ type: "text", text: state.output }],
+      provider: { executed: false },
+    })
   const current = liveToolStatus.get(part.id) ?? "pending"
   if (state.status === "running") {
     if (current === "running")
@@ -490,9 +498,16 @@ function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
   }
   if (state.status === "error") {
     if (current === "error") {
-      // A settled tool can only change content through the legacy part bridge
-      // (a pre-V2 server re-delivering the part); V2 has no such mutation.
-      return [legacyPartUpdated(part)]
+      // Re-delivery of a settled failure re-runs the tool through the V2
+      // sequence; V2 producers never mutate a settled tool.
+      liveToolStatus.set(part.id, "error")
+      const failed = v2Event("session.next.tool.failed", {
+        ...base,
+        timestamp: nextTimestamp(),
+        error: { type: "unknown", message: state.error ?? "Tool failed" },
+        provider: { executed: false },
+      })
+      return [called(state.input), failed]
     }
     if (current === "completed") return []
     liveToolStatus.set(part.id, "error")
@@ -505,18 +520,12 @@ function toolEvents(part: Extract<Part, { type: "tool" }>): TimelineEvent[] {
     return known ? [failed] : [started(), failed]
   }
   if (current === "completed") {
-    // Settled output updates re-deliver through the legacy part bridge.
-    return [legacyPartUpdated(part)]
+    // A settled tool only changes by re-running: re-drive the V2 sequence so
+    // the update lands through the record reducer like a real server would.
+    liveToolStatus.set(part.id, "completed")
+    return [called(state.input), success()]
   }
   liveToolStatus.set(part.id, "completed")
-  const success = () =>
-    v2Event("session.next.tool.success", {
-      ...base,
-      timestamp: nextTimestamp(),
-      structured: state.metadata ?? {},
-      content: [{ type: "text", text: state.output }],
-      provider: { executed: false },
-    })
   if (current === "running") return [success()]
   if (known) return [called(state.input), success()]
   return [started(), called(state.input), success()]

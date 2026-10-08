@@ -1,6 +1,7 @@
 import { base64Encode } from "@miao/core/util/encode"
 import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
+import { installSseTransport, type SseTransport } from "../utils/sse-transport"
 import { expectSessionTitle } from "../utils/waits"
 
 const directory = "C:/OpenCode/TodoDockNavigation"
@@ -17,15 +18,24 @@ const activeTodos = [
 ]
 
 type EventPayload = {
-  directory: string
-  payload: Record<string, unknown>
+  id: string
+  type: string
+  location: { directory: string }
+  data: Record<string, unknown>
 }
+
+let eventSequence = 0
 
 test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" })
 
 test("animates todo lifecycle without replaying it across session tabs", async ({ page }) => {
   test.setTimeout(90_000)
   const events: EventPayload[] = []
+  let transport: SseTransport<EventPayload> | undefined
+  const send = async (event: EventPayload) => {
+    events.push(event)
+    await transport?.send(event)
+  }
   const todos: Record<string, typeof activeTodos> = { [sourceID]: [], [otherID]: [] }
   const sessionStatus: Record<string, { type: "busy" | "idle" }> = {}
 
@@ -57,7 +67,6 @@ test("animates todo lifecycle without replaying it across session tabs", async (
       default: { providerID: "opencode", modelID: "claude-opus-4-6" },
     },
     sessions: [session(sourceID, sourceTitle, 1700000000000), session(otherID, otherTitle, 1700000001000)],
-    sessionStatus: { [sourceID]: { type: "busy" } },
     pageMessages: () => ({ items: [] }),
     events: () => events.splice(0, 1),
     eventRetry: 16,
@@ -65,20 +74,25 @@ test("animates todo lifecycle without replaying it across session tabs", async (
     todos: (sessionID) => todos[sessionID] ?? [],
   })
   await configurePage(page)
+  transport = await installSseTransport<EventPayload>(page, {
+    server: `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`,
+    retry: 16,
+  })
 
   await page.goto(sessionHref(sourceID))
   await expectSessionTitle(page, sourceTitle)
+  await transport.waitForConnection()
   const dock = page.locator('[data-component="session-todo-dock"]')
   await expect(dock).toHaveCount(0)
 
   sessionStatus[sourceID] = { type: "busy" }
-  events.push(statusEvent(sourceID, "busy"))
+  await send(statusEvent(sourceID, "busy"))
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
 
   await page.waitForTimeout(700)
   const opening = sampleDock(page, 1_000)
   todos[sourceID] = activeTodos
-  events.push(todoEvent(sourceID, activeTodos))
+  await send(todoEvent(sourceID, activeTodos))
   await expect(dock).toBeVisible()
   await expect(dock.locator('[data-state="in_progress"]')).toHaveCount(1)
   expect((await opening).some((sample) => sample.opacity > 0.05 && sample.opacity < 0.95)).toBe(true)
@@ -86,8 +100,9 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   await switchSession(page, otherID, otherTitle)
   await expect(dock).toHaveCount(0)
 
-  // Sample every frame from before the switch until the dock has shown, however long the switch takes:
-  // a replayed opening animation would make the first frame that shows the dock partly transparent.
+  // Sample continuously from before the switch until the dock has shown, however long the switch
+  // takes: a replayed opening animation would make the first sample that shows the dock partly
+  // transparent.
   await startDockSampler(page)
   await switchSession(page, sourceID, sourceTitle)
   await expect(dock).toBeVisible()
@@ -100,18 +115,18 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   const completedTodos = activeTodos.map((todo) => ({ ...todo, status: "completed" }))
   const closing = sampleDock(page, 1_000)
   todos[sourceID] = completedTodos
-  events.push(todoEvent(sourceID, completedTodos))
+  await send(todoEvent(sourceID, completedTodos))
   await expect(dock).toHaveCount(0)
   expect((await closing).some((sample) => sample.opacity > 0.05 && sample.opacity < 0.95)).toBe(true)
   todos[sourceID] = []
-  events.push(todoEvent(sourceID, []))
+  await send(todoEvent(sourceID, []))
 
   await switchSession(page, otherID, otherTitle)
   await startDockSampler(page)
   await switchSession(page, sourceID, sourceTitle)
   await expect(dock).toHaveCount(0)
-  // Keep sampling for a stretch of rendered frames after the switch, so a flash of the emptied dock
-  // is caught on a slow runner as well.
+  // Keep sampling for a stretch after the switch, so a flash of the emptied dock is caught on a
+  // slow runner as well.
   const returningEmpty = await stopDockSampler(page, 30)
   expect(returningEmpty.length).toBeGreaterThan(30)
   expect(returningEmpty.every((sample) => !sample.present)).toBe(true)
@@ -169,15 +184,19 @@ function session(id: string, title: string, created: number) {
 
 function statusEvent(sessionID: string, type: "busy" | "idle"): EventPayload {
   return {
-    directory,
-    payload: { type: "session.status", properties: { sessionID, status: { type } } },
+    id: `evt_todo_dock_${String(++eventSequence).padStart(3, "0")}`,
+    type: "session.next.status",
+    location: { directory },
+    data: { sessionID, timestamp: 1700000002000 + eventSequence * 100, status: { type } },
   }
 }
 
 function todoEvent(sessionID: string, next: typeof activeTodos): EventPayload {
   return {
-    directory,
-    payload: { type: "todo.updated", properties: { sessionID, todos: next } },
+    id: `evt_todo_dock_${String(++eventSequence).padStart(3, "0")}`,
+    type: "todo.updated",
+    location: { directory },
+    data: { sessionID, todos: next },
   }
 }
 
@@ -218,14 +237,13 @@ async function switchSession(page: Page, sessionID: string, title: string) {
 type DockSample = { present: boolean; height: number; opacity: number }
 type DockSamplerWindow = Window & { __dockSampler?: { samples: DockSample[]; stop: boolean } }
 
-// Records the dock on every rendered frame until stopped. Frame-driven rather than a fixed duration,
-// so a runner that renders slowly still records the frames around a tab switch.
+// Records the dock on a fixed ~16ms timer until stopped. Timer-driven rather than render-driven,
+// so sampling keeps running (and finishes) even if the page renders no frames.
 async function startDockSampler(page: Page) {
   await page.evaluate(() => {
     const state = { samples: [] as DockSample[], stop: false }
     ;(window as DockSamplerWindow).__dockSampler = state
-    const tick = () => {
-      if (state.stop) return
+    const sample = () => {
       const dock = document.querySelector<HTMLElement>('[data-component="session-todo-dock"]')
       const clip = dock?.parentElement?.parentElement
       const label = dock?.querySelector<HTMLElement>('[data-action="session-todo-toggle"] span[aria-label]')
@@ -234,25 +252,30 @@ async function startDockSampler(page: Page) {
         height: clip?.getBoundingClientRect().height ?? 0,
         opacity: label ? Number.parseFloat(getComputedStyle(label).opacity) : 0,
       })
-      requestAnimationFrame(tick)
+    }
+    const tick = () => {
+      if (state.stop) return
+      sample()
+      setTimeout(tick, 16)
     }
     tick()
   })
 }
 
-async function stopDockSampler(page: Page, frames: number) {
-  return page.evaluate(async (frames) => {
+async function stopDockSampler(page: Page, ticks: number) {
+  return page.evaluate(async (ticks) => {
     const state = (window as DockSamplerWindow).__dockSampler!
-    for (let index = 0; index < frames; index++) await new Promise(requestAnimationFrame)
+    for (let index = 0; index < ticks; index++) await new Promise((resolve) => setTimeout(resolve, 16))
     state.stop = true
     return state.samples
-  }, frames)
+  }, ticks)
 }
 
 function sampleDock(page: Page, duration: number) {
   return page.evaluate(async (duration) => {
-    const samples: { present: boolean; height: number; opacity: number }[] = []
+    const samples: DockSample[] = []
     const start = performance.now()
+    const next = () => new Promise((resolve) => setTimeout(resolve, 16))
     while (performance.now() - start < duration) {
       const dock = document.querySelector<HTMLElement>('[data-component="session-todo-dock"]')
       const clip = dock?.parentElement?.parentElement
@@ -262,7 +285,7 @@ function sampleDock(page: Page, duration: number) {
         height: clip?.getBoundingClientRect().height ?? 0,
         opacity: label ? Number.parseFloat(getComputedStyle(label).opacity) : 0,
       })
-      await new Promise(requestAnimationFrame)
+      await next()
     }
     return samples
   }, duration)
