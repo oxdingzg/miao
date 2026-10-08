@@ -6,6 +6,7 @@ use crate::{
     store::{RuntimeLease, Store},
     tools::{Prepared, ToolError, Tools},
 };
+use chrono::TimeZone;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
@@ -33,6 +34,7 @@ struct Inner {
     actors: Mutex<HashMap<String, Actor>>,
     jobs: Mutex<HashMap<String, Background>>,
     timers: Mutex<HashMap<String, Background>>,
+    crons: Mutex<HashMap<String, Background>>,
     job_slots: Arc<Semaphore>,
     slots: Arc<Semaphore>,
     stop: CancellationToken,
@@ -86,6 +88,7 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
             .with_process(policy.process_enabled(), policy.process_network())
@@ -106,6 +109,7 @@ impl Runtime {
         store.recover_jobs().await?;
         store.recover_questions().await?;
         store.recover_wakeups().await?;
+        store.recover_crons().await?;
         let (progress, _) = broadcast::channel(256);
         Ok(Self {
             inner: Arc::new(Inner {
@@ -118,6 +122,7 @@ impl Runtime {
                 actors: Mutex::new(HashMap::new()),
                 jobs: Mutex::new(HashMap::new()),
                 timers: Mutex::new(HashMap::new()),
+                crons: Mutex::new(HashMap::new()),
                 job_slots: Arc::new(Semaphore::new(2)),
                 slots: Arc::new(Semaphore::new(8)),
                 stop: CancellationToken::new(),
@@ -280,6 +285,10 @@ impl Runtime {
         cancel_background(&self.inner, session, id).await
     }
 
+    pub async fn cancel_cron(&self, session: &str, id: &str) -> Result<bool, Error> {
+        cancel_cron(&self.inner, session, id).await
+    }
+
     pub async fn cancel_wakeup(&self, session: &str, id: &str) -> Result<bool, Error> {
         cancel_wakeup(&self.inner, session, id).await
     }
@@ -299,6 +308,11 @@ impl Runtime {
         for (_, timer) in timers {
             timer.cancel.cancel();
             let _ = timer.join.await;
+        }
+        let crons = std::mem::take(&mut *self.inner.crons.lock().await);
+        for (_, cron) in crons {
+            cron.cancel.cancel();
+            let _ = cron.join.await;
         }
         self.inner.tools.shutdown_extensions().await;
     }
@@ -531,6 +545,22 @@ async fn execute(
                             let prepared_external =
                                 prepared.access() == crate::permission::Access::External;
                             let executed = match name {
+                                "cron_create" => {
+                                    start_cron(inner, session, run, id, &prepared).await?
+                                }
+                                "cron_list" => {
+                                    Ok(json!({"crons":inner.store.crons(session).await?}))
+                                }
+                                "cron_delete" => {
+                                    let selector =
+                                        crate::cron::Selector::parse(prepared.input().clone())
+                                            .map_err(|_| {
+                                                Error::Invalid("invalid cron selector".into())
+                                            })?;
+                                    Ok(
+                                        json!({"accepted":cancel_cron(inner,session,&selector.id).await?}),
+                                    )
+                                }
                                 "schedule_wakeup" => {
                                     start_wakeup(inner, session, run, id, &prepared).await?
                                 }
@@ -669,6 +699,157 @@ async fn execute(
     }
 }
 
+async fn notify_admission(
+    inner: &Inner,
+    session: &str,
+    admitted: &Admission,
+    event: &str,
+    data: Value,
+) -> Result<(), Error> {
+    if !admitted.pending || inner.stop.is_cancelled() {
+        return Ok(());
+    }
+    let commands = inner
+        .actors
+        .lock()
+        .await
+        .get(session)
+        .map(|actor| actor.commands.clone());
+    let Some(commands) = commands else {
+        inner.store.record(session, event, data).await?;
+        return Ok(());
+    };
+    tokio::select! {biased;_=inner.stop.cancelled()=>{},result=commands.send(Command::Wake(false))=>{if result.is_err(){inner.store.record(session,event,data).await?;}}}
+    Ok(())
+}
+async fn start_cron(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: &Prepared,
+) -> Result<Result<Value, ToolError>, Error> {
+    let input = crate::cron::Input::parse(prepared.input().clone())
+        .map_err(|_| Error::Invalid("invalid cron input".into()))?;
+    let anchor = chrono::Local::now();
+    let anchor_ms = anchor.timestamp_millis() as u64;
+    let clock = tokio::time::Instant::now();
+    let first = match crate::cron::next(input.cron.clone(), anchor).await {
+        Ok(next) => next.timestamp_millis() as u64,
+        Err(error) => return Ok(Err(ToolError::External(error.to_string()))),
+    };
+    let expires = anchor_ms.saturating_add(crate::cron::LIFETIME_MS);
+    if first >= expires {
+        return Ok(Err(ToolError::External(
+            "cron has no occurrence within seven-day lifetime".into(),
+        )));
+    }
+    let mut timers = inner.timers.lock().await;
+    timers.retain(|_, timer| !timer.join.is_finished());
+    let mut crons = inner.crons.lock().await;
+    crons.retain(|_, cron| !cron.join.is_finished());
+    if timers.len() + crons.len() >= 64
+        || timers
+            .values()
+            .chain(crons.values())
+            .filter(|timer| timer.session == session)
+            .count()
+            >= 8
+    {
+        return Ok(Err(ToolError::External(
+            "schedule capacity exceeded".into(),
+        )));
+    }
+    let pattern = input.cron.clone();
+    let recurring = input.recurring;
+    let data = inner
+        .store
+        .create_cron(
+            session,
+            run,
+            call,
+            inner.tools.location(),
+            input,
+            first..expires,
+        )
+        .await?;
+    let id = data["cron_id"]
+        .as_str()
+        .ok_or_else(|| Error::Invalid("cron id missing".into()))?
+        .to_owned();
+    if data["state"] != "scheduled" || crons.contains_key(&id) {
+        return Ok(Ok(data));
+    }
+    let mut next = data["first_occurrence_ms"]
+        .as_u64()
+        .ok_or_else(|| Error::Invalid("cron occurrence missing".into()))?;
+    let expires = data["expires_at_ms"]
+        .as_u64()
+        .ok_or_else(|| Error::Invalid("cron lifetime missing".into()))?;
+    let cancel = inner.stop.child_token();
+    let token = cancel.clone();
+    let owner = inner.clone();
+    let cron_id = id.clone();
+    let source = session.to_owned();
+    let join = tokio::spawn(async move {
+        let result=async {
+            loop {
+                let deadline=clock+std::time::Duration::from_millis(next.saturating_sub(anchor_ms));
+                let end=clock+std::time::Duration::from_millis(expires.saturating_sub(anchor_ms));
+                tokio::select!{biased;_=token.cancelled()=>{owner.store.close_cron(&source,&cron_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(end)=>{owner.store.close_cron(&source,&cron_id,"expired").await?;return Ok(());},_=tokio::time::sleep_until(deadline)=>{}}
+                if token.is_cancelled(){owner.store.close_cron(&source,&cron_id,"cancelled").await?;return Ok(());}
+                let logical_now=anchor_ms.saturating_add(clock.elapsed().as_millis().min(u64::MAX as u128) as u64);
+                if logical_now>=expires{owner.store.close_cron(&source,&cron_id,"expired").await?;return Ok(());}
+                if let Some(admitted)=owner.store.fire_cron(&source,&cron_id,next).await? {notify_admission(&owner,&source,&admitted,"cron.wake_failed",json!({"cron_id":cron_id,"input_id":admitted.input_id})).await?;}
+                if !recurring{return Ok(());}
+                // Advance from current logical time, not from the prior tick:
+                // suspension never floods the inbox with a catch-up burst.
+                let advance_after=anchor_ms.saturating_add(clock.elapsed().as_millis().min(u64::MAX as u128) as u64);
+                let after=chrono::Local.timestamp_millis_opt(advance_after as i64).single().ok_or_else(||Error::Invalid("cron clock out of range".into()))?;
+                next=crate::cron::next(pattern.clone(),after).await?.timestamp_millis() as u64;
+                owner.store.record(&source,"cron.next",json!({"cron_id":cron_id,"next_occurrence_ms":next,"advanced_after_ms":advance_after})).await?;
+            }
+        }.await;
+        if let Err(error) = result {
+            let _ = owner.store.close_cron(&source, &cron_id, "failed").await;
+            let _ = owner
+                .store
+                .record(
+                    &source,
+                    "cron.failed",
+                    json!({"cron_id":cron_id,"message":error.to_string()}),
+                )
+                .await;
+        }
+    });
+    crons.insert(
+        id,
+        Background {
+            session: session.into(),
+            cancel,
+            join,
+        },
+    );
+    Ok(Ok(data))
+}
+async fn cancel_cron(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
+    let token = inner
+        .crons
+        .lock()
+        .await
+        .get(id)
+        .filter(|cron| cron.session == session)
+        .map(|cron| cron.cancel.clone());
+    let Some(token) = token else {
+        return Ok(false);
+    };
+    let accepted = inner.store.close_cron(session, id, "cancelled").await?;
+    if accepted {
+        token.cancel();
+    }
+    Ok(accepted)
+}
+
 async fn start_wakeup(
     inner: &Arc<Inner>,
     session: &str,
@@ -680,15 +861,19 @@ async fn start_wakeup(
         .map_err(|_| Error::Invalid("invalid wakeup input".into()))?;
     let mut timers = inner.timers.lock().await;
     timers.retain(|_, timer| !timer.join.is_finished());
-    if timers.len() >= 64
+    let mut crons = inner.crons.lock().await;
+    crons.retain(|_, cron| !cron.join.is_finished());
+    if timers.len() + crons.len() >= 64
         || timers
             .values()
+            .chain(crons.values())
             .filter(|timer| timer.session == session)
             .count()
             >= 8
     {
         return Ok(Err(ToolError::External("wakeup capacity exceeded".into())));
     }
+    drop(crons);
     let data = inner
         .store
         .create_wakeup(session, run, call, inner.tools.location(), input)
@@ -715,10 +900,7 @@ async fn start_wakeup(
             tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(deadline)=>{}}
             if token.is_cancelled(){owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok(());}
             if let Some(admitted)=owner.store.fire_wakeup(&source,&timer_id).await? {
-                if admitted.pending&&!owner.stop.is_cancelled() {
-                    let commands=owner.actors.lock().await.get(&source).map(|actor|actor.commands.clone());
-                    if let Some(commands)=commands {tokio::select!{_=owner.stop.cancelled()=>{},result=commands.send(Command::Wake(false))=>{if result.is_err(){owner.store.record(&source,"wakeup.wake_failed",json!({"timer_id":timer_id,"input_id":admitted.input_id})).await?;}}}}
-                }
+                notify_admission(&owner,&source,&admitted,"wakeup.wake_failed",json!({"timer_id":timer_id,"input_id":admitted.input_id})).await?;
             }
             Ok(())
         }.await;

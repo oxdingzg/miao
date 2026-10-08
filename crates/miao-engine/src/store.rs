@@ -350,7 +350,8 @@ impl Store {
             let state=crate::state::projection(&tx,&session,cursor)?;
             let questions=crate::question::pending(&tx,&session)?;
             let wakeups=crate::wakeup::pending(&tx,&session)?;
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups});
+            let crons=crate::cron::pending(&tx,&session)?;
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await

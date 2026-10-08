@@ -97,6 +97,7 @@ pub struct Tools {
     process_enabled: bool,
     background_enabled: bool,
     wakeup_enabled: bool,
+    cron_enabled: bool,
     process_network: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
@@ -126,6 +127,7 @@ impl Tools {
             process_enabled: false,
             background_enabled: false,
             wakeup_enabled: false,
+            cron_enabled: false,
             process_network: false,
             runner: None,
             protected: vec![],
@@ -166,6 +168,11 @@ impl Tools {
         if let Some(registry) = &self.mcp {
             registry.shutdown().await;
         }
+    }
+
+    pub(crate) fn with_cron(mut self, enabled: bool) -> Self {
+        self.cron_enabled = enabled;
+        self
     }
 
     pub(crate) fn with_wakeup(mut self, enabled: bool) -> Self {
@@ -227,6 +234,20 @@ impl Tools {
                     return Err(ToolError::InvalidInput);
                 }
                 parsed.path
+            }
+            "cron_create" if self.cron_enabled => {
+                crate::cron::Input::parse(input.clone())?;
+                ".".into()
+            }
+            "cron_delete" if self.cron_enabled => {
+                crate::cron::Selector::parse(input.clone())?;
+                ".".into()
+            }
+            "cron_list" if self.cron_enabled => {
+                if input != json!({}) {
+                    return Err(ToolError::InvalidInput);
+                }
+                ".".into()
             }
             "schedule_wakeup" if self.wakeup_enabled => {
                 crate::wakeup::Input::parse(input.clone())?;
@@ -299,7 +320,14 @@ impl Tools {
             .components()
             .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
             .collect::<Result<Vec<_>, _>>()?;
-        let resource = if name == "schedule_wakeup" {
+        let resource = if name == "cron_create" || name == "cron_list" {
+            "@session/cron".into()
+        } else if name == "cron_delete" {
+            format!(
+                "@session/cron/{}",
+                crate::cron::Selector::parse(input.clone())?.id
+            )
+        } else if name == "schedule_wakeup" {
             "@session/wakeup".into()
         } else if name == "cancel_wakeup" {
             format!(
@@ -322,9 +350,11 @@ impl Tools {
         } else {
             parts.join("/")
         };
-        let access = if name == "schedule_wakeup" {
+        let access = if name == "cron_create" {
+            Access::Cron
+        } else if name == "schedule_wakeup" {
             Access::Schedule
-        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal") {
+        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete") {
             Access::SessionState
         } else if name == "start_job" {
             Access::Background
@@ -495,6 +525,13 @@ impl Tools {
             definitions.extend([
                 ToolDefinition{name:"schedule_wakeup".into(),description:"Schedule one prompt for this Session in 60..3600 seconds. Default delivery=queue. Survives turn cancel, but timers stop on process shutdown/restart. Durable admission is atomic at fire; no automatic timer replay.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","delaySeconds"],"additionalProperties":false})},
                 ToolDefinition{name:"cancel_wakeup".into(),description:"Cancel this Session's pending wakeup. A fired timer has already admitted its prompt and cannot be cancelled by this operation.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"}},"required":["timer_id"],"additionalProperties":false})},
+            ]);
+        }
+        if self.cron_enabled {
+            definitions.extend([
+                ToolDefinition{name:"cron_create".into(),description:"Schedule prompts for this Session using a numeric standard 5-field local-time cron expression. Process lifetime only, max seven days. Default recurring=true and delivery=queue. Missed ticks are not replayed; pending inputs coalesce.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"cron":{"type":"string","maxLength":256},"recurring":{"type":"boolean","default":true},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","cron"],"additionalProperties":false})},
+                ToolDefinition{name:"cron_list".into(),description:"List this Session's recent cron schedules, next occurrence, fired/skipped counts and terminal state.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
+                ToolDefinition{name:"cron_delete".into(),description:"Cancel future occurrences of this Session's cron schedule. Already admitted prompts remain durable.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})},
             ]);
         }
         if self.writes {
