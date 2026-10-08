@@ -92,11 +92,11 @@ impl Store {
                     ));
                 }
                 let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-                if version > 2 {
+                if version > 3 {
                     return Err(Error::Invalid("unsupported database schema version".into()));
                 }
 
-                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=2; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=3; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -106,7 +106,9 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_tool(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES engine_run(id), name TEXT NOT NULL, input TEXT NOT NULL, state TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_location(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),root TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_approval(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),run_id TEXT NOT NULL REFERENCES engine_run(id),call_id TEXT NOT NULL REFERENCES engine_tool(id),binding TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL);
-                    CREATE UNIQUE INDEX IF NOT EXISTS engine_pending_approval ON engine_approval(call_id) WHERE state='pending';")?;
+                    CREATE UNIQUE INDEX IF NOT EXISTS engine_pending_approval ON engine_approval(call_id) WHERE state='pending';
+                    CREATE TABLE IF NOT EXISTS engine_lineage(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),parent_session_id TEXT NOT NULL REFERENCES engine_session(id),message_seq INTEGER NOT NULL);
+                    CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);")?;
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -156,7 +158,13 @@ impl Store {
     }
 
     pub async fn admit_at(&self, input: Input, root: Option<String>) -> Result<Admission, Error> {
-        if input.session_id.is_empty() || input.input_id.is_empty() || input.prompt.is_empty() {
+        if input.session_id.is_empty()
+            || input.input_id.is_empty()
+            || input.prompt.is_empty()
+            || input.session_id.len() > 256
+            || input.input_id.len() > 256
+            || input.prompt.len() > 1024 * 1024
+        {
             return Err(Error::Invalid(
                 "session_id, input_id and prompt must be nonempty".into(),
             ));
@@ -222,6 +230,73 @@ impl Store {
             }
             tx.commit()?;
             Ok(events)
+        }).await
+    }
+
+    /// One read transaction captures a replay cursor and its projections. This
+    /// is a bounded resync view, not an unbounded transcript dump.
+    pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx=conn.transaction()?;
+            let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
+            let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
+            let messages=projected(&tx,&session,cursor)?;
+            let active:Option<String>=tx.query_row("SELECT id FROM engine_run WHERE session_id=?1 AND state='running'",[&session],|r|r.get(0)).optional()?;
+            let pending={
+                let mut stmt=tx.prepare("SELECT id,delivery,admitted_seq,substr(prompt,1,200),length(prompt)>200 FROM engine_input WHERE session_id=?1 AND state='pending' ORDER BY admitted_seq LIMIT 1001")?;
+                let rows=stmt.query_map([&session],|r|Ok(json!({"input_id":r.get::<_,String>(0)?,"delivery":r.get::<_,String>(1)?,"admitted_seq":r.get::<_,u64>(2)?,"preview":r.get::<_,String>(3)?,"truncated":r.get::<_,bool>(4)?})))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            };
+            if pending.len()>1000{return Err(Error::Invalid("snapshot pending limit; inspect inbox separately".into()));}
+            let approvals={
+                let mut stmt=tx.prepare("SELECT binding FROM engine_approval WHERE session_id=?1 AND state='pending'")?;
+                let rows=stmt.query_map([&session],|r|r.get::<_,String>(0))?;
+                rows.map(|r|Ok(serde_json::from_str::<Value>(&r?)?)).collect::<Result<Vec<_>,Error>>()?
+            };
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals});
+            if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
+            tx.commit()?;Ok(snapshot)
+        }).await
+    }
+
+    /// Fork only a closed message prefix, never executions, pending inbox,
+    /// permissions, side effects or filesystem state. Target ID reconciles an
+    /// exact retry even when the parent has advanced after the first commit.
+    pub async fn fork(
+        &self,
+        parent: &str,
+        target: &str,
+        message_seq: Option<u64>,
+    ) -> Result<Value, Error> {
+        if target.is_empty() || target.len() > 256 || parent == target {
+            return Err(Error::Invalid("invalid fork target".into()));
+        }
+        let (parent, target) = (parent.to_owned(), target.to_owned());
+        self.call(move |conn| {
+            let tx=conn.transaction()?;
+            let existing:Option<(String,u64)>=tx.query_row("SELECT parent_session_id,message_seq FROM engine_lineage WHERE session_id=?1",[&target],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if let Some((source,seq))=existing {
+                if source!=parent||message_seq.is_some_and(|requested|requested!=seq){return Err(Error::Conflict);}
+                return Ok(json!({"session_id":target,"parent_session_id":parent,"message_seq":seq,"duplicate":true}));
+            }
+            if tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",[&target],|r|r.get::<_,bool>(0))? {return Err(Error::Conflict);}
+            let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",[&parent],|r|r.get(0))?;
+            if !exists{return Err(Error::Invalid("parent Session does not exist".into()));}
+            if message_seq.is_none()&&tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",[&parent],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("active parent requires an explicit closed message boundary".into()));}
+            let seq=match message_seq {Some(seq)=>seq,None=>tx.query_row("SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",[&parent],|r|r.get(0))?};
+            if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2)",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message boundary".into()));}
+            let messages=projected(&tx,&parent,seq)?;
+            closed_prefix(&messages)?;
+            tx.execute("INSERT INTO engine_session(id) VALUES(?1)",[&target])?;
+            tx.execute("INSERT INTO engine_lineage VALUES(?1,?2,?3)",params![target,parent,seq])?;
+            tx.execute("INSERT INTO engine_location SELECT ?1,root FROM engine_location WHERE session_id=?2",params![target,parent])?;
+            append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
+            for message in messages {
+                project_message(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone())?;
+            }
+            tx.commit()?;
+            Ok(json!({"session_id":target,"parent_session_id":parent,"message_seq":seq,"duplicate":false}))
         }).await
     }
 
@@ -614,6 +689,60 @@ fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(),
             "approval.resolved",
             json!({"request_id":id,"state":"cancelled"}),
         )?;
+    }
+    Ok(())
+}
+
+fn projected(tx: &Transaction<'_>, session: &str, cursor: u64) -> Result<Vec<Value>, Error> {
+    let mut stmt=tx.prepare("SELECT seq,role,content FROM engine_message WHERE session_id=?1 AND seq<=?2 ORDER BY seq LIMIT 1001")?;
+    let mut rows = stmt.query(params![session, cursor])?;
+    let mut messages = Vec::new();
+    let mut bytes = 0;
+    while let Some(row) = rows.next()? {
+        let content: String = row.get(2)?;
+        bytes += content.len();
+        if bytes > 2 * 1024 * 1024 || messages.len() >= 1000 {
+            return Err(Error::Invalid(
+                "projection exceeds snapshot/fork limit".into(),
+            ));
+        }
+        messages.push(json!({"seq":row.get::<_,u64>(0)?,"role":row.get::<_,String>(1)?,"content":serde_json::from_str::<Value>(&content)?}));
+    }
+    Ok(messages)
+}
+
+fn closed_prefix(messages: &[Value]) -> Result<(), Error> {
+    let mut pending = std::collections::HashSet::new();
+    for message in messages {
+        for block in message["content"]
+            .as_array()
+            .ok_or_else(|| Error::Invalid("projected content".into()))?
+        {
+            match block["type"].as_str() {
+                Some("tool_use") => {
+                    let id = block["id"]
+                        .as_str()
+                        .ok_or_else(|| Error::Invalid("tool id".into()))?;
+                    if !pending.insert(id.to_owned()) {
+                        return Err(Error::Invalid("duplicate unresolved tool id".into()));
+                    }
+                }
+                Some("tool_result") => {
+                    let id = block["tool_use_id"]
+                        .as_str()
+                        .ok_or_else(|| Error::Invalid("tool result id".into()))?;
+                    if !pending.remove(id) {
+                        return Err(Error::Invalid("unmatched tool result".into()));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if !pending.is_empty() {
+        return Err(Error::Invalid(
+            "fork boundary has unresolved tool calls".into(),
+        ));
     }
     Ok(())
 }

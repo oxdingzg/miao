@@ -39,6 +39,15 @@ enum Command {
     Cancel {
         session_id: String,
     },
+    Snapshot {
+        session_id: String,
+    },
+    Fork {
+        session_id: String,
+        target_session_id: String,
+        #[serde(default)]
+        message_seq: Option<u64>,
+    },
     Events {
         session_id: String,
         #[serde(default)]
@@ -232,6 +241,8 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         Command::Admit{input,resume}=>runtime.admit(input,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
+                        Command::Snapshot{session_id}=>runtime.store().snapshot(&session_id).await,
+                        Command::Fork{session_id,target_session_id,message_seq}=>runtime.fork(&session_id,&target_session_id,message_seq).await,
                         Command::Events{session_id,after}=>runtime.store().events(&session_id,after,100).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::Subscribe{session_id,after}=>{
                             if subscriptions.len()>=64 && !subscriptions.contains_key(&session_id) {Err(Error::Invalid("subscription limit".into()))}

@@ -152,6 +152,22 @@ impl Runtime {
         Ok(admission)
     }
 
+    pub async fn fork(
+        &self,
+        parent: &str,
+        target: &str,
+        message_seq: Option<u64>,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(parent).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner.store.fork(parent, target, message_seq).await
+    }
+
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
         if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
         {
