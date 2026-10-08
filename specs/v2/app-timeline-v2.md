@@ -72,6 +72,28 @@ V2 reads (`promptInfoFromUserMessage`-style helpers already exist for the
 resend/fork flows). Acceptance: `grep -r "data.part\[" packages/app/src` is
 empty and the typecheck proves it.
 
+Execution inventory (verified on main after #401/#403/#404/#408):
+
+- Migrated to record reads: `messageAgentColor` callers (session header,
+  sidebar tint), `prompt-input` has-user check, `dialog-fork`, and the
+  home-screen markdown preloader (#408).
+- Remaining consumers need a V2-native context helper before the V1
+  stores can die: `session-context-tab`, `session-context-usage`
+  (context computation over V1 `Message[]`), the session retry flow
+  (`session.tsx` `extractPromptFromParts`), and
+  `use-session-commands`.
+- Store-surgery order once those land: delete `data.part` writes and
+  readers → merge `session_message` into `data.message`
+  (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the
+  V1 event branches in `apply()` → drop `Message`/`Part` from
+  `session-cache`/`session-trim` → remove the event-reducer V1 branches.
+- Deleting the V1 event branches also retires the legacy-bridge e2e
+  scenarios introduced by #401/#403 (settled-tool re-delivery, part
+  removals, the collapse-state diff update); redesign or drop them in
+  the same change.
+- Acceptance stays as specified above, plus the timeline-stability and
+  regression suites green locally.
+
 **Stage 4 — plugin/SDK surface.** The remaining V1 `Message` / `Part`
 view-model aliases serve only the plugin hook surface and the export format;
 they are retired with the plugin API versioning tracked in
