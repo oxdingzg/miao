@@ -57,11 +57,18 @@ describe("opencode run (non-interactive subprocess)", () => {
     "prints each completed text part in order around a tool continuation",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
+        // The stall holds the provider stream open between the tool-call deltas
+        // and the finish line. The runner publishes Tool.Input.Started right
+        // away but only flushes Text.Ended at stream end, so the projected
+        // assistant message spends several mirror passes as
+        // `[text "", tool]` — a settled text part whose content is still
+        // empty. Regression: that state must defer the print, not consume the
+        // once-per-part dedupe key, or the text is dropped entirely.
         yield* llm.push(
           reply().text("  before tool  ").tool("bash", {
             command: "printf tool-output",
             description: "Print deterministic output",
-          }),
+          }).stall(1500),
         )
         yield* llm.text("  after tool  ")
 
