@@ -147,6 +147,20 @@ records-native optimistic send). Remaining, in order:
 The regression suites to keep green: default e2e, timeline-stability,
 and the session-ui content tests.
 
+Execution state after the second pass (branch
+`refactor/stage3-final-cut`, two WIP commits, do-not-merge): the V1
+event branches, `part`/`part_text_accum_delta` stores, and
+`normalizeSessionMessages` are deleted; `data.message` holds records
+through fetch/apply and the records-native optimistic send; session-ui
+nav + Data contract + message-part last store read are flipped; the
+global-sync reducer/cache/bootstrap tests are aligned. Remaining,
+ordered: rewrite `timeline/projection.ts` over records (its
+`assistantMessagesByParent` grouping uses V1 `parentID`/`role` —
+records have neither; group by record order between user records),
+then the session.tsx resend/revert sites with the decided
+current-draft attribution, then message-nav/model tests, then the e2e
+fixture/spec redesign. The compiler enumerates everything else.
+
 Second entanglement, one layer up: `fetchMessages`/`applyMessagePage`
 shape a `MessagePage` as `{session, part, source, sourceMode,
 projectSource}` and the optimistic prompt flow books V1 parts through
