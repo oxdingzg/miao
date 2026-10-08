@@ -7,6 +7,7 @@ import { useDialog } from "@miao/ui/context/dialog"
 import { Dialog } from "@miao/ui/dialog"
 import { List } from "@miao/ui/list"
 import { showToast } from "@/utils/toast"
+import { contentParts } from "@/pages/session/timeline/content"
 import { extractPromptFromParts } from "@/utils/prompt"
 import type { TextPart as SDKTextPart } from "@miao/schema/view-models"
 import { base64Encode } from "@miao/core/util/encode"
@@ -35,13 +36,14 @@ export const DialogFork: Component = () => {
     const sessionID = params.id
     if (!sessionID) return []
 
-    const msgs = sync().data.message[sessionID] ?? []
+    const msgs = sync().data.session_message[sessionID] ?? []
+    const projected = contentParts(sessionID, msgs)
     const result: ForkableMessage[] = []
 
     for (const message of msgs) {
-      if (message.role !== "user") continue
+      if (message.type !== "user") continue
 
-      const parts = sync().data.part[message.id] ?? []
+      const parts = projected[message.id] ?? []
       const textPart = parts.find((x): x is SDKTextPart => x.type === "text" && !x.synthetic && !x.ignored)
       if (!textPart) continue
 
@@ -61,7 +63,7 @@ export const DialogFork: Component = () => {
     const sessionID = params.id
     if (!sessionID) return
 
-    const parts = sync().data.part[item.id] ?? []
+    const parts = contentParts(sessionID, sync().data.session_message[sessionID] ?? [])[item.id] ?? []
     const restored = extractPromptFromParts(parts, {
       directory: sdk().directory,
       attachmentName: language.t("common.attachment"),
