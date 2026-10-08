@@ -57,6 +57,14 @@ fn sandbox_available(workdir: &Path) -> bool {
         &format!("echo x > {target}"),
     ]);
     let fell_back = out.combined.contains("windows sandbox unavailable");
+    if std::env::var_os("MIAO_SANDBOX_REQUIRE").is_some() {
+        assert!(
+            !fell_back,
+            "required AppContainer unavailable: {}",
+            out.combined
+        );
+        assert_ne!(out.code, 0, "required outside-write denial was not applied");
+    }
     let _ = std::fs::remove_file(&probe);
     !fell_back
 }
@@ -146,6 +154,85 @@ fn powershell_can_create_and_reopen_nested_workdir_files() {
         out.combined
     );
     assert!(std::fs::read_to_string(nested).unwrap().contains("second"));
+}
+
+#[test]
+fn overlapping_invocations_keep_each_others_workspace_access() {
+    let wd = unique("shared-leases");
+    std::fs::create_dir_all(&wd).unwrap();
+    require_sandbox!(&wd);
+    let ready = wd.join("ready");
+    let release = wd.join("release");
+    let after = wd.join("after");
+    let script = format!(
+        "$ErrorActionPreference='Stop'; Set-Content -LiteralPath '{}' -Value ready; while (-not (Test-Path -LiteralPath '{}')) {{ Start-Sleep -Milliseconds 50 }}; Set-Content -LiteralPath '{}' -Value after",
+        ready.to_string_lossy(), release.to_string_lossy(), after.to_string_lossy(),
+    );
+    struct Runner(std::process::Child);
+    impl Drop for Runner {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let mut first = Runner(
+        Command::new(exe())
+            .args([
+                "--workdir",
+                &wd.to_string_lossy(),
+                "--",
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                &script,
+            ])
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !ready.exists() {
+        assert!(
+            first.0.try_wait().unwrap().is_none(),
+            "first lease exited early"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first lease never became ready"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let second = run(&[
+        "--workdir",
+        &wd.to_string_lossy(),
+        "--",
+        "cmd",
+        "/c",
+        "echo second > second.txt",
+    ]);
+    assert_eq!(second.code, 0, "second lease failed: {}", second.combined);
+    std::fs::write(release, "release").unwrap();
+    while !after.exists() {
+        if let Some(status) = first.0.try_wait().unwrap() {
+            assert!(
+                status.success(),
+                "first lease lost access after second cleanup: {status:?}"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first lease stalled after second cleanup"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        after.exists(),
+        "cleanup removed another invocation's file permissions"
+    );
+    assert!(
+        first.0.wait().unwrap().success(),
+        "first lease did not complete normally"
+    );
 }
 
 #[test]

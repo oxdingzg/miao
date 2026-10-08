@@ -201,6 +201,7 @@ jobs:
         working-directory: crates/miao-native
         env:
           MIAO_SANDBOX_NET: "1"
+          MIAO_SANDBOX_REQUIRE: "1"
 
       - name: Sandbox crate tests (Windows)
         run: cargo test --release

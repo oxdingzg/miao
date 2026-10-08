@@ -1,6 +1,6 @@
 //! Windows AppContainer + job-object sandbox backend.
 //!
-//! Creates/reuses an AppContainer, grants Modify only on the work/allow dirs,
+//! Creates an invocation-owned AppContainer, grants Modify only on the work/allow dirs,
 //! denies network unless allow_network, and runs the command inside it under a
 //! job object so the whole tree dies with miao-run.
 
@@ -10,10 +10,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, LocalFree, HLOCAL};
+use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
 use windows::Win32::Security::Authorization::{
-    ConvertStringSidToSidW, GetNamedSecurityInfoW, SetEntriesInAclW, SetNamedSecurityInfoW,
-    EXPLICIT_ACCESS_W, SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
+    ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SetEntriesInAclW,
+    SetNamedSecurityInfoW, SetSecurityInfo, EXPLICIT_ACCESS_W, GRANT_ACCESS, REVOKE_ACCESS,
+    SE_FILE_OBJECT, SE_WINDOW_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
 };
 use windows::Win32::Security::Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile};
 use windows::Win32::Security::{
@@ -32,11 +33,21 @@ use windows::Win32::System::JobObjects::{
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows::Win32::System::Threading::{
-    CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-    InitializeProcThreadAttributeList, ResumeThread, TerminateProcess, UpdateProcThreadAttribute,
-    WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
-    EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    CreateMutexW, CreateProcessW, DeleteProcThreadAttributeList, GetCurrentThreadId,
+    GetExitCodeProcess, InitializeProcThreadAttributeList, ReleaseMutex, ResumeThread,
+    TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED,
+    CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+    STARTF_USESTDHANDLES, STARTUPINFOEXW,
+};
+
+use windows::Win32::System::StationsAndDesktops::{
+    GetProcessWindowStation, GetThreadDesktop, DESKTOP_CREATEWINDOW, DESKTOP_READOBJECTS,
+    DESKTOP_WRITEOBJECTS,
+};
+
+use windows::Win32::UI::WindowsAndMessaging::{
+    WINSTA_ACCESSGLOBALATOMS, WINSTA_ENUMDESKTOPS, WINSTA_READATTRIBUTES,
 };
 
 pub enum WinError {
@@ -60,75 +71,233 @@ fn last_error(context: &str) -> WinError {
     ))
 }
 
-/// Grant the given SID `Modify` on `path`, remembering the original DACL so it
-/// can be restored on cleanup.
+enum AclTarget {
+    Path(Vec<u16>),
+    Window(HANDLE),
+}
+
 struct AclGrant {
-    path: Vec<u16>,
-    old_dacl: *mut ACL,
+    target: AclTarget,
+    sid: PSID,
     old_sd: *mut c_void,
 }
 
-fn grant_modify(path: &Path, sid: PSID, grants: &mut Vec<AclGrant>) -> Result<(), WinError> {
-    let mut wide_path = path
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<u16>>();
+struct AclLock(HANDLE);
+impl Drop for AclLock {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = ReleaseMutex(self.0);
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+fn acl_lock() -> Result<AclLock, WinError> {
+    let name = wide("Local\\miao-sandbox-acl");
+    let handle = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
+        .map_err(|_| last_error("CreateMutexW(ACL)"))?;
+    let result = unsafe { WaitForSingleObject(handle, INFINITE) };
+    if result.0 == 0 || result.0 == 0x80 {
+        return Ok(AclLock(handle));
+    }
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+    Err(last_error("WaitForSingleObject(ACL)"))
+}
 
+impl Drop for AclGrant {
+    fn drop(&mut self) {
+        // Other invocations can share the desktop/workspace. Revoke only our
+        // unique SID from the current ACL, never overwrite another lease with
+        // a stale snapshot. Lock read-modify-write across runner processes.
+        let result = (|| -> Result<(), WinError> {
+            let _lock = acl_lock()?;
+            let mut descriptor = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
+            let mut current: *mut ACL = std::ptr::null_mut();
+            let status = unsafe {
+                match &self.target {
+                    AclTarget::Path(path) => GetNamedSecurityInfoW(
+                        PCWSTR(path.as_ptr()),
+                        SE_FILE_OBJECT,
+                        DACL_SECURITY_INFORMATION,
+                        None,
+                        None,
+                        Some(&mut current),
+                        None,
+                        &mut descriptor,
+                    ),
+                    AclTarget::Window(handle) => GetSecurityInfo(
+                        *handle,
+                        SE_WINDOW_OBJECT,
+                        DACL_SECURITY_INFORMATION,
+                        None,
+                        None,
+                        Some(&mut current),
+                        None,
+                        Some(&mut descriptor),
+                    ),
+                }
+            };
+            if status.0 != 0 {
+                return Err(last_error("read ACL for revocation"));
+            }
+            let mut entry = EXPLICIT_ACCESS_W {
+                grfAccessMode: REVOKE_ACCESS,
+                ..Default::default()
+            };
+            entry.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+            entry.Trustee.TrusteeType = TRUSTEE_IS_USER;
+            entry.Trustee.ptstrName = PWSTR(self.sid.0 as *mut u16);
+            let mut revoked: *mut ACL = std::ptr::null_mut();
+            let merge = unsafe { SetEntriesInAclW(Some(&[entry]), Some(current), &mut revoked) };
+            let status = if merge.0 == 0 {
+                unsafe {
+                    match &mut self.target {
+                        AclTarget::Path(path) => SetNamedSecurityInfoW(
+                            PWSTR(path.as_mut_ptr()),
+                            SE_FILE_OBJECT,
+                            DACL_SECURITY_INFORMATION,
+                            None,
+                            None,
+                            Some(revoked as *const ACL),
+                            None,
+                        ),
+                        AclTarget::Window(handle) => SetSecurityInfo(
+                            *handle,
+                            SE_WINDOW_OBJECT,
+                            DACL_SECURITY_INFORMATION,
+                            None,
+                            None,
+                            Some(revoked as *const ACL),
+                            None,
+                        ),
+                    }
+                }
+            } else {
+                merge
+            };
+            unsafe {
+                if !revoked.is_null() {
+                    LocalFree(Some(HLOCAL(revoked as *mut c_void)));
+                }
+                if !descriptor.0.is_null() {
+                    LocalFree(Some(HLOCAL(descriptor.0)));
+                }
+            }
+            if status.0 != 0 {
+                return Err(last_error("revoke sandbox ACL"));
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            eprintln!("miao-run: failed to revoke invocation ACL");
+        }
+        unsafe {
+            if !self.old_sd.is_null() {
+                LocalFree(Some(HLOCAL(self.old_sd)));
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct Grants(Vec<AclGrant>);
+impl Grants {
+    fn push(&mut self, grant: AclGrant) {
+        self.0.push(grant);
+    }
+    fn restore(&mut self) {
+        // Restore descendants before parents so inherited entries disappear.
+        while self.0.pop().is_some() {}
+    }
+}
+impl Drop for Grants {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
+fn grant_acl(
+    target: AclTarget,
+    sid: PSID,
+    access: u32,
+    inheritance: windows::Win32::Security::ACE_FLAGS,
+    grants: &mut Grants,
+) -> Result<(), WinError> {
+    let _lock = acl_lock()?;
     let mut old_dacl: *mut ACL = std::ptr::null_mut();
     let mut old_sd = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
     let status = unsafe {
-        GetNamedSecurityInfoW(
-            PCWSTR(wide_path.as_ptr()),
-            SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION,
-            None,
-            None,
-            Some(&mut old_dacl),
-            None,
-            &mut old_sd,
-        )
+        match &target {
+            AclTarget::Path(path) => GetNamedSecurityInfoW(
+                PCWSTR(path.as_ptr()),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                Some(&mut old_dacl),
+                None,
+                &mut old_sd,
+            ),
+            AclTarget::Window(handle) => GetSecurityInfo(
+                *handle,
+                SE_WINDOW_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                Some(&mut old_dacl),
+                None,
+                Some(&mut old_sd),
+            ),
+        }
     };
     if status.0 != 0 {
         return Err(WinError::Unavailable(format!(
-            "GetNamedSecurityInfoW failed: {status:?}"
+            "read sandbox ACL failed: {status:?}"
         )));
     }
-
-    let mut entry = EXPLICIT_ACCESS_W::default();
-    entry.grfAccessPermissions =
-        (FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE).0;
-    entry.grfAccessMode = SET_ACCESS;
-    // File-provider APIs open/reopen descendants rather than only creating a
-    // directory entry. The allowlist must apply to the whole selected tree.
-    entry.grfInheritance = windows::Win32::Security::SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    let mut grant = AclGrant {
+        target,
+        sid,
+        old_sd: old_sd.0,
+    };
+    let mut entry = EXPLICIT_ACCESS_W {
+        grfAccessPermissions: access,
+        grfAccessMode: GRANT_ACCESS,
+        grfInheritance: inheritance,
+        ..Default::default()
+    };
     entry.Trustee.TrusteeForm = TRUSTEE_IS_SID;
     entry.Trustee.TrusteeType = TRUSTEE_IS_USER;
     entry.Trustee.ptstrName = PWSTR(sid.0 as *mut u16);
-
     let mut new_dacl: *mut ACL = std::ptr::null_mut();
-    let rc = unsafe { SetEntriesInAclW(Some(&[entry]), Some(old_dacl), &mut new_dacl) };
-    if rc.0 != 0 {
-        unsafe {
-            if !old_sd.0.is_null() {
-                LocalFree(Some(HLOCAL(old_sd.0)));
-            }
-        }
+    let status = unsafe { SetEntriesInAclW(Some(&[entry]), Some(old_dacl), &mut new_dacl) };
+    if status.0 != 0 {
         return Err(WinError::Unavailable(format!(
-            "SetEntriesInAclW failed: {rc:?}"
+            "SetEntriesInAclW failed: {status:?}"
         )));
     }
-
     let status = unsafe {
-        SetNamedSecurityInfoW(
-            PWSTR(wide_path.as_mut_ptr()),
-            SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION,
-            None,
-            None,
-            Some(new_dacl as *const ACL),
-            None,
-        )
+        match &mut grant.target {
+            AclTarget::Path(path) => SetNamedSecurityInfoW(
+                PWSTR(path.as_mut_ptr()),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                Some(new_dacl as *const ACL),
+                None,
+            ),
+            AclTarget::Window(handle) => SetSecurityInfo(
+                *handle,
+                SE_WINDOW_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                Some(new_dacl as *const ACL),
+                None,
+            ),
+        }
     };
     unsafe {
         if !new_dacl.is_null() {
@@ -136,42 +305,52 @@ fn grant_modify(path: &Path, sid: PSID, grants: &mut Vec<AclGrant>) -> Result<()
         }
     }
     if status.0 != 0 {
-        unsafe {
-            if !old_sd.0.is_null() {
-                LocalFree(Some(HLOCAL(old_sd.0)));
-            }
-        }
         return Err(WinError::Unavailable(format!(
-            "SetNamedSecurityInfoW failed: {status:?}"
+            "set sandbox ACL failed: {status:?}"
         )));
     }
-
-    grants.push(AclGrant {
-        path: wide_path,
-        old_dacl,
-        old_sd: old_sd.0,
-    });
+    grants.push(grant);
     Ok(())
 }
 
-fn restore_grants(grants: &[AclGrant]) {
-    for grant in grants {
-        let mut path = grant.path.clone();
-        let _ = unsafe {
-            SetNamedSecurityInfoW(
-                PWSTR(path.as_mut_ptr()),
-                SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION,
-                None,
-                None,
-                Some(grant.old_dacl as *const ACL),
-                None,
-            )
-        };
-        if !grant.old_sd.is_null() {
-            unsafe { LocalFree(Some(HLOCAL(grant.old_sd))) };
-        }
-    }
+fn grant_modify(path: &Path, sid: PSID, grants: &mut Grants) -> Result<(), WinError> {
+    grant_acl(
+        AclTarget::Path(
+            path.as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect(),
+        ),
+        sid,
+        (FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE).0,
+        windows::Win32::Security::SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        grants,
+    )
+}
+
+fn grant_console_objects(grants: &mut Grants, sid: PSID) -> Result<(), WinError> {
+    // Managed console runtimes load user32. An SSH/service desktop may exclude
+    // AppContainer SIDs, producing STATUS_DLL_INIT_FAILED before main runs.
+    // Grant this invocation only the initialization rights, not clipboard,
+    // hook, or journaling permissions and not global package-group access.
+    let station =
+        unsafe { GetProcessWindowStation() }.map_err(|_| last_error("GetProcessWindowStation"))?;
+    grant_acl(
+        AclTarget::Window(HANDLE(station.0)),
+        sid,
+        (WINSTA_READATTRIBUTES | WINSTA_ENUMDESKTOPS | WINSTA_ACCESSGLOBALATOMS) as u32,
+        windows::Win32::Security::NO_INHERITANCE,
+        grants,
+    )?;
+    let desktop = unsafe { GetThreadDesktop(GetCurrentThreadId()) }
+        .map_err(|_| last_error("GetThreadDesktop"))?;
+    grant_acl(
+        AclTarget::Window(HANDLE(desktop.0)),
+        sid,
+        DESKTOP_READOBJECTS.0 | DESKTOP_WRITEOBJECTS.0 | DESKTOP_CREATEWINDOW.0,
+        windows::Win32::Security::NO_INHERITANCE,
+        grants,
+    )
 }
 
 fn capability_sid(name: &str) -> Option<PSID> {
@@ -250,15 +429,15 @@ pub fn run(
     let _container = Container { name, sid };
 
     // 2. Write allowlist: grant Modify on workdirs + allow_paths.
-    let mut grants: Vec<AclGrant> = Vec::new();
+    let mut grants = Grants::default();
     let result = (|| -> Result<(), WinError> {
         for dir in workdirs.iter().chain(allow_paths.iter()) {
             grant_modify(dir, sid, &mut grants)?;
         }
-        Ok(())
+        grant_console_objects(&mut grants, sid)
     })();
     if let Err(error) = result {
-        restore_grants(&grants);
+        grants.restore();
         return Err(error);
     }
 
@@ -291,7 +470,7 @@ pub fn run(
     let job = match job {
         Ok(handle) => handle,
         Err(_) => {
-            restore_grants(&grants);
+            grants.restore();
             return Err(last_error("CreateJobObjectW"));
         }
     };
@@ -406,7 +585,7 @@ pub fn run(
         DeleteProcThreadAttributeList(attr_list);
     }
     if create.is_err() {
-        restore_grants(&grants);
+        grants.restore();
         unsafe {
             let _ = CloseHandle(job);
         }
@@ -422,7 +601,7 @@ pub fn run(
             let _ = CloseHandle(process_info.hThread);
             let _ = CloseHandle(job);
         }
-        restore_grants(&grants);
+        grants.restore();
         return Err(WinError::Start("AssignProcessToJobObject failed".into()));
     }
 
@@ -434,7 +613,7 @@ pub fn run(
             let _ = CloseHandle(process_info.hThread);
             let _ = CloseHandle(job);
         }
-        restore_grants(&grants);
+        grants.restore();
         return Err(WinError::Start("ResumeThread failed".into()));
     }
 
@@ -450,7 +629,7 @@ pub fn run(
         let _ = CloseHandle(job);
     }
 
-    restore_grants(&grants);
+    grants.restore();
     for value in capability_sids {
         unsafe { LocalFree(Some(HLOCAL(value.0 as *mut c_void))) };
     }
