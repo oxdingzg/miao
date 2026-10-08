@@ -60,8 +60,8 @@ test("prompt receipt distinguishes sending, failure and durable admission", asyn
     expect(app.captureCharFrame()).toContain("Network unavailable")
     receipts.admit("msg_test")
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("RECEIVED · waiting for the next safe turn")
-    expect(app.captureCharFrame()).toMatch(/RECEIVED · waiting for the next safe turn · \d/)
+    expect(app.captureCharFrame()).toContain("RECEIVED · joins at the next safe turn")
+    expect(app.captureCharFrame()).toMatch(/RECEIVED · joins at the next safe turn · esc removes waiting prompts, newest first · \d/)
     expect(app.captureCharFrame()).not.toContain("SEND FAILED")
   } finally {
     app.renderer.destroy()

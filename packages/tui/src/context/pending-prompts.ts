@@ -57,6 +57,14 @@ export function createPendingPrompts() {
         }),
       )
     },
+    // Durably admitted prompts still waiting for promotion, oldest first.
+    // In-flight ("sending") receipts are excluded: the server may not have
+    // admitted them yet, so cancelling one is a race.
+    waiting(sessionID: string): PendingPrompt[] {
+      return Object.values(data)
+        .filter((prompt) => prompt.sessionID === sessionID && prompt.state === "admitted")
+        .toSorted((a, b) => a.info.time.created - b.info.time.created || a.info.id.localeCompare(b.info.id))
+    },
     messages(sessionID: string, projected: ReadonlyArray<SessionMessage>): SessionMessage[] {
       const ids = new Set(projected.map((message) => message.id))
       const pending = Object.values(data)

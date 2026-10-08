@@ -1258,6 +1258,13 @@ export type SessionsInputsOutput = {
   readonly hasMore: boolean
 }
 
+export type SessionsInputCancelInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+}
+
+export type SessionsInputCancelOutput = { readonly cancelled: boolean }
+
 export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsStatusOutput = {
@@ -1531,6 +1538,14 @@ export type SessionsHistoryOutput = {
           }
           readonly delivery: "steer" | "queue"
         }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.prompt.cancelled"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
       }
     | {
         readonly id: string
@@ -2186,6 +2201,14 @@ export type SessionsEventsOutput =
         }
         readonly delivery: "steer" | "queue"
       }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.prompt.cancelled"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
     }
   | {
       readonly id: string

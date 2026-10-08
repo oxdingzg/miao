@@ -162,6 +162,7 @@ export function Prompt(props: PromptProps) {
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
+  const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
@@ -455,7 +456,7 @@ export function Prompt(props: PromptProps) {
         name: "session.interrupt",
         category: "Session",
         hidden: true,
-        enabled: status().type !== "idle",
+        enabled: status().type !== "idle" || waitingPrompts().length > 0,
         run: () => {
           if (auto()?.visible) return
           if (!input.focused) return
@@ -465,6 +466,29 @@ export function Prompt(props: PromptProps) {
             return
           }
           if (!props.sessionID) return
+
+          // One esc only cancels the newest waiting prompt, like Claude Code;
+          // the running turn is only interrupted once nothing is waiting, so a
+          // burst of queued prompts can be walked back one at a time.
+          const newest = waitingPrompts().at(-1)
+          if (newest) {
+            void sdk.api.sessions
+              .inputCancel({ sessionID: props.sessionID, messageID: newest.info.id })
+              .then((response) => {
+                if (!response.cancelled) return
+                sync.prompt.remove(newest.info.id)
+                // Take the text back into an empty composer so a cancelled
+                // prompt stays editable instead of lost. Attachments do not
+                // survive the round trip and stay cancelled.
+                if (store.prompt.input === "" && newest.info.text && !newest.info.files?.length)
+                  input.setText(newest.info.text)
+              })
+              .catch(() =>
+                toast.show({ message: "Cancel failed: session runtime unreachable", variant: "error" }),
+              )
+            dialog.clear()
+            return
+          }
 
           // A rejected interrupt (server 500, runtime unreachable) must not
           // kill the TUI: Bun exits the process on an unhandled rejection.
@@ -1618,7 +1642,12 @@ export function Prompt(props: PromptProps) {
                   <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                 </Show>
                 <text fg={theme.text}>
-                  esc <span style={{ fg: theme.textMuted }}>interrupt</span>
+                  esc{" "}
+                  <span style={{ fg: theme.textMuted }}>
+                    {waitingPrompts().length > 0
+                      ? `cancel waiting (${waitingPrompts().length})`
+                      : "interrupt"}
+                  </span>
                 </text>
               </box>
             </Match>

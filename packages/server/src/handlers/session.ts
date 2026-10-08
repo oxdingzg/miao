@@ -553,6 +553,24 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.inputCancel",
+        Effect.fn(function* (ctx) {
+          const cancelled = yield* session
+            .cancelInput({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
+          return { cancelled }
+        }),
+      )
+      .handle(
         "session.status",
         Effect.fn(function* (ctx) {
           return {
