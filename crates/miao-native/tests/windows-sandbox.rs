@@ -305,6 +305,9 @@ fn child_tree_killed_with_miaorun() {
             seen = true;
             break;
         }
+        if let Some(status) = child.try_wait().expect("poll miao-run") {
+            panic!("heartbeat command exited before writing: {status:?}");
+        }
     }
     if !seen {
         let _ = child.kill();
