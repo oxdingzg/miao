@@ -128,6 +128,25 @@ the tool-state settled-re-delivery cases re-sequence to V2-native
 scenarios drop, and collapse-state's diff-count update half drops with
 its sibling-streaming half retained.
 
+Execution state (branch `refactor/stage3-final-cut`, WIP commit
+4d588fd91, do-not-merge): the V1 event branches, `normalizeSessionMessages`,
+`part`/`part_text_accum_delta` stores, and the legacy mirrors are
+deleted; `data.message` holds records end to end (fetch, apply,
+records-native optimistic send). Remaining, in order:
+
+1. Product-decision sites (compiler-enumerated, session.tsx
+   :574/:654/:829/:1973/:2112, message-timeline :336/:957/:1069): the
+   resend and revert flows read agent/model/summary from the V1 user
+   message; V2 user records carry none. Decide: resend uses the current
+   draft's agent/model (recommended) or a record-carried attribution
+   lands first.
+2. The optimistic-remove settle and the unit tests
+   (server-session.test.ts optimistic/normalize cases).
+3. The e2e fixture/spec redesign per the map above.
+
+The regression suites to keep green: default e2e, timeline-stability,
+and the session-ui content tests.
+
 Second entanglement, one layer up: `fetchMessages`/`applyMessagePage`
 shape a `MessagePage` as `{session, part, source, sourceMode,
 projectSource}` and the optimistic prompt flow books V1 parts through
