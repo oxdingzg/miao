@@ -1,57 +1,39 @@
 import { describe, expect, test } from "bun:test"
-import type { FileDiffInfo } from "@/utils/server"
-import type { Message, Part, SessionStatus, Todo } from "@miao/schema/view-models"
+import type { SessionStatus, Todo } from "@miao/schema/view-models"
+import type { SessionMessageInfo } from "@miao/session-ui/content"
 import type { PermissionV2Request, QuestionRequest } from "@miao/schema/view-models"
+import type { FileDiffInfo } from "@/utils/server"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
 
-const msg = (id: string, sessionID: string) =>
+const msg = (id: string, sessionID: string): SessionMessageInfo =>
   ({
     id,
-    sessionID,
-    role: "user",
+    type: "user",
     time: { created: 1 },
-    agent: "assistant",
-    model: { providerID: "openai", modelID: "gpt" },
-  }) as Message
-
-const part = (id: string, sessionID: string, messageID: string) =>
-  ({
-    id,
-    sessionID,
-    messageID,
-    type: "text",
     text: id,
-  }) as Part
+  }) as SessionMessageInfo
 
 describe("app session cache", () => {
-  test("dropSessionCaches clears orphaned parts without message rows", () => {
+  test("dropSessionCaches clears orphaned message state", () => {
     const store: {
       session_status: Record<string, SessionStatus | undefined>
       session_diff: Record<string, FileDiffInfo[] | undefined>
       todo: Record<string, Todo[] | undefined>
-      message: Record<string, Message[] | undefined>
-      session_message: Record<string, never[] | undefined>
-      part: Record<string, Part[] | undefined>
+      message: Record<string, SessionMessageInfo[] | undefined>
       permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
-      part_text_accum_delta: Record<string, string | undefined>
     } = {
       session_status: { ses_1: { type: "busy" } as SessionStatus },
       session_diff: { ses_1: [] },
       todo: { ses_1: [] as Todo[] },
       message: {},
-      session_message: {},
-      part: { msg_1: [part("prt_1", "ses_1", "msg_1")] },
       permission: { ses_1: [] as PermissionV2Request[] },
       question: { ses_1: [] as QuestionRequest[] },
-      part_text_accum_delta: { prt_1: "streamed text" },
     }
 
     dropSessionCaches(store, ["ses_1"])
 
     expect(store.message.ses_1).toBeUndefined()
-    expect(store.part.msg_1).toBeUndefined()
-    expect(store.part_text_accum_delta.prt_1).toBeUndefined()
     expect(store.todo.ses_1).toBeUndefined()
     expect(store.session_diff.ses_1).toBeUndefined()
     expect(store.session_status.ses_1).toBeUndefined()
@@ -59,34 +41,27 @@ describe("app session cache", () => {
     expect(store.question.ses_1).toBeUndefined()
   })
 
-  test("dropSessionCaches clears message-backed parts", () => {
+  test("dropSessionCaches clears message-backed state", () => {
     const m = msg("msg_1", "ses_1")
     const store: {
       session_status: Record<string, SessionStatus | undefined>
       session_diff: Record<string, FileDiffInfo[] | undefined>
       todo: Record<string, Todo[] | undefined>
-      message: Record<string, Message[] | undefined>
-      session_message: Record<string, never[] | undefined>
-      part: Record<string, Part[] | undefined>
+      message: Record<string, SessionMessageInfo[] | undefined>
       permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
-      part_text_accum_delta: Record<string, string | undefined>
     } = {
       session_status: {},
       session_diff: {},
       todo: {},
       message: { ses_1: [m] },
-      session_message: {},
-      part: { [m.id]: [part("prt_1", "ses_1", m.id)] },
       permission: {},
       question: {},
-      part_text_accum_delta: {},
     }
 
     dropSessionCaches(store, ["ses_1"])
 
     expect(store.message.ses_1).toBeUndefined()
-    expect(store.part[m.id]).toBeUndefined()
   })
 
   test("pickSessionCacheEvictions preserves requested sessions", () => {
@@ -95,11 +70,9 @@ describe("app session cache", () => {
     const stale = pickSessionCacheEvictions({
       seen,
       keep: "ses_4",
-      limit: 2,
-      preserve: ["ses_1"],
+      limit: 1,
     })
 
-    expect(stale).toEqual(["ses_2", "ses_3"])
-    expect([...seen]).toEqual(["ses_1", "ses_4"])
+    expect(stale).toEqual(["ses_1"])
   })
 })

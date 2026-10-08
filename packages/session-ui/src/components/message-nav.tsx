@@ -1,4 +1,3 @@
-import type { UserMessage } from "@miao/schema/view-models"
 import { HoverCard } from "@kobalte/core/hover-card"
 import { ComponentProps, For, Match, Show, createSignal, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "@miao/ui/diff-changes"
@@ -6,18 +5,18 @@ import { useI18n } from "@miao/ui/context/i18n"
 
 export function MessageNav(
   props: ComponentProps<"ul"> & {
-    messages: UserMessage[]
-    current?: UserMessage
+    messages: SessionMessageUser[]
+    current?: SessionMessageUser
     size: "normal" | "compact"
-    onMessageSelect: (message: UserMessage) => void
-    getLabel?: (message: UserMessage) => string | undefined
+    onMessageSelect: (message: SessionMessageUser) => void
+    getLabel?: (message: SessionMessageUser) => string | undefined
   },
 ) {
   const i18n = useI18n()
   const [local, others] = splitProps(props, ["messages", "current", "size", "onMessageSelect", "getLabel", "class"])
   const [hovercardOpen, setHovercardOpen] = createSignal(false)
 
-  const selectMessage = (message: UserMessage) => {
+  const selectMessage = (message: SessionMessageUser) => {
     setHovercardOpen(false)
     local.onMessageSelect(message)
   }
