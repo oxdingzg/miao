@@ -96,6 +96,7 @@ pub struct Tools {
     writes: bool,
     process_enabled: bool,
     background_enabled: bool,
+    wakeup_enabled: bool,
     process_network: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
@@ -124,6 +125,7 @@ impl Tools {
             writes: false,
             process_enabled: false,
             background_enabled: false,
+            wakeup_enabled: false,
             process_network: false,
             runner: None,
             protected: vec![],
@@ -164,6 +166,11 @@ impl Tools {
         if let Some(registry) = &self.mcp {
             registry.shutdown().await;
         }
+    }
+
+    pub(crate) fn with_wakeup(mut self, enabled: bool) -> Self {
+        self.wakeup_enabled = enabled;
+        self
     }
 
     pub(crate) fn with_background(mut self, enabled: bool) -> Self {
@@ -220,6 +227,14 @@ impl Tools {
                     return Err(ToolError::InvalidInput);
                 }
                 parsed.path
+            }
+            "schedule_wakeup" if self.wakeup_enabled => {
+                crate::wakeup::Input::parse(input.clone())?;
+                ".".into()
+            }
+            "cancel_wakeup" if self.wakeup_enabled => {
+                crate::wakeup::Selector::parse(input.clone())?;
+                ".".into()
             }
             "question" => {
                 crate::question::Input::parse(input.clone())?;
@@ -284,7 +299,14 @@ impl Tools {
             .components()
             .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
             .collect::<Result<Vec<_>, _>>()?;
-        let resource = if name == "question" {
+        let resource = if name == "schedule_wakeup" {
+            "@session/wakeup".into()
+        } else if name == "cancel_wakeup" {
+            format!(
+                "@session/wakeup/{}",
+                crate::wakeup::Selector::parse(input.clone())?.timer_id
+            )
+        } else if name == "question" {
             "@session/question".into()
         } else if name == "session_state" || name == "todowrite" || name == "goal" {
             format!("@session/state/{name}")
@@ -300,7 +322,9 @@ impl Tools {
         } else {
             parts.join("/")
         };
-        let access = if name == "todowrite" || name == "goal" {
+        let access = if name == "schedule_wakeup" {
+            Access::Schedule
+        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal") {
             Access::SessionState
         } else if name == "start_job" {
             Access::Background
@@ -467,6 +491,12 @@ impl Tools {
             ToolDefinition{name:"goal".into(),description:"Record this Session's durable objective/status/evidence/budget. done and blocked require evidence. Optional expected_revision protects against stale writes; evidence is recorded, not independently verified.".into(),input_schema:json!({"type":"object","properties":{"objective":{"type":"string"},"status":{"type":"string","enum":["active","paused","blocked","done"]},"evidence":{"type":"string"},"budget":{"type":"string"},"expected_revision":{"type":"integer","minimum":0}},"required":["objective","status"],"additionalProperties":false})},
         ]);
         definitions.push(ToolDefinition{name:"question".into(),description:"Ask 1..4 bounded choice questions. Answers arrive through the authenticated local controller. Waiting is interruptible; no automatic replay after crash. multiSelect permits multiple labels; custom permits a typed answer.".into(),input_schema:json!({"type":"object","properties":{"questions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"],"additionalProperties":false}},"multiSelect":{"type":"boolean","default":false},"custom":{"type":"boolean","default":true}},"required":["question","options"],"additionalProperties":false}},"timeout_ms":{"type":"integer","minimum":1,"maximum":600000,"default":60000}},"required":["questions"],"additionalProperties":false})});
+        if self.wakeup_enabled {
+            definitions.extend([
+                ToolDefinition{name:"schedule_wakeup".into(),description:"Schedule one prompt for this Session in 60..3600 seconds. Default delivery=queue. Survives turn cancel, but timers stop on process shutdown/restart. Durable admission is atomic at fire; no automatic timer replay.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","delaySeconds"],"additionalProperties":false})},
+                ToolDefinition{name:"cancel_wakeup".into(),description:"Cancel this Session's pending wakeup. A fired timer has already admitted its prompt and cannot be cancelled by this operation.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"}},"required":["timer_id"],"additionalProperties":false})},
+            ]);
+        }
         if self.writes {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},

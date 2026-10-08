@@ -164,39 +164,13 @@ impl Store {
     }
 
     pub async fn admit_at(&self, input: Input, root: Option<String>) -> Result<Admission, Error> {
-        if input.session_id.is_empty()
-            || input.input_id.is_empty()
-            || input.prompt.is_empty()
-            || input.session_id.len() > 256
-            || input.input_id.len() > 256
-            || input.prompt.len() > 1024 * 1024
-        {
-            return Err(Error::Invalid(
-                "session_id, input_id and prompt must be nonempty".into(),
-            ));
-        }
         self.call(move |conn| {
-            let tx=conn.transaction()?;
-            let existing:Option<(String,String,String,u64,String)>=tx.query_row("SELECT session_id,prompt,delivery,admitted_seq,state FROM engine_input WHERE id=?1",[&input.input_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?;
-            let delivery=match input.delivery {Delivery::Steer=>"steer",Delivery::Queue=>"queue"};
-            if let Some((session,prompt,mode,_,_))=&existing {
-                if session!=&input.session_id||prompt!=&input.prompt||mode!=delivery {return Err(Error::Conflict);}
-            }
-            tx.execute("INSERT OR IGNORE INTO engine_session(id) VALUES(?1)",[&input.session_id])?;
-            if let Some(root)=root {
-                let placement:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&input.session_id],|r|r.get(0)).optional()?;
-                if placement.is_some_and(|r|r!=root) {return Err(Error::Conflict);}
-                tx.execute("INSERT OR IGNORE INTO engine_location VALUES(?1,?2)",params![input.session_id,root])?;
-            }
-            if let Some((_,_,_,seq,state))=existing {
-                tx.commit()?;
-                return Ok(Admission{input_id:input.input_id,admitted_seq:seq,duplicate:true,pending:state=="pending"});
-            }
-            let event=append(&tx,&input.session_id,"input.admitted",json!({"input_id":input.input_id,"delivery":delivery}))?;
-            tx.execute("INSERT INTO engine_input VALUES(?1,?2,?3,?4,'pending',?5)",params![input.input_id,input.session_id,input.prompt,delivery,event.seq])?;
+            let tx = conn.transaction()?;
+            let admission = admit_input(&tx, &input, root.as_deref())?;
             tx.commit()?;
-            Ok(Admission{input_id:input.input_id,admitted_seq:event.seq,duplicate:false,pending:true})
-        }).await
+            Ok(admission)
+        })
+        .await
     }
 
     pub async fn location(&self, session: &str) -> Result<Option<String>, Error> {
@@ -375,7 +349,8 @@ impl Store {
             let context=context.map(|(epoch,fingerprint,sources)|Ok::<_,Error>(json!({"epoch":epoch,"fingerprint":fingerprint,"sources":serde_json::from_str::<Value>(&sources)?}))).transpose()?;
             let state=crate::state::projection(&tx,&session,cursor)?;
             let questions=crate::question::pending(&tx,&session)?;
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions});
+            let wakeups=crate::wakeup::pending(&tx,&session)?;
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -745,6 +720,98 @@ impl Store {
         })
         .await
     }
+}
+
+pub(crate) fn admit_input(
+    tx: &Transaction<'_>,
+    input: &Input,
+    root: Option<&str>,
+) -> Result<Admission, Error> {
+    if input.session_id.is_empty()
+        || input.input_id.is_empty()
+        || input.prompt.is_empty()
+        || input.session_id.len() > 256
+        || input.input_id.len() > 256
+        || input.prompt.len() > 1024 * 1024
+    {
+        return Err(Error::Invalid(
+            "session_id, input_id and prompt must be nonempty".into(),
+        ));
+    }
+    let existing: Option<(String, String, String, u64, String)> = tx
+        .query_row(
+            "SELECT session_id,prompt,delivery,admitted_seq,state FROM engine_input WHERE id=?1",
+            [&input.input_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    let delivery = match input.delivery {
+        Delivery::Steer => "steer",
+        Delivery::Queue => "queue",
+    };
+    if let Some((session, prompt, mode, _, _)) = &existing {
+        if session != &input.session_id || prompt != &input.prompt || mode != delivery {
+            return Err(Error::Conflict);
+        }
+    }
+    tx.execute(
+        "INSERT OR IGNORE INTO engine_session(id) VALUES(?1)",
+        [&input.session_id],
+    )?;
+    if let Some(root) = root {
+        let placement: Option<String> = tx
+            .query_row(
+                "SELECT root FROM engine_location WHERE session_id=?1",
+                [&input.session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if placement.is_some_and(|placement| placement != root) {
+            return Err(Error::Conflict);
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO engine_location VALUES(?1,?2)",
+            params![input.session_id, root],
+        )?;
+    }
+    if let Some((_, _, _, seq, state)) = existing {
+        return Ok(Admission {
+            input_id: input.input_id.clone(),
+            admitted_seq: seq,
+            duplicate: true,
+            pending: state == "pending",
+        });
+    }
+    let event = append(
+        tx,
+        &input.session_id,
+        "input.admitted",
+        json!({"input_id":input.input_id,"delivery":delivery}),
+    )?;
+    tx.execute(
+        "INSERT INTO engine_input VALUES(?1,?2,?3,?4,'pending',?5)",
+        params![
+            input.input_id,
+            input.session_id,
+            input.prompt,
+            delivery,
+            event.seq
+        ],
+    )?;
+    Ok(Admission {
+        input_id: input.input_id.clone(),
+        admitted_seq: event.seq,
+        duplicate: false,
+        pending: true,
+    })
 }
 
 pub(crate) fn append(

@@ -28,6 +28,7 @@ pub enum Access {
     Background,
     External,
     SessionState,
+    Schedule,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +51,8 @@ pub struct Config {
     #[serde(default)]
     pub allow_mcp: bool,
     #[serde(default)]
+    pub allow_wakeup: bool,
+    #[serde(default)]
     pub process_network: bool,
     #[serde(default)]
     pub rules: Vec<Rule>,
@@ -66,6 +69,7 @@ impl Default for Config {
             allow_process: false,
             allow_background: false,
             allow_mcp: false,
+            allow_wakeup: false,
             process_network: false,
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
@@ -141,6 +145,10 @@ impl Policy {
         self.process_enabled() && self.config.allow_background
     }
 
+    pub fn wakeup_enabled(&self) -> bool {
+        self.config.allow_wakeup
+    }
+
     pub fn mcp_enabled(&self) -> bool {
         self.config.mode == Mode::Workspace && self.config.allow_mcp
     }
@@ -156,7 +164,8 @@ impl Policy {
     /// The mode is an upper bound. Explicit deny dominates ask and allow;
     /// absent matching rules, reads allow and workspace writes ask.
     pub fn evaluate(&self, tool: &str, path: &str, access: Access) -> Decision {
-        if (access == Access::Execute && !self.process_enabled())
+        if (access == Access::Schedule && !self.wakeup_enabled())
+            || (access == Access::Execute && !self.process_enabled())
             || (access == Access::Background && !self.background_enabled())
             || (access == Access::External && !self.mcp_enabled())
             || (access == Access::Write && self.config.mode == Mode::ReadOnly)

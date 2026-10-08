@@ -32,6 +32,7 @@ struct Inner {
     tools: Tools,
     actors: Mutex<HashMap<String, Actor>>,
     jobs: Mutex<HashMap<String, Background>>,
+    timers: Mutex<HashMap<String, Background>>,
     job_slots: Arc<Semaphore>,
     slots: Arc<Semaphore>,
     stop: CancellationToken,
@@ -85,6 +86,7 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
             .with_process(policy.process_enabled(), policy.process_network())
             .with_background(policy.background_enabled())
@@ -103,6 +105,7 @@ impl Runtime {
         store.recover().await?;
         store.recover_jobs().await?;
         store.recover_questions().await?;
+        store.recover_wakeups().await?;
         let (progress, _) = broadcast::channel(256);
         Ok(Self {
             inner: Arc::new(Inner {
@@ -114,6 +117,7 @@ impl Runtime {
                 tools,
                 actors: Mutex::new(HashMap::new()),
                 jobs: Mutex::new(HashMap::new()),
+                timers: Mutex::new(HashMap::new()),
                 job_slots: Arc::new(Semaphore::new(2)),
                 slots: Arc::new(Semaphore::new(8)),
                 stop: CancellationToken::new(),
@@ -276,6 +280,10 @@ impl Runtime {
         cancel_background(&self.inner, session, id).await
     }
 
+    pub async fn cancel_wakeup(&self, session: &str, id: &str) -> Result<bool, Error> {
+        cancel_wakeup(&self.inner, session, id).await
+    }
+
     pub async fn shutdown(&self) {
         self.inner.stop.cancel();
         let actors = std::mem::take(&mut *self.inner.actors.lock().await);
@@ -286,6 +294,11 @@ impl Runtime {
         for (_, job) in jobs {
             job.cancel.cancel();
             let _ = job.join.await;
+        }
+        let timers = std::mem::take(&mut *self.inner.timers.lock().await);
+        for (_, timer) in timers {
+            timer.cancel.cancel();
+            let _ = timer.join.await;
         }
         self.inner.tools.shutdown_extensions().await;
     }
@@ -518,6 +531,19 @@ async fn execute(
                             let prepared_external =
                                 prepared.access() == crate::permission::Access::External;
                             let executed = match name {
+                                "schedule_wakeup" => {
+                                    start_wakeup(inner, session, run, id, &prepared).await?
+                                }
+                                "cancel_wakeup" => {
+                                    let selector =
+                                        crate::wakeup::Selector::parse(prepared.input().clone())
+                                            .map_err(|_| {
+                                                Error::Invalid("invalid wakeup selector".into())
+                                            })?;
+                                    Ok(
+                                        json!({"accepted":cancel_wakeup(inner,session,&selector.timer_id).await?}),
+                                    )
+                                }
                                 "question" => match ask_question(
                                     inner,
                                     session,
@@ -641,6 +667,99 @@ async fn execute(
         }
         step += 1;
     }
+}
+
+async fn start_wakeup(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: &Prepared,
+) -> Result<Result<Value, ToolError>, Error> {
+    let input = crate::wakeup::Input::parse(prepared.input().clone())
+        .map_err(|_| Error::Invalid("invalid wakeup input".into()))?;
+    let mut timers = inner.timers.lock().await;
+    timers.retain(|_, timer| !timer.join.is_finished());
+    if timers.len() >= 64
+        || timers
+            .values()
+            .filter(|timer| timer.session == session)
+            .count()
+            >= 8
+    {
+        return Ok(Err(ToolError::External("wakeup capacity exceeded".into())));
+    }
+    let data = inner
+        .store
+        .create_wakeup(session, run, call, inner.tools.location(), input)
+        .await?;
+    let id = data["timer_id"]
+        .as_str()
+        .ok_or_else(|| Error::Invalid("timer id missing".into()))?
+        .to_owned();
+    if data["state"] != "scheduled" || timers.contains_key(&id) {
+        return Ok(Ok(data));
+    }
+    let delay = data["due_at_ms"]
+        .as_u64()
+        .unwrap_or(now_ms())
+        .saturating_sub(now_ms());
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(delay);
+    let cancel = inner.stop.child_token();
+    let token = cancel.clone();
+    let owner = inner.clone();
+    let timer_id = id.clone();
+    let source = session.to_owned();
+    let join = tokio::spawn(async move {
+        let result=async {
+            tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(deadline)=>{}}
+            if token.is_cancelled(){owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok(());}
+            if let Some(admitted)=owner.store.fire_wakeup(&source,&timer_id).await? {
+                if admitted.pending&&!owner.stop.is_cancelled() {
+                    let commands=owner.actors.lock().await.get(&source).map(|actor|actor.commands.clone());
+                    if let Some(commands)=commands {tokio::select!{_=owner.stop.cancelled()=>{},result=commands.send(Command::Wake(false))=>{if result.is_err(){owner.store.record(&source,"wakeup.wake_failed",json!({"timer_id":timer_id,"input_id":admitted.input_id})).await?;}}}}
+                }
+            }
+            Ok(())
+        }.await;
+        if let Err(error) = result {
+            let _ = owner.store.close_wakeup(&source, &timer_id, "failed").await;
+            let _ = owner
+                .store
+                .record(
+                    &source,
+                    "wakeup.failed",
+                    json!({"timer_id":timer_id,"message":error.to_string()}),
+                )
+                .await;
+        }
+    });
+    timers.insert(
+        id,
+        Background {
+            session: session.into(),
+            cancel,
+            join,
+        },
+    );
+    Ok(Ok(data))
+}
+async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
+    let token = inner
+        .timers
+        .lock()
+        .await
+        .get(id)
+        .filter(|timer| timer.session == session)
+        .map(|timer| timer.cancel.clone());
+    let Some(token) = token else {
+        return Ok(false);
+    };
+    let accepted = inner.store.close_wakeup(session, id, "cancelled").await?;
+    if accepted {
+        token.cancel();
+    }
+    Ok(accepted)
 }
 
 async fn ask_question(

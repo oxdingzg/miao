@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 104 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 108 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -311,7 +311,7 @@ snapshot 包含同一 cursor 的状态；默认 fork 继承当前状态，显式
 compaction 保留状态；恢复不重放状态工具，`session_state` 可核对已提交值。
 每个 provider boundary 在同一 SQLite read transaction 内选择 history 与 state；允许读取状态时，以独立 user-role 动态前缀注入当前值。
 此投影不写入 raw transcript，不改变稳定 system/Context Epoch；`provider.started.state_selection` 记录选用 revision 和 fingerprint。
-`session_state` read policy 为 ask/deny 时跳过注入。history+state 总预算仍为 2 MiB；cron/通知仍待后续实现。
+`session_state` read policy 为 ask/deny 时跳过注入。history+state 总预算仍为 2 MiB；recurring cron/通知仍待后续实现。
 
 
 ## Durable choice question
@@ -345,3 +345,27 @@ miao-engine doctor --db /path/to/engine.db
 数据库以 read-only connection 和单个 read transaction 检查，不获取 engine owner lease、不 admission、不 reconcile。
 运行中 owner 的 DB 也能检查；无关/future/missing DB 返回失败，不创建或迁移 DB，不输出 prompt/tool 内容。
 完整性结果见 `database.integrity.ok`；doctor 不是网络连通、凭据有效性或任务质量验收。
+
+
+## Process-owned 一次性 wakeup
+
+permission config `allow_wakeup: true` 才向模型暴露 `schedule_wakeup` / `cancel_wakeup`；
+这是独立 capability，默认 ask，允许 filesystem read-only Session 通过显式授权安排后续输入。
+可配置 `schedule_wakeup` + `@session/wakeup` 规则，取消 resource 为 `@session/wakeup/TIMER_ID`。
+输入 `prompt` 最多 8 KiB，`delaySeconds` 为 60..3600，`delivery` 默认 queue，也可显式 steer。
+
+```jsonl
+{"id":80,"method":"wakeups","params":{"session_id":"s"}}
+{"id":81,"method":"cancel_wakeup","params":{"session_id":"s","timer_id":"TIMER_ID"}}
+```
+
+每 Session 最多 8 个、每 process 最多 64 个 attached timers；timer task 由 Runtime 监督并 join，
+turn cancel 不取消 timer，独立 cancel_wakeup 只关闭未触发的 timer。触发时 `input.admitted` 与
+`wakeup.resolved(fired)` 同事务提交，固定 `wakeup/TIMER_ID` input id，随后才发送 advisory wake；
+queue 在 idle boundary 推进，steer 在安全 provider boundary 推进。
+
+SQLite event ledger 保留 schedule/result 元数据；timer 本身使用 process-local monotonic deadline。
+shutdown 取消/回收未触发 timers；恢复把未完成 schedule 标 interrupted，不重新安排 timer、发送 prompt 或重跑 provider。
+若已触发并提交输入，其 admission 保留，按现有 pending/promoted 与显式 resume 规则处理。
+触发与取消在 durable resolution 上串行化，fired timer 不能撤回已提交 prompt；fork 不复制 timers。
+snapshot 包含当前未完成 timers，wakeups 提供最近 100 项状态。尚未实现 recurring cron 或跨进程定时保证。

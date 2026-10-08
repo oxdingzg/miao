@@ -54,6 +54,13 @@ enum Command {
         #[serde(default)]
         before_message_seq: Option<u64>,
     },
+    Wakeups {
+        session_id: String,
+    },
+    CancelWakeup {
+        session_id: String,
+        timer_id: String,
+    },
     Questions {
         session_id: String,
     },
@@ -464,6 +471,8 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
                         Command::Compact{session_id,compaction_id,through_message_seq,summary}=>runtime.store().compact(&session_id,&compaction_id,through_message_seq,summary).await,
                         Command::Recall{session_id,query,limit,before_message_seq}=>runtime.store().recall(&session_id,miao_engine::recall::Query{query,limit,before_message_seq}).await,
+                        Command::Wakeups{session_id}=>runtime.store().wakeups(&session_id).await.and_then(|value|serde_json::to_value(value).map_err(Error::from)),
+                        Command::CancelWakeup{session_id,timer_id}=>runtime.cancel_wakeup(&session_id,&timer_id).await.map(|accepted|json!({"accepted":accepted})),
                         Command::Questions{session_id}=>runtime.store().questions(&session_id).await.and_then(|value|serde_json::to_value(value).map_err(Error::from)),
                         Command::AnswerQuestion{session_id,answer}=>runtime.answer_question(&controller,&session_id,answer).await.map(|_|json!({"accepted":true})),
                         Command::State{session_id}=>runtime.store().state(&session_id).await,
