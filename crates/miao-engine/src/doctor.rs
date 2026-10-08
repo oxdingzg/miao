@@ -14,7 +14,7 @@ pub fn report(path: Option<&Path>) -> Result<Value, Error> {
         "version":env!("MIAO_ENGINE_VERSION"),
         "platform":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},
         "sandbox":{"available":miao_sandbox::supported()},
-        "provider_transports":["anthropic","openai-chat","openai-responses","subscription-responses"],
+        "provider_transports":["anthropic","openai-chat","openai-responses","subscription-responses","gemini"],
         "database":database,
         "scope":"local diagnostics; network, credential validity and task quality are not probed",
     }))

@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 113 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 118 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -393,3 +393,28 @@ cron 与一次性 wakeup 共享 8/Session、64/process attached schedule 总限�
 recurring=false 在首次触发后完成；七天到期关闭 schedule，独立删除仅停止未来 occurrences，不撤回已 admitted 输入。
 turn cancel 保留 cron，shutdown join/cancel，恢复标 interrupted，不重新安排、不补发、不重跑 provider；fork 不继承 schedules。
 结构化查询返回 next occurrence、fired/skipped 数与 terminal state，snapshot 包含未结束 crons。
+
+
+## Gemini native GenerateContent SSE profile
+
+```sh
+GEMINI_API_KEY=... miao-engine serve --db /path/to/engine.db --workspace /path/to/workspace --provider gemini --model MODEL_ID
+```
+
+也可用已有 read-only credential source，默认 integration 为 `google`。目前是 API-key profile，
+通过 sensitive `x-goog-api-key` header 传递，不接受 OAuth/subscription profile。默认 endpoint 是原生
+`v1beta/models/MODEL_ID:streamGenerateContent?alt=sse`，可显式配置完整兼容 endpoint；模型必须显式指定。
+
+text/functionCall parts 与 late usageMetadata 经过公共 bounded SSE decoder、pre-body retry 与 cancel 控制。
+只接受单一 candidate、STOP finishReason；截断、blocked/未知 parts、partial/malformed args、重复 wire call id 显式失败，
+收到 200 body 后不透明重放。每 reply 投影最多 512 KiB，最多 128 function calls。
+
+function calls 使用独立 engine tool id，wire id/name/args 与完整 native parts 保存在
+`provider_opaque(gemini-generate-content, model)` capsule。thoughtSignature 原值、顺序与所属 part 不变；
+下轮 Echo native model parts，并合并连续 user functionResponses，保留 wire ids 和结构化结果。
+协议/模型不匹配或 native/neutral mapping 被修改时，在发送 HTTP 请求前拒绝。
+没有 native capsule 的外来 tool history 不合成 signatures；普通无签名 text history 可移植。
+
+当前验证为真实 HTTP fixture 的原生 wire/profile/runtime 路径；尚无 Gemini 实际账户验收。
+Vertex、Interactions、multimodal/hosted tools、streaming partial-function arguments 与 Google OAuth broker 仍未实现。
+官方行为说明：[thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)。

@@ -238,7 +238,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();
@@ -276,12 +276,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .get("--provider")
         .map(String::as_str)
         .unwrap_or("anthropic");
+    if ![
+        "anthropic",
+        "openai-chat",
+        "openai-responses",
+        "subscription-responses",
+        "gemini",
+    ]
+    .contains(&provider_name)
+    {
+        return Err("unknown provider".into());
+    }
     let integration = options
         .get("--credential-integration")
         .cloned()
         .unwrap_or_else(|| {
             if provider_name == "anthropic" {
                 "anthropic".into()
+            } else if provider_name == "gemini" {
+                "google".into()
             } else {
                 "openai".into()
             }
@@ -321,6 +334,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             let name = if provider_name == "anthropic" {
                 "ANTHROPIC_API_KEY"
+            } else if provider_name == "gemini" {
+                "GEMINI_API_KEY"
             } else {
                 "OPENAI_API_KEY"
             };
@@ -338,6 +353,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .cloned()
                 .unwrap_or_else(|| "https://api.anthropic.com/v1/messages".into());
             Arc::new(Anthropic::with_source(
+                endpoint,
+                source.clone(),
+                model.clone(),
+            )?)
+        }
+        "gemini" => {
+            let endpoint=options.get("--endpoint").cloned().unwrap_or_else(||format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent",model.strip_prefix("models/").unwrap_or(model)));
+            Arc::new(miao_engine::gemini::Gemini::with_source(
                 endpoint,
                 source.clone(),
                 model.clone(),

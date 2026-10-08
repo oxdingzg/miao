@@ -5,6 +5,7 @@ pub mod cron;
 pub mod doctor;
 pub mod export;
 mod file_mutation;
+pub mod gemini;
 mod history;
 mod jobs;
 pub mod mcp;
