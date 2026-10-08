@@ -93,6 +93,22 @@ Execution inventory (verified on main after #401/#403/#404/#408):
   the per-message V1 shape and needs a records-driven variant. The
   session retry flow and `use-session-commands` are mechanical:
   `extractPromptFromParts` over the `contentParts` projection.
+
+Store-surgery prerequisite discovered while starting it: the shared
+render `Data` contract lives in `@miao/session-ui` (`context/data.tsx`,
+V1 `message`/`part`/`part_text_accum_delta` shapes, consumed by
+`session-turn` and `message-part` — the latter reads the V1 delta
+accumulate store for streaming bash text). The content projection
+(`contentParts`, currently `packages/app/.../timeline/content.ts`, deps
+are clean: schema types + effect + solid) must move into
+`@miao/session-ui` first; session-ui's Data contract then becomes
+`SessionMessageInfo[]` + the projection, and the app store surgery
+(merge `session_message` into `data.message`, delete `part` +
+`part_text_accum_delta`, retire `normalizeSessionMessages` and the V1
+event branches) lands without touching package boundaries. The
+legacy-bridge e2e scenarios (#401/#403) retire with the V1 event
+branches; the settled-tool expansion contracts move to V2-native
+sequences (expand while running, assert across completion).
 - Store-surgery order once those land: delete `data.part` writes and
   readers → merge `session_message` into `data.message`
   (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the
