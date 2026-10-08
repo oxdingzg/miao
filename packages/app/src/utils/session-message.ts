@@ -5,7 +5,7 @@ import type {
   SessionMessageShell,
   SessionMessageUser,
 } from "@/utils/server"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 
 const emptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 const emptyModel: { id: string; providerID: string; variant?: string } = { id: "", providerID: "" }

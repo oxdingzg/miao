@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@miao/ui/context/dialog"
 import { previewSelectedLines } from "@miao/session-ui/pierre/selection-bridge"

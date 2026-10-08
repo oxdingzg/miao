@@ -20,7 +20,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextFromRecords } from "./session-context-metrics"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 

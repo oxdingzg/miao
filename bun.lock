@@ -658,6 +658,7 @@
       "version": "0.1.24",
       "dependencies": {
         "@kobalte/core": "catalog:",
+        "@miao/client": "workspace:*",
         "@miao/core": "workspace:*",
         "@miao/schema": "workspace:*",
         "@miao/ui": "workspace:*",
@@ -671,6 +672,7 @@
         "@solidjs/meta": "catalog:",
         "diff": "catalog:",
         "dompurify": "3.3.1",
+        "effect": "catalog:",
         "fuzzysort": "catalog:",
         "luxon": "catalog:",
         "marked": "catalog:",
