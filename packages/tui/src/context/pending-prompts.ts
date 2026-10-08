@@ -7,6 +7,7 @@ export type PendingPrompt = {
   state: "sending" | "admitted" | "failed"
   delivery: "steer" | "queue"
   error?: string
+  retries?: number
 }
 
 // Local display receipts are deliberately separate from projected history.
@@ -22,6 +23,10 @@ export function createPendingPrompts() {
     admit(id: string) {
       if (!data[id]) return
       setData(id, { state: "admitted", error: undefined })
+    },
+    retry(id: string, retries: number, error: string) {
+      if (data[id]?.state !== "sending") return
+      setData(id, { retries, error })
     },
     fail(id: string, error: string) {
       if (data[id]?.state !== "sending") return
