@@ -221,8 +221,12 @@ jobs:
           $D = Join-Path $env:TEMP ("miao-wd-" + [guid]::NewGuid())
           New-Item -ItemType Directory -Path $D -Force | Out-Null
           bun src/index.ts __sandbox-run --workdir "$D" -- cmd /c "echo ok > `"$D\ok.txt`""
+          if ($LASTEXITCODE -ne 0) { throw "sandbox workdir command failed" }
           if (-not (Test-Path "$D\ok.txt")) { throw "workdir write did not happen" }
           bun src/index.ts __sandbox-run --workdir "$D" -- cmd /c "echo x > `"$env:USERPROFILE\miao-escape.txt`""
+          if ($LASTEXITCODE -ne 1) { throw "expected cmd access-denied exit status" }
           if (Test-Path "$env:USERPROFILE\miao-escape.txt") { throw "outside write unexpectedly succeeded" }
           Remove-Item -Recurse -Force $D
+          # The expected negative command left LASTEXITCODE=1; this step passed.
+          exit 0
         working-directory: packages/miao
