@@ -10,6 +10,16 @@ to add a section here.
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-10-08
+
+### Changed
+- **session-ui**: read the session records via the Data contract (#418) (`0f462d596`)
+- **session-ui**: host the V2 record content projection (#416) (`37e37f1da`)
+
+### Fixed
+- **runtime**: every window starts and owns its Runtime (#421) (`36411618f`)
+- **app**: open the tab context menu from the keyboard (#417) (`57184b583`)
+
 ## [0.1.24] - 2026-10-08
 
 ### Added
