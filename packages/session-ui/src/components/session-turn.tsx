@@ -1,4 +1,5 @@
-import { AssistantMessage, Message as MessageType, Part as PartType } from "@miao/schema/view-models"
+import { Part as PartType } from "@miao/schema/view-models"
+import { contentParts, type SessionMessageAssistant, type SessionMessageInfo } from "../content"
 import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import type { Vcs } from "@miao/schema/vcs"
 import type { SessionStatus } from "@miao/schema/view-models"
@@ -151,7 +152,7 @@ export function SessionTurn(
   props: ParentProps<{
     sessionID: string
     messageID: string
-    messages?: MessageType[]
+    messages?: SessionMessageInfo[]
     actions?: UserActions
     showReasoningSummaries?: boolean
     shellToolDefaultOpen?: boolean
@@ -170,13 +171,14 @@ export function SessionTurn(
   const i18n = useI18n()
   const fileComponent = useFileComponent()
 
-  const emptyMessages: MessageType[] = []
+  const emptyMessages: SessionMessageInfo[] = []
   const emptyParts: PartType[] = []
-  const emptyAssistant: AssistantMessage[] = []
+  const emptyAssistant: SessionMessageAssistant[] = []
   const emptyDiffs: SummaryDiff[] = []
   const idle = { type: "idle" as const }
 
   const allMessages = createMemo(() => props.messages ?? list(data.store.message?.[props.sessionID], emptyMessages))
+  const projected = createMemo(() => contentParts(props.sessionID, allMessages()))
 
   const messageIndex = createMemo(() => {
     const messages = allMessages() ?? emptyMessages
@@ -186,7 +188,7 @@ export function SessionTurn(
     if (index < 0) return -1
 
     const msg = messages[index]
-    if (!msg || msg.role !== "user") return -1
+    if (!msg || msg.type !== "user") return -1
 
     return index
   })
@@ -197,7 +199,7 @@ export function SessionTurn(
 
     const messages = allMessages() ?? emptyMessages
     const msg = messages[index]
-    if (!msg || msg.role !== "user") return undefined
+    if (!msg || msg.type !== "user") return undefined
 
     return msg
   })
@@ -206,18 +208,21 @@ export function SessionTurn(
     if (typeof props.active === "boolean") return
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
+      (item): item is SessionMessageAssistant =>
+        item.type === "assistant" && typeof item.time.completed !== "number",
     )
   })
 
   const pendingUser = createMemo(() => {
     const item = pending()
-    if (!item?.parentID) return
+    if (!item) return
     const messages = allMessages() ?? emptyMessages
-    const result = Binary.search(messages, item.parentID, (m) => m.id)
-    const msg = result.found ? messages[result.index] : messages.find((m) => m.id === item.parentID)
-    if (!msg || msg.role !== "user") return
-    return msg
+    const index = messages.findIndex((m) => m.id === item.id)
+    for (let i = index - 1; i >= 0; i--) {
+      const msg = messages[i]
+      if (msg?.type === "user") return msg
+    }
+    return undefined
   })
 
   const active = createMemo(() => {
@@ -231,13 +236,15 @@ export function SessionTurn(
   const parts = createMemo(() => {
     const msg = message()
     if (!msg) return emptyParts
-    return list(data.store.part?.[msg.id], emptyParts)
+    return projected()[msg.id] ?? emptyParts
   })
 
   const compaction = createMemo(() => parts().find((part) => part.type === "compaction"))
 
+  // The V2 user record has no summary carrier (specs/v2/app-timeline-v2.md);
+  // diff summaries stay empty until that lands.
   const diffs = createMemo(() => {
-    const files = message()?.summary?.diffs
+    const files = emptyDiffs
     if (!files?.length) return emptyDiffs
 
     const seen = new Set<string>()
@@ -274,11 +281,12 @@ export function SessionTurn(
       const messages = allMessages() ?? emptyMessages
       if (messageIndex() < 0) return emptyAssistant
 
-      const result: AssistantMessage[] = []
-      for (let i = 0; i < messages.length; i++) {
+      const result: SessionMessageAssistant[] = []
+      for (let i = messageIndex() + 1; i < messages.length; i++) {
         const item = messages[i]
         if (!item) continue
-        if (item.role === "assistant" && item.parentID === msg.id) result.push(item as AssistantMessage)
+        if (item.type === "user") break
+        if (item.type === "assistant") result.push(item)
       }
       return result
     },
@@ -286,15 +294,13 @@ export function SessionTurn(
     { equals: same },
   )
 
-  const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.name === "MessageAbortedError"))
+  const interrupted = createMemo(() => assistantMessages().some((m) => m.finish === "aborted"))
   const divider = createMemo(() => {
     if (compaction()) return i18n.t("ui.messagePart.compaction")
     if (interrupted()) return i18n.t("ui.message.interrupted")
     return ""
   })
-  const error = createMemo(
-    () => assistantMessages().find((m) => m.error && m.error.name !== "MessageAbortedError")?.error,
-  )
+  const error = createMemo(() => assistantMessages().find((m) => m.error && m.finish !== "aborted")?.error)
   const showAssistantCopyPartID = createMemo(() => {
     const messages = assistantMessages()
 
@@ -302,7 +308,7 @@ export function SessionTurn(
       const message = messages[i]
       if (!message) continue
 
-      const parts = list(data.store.part?.[message.id], emptyParts)
+      const parts = projected()[message.id] ?? emptyParts
       for (let j = parts.length - 1; j >= 0; j--) {
         const part = parts[j]
         if (!part || part.type !== "text" || !part.text?.trim()) continue
@@ -313,12 +319,9 @@ export function SessionTurn(
     return undefined
   })
   const errorText = createMemo(() => {
-    const data = error()?.data
-    const msg = data && "message" in data ? data.message : undefined
-    if (typeof msg === "string") return unwrap(msg)
-    if (msg === undefined || msg === null) return ""
-    // oxlint-disable-next-line no-base-to-string -- msg is unknown from error data, coercion is intentional
-    return unwrap(String(msg))
+    const msg = error()?.message
+    if (typeof msg !== "string") return ""
+    return unwrap(msg)
   })
 
   const status = createMemo(() => {
@@ -353,7 +356,7 @@ export function SessionTurn(
     let reason: string | undefined
     const show = showReasoningSummaries()
     for (const message of assistantMessages()) {
-      for (const part of list(data.store.part?.[message.id], emptyParts)) {
+      for (const part of projected()[message.id] ?? emptyParts) {
         if (partState(part, show) === "visible") {
           visible++
         }
@@ -402,7 +405,7 @@ export function SessionTurn(
               class={props.classes?.container}
             >
               <div data-slot="session-turn-message-content" aria-live="off">
-                <Message message={message()!} parts={parts()} actions={props.actions} />
+                <Message sessionID={props.sessionID} message={message()!} parts={parts()} actions={props.actions} />
               </div>
               <Show when={divider()}>
                 <div data-slot="session-turn-compaction">
@@ -412,6 +415,7 @@ export function SessionTurn(
               <Show when={assistantMessages().length > 0}>
                 <div data-slot="session-turn-assistant-content" aria-hidden={working()}>
                   <AssistantParts
+                    sessionID={props.sessionID}
                     messages={assistantMessages()}
                     showAssistantCopyPartID={assistantCopyPartID()}
                     turnDurationMs={turnDurationMs()}
