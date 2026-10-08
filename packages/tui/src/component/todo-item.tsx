@@ -16,7 +16,7 @@ export function TodoItem(props: TodoItemProps) {
           fg: props.status === "in_progress" ? theme.warning : theme.textMuted,
         }}
       >
-        [{props.status === "completed" ? "✓" : props.status === "in_progress" ? "•" : " "}]{" "}
+        [{props.status === "completed" ? "✓" : props.status === "in_progress" ? "•" : props.status === "cancelled" ? "×" : " "}]{" "}
       </text>
       <text
         flexGrow={1}
