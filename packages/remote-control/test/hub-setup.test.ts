@@ -140,3 +140,15 @@ test("oauth setup surfaces an unusable authorize URL instead of a generic failur
     }),
   ).rejects.toThrow("Open this link in a browser")
 })
+
+
+test("provider discovery errors do not downgrade OAuth relays to password login", async () => {
+  for (const status of [403, 502]) {
+    await expect(HubSetup.providers({ hubURL: "https://relay.example.invalid", fetch: async () => json({ error: "private upstream body" }, status) }))
+      .rejects.toThrow("could not be discovered")
+  }
+  await expect(HubSetup.providers({ hubURL: "https://relay.example.invalid", fetch: async () => { throw new Error("private transport error") } }))
+    .rejects.toThrow("could not be discovered")
+  await expect(HubSetup.providers({ hubURL: "https://relay.example.invalid", fetch: async () => json({ unexpected: true }) }))
+    .rejects.toThrow("invalid login methods")
+})

@@ -32,11 +32,12 @@ export async function providers(input: {
     credentials: "omit",
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(10000),
-  }).catch(() => undefined)
-  if (!response?.ok) return { providers: [] }
+  }).catch(() => { throw new Error("Hub login methods could not be discovered; check the connection and retry") })
+  if (response.status === 404) return { providers: [] }
+  if (!response.ok) throw new Error("Hub login methods could not be discovered; check the connection and retry")
   const body: unknown = await response.json().catch(() => undefined)
   if (typeof body !== "object" || body === null || !("providers" in body) || !Array.isArray(body.providers))
-    return { providers: [] }
+    throw new Error("Hub returned invalid login methods")
   return { providers: body.providers.filter((value): value is string => typeof value === "string") }
 }
 
@@ -73,7 +74,7 @@ export async function connect(input: {
 
 /**
  * Signs in through the relay's browser flow, which is the only way into an
- * OAuth-only relay such as mhub. The caller owns the browser and the redirect
+ * OAuth-only relay. The caller owns the browser and the redirect
  * listener: it supplies the loopback `callbackURL`, opens the authorize URL,
  * and resolves `waitForCode` with the one-time code the relay hands back.
  */
