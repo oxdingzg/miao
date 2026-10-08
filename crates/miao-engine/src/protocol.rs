@@ -57,6 +57,12 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("runtime has stopped")]
     Closed,
+    #[error("approval identity or authority does not match")]
+    ApprovalMismatch,
+    #[error("approval is already resolved or no longer active")]
+    ApprovalResolved,
+    #[error("approval has expired")]
+    ApprovalExpired,
 }
 
 impl Error {
@@ -66,6 +72,9 @@ impl Error {
             Self::Busy => "store_busy",
             Self::Invalid(_) => "invalid_request",
             Self::Closed => "runtime_closed",
+            Self::ApprovalMismatch => "approval_mismatch",
+            Self::ApprovalResolved => "approval_resolved",
+            Self::ApprovalExpired => "approval_expired",
             _ => "storage_error",
         }
     }

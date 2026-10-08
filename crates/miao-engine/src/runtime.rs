@@ -1,8 +1,10 @@
 use crate::{
+    approval::{now_ms, Approval, Response},
+    permission::{input_digest, Config, Decision, Policy},
     protocol::{Admission, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
-    store::Store,
-    tools::{ToolError, Tools},
+    store::{RuntimeLease, Store},
+    tools::{Prepared, ToolError, Tools},
 };
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
@@ -15,7 +17,16 @@ pub struct Runtime {
     inner: Arc<Inner>,
 }
 
+/// An in-process adapter capability, never accepted as a client-supplied role.
+#[derive(Clone)]
+pub struct Controller {
+    runtime_id: String,
+}
+
 struct Inner {
+    id: String,
+    _lease: RuntimeLease,
+    policy: Policy,
     store: Store,
     provider: Arc<dyn Provider>,
     tools: Tools,
@@ -33,6 +44,7 @@ struct Actor {
 enum Command {
     Wake(bool),
     Cancel(oneshot::Sender<bool>),
+    Approve(Response, oneshot::Sender<Result<(), Error>>),
 }
 
 impl Runtime {
@@ -41,10 +53,23 @@ impl Runtime {
         provider: Arc<dyn Provider>,
         tools: Tools,
     ) -> Result<Self, Error> {
+        Self::with_policy(store, provider, tools, Policy::new(Config::default())?).await
+    }
+
+    pub async fn with_policy(
+        store: Store,
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        policy: Policy,
+    ) -> Result<Self, Error> {
+        let lease = store.claim_runtime()?;
         store.recover().await?;
         let (progress, _) = broadcast::channel(256);
         Ok(Self {
             inner: Arc::new(Inner {
+                id: uuid::Uuid::new_v4().to_string(),
+                _lease: lease,
+                policy,
                 store,
                 provider,
                 tools,
@@ -54,6 +79,36 @@ impl Runtime {
                 progress,
             }),
         })
+    }
+
+    pub fn controller(&self) -> Controller {
+        Controller {
+            runtime_id: self.inner.id.clone(),
+        }
+    }
+
+    pub async fn approve(
+        &self,
+        controller: &Controller,
+        session: &str,
+        response: Response,
+    ) -> Result<(), Error> {
+        if controller.runtime_id != self.inner.id
+            || response.policy_revision != self.inner.policy.revision()
+        {
+            return Err(Error::ApprovalMismatch);
+        }
+        let commands = {
+            let actors = self.inner.actors.lock().await;
+            actors.get(session).map(|a| a.commands.clone())
+        };
+        let commands = commands.ok_or(Error::ApprovalResolved)?;
+        let (send, receive) = oneshot::channel();
+        commands
+            .send(Command::Approve(response, send))
+            .await
+            .map_err(|_| Error::Closed)?;
+        receive.await.map_err(|_| Error::Closed)?
     }
 
     pub fn store(&self) -> &Store {
@@ -71,7 +126,11 @@ impl Runtime {
             return Err(Error::Closed);
         }
         let session = input.session_id.clone();
-        let admission = self.inner.store.admit(input).await?;
+        let admission = self
+            .inner
+            .store
+            .admit_at(input, Some(self.inner.tools.location().to_owned()))
+            .await?;
         // An exact retry may repair a lost advisory wake for pending input,
         // but never restarts promoted/completed provider work.
         if resume && admission.pending {
@@ -81,6 +140,10 @@ impl Runtime {
     }
 
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
         self.wake(session, true).await
     }
 
@@ -169,6 +232,10 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     if let Some(cancel)=&active { cancel.cancel(); }
                     let _=reply.send(active.is_some());
                 }
+                Some(Command::Approve(response,reply))=>{
+                    let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else{inner.store.resolve_approval(&session,response).await.map(|_|())};
+                    let _=reply.send(result);
+                },
                 None => break,
             },
             result=tasks.join_next(), if active.is_some() => {
@@ -308,14 +375,31 @@ async fn execute(
                 let name = block["name"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool name".into()))?;
-                let (output, is_error) = match inner
-                    .tools
-                    .execute(name, block["input"].clone(), cancel.child_token())
-                    .await
-                {
-                    Ok(output) => (output, false),
-                    Err(ToolError::Interrupted) => return Ok(()),
+                let prepared = inner.tools.prepare(name, block["input"].clone()).await;
+                let (output, is_error) = match prepared {
                     Err(error) => (json!({"error":error.to_string()}), true),
+                    Ok(prepared) => {
+                        let allowed =
+                            authorize(inner, session, run, id, &prepared, cancel.child_token())
+                                .await?;
+                        if cancel.is_cancelled() {
+                            return Ok(());
+                        }
+                        if !allowed {
+                            (json!({"error":"permission denied"}), true)
+                        } else {
+                            inner.store.mark_dispatched(session, run, id).await?;
+                            match inner
+                                .tools
+                                .execute_prepared(prepared, cancel.child_token())
+                                .await
+                            {
+                                Ok(output) => (output, false),
+                                Err(ToolError::Interrupted) => return Ok(()),
+                                Err(error) => (json!({"error":error.to_string()}), true),
+                            }
+                        }
+                    }
                 };
                 let signature = serde_json::to_string(
                     &json!({"name":name,"input":block["input"],"output":output,"is_error":is_error}),
@@ -352,5 +436,81 @@ async fn execute(
             repeats.clear();
         }
         step += 1;
+    }
+}
+
+async fn authorize(
+    inner: &Inner,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: &Prepared,
+    cancel: CancellationToken,
+) -> Result<bool, Error> {
+    match inner
+        .policy
+        .evaluate(prepared.name(), prepared.resource(), prepared.access())
+    {
+        Decision::Allow => return Ok(true),
+        Decision::Deny => {
+            inner.store.record(session,"permission.denied",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"policy_revision":inner.policy.revision()})).await?;
+            return Ok(false);
+        }
+        Decision::Ask => {}
+    }
+    let approval = Approval {
+        request_id: uuid::Uuid::new_v4().to_string(),
+        session_id: session.into(),
+        run_id: run.into(),
+        call_id: call.into(),
+        location: inner.tools.location().into(),
+        tool: prepared.name().into(),
+        resource: prepared.resource().into(),
+        input: prepared.input().clone(),
+        input_hash: input_digest(
+            inner.tools.location(),
+            prepared.name(),
+            prepared.resource(),
+            prepared.input(),
+        )?,
+        policy_revision: inner.policy.revision().into(),
+        expires_at_ms: now_ms().saturating_add(inner.policy.timeout_ms()),
+    };
+    inner.store.request_approval(approval.clone()).await?;
+    let deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_millis(inner.policy.timeout_ms());
+    loop {
+        if cancel.is_cancelled() {
+            return Ok(false);
+        }
+        match inner
+            .store
+            .approval_state(&approval.request_id)
+            .await?
+            .as_str()
+        {
+            "allow" => return Ok(true),
+            "pending" => {}
+            _ => return Ok(false),
+        }
+        if tokio::time::Instant::now() >= deadline || now_ms() >= approval.expires_at_ms {
+            let expired = inner
+                .store
+                .resolve_approval(
+                    session,
+                    Response {
+                        request_id: approval.request_id.clone(),
+                        input_hash: approval.input_hash.clone(),
+                        policy_revision: approval.policy_revision.clone(),
+                        decision: Decision::Deny,
+                    },
+                )
+                .await;
+            match expired {
+                Ok(_) | Err(Error::ApprovalExpired | Error::ApprovalResolved) => return Ok(false),
+                Err(error) => return Err(error),
+            }
+        }
+        tokio::select! {_=cancel.cancelled()=>return Ok(false),_=tokio::time::sleep(std::time::Duration::from_millis(25))=>{}}
     }
 }

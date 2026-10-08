@@ -193,6 +193,7 @@ async fn interrupted_committed_tool_calls_have_unknown_results_without_rerun() {
         )
         .await
         .unwrap();
+    store.mark_dispatched("s", "run", "call").await.unwrap();
     let (calls, _receive) = mpsc::channel(10);
     let runtime = Runtime::new(
         store.clone(),

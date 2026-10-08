@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod export;
 pub mod openai_chat;
 pub mod openai_responses;

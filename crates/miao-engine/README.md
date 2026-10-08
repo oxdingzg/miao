@@ -70,7 +70,10 @@ export 不创建缺失数据库、不改变执行状态、不承担第二份权�
 - actor 控制循环能在 provider 等待期间响应 cancel；tasks 在 shutdown 被取消并 join。
 - 相同工具名/input/result 累计 3 次且没有新用户输入时记录 `loop.detected` 并停止；新输入重置计数。该检测不宣称识别所有语义循环。
 - provider panic 仅 reconcile 当前 Session；慢临时进度消费者不阻塞执行，其他 Session 不受该故障影响。
-- 完整 assistant/tool-call projection 与 dispatch intents 同事务；tool settlement 与 tool-result projection 同事务。
+- 完整 assistant/tool-call projection 与 planned intents 同事务；授权通过后才记录 dispatched；tool settlement 与 tool-result projection 同事务。
+- Location 与 admission 同事务绑定，同 Session 不会因换启动 workspace 而静默迁移。
+- pending 审批绑定 Session/run/call、Location、resource、完整 input hash、policy revision 与期限；本地 stdio controller 才可答复。
+- 审批等待不占控制循环，cancel 后晚到答复失效；未派发的工具恢复为 not_executed，派发后未知结果才标 unknown。
 - startup 不自动续跑；未结算 dispatch 标为 unknown，补错误 tool-result 修复历史，不重做外部操作。
 - pre-response transport/429/特定 5xx 有最多 3 次、60 秒总预算的 retry；200 body 开始后不透明重播。
 - provider SSE 支持 bytewise UTF-8、CRLF、多行 data；frame 1 MiB/message 8 MiB 上限。

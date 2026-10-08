@@ -1,6 +1,8 @@
 use miao_engine::{
+    approval::Response,
     openai_chat::OpenAIChat,
     openai_responses::OpenAIResponses,
+    permission::{Config, Policy},
     protocol::{Error, Input},
     provider::{Anthropic, Provider},
     runtime::Runtime,
@@ -50,6 +52,10 @@ enum Command {
     Unsubscribe {
         session_id: String,
     },
+    Approve {
+        session_id: String,
+        response: Response,
+    },
     Shutdown,
 }
 fn yes() -> bool {
@@ -90,14 +96,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses] [--endpoint URL]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();
     let (flags, remainder) = args[1..].as_chunks::<2>();
     for flag in flags {
-        if !["--db", "--workspace", "--model", "--endpoint", "--provider"]
-            .contains(&flag[0].as_str())
+        if ![
+            "--db",
+            "--workspace",
+            "--model",
+            "--endpoint",
+            "--provider",
+            "--policy",
+        ]
+        .contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
         {
             return Err("unknown or duplicate option".into());
@@ -143,10 +156,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => return Err("unknown provider; use anthropic, openai-chat or openai-responses".into()),
     };
-    let runtime = Runtime::new(
+    let config = if let Some(path) = options.get("--policy") {
+        let bytes = tokio::fs::read(path).await?;
+        if bytes.len() > 65536 {
+            return Err("permission config exceeds 64 KiB".into());
+        }
+        serde_json::from_slice::<Config>(&bytes)?
+    } else {
+        Config::default()
+    };
+    let runtime = Runtime::with_policy(
         Store::open(db).await?,
         provider,
         Tools::new(workspace).await?,
+        Policy::new(config)?,
     )
     .await?;
     let result = serve(&runtime).await;
@@ -171,6 +194,9 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
         }
         Ok::<_, io::Error>(())
     });
+    // Possession of this local stdio adapter is the controller authority.
+    // Future network adapters must authenticate before receiving this handle.
+    let controller = runtime.controller();
     let mut input = BufReader::new(tokio::io::stdin());
     let mut bytes = Vec::new();
     let mut subscriptions = HashMap::<String, u64>::new();
@@ -196,6 +222,7 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                             else {subscriptions.insert(session_id,after);Ok(json!({"accepted":true}))}
                         },
                         Command::Unsubscribe{session_id}=>{subscriptions.remove(&session_id);Ok(json!({"accepted":true}))},
+                        Command::Approve{session_id,response}=>runtime.approve(&controller,&session_id,response).await.map(|_|json!({"accepted":true})),
                         Command::Shutdown=>Ok(json!({"accepted":true})),
                     };
                     let response=match result {Ok(value)=>json!({"id":request.id,"result":value}),Err(error)=>json!({"id":request.id,"error":{"code":error.code(),"message":error.to_string()}})};
