@@ -155,6 +155,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("miao-engine {}", env!("MIAO_ENGINE_VERSION"));
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("doctor") {
+        let path = match &args[1..] {
+            [] => None,
+            [flag, path] if flag == "--db" => Some(std::path::PathBuf::from(path)),
+            _ => return Err("Usage: miao-engine doctor [--db PATH]".into()),
+        };
+        let report =
+            tokio::task::spawn_blocking(move || miao_engine::doctor::report(path.as_deref()))
+                .await??;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("credentials") {
         let (flags, remainder) = args[1..].as_chunks::<2>();
         let mut options = HashMap::new();
@@ -212,7 +224,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY or OPENAI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();

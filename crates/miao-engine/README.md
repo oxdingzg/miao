@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 101 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 104 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -331,3 +331,17 @@ header 最多 12 字符，完整 request/answer 各最多 32 KiB；timeout 默�
 恢复还清理历史 orphaned question，最多 256 项；fork 不继承 pending 交互请求。
 模型只有 question tool，没有 controller 的答复权限；read policy 可通过 `@session/question` 拒绝请求。
 目前 adapter 输出结构化请求和答复，尚无 TUI question UI、选项 preview 或远程 controller authentication。
+
+
+## 只读 doctor 验收入口
+
+```sh
+miao-engine doctor
+miao-engine doctor --db /path/to/engine.db
+```
+
+无需 provider 或 credentials，输出 JSON：编译版本、OS/arch、sandbox available、provider transport 列表，
+以及可选 DB 的 application id/schema、`quick_check(1)` 完整性结果、Session/event/message 数量、input/run/tool 状态统计。
+数据库以 read-only connection 和单个 read transaction 检查，不获取 engine owner lease、不 admission、不 reconcile。
+运行中 owner 的 DB 也能检查；无关/future/missing DB 返回失败，不创建或迁移 DB，不输出 prompt/tool 内容。
+完整性结果见 `database.integrity.ok`；doctor 不是网络连通、凭据有效性或任务质量验收。

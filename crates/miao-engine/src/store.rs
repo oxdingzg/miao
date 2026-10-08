@@ -16,6 +16,9 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
+pub(crate) const SCHEMA_VERSION: u32 = 6;
+
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// One dedicated SQLite worker owns both the connection and store lease. Async
@@ -86,17 +89,17 @@ impl Store {
                 let app_id: u32 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
                 let engine:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='engine_session' AND type='table')",[],|r|r.get(0))?;
                 let existing:u32=conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",[],|r|r.get(0))?;
-                if (app_id != 0 && app_id != 0x4d494145) || (!engine && existing != 0) {
+                if (app_id != 0 && app_id != APPLICATION_ID) || (!engine && existing != 0) {
                     return Err(Error::Invalid(
                         "not a miao-engine database; use a separate path".into(),
                     ));
                 }
                 let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-                if version > 6 {
+                if version > SCHEMA_VERSION {
                     return Err(Error::Invalid("unsupported database schema version".into()));
                 }
 
-                conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=6; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+                conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={SCHEMA_VERSION}; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
                     CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
@@ -111,7 +114,7 @@ impl Store {
                     CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
-                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);")?;
+                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);"))?;
                 Ok((conn, lease, canonical))
             })();
             match opened {
