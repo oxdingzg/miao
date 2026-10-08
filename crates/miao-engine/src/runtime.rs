@@ -62,6 +62,7 @@ impl Runtime {
         tools: Tools,
         policy: Policy,
     ) -> Result<Self, Error> {
+        let tools = tools.with_writes(policy.writes_enabled());
         let lease = store.claim_runtime()?;
         store.recover().await?;
         let (progress, _) = broadcast::channel(256);
