@@ -282,4 +282,4 @@ bun --cwd packages/miao test
 
 ## 许可证
 
-MIT，详见 [LICENSE](../LICENSE)。
+MIT，详见 [LICENSE](../LICENSE) 与[项目来源与许可](attribution.zh.md)。

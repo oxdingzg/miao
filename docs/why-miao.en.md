@@ -4,8 +4,8 @@
 
 **If you want to add requirements while a task is running, understand context
 and cost changes, and manage parallel work in your terminal, miao is worth
-trying.** It builds on opencode's open-source workflow and concentrates on
-execution, context and interaction around the model. Model choice, MCP, LSP
+trying.** miao concentrates on execution, context and interaction around the
+model. Model choice, MCP, LSP
 and subagents are shared capabilities; the differences are how they are
 combined, which states are visible, and what record remains after a failure.
 
@@ -126,3 +126,5 @@ Implementation references: [execution](../packages/core/src/session/runner/llm.t
 [output governance](../packages/core/src/tool-output-store.ts),
 [compaction](../packages/core/src/session/compaction.ts), [edit recovery](edit-recovery.md),
 [read/LSP](../packages/core/src/tool/read.ts), and [permissions/isolation](../SECURITY.md).
+
+For source attribution and licensing, see [project origins and licensing](attribution.en.md).
