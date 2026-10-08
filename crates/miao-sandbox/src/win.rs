@@ -15,7 +15,7 @@ use windows::Win32::Security::Authorization::{
     ConvertStringSidToSidW, GetNamedSecurityInfoW, SetEntriesInAclW, SetNamedSecurityInfoW,
     EXPLICIT_ACCESS_W, SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
 };
-use windows::Win32::Security::Isolation::CreateAppContainerProfile;
+use windows::Win32::Security::Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile};
 use windows::Win32::Security::{
     FreeSid, ACL, DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES,
     SID_AND_ATTRIBUTES,
@@ -30,8 +30,9 @@ use windows::Win32::System::JobObjects::{
 };
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-    InitializeProcThreadAttributeList, UpdateProcThreadAttribute, WaitForSingleObject,
-    CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION,
+    InitializeProcThreadAttributeList, ResumeThread, TerminateProcess, UpdateProcThreadAttribute,
+    WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+    EXTENDED_STARTUPINFO_PRESENT, INFINITE, PROCESS_INFORMATION,
     PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
 };
 
@@ -95,7 +96,9 @@ fn grant_modify(path: &Path, sid: PSID, grants: &mut Vec<AclGrant>) -> Result<()
     entry.grfAccessPermissions =
         (FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE).0;
     entry.grfAccessMode = SET_ACCESS;
-    entry.grfInheritance = windows::Win32::Security::NO_INHERITANCE;
+    // File-provider APIs open/reopen descendants rather than only creating a
+    // directory entry. The allowlist must apply to the whole selected tree.
+    entry.grfInheritance = windows::Win32::Security::SUB_CONTAINERS_AND_OBJECTS_INHERIT;
     entry.Trustee.TrusteeForm = TRUSTEE_IS_SID;
     entry.Trustee.TrusteeType = TRUSTEE_IS_USER;
     entry.Trustee.ptstrName = PWSTR(sid.0 as *mut u16);
@@ -208,27 +211,40 @@ pub fn run(
     allow_network: bool,
     command: &[String],
 ) -> Result<i32, WinError> {
-    // 1. Reusable AppContainer profile.
-    let name: Vec<u16> = wide("miao.sandbox");
-    let sid = match unsafe {
+    // A process killed before cleanup can leave granted ACLs behind. Never
+    // reuse its SID: otherwise another invocation could access its old paths.
+    let name = wide(&format!(
+        "miao.sandbox.{}.{:x}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+    ));
+    let sid = unsafe {
         CreateAppContainerProfile(
             PCWSTR(name.as_ptr()),
             PCWSTR(name.as_ptr()),
             PCWSTR(name.as_ptr()),
             None,
         )
-    } {
-        Ok(value) => value,
-        // Already exists → look it up by name.
-        Err(_) => match unsafe {
-            windows::Win32::Security::Isolation::DeriveAppContainerSidFromAppContainerName(PCWSTR(
-                name.as_ptr(),
-            ))
-        } {
-            Ok(value) => value,
-            Err(_) => return Err(last_error("CreateAppContainerProfile")),
-        },
-    };
+    }
+    .map_err(|_| last_error("CreateAppContainerProfile"))?;
+    // The profile and local SID are invocation-owned. Drop runs on all normal
+    // returns (including setup errors); forced process death cannot run Drop.
+    struct Container {
+        name: Vec<u16>,
+        sid: PSID,
+    }
+    impl Drop for Container {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = DeleteAppContainerProfile(PCWSTR(self.name.as_ptr()));
+                FreeSid(self.sid);
+            }
+        }
+    }
+    let _container = Container { name, sid };
 
     // 2. Write allowlist: grant Modify on workdirs + allow_paths.
     let mut grants: Vec<AclGrant> = Vec::new();
@@ -240,7 +256,6 @@ pub fn run(
     })();
     if let Err(error) = result {
         restore_grants(&grants);
-        unsafe { FreeSid(sid) };
         return Err(error);
     }
 
@@ -274,7 +289,6 @@ pub fn run(
         Ok(handle) => handle,
         Err(_) => {
             restore_grants(&grants);
-            unsafe { FreeSid(sid) };
             return Err(last_error("CreateJobObjectW"));
         }
     };
@@ -347,7 +361,7 @@ pub fn run(
             None,
             None,
             false,
-            EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
             None,
             cwd_ptr,
             &startup.StartupInfo,
@@ -361,7 +375,6 @@ pub fn run(
         restore_grants(&grants);
         unsafe {
             let _ = CloseHandle(job);
-            FreeSid(sid);
         }
         return Err(WinError::Start(
             windows::core::Error::from_win32().message().to_string(),
@@ -369,8 +382,26 @@ pub fn run(
     }
     let job_assigned = unsafe { AssignProcessToJobObject(job, process_info.hProcess) };
     if job_assigned.is_err() {
-        // Not fatal for isolation; report but continue.
-        eprintln!("miao-run: warning: AssignProcessToJobObject failed");
+        unsafe {
+            let _ = TerminateProcess(process_info.hProcess, 1);
+            let _ = CloseHandle(process_info.hProcess);
+            let _ = CloseHandle(process_info.hThread);
+            let _ = CloseHandle(job);
+        }
+        restore_grants(&grants);
+        return Err(WinError::Start("AssignProcessToJobObject failed".into()));
+    }
+
+    // No child instructions run before tree containment is installed.
+    if unsafe { ResumeThread(process_info.hThread) } == u32::MAX {
+        unsafe {
+            let _ = TerminateProcess(process_info.hProcess, 1);
+            let _ = CloseHandle(process_info.hProcess);
+            let _ = CloseHandle(process_info.hThread);
+            let _ = CloseHandle(job);
+        }
+        restore_grants(&grants);
+        return Err(WinError::Start("ResumeThread failed".into()));
     }
 
     // 6. Wait for the child, then clean everything up.
@@ -386,9 +417,6 @@ pub fn run(
     }
 
     restore_grants(&grants);
-    // The container's SID from CreateAppContainerProfile is owned by the OS;
-    // free the local copy.
-    unsafe { FreeSid(sid) };
     for value in capability_sids {
         unsafe { LocalFree(Some(HLOCAL(value.0 as *mut c_void))) };
     }

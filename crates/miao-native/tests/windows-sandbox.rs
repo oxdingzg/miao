@@ -95,6 +95,36 @@ fn write_inside_workdir_allowed() {
 }
 
 #[test]
+fn powershell_can_create_and_reopen_nested_workdir_files() {
+    let wd = unique("nested");
+    std::fs::create_dir_all(&wd).unwrap();
+    require_sandbox!(&wd);
+    let nested = wd.join("child").join("state.txt");
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; New-Item -ItemType Directory -Path '{}' | Out-Null; Set-Content -LiteralPath '{}' -Value first; Set-Content -LiteralPath '{}' -Value second; Get-Content -LiteralPath '{}'",
+        wd.join("child").to_string_lossy(),
+        nested.to_string_lossy(),
+        nested.to_string_lossy(),
+        nested.to_string_lossy(),
+    );
+    let out = run(&[
+        "--workdir",
+        &wd.to_string_lossy(),
+        "--",
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        &script,
+    ]);
+    assert_eq!(
+        out.code, 0,
+        "nested writes/reopens failed: {}",
+        out.combined
+    );
+    assert!(std::fs::read_to_string(nested).unwrap().contains("second"));
+}
+
+#[test]
 fn write_outside_denied() {
     let wd = unique("wd");
     std::fs::create_dir_all(&wd).unwrap();
@@ -267,4 +297,22 @@ fn child_tree_killed_with_miaorun() {
         t1, t2,
         "child (heartbeat writer) should be dead after miao-run is killed"
     );
+
+    // A killed invocation cannot revoke its ACLs. Its SID must nevertheless
+    // remain unusable by later invocations with a different workspace.
+    let other = unique("next-wd");
+    std::fs::create_dir_all(&other).unwrap();
+    let out = run(&[
+        "--workdir",
+        &other.to_string_lossy(),
+        "--",
+        "cmd",
+        "/c",
+        &format!("echo escaped > {}", hb.to_string_lossy()),
+    ]);
+    assert_ne!(
+        out.code, 0,
+        "later invocation accessed killed sandbox workspace"
+    );
+    assert_eq!(std::fs::metadata(&hb).and_then(|m| m.modified()).ok(), t2);
 }
