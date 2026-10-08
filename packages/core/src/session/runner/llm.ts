@@ -6,6 +6,7 @@ import {
   Message,
   SystemPart,
   ToolFailure,
+  UnknownProviderReason,
   isContextOverflowFailure,
   type LLMRequest,
   type Model,
@@ -797,6 +798,25 @@ const layer = Layer.effect(
                 overflowFailure = event
                 return
               }
+              // In-band provider errors otherwise settle as successful stream
+              // reads and bypass the bounded retry policy. Replay only before
+              // any durable assistant output or tool call has been published.
+              if (event.retryable && !publisher.hasAssistantStarted())
+                return yield* new LLMError({
+                  module: "SessionRunner",
+                  method: "stream",
+                  reason: new UnknownProviderReason({
+                    message: event.message,
+                    transient: true,
+                    providerMetadata: event.providerMetadata,
+                  }),
+                })
+              yield* Effect.logWarning("session.provider.error", {
+                sessionID: session.id,
+                model: `${model.provider}/${model.id}`,
+                message: event.message,
+                retryable: event.retryable ?? false,
+              })
             }
             // A replayed call id was already executed by its first copy; the
             // publisher drops the echo and it must not run a second time.

@@ -212,6 +212,7 @@ const OpenAIResponsesErrorPayload = Schema.Struct({
 
 const OpenAIResponsesEvent = Schema.Struct({
   type: Schema.String,
+  error: optionalNull(OpenAIResponsesErrorPayload),
   delta: Schema.optional(Schema.String),
   item_id: Schema.optional(Schema.String),
   summary_index: Schema.optional(Schema.Number),
@@ -887,7 +888,7 @@ const onResponseFinish = (state: ParserState, event: OpenAIResponsesEvent): Step
 // the bare message — production rate limits and context-length failures used
 // to be indistinguishable from generic stream drops.
 const providerErrorMessage = (event: OpenAIResponsesEvent, fallback: string): string => {
-  const nested = event.response?.error ?? undefined
+  const nested = event.error ?? event.response?.error ?? undefined
   const message = event.message || nested?.message || undefined
   const code = event.code || nested?.code || undefined
   if (message && code) return `${code}: ${message}`
@@ -895,11 +896,16 @@ const providerErrorMessage = (event: OpenAIResponsesEvent, fallback: string): st
 }
 
 const providerError = (event: OpenAIResponsesEvent, fallback: string) => {
-  const code = event.code || event.response?.error?.code || undefined
+  const code = event.code || event.error?.code || event.response?.error?.code || undefined
   const message = providerErrorMessage(event, fallback)
   return LLMEvent.providerError({
     message,
     classification: code === "context_length_exceeded" || isContextOverflow(message) ? "context-overflow" : undefined,
+    retryable:
+      code &&
+      ["server_error", "internal_error", "rate_limit_exceeded", "overloaded", "service_unavailable"].includes(code)
+        ? true
+        : undefined,
   })
 }
 
