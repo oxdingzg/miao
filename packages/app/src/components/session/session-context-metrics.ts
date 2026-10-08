@@ -1,4 +1,5 @@
 import type { AssistantMessage, Message } from "@miao/schema/view-models"
+import type { SessionMessageInfo } from "@/utils/server"
 
 type Provider = {
   id: string
@@ -13,8 +14,16 @@ type Model = {
   }
 }
 
+type ContextMessage = {
+  id: string
+  providerID: string
+  modelID: string
+  tokens: AssistantMessage["tokens"]
+  time: { created: number; completed?: number }
+}
+
 type Context = {
-  message: AssistantMessage
+  message: ContextMessage
   provider?: Provider
   model?: Model
   providerLabel: string
@@ -25,20 +34,19 @@ type Context = {
   usage: number | null
 }
 
-const tokenTotal = (msg: AssistantMessage) => {
+const tokenTotal = (msg: ContextMessage) => {
   return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
 }
 
-const lastAssistantWithTokens = (messages: Message[]) => {
+const lastAssistantWithTokens = (messages: readonly ContextMessage[]) => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
-    if (msg.role !== "assistant") continue
     if (tokenTotal(msg) <= 0) continue
     return msg
   }
 }
 
-const build = (messages: Message[] = [], providers: Provider[] = []): Context | undefined => {
+const build = (messages: readonly ContextMessage[] = [], providers: Provider[] = []): Context | undefined => {
   const message = lastAssistantWithTokens(messages)
   if (!message) return undefined
 
@@ -61,5 +69,27 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
 }
 
 export function getSessionContext(messages: Message[] = [], providers: Provider[] = []) {
-  return build(messages, providers)
+  return build(
+    messages.flatMap((message) => (message.role === "assistant" ? [message] : [])),
+    providers,
+  )
+}
+
+export function getSessionContextFromRecords(records: SessionMessageInfo[] = [], providers: Provider[] = []) {
+  return build(
+    records.flatMap((record) =>
+      record.type === "assistant" && record.tokens
+        ? [
+            {
+              id: record.id,
+              providerID: record.model.providerID,
+              modelID: record.model.id,
+              tokens: record.tokens,
+              time: record.time,
+            },
+          ]
+        : [],
+    ),
+    providers,
+  )
 }

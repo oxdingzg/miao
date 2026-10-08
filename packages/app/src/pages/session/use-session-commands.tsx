@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { contentParts } from "@/pages/session/timeline/content"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@miao/ui/context/dialog"
 import { previewSelectedLines } from "@miao/session-ui/pierre/selection-bridge"
@@ -257,7 +258,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (boundary < 0) return
     const message = messages[boundary - 1]
     if (!message) return
-    const parts = sync().data.part[message.id]
+    const parts = contentParts(sessionID, sync().data.session_message[sessionID] ?? [])[message.id]
 
     if (sync().data.session_working(sessionID)) {
       await session.interrupt({ sessionID }).catch(() => {})

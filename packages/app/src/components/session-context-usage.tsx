@@ -12,7 +12,7 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
-import { getSessionContext } from "@/components/session/session-context-metrics"
+import { getSessionContextFromRecords } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSettings } from "@/context/settings"
@@ -62,7 +62,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
     fileBrowser: () => settings.general.newLayoutDesigns() && isDesktop() && !!params.id,
   })
-  const messages = createMemo(() => (params.id ? (sync().data.message[params.id] ?? []) : []))
+  const messages = createMemo(() => (params.id ? (sync().data.session_message[params.id] ?? []) : []))
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
 
   const usd = createMemo(
@@ -73,7 +73,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       }),
   )
 
-  const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const context = createMemo(() => getSessionContextFromRecords(messages(), [...providers.all().values()]))
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
   })
