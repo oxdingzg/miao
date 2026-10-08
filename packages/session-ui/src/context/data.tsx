@@ -1,4 +1,5 @@
-import type { Message, Session, Part } from "@miao/schema/view-models"
+import type { Session, Part } from "@miao/schema/view-models"
+import type { SessionMessageInfo } from "../content"
 import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import type { SessionStatus } from "@miao/schema/view-models"
 import type { Provider } from "@miao/schema/view-models"
@@ -35,7 +36,7 @@ type Data = {
     [sessionID: string]: PreloadMultiFileDiffResult<any>[]
   }
   message: {
-    [sessionID: string]: Message[]
+    [sessionID: string]: SessionMessageInfo[]
   }
   part: {
     [messageID: string]: Part[]
