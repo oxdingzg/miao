@@ -63,6 +63,7 @@ export interface NativeModule {
   sandboxSupported(): boolean
   sandboxProfile(workdirs: string[], allowPaths: string[], allowNetwork: boolean, compat: boolean): string
   sandboxRestrict(workdirs: string[], allowPaths: string[], allowNetwork: boolean): void
+  sandboxSpawn(workdirs: string[], allowPaths: string[], allowNetwork: boolean, command: string[]): number
 }
 
 function load(): NativeModule | undefined {

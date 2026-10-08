@@ -29,12 +29,13 @@ export interface Runner {
   readonly prefix: readonly string[]
 }
 
-export type Backend = "seatbelt" | "landlock"
+export type Backend = "seatbelt" | "landlock" | "appcontainer"
 
 /** The kernel mechanism this platform sandboxes with, if any. */
 export function backend(): Backend | undefined {
   if (process.platform === "darwin") return existsSync("/usr/bin/sandbox-exec") ? "seatbelt" : undefined
   if (process.platform === "linux") return "landlock"
+  if (process.platform === "win32") return "appcontainer"
   return undefined
 }
 
@@ -56,7 +57,10 @@ export function resolve(): Runner | undefined {
   // preloads) that the sandboxed project ships.
   return {
     program: InstallationExecutable.executable,
-    prefix: ["--config=/dev/null", path.join(import.meta.dir, "main.ts")],
+    prefix: [
+      `--config=${process.platform === "win32" ? path.join(import.meta.dir, "empty-bunfig.toml") : "/dev/null"}`,
+      path.join(import.meta.dir, "main.ts"),
+    ],
   }
 }
 
@@ -146,6 +150,8 @@ export async function run(argv: readonly string[]): Promise<number> {
     return 0
   }
 
+  if (process.platform === "win32") return runWindows(parsed)
+
   if (process.platform === "linux") {
     try {
       addon?.sandboxRestrict(parsed.workdirs, parsed.allowPaths, parsed.allowNetwork)
@@ -193,6 +199,24 @@ export async function run(argv: readonly string[]): Promise<number> {
 
   const code = await child.exited
   if (parsed.denyReport) writeDenyReport(parsed.denyReport, denied, code)
+  return code
+}
+
+/**
+ * Windows has no in-process restriction a child inherits: the AppContainer
+ * applies at CreateProcess time, so the addon spawns and waits for the child
+ * itself, with stdio inherited. Denied paths are not recoverable on Windows
+ * (access-denied errors carry no path), so the report lists none.
+ */
+async function runWindows(parsed: Options): Promise<number> {
+  const spawnSandboxed = addon?.sandboxSpawn
+  if (!spawnSandboxed) {
+    process.stderr.write("miao: windows sandbox needs the native addon; running unsandboxed\n")
+  }
+  const code = spawnSandboxed
+    ? spawnSandboxed(parsed.workdirs, parsed.allowPaths, parsed.allowNetwork, parsed.command)
+    : await Bun.spawn(parsed.command, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited
+  if (parsed.denyReport) writeDenyReport(parsed.denyReport, [], code)
   return code
 }
 
