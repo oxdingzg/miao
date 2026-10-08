@@ -12,7 +12,7 @@ import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import path from "node:path"
 
 describe("opencode run (non-interactive subprocess)", () => {
-  cliIt.concurrent(
+  cliIt.serial(
     "closing a terminal stops its execution and releases storage before another window continues",
     ({ home, llm, opencode }) =>
       Effect.gen(function* () {
@@ -41,7 +41,7 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
-  cliIt.concurrent(
+  cliIt.serial(
     "exits 0 and writes the response to stdout on a successful prompt",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
@@ -53,7 +53,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "prints each completed text part in order around a tool continuation",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
@@ -75,7 +75,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "prints reasoning before text only with --thinking",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
@@ -148,7 +148,7 @@ describe("opencode run (non-interactive subprocess)", () => {
   // --format json puts one JSON object per line on stdout for each emitted
   // event. Consumers (CI scripts, tooling) parse this stream. Asserts the
   // shape so a future event-emit change has to update this expectation.
-  cliIt.concurrent(
+  cliIt.serial(
     "--format json emits parseable line-delimited JSON to stdout",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
@@ -182,7 +182,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "--format json emits a pure error record for a rejected prompt request",
     ({ opencode }) =>
       Effect.gen(function* () {
@@ -205,7 +205,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     30_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "--format json preserves reasoning, tool, and continuation ordering",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
@@ -293,7 +293,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "rejects requested permissions by default and allows them with the dangerous flag",
     ({ home, llm, opencode }) =>
       Effect.gen(function* () {
@@ -355,7 +355,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     120_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "attach mode rejects local directories before prompt admission",
     ({ home, opencode }) =>
       Effect.gen(function* () {
