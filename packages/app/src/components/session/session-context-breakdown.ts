@@ -68,7 +68,7 @@ const build = (
 }
 
 export function estimateSessionContextBreakdown(args: {
-  messages: Message[]
+  messages: readonly { id: string; type: string }[]
   parts: Record<string, Part[] | undefined>
   input: number
   systemPrompt?: string
@@ -78,12 +78,12 @@ export function estimateSessionContextBreakdown(args: {
   const counts = args.messages.reduce(
     (acc, msg) => {
       const parts = args.parts[msg.id] ?? []
-      if (msg.role === "user") {
+      if (msg.type === "user") {
         const user = parts.reduce((sum, part) => sum + charsFromUserPart(part), 0)
         return { ...acc, user: acc.user + user }
       }
 
-      if (msg.role !== "assistant") return acc
+      if (msg.type !== "assistant") return acc
       const assistant = parts.reduce(
         (sum, part) => {
           const next = charsFromAssistantPart(part)

@@ -11,14 +11,16 @@ import { StickyAccordionHeader } from "@miao/ui/sticky-accordion-header"
 import { File } from "@miao/session-ui/file"
 import { Markdown } from "@miao/session-ui/markdown"
 import { ScrollView } from "@miao/ui/scroll-view"
-import type { Message, Part, UserMessage } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/view-models"
+import type { SessionMessageInfo } from "@/utils/server"
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContext } from "./session-context-metrics"
+import { getSessionContextFromRecords } from "./session-context-metrics"
+import { contentParts } from "@/pages/session/timeline/content"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
@@ -39,12 +41,16 @@ function Stat(props: { label: string; value: JSX.Element }) {
   )
 }
 
-function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
+function RawMessageContent(props: {
+  message: SessionMessageInfo
+  getParts: (id: string) => Part[]
+  onRendered: () => void
+}) {
   const file = createMemo(() => {
     const parts = props.getParts(props.message.id)
     const contents = JSON.stringify({ message: props.message, parts }, null, 2)
     return {
-      name: `${props.message.role}-${props.message.id}.json`,
+      name: `${props.message.type}-${props.message.id}.json`,
       contents,
       cacheKey: checksum(contents),
     }
@@ -62,7 +68,7 @@ function RawMessageContent(props: { message: Message; getParts: (id: string) => 
 }
 
 function RawMessage(props: {
-  message: Message
+  message: SessionMessageInfo
   getParts: (id: string) => Part[]
   onRendered: () => void
   time: (value: number | undefined) => string
@@ -73,7 +79,7 @@ function RawMessage(props: {
         <Accordion.Trigger>
           <div class="flex items-center justify-between gap-2 w-full">
             <div class="min-w-0 truncate">
-              {props.message.role} <span class="text-text-base">• {props.message.id}</span>
+              {props.message.type} <span class="text-text-base">• {props.message.id}</span>
             </div>
             <div class="flex items-center gap-3">
               <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
@@ -91,8 +97,8 @@ function RawMessage(props: {
   )
 }
 
-const emptyMessages: Message[] = []
-const emptyUserMessages: UserMessage[] = []
+const emptyMessages: SessionMessageInfo[] = []
+const emptyUserMessages: SessionMessageInfo[] = []
 
 export function SessionContextTab() {
   const sync = useSync()
@@ -107,14 +113,14 @@ export function SessionContextTab() {
     () => {
       const id = params.id
       if (!id) return emptyMessages
-      return (sync().data.message[id] ?? []) as Message[]
+      return sync().data.session_message[id] ?? []
     },
     emptyMessages,
     { equals: same },
   )
 
   const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
+    () => messages().filter((m) => m.type === "user"),
     emptyUserMessages,
     { equals: same },
   )
@@ -138,7 +144,7 @@ export function SessionContextTab() {
       }),
   )
 
-  const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const ctx = createMemo(() => getSessionContextFromRecords(messages(), [...providers.all().values()]))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
   const cost = createMemo(() => {
@@ -147,8 +153,8 @@ export function SessionContextTab() {
 
   const counts = createMemo(() => {
     const all = messages()
-    const user = all.reduce((count, x) => count + (x.role === "user" ? 1 : 0), 0)
-    const assistant = all.reduce((count, x) => count + (x.role === "assistant" ? 1 : 0), 0)
+    const user = all.reduce((count, x) => count + (x.type === "user" ? 1 : 0), 0)
+    const assistant = all.reduce((count, x) => count + (x.type === "assistant" ? 1 : 0), 0)
     return {
       all: all.length,
       user,
@@ -157,8 +163,8 @@ export function SessionContextTab() {
   })
 
   const systemPrompt = createMemo(() => {
-    const msg = findLast(visibleUserMessages(), (m) => !!m.system)
-    const system = msg?.system
+    const msg = findLast(messages(), (m) => m.type === "system")
+    const system = msg?.type === "system" ? msg.text : undefined
     if (!system) return
     const trimmed = system.trim()
     if (!trimmed) return
@@ -185,7 +191,7 @@ export function SessionContextTab() {
         if (!c?.input) return []
         return estimateSessionContextBreakdown({
           messages: messages(),
-          parts: sync().data.part as Record<string, Part[] | undefined>,
+          parts: projected(),
           input: c.input,
           systemPrompt: systemPrompt(),
         })
@@ -252,7 +258,8 @@ export function SessionContextTab() {
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
   let pending: { x: number; y: number } | undefined
-  const getParts = (id: string) => (sync().data.part[id] ?? []) as Part[]
+  const projected = createMemo(() => contentParts(params.id ?? "", messages()))
+  const getParts = (id: string) => projected()[id] ?? []
 
   const restoreScroll = () => {
     const el = scroll

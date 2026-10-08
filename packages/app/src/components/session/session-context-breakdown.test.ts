@@ -20,7 +20,10 @@ const assistant = (id: string) => {
 
 describe("estimateSessionContextBreakdown", () => {
   test("estimates tokens and keeps remaining tokens as other", () => {
-    const messages = [user("u1"), assistant("a1")]
+    const messages = [
+      { id: "u1", type: "user" },
+      { id: "a1", type: "assistant" },
+    ]
     const parts = {
       u1: [{ type: "text", text: "hello world" }] as unknown as Part[],
       a1: [{ type: "text", text: "assistant response" }] as unknown as Part[],
@@ -41,7 +44,10 @@ describe("estimateSessionContextBreakdown", () => {
   })
 
   test("scales segments when estimates exceed input", () => {
-    const messages = [user("u1"), assistant("a1")]
+    const messages = [
+      { id: "u1", type: "user" },
+      { id: "a1", type: "assistant" },
+    ]
     const parts = {
       u1: [{ type: "text", text: "x".repeat(400) }] as unknown as Part[],
       a1: [{ type: "text", text: "y".repeat(400) }] as unknown as Part[],
