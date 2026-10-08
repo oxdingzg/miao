@@ -1509,6 +1509,32 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("queued schedule notices wait until the current tool continuation finishes", () =>
+    Effect.gen(function* () {
+      yield* setup
+      responses = [
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "schedule-boundary", name: "echo", input: { text: "current work" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      yield* (yield* SessionV2.Service).prompt({ sessionID, prompt: Prompt.make({ text: "finish this work" }), resume: false })
+      yield* (yield* EventV2.Service).publish(SessionEvent.NotificationAdmitted, {
+        sessionID,
+        messageID: SessionMessage.ID.create(),
+        timestamp: yield* DateTime.now,
+        text: "scheduled follow-up after idle",
+        metadata: { scheduled: true, scheduleID: "schedule-boundary-test", delivery: "queue" },
+      })
+      yield* (yield* SessionExecution.Service).resume(sessionID)
+      yield* (yield* SessionExecution.Service).wait(sessionID)
+      expect(requests).toHaveLength(3)
+      expect(JSON.stringify(requests[0]?.messages)).not.toContain("scheduled follow-up after idle")
+      expect(JSON.stringify(requests[1]?.messages)).not.toContain("scheduled follow-up after idle")
+      expect(JSON.stringify(requests[2]?.messages)).toContain("scheduled follow-up after idle")
+      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 1)
+    }),
+  )
+
   itWithMonitor.live("monitor completion wakes an idle Session and can execute follow-up tools without a human prompt", () =>
     Effect.gen(function* () {
       yield* setup

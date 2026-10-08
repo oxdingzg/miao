@@ -1,5 +1,10 @@
 # V2 Schema Changelog
 
+## 2026-10-08: Scheduled Machine Continuations
+
+- Scheduled wakeups now use the existing notification-admission event with `scheduled`, `scheduleID`, and `delivery: queue` metadata, rather than user prompt admission. No new event version, table, or migration is required.
+- Repeated ticks coalesce while the same schedule has an unread notice. They wait for the current tool continuation to finish and use the machine wake allowance without refilling it.
+
 ## 2026-10-08: Durable Machine Notification Admission
 
 - Add durable `session.next.notification.admitted.1` with `sessionID`, `timestamp`, `messageID`, `text`, and optional `metadata`. It projects into the existing `session_notification` inbox; no new table or database migration is needed.

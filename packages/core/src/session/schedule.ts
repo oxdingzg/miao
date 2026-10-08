@@ -1,6 +1,6 @@
 export * as SessionSchedule from "./schedule"
 
-import { Clock, Context, Duration, Effect, Exit, Layer, Schema, Scope, SynchronizedRef } from "effect"
+import { Clock, Context, DateTime, Duration, Effect, Exit, Layer, Schema, Scope, SynchronizedRef } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode, makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -8,9 +8,9 @@ import { Identifier } from "../id/id"
 import { Cron } from "./cron"
 import { SessionOwnership } from "./ownership"
 import { SessionExecution } from "./execution"
-import { SessionInput } from "./input"
+import { SessionDelegationStore } from "./delegation-store"
+import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
-import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
 
 /** Recurring jobs stop on their own after this long, so one cannot run forever by accident. */
@@ -81,18 +81,20 @@ export const make = Effect.gen(function* () {
   const execution = yield* SessionExecution.Service
   const ownership = yield* SessionOwnership.Service
 
-  // Firing reuses the sanctioned prompt admission path: one durable
-  // `session_input` row, then an advisory wake. `queue` delivery makes the
-  // scheduled text wait until the Session is otherwise idle, like a human
-  // queued message. It must never call the runner directly.
+  // Machine continuations are notifications, never human prompts. One unread
+  // tick per schedule bounds backlog while a long provider/tool turn is busy.
   const fire = Effect.fn("SessionSchedule.fire")(function* (info: Info) {
-    const admitted = yield* SessionInput.admit(db, events, {
-      id: SessionMessage.ID.create(),
-      sessionID: info.sessionID,
-      prompt: Prompt.make({ text: info.prompt }),
-      delivery: "queue",
-    })
-    yield* execution.wake(admitted.sessionID)
+    const pending = yield* SessionDelegationStore.pendingSchedule(db, info.sessionID, info.id)
+    if (pending === undefined) {
+      yield* events.publish(SessionEvent.NotificationAdmitted, {
+        sessionID: info.sessionID,
+        messageID: SessionMessage.ID.create(),
+        timestamp: yield* DateTime.now,
+        text: info.prompt,
+        metadata: { scheduleID: info.id, delivery: "queue", scheduled: true },
+      })
+    }
+    yield* execution.wake(info.sessionID)
   })
 
   const detach = (id: string, token?: object) =>
