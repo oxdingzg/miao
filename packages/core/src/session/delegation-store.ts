@@ -63,6 +63,21 @@ const insertNotification = (
     .run()
     .pipe(Effect.orDie)
 
+export const projectNotificationAdmitted = Effect.fn("SessionDelegationStore.projectNotificationAdmitted")(function* (
+  db: DB,
+  event: SessionEvent.NotificationAdmitted,
+) {
+  if (!event.durable) return yield* Effect.die("Notification admission requires a durable sequence")
+  yield* insertNotification(db, {
+    sessionID: event.data.sessionID,
+    id: event.data.messageID,
+    text: event.data.text,
+    metadata: event.data.metadata ?? {},
+    admittedSeq: event.durable.seq,
+    timeCreated: DateTime.toEpochMillis(event.data.timestamp),
+  })
+})
+
 /**
  * Whether a notification is a subagent progress note. Metadata is the only
  * place a notification carries its kind, so this reads into the JSON column
