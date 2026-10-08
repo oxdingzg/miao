@@ -36,6 +36,7 @@ const CUSTOMIZE_MIAO_SKILL_DESCRIPTION =
 const CUSTOMIZE_MIAO_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
 const OFFICE_DOCUMENTS_SKILL_NAME = "office-documents"
 const MEDIA_OBSERVE_SKILL_NAME = "media-observe"
+const BACKGROUND_WAITS_SKILL_NAME = "background-waits"
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -294,6 +295,12 @@ const layer = Layer.effect(
           description: SkillPlugin.MediaObserveDescription,
           location: "<built-in>",
           content: SkillPlugin.MediaObserveContent,
+        }
+        s.skills[BACKGROUND_WAITS_SKILL_NAME] = {
+          name: BACKGROUND_WAITS_SKILL_NAME,
+          description: SkillPlugin.BackgroundWaitsDescription,
+          location: "<built-in>",
+          content: SkillPlugin.BackgroundWaitsContent,
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
