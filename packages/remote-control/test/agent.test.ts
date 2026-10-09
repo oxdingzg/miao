@@ -628,3 +628,24 @@ test("browser roster channel consumes encrypted approval and authenticates RPC w
     rpc.close()
   }
 })
+
+test("Hub-nominated account must match the rosterClaim account before admission", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-agent-nominee-"))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
+  const identity = await SecureChannel.createIdentity()
+  const hubURL = "http://127.0.0.1:1/"
+  const accountID = "account_roster_fixture_001"
+  const approved = await grants.approve({ publicKey: identity.publicKey, label: "Root", permissions: ["read"],
+    projectIDs: ["project-one"], sessionIDs: [], expiresAt: Date.now() + 600000 })
+  await grants.bindAccount({ hubURL, accountID, grantID: approved.id, grantVersion: approved.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: approved.expiresAt }, allowLoopbackHTTP: true })
+  const roster = await DeviceRoster.sign(identity, { version: 1, accountID, sequence: 1, issuedAt: 0,
+    devices: [{ publicKey: identity.publicKey, label: "Root", signer: true, addedAt: 0 }] })
+  await grants.acceptRoster(hubURL, roster)
+  const outsider = await SecureChannel.createIdentity()
+  await expect(grants.authorizeRosterDevice(hubURL, accountID, outsider.publicKey)).rejects.toThrow()
+  expect(grants.list().some((grant) => grant.publicKey === outsider.publicKey)).toBe(false)
+  expect(grants.accountTrust()).toMatchObject({ accountID, acceptedSequence: 1 })
+  grants.close()
+})

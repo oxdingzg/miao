@@ -53,7 +53,7 @@ const Request = Schema.Struct({
 export type Request = typeof Request.Type
 const decodeRequest = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Request)))
 const Envelope = Schema.Union([
-  Schema.Struct({ type: Schema.Literals(["connected", "disconnected"]), connectionID: Identifier }),
+  Schema.Struct({ type: Schema.Literals(["connected", "disconnected"]), connectionID: Identifier, accountID: Schema.optional(DeviceRoster.AccountID) }),
   Schema.Struct({ type: Schema.Literal("frame"), connectionID: Identifier, payload: Schema.String }),
 ])
 const decodeEnvelope = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Envelope)))
@@ -94,6 +94,8 @@ const RosterClaim = Schema.Struct({
   roster: Schema.optional(Schema.Unknown),
 })
 type Peer = {
+  /** Set only by the authenticated Hub control channel, not client frames. */
+  readonly accountID?: string
   readonly abort: AbortController
   readonly queue: { count: number; bytes: number; tail: Promise<void> }
   readonly timer: ReturnType<typeof setTimeout>
@@ -200,7 +202,7 @@ export function connect(options: Options) {
       send(id, sealed)
     }
   }
-  async function frame(id: string, peer: Peer, encoded: string) {
+async function frame(id: string, peer: Peer, encoded: string) {
     if (peer.abort.signal.aborted) return
     if (!peer.channel) {
       const bytes = Buffer.from(encoded, "base64url")
@@ -360,6 +362,7 @@ export function connect(options: Options) {
           return
         }
         peers.set(envelope.connectionID, {
+          accountID: envelope.accountID,
           abort: new AbortController(),
           queue: { count: 0, bytes: 0, tail: Promise.resolve() },
           timer: setTimeout(() => closePeer(envelope.connectionID), 10_000),
