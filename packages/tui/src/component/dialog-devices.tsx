@@ -142,11 +142,14 @@ export function DialogDevices(props: {
     const value = link()
     return value ? renderUnicodeCompact(value, { border: 1 }).split("\n") : []
   })
-  const fits = createMemo(
-    () =>
-      (qr()[0]?.length ?? 0) <= dimensions().width - 12 &&
-      qr().length + 15 <= dimensions().height - Math.floor(dimensions().height / 4),
-  )
+  // The dialog is a fixed 116-column box; compare against the box, not the raw
+  // terminal, so a wide terminal with a narrow dialog no longer hides the code.
+  const fits = createMemo(() => {
+    if (!invitation()) return false
+    const width = Math.min(dimensions().width, 120)
+    const height = Math.min(dimensions().height, 64)
+    return (qr()[0]?.length ?? 0) <= width - 4 && qr().length + 8 <= height - 4
+  })
 
   const options = createMemo((): DialogSelectOption<string>[] => {
     const confirm = confirmation()
