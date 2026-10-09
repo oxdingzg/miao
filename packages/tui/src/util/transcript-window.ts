@@ -238,7 +238,14 @@ export function createTranscriptWindow<T extends { id: string }>(
         return
       }
       const average = content / mounted
-      if (average > 0 && Math.abs(average - estimate()) > estimate() * 0.25)
+      // Recalibrate only while following the tail. A message renders at
+      // `index * estimate`, so once the reader is anchored the estimate defines
+      // where the mounted block sits; retuning it from whichever rows happen to
+      // be mounted reshapes the spacers under the reader every pass, pushing the
+      // block off the viewport and re-triggering the recovery jump below — an
+      // endless oscillation, with a blank transcript, once tall and short rows
+      // alternate. Following the tail has no anchor to protect, so it may retune.
+      if (!anchored && average > 0 && Math.abs(average - estimate()) > estimate() * 0.25)
         setEstimate(Math.max(1, Math.round(average)))
       if (atBottom) {
         setAnchor(undefined)
@@ -267,7 +274,13 @@ export function createTranscriptWindow<T extends { id: string }>(
       // instead; normal stepping resumes on the next pass. A single pass can
       // report stray geometry mid-move (stale scrollHeight against fresh
       // spacers), so the jump only fires once the stranding measured twice.
-      const first = start() * estimate()
+      //
+      // Measure against the spacer geometry rendered this frame. `leading` was
+      // captured before the recalibration above, matching the scrollHeight the
+      // caller measured; reading `estimate()` again here would describe a
+      // layout that is not on screen yet and report a stranding that the real
+      // geometry does not have.
+      const first = leading
       const last = first + content
       const stranded =
         content > 0 &&

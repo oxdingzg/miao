@@ -76,14 +76,18 @@ test("follow reveals local history above and hides it again below", () => {
   })
 })
 
-test("estimate recalibrates from measured rows on every pass, not only at the bottom", () => {
+test("estimate recalibrates while following the tail and holds once anchored", () => {
   createRoot((dispose) => {
     const all = Array.from({ length: 300 }, (_, i) => ({ id: `${i}` }))
     const window = createTranscriptWindow(createSignal(all)[0], { windowSize: 40, estimate: 8, margin: 2 })
-    // A viewport in the middle of the mounted window: no move is triggered,
-    // yet the measured rows replace the stale spacer estimate.
+    // Following the tail (no anchor): a viewport in the middle of the mounted
+    // window still lets the measured rows replace the stale spacer estimate.
     window.follow({ scrollTop: window.top() + 80, viewportHeight: 20, mountedHeight: 40 * 5 })
     expect(window.start()).toBe(260)
+    expect(window.top()).toBe(window.start() * 5)
+    // Anchored in history: a very different mounted average must not reshape
+    // the spacers under the reader, or the block walks off the viewport.
+    window.follow({ scrollTop: 1000, viewportHeight: 20, mountedHeight: 40 * 1 })
     expect(window.top()).toBe(window.start() * 5)
     dispose()
   })
