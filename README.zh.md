@@ -129,7 +129,7 @@ miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对
 | patch Unicode 归一化，20k 行 | 13.06 ms        | 5.21 ms   | 2.5×  |
 | git status，10 个文件        | 12.3 ms         | 1.0 ms    | 11.9× |
 
-这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。V2 的 edit／apply_patch 在 addon 已加载时调用原生匹配与派生，正常安装默认启用；`MIAO_NATIVE=0` 可改用 TypeScript 实现。addon 同时用于可选的 OS 沙箱；进程内 Git 仍属原型。完整数据和可用范围见[组件基准](docs/native-benchmarks.zh.md)。
+这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。V2 的 edit／apply_patch 在 addon 已加载时调用原生匹配与派生，正常安装默认启用；`MIAO_NATIVE=0` 可改用 TypeScript 实现。addon 同时用于可选的 OS 沙箱；进程内 Git status 也在同一开关后面。完整数据和可用范围见[组件基准](docs/native-benchmarks.zh.md)。
 
 ## 当前状态与架构
 

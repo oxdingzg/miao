@@ -20,6 +20,13 @@ export interface NativeDeriveResult {
   bom: boolean
 }
 
+export interface NativeGitEntry {
+  path: string
+  status: string
+  additions: number
+  deletions: number
+}
+
 export interface NativeModule {
   replaceOnly(content: string, oldString: string, newString: string, replaceAll?: boolean): string
   applyEdit(
@@ -37,7 +44,8 @@ export interface NativeModule {
   unifiedPatch(before: string, after: string, filePath: string): string
   deriveNewContents(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
   deriveNewContentsV2(chunks: NativePatchChunk[], filePath: string, originalText: string): NativeDeriveResult
-  gitStatus(path: string): Array<{ path: string; status: string }>
+  gitStatus(path: string): Array<NativeGitEntry>
+  gitStatusAsync(path: string): Promise<Array<NativeGitEntry>>
   gitRevParse(path: string, rev: string): string
   gitRevParseAsync(path: string, rev: string): Promise<string>
   gitBlob(path: string, rev: string, file: string): { content: string; binary: boolean }
