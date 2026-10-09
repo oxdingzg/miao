@@ -45,6 +45,13 @@ describe("SessionOutputGuard", () => {
     expect(detected).toBe(true)
   })
 
+  test("detects a bold refrain alternating with plain lines", () => {
+    // A production loop repeated `**做**。` / `（跑）` / `我跑。` for thousands of
+    // lines. Emphasis markers are formatting, so they must not be read as
+    // structure that resets the prose window.
+    expect(SessionOutputGuard.detect("**做**。\n（跑）\n我跑。\n".repeat(40))).toBe(true)
+  })
+
   test("allows ordinary progress, code, tables, lists and short repetition", () => {
     const examples = [
       "Emit.\nedit.\n".repeat(8),
@@ -56,6 +63,7 @@ describe("SessionOutputGuard", () => {
       "| Yes | No |\n".repeat(100),
       "- item\n".repeat(100),
       "1. item\n".repeat(100),
+      "**做**。\n（跑）\n我跑。\n".repeat(5),
       "x".repeat(1_000_000),
     ]
     examples.forEach((text) => expect(SessionOutputGuard.detect(text)).toBe(false))
