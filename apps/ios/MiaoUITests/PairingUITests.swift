@@ -64,9 +64,17 @@ final class PairingUITests: XCTestCase {
                 stage("pairing")
                 XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 30))
                 app.buttons["hubAccount"].tap()
-                // iOS 18 and 26 expose the disclosure header as different element types.
-                let disclosure = app.descendants(matching: .any)["同账号设备注册"].firstMatch
+                // iOS 18 exposes the disclosure header as a button; iOS 26 only
+                // as an accessibility node. Take the first match that can
+                // actually be tapped after bringing the section into view.
+                let disclosureButton = app.buttons["同账号设备注册"].firstMatch
+                let disclosure =
+                    disclosureButton.waitForExistence(timeout: 5)
+                    ? disclosureButton
+                    : app.descendants(matching: .any)["同账号设备注册"].firstMatch
                 XCTAssertTrue(disclosure.waitForExistence(timeout: 15))
+                for _ in 0..<6 where !disclosure.isHittable { app.swipeUp() }
+                XCTAssertTrue(disclosure.isHittable)
                 disclosure.tap()
                 XCTAssertTrue(app.buttons["enrollmentBegin"].waitForExistence(timeout: 10))
                 app.buttons["enrollmentBegin"].tap()
