@@ -85,3 +85,66 @@ test("a priced model keeps quoting real amounts", async () => {
     app.renderer.destroy()
   }
 })
+
+test("a recorded total stays visible when the selected model is unpriced", async () => {
+  const session = { cost: 25.19, model: { providerID: "plan", id: "plan-flash" } } as unknown as Session
+  const api = createTuiPluginApi({
+    state: {
+      provider: provider({
+        "plan-flash": { limit: LIMIT },
+        "gpt-sol": { cost: { input: 1.5, output: 6, cache: { read: 0.15, write: 0 } }, limit: LIMIT },
+      }),
+      session: {
+        get: () => session,
+        messages: () => [
+          testAssistantMessage({
+            id: "msg_priced",
+            model: { providerID: "plan", id: "gpt-sol" },
+            created: 0,
+            cost: 25.19,
+            tokens: { input: 4000, output: 500, reasoning: 0, cache: { read: 226_000, write: 0 } },
+          }),
+          testAssistantMessage({
+            id: "msg_unpriced",
+            model: MODEL,
+            created: 1,
+            tokens: { input: 1000, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
+          }),
+        ],
+      },
+    },
+  })
+  let slot: TuiSlotPlugin | undefined
+  api.slots = {
+    register(plugin: TuiSlotPlugin) {
+      slot = plugin
+      return "context"
+    },
+  }
+  await contextPlugin.tui(api, undefined, {
+    id: "context",
+    source: "internal",
+    spec: "context",
+    target: "context",
+    first_time: 0,
+    last_time: 0,
+    time_changed: 0,
+    load_count: 1,
+    fingerprint: "test",
+    state: "same",
+  })
+  const app = await testRender(() => slot!.slots.sidebar_content!({ theme: api.theme }, { session_id: "s1" }), {
+    width: 42,
+    height: 24,
+  })
+  await app.renderOnce()
+  try {
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("$25.19 spent")
+    expect(frame).toContain("gpt-sol 1t $25.19")
+    expect(frame).toContain("plan-flash 1t —")
+    expect(frame).not.toContain("— spent")
+  } finally {
+    app.renderer.destroy()
+  }
+})

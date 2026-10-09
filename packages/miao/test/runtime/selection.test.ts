@@ -178,6 +178,12 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
       if (!object(value)) throw new Error("Invalid selection fixture response")
       return value
     }
+    expect(await local("/api/runtime/control")).toMatchObject({ sessionIDs: [] })
+    expect(await request("session.switchAgent", crypto.randomUUID(), { agent: "plan" })).toMatchObject({
+      type: "error",
+      code: "forbidden",
+    })
+    await local(`/api/runtime/control/session/${sessionID}`, { enabled: true })
     const agentOperation = crypto.randomUUID()
     const modelOperation = crypto.randomUUID()
     for (let index = 0; index < 2; index++) {

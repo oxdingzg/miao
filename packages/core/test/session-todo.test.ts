@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { asc } from "drizzle-orm"
+import { asc, eq } from "drizzle-orm"
 import { Effect } from "effect"
 import { Database } from "@miao/core/database/database"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -9,7 +9,8 @@ import { Project } from "@miao/core/project"
 import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
-import { SessionTable, TodoTable } from "@miao/core/session/sql"
+import { SessionMessage } from "@miao/core/session/message"
+import { SessionMessageTable, SessionTable, TodoTable } from "@miao/core/session/sql"
 import { SystemContext } from "@miao/core/system-context"
 import { SessionTodo } from "@miao/core/session/todo"
 import { testEffect } from "./lib/effect"
@@ -39,6 +40,92 @@ const setup = Effect.gen(function* () {
 })
 
 describe("SessionTodo", () => {
+  const insertAssistantTurns = (input: { readonly startSeq: number; readonly count: number; readonly from: number }) =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionMessageTable)
+        .values(
+          Array.from({ length: input.count }, (_, index) => ({
+            id: SessionMessage.ID.make(`msg_stale_${input.startSeq + index}`),
+            session_id: sessionID,
+            type: "assistant" as const,
+            seq: input.startSeq + index,
+            time_created: input.from + index,
+            data: { type: "assistant", time: { created: input.from + index } } as never,
+          })),
+        )
+        .run()
+        .pipe(Effect.orDie)
+    })
+
+  it.effect("re-injects a reconciliation nudge once the list goes stale across provider turns", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const todos = yield* SessionTodo.Service
+      const source = SessionTodo.context(todos, sessionID)
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "verify release", status: "in_progress", priority: "high" }],
+      })
+      const fresh = yield* SystemContext.initialize(source)
+      expect(fresh.baseline).not.toContain("provider turns while work continued")
+      expect(yield* SystemContext.reconcile(source, fresh.snapshot)).toEqual({ _tag: "Unchanged" })
+
+      yield* insertAssistantTurns({ startSeq: 1, count: 10, from: Date.now() + 1_000 })
+      const stale = yield* SystemContext.reconcile(source, fresh.snapshot)
+      expect(stale._tag).toBe("Updated")
+      if (stale._tag !== "Updated") throw new Error("expected stale todo context update")
+      expect(stale.text).toContain("has not been updated for 8 provider turns")
+      expect(stale.text).toContain('"content": "verify release"')
+
+      // The quantized count only moves every 4 further unsynced turns, so the
+      // reminder does not fire on every provider-turn boundary.
+      expect(yield* SystemContext.reconcile(source, stale.snapshot)).toEqual({ _tag: "Unchanged" })
+      yield* insertAssistantTurns({ startSeq: 11, count: 4, from: Date.now() + 2_000 })
+      const staler = yield* SystemContext.reconcile(source, stale.snapshot)
+      expect(staler._tag).toBe("Updated")
+      if (staler._tag !== "Updated") throw new Error("expected a re-nudged todo context")
+      expect(staler.text).toContain("has not been updated for 12 provider turns")
+    }),
+  )
+
+  it.effect("treats an unchanged todowrite as a sync that resets the staleness anchor", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const todos = yield* SessionTodo.Service
+      const list = [{ content: "verify release", status: "in_progress", priority: "high" }]
+      yield* todos.update({ sessionID, todos: list })
+      // Age the anchor so the seeded turns count as unsynced work.
+      yield* db
+        .update(TodoTable)
+        .set({ time_updated: 1 })
+        .where(eq(TodoTable.session_id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* insertAssistantTurns({ startSeq: 1, count: 10, from: 100 })
+      expect((yield* todos.observe(sessionID)).turnsBehind).toBe(10)
+      yield* todos.update({ sessionID, todos: list })
+      expect((yield* todos.observe(sessionID)).turnsBehind).toBe(0)
+    }),
+  )
+
+  it.effect("does not nudge reconciliation for a list with nothing open", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const todos = yield* SessionTodo.Service
+      const source = SessionTodo.context(todos, sessionID)
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "verify release", status: "completed", priority: "high" }],
+      })
+      const baseline = yield* SystemContext.initialize(source)
+      yield* insertAssistantTurns({ startSeq: 1, count: 10, from: Date.now() + 1_000 })
+      expect(yield* SystemContext.reconcile(source, baseline.snapshot)).toEqual({ _tag: "Unchanged" })
+    }),
+  )
+
   it.effect("refreshes persisted task context, survives replacement and isolates sessions", () =>
     Effect.gen(function* () {
       yield* setup

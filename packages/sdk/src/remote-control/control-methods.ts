@@ -20,6 +20,7 @@ const Prompt = Schema.Struct({
 
 export function make(options: {
   owned: (sessionID: string) => Promise<boolean>
+  sessionCreated?: (sessionID: string) => Promise<void>
   client: ReturnType<typeof OpenCode.make>
   live?: ReturnType<typeof RuntimeControlLive.make>
   run: <A, E>(effect: Effect.Effect<A, E, Database.Service>) => Promise<A>
@@ -277,6 +278,8 @@ export function make(options: {
           // Core adopts an existing ID; creation itself never starts provider work.
           const session = await options.client.sessions.create({ id: sessionID, location: { directory } })
           if (session.projectID !== projectID) throw new ControlAgent.RequestError("conflict")
+          await options.sessionCreated?.(session.id)
+          context.authorize()
           const result = { status: "completed", session }
           await query((db) => RemoteOperations.settle(db, subject, id, "completed", result))
           context.authorize()

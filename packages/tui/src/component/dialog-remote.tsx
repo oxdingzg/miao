@@ -41,6 +41,7 @@ export const RemoteLocalProvider = RemoteLocalContext.Provider
 export type RemoteEnvironment = {
   readonly devices: DeviceApi
   readonly setEnabled?: ReturnType<typeof OpenCode.make>["server.runtime"]["setEnabled"]
+  readonly setSessionEnabled?: ReturnType<typeof OpenCode.make>["server.runtime"]["setSessionEnabled"]
   readonly configure?: ReturnType<typeof OpenCode.make>["server.runtime"]["configure"]
   readonly sessionID?: string
   readonly projectID?: string
@@ -62,6 +63,7 @@ export function DialogRemote() {
       environment={{
         devices: sdk.api["server.runtime"],
         configure: sdk.api["server.runtime"].configure,
+        setSessionEnabled: sdk.api["server.runtime"].setSessionEnabled,
         setEnabled: sdk.api["server.runtime"].setEnabled,
         sessionID,
         projectID: sync.data.session.find((session) => session.id === sessionID)?.projectID ?? project.data.project.id,
@@ -146,6 +148,30 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                   void environment.setEnabled!({ enabled: false })
                     .then(reopen)
                     .catch(() => DialogAlert.show(dialog, "关闭失败", "请重试关闭远程接入。")),
+              },
+            ]
+          : []),
+        ...(environment.sessionID && environment.setSessionEnabled
+          ? [
+              {
+                value: "session-enable",
+                title: "开启当前会话的远程控制",
+                category: "当前会话",
+                description: "允许已授权设备发现和访问；仍需登录 Hub 并接入窗口",
+                onSelect: () =>
+                  void environment.setSessionEnabled!({ sessionID: environment.sessionID!, enabled: true })
+                    .then(reopen)
+                    .catch(() => DialogAlert.show(dialog, "开启失败", "该会话可能正由其他窗口使用，请检查后重试。")),
+              },
+              {
+                value: "session-disable",
+                title: "关闭当前会话的远程控制",
+                category: "当前会话",
+                description: "立即停止远程访问，本地任务继续运行",
+                onSelect: () =>
+                  void environment.setSessionEnabled!({ sessionID: environment.sessionID!, enabled: false })
+                    .then(reopen)
+                    .catch(() => DialogAlert.show(dialog, "关闭失败", "请重试关闭当前会话的远程控制。")),
               },
             ]
           : []),

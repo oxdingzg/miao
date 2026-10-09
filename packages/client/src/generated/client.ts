@@ -222,6 +222,8 @@ import type {
   ServerRuntimeGetOutput,
   ServerRuntimeSetEnabledInput,
   ServerRuntimeSetEnabledOutput,
+  ServerRuntimeSetSessionEnabledInput,
+  ServerRuntimeSetSessionEnabledOutput,
   ServerRuntimeConfigureInput,
   ServerRuntimeConfigureOutput,
   ServerRuntimeInviteInput,
@@ -1815,6 +1817,18 @@ export function make(options: ClientOptions) {
             body: { enabled: input["enabled"] },
             successStatus: 200,
             declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      setSessionEnabled: (input: ServerRuntimeSetSessionEnabledInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeSetSessionEnabledOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/session/${encodeURIComponent(input.sessionID)}`,
+            body: { enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [503, 400, 401],
             empty: false,
           },
           requestOptions,

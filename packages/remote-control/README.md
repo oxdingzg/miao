@@ -142,6 +142,28 @@ credentials do not belong in this file. Selecting a default does not log in,
 register a host, or grant a phone access: complete desktop account login and
 locally approve the device grant before opening a remote session.
 
+## Per-session publication
+
+The desktop Remote Control dialog provides **开启当前会话的远程控制** and
+**关闭当前会话的远程控制**. Publication is local administrator policy, independent
+of the window's relay connection and a device's grant. A device needs both a
+valid grant covering the Session and an explicitly published Session owned by
+this Runtime. Project grants do not publish existing Sessions automatically.
+Creating a Session remotely through an owner-approved project grant publishes
+that newly created Session; sharing a Session locally also publishes it.
+
+Each Runtime starts with no published Sessions. Publication survives a relay
+reconnect within that Runtime, but not closing or restarting the window. The
+local owner API `POST /api/runtime/control/session/:sessionID` takes
+`{"enabled": true}` or `{"enabled": false}`; status reports `sessionIDs` without
+credentials. Enabling adopts the Session's local ownership lease, so an idle
+Session can be shared and a Session owned by another window cannot be stolen.
+
+Disabling removes the Session from remote lists, rejects further operations,
+rechecks pending encrypted replies before disclosure and stops new notification
+admissions. Already admitted model work continues locally. Device grants and
+account login never expose the publication administrator endpoint.
+
 ## Browser OAuth and scan entry
 
 A Hub may advertise GitHub/Google via `GET /api/auth/providers`. The web client
