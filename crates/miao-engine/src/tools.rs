@@ -103,6 +103,7 @@ pub struct Tools {
     protected: Vec<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
+    hooks: Arc<Vec<crate::hooks::Hook>>,
 }
 
 impl Tools {
@@ -133,6 +134,7 @@ impl Tools {
             protected: vec![],
             mcp: None,
             context_sources: Arc::new(vec![]),
+            hooks: Arc::new(vec![]),
         })
     }
 
@@ -153,6 +155,25 @@ impl Tools {
         self.context_sources = Arc::new(sources);
         Ok(self)
     }
+    pub fn with_hooks(mut self, hooks: Vec<crate::hooks::Hook>) -> Result<Self, ToolError> {
+        crate::hooks::validate(&hooks)?;
+        self.hooks = Arc::new(hooks);
+        Ok(self)
+    }
+    pub(crate) fn hooks(&self) -> &[crate::hooks::Hook] {
+        &self.hooks
+    }
+    pub(crate) async fn run_hook(
+        &self,
+        hook: &crate::hooks::Hook,
+        cancel: CancellationToken,
+    ) -> Result<Value, ToolError> {
+        let runner = self.runner.as_deref().ok_or(ToolError::Unsupported)?;
+        let mut input = hook.input()?;
+        input.cwd = ".".into();
+        process::execute(runner, &self.root, &self.root, input, false, cancel).await
+    }
+
     pub(crate) fn context_sources(&self) -> std::slice::Iter<'_, crate::context::Source> {
         self.context_sources.iter()
     }

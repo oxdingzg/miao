@@ -147,7 +147,7 @@ stdout/stderr 各最多 32 KiB，超限停止进程。超时/取消回收普通�
 - 开启进程时强制 authority DB 位于 workspace 外；文件工具也保护 DB/WAL/SHM/lease 路径。
 - 文件已发布后若父目录同步失败，返回 applied=true、durability=unknown 的已应用结果；不伪装成无副作用失败。
 
-验证状态：macOS arm64 与 Linux x86_64，engine 123 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
+验证状态：macOS arm64 与 Linux x86_64，engine 127 个测试及 sandbox 6 个测试、严格 clippy、fmt 均通过。
 真实 stdio→HTTP fixture→沙箱命令验证了 argv 执行、provider key 隔离与 durable settlement；非 live 模型质量验收。
 
 
@@ -440,3 +440,24 @@ Vertex、Interactions、multimodal/hosted tools、streaming partial-function arg
 启用该 wrapper 后 `usage` 为 `{reported: VENDOR_USAGE, routing: SELECTION}`；失败事件也保存 routing metadata。
 selection 包含 protocol/model、primary/fallback、opaque_pinned、fallback 原因与 attempt 数，不包含 endpoint 或 credentials。
 当前尚无完整 purpose-role catalog、自动模型发现或质量/价格路由。
+
+
+## Host 生命周期 hooks（tool 前后）
+
+`--hooks-config /absolute/path/hooks.json` 配置 host 侧钩子（workspace 之外，≤64 KiB，自动列入保护资源）：
+
+```json
+[{"event":"tool_before","tool":"run_command","argv":["/path/guard","--check"],"timeout_ms":10000}]
+```
+
+`event` 为 `tool_before` / `tool_after`；`tool` 为精确模型工具名或 `*`；最多 16 个，
+`(event, tool, argv)` 去重；argv 复用 run_command 校验（≤128 段、无 NUL、timeout 1..120000ms，默认 10s）。
+
+钩子进程走 run_command 同一条 sandbox 路径（workspace 写沙箱、网络关闭、独立临时目录、进程组守护）。
+`tool_before` 在 policy 授权后、intent 派发前执行：exit 0 且正常退出才放行；非零、超时、输出超限、执行错误一律
+fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome …)`，不产生工具副作用。
+`tool_after` 在工具结果 durable 落库后执行，只观测，永不改变结果或错误状态。
+每次执行记录 `hook.completed`（phase/tool/outcome/exit_code/reason/时长），可审计。
+
+钩子是 host 信任配置的守门/观测面，不是模型能力：不占 permission 规则、不需要 allow_process，
+也不给模型任何新 authority。目前没有 per-hook 网络、stdin 注入、run/turn 级事件或远程 hook。

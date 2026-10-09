@@ -252,6 +252,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--provider",
             "--policy",
             "--mcp-config",
+            "--hooks-config",
             "--context-config",
             "--credential-db",
             "--credential-id",
@@ -413,6 +414,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_context_sources(sources)?;
+    }
+    if let Some(path) = options.get("--hooks-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("Hooks host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("Hooks config exceeds 64 KiB".into());
+        }
+        let hooks = serde_json::from_slice::<Vec<miao_engine::hooks::Hook>>(&bytes)
+            .map_err(|_| "invalid hooks host config")?;
+        tools = tools.with_protected_resource(&path).with_hooks(hooks)?;
     }
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {

@@ -7,6 +7,7 @@ pub mod export;
 mod file_mutation;
 pub mod gemini;
 mod history;
+pub mod hooks;
 mod jobs;
 pub mod mcp;
 pub mod openai_chat;

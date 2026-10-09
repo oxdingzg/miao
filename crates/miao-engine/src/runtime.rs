@@ -540,6 +540,10 @@ async fn execute(
                         }
                         if !allowed {
                             (json!({"error":"permission denied"}), true)
+                        } else if let Some(blocked) =
+                            run_hooks(inner, session, crate::hooks::Event::ToolBefore, name).await?
+                        {
+                            (json!({"error":blocked}), true)
                         } else {
                             inner.store.mark_dispatched(session, run, id).await?;
                             let prepared_external =
@@ -665,6 +669,7 @@ async fn execute(
                     .store
                     .tool_result(session, run, id, output, is_error)
                     .await?;
+                run_hooks(inner, session, crate::hooks::Event::ToolAfter, name).await?;
                 let repeat = repeats.entry(signature).or_default();
                 *repeat += 1;
                 if *repeat >= 3 {
@@ -978,6 +983,61 @@ async fn ask_question(
         }
         tokio::select! {_=cancel.cancelled()=>return Ok(None),_=tokio::time::sleep(std::time::Duration::from_millis(25))=>{}}
     }
+}
+
+async fn run_hooks(
+    inner: &Inner,
+    session: &str,
+    phase: crate::hooks::Event,
+    tool: &str,
+) -> Result<Option<String>, Error> {
+    let hooks = inner.tools.hooks();
+    if hooks.is_empty() {
+        return Ok(None);
+    }
+    let mut blocked = None;
+    for hook in hooks
+        .iter()
+        .filter(|hook| hook.event == phase && hook.matches(tool))
+    {
+        let started = std::time::Instant::now();
+        let result = inner
+            .tools
+            .run_hook(hook, tokio_util::sync::CancellationToken::new())
+            .await;
+        let (outcome, exit_code, reason) = match &result {
+            Ok(output) => {
+                let exit = output["exit_code"].as_i64();
+                let reason = output["reason"].as_str().unwrap_or("completed");
+                let outcome = if exit == Some(0) && reason == "completed" {
+                    "ok"
+                } else {
+                    "failed"
+                };
+                (outcome, exit, reason)
+            }
+            Err(_) => ("error", None, "error"),
+        };
+        inner
+            .store
+            .record(
+                session,
+                "hook.completed",
+                json!({
+                    "phase": phase.name(),
+                    "tool": tool,
+                    "outcome": outcome,
+                    "exit_code": exit_code,
+                    "reason": reason,
+                    "duration_ms": started.elapsed().as_millis() as u64,
+                }),
+            )
+            .await?;
+        if phase == crate::hooks::Event::ToolBefore && outcome != "ok" && blocked.is_none() {
+            blocked = Some(format!("blocked by tool_before hook (outcome {outcome})"));
+        }
+    }
+    Ok(blocked)
 }
 
 async fn authorize(
