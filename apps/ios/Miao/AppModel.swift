@@ -436,6 +436,11 @@ final class AppModel {
         do {
             let hosts = try await account.hosts()
             guard generation == accountEpoch, accountSignedIn else { return }
+            if let registry {
+                let origin = await account.origin
+                try? await registry.rename(hosts, hubURL: origin)
+                try await reload()
+            }
             if try await enrollmentStore?.account(hubURL: (await account.origin).absoluteString,
                 accountID: try await account.authenticatedAccountID()) != nil {
                 try await admitAccountHosts(hosts, account: account, epoch: generation)
@@ -530,7 +535,18 @@ final class AppModel {
     }
 
     func receiveEnrollmentApproval() async {
-        guard enrollmentIndependentPin, !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollment, let enrollmentStore else { return }
+        guard enrollmentIndependentPin, !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollment, let enrollmentStore else {
+            // A disabled-looking button that silently ignores taps is a dead end for
+            // the person holding the phone; surface exactly what is not ready.
+            var missing: [String] = []
+            if !enrollmentIndependentPin { missing.append("独立来源确认") }
+            if !accountSignedIn || account == nil { missing.append("账号登录") }
+            if enrollment == nil { missing.append("注册会话") }
+            if enrollmentStore == nil { missing.append("本地信任存储") }
+            if accountBusy || enrollmentBusy { missing.append("其他操作进行中") }
+            enrollmentError = missing.isEmpty ? "注册入口异常，请重试" : "暂不能完成注册：缺" + missing.joined(separator: "、")
+            return
+        }
         enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
         let epoch = accountEpoch
         defer { enrollmentBusy = false }
@@ -723,8 +739,11 @@ final class HostClient {
         guard !closed else { throw CancellationError() }
         guard let data = projects["data"]?.array else { throw RemoteConnectionError.protocolIncompatible }
         self.projects = data
+        print("MIAO-DBG sync projects=", data.count, "grantProjects=", record.grant.projectIDs,
+            "grantSessions=", record.grant.sessionIDs.count, "expired=", record.expired)
         if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
         for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+        print("MIAO-DBG lists=", lists.map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: ","))
     }
 
     func scene(_ id: UUID, phase: ScenePhase) async {

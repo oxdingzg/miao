@@ -66,6 +66,25 @@ public actor HostRegistry {
         try persist(next)
     }
 
+    /// Computer names come from live directory metadata; a pairing URL only carries identifiers.
+    public func rename(_ directory: [HubDirectoryHost], hubURL: URL) throws {
+        var next = try load()
+        var changed = false
+        for index in next.hosts.indices {
+            guard next.hosts[index].host.hubURL == hubURL else { continue }
+            guard let entry = directory.first(where: {
+                $0.hostID == next.hosts[index].host.target.hostID && $0.runtimeID == next.hosts[index].host.target.runtimeID &&
+                $0.revokedAt == nil && !$0.name.isEmpty
+            }), next.hosts[index].host.label != entry.name else { continue }
+            var host = next.hosts[index].host
+            host.label = entry.name
+            next.hosts[index] = AuthorizedHost(host: host, grant: next.hosts[index].grant)
+            changed = true
+        }
+        guard changed else { return }
+        try persist(next)
+    }
+
     /// Install only the encrypted Agent approval for a host independently endorsed in accepted account trust.
     public func admitAccount(host: ApprovedHost, grant: DeviceGrant, enrollment: AcceptedAccountEnrollment) throws {
         try grant.validate(deviceKey: deviceKey)
