@@ -37,6 +37,8 @@ const CUSTOMIZE_MIAO_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
 const OFFICE_DOCUMENTS_SKILL_NAME = "office-documents"
 const MEDIA_OBSERVE_SKILL_NAME = "media-observe"
 const BACKGROUND_WAITS_SKILL_NAME = "background-waits"
+const AUTONOMOUS_CONTINUATION_SKILL_NAME = "autonomous-continuation"
+const AUTONOMOUS_CONTINUATION_SKILL_DESCRIPTION = SkillPlugin.AutonomousContinuationDescription
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -301,6 +303,12 @@ const layer = Layer.effect(
           description: SkillPlugin.BackgroundWaitsDescription,
           location: "<built-in>",
           content: SkillPlugin.BackgroundWaitsContent,
+        }
+        s.skills[AUTONOMOUS_CONTINUATION_SKILL_NAME] = {
+          name: AUTONOMOUS_CONTINUATION_SKILL_NAME,
+          description: AUTONOMOUS_CONTINUATION_SKILL_DESCRIPTION,
+          location: "<built-in>",
+          content: SkillPlugin.AutonomousContinuationContent,
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
