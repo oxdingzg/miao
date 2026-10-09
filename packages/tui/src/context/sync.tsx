@@ -274,6 +274,11 @@ export const {
     // and would otherwise revert it. Record when a live update lands so a sync
     // that started earlier can skip its stale snapshot.
     const todoLiveAt = new Map<string, number>()
+    // Same hazard for the session list entry: a generated title or rename that
+    // lands mid-turn (`session.next.info.updated`) arrives while the streamed
+    // transcript keeps triggering syncs, and an older sync's snapshot would
+    // quietly put the default title back.
+    const sessionLiveAt = new Map<string, number>()
     const hydration = { count: 0, totalMs: 0, maxMs: 0, lastMs: 0 }
     const diffRequests = new Map<string, AbortController>()
     const diffLiveAt = new Map<string, number>()
@@ -421,6 +426,7 @@ export const {
       olderLoaded.delete(sessionID)
       loadingOlder.delete(sessionID)
       todoLiveAt.delete(sessionID)
+      sessionLiveAt.delete(sessionID)
       lastViewed.delete(sessionID)
       diffRequests.get(sessionID)?.abort()
       diffRequests.delete(sessionID)
@@ -705,6 +711,7 @@ export const {
         if (sessionID && !watchedSessions.has(sessionID)) {
           if (isSessionListV2Event(event.type)) scheduleListRefresh()
         } else if (sessionID && (FULL_SYNC_V2_EVENTS.has(event.type) || !applyV2DurableEvent(sessionID, event))) {
+          if (isSessionListV2Event(event.type)) sessionLiveAt.set(sessionID, performance.now())
           v2Refresh.schedule(sessionID)
         } else if (sessionID) {
           capSessionMessages(sessionID)
@@ -739,8 +746,13 @@ export const {
             input.status.type === "idle" &&
             (previousType === "busy" || previousType === "retry") &&
             watchedSessions.has(input.sessionID)
-          )
+          ) {
             v2Refresh.schedule(input.sessionID)
+            // A title generated mid-turn rides the same stream as the transcript
+            // and can be lost or reverted by an in-flight sync; the idle boundary
+            // is the cheap place to catch the session list up.
+            scheduleListRefresh()
+          }
           break
         }
         case "session.next.retried": {
@@ -1427,8 +1439,13 @@ export const {
             ])
             batch(() => {
               const match = search(store.session, sessionID, (s) => s.id)
-              if (match.found) setStore("session", match.index, reconcile(session.data! as Session))
-              if (!match.found) setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data! as Session))
+              // A snapshot fetched before a live rename must not revert it; the
+              // refresh that observed the rename re-syncs with fresh data.
+              if ((sessionLiveAt.get(sessionID) ?? 0) < started) {
+                if (match.found) setStore("session", match.index, reconcile(session.data! as Session))
+                if (!match.found)
+                  setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data! as Session))
+              }
               if ((todoLiveAt.get(sessionID) ?? 0) < started) setStore("todo", sessionID, reconcile(todo.data ?? []))
               const currentMessages = store.message[sessionID] ?? []
               const currentByID = new Map(currentMessages.map((message) => [message.id, message]))
