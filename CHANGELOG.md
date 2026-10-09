@@ -11,6 +11,11 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-10
+
+### Fixed
+- **core**: retry session title generation while the title is a placeholder (#507) (`c3760d6ee`)
+
 ## [0.2.0] - 2026-10-10
 
 miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session core, end-to-end remote control, native acceleration and sandboxing, cost and latency controls, and the first slice of the Rust engine. Full milestone notes live at `docs/releases/v0.2.0.md`.
