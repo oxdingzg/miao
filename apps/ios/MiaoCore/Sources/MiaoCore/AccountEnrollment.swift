@@ -100,6 +100,7 @@ public struct AccountHostEndorsement: Codable, Sendable, Equatable {
 }
 
 public struct AcceptedAccountEnrollment: Codable, Sendable, Equatable {
+    public let hubURL: String
     public let roster: SignedAccountRoster
     public let authority: AccountRosterAuthority
     public let hosts: [EndorsedAccountHost]
@@ -154,7 +155,7 @@ public struct AccountEnrollmentApproval: Codable, Sendable, Equatable {
         let signature = try P256.Signing.ECDSASignature(rawRepresentation: rosterBytes(endorsement.signature, length: 64))
         guard try rosterKey(trustedSignerKey).isValidSignature(signature,
             for: canonical(["miao.control.host-endorsement.v1", endorsement.payload.object])) else { throw AccountRosterError.untrustedSigner }
-        return AcceptedAccountEnrollment(roster: roster, authority: accepted, hosts: endorsement.payload.hosts)
+        return AcceptedAccountEnrollment(hubURL: endorsement.payload.hubURL, roster: roster, authority: accepted, hosts: endorsement.payload.hosts)
     }
 }
 

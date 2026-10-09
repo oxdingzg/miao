@@ -131,8 +131,8 @@ public actor HubAccount {
         return url
     }
 
-    /// Trade the provider's one-time code for an access token and sign in. mhub
-    /// has no password, so this is the only way in for an OAuth-only hub.
+    /// Trade the provider's one-time code for an access token and sign in. An OAuth-only Hub
+    /// has no password, so this is its native login entry.
     public func signInWithOAuth(code: String) async throws {
         guard !code.isEmpty, code.utf8.count <= 512 else { throw HubAccountError.malformed }
         if pendingLogout != nil { try await signOut() }
@@ -196,6 +196,57 @@ public actor HubAccount {
             }
         }
         return hosts
+    }
+
+    /// Account identity comes from authenticated session metadata, not JWT claims or a device request.
+    public func authenticatedAccountID() async throws -> String {
+        let expected = generation
+        _ = try await bearer()
+        guard generation == expected, let credential = login else { throw HubAccountError.superseded }
+        let (data, _) = try await send("/api/auth/get-session", credential: credential)
+        guard generation == expected else { throw HubAccountError.superseded }
+        guard let object = try JSONDecoder().decode(JSONValue.self, from: data).object,
+              let id = object["user"]?["id"]?.string,
+              id.range(of: "^[A-Za-z0-9_-]{16,128}$", options: .regularExpression) != nil else {
+            throw HubAccountError.authenticationRequired
+        }
+        return id
+    }
+
+    func enrollmentContext() async throws -> (generation: UInt64, accountID: String) {
+        let expected = generation
+        let id = try await authenticatedAccountID()
+        try requireGeneration(expected)
+        return (expected, id)
+    }
+    func requireGeneration(_ expected: UInt64) throws {
+        guard generation == expected, login != nil else { throw HubAccountError.superseded }
+    }
+
+    public func roster() async throws -> SignedAccountRoster? {
+        let expected = generation
+        let accountID = try await authenticatedAccountID()
+        let token = try await bearer()
+        guard generation == expected else { throw HubAccountError.superseded }
+        let (data, _) = try await send("/api/hub/roster", credential: token)
+        guard generation == expected else { throw HubAccountError.superseded }
+        return try SignedAccountRoster.hubRecord(data, accountID: accountID)
+    }
+
+    public func publishRoster(_ roster: SignedAccountRoster) async throws -> SignedAccountRoster {
+        let expected = generation
+        let accountID = try await authenticatedAccountID()
+        guard roster.roster.accountID == accountID else { throw AccountRosterError.accountMismatch }
+        let digest = try roster.fingerprint()
+        let token = try await bearer()
+        guard generation == expected else { throw HubAccountError.superseded }
+        let body = try JSONEncoder().encode(RosterUpdate(sequence: roster.roster.sequence, payload: roster.roster,
+                                                       signature: roster.signature, digest: digest))
+        let (data, _) = try await send("/api/hub/roster", credential: token, body: body, method: "PUT")
+        guard generation == expected else { throw HubAccountError.superseded }
+        guard let published = try SignedAccountRoster.hubRecord(data, accountID: accountID),
+              try published.fingerprint() == digest else { throw HubAccountError.malformed }
+        return published
     }
 
     public func pushRegistrationAvailable(requireDelivery: Bool = false) async throws -> Bool {
@@ -338,6 +389,7 @@ public actor HubAccount {
     }
     private struct ExchangeResult: Decodable { let token: String }
     private struct Token: Decodable { let token: String }
+    private struct RosterUpdate: Encodable { let sequence: Int64; let payload: AccountRosterPayload; let signature: String; let digest: String }
     private struct Directory: Decodable { let data: [HubDirectoryHost] }
     private struct HubVersion: Decodable {
         let protocolVersion: Int
@@ -348,12 +400,12 @@ public actor HubAccount {
     private struct PushRevoked: Decodable { let revoked: Bool }
 
     private func send(_ path: String, credential: String? = nil, body: Data? = nil,
-                      query: [URLQueryItem] = []) async throws -> (Data, HTTPURLResponse) {
+                      query: [URLQueryItem] = [], method: String? = nil) async throws -> (Data, HTTPURLResponse) {
         var components = URLComponents(url: origin.appendingPathComponent(String(path.dropFirst())), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         guard let url = components.url else { throw HubAccountError.invalidEndpoint }
         var request = URLRequest(url: url)
-        request.httpMethod = body == nil ? "GET" : "POST"
+        request.httpMethod = method ?? (body == nil ? "GET" : "POST")
         request.httpBody = body
         request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
         request.setValue("application/json", forHTTPHeaderField: "Accept")

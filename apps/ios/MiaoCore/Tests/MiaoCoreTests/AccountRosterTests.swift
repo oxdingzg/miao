@@ -90,6 +90,55 @@ final class AccountRosterTests: XCTestCase {
         catch { XCTAssertEqual(error as? AccountRosterError, .noPendingRequest) }
     }
 
+    func testAtomicAccountTrustReloadIsolationAndRollbackRejection() async throws {
+        let value = try fixture()
+        let rootKey = try XCTUnwrap(value["rootKey"] as? String)
+        let deviceKey = try XCTUnwrap(value["deviceKey"] as? String)
+        let pending = try AccountEnrollmentRequest.decode(data(value["request"]!))
+        let accepted = try AccountEnrollmentApproval.decode(data(value["approved"]!)).accept(pending: pending, trustedSignerKey: rootKey, now: now)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AccountEnrollmentStore(directory: directory, deviceKey: deviceKey)
+        try await store.accept(accepted)
+        let restored = try AccountEnrollmentStore(directory: directory, deviceKey: deviceKey)
+        let saved = try await restored.account(hubURL: hubURL, accountID: accountID)
+        XCTAssertEqual(saved, accepted)
+        let foreign = try await restored.account(hubURL: hubURL, accountID: "account_bbbbbbbbbbbbbbbbbbbbbbbb")
+        XCTAssertNil(foreign)
+        let lower = try SignedAccountRoster.decode(data(value["current"]!))
+        do { _ = try await restored.refresh(lower, hubURL: hubURL, accountID: accountID); XCTFail("Rollback accepted") }
+        catch { XCTAssertEqual(error as? AccountRosterError, .staleOrForked) }
+        let wrongDevice = try AccountEnrollmentStore(directory: directory, deviceKey: rootKey)
+        do { _ = try await wrongDevice.account(hubURL: hubURL, accountID: accountID); XCTFail("Other identity read trust") }
+        catch { XCTAssertNotNil(error as? ClientStateError) }
+    }
+
+    func testAuthenticatedMemberRemovalPersistsItsSequenceAndRejectsLaterRollback() async throws {
+        let root = P256.Signing.PrivateKey(), recipient = P256.Signing.PrivateKey(), host = P256.Signing.PrivateKey()
+        let rootKey = root.publicKey.x963Representation.base64URL
+        let deviceKey = recipient.publicKey.x963Representation.base64URL
+        let current = try SignedAccountRoster.sign(identity: root, roster: AccountRosterPayload(accountID: accountID, sequence: 1, issuedAt: 0,
+            devices: [AccountRosterDevice(publicKey: rootKey, label: "Root", signer: true, addedAt: 0)]))
+        let authority = try current.accept(accountID: accountID, previous: AccountRosterAuthority(accountID: accountID, sequence: 0, digest: "", signerKeys: [rootKey]))
+        let request = try AccountEnrollmentRequest.create(identity: recipient, hubURL: hubURL, accountID: accountID, label: "Phone", now: now)
+        let approved = try AccountEnrollmentApproval.approve(identity: root, request: request, hubURL: hubURL, current: current, authority: authority,
+            pairedHosts: [EndorsedAccountHost(hostID: "host_aaaaaaaaaaaaaaaaaaaaaaaa", publicKey: host.publicKey.x963Representation.base64URL)], now: now)
+        let accepted = try approved.accept(pending: request, trustedSignerKey: rootKey, now: now)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AccountEnrollmentStore(directory: directory, deviceKey: deviceKey)
+        try await store.accept(accepted)
+        let removed = try SignedAccountRoster.sign(identity: root, roster: AccountRosterPayload(accountID: accountID, sequence: 3, issuedAt: 3000, devices: current.roster.devices))
+        let updated = try await store.refresh(removed, hubURL: hubURL, accountID: accountID)
+        XCTAssertEqual(updated.authority.sequence, 3)
+        XCTAssertFalse(updated.roster.roster.devices.contains { $0.publicKey == deviceKey })
+        let restored = try AccountEnrollmentStore(directory: directory, deviceKey: deviceKey)
+        let saved = try await restored.account(hubURL: hubURL, accountID: accountID)
+        XCTAssertEqual(saved?.authority.sequence, 3)
+        do { _ = try await restored.refresh(approved.roster, hubURL: hubURL, accountID: accountID); XCTFail("Removed membership was restored by rollback") }
+        catch { XCTAssertEqual(error as? AccountRosterError, .staleOrForked) }
+    }
+
     func testHTTPNeedsExplicitLoopbackOptIn() throws {
         let key = P256.Signing.PrivateKey()
         XCTAssertThrowsError(try AccountEnrollmentRequest.create(identity: key, hubURL: "http://127.0.0.1:4600", accountID: accountID, label: "Phone", now: now))

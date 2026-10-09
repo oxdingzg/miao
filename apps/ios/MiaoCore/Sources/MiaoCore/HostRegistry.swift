@@ -66,6 +66,20 @@ public actor HostRegistry {
         try persist(next)
     }
 
+    /// Install only the encrypted Agent approval for a host independently endorsed in accepted account trust.
+    public func admitAccount(host: ApprovedHost, grant: DeviceGrant, enrollment: AcceptedAccountEnrollment) throws {
+        try grant.validate(deviceKey: deviceKey)
+        guard host.hubURL.absoluteString == enrollment.hubURL,
+              host.grantID == grant.id, host.grantVersion == grant.version,
+              enrollment.roster.roster.devices.contains(where: { $0.publicKey == deviceKey }),
+              enrollment.hosts.contains(where: { $0.hostID == host.target.hostID && $0.publicKey == host.publicKey }),
+              try enrollment.roster.fingerprint() == enrollment.authority.digest else { throw ClientStateError.scopeMismatch }
+        var next = try load()
+        next.hosts.removeAll { $0.host.hubURL == host.hubURL && $0.host.target.hostID == host.target.hostID && $0.grant.id == grant.id }
+        next.hosts.append(AuthorizedHost(host: host, grant: grant))
+        try persist(next)
+    }
+
     public func forget(_ id: UUID) throws {
         var next = try load()
         next.hosts.removeAll { $0.id == id }
