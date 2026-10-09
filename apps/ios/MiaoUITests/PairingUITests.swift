@@ -213,7 +213,11 @@ final class PairingUITests: XCTestCase {
         XCTAssertTrue(variantPicker.waitForExistence(timeout: 10))
         variantPicker.tap()
         app.buttons["reasoning"].tap()
-        app.buttons["保存模型"].tap()
+        // The expanded registration disclosure pushes the save action off-screen.
+        let saveModel = app.buttons["保存模型"]
+        for _ in 0..<6 where saveModel.exists && !saveModel.isHittable { app.swipeUp() }
+        XCTAssertTrue(saveModel.waitForExistence(timeout: 10))
+        saveModel.tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         stage("relaunch")
         app.terminate()
