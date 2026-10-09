@@ -77,7 +77,22 @@ const layer = Layer.effect(
         Effect.catchDefect((defect) => Effect.logWarning("failed to publish session status", { defect })),
       ),
     })
-    wake = (sessionID) => ownership.claim(sessionID).pipe(Effect.andThen(coordinator.wake(sessionID)))
+    // A wake is advisory and process-local. A Session owned by another window
+    // keeps its durable input for that window to drain, so a failed claim is not
+    // a conflict here; claiming would also pin the target's lease to this runtime,
+    // which the send_message admission deliberately avoids.
+    wake = (sessionID) =>
+      ownership.claim(sessionID).pipe(
+        Effect.as(true),
+        Effect.catchDefect((defect) =>
+          defect instanceof SessionOwnership.BusyError
+            ? Effect.logDebug("Session is owned by another window; leaving the wakeup durable", { sessionID }).pipe(
+                Effect.as(false),
+              )
+            : Effect.die(defect),
+        ),
+        Effect.flatMap((claimed) => (claimed ? coordinator.wake(sessionID) : Effect.void)),
+      )
     setPhase = coordinator.setPhase
     const backgroundLimit = Number(process.env.MIAO_MAX_BACKGROUND_SUBAGENTS ?? 4)
     delegation = yield* SessionDelegation.make({
