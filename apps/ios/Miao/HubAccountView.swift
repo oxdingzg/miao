@@ -60,7 +60,10 @@ struct HubAccountView: View {
                             Button("初始化签名设备") { Task { await model.initializeAccountSigner() } }
                                 .disabled(model.enrollmentBusy || !model.enrollmentSignerConsent)
                                 .accessibilityIdentifier("enrollmentRoot")
-                            Button("生成十分钟注册码") { Task { await model.createEnrollmentRequest() } }
+                            Button("连接我的电脑") { Task { await model.connectAccountDevices() } }
+                            .disabled(model.accountBusy || model.enrollmentBusy)
+                            .accessibilityIdentifier("connectAccountDevices")
+                        Button("生成十分钟注册码") { Task { await model.createEnrollmentRequest() } }
                                 .disabled(model.enrollmentBusy).accessibilityIdentifier("enrollmentBegin")
                             if !model.enrollmentRequest.isEmpty {
                                 Text(model.enrollmentRequest).font(.caption.monospaced()).textSelection(.enabled)
@@ -97,7 +100,8 @@ struct HubAccountView: View {
                                 .disabled(model.enrollmentBusy || !model.enrollmentIndependentPin || model.enrollmentApproved.isEmpty || model.enrollmentPin.isEmpty)
                                 .accessibilityIdentifier("enrollmentReceive")
                             if model.enrollmentBusy { ProgressView("正在验证设备授权…") }
-                            if let error = model.enrollmentError { Text(error).font(.footnote).foregroundStyle(.red) }
+                            if let error = model.enrollmentError { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("enrollmentError") }
+                            if model.enrollmentComplete { Text("设备注册完成").accessibilityIdentifier("enrollmentComplete") }
                         }
                     }
                     Section("会话通知") {

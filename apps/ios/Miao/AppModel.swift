@@ -48,6 +48,7 @@ final class AppModel {
     var enrollmentIndependentPin = false
     var enrollmentBusy = false
     var enrollmentError: String?
+    var enrollmentComplete = false
     private var enrollment: AccountEnrollment?
     private var enrollmentStore: AccountEnrollmentStore?
     private var account: HubAccount?
@@ -239,6 +240,21 @@ final class AppModel {
         }
     }
 
+    /// One tap connects every account-trusted computer; QR pairing stays as a separate entry.
+    func connectAccountDevices() async {
+        guard !accountBusy, !enrollmentBusy, accountSignedIn, let account, let registry else { return }
+        accountBusy = true; accountError = nil
+        let epoch = accountEpoch
+        defer { accountBusy = false }
+        do {
+            let directory = try await account.hosts()
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            try await admitAccountHosts(directory, account: account, epoch: epoch)
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            if accountError == nil { await refreshDirectory() }
+        } catch { if epoch == accountEpoch { accountError = accountMessage(error) } }
+    }
+
     func pair(_ uri: String, label: String) {
         guard pairTask == nil, let registry else { return }
         let invitation: PairingInvitation
@@ -420,8 +436,11 @@ final class AppModel {
         do {
             let hosts = try await account.hosts()
             guard generation == accountEpoch, accountSignedIn else { return }
-            try await admitAccountHosts(hosts, account: account, epoch: generation)
-            guard generation == accountEpoch, accountSignedIn else { return }
+            if try await enrollmentStore?.account(hubURL: (await account.origin).absoluteString,
+                accountID: try await account.authenticatedAccountID()) != nil {
+                try await admitAccountHosts(hosts, account: account, epoch: generation)
+                guard generation == accountEpoch, accountSignedIn else { return }
+            }
             discoveredHosts = hosts; accountError = nil
         } catch {
             guard generation == accountEpoch else { return }
@@ -437,7 +456,7 @@ final class AppModel {
     private func clearEnrollment() async {
         await enrollment?.cancel(); enrollment = nil
         enrollmentRequest = ""; enrollmentIncoming = ""; enrollmentResponse = ""; enrollmentApproved = ""; enrollmentPin = ""; enrollmentSigner = ""
-        enrollmentSignerConsent = false; enrollmentIndependentPin = false; enrollmentError = nil
+        enrollmentSignerConsent = false; enrollmentIndependentPin = false; enrollmentError = nil; enrollmentComplete = false
     }
 
     var incomingEnrollmentSummary: String {
@@ -448,7 +467,7 @@ final class AppModel {
 
     func initializeAccountSigner() async {
         guard enrollmentSignerConsent, !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollmentStore else { return }
-        enrollmentBusy = true; enrollmentError = nil
+        enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
         let epoch = accountEpoch
         defer { enrollmentBusy = false }
         do {
@@ -469,7 +488,7 @@ final class AppModel {
 
     func createEnrollmentRequest() async {
         guard !accountBusy, !enrollmentBusy, accountSignedIn, let account else { return }
-        enrollmentBusy = true; enrollmentError = nil
+        enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
         let epoch = accountEpoch
         defer { enrollmentBusy = false }
         do {
@@ -512,7 +531,7 @@ final class AppModel {
 
     func receiveEnrollmentApproval() async {
         guard enrollmentIndependentPin, !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollment, let enrollmentStore else { return }
-        enrollmentBusy = true; enrollmentError = nil
+        enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
         let epoch = accountEpoch
         defer { enrollmentBusy = false }
         do {
@@ -526,6 +545,9 @@ final class AppModel {
             guard epoch == accountEpoch, accountSignedIn else { return }
             enrollmentRequest = ""; enrollmentApproved = ""
             await refreshDirectory()
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            if let accountError { enrollmentError = accountError }
+            else { enrollmentComplete = true }
         } catch { if epoch == accountEpoch { enrollmentError = "注册未完成。请使用已信任设备直接提供的批准结果和签名公钥。" } }
     }
 
