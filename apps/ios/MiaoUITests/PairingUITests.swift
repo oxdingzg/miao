@@ -33,6 +33,14 @@ final class PairingUITests: XCTestCase {
         fflush(stdout)
     }
 
+    /// The enrollment section is a long disclosure whose later rows are only
+    /// materialized once scrolled near, so a plain wait never sees them. Scroll
+    /// until the control enters the tree; hittability is handled by the caller,
+    /// since the keyboard can cover a materialized field.
+    private func scrollIntoView(_ app: XCUIApplication, _ element: XCUIElement, swipes: Int = 10) {
+        for _ in 0..<swipes where !element.exists { app.swipeUp() }
+    }
+
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
@@ -76,9 +84,12 @@ final class PairingUITests: XCTestCase {
                 for _ in 0..<6 where !disclosure.isHittable { app.swipeUp() }
                 XCTAssertTrue(disclosure.isHittable)
                 disclosure.tap()
-                XCTAssertTrue(app.buttons["enrollmentBegin"].waitForExistence(timeout: 10))
-                app.buttons["enrollmentBegin"].tap()
+                let enrollmentBegin = app.buttons["enrollmentBegin"]
+                scrollIntoView(app, enrollmentBegin)
+                XCTAssertTrue(enrollmentBegin.waitForExistence(timeout: 10))
+                enrollmentBegin.tap()
                 let code = app.staticTexts["enrollmentRequest"]
+                scrollIntoView(app, code)
                 XCTAssertTrue(code.waitForExistence(timeout: 15))
                 var request = URLRequest(url: enrollment.approveURL)
                 request.httpMethod = "POST"; request.httpBody = Data(code.label.utf8)
@@ -96,15 +107,17 @@ final class PairingUITests: XCTestCase {
                 let approved = try XCTUnwrap(result.value)
                 app.swipeUp()
                 let field = app.textFields["enrollmentApproved"].exists ? app.textFields["enrollmentApproved"] : app.textViews["enrollmentApproved"]
+                scrollIntoView(app, field)
                 XCTAssertTrue(field.waitForExistence(timeout: 10))
                 field.tap(); field.typeText(approved)
                 XCTAssertEqual(field.value as? String, approved, "The complete signed approval is entered")
-                app.swipeUp()
                 let pin = app.textFields["enrollmentPin"]
+                scrollIntoView(app, pin)
                 XCTAssertTrue(pin.waitForExistence(timeout: 10))
                 pin.tap(); pin.typeText(enrollment.rootKey)
                 XCTAssertEqual(pin.value as? String, enrollment.rootKey)
                 let independent = app.switches["enrollmentIndependentPin"]
+                scrollIntoView(app, independent)
                 XCTAssertTrue(independent.waitForExistence(timeout: 10))
                 // SwiftUI toggles inside disclosure rows often swallow element taps on
                 // iOS 18; hit the switch knob by coordinate and fall back to the row.
@@ -115,8 +128,10 @@ final class PairingUITests: XCTestCase {
                 expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: independent)
                 waitForExpectations(timeout: 5)
                 XCTAssertEqual(independent.value as? String, "1", "Independent source confirmation is on")
-                XCTAssertTrue(app.buttons["enrollmentReceive"].isEnabled)
-                app.buttons["enrollmentReceive"].tap()
+                let receive = app.buttons["enrollmentReceive"]
+                scrollIntoView(app, receive)
+                XCTAssertTrue(receive.isEnabled)
+                receive.tap()
                 let completedRegistration = app.staticTexts["enrollmentComplete"]
                 let failedRegistration = app.staticTexts["enrollmentError"]
                 expectation(for: NSPredicate { _, _ in completedRegistration.exists || failedRegistration.exists }, evaluatedWith: app)
