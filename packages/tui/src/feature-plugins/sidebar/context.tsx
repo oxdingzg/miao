@@ -39,13 +39,16 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // model declares one, and in USD otherwise; the cache figures are derived
   // from the same price table, so every amount follows that split. A subagent
   // row can run a different model, so it resolves its own currency rather than
-  // borrowing the parent's. A model no table quotes has no honest amount,
-  // which reads better as an em dash than as a fake zero.
+  // borrowing the parent's.
   const money = (value: number, model = session()?.model) => {
-    if (!Currency.priceable(props.api.state.provider, model?.providerID, model?.id)) return "—"
     const native = Currency.native(props.api.state.provider, model?.providerID, model?.id)
     return native ? Currency.amount(value, native) : Currency.format(value, currency())
   }
+
+  // Whether the price tables quote the model at all; an unpriced model
+  // projects as an all-zero rate and its amounts are absences, not zeros.
+  const priced = (model?: { providerID?: string; id?: string }) =>
+    Currency.priceable(props.api.state.provider, model?.providerID, model?.id)
 
   const state = createMemo(() => {
     const last = msg().findLast(
@@ -103,6 +106,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     if (covered === 0 && economy().unpriced > 0) return "— saved"
     const amount = economy().saved
     return amount < 0 ? `${money(-amount)} cache cost` : `${money(amount)} saved`
+  })
+
+  // A recorded amount is real regardless of which model the session has
+  // selected now; a session that priced nothing is only unknown when its turns
+  // ran on models no table covers.
+  const spendKnown = createMemo(() => {
+    if (cost() > 0) return true
+    const last = assistants().at(-1)
+    return !last || priced(last.model)
   })
 
   // No provider reports an expiry, so the age is counted locally and the row has
@@ -218,7 +230,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <Show when={speed()}>
         <text fg={theme().textMuted}>{speed()}</text>
       </Show>
-      <text fg={theme().textMuted}>{money(cost())} spent</text>
+      <text fg={theme().textMuted}>{spendKnown() ? `${money(cost())} spent` : "— spent"}</text>
       <Show when={usage()}>
         {(usage) => (
           <text fg={theme().textMuted}>
@@ -231,7 +243,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <For each={byModel()}>
           {(row) => (
             <text fg={theme().textMuted}>
-              {row.id} {row.turns}t {money(row.cost, row)}
+              {row.id} {row.turns}t {priced(row) ? money(row.cost, row) : "—"}
             </text>
           )}
         </For>
@@ -243,7 +255,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <For each={children()}>
           {(child) => (
             <text fg={theme().textMuted}>
-              {childLabel(child)} {money(child.cost ?? 0, child.model)}
+              {childLabel(child)} {priced(child.model) ? money(child.cost ?? 0, child.model) : "—"}
             </text>
           )}
         </For>
