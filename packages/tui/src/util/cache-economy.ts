@@ -1,11 +1,13 @@
 import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
-import type { ProviderLike } from "./currency"
+import { priceable, type ProviderLike } from "./currency"
 
 export type CacheEconomy = {
   readonly read: number
   readonly write: number
   /** Discount earned by cache reads minus the premium paid to write the cache. */
   readonly saved: number
+  /** Cache tokens on turns no price table covers; their saving is unknown rather than zero. */
+  readonly unpriced: number
 }
 
 /** Per-million-token rates, in the model's price currency. */
@@ -42,9 +44,15 @@ export function cacheEconomy(
         providers.find((provider) => provider.id === message.model.providerID)?.models[message.model.id],
         tokens.input + tokens.cache.read + tokens.cache.write,
       )
-      if (!price) return total
       const read = tokens.cache.read
       const write = tokens.cache.write
+      if (!price || !priceable(providers, message.model.providerID, message.model.id))
+        return {
+          read: total.read + read,
+          write: total.write + write,
+          saved: total.saved,
+          unpriced: total.unpriced + read + write,
+        }
       // A discounted rate moves both endpoints of the spread, so the factor
       // scales the difference rather than either side of it.
       const net = read * (price.input - price.cache_read) - write * (price.cache_write - price.input)
@@ -52,9 +60,10 @@ export function cacheEconomy(
         read: total.read + read,
         write: total.write + write,
         saved: total.saved + (net * multiplier(message)) / 1_000_000,
+        unpriced: total.unpriced,
       }
     },
-    { read: 0, write: 0, saved: 0 },
+    { read: 0, write: 0, saved: 0, unpriced: 0 },
   )
 }
 

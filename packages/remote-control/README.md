@@ -163,3 +163,26 @@ Disabling removes the Session from remote lists, rejects further operations,
 rechecks pending encrypted replies before disclosure and stops new notification
 admissions. Already admitted model work continues locally. Device grants and
 account login never expose the publication administrator endpoint.
+
+## Browser OAuth and scan entry
+
+A Hub may advertise GitHub/Google via `GET /api/auth/providers`. The web client
+shows only those social methods; HTTP 404 retains legacy password login.
+Discovery failures stay visible. Social login uses a tab-bound, expiring state
+and a one-time callback code, then `POST /api/auth/exchange` with `client: "web"`.
+The Hub must establish a same-origin HttpOnly session cookie at exchange time,
+so directory requests and page reloads can use the existing cookie API. The web
+client never saves the returned JWT. Callback query parameters are removed from
+the address bar before asynchronous account work begins.
+
+To direct desktop QR codes to a browser bundle hosted on the same Hub, add
+`"browserURL": "https://relay.example.invalid/control/"` to the private
+`client.json`. It must be a same-origin HTTPS URL without credentials, query or
+fragment. The bundle can be hosted at the root or a subdirectory; its assets
+use relative paths. A browser invitation is `<browserURL>#pair=<base64url JSON>`.
+The fragment is removed on startup, validated against the current origin and
+kept only in this tab while account login completes. Pairing then resumes and
+still requires local owner approval. Without `browserURL`, desktop invitations
+keep the native `miao://pair#...` form. With a browser entry configured, the
+dialog also offers **使用 App 扫码** to switch the same invitation back to the
+native URI accepted by iOS clients.

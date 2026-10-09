@@ -25,6 +25,19 @@ For an App invitation, the QR code and copy action use this URI:
 miao://pair#<base64url UTF-8 JSON invitation>
 ```
 
+An operator may instead configure a same-origin HTTPS browser entry:
+
+```text
+https://relay.example.invalid/control/#pair=<base64url UTF-8 JSON invitation>
+```
+
+The path is deployment configuration, not a protocol constant. A browser client
+accepts the fragment only when the invitation's Hub origin matches its own,
+removes it from the address bar before asynchronous requests, and retains the
+short-lived invitation in tab-only session storage across account login. After
+login, it consumes and removes that saved invitation and starts the same local
+approval handshake below. OAuth callback codes remain separate from invitations.
+
 The fragment decodes to the entire version-1 invitation above. QR expiry is
 distinct from grant expiry. If the terminal cannot fit the entire QR code, the
 dialog offers copying the same link rather than displaying a clipped code.

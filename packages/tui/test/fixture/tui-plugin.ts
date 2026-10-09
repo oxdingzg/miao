@@ -7,7 +7,7 @@ type Opts = {
   keymap?: TuiPluginApi["keymap"]
   attention?: Partial<TuiPluginApi["attention"]>
   event?: TuiPluginApi["event"]
-  state?: { session?: Partial<TuiPluginApi["state"]["session"]> }
+  state?: { session?: Partial<TuiPluginApi["state"]["session"]>; provider?: TuiPluginApi["state"]["provider"] }
 }
 
 export function createTuiPluginApi(opts: Opts = {}) {
@@ -28,7 +28,10 @@ export function createTuiPluginApi(opts: Opts = {}) {
       },
       ready: true,
     },
-    state: { session: { get: () => undefined, ...opts.state?.session } },
+    state: {
+      session: { get: () => undefined, children: () => [], ...opts.state?.session },
+      provider: opts.state?.provider ?? [],
+    },
     theme: { current: new Proxy({}, { get: () => color }) },
     tuiConfig: createTuiResolvedConfig(),
     ui: { dialog },

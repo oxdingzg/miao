@@ -4,18 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>miao · Remote</title>
-    <link rel="stylesheet" href="/control.css" />
-    <script type="module" src="/control.js"></script>
+    <link rel="stylesheet" href="./control.css" />
+    <script type="module" src="./control.js"></script>
   </head>
   <body>
     <div class="shell">
       <aside>
-        <a class="wordmark" href="/">miao<span>REMOTE</span></a>
+        <a class="wordmark" href="./">miao<span>REMOTE</span></a>
         <p class="eyebrow">你的工作，随处继续</p>
         <section id="login">
           <h1>回到你的工作台。</h1>
           <p>登录中继，连接运行 miao 的电脑。</p>
-          <form id="login-form">
+          <div id="social-login" hidden></div>
+          <form id="login-form" hidden>
             <label>邮箱<input id="email" type="email" autocomplete="username" required /></label
             ><label>密码<input id="password" type="password" autocomplete="current-password" required /></label
             ><button type="submit">登录 →</button>
