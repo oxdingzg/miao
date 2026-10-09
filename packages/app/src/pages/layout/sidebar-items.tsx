@@ -169,7 +169,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   })
 
   const tint = createMemo(() =>
-    messageAgentColor(serverSync().session.data.session_message[props.session.id], sessionStore.agent),
+    messageAgentColor(serverSync().session.data.message[props.session.id], sessionStore.agent),
   )
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
   const currentChild = createMemo(() => {

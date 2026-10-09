@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@miao/ui/context/dialog"
 import { previewSelectedLines } from "@miao/session-ui/pierre/selection-bridge"
@@ -17,7 +17,8 @@ import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from
 import { findLast } from "@miao/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
-import { Message, Part, UserMessage } from "@miao/schema/view-models"
+import { Part } from "@miao/schema/view-models"
+import type { SessionMessageUser } from "@miao/session-ui/content"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { createSessionOwnership } from "./session-ownership"
@@ -25,7 +26,7 @@ import { useLocal } from "@/context/local"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
-  setActiveMessage: (message: UserMessage | undefined) => void
+  setActiveMessage: (message: SessionMessageUser | undefined) => void
   focusInput: () => void
   review?: () => boolean
   fileBrowser?: () => boolean
@@ -99,7 +100,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (!id) return []
     return sync().data.message[id] ?? []
   }
-  const userMessages = () => messages().filter((m) => m.role === "user") as UserMessage[]
+  const userMessages = () => messages().filter((m) => m.type === "user")
   const visibleUserMessages = () => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()
@@ -258,7 +259,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (boundary < 0) return
     const message = messages[boundary - 1]
     if (!message) return
-    const parts = contentParts(sessionID, sync().data.session_message[sessionID] ?? [])[message.id]
+    const parts = contentParts(sessionID, sync().data.message[sessionID] ?? [])[message.id]
 
     if (sync().data.session_working(sessionID)) {
       await session.interrupt({ sessionID }).catch(() => {})

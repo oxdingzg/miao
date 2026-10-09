@@ -1,6 +1,6 @@
 import type { Session } from "@miao/schema/view-models"
 import { preloadMarkdown } from "@miao/session-ui/markdown-cache"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 import { DateTime } from "luxon"
@@ -115,7 +115,7 @@ export function createHomeSessionsController(home: HomeController) {
               .sync(record.session.id)
               .then(() =>
                 Promise.all(
-                  Object.values(contentParts(record.session.id, ctx.sync.session.data.session_message[record.session.id] ?? []))
+                  Object.values(contentParts(record.session.id, ctx.sync.session.data.message[record.session.id] ?? []))
                     .flat()
                     .flatMap((part) => {
                       if (part.type !== "text" || !part.text) return []

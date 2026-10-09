@@ -99,6 +99,16 @@ export const PromptAdmitted = Event.define({
 })
 export type PromptAdmitted = typeof PromptAdmitted.Type
 
+export const PromptCancelled = Event.define({
+  type: "session.next.prompt.cancelled",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+  },
+})
+export type PromptCancelled = typeof PromptCancelled.Type
+
 export const ContextUpdated = Event.define({
   type: "session.next.context.updated",
   ...options,
@@ -121,6 +131,19 @@ export const Synthetic = Event.define({
   },
 })
 export type Synthetic = typeof Synthetic.Type
+
+/** Machine notices are admitted before the runner promotes them into history. */
+export const NotificationAdmitted = Event.define({
+  type: "session.next.notification.admitted",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    text: Schema.String,
+    metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
+  },
+})
+export type NotificationAdmitted = typeof NotificationAdmitted.Type
 
 /** Background delegation is durable work, separate from user prompt admission. */
 export const DelegationStarted = Event.define({
@@ -637,8 +660,10 @@ export const DurableDefinitions = Event.inventory(
   Moved,
   Prompted,
   PromptAdmitted,
+  PromptCancelled,
   ContextUpdated,
   Synthetic,
+  NotificationAdmitted,
   DelegationStarted,
   DelegationEnded,
   DelegationReported,
@@ -676,8 +701,10 @@ export const Definitions = Event.inventory(
   Moved,
   Prompted,
   PromptAdmitted,
+  PromptCancelled,
   ContextUpdated,
   Synthetic,
+  NotificationAdmitted,
   DelegationStarted,
   DelegationEnded,
   DelegationReported,

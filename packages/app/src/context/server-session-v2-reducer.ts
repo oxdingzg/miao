@@ -302,7 +302,14 @@ export function createV2SessionReducer() {
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) => ({
           ...tool,
           provider: wire(event.data.provider),
-          state: { status: "running", input: wire(event.data.input), structured: {}, content: [] },
+          // A re-run keeps the settled metadata: the edit renderer reads the
+          // diff from `structured` while the tool is running again.
+          state: {
+            status: "running",
+            input: wire(event.data.input),
+            structured: ("structured" in tool.state ? tool.state.structured : {}) ?? {},
+            content: [],
+          },
           time: { ...tool.time, ran: event.data.timestamp },
         }))
       case "session.next.tool.progress":

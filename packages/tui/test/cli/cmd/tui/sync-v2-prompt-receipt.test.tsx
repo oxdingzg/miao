@@ -23,8 +23,7 @@ function partsOf(
   const message = sync.data.message[sessionID]?.find((item) => item.id === messageID)
   if (!message) return undefined
   if (message.type === "assistant") return message.content as ReadonlyArray<Record<string, unknown>>
-  if (message.type === "user")
-    return [{ type: "text", id: `${messageID}-text`, text: message.text }]
+  if (message.type === "user") return [{ type: "text", id: `${messageID}-text`, text: message.text }]
   return undefined
 }
 const session = {
@@ -195,14 +194,17 @@ test("admission is a receipt, promotion reconciles one visible message, and a la
 test("a rejected send keeps the text with a failed receipt, not a phantom projected user message", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const mounted = await mountReceipt(tmp.path, () =>
-    json({ name: "UnknownError", data: { message: "Prompt rejected" } }, { status: 503 }),
-  )
+  let requests = 0
+  const mounted = await mountReceipt(tmp.path, () => {
+    requests++
+    return json({ name: "UnknownError", data: { message: "Prompt rejected" } }, { status: 503 })
+  })
   try {
     await expect(mounted.sync.prompt.send(input)).rejects.toThrow()
     const [receipt] = Object.values(mounted.sync.prompt.data)
     expect(receipt.state).toBe("failed")
     expect(receipt.error).toContain("Prompt rejected")
+    expect(requests).toBe(1)
     expect(mounted.sync.data.message[sessionID] ?? []).toHaveLength(0)
   } finally {
     mounted.app.renderer.destroy()
@@ -232,6 +234,141 @@ test("an externally admitted queued message is visible before its promotion", as
     expect(mounted.sync.prompt.messages(sessionID, mounted.sync.data.message[sessionID] ?? [])).toHaveLength(1)
     expect(mounted.sync.data.message[sessionID] ?? []).toHaveLength(0)
   } finally {
+    mounted.app.renderer.destroy()
+  }
+})
+
+test("a transient prompt transport failure retries the exact message ID and payload", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const requests: unknown[] = []
+  const mounted = await mountReceipt(tmp.path, async (request) => {
+    const body = await request.json()
+    requests.push(body)
+    if (requests.length === 1) throw new TypeError("Connection reset")
+    return json({
+      data: { id: body.id, sessionID, prompt: body.prompt, delivery: "steer", admittedSeq: 1, timeCreated: 2 },
+    })
+  })
+  try {
+    await mounted.sync.prompt.send(input)
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual(requests[0])
+    const [receipt] = Object.values(mounted.sync.prompt.data)
+    expect(receipt.state).toBe("admitted")
+    expect(receipt.error).toBeUndefined()
+    expect(mounted.sync.prompt.messages(sessionID, [])).toHaveLength(1)
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
+
+test("persistent connection failure is bounded and preserves the underlying cause", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const requests: unknown[] = []
+  const mounted = await mountReceipt(tmp.path, async (request) => {
+    requests.push(await request.json())
+    throw Object.assign(new Error("Connection refused"), { code: "ECONNREFUSED" })
+  })
+  try {
+    await expect(mounted.sync.prompt.send(input)).rejects.toThrow("Transport")
+    expect(requests).toHaveLength(4)
+    expect(requests.every((request) => JSON.stringify(request) === JSON.stringify(requests[0]))).toBe(true)
+    const [receipt] = Object.values(mounted.sync.prompt.data)
+    expect(receipt.state).toBe("failed")
+    expect(receipt.error).toContain("Connection refused")
+    expect(receipt.error).toContain("ECONNREFUSED")
+    expect(mounted.sync.data.message[sessionID] ?? []).toHaveLength(0)
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
+
+test("a durable admission event resolves a lost HTTP response without resending", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  let requests = 0
+  let mounted!: Awaited<ReturnType<typeof mountReceipt>>
+  mounted = await mountReceipt(tmp.path, async (request) => {
+    const body = await request.json()
+    requests++
+    mounted.emit(
+      payload({
+        id: "evt_lost_receipt",
+        type: "session.next.prompt.admitted",
+        properties: {
+          sessionID,
+          messageID: body.id,
+          timestamp: Date.now(),
+          delivery: "steer",
+          prompt: body.prompt,
+        },
+      }),
+    )
+    await wait(() => mounted.sync.prompt.data[body.id]?.state === "admitted")
+    throw new TypeError("Response connection closed")
+  })
+  try {
+    await mounted.sync.prompt.send(input)
+    expect(requests).toBe(1)
+    expect(Object.values(mounted.sync.prompt.data)[0].state).toBe("admitted")
+    expect(mounted.sync.prompt.messages(sessionID, [])).toHaveLength(1)
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
+
+test("a lost agent-switch receipt is reconciled before retrying selection", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const stored = { ...session }
+  let switches = 0
+  let prompts = 0
+  const mounted = await mount((url, request) => {
+    if (url.pathname === "/api/session") return json({ data: [stored] })
+    if (url.pathname === `/api/session/${sessionID}`) return json({ data: stored })
+    if (url.pathname === `/api/session/${sessionID}/context`) return json({ data: [] })
+    if (url.pathname === `/api/session/${sessionID}/agent`) {
+      switches++
+      stored.agent = "new-agent"
+      throw new TypeError("Agent switch reply lost")
+    }
+    if (url.pathname === `/api/session/${sessionID}/model`) return new Response(null, { status: 204 })
+    if (url.pathname === `/api/session/${sessionID}/prompt`) {
+      prompts++
+      return json({ data: {} })
+    }
+    return undefined
+  }, tmp.path)
+  try {
+    await mounted.sync.prompt.send({ ...input, agent: "new-agent" })
+    expect(switches).toBe(1)
+    expect(prompts).toBe(1)
+    expect(Object.values(mounted.sync.prompt.data)[0].state).toBe("admitted")
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
+
+test("clearing an in-flight receipt stops automatic retries", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  let requests = 0
+  const mounted = await mountReceipt(tmp.path, () => {
+    requests++
+    throw new TypeError("Connection reset")
+  })
+  const sent = mounted.sync.prompt.send(input)
+  try {
+    const [receipt] = Object.values(mounted.sync.prompt.data)
+    await wait(() => mounted.sync.prompt.data[receipt.info.id]?.retries === 1)
+    mounted.sync.prompt.remove(receipt.info.id)
+    await sent
+    expect(requests).toBe(1)
+    expect(Object.values(mounted.sync.prompt.data)).toHaveLength(0)
+  } finally {
+    await sent.catch(() => {})
     mounted.app.renderer.destroy()
   }
 })

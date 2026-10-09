@@ -175,32 +175,51 @@ test.describe("regression: session timeline local row state", () => {
     })
 
     await markDiffProbe(page)
-    // The V2 producer never mutates a settled tool; the diff-count update
-    // arrives through the legacy part bridge (pre-V2 servers), which mirrors
-    // into the V2 records.
-    events.push({
-      directory,
-      payload: {
-        type: "message.part.updated",
-        properties: {
-          sessionID,
-          messageID: assistantMessageID,
-          part: {
-            ...editPart,
-            state: {
-              ...editPart.state,
-              metadata: {
-                filediff: {
-                  ...editPart.state.metadata.filediff,
-                  additions: 2,
-                },
-                diff: editPart.state.metadata.diff,
-              },
-            },
+    // A settled tool updates by re-running through the V2 sequence: called
+    // re-opens the turn and success re-delivers the diff metadata. The edit
+    // diff must update in place without a remount.
+    events.push(
+      {
+        directory,
+        payload: {
+          type: "session.next.tool.called",
+          properties: {
+            sessionID,
+            assistantMessageID,
+            callID: editPartID,
+            tool: "edit",
+            input: editPart.state.input,
+            provider: { executed: false },
+            timestamp: 1700000004000,
           },
         },
       },
-    })
+      {
+        directory,
+        payload: {
+          type: "session.next.tool.success",
+          properties: {
+            sessionID,
+            assistantMessageID,
+            callID: editPartID,
+            structured: {
+              filediff: {
+                file: "src/regression.ts",
+                additions: 2,
+                deletions: 1,
+                before: "export const value = 'before'\n",
+                after: "export const value = 'after'\nexport const value2 = 'added'\n",
+              },
+              diff:
+                "diff --git a/src/regression.ts b/src/regression.ts\n-export const value = 'before'\n+export const value = 'after'\n+export const value2 = 'added'\n",
+            },
+            content: [{ type: "text", text: "Edited src/regression.ts (added value2)" }],
+            provider: { executed: false },
+            timestamp: 1700000004001,
+          },
+        },
+      },
+    )
 
     await expect(wrapper.locator('[data-slot="diff-changes-additions"]').filter({ hasText: "+2" }).first()).toBeVisible(
       { timeout: 10_000 },

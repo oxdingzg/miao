@@ -18,6 +18,7 @@ export type RemoteRuntime = {
   readonly configure: (value: RemoteAccess.Configuration) => Promise<RemoteAccess.Status>
 }
 export type RemoteLocal = {
+  readonly settings?: () => Promise<{ defaultHubURL?: string; browserURL?: string }>
   readonly providers: (input: { hubURL: string }) => Promise<{ providers: ReadonlyArray<string> }>
   readonly setup: (input: {
     hubURL: string
@@ -40,6 +41,7 @@ export const RemoteLocalProvider = RemoteLocalContext.Provider
 export type RemoteEnvironment = {
   readonly devices: DeviceApi
   readonly setEnabled?: ReturnType<typeof OpenCode.make>["server.runtime"]["setEnabled"]
+  readonly setSessionEnabled?: ReturnType<typeof OpenCode.make>["server.runtime"]["setSessionEnabled"]
   readonly configure?: ReturnType<typeof OpenCode.make>["server.runtime"]["configure"]
   readonly sessionID?: string
   readonly projectID?: string
@@ -61,11 +63,13 @@ export function DialogRemote() {
       environment={{
         devices: sdk.api["server.runtime"],
         configure: sdk.api["server.runtime"].configure,
+        setSessionEnabled: sdk.api["server.runtime"].setSessionEnabled,
         setEnabled: sdk.api["server.runtime"].setEnabled,
         sessionID,
         projectID: sync.data.session.find((session) => session.id === sessionID)?.projectID ?? project.data.project.id,
         local: factory
           ? {
+              settings: async () => (await factory()).settings?.() ?? {},
               providers: async (input) => (await factory()).providers(input),
               setup: async (input) => (await factory()).setup(input),
               setupOAuth: async (input) => (await factory()).setupOAuth(input),
@@ -147,6 +151,30 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
               },
             ]
           : []),
+        ...(environment.sessionID && environment.setSessionEnabled
+          ? [
+              {
+                value: "session-enable",
+                title: "开启当前会话的远程控制",
+                category: "当前会话",
+                description: "允许已授权设备发现和访问；仍需登录 Hub 并接入窗口",
+                onSelect: () =>
+                  void environment.setSessionEnabled!({ sessionID: environment.sessionID!, enabled: true })
+                    .then(reopen)
+                    .catch(() => DialogAlert.show(dialog, "开启失败", "该会话可能正由其他窗口使用，请检查后重试。")),
+              },
+              {
+                value: "session-disable",
+                title: "关闭当前会话的远程控制",
+                category: "当前会话",
+                description: "立即停止远程访问，本地任务继续运行",
+                onSelect: () =>
+                  void environment.setSessionEnabled!({ sessionID: environment.sessionID!, enabled: false })
+                    .then(reopen)
+                    .catch(() => DialogAlert.show(dialog, "关闭失败", "请重试关闭当前会话的远程控制。")),
+              },
+            ]
+          : []),
         ...(local?.setup && runtime
           ? [
               {
@@ -156,12 +184,44 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                 description: "登录中继账号并登记这台电脑，无需重启会话",
                 onSelect: () =>
                   void (async () => {
-                    const hubURL = await DialogPrompt.show(dialog, "中继地址", {
-                      placeholder: "https://hub.example.com",
-                      value: process.env.MIAO_HUB_URL ?? "",
-                    })
+                    const defaults = (await local.settings?.()) ?? {}
+                    const configuredHub = defaults.defaultHubURL ?? process.env.MIAO_HUB_URL
+                    const choice = configuredHub
+                      ? await new Promise<"default" | "custom" | undefined>((resolve) => {
+                          dialog.replace(
+                            () => (
+                              <DialogSelect
+                                title="选择 Hub"
+                                options={[
+                                  {
+                                    value: "default",
+                                    title: "使用默认 Hub",
+                                    description: configuredHub,
+                                    onSelect: () => resolve("default"),
+                                  },
+                                  {
+                                    value: "custom",
+                                    title: "指定其他 Hub",
+                                    description: "登录你选择的公共或自建中继",
+                                    onSelect: () => resolve("custom"),
+                                  },
+                                ]}
+                              />
+                            ),
+                            () => resolve(undefined),
+                          )
+                        })
+                      : "custom"
+                    if (!choice) return reopen()
+                    const hubURL =
+                      choice === "default"
+                        ? configuredHub
+                        : await DialogPrompt.show(dialog, "中继地址", {
+                            placeholder: "https://hub.example.com",
+                            value: configuredHub ?? "",
+                          })
                     if (!hubURL) return reopen()
-                    const discovered = await local.providers({ hubURL }).catch(() => ({ providers: [] as string[] }))
+                    const discovered = await local.providers({ hubURL })
                     const social = discovered.providers.filter(
                       (provider) => provider === "github" || provider === "google",
                     )
@@ -192,7 +252,13 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                     const connecting = local.setup({ hubURL, email, password, name, runtime })
                     password = null
                     await connect(connecting)
-                  })(),
+                  })().catch((error: unknown) =>
+                    DialogAlert.show(
+                      dialog,
+                      "Hub 登录未完成",
+                      error instanceof Error ? error.message : "请检查 Hub 配置并重试",
+                    ),
+                  ),
               },
             ]
           : []),
@@ -204,13 +270,17 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                 description: "扫码、批准设备和撤销授权",
                 category: "设备接入",
                 onSelect: () =>
-                  dialog.replace(() => (
-                    <DialogDevices
-                      api={environment.devices!}
-                      sessionID={environment.sessionID}
-                      projectID={environment.projectID}
-                    />
-                  )),
+                  void (async () => {
+                    const settings = await local?.settings?.()
+                    dialog.replace(() => (
+                      <DialogDevices
+                        api={environment.devices!}
+                        sessionID={environment.sessionID}
+                        projectID={environment.projectID}
+                        browserURL={settings?.browserURL}
+                      />
+                    ))
+                  })().catch(() => DialogAlert.show(dialog, "无法读取扫码入口", "请检查本地 Hub 客户端配置。")),
               },
             ]
           : []),

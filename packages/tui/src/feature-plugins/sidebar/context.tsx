@@ -45,6 +45,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return native ? Currency.amount(value, native) : Currency.format(value, currency())
   }
 
+  // Whether the price tables quote the model at all; an unpriced model
+  // projects as an all-zero rate and its amounts are absences, not zeros.
+  const priced = (model?: { providerID?: string; id?: string }) =>
+    Currency.priceable(props.api.state.provider, model?.providerID, model?.id)
+
   const state = createMemo(() => {
     const last = msg().findLast(
       (item): item is TuiTranscriptAssistant => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
@@ -92,6 +97,24 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     if (!last) return
     if (!isTimeOfDayPriced(last.model.providerID, last.model.id, { providers: offPeakProviders() })) return
     return isOffPeak(last.time.created) ? "off-peak" : "peak"
+  })
+
+  // Savings are only known when the price tables cover the turns that moved
+  // the cache; an uncovered turn makes the total unknown rather than zero.
+  const savedRow = createMemo(() => {
+    const covered = economy().read + economy().write - economy().unpriced
+    if (covered === 0 && economy().unpriced > 0) return "— saved"
+    const amount = economy().saved
+    return amount < 0 ? `${money(-amount)} cache cost` : `${money(amount)} saved`
+  })
+
+  // A recorded amount is real regardless of which model the session has
+  // selected now; a session that priced nothing is only unknown when its turns
+  // ran on models no table covers.
+  const spendKnown = createMemo(() => {
+    if (cost() > 0) return true
+    const last = assistants().at(-1)
+    return !last || priced(last.model)
   })
 
   // No provider reports an expiry, so the age is counted locally and the row has
@@ -192,7 +215,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         read {compact(economy().read)} · write {compact(economy().write)}
       </text>
       <text fg={theme().textMuted}>
-        {economy().saved < 0 ? `${money(-economy().saved)} cache cost` : `${money(economy().saved)} saved`}
+        {savedRow()}
         {pricing() ? ` · ${pricing()}` : ""}
       </text>
       <Show when={ttl()}>
@@ -207,7 +230,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <Show when={speed()}>
         <text fg={theme().textMuted}>{speed()}</text>
       </Show>
-      <text fg={theme().textMuted}>{money(cost())} spent</text>
+      <text fg={theme().textMuted}>{spendKnown() ? `${money(cost())} spent` : "— spent"}</text>
       <Show when={usage()}>
         {(usage) => (
           <text fg={theme().textMuted}>
@@ -220,7 +243,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <For each={byModel()}>
           {(row) => (
             <text fg={theme().textMuted}>
-              {row.id} {row.turns}t {money(row.cost, row)}
+              {row.id} {row.turns}t {priced(row) ? money(row.cost, row) : "—"}
             </text>
           )}
         </For>
@@ -232,7 +255,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <For each={children()}>
           {(child) => (
             <text fg={theme().textMuted}>
-              {childLabel(child)} {money(child.cost ?? 0, child.model)}
+              {childLabel(child)} {priced(child.model) ? money(child.cost ?? 0, child.model) : "—"}
             </text>
           )}
         </For>

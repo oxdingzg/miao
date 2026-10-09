@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Duration, Effect, Layer, Option } from "effect"
+import { adjust as adjustClock } from "effect/testing/TestClock"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -10,6 +11,9 @@ import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionInput } from "@miao/core/session/input"
+import { SessionDelegationStore } from "@miao/core/session/delegation-store"
+import { SessionNotificationTable } from "@miao/core/session/sql"
+import { eq } from "drizzle-orm"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionSchema } from "@miao/core/session/schema"
@@ -71,7 +75,7 @@ const insertSession = (sessionID: SessionSchema.ID) =>
   })
 
 describe("SessionSchedule", () => {
-  it.live("admits a queued prompt and wakes the Session when a job fires", () =>
+  it.live("admits a queued machine notice and wakes the Session without creating a human prompt", () =>
     Effect.gen(function* () {
       const schedule = yield* SessionSchedule.Service
       const { db } = yield* Database.Service
@@ -86,13 +90,49 @@ describe("SessionSchedule", () => {
       expect(Option.isSome(observed)).toBe(true)
       expect(Option.getOrThrow(observed)).toBe(sessionID)
 
-      const pending = yield* SessionInput.pending(db, { sessionID, limit: 10 })
-      expect(pending.inputs).toHaveLength(1)
-      expect(pending.inputs[0].delivery).toBe("queue")
-      expect(pending.inputs[0].prompt.text).toBe("wake up")
+      expect((yield* SessionInput.pending(db, { sessionID, limit: 10 })).inputs).toHaveLength(0)
+      const pending = yield* SessionDelegationStore.pendingSchedule(db, sessionID, info.id)
+      expect(pending).toBeDefined()
+      const row = yield* db.select().from(SessionNotificationTable).where(eq(SessionNotificationTable.id, pending!.id)).get().pipe(Effect.orDie)
+      expect(row?.text).toBe("wake up")
+      expect(row?.metadata).toEqual({ scheduleID: info.id, scheduled: true, delivery: "queue" })
 
       // A one-shot job removes itself once it has fired.
       expect(yield* schedule.list(sessionID)).toHaveLength(0)
+    }),
+  )
+
+  it.effect("coalesces repeated ticks until consumed and admits a fresh notice after promotion", () =>
+    Effect.gen(function* () {
+      const schedule = yield* SessionSchedule.Service
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const sessionID = SessionV2.ID.make("ses_schedule_coalesce")
+      yield* insertSession(sessionID)
+      woken = undefined
+      const job = yield* schedule.create({ sessionID, prompt: "continue once", cron: "* * * * *", recurring: true })
+      yield* Effect.yieldNow
+      yield* adjustClock(Duration.minutes(1))
+      yield* Effect.yieldNow
+      const first = yield* SessionDelegationStore.pendingSchedule(db, sessionID, job.id)
+      expect(first).toBeDefined()
+      yield* adjustClock(Duration.minutes(1))
+      yield* Effect.yieldNow
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(1)
+      expect((yield* SessionDelegationStore.pendingSchedule(db, sessionID, job.id))?.id).toBe(first?.id)
+      expect(yield* SessionDelegationStore.hasPromotableNotifications(db, sessionID, false)).toBe(false)
+      expect(yield* SessionDelegationStore.promoteNext(db, events, sessionID, false)).toBe(false)
+      expect(yield* SessionDelegationStore.promoteNext(db, events, sessionID)).toBe(true)
+      expect(yield* SessionDelegationStore.wakeAllowance(db, sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 1)
+      yield* adjustClock(Duration.minutes(1))
+      yield* Effect.yieldNow
+      const next = yield* SessionDelegationStore.pendingSchedule(db, sessionID, job.id)
+      expect(next).toBeDefined()
+      expect(next?.id).not.toBe(first?.id)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(1)
+      expect((yield* SessionInput.pending(db, { sessionID, limit: 10 })).inputs).toHaveLength(0)
+      expect(yield* SessionDelegationStore.wakeAllowance(db, sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 1)
+      yield* schedule.remove(job.id)
     }),
   )
 

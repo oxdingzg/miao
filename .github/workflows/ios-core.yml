@@ -25,6 +25,10 @@ jobs:
           install-flags: --ignore-scripts --frozen-lockfile
       - name: Swift core tests
         run: swift test --package-path apps/ios/MiaoCore
+      - name: Native signed roster admission integration
+        env:
+          MIAO_NATIVE_ROSTER_PROBE: apps/ios/MiaoCore/.build/debug/RosterAdmissionProbe
+        run: bun packages/remote-control/script/check-native-roster.ts
       - name: iOS platform source check
         run: >-
           xcrun --sdk iphoneos swiftc -typecheck
@@ -59,4 +63,17 @@ jobs:
       - name: Native account app against a real Runtime
         env:
           MIAO_UI_TEST_ACCOUNT: "1"
+        run: bun apps/ios/scripts/check-app.ts
+
+  roster-app:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --ignore-scripts --frozen-lockfile
+      - name: Native enrolled account app against a real Runtime
+        env:
+          MIAO_UI_TEST_ENROLLMENT: "1"
         run: bun apps/ios/scripts/check-app.ts

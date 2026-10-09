@@ -1,6 +1,7 @@
 export * as HubService from "./hub-service"
 
 import { HubAuth } from "./hub-auth"
+import { HubRoster } from "./hub-roster"
 import { HubDirectory } from "./hub-directory"
 import { ControlHub } from "./hub"
 import { HubTickets } from "./hub-tickets"
@@ -63,8 +64,16 @@ export async function listen(options: Options) {
       assets.set(asset.route, { content: await file.arrayBuffer(), type: asset.type })
     }
   }
-  if (options.migrate) HubDirectory.migrate(options.database)
+  if (options.migrate) {
+    HubDirectory.migrate(options.database)
+    HubRoster.migrate(options.database)
+  }
   const directory = HubDirectory.open(options.database)
+  const roster = options.database
+    .query("SELECT name FROM sqlite_master WHERE type='table' AND name='hub_roster_schema'")
+    .get()
+    ? HubRoster.open(options.database)
+    : undefined
   const identity = await HubAuth.create({ ...options, migrate: options.migrate === true })
   if (options.pushRegistrations && options.migrate) PushRegistry.migrate(options.database)
   const push = options.pushRegistrations ? PushRegistry.open(options.database) : undefined
@@ -269,6 +278,38 @@ export async function listen(options: Options) {
           const issued = tickets.issue(authenticated, host.hostID, host.runtimeID)
           return issued ? Response.json(issued, noStore) : error("ticket_limit", 429)
         }
+        if (url.pathname === "/api/hub/roster" && request.method === "GET") {
+          if (!roster) return error("roster_storage_unavailable", 503)
+          return Response.json({ roster: roster.get(authenticated.accountID) }, noStore)
+        }
+        if (url.pathname === "/api/hub/roster" && request.method === "PUT") {
+          if (!roster) return error("roster_storage_unavailable", 503)
+          if (request.headers.get("content-type")?.split(";")[0] !== "application/json")
+            return error("invalid_roster", 400)
+          const body = await boundedPushBody(request, 65536)
+          if (body === undefined) return error("invalid_roster", 400)
+          try {
+            const stored = await roster.put(authenticated.accountID, JSON.parse(body), () =>
+              identity.active(authenticated),
+            )
+            return Response.json({ roster: stored }, noStore)
+          } catch (failure) {
+            return error(
+              failure instanceof Error && failure.message === "Roster sequence conflict"
+                ? "roster_sequence_conflict"
+                : "invalid_roster",
+              failure instanceof Error && failure.message === "Roster sequence conflict" ? 409 : 400,
+            )
+          }
+        }
+        if (url.pathname === "/api/hub/roster/history" && request.method === "GET") {
+          if (!roster) return error("roster_storage_unavailable", 503)
+          return Response.json({ history: roster.history(authenticated.accountID) }, noStore)
+        }
+        if (url.pathname === "/api/hub/roster/devices" && request.method === "GET") {
+          if (!roster) return error("roster_storage_unavailable", 503)
+          return Response.json({ devices: roster.get(authenticated.accountID)?.payload.devices ?? [] }, noStore)
+        }
         if (url.pathname === "/api/hub/hosts" && request.method === "GET") {
           const connected = server.connectedHosts().filter((host) => host.accountID === authenticated.accountID)
           return Response.json(
@@ -293,7 +334,7 @@ export async function listen(options: Options) {
             .register(authenticated.accountID, body.value, () => identity.active(authenticated))
             .catch(() => undefined)
           return registered
-            ? Response.json(registered, { ...noStore, status: 201 })
+            ? Response.json({ ...registered, accountID: authenticated.accountID }, { ...noStore, status: 201 })
             : error("registration_rejected", 409)
         }
         const host = /^\/api\/hub\/hosts\/([A-Za-z0-9_-]{16,128})\/(revoke|rotate)$/.exec(url.pathname)
@@ -308,7 +349,9 @@ export async function listen(options: Options) {
             identity.active(authenticated) ? directory.rotate(authenticated.accountID, host[1]!) : undefined,
           )
           .catch(() => undefined)
-        return token ? Response.json({ token }, noStore) : error("host_unavailable", 404)
+        return token
+          ? Response.json({ token, accountID: authenticated.accountID }, noStore)
+          : error("host_unavailable", 404)
       },
       host: async (request, hostID) => {
         const authorization = request.headers.get("authorization") ?? ""

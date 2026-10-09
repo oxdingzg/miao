@@ -52,7 +52,8 @@ import { createPendingPrompts } from "./pending-prompts"
 import { promptInputFromParts } from "./session-v2-write"
 import { SessionMessage } from "@miao/core/session/message"
 import type { PromptInfo } from "../prompt/history"
-import { errorMessage } from "../util/error"
+import { errorData, errorMessage } from "../util/error"
+import { retryPromptSend } from "./prompt-send"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -273,6 +274,11 @@ export const {
     // and would otherwise revert it. Record when a live update lands so a sync
     // that started earlier can skip its stale snapshot.
     const todoLiveAt = new Map<string, number>()
+    // Same hazard for the session list entry: a generated title or rename that
+    // lands mid-turn (`session.next.info.updated`) arrives while the streamed
+    // transcript keeps triggering syncs, and an older sync's snapshot would
+    // quietly put the default title back.
+    const sessionLiveAt = new Map<string, number>()
     const hydration = { count: 0, totalMs: 0, maxMs: 0, lastMs: 0 }
     const diffRequests = new Map<string, AbortController>()
     const diffLiveAt = new Map<string, number>()
@@ -420,6 +426,7 @@ export const {
       olderLoaded.delete(sessionID)
       loadingOlder.delete(sessionID)
       todoLiveAt.delete(sessionID)
+      sessionLiveAt.delete(sessionID)
       lastViewed.delete(sessionID)
       diffRequests.get(sessionID)?.abort()
       diffRequests.delete(sessionID)
@@ -704,6 +711,7 @@ export const {
         if (sessionID && !watchedSessions.has(sessionID)) {
           if (isSessionListV2Event(event.type)) scheduleListRefresh()
         } else if (sessionID && (FULL_SYNC_V2_EVENTS.has(event.type) || !applyV2DurableEvent(sessionID, event))) {
+          if (isSessionListV2Event(event.type)) sessionLiveAt.set(sessionID, performance.now())
           v2Refresh.schedule(sessionID)
         } else if (sessionID) {
           capSessionMessages(sessionID)
@@ -738,8 +746,13 @@ export const {
             input.status.type === "idle" &&
             (previousType === "busy" || previousType === "retry") &&
             watchedSessions.has(input.sessionID)
-          )
+          ) {
             v2Refresh.schedule(input.sessionID)
+            // A title generated mid-turn rides the same stream as the transcript
+            // and can be lost or reverted by an in-flight sync; the idle boundary
+            // is the cheap place to catch the session list up.
+            scheduleListRefresh()
+          }
           break
         }
         case "session.next.retried": {
@@ -893,6 +906,17 @@ export const {
               draft.splice(match.index, 1)
             }),
           )
+          break
+        }
+
+        case "todo.updated": {
+          // The sidebar's Todo panel reads the store, and a session's todo list
+          // is fetched from the server only once, during the first full sync —
+          // live events are the only mid-run refresh. Store the new list and
+          // stamp the clock, so a full sync that started before this event
+          // cannot roll the panel back with its older snapshot.
+          todoLiveAt.set(event.properties.sessionID, performance.now())
+          setStore("todo", event.properties.sessionID, event.properties.todos)
           break
         }
 
@@ -1133,18 +1157,21 @@ export const {
       sessionID: string
       agent: string
       model: { providerID: string; modelID: string; variant?: string }
-    }) {
+    }, signal: AbortSignal, retry: boolean) {
       const match = search(store.session, input.sessionID, (s) => s.id)
-      const session = match.found ? store.session[match.index] : undefined
+      // A lost agent-switch receipt must not append the switch a second time.
+      const session = retry
+        ? await sdk.api.sessions.get({ sessionID: input.sessionID }, { signal })
+        : match.found ? store.session[match.index] : undefined
       if (input.agent && session?.agent !== input.agent)
-        await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, {})
+        await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, { signal })
       if (!input.model.providerID || !input.model.modelID) return
       await sdk.api.sessions.switchModel(
         {
           sessionID: input.sessionID,
           model: { id: input.model.modelID, providerID: input.model.providerID, variant: input.model.variant },
         },
-        {},
+        { signal },
       )
     }
 
@@ -1184,10 +1211,23 @@ export const {
             state: "sending",
             delivery: "steer",
           })
-          return applySelection(input)
-            .then(() =>
-              sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, {}),
-            )
+          let selected = false
+          return retryPromptSend({
+            send: async (signal, attempt) => {
+              if (!selected) {
+                await applySelection(input, signal, attempt > 0)
+                selected = true
+              }
+              return sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, { signal })
+            },
+            // An event receipt or removal/reconciliation is authoritative even
+            // if the HTTP reply is lost. Never resend a cleared local intent.
+            received: () => !pendingPrompts.data[id] || pendingPrompts.data[id].state === "admitted",
+            retry: (error, attempt) => {
+              pendingPrompts.retry(id, attempt, errorMessage(error))
+              console.warn("session prompt transport retry", { sessionID: input.sessionID, messageID: id, attempt, error: errorData(error) })
+            },
+          })
             .then(
               (response) => {
                 pendingPrompts.admit(id)
@@ -1196,6 +1236,7 @@ export const {
               },
               (error: unknown) => {
                 pendingPrompts.fail(id, errorMessage(error))
+                console.error("session prompt send failed", { sessionID: input.sessionID, messageID: id, error: errorData(error) })
                 throw error
               },
             )
@@ -1398,8 +1439,13 @@ export const {
             ])
             batch(() => {
               const match = search(store.session, sessionID, (s) => s.id)
-              if (match.found) setStore("session", match.index, reconcile(session.data! as Session))
-              if (!match.found) setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data! as Session))
+              // A snapshot fetched before a live rename must not revert it; the
+              // refresh that observed the rename re-syncs with fresh data.
+              if ((sessionLiveAt.get(sessionID) ?? 0) < started) {
+                if (match.found) setStore("session", match.index, reconcile(session.data! as Session))
+                if (!match.found)
+                  setStore("session", (sessions) => sessions.toSpliced(match.index, 0, session.data! as Session))
+              }
               if ((todoLiveAt.get(sessionID) ?? 0) < started) setStore("todo", sessionID, reconcile(todo.data ?? []))
               const currentMessages = store.message[sessionID] ?? []
               const currentByID = new Map(currentMessages.map((message) => [message.id, message]))

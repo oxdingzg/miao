@@ -9,12 +9,15 @@
   },
   "scripts": {
     "test": "bun test",
+    "check:native:roster": "bun script/check-native-roster.ts",
+    "check:browser:enrollment": "bun script/check-browser-enrollment.ts",
     "check:browser": "bun script/check-browser.ts && bun script/check-browser-account.ts",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",
     "hub": "bun src/hub-main.ts",
     "build:web": "bun script/build-web.ts",
     "check:web": "bun run build:web && bun script/check-web.ts",
-    "check:web:mobile": "bun run build:web && bun script/check-web.ts --mobile",
+    "check:web:mobile": "bun run build:web && bun script/check-web.ts --mobile --scan --social",
+    "check:web:enrollment": "bun run build:web && bun script/check-web-runtime.ts --account-enrollment",
     "check:web:runtime": "bun run build:web && bun script/check-web-runtime.ts && bun script/check-web-runtime.ts --project-scope && bun script/check-web-runtime.ts --live"
   },
   "dependencies": {

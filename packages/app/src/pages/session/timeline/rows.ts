@@ -6,11 +6,10 @@ import type {
   SessionMessageSynthetic,
   SessionMessageUser,
 } from "@/utils/server"
-import { AssistantMessage, Part, SessionStatus, UserMessage } from "@miao/schema/view-models"
+import { Part, SessionStatus } from "@miao/schema/view-models"
 import { groupParts, renderable, type PartGroup } from "@miao/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
-import { compareMessages } from "@/utils/session-message"
 
 export { TimelineRow, type SummaryDiff } from "./timeline-row"
 
@@ -50,7 +49,7 @@ export namespace Timeline {
     showReasoning: boolean,
     status: SessionStatus["type"],
     inlineComments: boolean,
-    projectedUserMessages: UserMessage[],
+    projectedUserMessages: SessionMessageUser[],
   ) {
     const turns: { user: TurnUser; assistants: TurnAssistant[] }[] = []
     const turnByUserID = new Map<string, (typeof turns)[number]>()
@@ -107,7 +106,7 @@ export namespace Timeline {
         assistants: [] as TurnAssistant[],
       }
       turnByUserID.set(user.id, turn)
-      const index = turns.findIndex((item) => compareMessages(user, item.user) < 0)
+      const index = turns.findIndex((item) => user.time.created < item.user.time.created)
       if (index < 0) turns.push(turn)
       else turns.splice(index, 0, turn)
     })

@@ -4,7 +4,7 @@ import path from "path"
 import { cliIt } from "../lib/cli-process"
 
 describe("opencode mcp add (non-interactive subprocess)", () => {
-  cliIt.concurrent(
+  cliIt.serial(
     "adds a remote server with HTTP headers",
     ({ home, opencode }) =>
       Effect.gen(function* () {
@@ -36,7 +36,7 @@ describe("opencode mcp add (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.serial(
     "adds a local server while preserving argv and environment values",
     ({ home, opencode }) =>
       Effect.gen(function* () {

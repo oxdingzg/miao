@@ -61,16 +61,7 @@ export type State = {
   vcs: VcsInfo | undefined
   limit: number
   message: {
-    [sessionID: string]: Message[]
-  }
-  session_message: {
     [sessionID: string]: SessionMessageInfo[]
-  }
-  part: {
-    [messageID: string]: Part[]
-  }
-  part_text_accum_delta: {
-    [partID: string]: string
   }
 }
 

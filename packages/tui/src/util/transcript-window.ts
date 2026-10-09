@@ -139,6 +139,17 @@ export function createTranscriptWindow<T extends { id: string }>(
   const [holdEnd, setHoldEnd] = createSignal<number>()
   let lastScrollTop: number | undefined
   let idleFrames = 0
+  // Consecutive passes that measured the viewport entirely outside the mounted
+  // block. One mid-move pass can report mixed stale/fresh geometry; a genuine
+  // stranding persists, so the recovery jump waits for the second pass.
+  let strandedFrames = 0
+  let coverageFloor = minWindow
+  // The tallest timeline seen while the window is anchored. A streamed reflow
+  // can collapse the measured height for a pass or two, which reads as
+  // "at bottom"; leaving anchored reading on such a frame snaps the window to
+  // the tail and yanks the reader. At-bottom readings below the high-water
+  // mark are measurement noise and keep anchored reading instead.
+  let peakTimeline: number | undefined
 
   const total = createMemo(() => messages().length)
   const maxStart = createMemo(() => Math.max(0, total() - windowSize()))
@@ -177,8 +188,11 @@ export function createTranscriptWindow<T extends { id: string }>(
     bottom,
     messages: window,
     reset: () => {
+      coverageFloor = minWindow
       setAnchor(undefined)
       setHoldEnd(undefined)
+      strandedFrames = 0
+      peakTimeline = undefined
     },
     reveal(id: string) {
       const index = messages().findIndex((message) => message.id === id)
@@ -203,6 +217,8 @@ export function createTranscriptWindow<T extends { id: string }>(
         setHoldEnd(undefined)
         lastScrollTop = metrics.scrollTop
         idleFrames = 0
+        strandedFrames = 0
+        peakTimeline = undefined
         return
       }
       const leading = top()
@@ -210,6 +226,17 @@ export function createTranscriptWindow<T extends { id: string }>(
       const content = Math.max(0, metrics.mountedHeight)
       const mounted = Math.max(1, end() - start())
       const atBottom = metrics.scrollTop + metrics.viewportHeight >= leading + content + trailing - margin
+      const anchored = anchor() !== undefined || holdEnd() !== undefined
+      const timeline = leading + content + trailing
+      if (!anchored) peakTimeline = undefined
+      else if (peakTimeline === undefined || timeline > peakTimeline) peakTimeline = timeline
+      // Below the high-water mark the geometry is mid-reflow, so an at-bottom
+      // reading is noise: keep anchored reading instead of snapping to the tail.
+      const atHighWater = peakTimeline !== undefined && timeline >= peakTimeline - 0.5
+      if (atBottom && anchored && !atHighWater) {
+        lastScrollTop = metrics.scrollTop
+        return
+      }
       const average = content / mounted
       if (average > 0 && Math.abs(average - estimate()) > estimate() * 0.25)
         setEstimate(Math.max(1, Math.round(average)))
@@ -218,19 +245,41 @@ export function createTranscriptWindow<T extends { id: string }>(
         setHoldEnd(undefined)
         if (adaptive && metrics.viewportHeight > 0) {
           const rows = average > 0 ? average : estimate()
-          const desired = Math.max(
-            minWindow,
-            Math.min(maxWindow, Math.ceil((metrics.viewportHeight + 2 * margin) / rows)),
-          )
-          // Re-size only past a dead band, so the layout/measure feedback loop
-          // cannot oscillate every frame.
-          if (Math.abs(desired - windowSize()) > Math.max(2, windowSize() * 0.25)) setSize(desired)
+          const target = metrics.viewportHeight + 2 * margin
+          // A tall-history/short-tail mix can alternate between an underfilled
+          // small window and a tall larger window forever. Remember the count
+          // needed for coverage rather than shrinking back to the failed size.
+          const underfilled = content < target && windowSize() < maxWindow
+          if (underfilled) coverageFloor = Math.max(coverageFloor, Math.min(maxWindow, windowSize() + step()))
+          const desired = Math.max(coverageFloor, Math.min(maxWindow, Math.ceil(target / rows)))
+          if (underfilled || Math.abs(desired - windowSize()) > Math.max(2, windowSize() * 0.25)) setSize(desired)
         }
+        lastScrollTop = metrics.scrollTop
+        idleFrames = 0
+        strandedFrames = 0
+        return
+      }
+      const moving = lastScrollTop !== undefined && Math.abs(metrics.scrollTop - lastScrollTop) > 0.5
+      // A fast drag, a scrollbar jump, or a streamed reflow can leave the
+      // viewport entirely outside the mounted block. The stepped chase below
+      // advances a fraction of the window per pass, which reads as a blank
+      // transcript until the chase lands — cover the viewport in one move
+      // instead; normal stepping resumes on the next pass. A single pass can
+      // report stray geometry mid-move (stale scrollHeight against fresh
+      // spacers), so the jump only fires once the stranding measured twice.
+      const first = start() * estimate()
+      const last = first + content
+      const stranded =
+        content > 0 &&
+        (metrics.scrollTop + metrics.viewportHeight <= first - margin || metrics.scrollTop >= last + margin)
+      strandedFrames = stranded ? strandedFrames + 1 : 0
+      if (stranded && strandedFrames >= 2) {
+        setHoldEnd(undefined)
+        moveTo(Math.max(0, Math.min(total() - 1, Math.floor(metrics.scrollTop / Math.max(1, estimate())))))
         lastScrollTop = metrics.scrollTop
         idleFrames = 0
         return
       }
-      const moving = lastScrollTop !== undefined && Math.abs(metrics.scrollTop - lastScrollTop) > 0.5
       idleFrames = moving ? 0 : idleFrames + 1
       if (idleFrames >= IDLE_FRAMES) setHoldEnd(undefined)
       if (anchor() === undefined) setAnchor(messages()[start()]?.id)

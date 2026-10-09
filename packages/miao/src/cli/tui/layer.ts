@@ -2,6 +2,7 @@ import { run as runTui, type RemoteLocalFactory, type TuiInput } from "@miao/tui
 import { Global } from "@miao/core/global"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { Effect } from "effect"
+import path from "node:path"
 import { TerminalSession } from "./terminal-session"
 
 export function run(input: TuiInput & { runtimeTarget?: TerminalSession.Runtime }) {
@@ -21,6 +22,13 @@ const callbackPage = (ok: boolean) => `<!doctype html>
 
 // Relay account setup stays lazy and separate from session execution.
 const remote: RemoteLocalFactory = async () => ({
+  settings: async () => {
+    const { ControlClientSettings } = await import("@miao/remote-control/client-settings")
+    return ControlClientSettings.read(
+      process.env.MIAO_REMOTE_CONTROL_SETTINGS ?? path.join(Global.Path.config, "remote-control", "client.json"),
+      process.env.MIAO_HUB_URL,
+    )
+  },
   providers: async (input) => {
     const { HubSetup } = await import("@miao/remote-control/hub-setup")
     return HubSetup.providers(input)

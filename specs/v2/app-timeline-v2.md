@@ -93,6 +93,85 @@ Execution inventory (verified on main after #401/#403/#404/#408):
   the per-message V1 shape and needs a records-driven variant. The
   session retry flow and `use-session-commands` are mechanical:
   `extractPromptFromParts` over the `contentParts` projection.
+
+Store-surgery prerequisite discovered while starting it: the shared
+render `Data` contract lives in `@miao/session-ui` (`context/data.tsx`,
+V1 `message`/`part`/`part_text_accum_delta` shapes, consumed by
+`session-turn` and `message-part` — the latter reads the V1 delta
+accumulate store for streaming bash text). The content projection
+(`contentParts`, currently `packages/app/.../timeline/content.ts`, deps
+are clean: schema types + effect + solid) must move into
+`@miao/session-ui` first; session-ui's Data contract then becomes
+`SessionMessageInfo[]` + the projection, and the app store surgery
+(merge `session_message` into `data.message`, delete `part` +
+`part_text_accum_delta`, retire `normalizeSessionMessages` and the V1
+event branches) lands without touching package boundaries. The
+legacy-bridge e2e scenarios (#401/#403) retire with the V1 event
+branches; the settled-tool expansion contracts move to V2-native
+sequences (expand while running, assert across completion).
+
+Surgery map (measured on main, packages/app/src/context/server-session.ts):
+the five V1 cases span `session.status`, `message.updated`,
+`message.removed`, `message.part.updated`, `message.part.removed`,
+`message.part.delta` in the event `apply` switch. They are entangled
+with shared load bookkeeping — `messageLoads` (touched/removed/cleared
+sets), `orphanParts`, `pendingParts`, `optimistic`, `deltaBases`,
+`part_text_accum_delta`, `removedMessages` — some of which the V2
+paths also use, so the cut deletes the cases plus the V1-only helpers
+(`legacy-part-record.ts`, `indexLegacyMessage`, `cleanMessage`,
+`normalizeSessionMessages`, `compareMessages`/`messageKey`) and the
+`part`/`part_text_accum_delta` store writes in one pass, keeping the
+load state the V2 reducer still consumes. The e2e fixture keeps its
+V2 send helpers and loses `legacyPartUpdated` and the removal events;
+the tool-state settled-re-delivery cases re-sequence to V2-native
+(expand while running, assert across completion), the removal
+scenarios drop, and collapse-state's diff-count update half drops with
+its sibling-streaming half retained.
+
+Execution state (branch `refactor/stage3-final-cut`, WIP commit
+4d588fd91, do-not-merge): the V1 event branches, `normalizeSessionMessages`,
+`part`/`part_text_accum_delta` stores, and the legacy mirrors are
+deleted; `data.message` holds records end to end (fetch, apply,
+records-native optimistic send). Remaining, in order:
+
+1. Product-decision sites (compiler-enumerated, session.tsx
+   :574/:654/:829/:1973/:2112, message-timeline :336/:957/:1069): the
+   resend and revert flows read agent/model/summary from the V1 user
+   message; V2 user records carry none. Decide: resend uses the current
+   draft's agent/model (recommended) or a record-carried attribution
+   lands first.
+2. The optimistic-remove settle and the unit tests
+   (server-session.test.ts optimistic/normalize cases).
+3. The e2e fixture/spec redesign per the map above.
+
+The regression suites to keep green: default e2e, timeline-stability,
+and the session-ui content tests.
+
+Execution state after the second pass (branch
+`refactor/stage3-final-cut`, two WIP commits, do-not-merge): the V1
+event branches, `part`/`part_text_accum_delta` stores, and
+`normalizeSessionMessages` are deleted; `data.message` holds records
+through fetch/apply and the records-native optimistic send; session-ui
+nav + Data contract + message-part last store read are flipped; the
+global-sync reducer/cache/bootstrap tests are aligned. Remaining,
+ordered: rewrite `timeline/projection.ts` over records (its
+`assistantMessagesByParent` grouping uses V1 `parentID`/`role` —
+records have neither; group by record order between user records),
+then the session.tsx resend/revert sites with the decided
+current-draft attribution, then message-nav/model tests, then the e2e
+fixture/spec redesign. The compiler enumerates everything else.
+
+Second entanglement, one layer up: `fetchMessages`/`applyMessagePage`
+shape a `MessagePage` as `{session, part, source, sourceMode,
+projectSource}` and the optimistic prompt flow books V1 parts through
+`optimistic`/`confirmOptimistic`/`mergeOptimisticPage`/`replaceParts`.
+The store cut therefore rewrites the page contract to
+`{source, sourceMode, cursor, complete}` (records only), replaces the
+optimistic parts booking with a records-native pending-user insert,
+and deletes `replaceMessages`/`replaceParts`/`reconcileFetched`
+(parts)/`deleteMessageParts`/`mergeOptimisticPage`/`SKIP_PARTS` with
+it. Sequence the optimistic-flow rewrite FIRST inside the same change:
+the send path is the one behavior the e2e suites cannot mock around.
 - Store-surgery order once those land: delete `data.part` writes and
   readers → merge `session_message` into `data.message`
   (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the

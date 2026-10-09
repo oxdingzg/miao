@@ -7,7 +7,7 @@ import {
   isV2StreamFragmentEvent,
   mergeTranscript,
 } from "../src/context/session-v2"
-import { promptInputFromParts } from "../src/context/session-v2-write"
+import { promptInputFromParts, toolPart } from "../src/context/session-v2-write"
 
 const base = { sessionID: "ses_1" }
 
@@ -88,3 +88,47 @@ test("maps prompt parts into the V2 prompt input", () => {
   ).toEqual({ text: "a\n\nb" })
 })
 
+
+test("maps V2 tool parts into the V1 shape the renderers read", () => {
+  const edit = {
+    type: "tool",
+    id: "tool_1",
+    name: "edit",
+    state: {
+      status: "completed",
+      input: { path: "/project/src/a.ts", oldString: "a", newString: "b" },
+      content: [],
+      structured: {
+        files: [
+          { file: "src/a.ts", patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@\n-a\n+b\n", additions: 1, deletions: 1, status: "modified" },
+        ],
+        replacements: 1,
+      },
+    },
+    time: { created: 1, ran: 2, completed: 3 },
+  } as Extract<SessionMessage, { type: "assistant" }>["content"][number] & { type: "tool" }
+
+  const part = toolPart("ses_1", "msg_1", edit)
+  if (part.type !== "tool" || part.state.status !== "completed") throw new Error("expected a completed tool part")
+  // V2 names the target `path`; the Edit renderer reads `filePath`, and a
+  // missing one renders the part as permanently pending.
+  expect(part.state.input).toMatchObject({ path: "/project/src/a.ts", filePath: "/project/src/a.ts" })
+  // The diff the renderer expands lives on V1 `metadata.diff`, not `structured`.
+  expect(part.state.metadata.diff).toContain("+b")
+
+  const read = {
+    type: "tool",
+    id: "tool_2",
+    name: "read",
+    state: {
+      status: "running",
+      input: { path: "/project/src/b.ts" },
+      structured: {},
+      content: [],
+    },
+    time: { created: 4, ran: 5 },
+  } as Extract<SessionMessage, { type: "assistant" }>["content"][number] & { type: "tool" }
+  const running = toolPart("ses_1", "msg_1", read)
+  if (running.type !== "tool" || running.state.status !== "running") throw new Error("expected a running tool part")
+  expect(running.state.input).toMatchObject({ filePath: "/project/src/b.ts" })
+})

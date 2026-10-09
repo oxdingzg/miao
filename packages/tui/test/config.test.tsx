@@ -119,10 +119,10 @@ test("preserves an explicit undo binding when suspend is unsupported", () => {
 test("binds cmd+left/right to the start and end of the input buffer", () => {
   const config = resolve({}, { terminalSuspend: true })
 
-  expect(config.keybinds.get("input.buffer.home")).toMatchObject([{ key: "home,super+left" }])
-  expect(config.keybinds.get("input.buffer.end")).toMatchObject([{ key: "end,super+right" }])
-  expect(config.keybinds.get("input.select.buffer.home")).toMatchObject([{ key: "shift+home,super+shift+left" }])
-  expect(config.keybinds.get("input.select.buffer.end")).toMatchObject([{ key: "shift+end,super+shift+right" }])
+  expect(config.keybinds.get("input.buffer.home")).toMatchObject([{ key: "home,ctrl+home,super+left" }])
+  expect(config.keybinds.get("input.buffer.end")).toMatchObject([{ key: "end,ctrl+end,super+right" }])
+  expect(config.keybinds.get("input.select.buffer.home")).toMatchObject([{ key: "shift+home,ctrl+shift+home,super+shift+left" }])
+  expect(config.keybinds.get("input.select.buffer.end")).toMatchObject([{ key: "shift+end,ctrl+shift+end,super+shift+right" }])
 })
 
 test("provides resolved config through Solid context", async () => {

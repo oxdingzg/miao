@@ -10,11 +10,13 @@ import customizeOpencodeContent from "./skill/customize-miao.md" with { type: "t
 import officeDocumentsContent from "./skill/office-documents.md" with { type: "text" }
 import mediaObserveContent from "./skill/media-observe.md" with { type: "text" }
 import backgroundWaitsContent from "./skill/background-waits.md" with { type: "text" }
+import autonomousContinuationContent from "./skill/autonomous-continuation.md" with { type: "text" }
 
 export const CustomizeOpencodeContent = customizeOpencodeContent
 export const OfficeDocumentsContent = officeDocumentsContent
 export const MediaObserveContent = mediaObserveContent
 export const BackgroundWaitsContent = backgroundWaitsContent
+export const AutonomousContinuationContent = autonomousContinuationContent
 export const MediaObserveDescription =
   "Use when a task involves a video or audio file: understanding footage, finding moments, building or checking a video edit, extracting frames, or verifying a render. Turns media into timestamped contact sheets with ffmpeg and reads those instead of guessing from metadata."
 
@@ -23,6 +25,9 @@ export const OfficeDocumentsDescription =
 
 export const BackgroundWaitsDescription =
   "Use when a task must wait more than a minute on an external process: CI runs, GitHub checks or releases, remote builds over SSH, test suites, dev servers, or any open-ended watch (--watch, watch, tail -f, polling loops). Teaches non-blocking waits: start the job in the background, end the turn, and continue from the completion notification; watch the GitHub run instead of gh pr checks --watch, which can report a false all-green before a fresh run's jobs register."
+
+export const AutonomousContinuationDescription =
+  "Use when the user has explicitly authorized an engagement to keep running on its own until a stated objective is done (overnight implementation, long batch work, unattended verification). Teaches one-shot self-renewal wakeups instead of recurring cron heartbeats, waiting on background completion notifications instead of polling, treating backlogged duplicate wake prompts as one heartbeat, and stopping all renewal once the objective is complete."
 
 export const Plugin = define({
   id: "skill",
@@ -70,6 +75,17 @@ export const Plugin = define({
             description: BackgroundWaitsDescription,
             location: AbsolutePath.make("/builtin/background-waits.md"),
             content: BackgroundWaitsContent,
+          }),
+        }),
+      )
+      draft.source(
+        SkillV2.EmbeddedSource.make({
+          type: "embedded",
+          skill: SkillV2.Info.make({
+            name: "autonomous-continuation",
+            description: AutonomousContinuationDescription,
+            location: AbsolutePath.make("/builtin/autonomous-continuation.md"),
+            content: AutonomousContinuationContent,
           }),
         }),
       )

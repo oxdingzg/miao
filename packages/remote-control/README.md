@@ -114,3 +114,90 @@ The owner-only `POST /api/runtime/control/configuration` endpoint accepts a root
 Without `MIAO_REMOTE_CONTROL_CONFIG`, the Runtime uses a private `.remote-control` sidecar directory next to its session database. A disabled Runtime still exposes its stable public host identity to its local administrator, allowing account registration before connecting. Existing private environment-selected configurations continue to load. Credentials never appear in status responses, and failed validation or an unsafe target does not replace a working configuration.
 
 The generated local SDK exposes `client["server.runtime"].configure`. This is the backend path for the setup wizard; the account-login and channel-selection UI are delivered separately. Loopback plaintext is allowed only by an already private test configuration or an explicit test-only manager option, never by the public configuration payload.
+
+## Desktop Hub selection
+
+The desktop Remote Control dialog offers **使用默认 Hub** and **指定其他 Hub** before
+account login when a private default is configured. Without a default, it prompts
+for the Hub address. Provider discovery selects the available GitHub/Google login
+methods advertised by that Hub; network errors and malformed discovery responses
+are shown as errors instead of falling back to a password form. A legacy Hub that
+returns HTTP 404 for provider discovery can still use password login.
+
+Store the operator default outside the checkout in
+`$XDG_CONFIG_HOME/miao/remote-control/client.json` (normally
+`$HOME/.config/miao/remote-control/client.json`), with owner-only permissions
+(`0600` on Unix):
+
+```json
+{
+  "defaultHubURL": "https://relay.example.invalid"
+}
+```
+
+`MIAO_REMOTE_CONTROL_SETTINGS` overrides the settings file path, and
+`MIAO_HUB_URL` overrides the default URL. The file accepts only `defaultHubURL`,
+a root HTTPS origin without credentials, query, fragment, or path. Account
+credentials do not belong in this file. Selecting a default does not log in,
+register a host, or grant a phone access: complete desktop account login and
+locally approve the device grant before opening a remote session.
+
+## Authenticated account binding metadata
+
+Desktop setup records an optional `accountID` from authenticated host
+registration or the authenticated login response. Credential rotation retains
+that identity even if an older relay returns only the replacement host token.
+Conflicting account IDs are rejected before the Runtime configuration changes.
+The private owner-only control configuration saves the ID and host credential;
+account access tokens remain transient. Local Runtime status exposes the ID for
+later owner consent controls. Reconfiguring without account metadata clears a
+previous ID instead of silently carrying it into another login.
+
+The self-hosted Hub includes its authenticated caller's account ID in host
+registration and rotation responses. Legacy relays without this metadata retain
+manual pairing. A device claim never supplies the host's binding identity.
+
+## Per-session publication
+
+The desktop Remote Control dialog provides **开启当前会话的远程控制** and
+**关闭当前会话的远程控制**. Publication is local administrator policy, independent
+of the window's relay connection and a device's grant. A device needs both a
+valid grant covering the Session and an explicitly published Session owned by
+this Runtime. Project grants do not publish existing Sessions automatically.
+Creating a Session remotely through an owner-approved project grant publishes
+that newly created Session; sharing a Session locally also publishes it.
+
+Each Runtime starts with no published Sessions. Publication survives a relay
+reconnect within that Runtime, but not closing or restarting the window. The
+local owner API `POST /api/runtime/control/session/:sessionID` takes
+`{"enabled": true}` or `{"enabled": false}`; status reports `sessionIDs` without
+credentials. Enabling adopts the Session's local ownership lease, so an idle
+Session can be shared and a Session owned by another window cannot be stolen.
+
+Disabling removes the Session from remote lists, rejects further operations,
+rechecks pending encrypted replies before disclosure and stops new notification
+admissions. Already admitted model work continues locally. Device grants and
+account login never expose the publication administrator endpoint.
+
+## Browser OAuth and scan entry
+
+A Hub may advertise GitHub/Google via `GET /api/auth/providers`. The web client
+shows only those social methods; HTTP 404 retains legacy password login.
+Discovery failures stay visible. Social login uses a tab-bound, expiring state
+and a one-time callback code, then `POST /api/auth/exchange` with `client: "web"`.
+The Hub must establish a same-origin HttpOnly session cookie at exchange time,
+so directory requests and page reloads can use the existing cookie API. The web
+client never saves the returned JWT. Callback query parameters are removed from
+the address bar before asynchronous account work begins.
+
+To direct desktop QR codes to a browser bundle hosted on the same Hub, add
+`"browserURL": "https://relay.example.invalid/control/"` to the private
+`client.json`. It must be a same-origin HTTPS URL without credentials, query or
+fragment. The bundle can be hosted at the root or a subdirectory; its assets
+use relative paths. A browser invitation is `<browserURL>#pair=<base64url JSON>`.
+The fragment is removed on startup, validated against the current origin and
+kept only in this tab while account login completes. Pairing then resumes and
+still requires local owner approval. Without `browserURL`, desktop invitations
+keep the native `miao://pair#...` form. With a browser entry configured, the
+dialog also offers **使用 App 扫码** to switch the same invitation back to the
+native URI accepted by iOS clients.

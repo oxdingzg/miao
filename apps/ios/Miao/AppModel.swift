@@ -38,6 +38,19 @@ final class AppModel {
     private var notificationOpenTask: Task<Void, Never>?
     private var notificationEpoch = 0
     private var pushTask: Task<Void, Never>?
+    var enrollmentRequest = ""
+    var enrollmentIncoming = ""
+    var enrollmentResponse = ""
+    var enrollmentApproved = ""
+    var enrollmentPin = ""
+    var enrollmentSigner = ""
+    var enrollmentSignerConsent = false
+    var enrollmentIndependentPin = false
+    var enrollmentBusy = false
+    var enrollmentError: String?
+    var enrollmentComplete = false
+    private var enrollment: AccountEnrollment?
+    private var enrollmentStore: AccountEnrollmentStore?
     private var account: HubAccount?
     private var accountOrigin: URL?
     private var accountLoaded = false
@@ -204,7 +217,9 @@ final class AppModel {
             }
             let key = try await identity.loadOrCreate()
             if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
+            if enrollmentStore == nil { enrollmentStore = try AccountEnrollmentStore(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             try await reload()
+            if accountSignedIn { await refreshDirectory() }
             await restoreNotifications()
         } catch { self.error = userMessage(error) }
     }
@@ -215,11 +230,30 @@ final class AppModel {
         let generation = reloadEpoch
         let snapshot = try await registry.snapshot()
         guard generation == reloadEpoch else { return }
+        for (id, client) in clients {
+            if !snapshot.hosts.contains(where: { $0 == client.record }) { await client.close(); clients[id] = nil }
+        }
         hosts = snapshot.hosts
         attempts = snapshot.attempts
         for record in hosts where clients[record.id] == nil {
             clients[record.id] = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"), account: accountFor(record.host.hubURL))
         }
+    }
+
+    /// One tap connects account computers: enrolled devices use accepted trust, and
+    /// fresh devices request the computer's same-account auto-admission (owner toggle).
+    func connectAccountDevices() async {
+        guard !accountBusy, !enrollmentBusy, accountSignedIn, let account, let registry else { return }
+        accountBusy = true; accountError = nil
+        let epoch = accountEpoch
+        defer { accountBusy = false }
+        do {
+            let directory = try await account.hosts()
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            try await admitAccountHosts(directory, account: account, epoch: epoch, allowAuto: true)
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            await refreshDirectory()
+        } catch { if epoch == accountEpoch { accountError = accountMessage(error) } }
     }
 
     func pair(_ uri: String, label: String) {
@@ -287,6 +321,7 @@ final class AppModel {
             guard let url = URL(string: origin.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
             accountSignedIn = false; discoveredHosts = []
+            await clearEnrollment()
             let pendingPair = pairTask
             pendingPair?.cancel(); await pendingPair?.value
             for client in clients.values { await client.close() }
@@ -314,7 +349,7 @@ final class AppModel {
         }
     }
 
-    /// Sign in through the hub's OAuth provider (mhub has no password). The
+    /// Sign in through the Hub's advertised OAuth provider. The
     /// browser returns to the app's own scheme with a one-time code.
     func signInWithOAuth(provider: String) async {
         guard !accountBusy else { return }
@@ -327,6 +362,7 @@ final class AppModel {
             guard let url = URL(string: raw) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
             accountSignedIn = false; discoveredHosts = []
+            await clearEnrollment()
             let pendingPair = pairTask
             pendingPair?.cancel(); await pendingPair?.value
             for client in clients.values { await client.close() }
@@ -378,6 +414,7 @@ final class AppModel {
         notificationOpenTask?.cancel()
         notificationHostID = nil; notificationDestination = nil
         accountSignedIn = false; discoveredHosts = []
+        await clearEnrollment()
         notificationEpoch += 1; notificationsRegistered = false
         UIApplication.shared.unregisterForRemoteNotifications()
         AppNotifications.shared.forget()
@@ -400,6 +437,16 @@ final class AppModel {
         do {
             let hosts = try await account.hosts()
             guard generation == accountEpoch, accountSignedIn else { return }
+            if let registry {
+                let origin = await account.origin
+                try? await registry.rename(hosts, hubURL: origin)
+                try await reload()
+            }
+            if try await enrollmentStore?.account(hubURL: (await account.origin).absoluteString,
+                accountID: try await account.authenticatedAccountID()) != nil {
+                try await admitAccountHosts(hosts, account: account, epoch: generation)
+                guard generation == accountEpoch, accountSignedIn else { return }
+            }
             discoveredHosts = hosts; accountError = nil
         } catch {
             guard generation == accountEpoch else { return }
@@ -410,6 +457,154 @@ final class AppModel {
                 connectionEpoch += 1
             }
         }
+    }
+
+    private func clearEnrollment() async {
+        await enrollment?.cancel(); enrollment = nil
+        enrollmentRequest = ""; enrollmentIncoming = ""; enrollmentResponse = ""; enrollmentApproved = ""; enrollmentPin = ""; enrollmentSigner = ""
+        enrollmentSignerConsent = false; enrollmentIndependentPin = false; enrollmentError = nil; enrollmentComplete = false
+    }
+
+    var incomingEnrollmentSummary: String {
+        guard enrollmentIncoming.utf8.count <= 8192,
+              let request = try? AccountEnrollmentRequest.decode(Data(enrollmentIncoming.utf8)) else { return "请输入新设备直接提供的注册码" }
+        return request.payload.label + "\n" + request.payload.publicKey
+    }
+
+    func initializeAccountSigner() async {
+        guard enrollmentSignerConsent, !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollmentStore else { return }
+        enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
+        let epoch = accountEpoch
+        defer { enrollmentBusy = false }
+        do {
+            let key = try await identity.loadOrCreate()
+            let id = try await account.authenticatedAccountID()
+            let origin = (await account.origin).absoluteString
+            let existing = try await account.roster()
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            let rooted = try AcceptedAccountEnrollment.root(identity: key, hubURL: origin, accountID: id, paired: hosts,
+                existing: existing, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            if existing == nil { _ = try await account.publishRoster(rooted.roster) }
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            try await enrollmentStore.accept(rooted)
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            enrollmentSigner = publicKey(key)
+        } catch { if epoch == accountEpoch { enrollmentError = "初始化未完成。请先独立配对电脑，并在电脑明确选择此设备作为账号签名设备。" } }
+    }
+
+    func createEnrollmentRequest() async {
+        guard !accountBusy, !enrollmentBusy, accountSignedIn, let account else { return }
+        enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
+        let epoch = accountEpoch
+        defer { enrollmentBusy = false }
+        do {
+            let key = try await identity.loadOrCreate()
+            let id = try await account.authenticatedAccountID()
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            if enrollment == nil { enrollment = AccountEnrollment(identity: key) }
+            let request = try await enrollment!.begin(hubURL: (await account.origin).absoluteString, accountID: id, label: "iOS 设备",
+                allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            enrollmentRequest = String(decoding: request, as: UTF8.self)
+        } catch { if epoch == accountEpoch { enrollmentError = "无法生成注册码，请检查账号连接后重试。" } }
+    }
+
+    func approveEnrollmentRequest() async {
+        guard !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollmentStore else { return }
+        enrollmentBusy = true; enrollmentError = nil; enrollmentResponse = ""
+        let epoch = accountEpoch
+        defer { enrollmentBusy = false }
+        do {
+            guard enrollmentIncoming.utf8.count <= 8192 else { throw AccountRosterError.malformed }
+            let request = try AccountEnrollmentRequest.decode(Data(enrollmentIncoming.utf8))
+            let id = try await account.authenticatedAccountID()
+            let origin = (await account.origin).absoluteString
+            guard let roster = try await account.roster() else { throw AccountRosterError.untrustedSigner }
+            let current = try await enrollmentStore.refresh(roster, hubURL: origin, accountID: id)
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            let key = try await identity.loadOrCreate()
+            let approved = try AccountEnrollmentApproval.approve(identity: key, request: request, hubURL: origin,
+                current: current.roster, authority: current.authority, pairedHosts: current.hosts,
+                allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            let published = try await account.publishRoster(approved.roster)
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            _ = try await enrollmentStore.refresh(published, hubURL: origin, accountID: id)
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            enrollmentResponse = String(decoding: try JSONEncoder().encode(approved), as: UTF8.self)
+            enrollmentSigner = publicKey(key)
+        } catch { if epoch == accountEpoch { enrollmentError = "批准未完成。请核对注册码、签名设备资格与账号后重试。" } }
+    }
+
+    func receiveEnrollmentApproval() async {
+        guard enrollmentIndependentPin, !accountBusy, !enrollmentBusy, accountSignedIn, let account, let enrollment, let enrollmentStore else {
+            // A disabled-looking button that silently ignores taps is a dead end for
+            // the person holding the phone; surface exactly what is not ready.
+            var missing: [String] = []
+            if !enrollmentIndependentPin { missing.append("独立来源确认") }
+            if !accountSignedIn || account == nil { missing.append("账号登录") }
+            if enrollment == nil { missing.append("注册会话") }
+            if enrollmentStore == nil { missing.append("本地信任存储") }
+            if accountBusy || enrollmentBusy { missing.append("其他操作进行中") }
+            enrollmentError = missing.isEmpty ? "注册入口异常，请重试" : "暂不能完成注册：缺" + missing.joined(separator: "、")
+            return
+        }
+        enrollmentBusy = true; enrollmentError = nil; enrollmentComplete = false
+        let epoch = accountEpoch
+        defer { enrollmentBusy = false }
+        do {
+            guard enrollmentApproved.utf8.count <= 131072 else { throw AccountRosterError.malformed }
+            let id = try await account.authenticatedAccountID()
+            let accepted = try await enrollment.receive(Data(enrollmentApproved.utf8), trustedSignerKey: enrollmentPin.trimmingCharacters(in: .whitespacesAndNewlines),
+                allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            guard epoch == accountEpoch, accountSignedIn, accepted.authority.accountID == id,
+                  accepted.hubURL == (await account.origin).absoluteString else { throw HubAccountError.superseded }
+            try await enrollmentStore.accept(accepted)
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            enrollmentRequest = ""; enrollmentApproved = ""
+            await refreshDirectory()
+            guard epoch == accountEpoch, accountSignedIn else { return }
+            if let accountError { enrollmentError = accountError }
+            else { enrollmentComplete = true }
+        } catch { if epoch == accountEpoch { enrollmentError = "注册未完成。请使用已信任设备直接提供的批准结果和签名公钥。" } }
+    }
+
+    private func admitAccountHosts(_ directory: [HubDirectoryHost], account: HubAccount, epoch: Int, allowAuto: Bool = false) async throws {
+        guard let registry else { return }
+        let id = try await account.authenticatedAccountID()
+        let origin = (await account.origin).absoluteString
+        guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+        let key = try await identity.loadOrCreate()
+        let saved = try await enrollmentStore?.account(hubURL: origin, accountID: id)
+        var roster: AcceptedAccountEnrollment?
+        if let enrollmentStore, saved != nil {
+            guard let live = try await account.roster() else { throw AccountRosterError.untrustedSigner }
+            let current = try await enrollmentStore.refresh(live, hubURL: origin, accountID: id)
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            guard current.roster.roster.devices.contains(where: { $0.publicKey == publicKey(key) }) else {
+                for record in hosts where record.host.hubURL.absoluteString == origin && (saved?.hosts.contains(where: { $0.hostID == record.host.target.hostID }) ?? false) {
+                    await clients[record.id]?.close()
+                }
+                throw RemoteConnectionError.authorizationBlocked
+            }
+            roster = current
+        }
+        for host in directory where host.online && host.revokedAt == nil {
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            let existing = hosts.first { $0.host.hubURL.absoluteString == origin && $0.host.target.hostID == host.hostID && $0.host.target.runtimeID == host.runtimeID }
+            if let current = roster, current.hosts.contains(where: { $0.hostID == host.hostID }) {
+                let admitted = try await HubConnection.admit(account: account, enrollment: current, discovered: host, identity: key, existingID: existing?.id,
+                    persist: { record, grant in try await registry.admitAccount(host: record, grant: grant, enrollment: current) },
+                    reconcile: { _ in throw RemoteRPCError.disconnected })
+                await admitted.connection.close()
+            } else if allowAuto {
+                let admitted = try await HubConnection.autoAdmit(account: account, discovered: host, identity: key,
+                    persist: { record, grant in try await registry.admitAuto(host: record, grant: grant) },
+                    reconcile: { _ in throw RemoteRPCError.disconnected })
+                await admitted.connection.close()
+            }
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+        }
+        try await reload()
     }
 
     private func accountMessage(_ error: Error) -> String {
@@ -556,8 +751,11 @@ final class HostClient {
         guard !closed else { throw CancellationError() }
         guard let data = projects["data"]?.array else { throw RemoteConnectionError.protocolIncompatible }
         self.projects = data
+        print("MIAO-DBG sync projects=", data.count, "grantProjects=", record.grant.projectIDs,
+            "grantSessions=", record.grant.sessionIDs.count, "expired=", record.expired)
         if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
         for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+        print("MIAO-DBG lists=", lists.map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: ","))
     }
 
     func scene(_ id: UUID, phase: ScenePhase) async {

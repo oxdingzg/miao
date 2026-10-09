@@ -66,6 +66,50 @@ public actor HostRegistry {
         try persist(next)
     }
 
+    /// Installs an encrypted grant from the computer's same-account auto-admission.
+    public func admitAuto(host: ApprovedHost, grant: DeviceGrant) throws {
+        try grant.validate(deviceKey: deviceKey)
+        guard host.grantID == grant.id, host.grantVersion == grant.version,
+              !host.label.isEmpty, host.label.utf16.count <= 128 else { throw ClientStateError.scopeMismatch }
+        var next = try load()
+        next.hosts.removeAll { $0.host.hubURL == host.hubURL && $0.host.target.hostID == host.target.hostID && $0.grant.id == grant.id }
+        next.hosts.append(AuthorizedHost(host: host, grant: grant))
+        try persist(next)
+    }
+
+    /// Computer names come from live directory metadata; a pairing URL only carries identifiers.
+    public func rename(_ directory: [HubDirectoryHost], hubURL: URL) throws {
+        var next = try load()
+        var changed = false
+        for index in next.hosts.indices {
+            guard next.hosts[index].host.hubURL == hubURL else { continue }
+            guard let entry = directory.first(where: {
+                $0.hostID == next.hosts[index].host.target.hostID && $0.runtimeID == next.hosts[index].host.target.runtimeID &&
+                $0.revokedAt == nil && !$0.name.isEmpty
+            }), next.hosts[index].host.label != entry.name else { continue }
+            var host = next.hosts[index].host
+            host.label = entry.name
+            next.hosts[index] = AuthorizedHost(host: host, grant: next.hosts[index].grant)
+            changed = true
+        }
+        guard changed else { return }
+        try persist(next)
+    }
+
+    /// Install only the encrypted Agent approval for a host independently endorsed in accepted account trust.
+    public func admitAccount(host: ApprovedHost, grant: DeviceGrant, enrollment: AcceptedAccountEnrollment) throws {
+        try grant.validate(deviceKey: deviceKey)
+        guard host.hubURL.absoluteString == enrollment.hubURL,
+              host.grantID == grant.id, host.grantVersion == grant.version,
+              enrollment.roster.roster.devices.contains(where: { $0.publicKey == deviceKey }),
+              enrollment.hosts.contains(where: { $0.hostID == host.target.hostID && $0.publicKey == host.publicKey }),
+              try enrollment.roster.fingerprint() == enrollment.authority.digest else { throw ClientStateError.scopeMismatch }
+        var next = try load()
+        next.hosts.removeAll { $0.host.hubURL == host.hubURL && $0.host.target.hostID == host.target.hostID && $0.grant.id == grant.id }
+        next.hosts.append(AuthorizedHost(host: host, grant: grant))
+        try persist(next)
+    }
+
     public func forget(_ id: UUID) throws {
         var next = try load()
         next.hosts.removeAll { $0.id == id }

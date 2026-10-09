@@ -7,7 +7,7 @@ import { useDialog } from "@miao/ui/context/dialog"
 import { Dialog } from "@miao/ui/dialog"
 import { List } from "@miao/ui/list"
 import { showToast } from "@/utils/toast"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { extractPromptFromParts } from "@/utils/prompt"
 import type { TextPart as SDKTextPart } from "@miao/schema/view-models"
 import { base64Encode } from "@miao/core/util/encode"
@@ -36,7 +36,7 @@ export const DialogFork: Component = () => {
     const sessionID = params.id
     if (!sessionID) return []
 
-    const msgs = sync().data.session_message[sessionID] ?? []
+    const msgs = sync().data.message[sessionID] ?? []
     const projected = contentParts(sessionID, msgs)
     const result: ForkableMessage[] = []
 
@@ -63,7 +63,7 @@ export const DialogFork: Component = () => {
     const sessionID = params.id
     if (!sessionID) return
 
-    const parts = contentParts(sessionID, sync().data.session_message[sessionID] ?? [])[item.id] ?? []
+    const parts = contentParts(sessionID, sync().data.message[sessionID] ?? [])[item.id] ?? []
     const restored = extractPromptFromParts(parts, {
       directory: sdk().directory,
       attachmentName: language.t("common.attachment"),

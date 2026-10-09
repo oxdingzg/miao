@@ -1258,6 +1258,13 @@ export type SessionsInputsOutput = {
   readonly hasMore: boolean
 }
 
+export type SessionsInputCancelInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+}
+
+export type SessionsInputCancelOutput = { readonly cancelled: boolean }
+
 export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsStatusOutput = {
@@ -1535,6 +1542,14 @@ export type SessionsHistoryOutput = {
     | {
         readonly id: string
         readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.prompt.cancelled"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.context.updated"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
         readonly location?: { readonly directory: string; readonly workspaceID?: string }
@@ -1549,6 +1564,20 @@ export type SessionsHistoryOutput = {
         readonly id: string
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly type: "session.next.synthetic"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string
+          readonly messageID: string
+          readonly text: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.notification.admitted"
         readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
         readonly location?: { readonly directory: string; readonly workspaceID?: string }
         readonly data: {
@@ -2190,6 +2219,14 @@ export type SessionsEventsOutput =
   | {
       readonly id: string
       readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.prompt.cancelled"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: { readonly timestamp: number; readonly sessionID: string; readonly messageID: string }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.context.updated"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
       readonly location?: { readonly directory: string; readonly workspaceID?: string }
@@ -2204,6 +2241,20 @@ export type SessionsEventsOutput =
       readonly id: string
       readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.synthetic"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly text: string
+        readonly metadata?: { readonly [x: string]: unknown }
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.notification.admitted"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
       readonly location?: { readonly directory: string; readonly workspaceID?: string }
       readonly data: {
@@ -4486,6 +4537,8 @@ export type ServerRuntimeIdentityOutput = {
 export type ServerRuntimeStopOutput = void
 
 export type ServerRuntimeGetOutput = {
+  readonly accountID?: string
+  readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean
   readonly hostID?: string
@@ -4497,6 +4550,8 @@ export type ServerRuntimeGetOutput = {
 export type ServerRuntimeSetEnabledInput = { readonly enabled: { readonly enabled: boolean }["enabled"] }
 
 export type ServerRuntimeSetEnabledOutput = {
+  readonly accountID?: string
+  readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean
   readonly hostID?: string
@@ -4505,12 +4560,134 @@ export type ServerRuntimeSetEnabledOutput = {
   readonly hubURL?: string
 }
 
+export type ServerRuntimeSetSessionEnabledInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly enabled: { readonly enabled: boolean }["enabled"]
+}
+
+export type ServerRuntimeSetSessionEnabledOutput = {
+  readonly accountID?: string
+  readonly sessionIDs?: ReadonlyArray<string>
+  readonly enabled: boolean
+  readonly connected: boolean
+  readonly hostID?: string
+  readonly runtimeID?: string
+  readonly hostPublicKey?: string
+  readonly hubURL?: string
+}
+
+export type ServerRuntimeAccountTrustOutput = {
+  readonly hubURL: string
+  readonly accountID: string
+  readonly acceptedSequence: number
+  readonly deviceCount: number
+  readonly permissions: ReadonlyArray<
+    | "read"
+    | "prompt"
+    | "permission.reply"
+    | "question.reply"
+    | "interrupt"
+    | "session.create"
+    | "session.rename"
+    | "session.selection"
+  >
+  readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
+} | null
+
+export type ServerRuntimeBindAccountInput = {
+  readonly grantID: {
+    readonly grantID: string
+    readonly version: number
+    readonly policy: {
+      readonly permissions: ReadonlyArray<
+        | "read"
+        | "prompt"
+        | "permission.reply"
+        | "question.reply"
+        | "interrupt"
+        | "session.create"
+        | "session.rename"
+        | "session.selection"
+      >
+      readonly projectIDs: ReadonlyArray<string>
+      readonly sessionIDs: ReadonlyArray<string>
+      readonly expiresAt: number
+      readonly autoAdmit?: boolean | undefined
+    }
+  }["grantID"]
+  readonly version: {
+    readonly grantID: string
+    readonly version: number
+    readonly policy: {
+      readonly permissions: ReadonlyArray<
+        | "read"
+        | "prompt"
+        | "permission.reply"
+        | "question.reply"
+        | "interrupt"
+        | "session.create"
+        | "session.rename"
+        | "session.selection"
+      >
+      readonly projectIDs: ReadonlyArray<string>
+      readonly sessionIDs: ReadonlyArray<string>
+      readonly expiresAt: number
+      readonly autoAdmit?: boolean | undefined
+    }
+  }["version"]
+  readonly policy: {
+    readonly grantID: string
+    readonly version: number
+    readonly policy: {
+      readonly permissions: ReadonlyArray<
+        | "read"
+        | "prompt"
+        | "permission.reply"
+        | "question.reply"
+        | "interrupt"
+        | "session.create"
+        | "session.rename"
+        | "session.selection"
+      >
+      readonly projectIDs: ReadonlyArray<string>
+      readonly sessionIDs: ReadonlyArray<string>
+      readonly expiresAt: number
+      readonly autoAdmit?: boolean | undefined
+    }
+  }["policy"]
+}
+
+export type ServerRuntimeBindAccountOutput = {
+  readonly hubURL: string
+  readonly accountID: string
+  readonly acceptedSequence: number
+  readonly deviceCount: number
+  readonly permissions: ReadonlyArray<
+    | "read"
+    | "prompt"
+    | "permission.reply"
+    | "question.reply"
+    | "interrupt"
+    | "session.create"
+    | "session.rename"
+    | "session.selection"
+  >
+  readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
+}
+
+export type ServerRuntimeClearAccountTrustOutput = void
+
 export type ServerRuntimeConfigureInput = {
-  readonly hubURL: { readonly hubURL: string; readonly hostToken: string }["hubURL"]
-  readonly hostToken: { readonly hubURL: string; readonly hostToken: string }["hostToken"]
+  readonly accountID?: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["accountID"]
+  readonly hubURL: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["hubURL"]
+  readonly hostToken: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["hostToken"]
 }
 
 export type ServerRuntimeConfigureOutput = {
+  readonly accountID?: string
+  readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean
   readonly hostID?: string
@@ -4534,6 +4711,7 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["permissions"]
   readonly projectIDs: {
     readonly permissions: ReadonlyArray<
@@ -4549,6 +4727,7 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["projectIDs"]
   readonly sessionIDs: {
     readonly permissions: ReadonlyArray<
@@ -4564,6 +4743,7 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["sessionIDs"]
   readonly expiresAt: {
     readonly permissions: ReadonlyArray<
@@ -4579,7 +4759,24 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["expiresAt"]
+  readonly autoAdmit?: {
+    readonly permissions: ReadonlyArray<
+      | "read"
+      | "prompt"
+      | "permission.reply"
+      | "question.reply"
+      | "interrupt"
+      | "session.create"
+      | "session.rename"
+      | "session.selection"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
+  }["autoAdmit"]
 }
 
 export type ServerRuntimeInviteOutput = {
@@ -4610,6 +4807,7 @@ export type ServerRuntimePendingOutput = ReadonlyArray<{
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }
   readonly expiresAt: number
 }>
@@ -4633,6 +4831,7 @@ export type ServerRuntimeApproveOutput = {
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
   readonly id: string
   readonly version: number
   readonly publicKey: string
@@ -4659,6 +4858,7 @@ export type ServerRuntimeDevicesOutput = ReadonlyArray<{
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
   readonly id: string
   readonly version: number
   readonly publicKey: string
@@ -4686,6 +4886,7 @@ export type ServerRuntimeRevokeOutput = {
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
   readonly id: string
   readonly version: number
   readonly publicKey: string

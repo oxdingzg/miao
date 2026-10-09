@@ -164,12 +164,13 @@ export class InvalidProviderOutputReason extends Schema.Class<InvalidProviderOut
 export class UnknownProviderReason extends Schema.Class<UnknownProviderReason>("LLM.Error.UnknownProvider")({
   _tag: Schema.tag("UnknownProvider"),
   message: Schema.String,
+  transient: Schema.optional(Schema.Boolean),
   status: Schema.optional(Schema.Number),
   providerMetadata: Schema.optional(ProviderMetadata),
   http: Schema.optional(HttpContext),
 }) {
   get retryable() {
-    return capacityMessage.test(this.message)
+    return this.transient ?? capacityMessage.test(this.message)
   }
 }
 

@@ -171,3 +171,66 @@ jobs:
           test ! -f "$HOME/miao-escape.txt"
           rm -rf "$D"
         working-directory: packages/miao
+
+  sandbox-windows:
+    name: sandbox-windows
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crates/miao-native
+            crates/miao-sandbox
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      # AppContainer needs a container profile (the runner is admin). If the host
+      # forbids it, the integration tests print an explicit SKIP and record why —
+      # they never silently pass a broken sandbox.
+      - name: Rust tests and AppContainer enforcement (Windows)
+        run: cargo test --release
+        working-directory: crates/miao-native
+        env:
+          MIAO_SANDBOX_NET: "1"
+          MIAO_SANDBOX_REQUIRE: "1"
+
+      - name: Sandbox crate tests (Windows)
+        run: cargo test --release
+        working-directory: crates/miao-sandbox
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build native addon
+        run: bun run build.ts
+        working-directory: packages/native
+
+      - name: Self-exec sandbox smoke (AppContainer)
+        shell: pwsh
+        run: |
+          # Arguments after the source file are forwarded; exactly one separator starts the command.
+          $D = Join-Path $env:TEMP ("miao-wd-" + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $D -Force | Out-Null
+          bun src/index.ts __sandbox-run --workdir "$D" -- cmd /c "echo ok > `"$D\ok.txt`""
+          if ($LASTEXITCODE -ne 0) { throw "sandbox workdir command failed" }
+          if (-not (Test-Path "$D\ok.txt")) { throw "workdir write did not happen" }
+          bun src/index.ts __sandbox-run --workdir "$D" -- cmd /c "echo x > `"$env:USERPROFILE\miao-escape.txt`""
+          if ($LASTEXITCODE -ne 1) { throw "expected cmd access-denied exit status" }
+          if (Test-Path "$env:USERPROFILE\miao-escape.txt") { throw "outside write unexpectedly succeeded" }
+          Remove-Item -Recurse -Force $D
+          # The expected negative command left LASTEXITCODE=1; this step passed.
+          exit 0
+        working-directory: packages/miao

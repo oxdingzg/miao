@@ -645,4 +645,68 @@ describe("SessionV2.prompt", () => {
       expect(wakeCalls).toEqual([])
     }),
   )
+
+  it.effect("cancels one pending input durably and leaves the rest pending", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const first = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
+      const second = yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Second" }),
+        delivery: "queue",
+        resume: false,
+      })
+
+      expect(yield* session.cancelInput({ sessionID, messageID: second.id })).toBe(true)
+      expect(yield* admitted(second.id)).toBeUndefined()
+      expect((yield* session.inputs({ sessionID, limit: 200 })).inputs.map((entry) => entry.id)).toEqual([first.id])
+      expect(yield* eventCount(EventV2.versionedType(SessionEvent.PromptCancelled.type, 1))).toBe(1)
+
+      // The cancel is durable so a replay cannot resurrect the cancelled
+      // prompt from its PromptAdmitted record.
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const recorded = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+      yield* events.remove(sessionID)
+      yield* db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, sessionID)).run().pipe(Effect.orDie)
+      yield* db
+        .delete(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* events.replayAll(
+        recorded.map((event) => ({
+          id: event.id,
+          aggregateID: event.aggregate_id,
+          seq: event.seq,
+          type: event.type,
+          data: event.data,
+        })),
+      )
+      expect(yield* admitted(second.id)).toBeUndefined()
+      expect(yield* admitted(first.id)).toMatchObject({ id: first.id })
+    }),
+  )
+
+  it.effect("does not cancel a promoted or unknown input", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const first = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
+      yield* SessionInput.promoteSteers(db, events, sessionID, first.admittedSeq)
+
+      expect(yield* session.cancelInput({ sessionID, messageID: first.id })).toBe(false)
+      expect(yield* session.cancelInput({ sessionID, messageID: SessionMessage.ID.create() })).toBe(false)
+      expect(yield* admitted(first.id)).toHaveProperty("promotedSeq")
+      expect(yield* eventCount(EventV2.versionedType(SessionEvent.PromptCancelled.type, 1))).toBe(0)
+    }),
+  )
 })

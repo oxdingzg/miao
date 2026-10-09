@@ -31,6 +31,16 @@ jobs:
             echo "Not a release PR (package.json version $version_base unchanged)."
             exit 0
           fi
+          # Only a version INCREASE is a release. A decrease means the branch
+          # was cut before a release merged (a stale-base feature branch) —
+          # the relative diff then shows a bogus "downgrade", and the
+          # whitelist would flag every file of an ordinary feature PR
+          # (#437 was the false positive).
+          newer=$(printf '%s\n%s\n' "$version_base" "$version_head" | sort -V | tail -1)
+          if [ "$newer" != "$version_head" ]; then
+            echo "Not a release PR ($version_base -> $version_head is not an increase; the branch predates a release merge)."
+            exit 0
+          fi
           echo "Release PR detected: $version_base -> $version_head"
           violations=$(git diff --name-only "$base" "$head" | grep -vE '^(package\.json|bun\.lock|CHANGELOG\.md|packages/[^/]+/package\.json|docs/releases/.+|docs/release\.(en|zh)\.md)$' || true)
           if [ -n "$violations" ]; then

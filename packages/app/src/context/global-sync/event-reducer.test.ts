@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part, Project, Session } from "@miao/schema/view-models"
+import type { Message, Project, Session } from "@miao/schema/view-models"
 import type { PermissionRequest, QuestionRequest } from "@miao/schema/view-models"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
-import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"
+import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
 
 const rootSession = (input: { id: string; parentID?: string; archived?: number }) =>
   ({
@@ -25,15 +25,6 @@ const userMessage = (id: string, sessionID: string, created = 1) =>
     agent: "assistant",
     model: { providerID: "openai", modelID: "gpt" },
   }) as Message
-
-const textPart = (id: string, sessionID: string, messageID: string) =>
-  ({
-    id,
-    sessionID,
-    messageID,
-    type: "text",
-    text: id,
-  }) as Part
 
 const permissionRequest = (id: string, sessionID: string, title = id) =>
   ({
@@ -81,9 +72,6 @@ const baseState = (input: Partial<State> = {}) =>
     vcs: undefined,
     limit: 10,
     message: {},
-    session_message: {},
-    part: {},
-    part_text_accum_delta: {},
     ...input,
   }) as State
 
@@ -175,22 +163,6 @@ describe("applyDirectoryEvent", () => {
     expect(store.session).toEqual([])
     expect(store.sessionTotal).toBe(0)
   })
-
-
-
-  test("cleanupDroppedSessionCaches clears part-only orphan state", () => {
-    const [store, setStore] = createStore(
-      baseState({
-        session: [rootSession({ id: "ses_keep" })],
-        part: { msg_1: [textPart("prt_1", "ses_drop", "msg_1")] },
-      }),
-    )
-
-    cleanupDroppedSessionCaches(store, setStore, store.session)
-
-    expect(store.part.msg_1).toBeUndefined()
-  })
-
 
 
 

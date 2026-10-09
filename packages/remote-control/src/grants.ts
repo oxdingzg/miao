@@ -5,6 +5,7 @@ import path from "node:path"
 import { constants, openSync, closeSync, fstatSync, readFileSync } from "node:fs"
 import { openGrantLock } from "#grant-lock"
 import { Option, Schema } from "effect"
+import { DeviceRoster } from "./device-roster"
 import { SecureChannel } from "./secure-channel"
 import { RemoteAccess } from "@miao/schema/remote-access"
 
@@ -13,6 +14,34 @@ export const Permission = RemoteAccess.Permission
 export const Grant = RemoteAccess.Grant
 export type Grant = RemoteAccess.Grant
 export type Permission = RemoteAccess.Permission
+
+const ScopeID = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/))
+const AccountPolicy = Schema.Struct({
+  permissions: Schema.Array(Permission).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+  projectIDs: Schema.Array(ScopeID).check(Schema.isMaxLength(1024)),
+  sessionIDs: Schema.Array(ScopeID).check(Schema.isMaxLength(1024)),
+  expiresAt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  /** Owner opt-in: same-account devices are admitted without scanning. */
+  autoAdmit: Schema.optional(Schema.Boolean),
+})
+const AccountTrust = Schema.Struct({
+  version: Schema.Literal(1),
+  hubURL: Schema.String,
+  accountID: DeviceRoster.AccountID,
+  acceptedSequence: Schema.Int.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+  ),
+  acceptedDigest: Schema.Union([Schema.Null, Schema.String]),
+  devices: Schema.Array(DeviceRoster.Device).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  managedGrants: Schema.optional(
+    Schema.Array(Schema.Struct({ publicKey: DeviceRoster.Device.fields.publicKey, grantID: Grant.fields.id })).check(
+      Schema.isMaxLength(1024),
+    ),
+  ),
+  policy: AccountPolicy,
+})
+export type AccountTrust = typeof AccountTrust.Type
 
 const State = Schema.Struct({
   version: Schema.Literal(1),
@@ -25,6 +54,7 @@ const State = Schema.Struct({
     d: Schema.String,
   }),
   grants: Schema.Array(Grant).check(Schema.isMaxLength(1024)),
+  accountTrust: Schema.optional(AccountTrust),
 })
 type State = typeof State.Type
 const decode = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(State)))
@@ -47,14 +77,14 @@ export async function load(filename: string) {
   })
   const identity = await importIdentity(initial.privateKey)
   const state = { tail: Promise.resolve(), available: true, accepting: true }
-  function mutate<T>(update: (current: State) => { next: State; result: T }) {
+  function mutate<T>(update: (current: State) => { next: State; result: T } | Promise<{ next: State; result: T }>) {
     if (!state.accepting) return Promise.reject(new Error("Device grant storage closed"))
     const pending = state.tail.then(async () => {
       if (!state.available) throw new Error("Device grant storage unavailable")
       return locked(filename, async () => {
         const current = await read(filename)
         if (!current || current.hostID !== initial.hostID) throw new Error("Device identity changed")
-        const updated = update(current)
+        const updated = await update(current)
         await persist(filename, updated.next)
         return updated.result
       })
@@ -76,6 +106,38 @@ export async function load(filename: string) {
       (grant) => grant.publicKey === publicKey && grant.revokedAt === null && grant.expiresAt > now,
     )
   }
+  const admitRoster = (hubURL: string, input: unknown) =>
+    mutate(async (current) => {
+      const trust = current.accountTrust
+      if (!trust || new URL(hubURL).origin !== trust.hubURL) throw new Error("Account is not locally bound to this Hub")
+      const accepted = await DeviceRoster.accept(input, {
+        accountID: trust.accountID,
+        acceptedSequence: trust.acceptedSequence,
+        signerKeys: trust.devices.filter((device) => device.signer).map((device) => device.publicKey),
+      })
+      const keys = new Set(accepted.roster.devices.map((device) => device.publicKey))
+      const removed = new Set(
+        trust.devices.filter((device) => !keys.has(device.publicKey)).map((device) => device.publicKey),
+      )
+      const updated: AccountTrust = {
+        ...trust,
+        devices: accepted.roster.devices,
+        acceptedSequence: accepted.roster.sequence,
+        acceptedDigest: accepted.digest,
+      }
+      return {
+        next: {
+          ...current,
+          accountTrust: updated,
+          grants: current.grants.map((grant) =>
+            grant.revokedAt === null && removed.has(grant.publicKey)
+              ? { ...grant, version: grant.version + 1, revokedAt: Date.now() }
+              : grant,
+          ),
+        },
+        result: structuredClone(updated),
+      }
+    })
   return {
     close: async () => {
       state.accepting = false
@@ -84,9 +146,165 @@ export async function load(filename: string) {
     },
     hostID: initial.hostID,
     identity,
+    acceptRoster: admitRoster,
     list: () => structuredClone(readCurrent().grants),
     active: (publicKey: string) => structuredClone(active(publicKey)),
     get: (id: string, publicKey: string) => structuredClone(active(publicKey).find((grant) => grant.id === id)),
+    accountTrust: () => structuredClone(readCurrent().accountTrust),
+    /** Only a local owner may bind an account to an already approved, live device.
+     * accountID comes from the host's authenticated Hub setup, never a device claim. */
+    bindAccount: (input: {
+      hubURL: string
+      accountID: string
+      grantID: string
+      grantVersion: number
+      policy: AccountTrust["policy"]
+      allowLoopbackHTTP?: boolean
+    }) =>
+      mutate((current) => {
+        if (current.accountTrust) throw new Error("Account already bound; local reset required")
+        const origin = new URL(input.hubURL)
+        if (
+          (origin.protocol !== "https:" &&
+            !(
+              input.allowLoopbackHTTP &&
+              origin.protocol === "http:" &&
+              ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)
+            )) ||
+          origin.username ||
+          origin.password ||
+          origin.pathname !== "/" ||
+          origin.search ||
+          origin.hash
+        )
+          throw new Error("Invalid account Hub origin")
+        const selected = current.grants.find(
+          (grant) =>
+            grant.id === input.grantID &&
+            grant.version === input.grantVersion &&
+            grant.revokedAt === null &&
+            grant.expiresAt > Date.now(),
+        )
+        if (!selected) throw new Error("Account trust requires an approved live device")
+        const policy = Schema.decodeUnknownSync(AccountPolicy, { onExcessProperty: "error" })(input.policy)
+        if (
+          (!policy.projectIDs.length && !policy.sessionIDs.length) ||
+          policy.expiresAt <= Date.now() ||
+          policy.expiresAt > Date.now() + 365 * 86400000
+        )
+          throw new Error("Invalid local account policy")
+        const trust = Schema.decodeUnknownSync(AccountTrust, { onExcessProperty: "error" })({
+          version: 1,
+          hubURL: origin.origin,
+          accountID: input.accountID,
+          acceptedSequence: 0,
+          acceptedDigest: null,
+          devices: [
+            { publicKey: selected.publicKey, label: selected.label, signer: true, addedAt: selected.createdAt },
+          ],
+          policy,
+        })
+        return { next: { ...current, accountTrust: trust }, result: structuredClone(trust) }
+      }),
+    /** Caller must verify possession of this device key before invoking enrollment. */
+    authorizeRosterDevice: (hubURL: string, accountID: string, publicKey: string) =>
+      mutate((current) => {
+        const trust = current.accountTrust
+        const member = trust?.devices.find((device) => device.publicKey === publicKey)
+        if (
+          !trust ||
+          !member ||
+          trust.accountID !== accountID ||
+          new URL(hubURL).origin !== trust.hubURL ||
+          trust.policy.expiresAt <= Date.now()
+        )
+          throw new Error("Device is not locally authorized by this account")
+        const index = trust.managedGrants ?? []
+        const mapping = index.find((entry) => entry.publicKey === publicKey)
+        const existing = mapping
+          ? current.grants.find((grant) => grant.id === mapping.grantID && grant.publicKey === publicKey)
+          : undefined
+        if (mapping && !existing) throw new Error("Managed grant state is inconsistent")
+        const same =
+          existing &&
+          existing.revokedAt === null &&
+          existing.expiresAt === trust.policy.expiresAt &&
+          JSON.stringify(existing.permissions) === JSON.stringify(trust.policy.permissions) &&
+          JSON.stringify(existing.projectIDs) === JSON.stringify(trust.policy.projectIDs) &&
+          JSON.stringify(existing.sessionIDs) === JSON.stringify(trust.policy.sessionIDs)
+        if (same) return { next: current, result: structuredClone(existing) }
+        // Recycle a revoked matching-key row after a local reset; never overwrite an unrelated device.
+        const previous =
+          existing ?? current.grants.find((grant) => grant.publicKey === publicKey && grant.revokedAt !== null)
+        if (!previous && current.grants.length >= 1024) throw new Error("Device grant limit reached")
+        if (!mapping && index.length >= 1024) throw new Error("Managed device limit reached")
+        const grant = Schema.decodeUnknownSync(Grant)({
+          ...trust.policy,
+          id: previous?.id ?? crypto.randomUUID(),
+          version: previous ? previous.version + 1 : 1,
+          publicKey,
+          label: member.label,
+          createdAt: Date.now(),
+          revokedAt: null,
+        })
+        const managedGrants = mapping ? index : [...index, { publicKey, grantID: grant.id }]
+        return {
+          next: {
+            ...current,
+            accountTrust: { ...trust, managedGrants },
+            grants: previous
+              ? current.grants.map((item) => (item.id === grant.id ? grant : item))
+              : [...current.grants, grant],
+          },
+          result: structuredClone(grant),
+        }
+      }),
+    /** Local cancellation removes delegation and revokes all member-key grants atomically. */
+    clearAccountTrust: () =>
+      mutate((current) => {
+        if (!current.accountTrust) return { next: current, result: [] as Grant[] }
+        const keys = new Set(current.accountTrust.devices.map((device) => device.publicKey))
+        const revoked: Grant[] = []
+        const grants = current.grants.map((grant) => {
+          if (grant.revokedAt !== null || !keys.has(grant.publicKey)) return grant
+          const updated = { ...grant, version: grant.version + 1, revokedAt: Date.now() }
+          revoked.push(updated)
+          return updated
+        })
+        const { accountTrust: _, ...rest } = current
+        return { next: { ...rest, grants }, result: structuredClone(revoked) }
+      }),
+    /** Advancing authority and revoking removed keys share one durable atomic write. */
+    autoAdmitRosterDevice: async (hubURL: string, accountID: string, deviceKey: string, label: string) => {
+      const current = readCurrent()
+      const trust = current.accountTrust
+      if (!trust || trust.hubURL !== new URL(hubURL).origin || trust.accountID !== accountID)
+        throw new Error("Account is not locally bound to this Hub")
+      // Admission is the owner's explicit toggle, never a Hub assertion.
+      if (trust.policy.autoAdmit !== true) throw new Error("Automatic account admission is disabled")
+      if (trust.devices.some((device) => device.publicKey === deviceKey)) return null
+      if (trust.devices.length >= 64) throw new Error("Account roster is full")
+      if (!trust.devices.some((device) => device.signer && device.publicKey === identity.publicKey))
+        throw new Error("This host cannot sign the account roster")
+      if (
+        current.grants.some(
+          (grant) => grant.publicKey === deviceKey && grant.revokedAt === null && grant.expiresAt > Date.now(),
+        )
+      )
+        throw new Error("Device already holds a live grant")
+      const name = label.trim().slice(0, 128) || `同账号设备 ${new Date().toISOString().slice(0, 10)}`
+      const signed = await DeviceRoster.sign(identity, {
+        version: 1,
+        accountID,
+        sequence: trust.acceptedSequence + 1,
+        issuedAt: Date.now(),
+        devices: [...trust.devices, { publicKey: deviceKey, label: name, signer: false, addedAt: Date.now() }].sort(
+          (a, b) => (a.publicKey < b.publicKey ? -1 : 1),
+        ),
+      })
+      await admitRoster(hubURL, signed)
+      return signed
+    },
     approve: async (input: {
       publicKey: string
       label: string

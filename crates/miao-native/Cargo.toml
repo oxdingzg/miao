@@ -32,3 +32,6 @@ napi-build = "2"
 
 [profile.release]
 lto = true
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

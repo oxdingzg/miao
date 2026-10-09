@@ -35,6 +35,7 @@ const budget = {
 
 let timer: Timer | undefined
 let ticks = 0
+let previous: number | undefined
 let target: string | undefined
 let loop: ReturnType<typeof monitorEventLoopDelay> | undefined
 let pending: Promise<void> | undefined
@@ -63,6 +64,18 @@ export function start(options: { intervalMs?: number } = {}) {
   append(header(interval))
   ticks = 0
   timer = setInterval(() => {
+    const now = Date.now()
+    if (previous !== undefined) {
+      // A tick more than one full interval late means this loop (or the whole
+      // machine) was not running: memory thrash, suspension, or a blocked main
+      // thread. Record the hole so a stall reads as a stall that the process
+      // survived instead of as a cliff that looks exactly like a death. This
+      // check runs before the pending skip so a slow in-flight probe can never
+      // masquerade as a stall.
+      const late = now - previous - interval
+      if (late >= interval) append({ type: "gap", t: now, pid: process.pid, gapMs: late })
+    }
+    previous = now
     if (pending) {
       skipped += 1
       return

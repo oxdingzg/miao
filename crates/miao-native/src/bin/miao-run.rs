@@ -11,7 +11,7 @@
 //! `--allow-path` adds extra writable directories beyond the workdirs (for tool caches,
 //! package managers, etc.). `--deny-report` writes the paths a denial blocked to a JSON
 //! file so the caller can prompt the user and retry with more `--allow-path` entries.
-//! On non-macOS hosts the command is executed without a sandbox.
+//! When no sandbox backend exists for the platform, the command runs unsandboxed.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -130,23 +130,77 @@ fn main() -> ExitCode {
         }
     };
 
-    let profile = miao_sandbox::profile(&options.workdirs, &options.allow_paths, options.allow_network, options.compat);
+    let profile = miao_sandbox::profile(
+        &options.workdirs,
+        &options.allow_paths,
+        options.allow_network,
+        options.compat,
+    );
     if options.print_profile {
         println!("{profile}");
         return ExitCode::SUCCESS;
     }
 
+    // Windows runs the command *inside* an AppContainer via CreateProcess, so it
+    // is a distinct path from the inherited-restriction backends below.
+    #[cfg(target_os = "windows")]
+    {
+        use miao_sandbox::win::WinError;
+        return match miao_sandbox::win::run(
+            &options.workdirs,
+            &options.allow_paths,
+            options.allow_network,
+            &options.command,
+        ) {
+            Ok(code) => {
+                if let Some(report) = &options.deny_report {
+                    write_report(report, &[], code);
+                }
+                std::process::exit(code)
+            }
+            Err(WinError::Unavailable(message)) => {
+                eprintln!("miao-run: windows sandbox unavailable: {message}");
+                eprintln!("miao-run: running unsandboxed (no file/network isolation)");
+                let code = Command::new(&options.command[0])
+                    .args(&options.command[1..])
+                    .status()
+                    .ok()
+                    .and_then(|status| status.code())
+                    .unwrap_or(1);
+                if let Some(report) = &options.deny_report {
+                    write_report(report, &[], code);
+                }
+                std::process::exit(code)
+            }
+            Err(WinError::Start(message)) => {
+                eprintln!("miao-run: failed to start command: {message}");
+                ExitCode::from(127)
+            }
+        };
+    }
+
     #[cfg(target_os = "linux")]
-    if let Err(error) = miao_sandbox::apply_linux_restrictions(&options.workdirs, &options.allow_paths, options.allow_network) {
+    if let Err(error) = miao_sandbox::apply_linux_restrictions(
+        &options.workdirs,
+        &options.allow_paths,
+        options.allow_network,
+    ) {
         eprintln!("miao-run: failed to apply landlock: {error}");
         return ExitCode::from(125);
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     eprintln!("miao-run: no sandbox backend for this platform; running unsandboxed");
 
+    // Unreachable on Windows (handled above), but kept for macOS/Linux/other.
+    #[allow(unreachable_code)]
     let (program, args) = sandbox_invocation(&profile, &options.command);
-    let mut child = match Command::new(&program).args(&args).stdout(Stdio::inherit()).stderr(Stdio::piped()).spawn() {
+    let mut child = match Command::new(&program)
+        .args(&args)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
         Ok(child) => child,
         Err(error) => {
             eprintln!("miao-run: failed to start {program}: {error}");
@@ -164,7 +218,11 @@ fn main() -> ExitCode {
         }
     }
 
-    let code = child.wait().ok().and_then(|status| status.code()).unwrap_or(1);
+    let code = child
+        .wait()
+        .ok()
+        .and_then(|status| status.code())
+        .unwrap_or(1);
     if let Some(report) = &options.deny_report {
         write_report(report, &denied, code);
     }

@@ -539,14 +539,14 @@ export const cliIt = {
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
   ) => it.live(name, () => withCliFixture(body), opts),
-  concurrent: <A, E>(
+  // Serial on every platform (Windows already was): N concurrent CLI
+  // subprocesses + LLM servers amplify stdout/event races under CI load, and
+  // the concurrent load pattern does not match the non-interactive run mode's
+  // real usage (one command at a time).
+  serial: <A, E>(
     name: string,
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
   ) =>
-    (process.platform === "win32" ? test : test.concurrent)(
-      name,
-      () => Effect.runPromise(Effect.scoped(withCliFixture(body))),
-      opts,
-    ),
+    test(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
 }

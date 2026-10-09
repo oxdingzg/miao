@@ -4,13 +4,13 @@
 // projection this complements (`data.part` + normalizeSessionMessages) is
 // retired in stage 3, leaving this module as the only content projection.
 import type { FilePart, Part, ToolPart } from "@miao/schema/view-models"
-import type {
-  SessionMessageAssistant,
-  SessionMessageAssistantTool,
-  SessionMessageInfo,
-  SessionMessageShell,
-  SessionMessageUser,
-} from "@/utils/server"
+import type { MessagesListOutput } from "@miao/client"
+
+export type SessionMessageInfo = MessagesListOutput["data"][number]
+export type SessionMessageUser = Extract<SessionMessageInfo, { type: "user" }>
+export type SessionMessageShell = Extract<SessionMessageInfo, { type: "shell" }>
+export type SessionMessageAssistant = Extract<SessionMessageInfo, { type: "assistant" }>
+export type SessionMessageAssistantTool = Extract<SessionMessageAssistant["content"][number], { type: "tool" }>
 import { Option, Schema } from "effect"
 import { createComputed } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"

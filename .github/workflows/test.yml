@@ -4,17 +4,7 @@ on:
   push:
     branches:
       - main
-    # Docs-only changes cannot affect the suite; skip the run entirely instead
-    # of paying for checkout and setup on every one.
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "specs/**"
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "specs/**"
   # The Windows suite runs on the nightly schedule, not per commit (see the
   # `windows` job below).
   schedule:
@@ -36,8 +26,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  unit:
-    name: unit (linux)
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+
+  unit-tests:
+    name: unit tests (linux)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,9 +65,9 @@ jobs:
           # Turbo 2.x writes its local cache to <repo>/.turbo/cache. Caching
           # node_modules/.cache/turbo (the pre-2.0 path) silently saved nothing.
           path: .turbo/cache
-          # No github.sha in the key: the key must be reusable across commits so
-          # an unchanged task can hit an exact match instead of only a prefix.
-          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', 'bun.lock') }}
+          # Restore previous snapshots by prefix, then save newly computed
+          # tasks under this commit: Actions cache entries are immutable.
+          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', 'bun.lock') }}-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-
 
@@ -85,7 +80,7 @@ jobs:
           set -euo pipefail
           filter=()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            filter=("--filter=[${{ github.event.pull_request.base.sha }}]")
+            filter=("--filter=...[${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}]")
           fi
           GITHUB_ACTIONS=false bun turbo test "${filter[@]}"
 
@@ -99,7 +94,8 @@ jobs:
   # dispatch.
   windows:
     name: unit (windows, non-blocking until Windows suite is fixed)
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: windows-2025
     continue-on-error: true
     defaults:
@@ -129,7 +125,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .turbo/cache
-          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', 'bun.lock') }}
+          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', 'bun.lock') }}-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-
 
@@ -146,6 +142,8 @@ jobs:
 
   window-runtime-windows:
     name: window runtime (windows)
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-2025
     timeout-minutes: 15
     defaults:
@@ -166,3 +164,22 @@ jobs:
       - name: Verify window exit and immutable upgrade
         working-directory: packages/miao
         run: bun test test/runtime/window.test.ts test/installation/windows-upgrade.test.ts
+
+  unit:
+    name: unit (linux)
+    needs: [changes, unit-tests, window-runtime-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce required results, including intentionally skipped checks
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          WINDOWS: ${{ needs.changes.outputs.windows }}
+          UNIT: ${{ needs.unit-tests.result }}
+          RUNTIME: ${{ needs.window-runtime-windows.result }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$CODE" = true ]; then test "$UNIT" = success; else test "$UNIT" = skipped; fi
+          if [ "$WINDOWS" = true ]; then test "$RUNTIME" = success; else test "$RUNTIME" = skipped; fi

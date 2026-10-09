@@ -482,6 +482,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.delete("session.inputCancel", "/api/session/:sessionID/input/:messageID", {
+        params: { sessionID: Session.ID, messageID: SessionMessage.ID },
+        success: Schema.Struct({ cancelled: Schema.Boolean }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.inputCancel",
+            summary: "Cancel a pending session input",
+            description:
+              "Remove one durably admitted input before it is promoted. Returns cancelled: false when the input is unknown or already promoted.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.get("session.status", "/api/session/:sessionID/status", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: SessionEvent.StatusInfo }),

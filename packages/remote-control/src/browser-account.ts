@@ -17,18 +17,19 @@ export function make(options: { onInvalidated?: () => void } = {}) {
     )
     return result
   }
+  const attemptKey = "miao.remote-control.login-attempt"
   const pendingKey = "miao.remote-control.logout-pending"
   const changed = (event: StorageEvent) => {
-    if (event.key !== pendingKey && event.key !== null) return
+    if (event.key !== pendingKey && event.key !== attemptKey && event.key !== null) return
     epoch++
     account = undefined
     access = undefined
     options.onInvalidated?.()
   }
   window.addEventListener("storage", changed)
-  const request = async (path: string, body?: unknown, token?: string) => {
+  const request = async (path: string, body?: unknown, token?: string, method?: string) => {
     const response = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       credentials: "same-origin",
       redirect: "error",
       cache: "no-store",
@@ -36,7 +37,8 @@ export function make(options: { onInvalidated?: () => void } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     })
-    if (!response.ok) throw new Error("Relay account request could not be confirmed")
+    if (!response.ok && !(path === "/api/auth/sign-out" && response.status === 401))
+      throw new Error("Relay account request could not be confirmed")
     return response
   }
   const restore = async () => {
@@ -61,6 +63,8 @@ export function make(options: { onInvalidated?: () => void } = {}) {
     return { ...account }
   }
   const signOut = async () => {
+    sessionStorage.removeItem("miao.remote-control.oauth")
+    localStorage.removeItem(attemptKey)
     epoch++
     account = undefined
     access = undefined
@@ -107,10 +111,103 @@ export function make(options: { onInvalidated?: () => void } = {}) {
         return restore()
       })
     },
+    providers: async (): Promise<string[]> => {
+      const response = await fetch("/api/auth/providers", {
+        credentials: "same-origin",
+        redirect: "error",
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
+      })
+      if (response.status === 404) return []
+      if (!response.ok) throw new Error("Hub login methods could not be discovered")
+      const value: unknown = await response.json()
+      if (
+        !object(value) ||
+        !Array.isArray(value.providers) ||
+        value.providers.some((provider) => typeof provider !== "string")
+      )
+        throw new Error("Invalid Hub login methods")
+      return value.providers.filter((provider) => provider === "github" || provider === "google")
+    },
+    beginSocial: async (provider: string): Promise<string> => {
+      if (provider !== "github" && provider !== "google") throw new Error("Unsupported login method")
+      sessionStorage.removeItem("miao.remote-control.oauth")
+      localStorage.removeItem(attemptKey)
+      const current = ++epoch
+      account = undefined
+      access = undefined
+      localStorage.setItem(pendingKey, "1")
+      options.onInvalidated?.()
+      return serialize(async () => {
+        await request("/api/auth/sign-out", {})
+        if (current !== epoch) throw new Error("Account changed")
+        const state = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("")
+        const callbackURL = new URL(location.pathname, location.origin)
+        callbackURL.searchParams.set("miao_login", "1")
+        const value: unknown = await (
+          await request("/api/auth/sign-in/social", { provider, callbackURL: callbackURL.href, state })
+        ).json()
+        if (current !== epoch) throw new Error("Account changed")
+        if (!object(value) || typeof value.url !== "string") throw new Error("Invalid Hub authorization URL")
+        const url = new URL(value.url)
+        if (url.protocol !== "https:" || url.username || url.password) throw new Error("Invalid Hub authorization URL")
+        localStorage.setItem(attemptKey, state)
+        sessionStorage.setItem("miao.remote-control.oauth", JSON.stringify({ state, startedAt: Date.now() }))
+        return url.href
+      })
+    },
+    completeSocial: async (search: string): Promise<Session | undefined> => {
+      const params = new URLSearchParams(search)
+      const saved = sessionStorage.getItem("miao.remote-control.oauth")
+      sessionStorage.removeItem("miao.remote-control.oauth")
+      const expected: unknown = saved ? JSON.parse(saved) : undefined
+      if (
+        !object(expected) ||
+        typeof expected.state !== "string" ||
+        typeof expected.startedAt !== "number" ||
+        Date.now() - expected.startedAt < 0 ||
+        Date.now() - expected.startedAt > 600000 ||
+        params.get("miao_login") !== "1" ||
+        params.get("state") !== expected.state ||
+        localStorage.getItem(attemptKey) !== expected.state
+      )
+        throw new Error("Hub login callback could not be confirmed; start login again")
+      localStorage.removeItem(attemptKey)
+      if (params.has("error")) throw new Error("Hub authorization was not completed")
+      const code = params.get("code")
+      if (!code || code.length > 8192) throw new Error("Hub login callback could not be confirmed")
+      const current = ++epoch
+      account = undefined
+      access = undefined
+      return serialize(async () => {
+        if (current !== epoch) throw new Error("Account changed")
+        const response = await request("/api/auth/exchange", { code, client: "web" })
+        await response.body?.cancel()
+        if (current !== epoch) throw new Error("Account changed")
+        localStorage.removeItem(pendingKey)
+        const restored = await restore()
+        if (!restored) throw new Error("Hub did not establish a browser session")
+        return restored
+      })
+    },
     directory: async (): Promise<unknown> => {
       const current = epoch
       const response = await request("/api/hub/hosts", undefined, await bearer())
       const value: unknown = await response.json()
+      if (current !== epoch) throw new Error("Account changed")
+      return value
+    },
+    roster: async (): Promise<unknown> => {
+      const current = epoch
+      const value: unknown = await (await request("/api/hub/roster", undefined, await bearer())).json()
+      if (current !== epoch) throw new Error("Account changed")
+      return value
+    },
+    putRoster: async (body: unknown): Promise<unknown> => {
+      const current = epoch
+      const value: unknown = await (await request("/api/hub/roster", body, await bearer(), "PUT")).json()
       if (current !== epoch) throw new Error("Account changed")
       return value
     },
