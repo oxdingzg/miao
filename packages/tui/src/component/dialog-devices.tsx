@@ -21,6 +21,7 @@ type Confirmation =
 
 /** Local owner approval stays in this component so opening a confirmation cannot cancel the invitation. */
 export function DialogDevices(props: {
+  readonly browserURL?: string
   readonly api: DeviceApi
   readonly sessionID?: string
   readonly projectID?: string
@@ -34,6 +35,7 @@ export function DialogDevices(props: {
   const [pending, setPending] = createSignal<readonly RemoteAccess.Candidate[]>([])
   const [devices, setDevices] = createSignal<readonly RemoteAccess.Grant[]>([])
   const [invitation, setInvitation] = createSignal<RemoteAccess.Invitation>()
+  const [browserMode, setBrowserMode] = createSignal(!!props.browserURL)
   const [confirmation, setConfirmation] = createSignal<Confirmation>()
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
@@ -110,7 +112,23 @@ export function DialogDevices(props: {
   // The fragment contains the one-time secret. It is never sent in an HTTP URL or printed in a status message.
   const link = createMemo(() => {
     const issued = invitation()
-    return issued ? `miao://pair#${Buffer.from(JSON.stringify(issued)).toString("base64url")}` : undefined
+    if (!issued) return undefined
+    const encoded = Buffer.from(JSON.stringify(issued)).toString("base64url")
+    if (browserMode() && props.browserURL) {
+      const url = new URL(props.browserURL)
+      if (
+        url.origin === new URL(issued.hubURL).origin &&
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash
+      ) {
+        url.hash = "pair=" + encoded
+        return url.href
+      }
+    }
+    return `miao://pair#${encoded}`
   })
   const qr = createMemo(() => {
     const value = link()
@@ -174,6 +192,16 @@ export function DialogDevices(props: {
                         await clipboard.write!(link()!)
                         setNotice("配对链接已复制")
                       }),
+                  },
+                ]
+              : []),
+            ...(props.browserURL && new URL(props.browserURL).origin === new URL(issued.hubURL).origin
+              ? [
+                  {
+                    value: "pairing-format",
+                    title: browserMode() ? "使用 App 扫码" : "使用浏览器扫码",
+                    description: "切换扫码入口，授权范围不变",
+                    onSelect: () => setBrowserMode(!browserMode()),
                   },
                 ]
               : []),
