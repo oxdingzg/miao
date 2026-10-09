@@ -28,10 +28,22 @@ export const THRESHOLDS = {
   dbBytesPerHour: 200 * 1024 * 1024,
   /** Minimum samples before a trend is worth reporting at all. */
   minSamples: 5,
+  /** A sampler gap this long means the loop or machine stopped for real. */
+  stallGapMs: 60_000,
 } as const
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 const pct = (fraction: number) => `${(fraction * 100).toFixed(1)}%`
+const span = (ms: number) =>
+  ms < 60_000
+    ? `${(ms / 1000).toFixed(0)} s`
+    : ms < 3_600_000
+      ? `${(ms / 60_000).toFixed(1)} min`
+      : `${(ms / 3_600_000).toFixed(1)} h`
+const clock = (t: number) => {
+  const date = new Date(t)
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+}
 /** Retained text and cell counts get large, so trends abbreviate like the sidebar. */
 const compact = (value: number) =>
   value < 10_000
@@ -43,9 +55,10 @@ const compact = (value: number) =>
 type RuntimeEntry = { name: string; value: unknown }
 
 interface Sample {
-  type: "start" | "sample"
+  type: "start" | "sample" | "gap"
   t: number
   pid: number
+  gapMs?: number
   version?: string
   channel?: string
   intervalMs?: number
@@ -163,6 +176,7 @@ function files() {
 function read(sinceMs: number) {
   const now = Date.now()
   const byPid = new Map<number, Sample[]>()
+  const gapsByPid = new Map<number, Sample[]>()
   let header: Sample | undefined
   for (const file of files()) {
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
@@ -174,13 +188,19 @@ function read(sinceMs: number) {
         header ??= sample
         continue
       }
+      if (sample.type === "gap") {
+        const gaps = gapsByPid.get(sample.pid) ?? []
+        gaps.push(sample)
+        gapsByPid.set(sample.pid, gaps)
+        continue
+      }
       const list = byPid.get(sample.pid) ?? []
       list.push(sample)
       byPid.set(sample.pid, list)
     }
   }
   for (const list of byPid.values()) list.sort((a, b) => a.t - b.t)
-  return { header, byPid }
+  return { header, byPid, gapsByPid }
 }
 
 const alive = (pid: number) => {
@@ -223,9 +243,19 @@ function cpuFraction(samples: Sample[]) {
 }
 
 interface Finding {
-  severity: "leak" | "spin" | "handle" | "growth" | "swap"
+  severity: "leak" | "spin" | "handle" | "growth" | "swap" | "stall"
   pid?: number
   message: string
+}
+
+function stallFindings(gaps: Sample[], pid: number): Finding[] {
+  return gaps
+    .filter((gap) => (gap.gapMs ?? 0) >= THRESHOLDS.stallGapMs)
+    .map((gap) => ({
+      severity: "stall" as const,
+      pid,
+      message: `event loop stopped responding for ~${span((gap.gapMs ?? 0) + 30_000)} (resumed ${clock(gap.t)}) — machine pause, suspension, or a blocked main thread`,
+    }))
 }
 
 function analyze(samples: Sample[], pid: number): Finding[] {
@@ -382,7 +412,7 @@ const ReportCommand = cmd({
       .option("json", { type: "boolean", default: false, describe: "emit machine-readable output" }),
   handler: (args: { since: string; json: boolean }) => {
     const window = duration(args.since, 24 * 3_600_000)
-    const { byPid } = read(window)
+    const { byPid, gapsByPid } = read(window)
     const reports = [...byPid.entries()].map(([pid, samples]) => ({
       pid,
       samples: samples.length,
@@ -402,7 +432,8 @@ const ReportCommand = cmd({
       cellsPerFrame: trend(samples, renderCellsPerFrame),
       renderFrames: trend(samples, renderFrames),
       frameTimeMs: trend(samples, renderFrameTimeMs),
-      findings: analyze(samples, pid),
+      gaps: gapsByPid.get(pid) ?? [],
+      findings: [...analyze(samples, pid), ...stallFindings(gapsByPid.get(pid) ?? [], pid)],
     }))
 
     if (args.json) {
@@ -449,6 +480,13 @@ const ReportCommand = cmd({
         if (report.renderFps) line("render fps", report.renderFps.last.toFixed(1))
         if (report.cellsPerFrame) line("cells/frame", `${Math.round(report.cellsPerFrame.last)}`)
         if (report.frameTimeMs) line("frame time", `${report.frameTimeMs.last.toFixed(2)} ms`)
+        if (report.gaps.length > 0) {
+          const worst = Math.max(...report.gaps.map((gap) => gap.gapMs ?? 0))
+          line(
+            "stalls",
+            `${report.gaps.length} (largest ~${span(worst + 30_000)}, last resumed ${clock(report.gaps.at(-1)!.t)})`,
+          )
+        }
         for (const finding of report.findings) console.log(`  [${finding.severity}]  ${finding.message}`)
       }
     }

@@ -11,6 +11,18 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-10-09
+
+### Added
+- **miao**: record sampler stalls as gaps and report them in doctor (#478) (`eacf3994e`)
+- **remote-control**: add account-isolated signed roster transport (#480) (`5ea84adc1`)
+- **remote-control**: admit signed roster members with bounded grants (#476) (`3f6b34759`)
+- **remote-control**: add local account delegation consent and cancellation (#473) (`5417c8ac2`)
+- **remote-control**: persist authenticated Hub account identity (#471) (`a1d73ed22`)
+
+### Fixed
+- **tui**: keep reading history stable while the tail streams (#474) (`78172682d`)
+
 ## [0.1.27] - 2026-10-09
 
 ### Added
