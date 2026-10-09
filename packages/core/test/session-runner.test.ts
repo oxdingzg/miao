@@ -7380,6 +7380,32 @@ describe("SessionRunnerLLM", () => {
         expect((yield* session.messages({ sessionID })).some((message) => message.type === "assistant")).toBe(true)
       }),
     )
+
+    it.effect("retitles after a failed attempt while the title is still the placeholder", () =>
+      Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const session = yield* SessionV2.Service
+        requests.length = 0
+        // The first turn's title call fails, so the Session keeps its placeholder.
+        response = fragmentFixture("text", "text-main", ["Answer"]).completeEvents
+        titleResponse = [LLMEvent.providerError({ message: "title model down" })]
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Login fails on submit" }), resume: false })
+        yield* session.resume(sessionID)
+        yield* settle
+        expect(titleRequests()).toHaveLength(1)
+        expect(yield* currentTitle).toBe(defaultTitle)
+
+        // A later turn retries, because the placeholder title is still there.
+        titleResponse = fragmentFixture("text", "text-title-retry", ["Fix the login bug"]).completeEvents
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Any progress?" }), resume: false })
+        yield* session.resume(sessionID)
+        yield* settle
+        expect(titleRequests()).toHaveLength(2)
+        expect(yield* currentTitle).toBe("Fix the login bug")
+      }),
+    )
   })
 
   describe("session failure events", () => {
