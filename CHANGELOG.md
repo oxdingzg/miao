@@ -11,6 +11,31 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-10
+
+miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session core, end-to-end remote control, native acceleration and sandboxing, cost and latency controls, and the first slice of the Rust engine. Full milestone notes live at `docs/releases/v0.2.0.md`.
+
+### Added
+- **session**: V2 is the only session runtime; every client reads the durable record (#324, #299, #427, #416, #418)
+- **storage**: shared storage with exclusive migrations and per-window ownership, plus content-addressed blobs (#256, #259, #336, #421, #55, #61)
+- **remote-control**: Hub accounts, signed device authority, signed roster, browser pairing, push, and a native iOS app (#98, #469, #476, #480, #482, #487, #464, #146, #97)
+- **native**: the `@miao/native` addon backs edit matching, patch derivation, and in-process git status, with a TypeScript fallback (#103, #492)
+- **sandbox**: Seatbelt, Landlock, and Windows AppContainer backends, opt-in through config or `MIAO_SANDBOX` (#435)
+- **engine**: a host client and headless driver for `miao-engine` (#498)
+- **tui**: recent cross-Session messages in the sidebar (#501)
+
+### Changed
+- **catalog**: miao's own catalog is the only model source; the models.dev fallback is gone (#171)
+- **runtime**: window-owned execution replaced the detached daemon (#261, #268, #421)
+- **plugin**: the deprecated V1-only plugin hooks are retired (#376)
+
+### Fixed
+- **core**: keep a cross-window session wake advisory so the admitted message survives (#500)
+- **llm**: normalise provider-safe tool schema roots at the protocol boundary (#491)
+- **core**: stop markdown-emphasis refrains and other repetitive output (#495)
+- **tui**: stop the transcript window oscillating into a blank view (#497)
+- **tui**: stabilise question-prompt tests by awaiting async state (#494)
+
 ## [0.1.31] - 2026-10-09
 
 ### Added
