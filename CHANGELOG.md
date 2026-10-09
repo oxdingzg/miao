@@ -11,6 +11,11 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-10-09
+
+### Fixed
+- **llm**: enforce provider-safe object root for tool schemas (#491) (`2032b89bc`)
+
 ## [0.1.29] - 2026-10-09
 
 ### Added
