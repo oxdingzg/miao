@@ -32,6 +32,11 @@ const AccountTrust = Schema.Struct({
   ),
   acceptedDigest: Schema.Union([Schema.Null, Schema.String]),
   devices: Schema.Array(DeviceRoster.Device).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  managedGrants: Schema.optional(
+    Schema.Array(Schema.Struct({ publicKey: DeviceRoster.Device.fields.publicKey, grantID: Grant.fields.id })).check(
+      Schema.isMaxLength(1024),
+    ),
+  ),
   policy: AccountPolicy,
 })
 export type AccountTrust = typeof AccountTrust.Type
@@ -165,6 +170,59 @@ export async function load(filename: string) {
           policy,
         })
         return { next: { ...current, accountTrust: trust }, result: structuredClone(trust) }
+      }),
+    /** Caller must verify possession of this device key before invoking enrollment. */
+    authorizeRosterDevice: (hubURL: string, accountID: string, publicKey: string) =>
+      mutate((current) => {
+        const trust = current.accountTrust
+        const member = trust?.devices.find((device) => device.publicKey === publicKey)
+        if (
+          !trust ||
+          !member ||
+          trust.accountID !== accountID ||
+          new URL(hubURL).origin !== trust.hubURL ||
+          trust.policy.expiresAt <= Date.now()
+        )
+          throw new Error("Device is not locally authorized by this account")
+        const index = trust.managedGrants ?? []
+        const mapping = index.find((entry) => entry.publicKey === publicKey)
+        const existing = mapping
+          ? current.grants.find((grant) => grant.id === mapping.grantID && grant.publicKey === publicKey)
+          : undefined
+        if (mapping && !existing) throw new Error("Managed grant state is inconsistent")
+        const same =
+          existing &&
+          existing.revokedAt === null &&
+          existing.expiresAt === trust.policy.expiresAt &&
+          JSON.stringify(existing.permissions) === JSON.stringify(trust.policy.permissions) &&
+          JSON.stringify(existing.projectIDs) === JSON.stringify(trust.policy.projectIDs) &&
+          JSON.stringify(existing.sessionIDs) === JSON.stringify(trust.policy.sessionIDs)
+        if (same) return { next: current, result: structuredClone(existing) }
+        // Recycle a revoked matching-key row after a local reset; never overwrite an unrelated device.
+        const previous =
+          existing ?? current.grants.find((grant) => grant.publicKey === publicKey && grant.revokedAt !== null)
+        if (!previous && current.grants.length >= 1024) throw new Error("Device grant limit reached")
+        if (!mapping && index.length >= 1024) throw new Error("Managed device limit reached")
+        const grant = Schema.decodeUnknownSync(Grant)({
+          ...trust.policy,
+          id: previous?.id ?? crypto.randomUUID(),
+          version: previous ? previous.version + 1 : 1,
+          publicKey,
+          label: member.label,
+          createdAt: Date.now(),
+          revokedAt: null,
+        })
+        const managedGrants = mapping ? index : [...index, { publicKey, grantID: grant.id }]
+        return {
+          next: {
+            ...current,
+            accountTrust: { ...trust, managedGrants },
+            grants: previous
+              ? current.grants.map((item) => (item.id === grant.id ? grant : item))
+              : [...current.grants, grant],
+          },
+          result: structuredClone(grant),
+        }
       }),
     /** Local cancellation removes delegation and revokes all member-key grants atomically. */
     clearAccountTrust: () =>

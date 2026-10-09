@@ -88,6 +88,11 @@ export async function accept(input: unknown, authority: Authority): Promise<Sign
   return { version: 1, roster, signature: signed.signature, digest }
 }
 
+/** Fingerprint an already accepted payload without trusting a new signature or signer. */
+export async function fingerprint(input: unknown): Promise<string> {
+  return encode(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes(await validate(input)))))
+}
+
 function bytes(roster: Roster) {
   return new TextEncoder().encode(SecureChannel.canonicalJSON(["miao.control.roster.v1", roster]))
 }

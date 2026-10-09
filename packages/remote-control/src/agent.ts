@@ -3,6 +3,7 @@ export * as ControlAgent from "./agent"
 import { Option, Schema } from "effect"
 import { SecureChannel } from "./secure-channel"
 import { DeviceGrants } from "./grants"
+import { DeviceRoster } from "./device-roster"
 import { ControlPairing } from "./pairing"
 
 // The Agent runs under Bun. Keep its authenticated constructor explicit when
@@ -81,8 +82,17 @@ export type Options = {
   /** Local publication gate, rechecked after awaits and before encrypted disclosure. */
   readonly sessionEnabled?: (sessionID: string) => boolean
   readonly allowLoopbackHTTP?: boolean
+  /** Account identity from authenticated host setup; never populated by a device claim. */
+  readonly accountID?: string
   readonly pairing?: ReturnType<typeof ControlPairing.make>
 }
+const RosterClaim = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("rosterClaim"),
+  accountID: DeviceRoster.AccountID,
+  hello: Schema.Unknown,
+  roster: Schema.optional(Schema.Unknown),
+})
 type Peer = {
   readonly abort: AbortController
   readonly queue: { count: number; bytes: number; tail: Promise<void> }
@@ -194,8 +204,72 @@ export function connect(options: Options) {
     if (peer.abort.signal.aborted) return
     if (!peer.channel) {
       const bytes = Buffer.from(encoded, "base64url")
-      if (bytes.length > 4096 || bytes.toString("base64url") !== encoded) return closePeer(id)
+      if (bytes.length > 65536 || bytes.toString("base64url") !== encoded) return closePeer(id)
       const hello: unknown = JSON.parse(bytes.toString("utf8"))
+      if (typeof hello === "object" && hello !== null && "type" in hello && hello.type === "rosterClaim") {
+        const claim = Schema.decodeUnknownSync(RosterClaim, { onExcessProperty: "error" })(hello)
+        const trust = options.grants.accountTrust()
+        if (
+          !options.accountID ||
+          claim.accountID !== options.accountID ||
+          !trust ||
+          trust.accountID !== options.accountID ||
+          trust.hubURL !== new URL(options.hubURL).origin
+        )
+          return closePeer(id)
+        const key =
+          typeof claim.hello === "object" &&
+          claim.hello !== null &&
+          "signingKey" in claim.hello &&
+          typeof claim.hello.signingKey === "string"
+            ? claim.hello.signingKey
+            : undefined
+        if (!key) return closePeer(id)
+        // Verify signed ClientHello ownership/target BEFORE any roster or grant mutation.
+        const accepted = await SecureChannel.acceptClient(
+          options.grants.identity,
+          { hostID: options.grants.hostID, runtimeID: options.runtimeID },
+          id,
+          claim.hello,
+          key,
+        )
+        if (peer.abort.signal.aborted) return closePeer(id)
+        if (claim.roster !== undefined) {
+          const candidate = Schema.decodeUnknownSync(DeviceRoster.Signed, { onExcessProperty: "error" })(claim.roster)
+          const current = options.grants.accountTrust()
+          if (!current) return closePeer(id)
+          // Exact same-sequence envelopes are not reapplied; membership comes only from durable state.
+          if (candidate.roster.sequence > current.acceptedSequence)
+            await options.grants.acceptRoster(options.hubURL, candidate)
+          else if (
+            candidate.roster.sequence < current.acceptedSequence ||
+            (await DeviceRoster.fingerprint(candidate.roster)) !== current.acceptedDigest
+          )
+            return closePeer(id)
+        }
+        if (peer.abort.signal.aborted) return closePeer(id)
+        const grant = await options.grants.authorizeRosterDevice(options.hubURL, options.accountID, key)
+        const check = () => {
+          const current = options.grants.accountTrust()
+          if (
+            peer.abort.signal.aborted ||
+            !current ||
+            current.accountID !== options.accountID ||
+            current.hubURL !== new URL(options.hubURL).origin ||
+            !current.devices.some((device) => device.publicKey === key) ||
+            options.grants.get(grant.id, key)?.version !== grant.version
+          )
+            throw new Error("Roster admission unavailable")
+        }
+        check()
+        peer.key = key
+        peer.channel = accepted.channel
+        clearTimeout(peer.timer)
+        send(id, Buffer.from(JSON.stringify(accepted.hello)).toString("base64url"))
+        await reply(id, peer, { version: 1, type: "roster", status: "approved", grant }, check)
+        return
+      }
+      if (bytes.length > 4096) return closePeer(id)
       if (options.pairing && hello && typeof hello === "object" && "pairingID" in hello) {
         peer.pairing = "pending"
         const claimed = await options.pairing.claim(hello, id)
