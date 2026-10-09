@@ -230,7 +230,7 @@ export function toolPart(
 // permanently pending row, which is why substantive blocks used to disappear.
 const FILE_PATH_TOOLS = ["read", "write", "edit"]
 
-function toolInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
+export function toolInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
   if (!FILE_PATH_TOOLS.includes(name)) return input
   if (typeof input.path !== "string" || typeof input.filePath === "string") return input
   return { ...input, filePath: input.path }
@@ -239,7 +239,7 @@ function toolInput(name: string, input: Record<string, unknown>): Record<string,
 // V2 tool state carries the tool's structured output separately from its text
 // content. The TUI renderers read `metadata` (diffs, diagnostics, summaries) and
 // `output` (body text), so merge them back into the V1 shape.
-function toolMetadata(name: string, structured: unknown, output?: string): Record<string, unknown> {
+export function toolMetadata(name: string, structured: unknown, output?: string): Record<string, unknown> {
   const metadata = structuredMetadata(structured)
   const diff = name === "edit" ? editsToDiff(metadata.files) : undefined
   if (diff && metadata.diff === undefined) metadata.diff = diff

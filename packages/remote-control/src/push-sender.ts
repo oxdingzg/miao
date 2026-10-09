@@ -10,6 +10,7 @@ export type Options = {
   grants: DeviceGrants.Store
   connected: () => boolean
   projectForSession: (sessionID: string, signal: AbortSignal) => Promise<string | undefined>
+  sessionEnabled?: (sessionID: string) => boolean
   allowLoopbackHTTP?: boolean
 }
 
@@ -101,6 +102,7 @@ export function make(options: Options) {
         state.stopped ||
         Date.now() >= until ||
         !options.connected() ||
+        (options.sessionEnabled && !options.sessionEnabled(sessionID)) ||
         current?.version !== grant.version ||
         !current.permissions.includes("read") ||
         (!current.sessionIDs.includes(sessionID) && !current.projectIDs.includes(projectID))
@@ -133,7 +135,9 @@ export function make(options: Options) {
         return
       }
       if (
-        !["permission.v2.asked", "question.v2.asked", "session.next.failed", "session.next.notified"].includes(event.type)
+        !["permission.v2.asked", "question.v2.asked", "session.next.failed", "session.next.notified"].includes(
+          event.type,
+        )
       )
         return
       if (event.type === "session.next.failed") {

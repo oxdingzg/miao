@@ -323,6 +323,77 @@ test("relay setup uses browser login when the hub only offers a social provider"
   }
 })
 
+test("relay setup offers the private default and custom Hub before desktop social login", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  let selected = ""
+  const local: RemoteLocal = {
+    settings: async () => ({ defaultHubURL: "https://default.example.invalid" }),
+    providers: async (input) => {
+      selected = input.hubURL
+      return { providers: ["github"] }
+    },
+    setup: async () => {
+      throw new Error("unused password flow")
+    },
+    setupOAuth: async (input) => input.runtime.configure({ hubURL: input.hubURL, hostToken: "c".repeat(43) }),
+  }
+  const view = await mount(
+    tmp.path,
+    environment({
+      local,
+      devices: control.api,
+      configure: async () => {
+        control.state.status = { enabled: true, connected: true }
+        return control.state.status
+      },
+    }),
+  )
+  try {
+    await view.until((frame) => frame.includes("登录中继并接入"))
+    await view.select(0)
+    const frame = await view.until((frame) => frame.includes("选择 Hub"))
+    expect(frame).toContain("使用默认 Hub")
+    expect(frame).toContain("指定其他 Hub")
+    await view.select(0)
+    await view.until((frame) => frame.includes("这台电脑的名称"))
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("分享当前会话（只读）"))
+    expect(selected).toBe("https://default.example.invalid")
+    expect(control.state.status.enabled).toBe(true)
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("current-session publication sends the selected Session ID and both toggle states", async () => {
+  await using tmp = await tmpdir()
+  const calls: Array<{ sessionID: string; enabled: boolean }> = []
+  const view = await mount(
+    tmp.path,
+    environment({
+      devices: deviceControl(true).api,
+      setSessionEnabled: async (input) => {
+        calls.push(input)
+        return { enabled: true, connected: true, sessionIDs: input.enabled ? [input.sessionID] : [] }
+      },
+    }),
+  )
+  try {
+    await view.until((frame) => frame.includes("开启当前会话的远程控制"))
+    await view.select(0)
+    await view.until((frame) => frame.includes("关闭当前会话的远程控制"))
+    await view.select(1)
+    await view.until(() => calls.length === 2)
+    expect(calls).toEqual([
+      { sessionID: "ses_current", enabled: true },
+      { sessionID: "ses_current", enabled: false },
+    ])
+  } finally {
+    view.cleanup()
+  }
+})
+
 function deviceControl(enabled = true) {
   const publicKey = `B${"A".repeat(86)}`
   const issued: RemoteAccess.Invitation = {
@@ -399,6 +470,39 @@ test("device access is available without IM and shows an unconfigured relay trut
     expect(frame).not.toContain("分享当前会话")
     expect(frame).not.toContain("接入当前窗口")
     expect(control.calls).toEqual([])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("private browser pairing path produces an HTTPS fragment link with the exact invitation", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const copied: string[] = []
+  const local: RemoteLocal = {
+    setupOAuth: async () => {
+      throw new Error("unused")
+    },
+    settings: async () => ({ browserURL: "https://relay.example.invalid/control/" }),
+    providers: async () => ({ providers: [] }),
+    setup: async () => {
+      throw new Error("unused")
+    },
+  }
+  const view = await mount(tmp.path, environment({ devices: control.api, local }), {
+    write: async (text) => void copied.push(text),
+  })
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("只读")
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("二维码到期"))
+    await view.select(0)
+    await view.until(() => copied.length === 1)
+    const url = new URL(copied[0])
+    expect(url.origin + url.pathname).toBe("https://relay.example.invalid/control/")
+    expect(url.search).toBe("")
+    expect(JSON.parse(Buffer.from(url.hash.slice(6), "base64url").toString())).toEqual(control.issued)
   } finally {
     view.cleanup()
   }
@@ -582,6 +686,109 @@ test("pairing failures never display a secret carried by SDK error details", asy
     const frame = await view.until((value) => value.includes("操作未完成"))
     expect(frame).not.toContain(control.issued.secret)
     expect(frame).not.toContain(control.issued.hostPublicKey)
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("account trust and cancellation require separate local confirmations and use authenticated status identity", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  control.state.status = { ...control.state.status, accountID: "account_owner_fixture_001" }
+  const grant: RemoteAccess.Grant = {
+    id: crypto.randomUUID(),
+    version: 1,
+    publicKey: control.publicKey,
+    label: "Phone",
+    permissions: ["read", "session.create"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60000,
+    revokedAt: null,
+  }
+  control.state.grants = [grant]
+  let trust: RemoteAccess.AccountTrustStatus | null = null
+  const calls: string[] = []
+  const api: DeviceApi = {
+    ...control.api,
+    accountTrust: async () => trust,
+    bindAccount: async (input) => {
+      calls.push("bind")
+      expect(input).not.toHaveProperty("accountID")
+      expect(input.policy.permissions).toEqual(["read"])
+      expect(input.policy.expiresAt).toBeGreaterThan(Date.now() + 89 * 86400000)
+      trust = {
+        accountID: "account_owner_fixture_001",
+        hubURL: "https://relay.example.invalid",
+        deviceCount: 1,
+        acceptedSequence: 0,
+        permissions: input.policy.permissions,
+        expiresAt: input.policy.expiresAt,
+      }
+      return trust
+    },
+    clearAccountTrust: async () => {
+      calls.push("clear")
+      trust = null
+      control.state.grants = []
+    },
+  }
+  const view = await mount(tmp.path, environment({ devices: api }))
+  try {
+    await openDevices(view)
+    await view.until((frame) => frame.includes("为签名根信任账号"))
+    await view.app.mockInput.typeText("签名根")
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("确认信任账号设备"))
+    expect(calls).toEqual([])
+    await view.select(1)
+    await view.until((frame) => frame.includes("已信任此账号") && !frame.includes("正在处理"))
+    await view.until((frame) => frame.includes("取消账号信任并撤销名单设备") && !frame.includes("正在处理"))
+    await Bun.sleep(30)
+    await view.app.mockInput.typeText("取消账号")
+    await view.app.renderOnce()
+    await Bun.sleep(50)
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("包括原始签名设备"))
+    expect(calls).toEqual(["bind"])
+    await view.select(1)
+    await view.until((frame) => frame.includes("已取消账号信任"))
+    expect(calls).toEqual(["bind", "clear"])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("account delegation can be cancelled while relay transport is disabled", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  let cleared = false
+  const trust: RemoteAccess.AccountTrustStatus = {
+    accountID: "account_owner_fixture_001",
+    hubURL: "https://relay.example.invalid",
+    acceptedSequence: 0,
+    deviceCount: 1,
+    permissions: ["read"],
+    expiresAt: Date.now() + 60000,
+  }
+  const api: DeviceApi = {
+    ...control.api,
+    accountTrust: async () => (cleared ? null : trust),
+    clearAccountTrust: async () => {
+      cleared = true
+    },
+  }
+  const view = await mount(tmp.path, environment({ devices: api }))
+  try {
+    await openDevices(view)
+    await view.until((frame) => frame.includes("取消账号信任并撤销名单设备"))
+    await view.select(0)
+    await view.until((frame) => frame.includes("包括原始签名设备"))
+    expect(cleared).toBe(false)
+    await view.select(1)
+    await view.until((frame) => frame.includes("已取消账号信任"))
+    expect(cleared).toBe(true)
   } finally {
     view.cleanup()
   }

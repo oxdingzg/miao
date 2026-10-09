@@ -149,7 +149,7 @@ impl Tools {
         self
     }
     pub(crate) fn with_process(mut self, enabled: bool, network: bool) -> Self {
-        self.process_enabled = enabled && self.runner.is_some() && miao_sandbox::supported();
+        self.process_enabled = enabled && self.runner.is_some() && process::enforced();
         self.process_network = network;
         self
     }

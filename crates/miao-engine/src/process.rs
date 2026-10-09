@@ -55,6 +55,13 @@ struct Runner {
     timeout_ms: u64,
 }
 
+/// Whether this engine can actually confine a spawned process. macOS uses
+/// seatbelt and Linux uses Landlock; other platforms compile but do not enforce,
+/// so the process tools stay disabled there instead of running unsandboxed.
+pub fn enforced() -> bool {
+    cfg!(any(target_os = "macos", target_os = "linux"))
+}
+
 /// The binary calls this before constructing Tokio: Linux confinement must be
 /// applied to a fresh single-threaded process, not a provider/runtime thread.
 pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -243,7 +250,7 @@ pub(crate) async fn execute(
     allow_network: bool,
     cancel: CancellationToken,
 ) -> Result<Value, ToolError> {
-    if !miao_sandbox::supported() {
+    if !enforced() {
         return Err(ToolError::Unsupported);
     }
     if cancel.is_cancelled() {

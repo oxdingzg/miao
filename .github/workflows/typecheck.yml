@@ -4,17 +4,7 @@ on:
   push:
     branches:
       - main
-    # Docs-only changes cannot affect the graph; skip the run instead of paying
-    # for checkout and setup on every one.
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "specs/**"
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "specs/**"
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +15,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  typecheck:
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+
+  typecheck-tasks:
+    name: typecheck tasks
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Bound the job so a stalled typecheck fails fast instead of running until
     # the runner is reclaimed (and reports as a shutdown signal). The graph
@@ -50,9 +46,9 @@ jobs:
           # Turbo 2.x writes its local cache to <repo>/.turbo/cache. Caching
           # node_modules/.cache/turbo (the pre-2.0 path) silently saved nothing.
           path: .turbo/cache
-          # No github.sha in the key: the key must be reusable across commits so
-          # an unchanged task can hit an exact match instead of only a prefix.
-          key: turbo-typecheck-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', '**/tsconfig.json', 'bun.lock') }}
+          # Restore previous snapshots by prefix, then save newly computed
+          # tasks under this commit: Actions cache entries are immutable.
+          key: turbo-typecheck-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json', '**/tsconfig.json', 'bun.lock') }}-${{ github.sha }}
           restore-keys: |
             turbo-typecheck-${{ runner.os }}-
 
@@ -68,6 +64,22 @@ jobs:
           set -euo pipefail
           filter=()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            filter=("--filter=[${{ github.event.pull_request.base.sha }}]")
+            filter=("--filter=...[${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}]")
           fi
           bun turbo typecheck --concurrency=2 "${filter[@]}"
+
+  typecheck:
+    name: typecheck
+    needs: [changes, typecheck-tasks]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce required result
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          RESULT: ${{ needs.typecheck-tasks.result }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$CODE" = true ]; then test "$RESULT" = success; else test "$RESULT" = skipped; fi

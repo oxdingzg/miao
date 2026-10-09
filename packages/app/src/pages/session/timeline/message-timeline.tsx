@@ -44,7 +44,8 @@ import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@miao/
 import { StickyAccordionHeader } from "@miao/ui/sticky-accordion-header"
 import { TextReveal } from "@miao/ui/text-reveal"
 import { TextShimmer } from "@miao/ui/text-shimmer"
-import type { AssistantMessage, Message as MessageType, Part as PartType, ToolPart, UserMessage } from "@miao/schema/view-models"
+import type { Message as MessageType, Part as PartType, ToolPart } from "@miao/schema/view-models"
+import type { SessionMessageAssistant, SessionMessageUser } from "@miao/session-ui/content"
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
 import { getDirectory, getFilename } from "@miao/core/util/path"
@@ -52,7 +53,7 @@ import { normalize } from "@miao/session-ui/session-diff"
 import { useFileComponent } from "@miao/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { createSessionContent } from "./content"
+import { createSessionContent } from "@miao/session-ui/content"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { sessionPhaseLabelKey } from "@miao/session-ui/session-status-label"
@@ -74,7 +75,7 @@ import { filterVirtualIndexes } from "./virtual-items"
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
 const emptyTools: ToolPart[] = []
-const emptyAssistantMessages: AssistantMessage[] = []
+const emptyAssistantMessages: SessionMessageAssistant[] = []
 const idle = { type: "idle" as const }
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
@@ -248,7 +249,7 @@ export function MessageTimeline(props: {
   shouldAnchorBottom: () => boolean
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
-  userMessages: UserMessage[]
+  userMessages: SessionMessageUser[]
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
@@ -285,8 +286,8 @@ export function MessageTimeline(props: {
     const id = sessionID()
     if (!id) return []
     const visible = new Set(props.userMessages.map((message) => message.id))
-    const boundary = sessionMessages().find((message) => message.role === "user" && !visible.has(message.id))?.id
-    const messages = sync().data.session_message[id] ?? []
+    const boundary = sessionMessages().find((message) => message.type === "user" && !visible.has(message.id))?.id
+    const messages = sync().data.message[id] ?? []
     if (!boundary) return messages
     const index = messages.findIndex((message) => message.id === boundary)
     return index < 0 ? messages : messages.slice(0, index)
@@ -312,8 +313,8 @@ export function MessageTimeline(props: {
   const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? language.t("command.session.new"))
   // Stage 2 bridge (specs/v2/app-timeline-v2.md): timeline part content derives
   // from the V2 session_message records instead of the projected data.part store.
-  const sessionContent = createSessionContent(sessionID, (id) => sync().data.session_message[id])
-  const parentContent = createSessionContent(parentID, (id) => sync().data.session_message[id])
+  const sessionContent = createSessionContent(sessionID, (id) => sync().data.message[id])
+  const parentContent = createSessionContent(parentID, (id) => sync().data.message[id])
   const getMsgParts = (msgId: string) => sessionContent(msgId) ?? emptyParts
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
   const childTaskDescription = createMemo(() => {
@@ -333,18 +334,23 @@ export function MessageTimeline(props: {
   })
   const showHeader = createMemo(() => !!(titleValue() || parentID()))
   const projection = createTimelineProjection({
-    messages: sessionMessages,
-    userMessages: () => props.userMessages,
-    sessionMessages: projectedMessages,
+    records: projectedMessages,
+    projectedUserMessages: () => props.userMessages,
     parts: getMsgParts,
     status: sessionStatus,
     showReasoningSummaries: settings.general.showReasoningSummaries,
     inlineComments: settings.general.newLayoutDesigns,
   })
   const activeMessageID = projection.activeMessageID
-  const assistantMessagesByParent = projection.assistantMessagesByParent
+  const assistantsByTurn = projection.assistantsByTurn
   const lastAssistantGroupKey = projection.lastAssistantGroupKey
   const messageByID = projection.messageByID
+  // Row refs and render components consume V2 records (SessionMessageInfo);
+  // the V1 view-model map only feeds non-render lookups.
+  const recordByID = createMemo(() => {
+    const id = sessionID()
+    return new Map((id ? (sync().data.message[id] ?? []) : []).map((message) => [message.id, message] as const))
+  })
   const messageLastRowIndex = projection.messageLastRowIndex
   const messageRowIndex = projection.messageRowIndex
   const timelineRowByKey = projection.rowByKey
@@ -872,13 +878,19 @@ export function MessageTimeline(props: {
 
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)
-    if (!message || message.role !== "user") return
-    const end = (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).reduce<number | undefined>(
+    if (!message || message.type !== "user") return
+    const end = (assistantsByTurn().get(userMessageID) ?? emptyAssistantMessages).reduce<number | undefined>(
       (max, item) => {
-        const completed = item.time.completed
-        if (typeof completed !== "number") return max
-        if (max === undefined) return completed
-        return Math.max(max, completed)
+        let latest: number | undefined
+        for (const content of item.content) {
+          if (!("time" in content) || !content.time) continue
+          const completed = (content.time as { completed?: number }).completed
+          if (typeof completed !== "number") continue
+          if (latest === undefined || completed > latest) latest = completed
+        }
+        if (latest === undefined) return max
+        if (max === undefined) return latest
+        return Math.max(max, latest)
       },
       undefined,
     )
@@ -889,7 +901,7 @@ export function MessageTimeline(props: {
 
   const assistantCopyPartID = (userMessageID: string) => {
     if (workingTurn(userMessageID)) return null
-    const messages = assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
+    const messages = assistantsByTurn().get(userMessageID) ?? emptyAssistantMessages
 
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i]
@@ -934,7 +946,7 @@ export function MessageTimeline(props: {
     const message = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return
-      return messageByID().get(group.ref.messageID)
+      return recordByID().get(group.ref.messageID)
     })
     const part = createMemo(() => {
       const group = row().group
@@ -1052,8 +1064,8 @@ export function MessageTimeline(props: {
       case "UserMessage": {
         const userMessageRow = row as Accessor<TimelineRowByTag<"UserMessage">>
         const message = createMemo(() => {
-          const m = messageByID().get(userMessageRow().userMessageID)
-          if (m?.role === "user") return m
+          const m = recordByID().get(userMessageRow().userMessageID)
+          if (m?.type === "user") return m
         })
         const messageComments = createMemo(() => {
           if (!settings.general.newLayoutDesigns()) return []
@@ -1066,6 +1078,7 @@ export function MessageTimeline(props: {
                 <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
                   <div data-slot="session-turn-message-content" aria-live="off">
                     <Message
+                      sessionID={sessionID() ?? ""}
                       message={message()}
                       parts={getMsgParts(userMessageRow().userMessageID)}
                       actions={props.actions}

@@ -134,6 +134,17 @@ export function errorFormat(error: unknown): string {
 }
 
 export function errorMessage(error: unknown): string {
+  if (error instanceof Error && isRecord(error) && error.reason === "Transport") {
+    const cause = error.cause
+    const message =
+      cause instanceof Error
+        ? cause.message
+        : isRecord(cause) && typeof cause.message === "string"
+          ? cause.message
+          : undefined
+    const code = isRecord(cause) && typeof cause.code === "string" ? cause.code : undefined
+    if (message || code) return `Transport: ${[message, code].filter(Boolean).join(" · ")}`
+  }
   if (error instanceof Error) {
     if (error.message) return error.message
     if (error.name) return error.name

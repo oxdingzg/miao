@@ -1,3 +1,12 @@
+diff --git a/node_modules/@opentui/core/.bun-tag-28b837cedc5d4451 b/.bun-tag-28b837cedc5d4451
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@opentui/core/.bun-tag-65a0d2728d34761a b/.bun-tag-65a0d2728d34761a
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@opentui/core/.bun-tag-cf06542fca60507 b/.bun-tag-cf06542fca60507
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/node_modules/@opentui/core/.bun-tag-f4fd384a596d25f9 b/.bun-tag-f4fd384a596d25f9
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
@@ -108,7 +117,7 @@ index 28c53d7e1a7908d2e3e03cb5a1ce2844f629e486..dda7ea4f96069f1f29c5234510ec0ab7
            if (byte >= 48 && byte <= 57 || byte === 59) {
              this.cursor += 1;
 diff --git a/index.bun.js b/index.bun.js
-index 6ed0b0f9b3438c58cfbb06996c18927d8b893f7b..c27050fce7671305d8884dc00addc905e9aa693c 100644
+index 6ed0b0f9b3438c58cfbb06996c18927d8b893f7b..6f8f492125405b48c37c5beedaf9543ac3ea2171 100644
 --- a/index.bun.js
 +++ b/index.bun.js
 @@ -8062,6 +8062,19 @@ class DiffRenderable extends Renderable2 {
@@ -131,7 +140,28 @@ index 6ed0b0f9b3438c58cfbb06996c18927d8b893f7b..c27050fce7671305d8884dc00addc905
    get diff() {
      return this._diff;
    }
-@@ -14294,7 +14307,18 @@ class ScrollBoxRenderable extends BoxRenderable2 {
+@@ -14288,13 +14301,45 @@ class ScrollBoxRenderable extends BoxRenderable2 {
+     const maxScrollTop = Math.max(0, this.scrollHeight - this.viewport.height);
+     const maxScrollLeft = Math.max(0, this.scrollWidth - this.viewport.width);
+     const hasScrollableContent = maxScrollTop > 1 || maxScrollLeft > 1;
++    // miao patch: sticky state must read user intent, not layout noise.
++    // - A shrink that clamps the position onto the new edge is layout: a
++    //   reader can never scroll past the edge, so a previous position beyond
++    //   the current maximum means the range collapsed under them (streamed
++    //   reflow, spacer recalibration). Such a clamp must not wipe the
++    //   manual-scroll flag, or the reader is yanked to the tail.
++    // - A moved maximum with a still position is layout too (a window snap
++    //   rebuilt the range one pass after the reader re-engaged at the edge);
++    //   only a moved position may arm the manual-scroll flag.
++    const prevTop = this._stickyPrevTop;
++    const clamped = prevTop !== undefined && prevTop > maxScrollTop + 1 && this.scrollTop >= maxScrollTop - 1;
++    const moved = prevTop !== undefined && prevTop !== this.scrollTop;
++    this._stickyPrevTop = this.scrollTop;
++    this._stickyPrevMax = maxScrollTop;
+     if (this._isApplyingStickyScroll) {
+-      if (this._hasManualScroll && hasScrollableContent && this.isAtStickyPosition()) {
++      if (!clamped && this._hasManualScroll && hasScrollableContent && this.isAtStickyPosition()) {
+         this._hasManualScroll = false;
        }
        return;
      }
@@ -145,14 +175,38 @@ index 6ed0b0f9b3438c58cfbb06996c18927d8b893f7b..c27050fce7671305d8884dc00addc905
 +      this._hasManualScroll = false;
 +      return;
 +    }
-+    if (!this._hasManualScroll && !this.isAtStickyPosition()) {
++    if (clamped) {
++      return;
++    }
++    if (this._hasManualScroll && this.isAtStickyPosition()) {
++      this._hasManualScroll = false;
++      return;
++    }
++    if (moved && !this._hasManualScroll && !this.isAtStickyPosition()) {
 +      this._hasManualScroll = true;
 +    }
    }
    applyStickyStart(stickyStart) {
      const wasApplyingStickyScroll = this._isApplyingStickyScroll;
+@@ -14723,10 +14768,13 @@ class ScrollBoxRenderable extends BoxRenderable2 {
+         const stickyStart = this._stickyStart;
+         if (stickyStart && !this._hasManualScroll) {
+           this.applyStickyStart(stickyStart);
+-        } else if (stickyStart && this._hasManualScroll && this.isAtStickyReengagePoint(stickyStart, newMaxScrollTop, newMaxScrollLeft)) {
+-          this._hasManualScroll = false;
+-          this.applyStickyStart(stickyStart);
+         } else if (!this._hasManualScroll) {
++          // miao patch: re-engaging the sticky edge here made layout passes
++          // able to pull a reading user back to the tail - a streamed reflow
++          // that transiently shrinks the scroll range (spacer recalibration,
++          // mixed stale/fresh layout) then reads as "at the edge". Only a
++          // real scroll event may re-engage, via updateStickyState above.
++        
+           if (this._stickyScrollTop) {
+             this.scrollTop = 0;
+           } else if (this._stickyScrollBottom && newMaxScrollTop > 0) {
 diff --git a/index.node.js b/index.node.js
-index 5b29cee090875da343cff8167d1bc65c1f8039b8..931bfa7b6278b918d5c346e3679861712c995c5f 100644
+index 5b29cee090875da343cff8167d1bc65c1f8039b8..12a4c9e9de9b2ac62107effdeb6f8f05ad0a4c82 100644
 --- a/index.node.js
 +++ b/index.node.js
 @@ -8061,6 +8061,19 @@ class DiffRenderable extends Renderable2 {
@@ -175,7 +229,28 @@ index 5b29cee090875da343cff8167d1bc65c1f8039b8..931bfa7b6278b918d5c346e367986171
    get diff() {
      return this._diff;
    }
-@@ -14293,7 +14306,18 @@ class ScrollBoxRenderable extends BoxRenderable2 {
+@@ -14287,13 +14300,45 @@ class ScrollBoxRenderable extends BoxRenderable2 {
+     const maxScrollTop = Math.max(0, this.scrollHeight - this.viewport.height);
+     const maxScrollLeft = Math.max(0, this.scrollWidth - this.viewport.width);
+     const hasScrollableContent = maxScrollTop > 1 || maxScrollLeft > 1;
++    // miao patch: sticky state must read user intent, not layout noise.
++    // - A shrink that clamps the position onto the new edge is layout: a
++    //   reader can never scroll past the edge, so a previous position beyond
++    //   the current maximum means the range collapsed under them (streamed
++    //   reflow, spacer recalibration). Such a clamp must not wipe the
++    //   manual-scroll flag, or the reader is yanked to the tail.
++    // - A moved maximum with a still position is layout too (a window snap
++    //   rebuilt the range one pass after the reader re-engaged at the edge);
++    //   only a moved position may arm the manual-scroll flag.
++    const prevTop = this._stickyPrevTop;
++    const clamped = prevTop !== undefined && prevTop > maxScrollTop + 1 && this.scrollTop >= maxScrollTop - 1;
++    const moved = prevTop !== undefined && prevTop !== this.scrollTop;
++    this._stickyPrevTop = this.scrollTop;
++    this._stickyPrevMax = maxScrollTop;
+     if (this._isApplyingStickyScroll) {
+-      if (this._hasManualScroll && hasScrollableContent && this.isAtStickyPosition()) {
++      if (!clamped && this._hasManualScroll && hasScrollableContent && this.isAtStickyPosition()) {
+         this._hasManualScroll = false;
        }
        return;
      }
@@ -189,12 +264,36 @@ index 5b29cee090875da343cff8167d1bc65c1f8039b8..931bfa7b6278b918d5c346e367986171
 +      this._hasManualScroll = false;
 +      return;
 +    }
-+    if (!this._hasManualScroll && !this.isAtStickyPosition()) {
++    if (clamped) {
++      return;
++    }
++    if (this._hasManualScroll && this.isAtStickyPosition()) {
++      this._hasManualScroll = false;
++      return;
++    }
++    if (moved && !this._hasManualScroll && !this.isAtStickyPosition()) {
 +      this._hasManualScroll = true;
 +    }
    }
    applyStickyStart(stickyStart) {
      const wasApplyingStickyScroll = this._isApplyingStickyScroll;
+@@ -14722,10 +14767,13 @@ class ScrollBoxRenderable extends BoxRenderable2 {
+         const stickyStart = this._stickyStart;
+         if (stickyStart && !this._hasManualScroll) {
+           this.applyStickyStart(stickyStart);
+-        } else if (stickyStart && this._hasManualScroll && this.isAtStickyReengagePoint(stickyStart, newMaxScrollTop, newMaxScrollLeft)) {
+-          this._hasManualScroll = false;
+-          this.applyStickyStart(stickyStart);
+         } else if (!this._hasManualScroll) {
++          // miao patch: re-engaging the sticky edge here made layout passes
++          // able to pull a reading user back to the tail - a streamed reflow
++          // that transiently shrinks the scroll range (spacer recalibration,
++          // mixed stale/fresh layout) then reads as "at the edge". Only a
++          // real scroll event may re-engage, via updateStickyState above.
++        
+           if (this._stickyScrollTop) {
+             this.scrollTop = 0;
+           } else if (this._stickyScrollBottom && newMaxScrollTop > 0) {
 diff --git a/renderables/Diff.d.ts b/renderables/Diff.d.ts
 index 1659547060b33401d51e3bc609d245e6b069434d..b0376f29b3b1572aab22a526d62ce2524b09a2f7 100644
 --- a/renderables/Diff.d.ts

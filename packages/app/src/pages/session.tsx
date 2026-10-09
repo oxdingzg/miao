@@ -1,4 +1,5 @@
-import type { FilePart, Project, UserMessage, VcsFileDiff } from "@miao/schema/view-models"
+import type { FilePart, Project, VcsFileDiff } from "@miao/schema/view-models"
+import type { SessionMessageUser } from "@miao/session-ui/content"
 import { normalizeProjectInfo } from "@/context/global-sync/utils"
 import { getFilename } from "@miao/core/util/path"
 import { useDialog } from "@miao/ui/context/dialog"
@@ -98,7 +99,7 @@ import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { formatServerError, isLocalSessionNotFoundError, isSessionNotFoundError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
@@ -567,12 +568,8 @@ export default function Page() {
 
   createEffect(
     on(
-      () => lastUserMessage()?.id,
-      () => {
-        const msg = lastUserMessage()
-        if (!msg) return
-        syncSessionModel(local, msg)
-      },
+      () => timeline.lastAttribution(),
+      (attribution) => syncSessionModel(local, params.id, attribution),
     ),
   )
 
@@ -651,7 +648,9 @@ export default function Page() {
     return open
   }, desktopReviewOpen())
 
-  const turnDiffs = createMemo(() => list(lastUserMessage()?.summary?.diffs))
+  // Per-turn summary diffs need a V2 projection (SessionDiff over recorded
+  // events); until the server exposes them the turn review mode stays empty.
+  const turnDiffs = createMemo(() => [])
   const nogit = createMemo(() => {
     const project = sync().project
     return !!project && project.vcs !== "git"
@@ -772,7 +771,7 @@ export default function Page() {
     return "main"
   })
 
-  const setActiveMessage = (message: UserMessage | undefined) => {
+  const setActiveMessage = (message: SessionMessageUser | undefined) => {
     messageMark = scrollMark
     setStore("messageId", message?.id)
   }
@@ -1671,7 +1670,7 @@ export default function Page() {
   const draft = (id: string) => {
     const directory = params.id
     if (!directory) return []
-    return extractPromptFromParts(contentParts(directory, sync().data.session_message[directory] ?? [])[id] ?? [], {
+    return extractPromptFromParts(contentParts(directory, sync().data.message[directory] ?? [])[id] ?? [], {
       directory: sdk().directory,
       attachmentName: language.t("common.attachment"),
     })

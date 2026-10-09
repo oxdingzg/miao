@@ -129,7 +129,7 @@ miao 包含 Rust 加速模块，以及与本仓库早期 TypeScript 实现的对
 | patch Unicode 归一化，20k 行 | 13.06 ms        | 5.21 ms   | 2.5×  |
 | git status，10 个文件        | 12.3 ms         | 1.0 ms    | 11.9× |
 
-这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。V2 的 edit／apply_patch 在 addon 已加载时调用原生匹配与派生，正常安装默认启用；`MIAO_NATIVE=0` 可改用 TypeScript 实现。addon 同时用于可选的 OS 沙箱；进程内 Git 仍属原型。完整数据和可用范围见[组件基准](docs/native-benchmarks.zh.md)。
+这些是**组件级基准，不代表整个任务的提速，也不是与当前上游版本的对比**。V2 的 edit／apply_patch 在 addon 已加载时调用原生匹配与派生，正常安装默认启用；`MIAO_NATIVE=0` 可改用 TypeScript 实现。addon 同时用于可选的 OS 沙箱；进程内 Git status 也在同一开关后面。完整数据和可用范围见[组件基准](docs/native-benchmarks.zh.md)。
 
 ## 当前状态与架构
 
@@ -198,4 +198,10 @@ cd packages/miao
 bun typecheck
 ```
 
-miao 采用 MIT 许可证。详见 [LICENSE](LICENSE)。
+## 致谢与许可
+
+miao 衍生自 [opencode](https://github.com/anomalyco/opencode)，项目中相当一部分代码来自其 MIT 授权的实现。感谢 opencode 作者与贡献者提供的基础。miao 作为单独的项目维护，有自己的开发方向与发布版本。
+
+miao 采用 MIT 许可证。[LICENSE](LICENSE) 保留 miao 作者和 opencode 的版权声明，以及 MIT 授权声明。分发软件副本或其中的实质性部分时，请一并保留这些声明。第三方组件继续适用各自的许可证和声明。
+
+项目来源及可选服务的关系见[项目来源与许可](docs/attribution.zh.md)。

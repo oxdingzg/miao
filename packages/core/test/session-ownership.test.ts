@@ -2,8 +2,16 @@ import { expect, test } from "bun:test"
 import { Effect, Exit, Scope } from "effect"
 import { symlink } from "node:fs/promises"
 import path from "node:path"
+import { AppNodeBuilder } from "../src/effect/app-node-builder"
+import { LayerNode } from "../src/effect/layer-node"
+import { Database } from "../src/database/database"
+import { EventV2 } from "../src/event"
+import { LocationServiceMap } from "../src/location-services"
+import { SessionExecution } from "../src/session/execution"
+import { SessionExecutionLocal } from "../src/session/execution/local"
 import { SessionOwnership } from "../src/session/ownership"
 import { SessionSchema } from "../src/session/schema"
+import { SessionStore } from "../src/session/store"
 import { tmpdir } from "./fixture/tmpdir"
 
 async function window(storage: string, id: string, action = "prompt") {
@@ -133,5 +141,33 @@ test("different windows concurrently admit inputs without WAL snapshot failures 
   } finally {
     windows.forEach((entry) => entry.child.kill())
     await Promise.all(windows.map((entry) => entry.child.exited))
+  }
+}, 30_000)
+
+test("a wakeup for a session owned by another window is advisory, not a conflict", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "wake.db")
+  const id = SessionSchema.ID.create()
+  const owner = await window(storage, id)
+  try {
+    const layer = AppNodeBuilder.build(
+      LayerNode.group([Database.node, EventV2.node, LocationServiceMap.node, SessionStore.node, SessionExecution.node]),
+      [
+        [Database.node, Database.sharedLayerFromPath(storage)],
+        [SessionExecution.node, SessionExecutionLocal.node],
+      ],
+    )
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const execution = yield* SessionExecution.Service
+        // The owner window holds the lease, so this runtime cannot claim the
+        // Session. A send_message wakeup must stay advisory instead of raising
+        // SessionOwnership.BusyError; the durable input waits for its window.
+        yield* execution.wake(SessionSchema.ID.make(id))
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+  } finally {
+    owner.child.kill()
+    await owner.child.exited
   }
 }, 30_000)

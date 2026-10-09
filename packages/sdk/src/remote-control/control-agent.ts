@@ -15,10 +15,12 @@ import { RemoteAccess } from "@miao/schema/remote-access"
 import type { RuntimeAdministration } from "@miao/core/runtime/administration"
 import { RuntimeControlMethods } from "./control-methods"
 import { Database } from "@miao/core/database/database"
+import { Session } from "@miao/schema/session"
 import { SessionOwnership } from "@miao/core/session/ownership"
 import { ServerAuth } from "@miao/server/auth"
 
 const Configuration = Schema.Struct({
+  accountID: RemoteAccess.Configuration.fields.accountID,
   hubURL: Schema.String,
   hostToken: Schema.String.check(Schema.isMinLength(32)),
   grantFile: Schema.String.check(Schema.isMinLength(1)),
@@ -57,12 +59,22 @@ export async function start(input: {
       notifications: ReturnType<typeof PushSender.make>
     }
   } = { stopped: false, tail: Promise.resolve() }
+  const published = new Set<string>()
   const live = RuntimeControlLive.make()
   const allowLoopbackHTTP = input.allowLoopbackHTTP ?? initial?.allowLoopbackHTTP ?? false
   const owned = (sessionID: string) =>
     input.run(SessionOwnership.Service.use((ownership) => ownership.owned(sessionID)))
+  const accessible = async (sessionID: string) => (await owned(sessionID)) && published.has(sessionID)
+  const publish = async (sessionID: string) => {
+    const session = await client.sessions.get({ sessionID })
+    await input.run(
+      SessionOwnership.Service.use((ownership) => ownership.claim(Schema.decodeUnknownSync(Session.ID)(session.id))),
+    )
+    if (state.stopped) throw new Error("Remote Control stopped")
+    published.add(sessionID)
+  }
   const projectForSession = async (sessionID: string, signal?: AbortSignal) =>
-    (await owned(sessionID))
+    (await accessible(sessionID))
       ? (await client.sessions.get({ sessionID }, { signal }).catch(() => undefined))?.projectID
       : undefined
   const activate = async (configuration: typeof Configuration.Type) => {
@@ -83,12 +95,14 @@ export async function start(input: {
     })
     const agent = ControlAgent.connect({
       hubURL: configuration.hubURL,
+      accountID: configuration.accountID,
       hostToken: configuration.hostToken,
       allowLoopbackHTTP: configuration.allowLoopbackHTTP,
       runtimeID: input.runtimeID,
       grants,
       pairing,
-      methods: RuntimeControlMethods.make({ client, live, owned, run: input.run }),
+      methods: RuntimeControlMethods.make({ client, live, owned: accessible, sessionCreated: publish, run: input.run }),
+      sessionEnabled: (sessionID) => published.has(sessionID),
       projectForSession,
     })
     const notifications = PushSender.make({
@@ -97,12 +111,15 @@ export async function start(input: {
       runtimeID: input.runtimeID,
       grants,
       connected: () => agent.connected(),
+      sessionEnabled: (sessionID) => published.has(sessionID),
       allowLoopbackHTTP: configuration.allowLoopbackHTTP,
       projectForSession,
     })
     state.active = { agent, pairing, configuration, notifications }
   }
   const status = (): RemoteAccess.Status => ({
+    accountID: state.active?.configuration.accountID,
+    sessionIDs: [...published],
     enabled: !state.stopped && state.active !== undefined,
     connected: !state.stopped && (state.active?.agent.connected() ?? false),
     hostID: grants.hostID,
@@ -121,8 +138,70 @@ export async function start(input: {
     if (unsubscribe) await input.run(unsubscribe)
     live.clear()
   }
+  const accountTrust = (): RemoteAccess.AccountTrustStatus | null => {
+    const saved = grants.accountTrust()
+    return saved
+      ? {
+          hubURL: saved.hubURL,
+          accountID: saved.accountID,
+          acceptedSequence: saved.acceptedSequence,
+          deviceCount: saved.devices.length,
+          permissions: saved.policy.permissions,
+          expiresAt: saved.policy.expiresAt,
+          autoAdmit: saved.policy.autoAdmit,
+        }
+      : null
+  }
   const administration: RuntimeAdministration.Interface = {
     status,
+    accountTrust,
+    bindAccount: (grantID, version, policy) => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped || !state.active?.configuration.accountID)
+          throw new Error("Authenticated Hub account required")
+        const configuration = state.active.configuration
+        const projects = await client.projects.list()
+        if (policy.projectIDs.some((id) => !projects.data.some((project) => project.id === id)))
+          throw new Error("Unknown project scope")
+        if ((await Promise.all(policy.sessionIDs.map(owned))).some((valid) => !valid))
+          throw new Error("Session unavailable in this Runtime")
+        if (state.stopped) throw new Error("Remote Control stopped")
+        await grants.bindAccount({
+          hubURL: configuration.hubURL,
+          accountID: configuration.accountID!,
+          grantID,
+          grantVersion: version,
+          policy,
+          allowLoopbackHTTP,
+        })
+        return accountTrust()!
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
+    clearAccountTrust: () => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped) throw new Error("Remote Control stopped")
+        const revoked = await grants.clearAccountTrust()
+        const active = state.active
+        for (const grant of revoked) {
+          await active?.agent.revoke(grant.id, grant.version)
+          await active?.notifications.revoke(grant)
+        }
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
+    setSessionEnabled: (sessionID, enabled) => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped) throw new Error("Remote Control stopped")
+        if (enabled) await publish(sessionID)
+        if (!enabled) published.delete(sessionID)
+        return status()
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
     setEnabled: (enabled) => {
       const operation = state.tail.then(async () => {
         if (state.stopped) throw new Error("Remote Control stopped")
@@ -155,6 +234,7 @@ export async function start(input: {
         )
           throw new Error("Invalid relay origin")
         const configuration = {
+          ...(decoded.accountID ? { accountID: decoded.accountID } : {}),
           hubURL: url.origin,
           hostToken: decoded.hostToken,
           grantFile,
@@ -170,11 +250,11 @@ export async function start(input: {
       return operation
     },
     invite: async (policy) => {
+      if (state.stopped || !state.active) throw new Error("Remote Control stopped")
       const projects = await client.projects.list()
       if (policy.projectIDs.some((id) => !projects.data.some((project) => project.id === id)))
         throw new Error("Unknown project scope")
-      if ((await Promise.all(policy.sessionIDs.map(owned))).some((owns) => !owns))
-        throw new Error("This window does not own the requested Session")
+      for (const sessionID of policy.sessionIDs) await publish(sessionID)
       if (state.stopped || !state.active) throw new Error("Remote Control stopped")
       return state.active.pairing.issue(policy)
     },
@@ -199,6 +279,7 @@ export async function start(input: {
       state.stopped = true
       await state.tail
       await disconnect()
+      published.clear()
       await grants.close()
     },
   }

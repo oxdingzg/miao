@@ -1,4 +1,5 @@
 import type { Message, Session } from "@miao/schema/view-models"
+import type { SessionMessageUser } from "@miao/session-ui/content"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@miao/core/util/encode"
 import { Binary } from "@miao/core/util/binary"
@@ -107,7 +108,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       dataUrl: await blobDataUrl(attachment.blob, attachment.mime),
     })),
   )
-  const { requestParts, optimisticParts } = buildRequestParts({
+  const { requestParts } = buildRequestParts({
     prompt: input.draft.prompt,
     context: input.draft.context,
     images: encodedImages,
@@ -117,13 +118,17 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     sessionDirectory: input.draft.sessionDirectory,
   })
 
-  const message: Message = {
+  const message: SessionMessageUser = {
     id: messageID,
-    sessionID: input.draft.sessionID,
-    role: "user",
+    type: "user",
     time: { created: Date.now() },
-    agent: input.draft.agent,
-    model: { ...input.draft.model, variant: input.draft.variant },
+    text,
+    files: encodedImages.map((image) => ({
+      type: "file" as const,
+      uri: image.dataUrl,
+      mime: image.mime,
+      name: image.filename,
+    })),
   }
 
   const add = () =>
@@ -131,7 +136,6 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       directory: input.draft.sessionDirectory,
       sessionID: input.draft.sessionID,
       message,
-      parts: optimisticParts,
     })
 
   const remove = () =>

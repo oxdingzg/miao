@@ -70,12 +70,18 @@ export function make() {
         continue
       }
       if (state.fenced || !line) continue
+      // Markdown emphasis is formatting, not content, so `**做**。` is the same
+      // prose line as `做。`. Leaving the asterisks in the charset test made
+      // every bold line reset the window, so a loop alternating a bold and a
+      // plain refrain (`**做**。` / `（跑）` / `我跑。`) never filled it and ran
+      // for thousands of lines undetected.
+      const prose = line.replace(/[*_]/gu, "")
       // Exclude code, JSON, tables, numbered lists and punctuation-only art.
-      if (/^[-*+]\s/u.test(line) || !/\p{L}/u.test(line) || !/^[\p{L}\p{M}\s.,!?…。！？，、()（）'’"-]+$/u.test(line)) {
+      if (/^[-*+]\s/u.test(line) || !/\p{L}/u.test(prose) || !/^[\p{L}\p{M}\s.,!?…。！？，、()（）'’"-]+$/u.test(prose)) {
         state.lines = []
         continue
       }
-      state.lines.push(line)
+      state.lines.push(prose)
       if (state.lines.length > WINDOW_LINES) state.lines.shift()
       if (state.lines.length !== WINDOW_LINES) continue
       const counts = new Map<string, number>()

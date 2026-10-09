@@ -35,7 +35,7 @@ import type {
   TranscriptReasoningPart,
 } from "@miao/schema/view-models"
 import { toolOutputText } from "../../context/session-v2"
-import { promptInfoFromUserMessage } from "../../context/session-v2-write"
+import { promptInfoFromUserMessage, toolInput, toolMetadata } from "../../context/session-v2-write"
 
 import type { Provider, SessionStatus } from "@miao/schema/view-models"
 import { useLocal } from "../../context/local"
@@ -376,6 +376,15 @@ export function Session() {
   let followPass = 0
   let lastMutation = -10
   const anchoringSettled = () => followPass - lastMutation >= 2
+  // Sticky-bottom compensation: the scrollbox's sticky scroll disengages on
+  // any transient offset (a mid-frame measurement or anchoring correction
+  // leaves the viewport a few lines short of the tail), and its re-engage
+  // point is exact, so that gap never self-heals. While the reader is pinned
+  // to the tail, re-pin on every layout pass; scrolling up releases the pin,
+  // scrolling back near the bottom re-arms it.
+  let tailPinned = true
+  let tailWant = true
+  const tailSnap = 3
   const bind = (r: PromptRef | undefined) => {
     prompt = r
     promptRef.set(r)
@@ -438,6 +447,12 @@ export function Session() {
   // Helper: Scroll to message in direction or fallback to page scroll
   const scrollToMessage = (direction: "next" | "prev", dialog: ReturnType<typeof useDialog>) => {
     const targetID = findNextVisibleMessage(direction)
+    if (direction === "prev") {
+      tailPinned = false
+      tailWant = false
+    } else {
+      tailWant = true
+    }
 
     if (!targetID) {
       scroll.scrollBy(direction === "next" ? scroll.height : -scroll.height)
@@ -469,6 +484,8 @@ export function Session() {
     anchoring.drop()
     jumpTo = undefined
     bottomPin = { tries: 0 }
+    tailPinned = true
+    tailWant = true
   }
 
   const local = useLocal()
@@ -1217,6 +1234,9 @@ export function Session() {
                     applyJump()
                     applyBottom()
                     followWindow(geometry)
+                    const tailGap = scroll.scrollHeight - scroll.height - scroll.scrollTop
+                    if (tailWant && !tailPinned && tailGap >= 0 && tailGap <= tailSnap) tailPinned = true
+                    if (tailPinned && !loadingHistory && tailGap > 0) scroll.scrollTo(scroll.scrollHeight)
                   }
                   r.ctx.registerLifecyclePass(r)
                 }}
@@ -1229,7 +1249,13 @@ export function Session() {
                 flexGrow={1}
                 scrollAcceleration={scrollAcceleration()}
                 onMouseScroll={(event) => {
-                  if (event.scroll?.direction === "up") loadOlderAtTop()
+                  if (event.scroll?.direction === "up") {
+                    loadOlderAtTop()
+                    tailPinned = false
+                    tailWant = false
+                  } else if (event.scroll?.direction === "down") {
+                    tailWant = true
+                  }
                 }}
               >
                 <box height={1} />
@@ -1467,7 +1493,7 @@ function UserMessage(props: {
           border={["left"]}
           borderColor={color()}
           customBorderChars={SplitBorder.customBorderChars}
-          marginTop={props.index === 0 ? 0 : 1}
+          marginTop={props.index === 0 ? 0 : 2}
         >
           <box
             onMouseOver={() => {
@@ -1489,7 +1515,15 @@ function UserMessage(props: {
                 <Show
                   when={reminder()}
                   fallback={
-                    <Show when={sessionMessage()} fallback={<text fg={theme.text}>{text()}</text>}>
+                    <Show
+                      when={sessionMessage()}
+                      fallback={
+                        <text fg={theme.text}>
+                          <span style={{ fg: theme.textMuted }}>{"❯ "}</span>
+                          {text()}
+                        </text>
+                      }
+                    >
                       {(message) => (
                         <SessionMessageContent
                           sessionID={message().sessionID}
@@ -1509,6 +1543,7 @@ function UserMessage(props: {
             >
               {(value) => (
                 <text fg={theme.text}>
+                  <span style={{ fg: theme.textMuted }}>{"❯ "}</span>
                   {`/${value().name}${value().arguments ? ` ${value().arguments}` : ""}`}
                 </text>
               )}
@@ -1834,10 +1869,16 @@ function ToolPart(props: { last: boolean; part: TranscriptToolPart; message: Tra
 
   const toolprops = {
     get metadata() {
-      return state.status === "pending" ? {} : ((state as { metadata?: Record<string, unknown> }).metadata ?? {})
+      if (state.status === "pending" || state.status === "running") return {}
+      // V2 tool state carries results in `structured`; the renderers read the
+      // V1 `metadata` shape (diffs, diagnostics, summaries).
+      return toolMetadata(props.part.name, state.structured)
     },
     get input() {
-      return typeof state.input === "object" && state.input !== null ? (state.input as Record<string, unknown>) : {}
+      // V2 file tools name their target `path`; the renderers read `filePath`.
+      return typeof state.input === "object" && state.input !== null
+        ? toolInput(props.part.name, state.input)
+        : {}
     },
     get output() {
       return state.status === "completed" ? toolOutputText(state) : undefined

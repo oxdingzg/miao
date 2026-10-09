@@ -46,6 +46,9 @@ import { SessionRunner } from "@miao/core/session/runner"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { BashTool } from "@miao/core/tool/bash"
+import { MonitorTool } from "@miao/core/tool/monitor"
+import { BackgroundJob } from "@miao/core/background-job"
+import { settleTool, toolIdentity } from "./lib/tool"
 import { ToolCallLeak } from "@miao/core/session/tool-call-leak"
 import { SessionOutputGuard } from "@miao/core/session/runner/output-guard"
 import { ToolRegistry } from "@miao/core/tool/registry"
@@ -165,7 +168,7 @@ const permission = Layer.succeed(
       // "external_directory" for a workdir outside the bound Location; the test
       // only cares that the OS process it spawns is cleaned up.
       if (input.action === commandDeniedAction) return Effect.fail(new PermissionV2.BlockedError({ rules: [] }))
-      return input.action === "task" || input.action === "read" || input.action === "message" || input.action === "read_session" || input.action === "bash" || input.action === "external_directory"
+      return input.action === "task" || input.action === "read" || input.action === "message" || input.action === "read_session" || input.action === "bash" || input.action === "monitor" || input.action === "external_directory"
         ? Effect.void
         : Effect.die("unused")
     },
@@ -528,6 +531,12 @@ const itWithSinglePermit = testEffect(
 const bashLocation = mkdtempSync(join(os.tmpdir(), "miao-bash-harness-"))
 const itWithBash = testEffect(
   AppNodeBuilder.build(LayerNode.group([...appNodes, BashTool.node]), appOverrides(location(bashLocation))),
+)
+const itWithMonitor = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([...appNodes, BackgroundJob.node, MonitorTool.node]),
+    appOverrides(location(bashLocation)),
+  ),
 )
 // Counts tree captures so tests can assert how many the runner performed.
 const snapshotCaptures: string[] = []
@@ -1497,6 +1506,93 @@ describe("SessionRunnerLLM", () => {
       expect(JSON.stringify(requests[1].messages)).toContain("BOUNDARY REPORT")
       expect(requests[1].toolChoice).toMatchObject({ type: "none" })
       expect(requests[1].tools).toEqual([])
+    }),
+  )
+
+  it.effect("queued schedule notices wait until the current tool continuation finishes", () =>
+    Effect.gen(function* () {
+      yield* setup
+      responses = [
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "schedule-boundary", name: "echo", input: { text: "current work" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      yield* (yield* SessionV2.Service).prompt({ sessionID, prompt: Prompt.make({ text: "finish this work" }), resume: false })
+      yield* (yield* EventV2.Service).publish(SessionEvent.NotificationAdmitted, {
+        sessionID,
+        messageID: SessionMessage.ID.create(),
+        timestamp: yield* DateTime.now,
+        text: "scheduled follow-up after idle",
+        metadata: { scheduled: true, scheduleID: "schedule-boundary-test", delivery: "queue" },
+      })
+      yield* (yield* SessionExecution.Service).resume(sessionID)
+      yield* (yield* SessionExecution.Service).wait(sessionID)
+      expect(requests).toHaveLength(3)
+      expect(JSON.stringify(requests[0]?.messages)).not.toContain("scheduled follow-up after idle")
+      expect(JSON.stringify(requests[1]?.messages)).not.toContain("scheduled follow-up after idle")
+      expect(JSON.stringify(requests[2]?.messages)).toContain("scheduled follow-up after idle")
+      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 1)
+    }),
+  )
+
+  itWithMonitor.live("monitor completion wakes an idle Session and can execute follow-up tools without a human prompt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const db = (yield* Database.Service).db
+      yield* db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "monitor-followup", name: "echo", input: { text: "automatic CI follow-up" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })]
+      const execution = yield* SessionExecution.Service
+      expect(yield* execution.active).toEqual(new Set())
+      const registry = yield* ToolRegistry.Service
+      yield* settleTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "idle-monitor", name: "monitor", input: { command: "printf 'CI_DONE exit=0\\n'", pattern: "CI_DONE" } },
+      })
+      const jobs = yield* BackgroundJob.Service
+      const job = (yield* jobs.list())[0]
+      expect((yield* jobs.wait({ id: job.id, timeout: 5_000 })).timedOut).toBe(false)
+      yield* execution.wait(sessionID)
+      expect(requests.length).toBeGreaterThan(0)
+      expect(JSON.stringify(requests.map((request) => request.messages))).toContain("CI_DONE exit=0")
+      expect(JSON.stringify(requests.map((request) => request.messages))).toContain("exited with code 0")
+      expect(executions).toContain("automatic CI follow-up")
+      const history = yield* (yield* SessionV2.Service).context(sessionID)
+      expect(history.filter((message) => message.type === "user")).toHaveLength(0)
+      expect(history.filter((message) => message.type === "synthetic")).toHaveLength(2)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(0)
+      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 2)
+    }),
+  )
+
+  itWithMonitor.live("monitor notices respect the wake allowance and remain pending when it is exhausted", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const db = (yield* Database.Service).db
+      yield* db.update(SessionTable).set({ directory: bashLocation }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      yield* drainWakeAllowance(sessionID, 0)
+      const registry = yield* ToolRegistry.Service
+      yield* settleTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "bounded-monitor", name: "monitor", input: { command: "printf 'CI_DONE exit=0\\n'", pattern: "CI_DONE" } },
+      })
+      const jobs = yield* BackgroundJob.Service
+      expect((yield* jobs.wait({ id: (yield* jobs.list())[0].id, timeout: 5_000 })).timedOut).toBe(false)
+      yield* (yield* SessionExecution.Service).wait(sessionID)
+      expect(requests).toHaveLength(0)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(2)
+      expect(yield* wakeAllowance(sessionID)).toBe(0)
     }),
   )
 
@@ -6437,6 +6533,55 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "user", text: "Fail before step" },
         { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
+      ])
+    }),
+  )
+
+  it.effect("retries transient in-band provider errors before publishing assistant output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover a stream error" }), resume: false })
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.fromIterable([
+                LLMEvent.stepStart({ index: 0 }),
+                LLMEvent.providerError({ message: "internal_error: Try again", retryable: true }),
+              ])
+            : Stream.fromIterable(fragmentFixture("text", "text-recovered", ["Recovered"]).completeEvents),
+        ),
+      )
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+      expect(attempts).toBe(2)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Recover a stream error" },
+        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
+      ])
+      expect(yield* session.context(sessionID)).toHaveLength(2)
+    }),
+  )
+
+  it.effect("does not retry transient in-band errors after durable assistant output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Preserve partial output" }), resume: false })
+      requests.length = 0
+      response = [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id: "text-partial" }),
+        LLMEvent.textDelta({ id: "text-partial", text: "Partial" }),
+        LLMEvent.providerError({ message: "internal_error: Try again", retryable: true }),
+      ]
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(1)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Preserve partial output" },
+        { type: "assistant", finish: "error", content: [{ type: "text", text: "Partial" }] },
       ])
     }),
   )

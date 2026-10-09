@@ -32,11 +32,14 @@ export async function providers(input: {
     credentials: "omit",
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(10000),
-  }).catch(() => undefined)
-  if (!response?.ok) return { providers: [] }
+  }).catch(() => {
+    throw new Error("Hub login methods could not be discovered; check the connection and retry")
+  })
+  if (response.status === 404) return { providers: [] }
+  if (!response.ok) throw new Error("Hub login methods could not be discovered; check the connection and retry")
   const body: unknown = await response.json().catch(() => undefined)
   if (typeof body !== "object" || body === null || !("providers" in body) || !Array.isArray(body.providers))
-    return { providers: [] }
+    throw new Error("Hub returned invalid login methods")
   return { providers: body.providers.filter((value): value is string => typeof value === "string") }
 }
 
@@ -55,14 +58,27 @@ export async function connect(input: {
   const request = relayRequest(origin, input.fetch ?? fetch)
   let login: string | undefined
   try {
-    const signedIn = await request("/api/auth/sign-in/email", undefined, { email: input.email, password: input.password })
+    const signedIn = await request("/api/auth/sign-in/email", undefined, {
+      email: input.email,
+      password: input.password,
+    })
     login = signedIn.headers.get("set-auth-token") ?? undefined
     if (!signedIn.ok || !login) throw new Error("Relay login failed")
+    const signedInBody: unknown = await signedIn.json().catch(() => undefined)
+    const accountID = authAccount(signedInBody)
     const accessResponse = await request("/api/auth/token", login)
     if (!accessResponse.ok) throw new Error("Relay login failed")
     const access: unknown = await accessResponse.json()
     if (!isToken(access)) throw new Error("Relay login failed")
-    return await registerHost({ origin, name: input.name, token: access.token, host, request, runtime: input.runtime })
+    return await registerHost({
+      origin,
+      name: input.name,
+      token: access.token,
+      accountID,
+      host,
+      request,
+      runtime: input.runtime,
+    })
   } catch {
     // Never forward HTTP bodies, provider errors, or Runtime SDK request details containing credentials.
     throw new Error("Relay setup could not be confirmed; check the Runtime status and relay host directory")
@@ -73,7 +89,7 @@ export async function connect(input: {
 
 /**
  * Signs in through the relay's browser flow, which is the only way into an
- * OAuth-only relay such as mhub. The caller owns the browser and the redirect
+ * OAuth-only relay. The caller owns the browser and the redirect
  * listener: it supplies the loopback `callbackURL`, opens the authorize URL,
  * and resolves `waitForCode` with the one-time code the relay hands back.
  */
@@ -120,7 +136,15 @@ export async function connectWithOAuth(input: {
     const access: unknown = await exchanged.json()
     if (!isToken(access)) throw new Error("Relay login failed")
     token = access.token
-    return await registerHost({ origin, name: input.name, token, host, request, runtime: input.runtime })
+    return await registerHost({
+      origin,
+      name: input.name,
+      token,
+      accountID: authAccount(access),
+      host,
+      request,
+      runtime: input.runtime,
+    })
   } catch {
     throw new Error("Relay setup could not be confirmed; check the Runtime status and relay host directory")
   } finally {
@@ -132,6 +156,7 @@ async function registerHost(input: {
   origin: string
   name: string
   token: string
+  accountID?: string
   host: Host
   request: Request
   runtime: Runtime
@@ -156,7 +181,15 @@ async function registerHost(input: {
   }
   if (!isToken(registration) || !/^[A-Za-z0-9_-]{32,256}$/.test(registration.token))
     throw new Error("Invalid host registration response")
-  return await input.runtime.configure({ hubURL: input.origin, hostToken: registration.token })
+  const declared = "accountID" in registration ? registration.accountID : undefined
+  if (declared !== undefined && !validAccount(declared)) throw new Error("Invalid account registration metadata")
+  if (declared && input.accountID && declared !== input.accountID) throw new Error("Authenticated account mismatch")
+  const accountID = declared ?? input.accountID
+  return await input.runtime.configure({
+    hubURL: input.origin,
+    hostToken: registration.token,
+    ...(accountID ? { accountID } : {}),
+  })
 }
 
 async function requireHost(runtime: Runtime): Promise<Host> {
@@ -219,4 +252,14 @@ function hasMatchingHost(value: unknown, hostID: string, publicKey: string): boo
       "revokedAt" in host &&
       host.revokedAt === null,
   )
+}
+
+function validAccount(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(value)
+}
+function authAccount(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || !("user" in body)) return undefined
+  const user = body.user
+  if (typeof user !== "object" || user === null || !("id" in user) || !validAccount(user.id)) return undefined
+  return user.id
 }

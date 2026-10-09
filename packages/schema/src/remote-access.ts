@@ -23,6 +23,8 @@ export const Policy = Schema.Struct({
   projectIDs: Schema.Array(ScopeID).check(Schema.isMaxLength(128)),
   sessionIDs: Schema.Array(ScopeID).check(Schema.isMaxLength(256)),
   expiresAt: Schema.Int,
+  /** Owner opt-in: devices signed into the same Hub account are admitted without scanning. */
+  autoAdmit: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "RemoteAccess.Policy" })
 export interface Grant extends Schema.Schema.Type<typeof Grant> {}
 export const Grant = Schema.Struct({
@@ -52,8 +54,21 @@ export const Candidate = Schema.Struct({
   policy: Policy,
   expiresAt: Schema.Int,
 }).annotate({ identifier: "RemoteAccess.Candidate" })
+export const AccountTrustStatus = Schema.Struct({
+  hubURL: Schema.String,
+  accountID: ID,
+  acceptedSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  deviceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(64)),
+  permissions: Schema.Array(Permission),
+  expiresAt: Schema.Int,
+  autoAdmit: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "RemoteAccess.AccountTrustStatus" })
+export type AccountTrustStatus = typeof AccountTrustStatus.Type
+
 export interface Status extends Schema.Schema.Type<typeof Status> {}
 export const Status = Schema.Struct({
+  accountID: ID.pipe(optional),
+  sessionIDs: Schema.Array(ScopeID).pipe(optional),
   enabled: Schema.Boolean,
   connected: Schema.Boolean,
   hostID: ID.pipe(optional),
@@ -64,6 +79,7 @@ export const Status = Schema.Struct({
 
 export interface Configuration extends Schema.Schema.Type<typeof Configuration> {}
 export const Configuration = Schema.Struct({
+  accountID: ID.pipe(optional),
   hubURL: Schema.String.check(Schema.isLengthBetween(1, 2048)),
   hostToken: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{32,256}$/)).pipe(Schema.redact),
 }).annotate({ identifier: "RemoteAccess.Configuration" })

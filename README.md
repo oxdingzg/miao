@@ -129,7 +129,7 @@ miao includes Rust accelerators and benchmarks against this repository's earlier
 | Patch Unicode normalization, 20k lines | 13.06 ms            | 5.21 ms     | 2.5×    |
 | Git status, 10 files                   | 12.3 ms             | 1.0 ms      | 11.9×   |
 
-These are **component benchmarks, not end-to-end task speedups or comparisons with today's upstream release**. The primitives behind them did not leave with the V1 tools: V2's `edit` and `apply_patch` call the same native matching and derivation whenever the addon is loaded, which it is by default, and `MIAO_NATIVE=0` falls back to the TypeScript implementations. The addon also backs the opt-in OS sandbox runner, and in-process Git remains a prototype. See the [recorded component benchmarks](docs/native-benchmarks.en.md).
+These are **component benchmarks, not end-to-end task speedups or comparisons with today's upstream release**. The primitives behind them did not leave with the V1 tools: V2's `edit` and `apply_patch` call the same native matching and derivation whenever the addon is loaded, which it is by default, and `MIAO_NATIVE=0` falls back to the TypeScript implementations. The addon also backs the opt-in OS sandbox runner, and in-process Git status is wired behind the same flag. See the [recorded component benchmarks](docs/native-benchmarks.en.md).
 
 ### Public baseline: startup, memory, idle cost, crash recovery
 
@@ -223,4 +223,10 @@ cd packages/miao
 bun typecheck
 ```
 
-miao is released under the MIT License. See [LICENSE](LICENSE).
+## Acknowledgements and license
+
+miao is derived from [opencode](https://github.com/anomalyco/opencode), whose MIT-licensed code provides a substantial part of this project. We thank the opencode authors and contributors for that foundation. miao is maintained as a separate project, with its own development direction and releases.
+
+miao is released under the MIT License. [LICENSE](LICENSE) preserves both the miao authors’ and opencode’s copyright notices and the MIT permission notice. Keep these notices with copies or substantial portions of the software. Third-party components retain their respective licenses and notices.
+
+See [project origins and licensing](docs/attribution.en.md) for source attribution and the relationship to optional services.

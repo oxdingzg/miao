@@ -320,19 +320,64 @@ try {
     viewport: process.argv.includes("--mobile") ? { width: 390, height: 844 } : { width: 1280, height: 900 },
   })
   const page = await context.newPage()
+  const social = process.argv.includes("--social")
+  let exchangedSocialCode = false
+  if (social) {
+    await page.route(origin + "/api/auth/providers", (route) => route.fulfill({ json: { providers: ["github"] } }))
+    await page.route(origin + "/api/auth/sign-in/social", async (route) => {
+      const body = route.request().postDataJSON() as { state: string; callbackURL: string; provider: string }
+      if (body.provider !== "github" || new URL(body.callbackURL).origin !== origin)
+        throw new Error("Invalid fixture browser start")
+      await route.fulfill({ json: { url: "https://identity.example.invalid/authorize?state=" + body.state } })
+    })
+    await page.route("https://identity.example.invalid/authorize?*", async (route) => {
+      const state = new URL(route.request().url()).searchParams.get("state")
+      await route.fulfill({
+        status: 302,
+        headers: { location: origin + "/?miao_login=1&code=fixture-social-code&state=" + state },
+      })
+    })
+    await page.route(origin + "/api/auth/exchange", async (route) => {
+      const body = route.request().postDataJSON() as { code: string; client: string }
+      if (exchangedSocialCode || body.code !== "fixture-social-code" || body.client !== "web")
+        throw new Error("Invalid fixture exchange")
+      exchangedSocialCode = true
+      const response = await fetch(origin + "/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { origin, "content-type": "application/json" },
+        body: JSON.stringify({ email: "web@example.invalid", password: "web-ui-fixture-password-0001" }),
+      })
+      await response.body?.cancel()
+      await route.fulfill({
+        status: response.status,
+        headers: { "content-type": "application/json", "set-cookie": response.headers.get("set-cookie") ?? "" },
+        body: "{}",
+      })
+    })
+  }
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.name))
   stage = "login"
-  await page.goto(origin)
-  await page.getByLabel("邮箱").fill("web@example.invalid")
-  await page.getByLabel("密码").fill("web-ui-fixture-password-0001")
-  await page.getByRole("button", { name: "登录 →" }).click()
+  const scan = process.argv.includes("--scan")
+  await page.goto(origin + (scan ? "#pair=" + Buffer.from(JSON.stringify(invitation)).toString("base64url") : ""))
+  if (scan && new URL(page.url()).hash) throw new Error("Scanned invitation stayed in the address bar")
+  if (social) {
+    await page.getByRole("button", { name: "使用 GitHub 登录", exact: true }).click()
+  } else {
+    await page.getByLabel("邮箱").fill("web@example.invalid")
+    await page.getByLabel("密码").fill("web-ui-fixture-password-0001")
+    await page.getByRole("button", { name: "登录 →" }).click()
+  }
   await page.getByRole("button", { name: "Studio computer" }).waitFor()
   stage = "pairing"
-  await page.getByText("配对新设备", { exact: true }).click()
-  await page.getByLabel("配对邀请", { exact: true }).fill(JSON.stringify(invitation))
-  await page.getByRole("button", { name: "请求配对" }).click()
+  if (!scan) {
+    await page.getByText("配对新设备", { exact: true }).click()
+    await page.getByLabel("配对邀请", { exact: true }).fill(JSON.stringify(invitation))
+    await page.getByRole("button", { name: "请求配对" }).click()
+  }
   await page.getByText("设备已授权。选择电脑继续。", { exact: true }).waitFor()
+  if (social && (!exchangedSocialCode || new URL(page.url()).search))
+    throw new Error("Browser callback code was not consumed and removed")
   await page.getByRole("button", { name: "Studio computer" }).click()
   stage = "history"
   await page.getByRole("button", { name: "下一页", exact: true }).click()
@@ -433,7 +478,7 @@ try {
   if (process.env.MIAO_WEB_SCREENSHOT) await page.screenshot({ path: process.env.MIAO_WEB_SCREENSHOT, fullPage: true })
   stage = "logout"
   await page.getByRole("button", { name: "退出账号", exact: true }).click()
-  await page.getByRole("button", { name: "登录 →" }).waitFor()
+  await page.getByRole("button", { name: social ? "使用 GitHub 登录" : "登录 →", exact: true }).waitFor()
   if ((await page.locator("#timeline").textContent()) !== "" || errors.length)
     throw new Error("Logout or browser execution failed")
   console.log(

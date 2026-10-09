@@ -1,7 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { SessionMessageInfo } from "@/utils/server"
-import type { UserMessage } from "@miao/schema/view-models"
-import { normalizeSessionMessages } from "@/utils/session-message"
+import { contentParts } from "@miao/session-ui/content"
 
 mock.module("@miao/session-ui/message-part", () => ({
   renderable: () => true,
@@ -37,11 +36,11 @@ describe("current session timeline rows", () => {
         time: { created: 5 },
       },
     ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
+    const parts = contentParts("ses_1", source)
 
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => normalized.parts.get(messageID) ?? [],
+      (messageID) => parts[messageID] ?? [],
       true,
       "busy",
       true,
@@ -69,11 +68,11 @@ describe("current session timeline rows", () => {
         time: { created: 1, completed: 2 },
       },
     ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
+    const parts = contentParts("ses_1", source)
 
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => normalized.parts.get(messageID) ?? [],
+      (messageID) => parts[messageID] ?? [],
       true,
       "idle",
       true,
@@ -108,11 +107,11 @@ describe("current session timeline rows", () => {
         time: { created: 5, completed: 6 },
       },
     ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
+    const parts = contentParts("ses_1", source)
 
     const result = Timeline.constructSessionMessageRows(
       source.slice(1),
-      (messageID) => normalized.parts.get(messageID) ?? [],
+      (messageID) => parts[messageID] ?? [],
       true,
       "idle",
       true,
@@ -131,22 +130,20 @@ describe("current session timeline rows", () => {
     const source = [
       { id: "msg_z", type: "user", text: "existing", time: { created: 1 } },
     ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
+    const parts = contentParts("ses_1", source)
     const optimistic = {
       id: "msg_a",
-      sessionID: "ses_1",
-      role: "user" as const,
+      type: "user" as const,
+      text: "",
       time: { created: 2 },
-      agent: "build",
-      model: { modelID: "model", providerID: "provider" },
     }
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => (messageID === optimistic.id ? [] : (normalized.parts.get(messageID) ?? [])),
+      (messageID) => (messageID === optimistic.id ? [] : (parts[messageID] ?? [])),
       true,
       "busy",
       true,
-      [...normalized.messages.filter((message) => message.role === "user"), optimistic] as unknown as UserMessage[],
+      [...source, optimistic],
     )
 
     expect(result.activeMessageID).toBe(optimistic.id)
@@ -179,11 +176,11 @@ describe("current session timeline rows", () => {
         time: { created: 4 },
       },
     ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
+    const parts = contentParts("ses_1", source)
 
     const result = Timeline.constructSessionMessageRows(
       source,
-      (messageID) => normalized.parts.get(messageID) ?? [],
+      (messageID) => parts[messageID] ?? [],
       true,
       "busy",
       true,

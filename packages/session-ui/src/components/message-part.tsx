@@ -20,7 +20,6 @@ import {
   AgentPart,
   AssistantMessage,
   FilePart,
-  Message as MessageType,
   Part as PartType,
   ReasoningPart,
   Session,
@@ -31,6 +30,7 @@ import {
 import type { Todo } from "@miao/schema/view-models"
 import type { QuestionAnswer, QuestionInfo } from "@miao/schema/view-models"
 import { useData } from "../context"
+import { contentParts, type SessionMessageAssistant, type SessionMessageInfo, type SessionMessageUser } from "../content"
 import { useFileComponent } from "@miao/ui/context/file"
 import { useDialog } from "@miao/ui/context/dialog"
 import { type UiI18n, useI18n } from "@miao/ui/context/i18n"
@@ -164,7 +164,8 @@ function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
 }
 
 export interface MessageProps {
-  message: MessageType
+  sessionID: string
+  message: SessionMessageInfo
   parts: PartType[]
   actions?: UserActions
   showAssistantCopyPartID?: string | null
@@ -192,7 +193,7 @@ export type UserMessageComment = {
 
 export interface MessagePartProps {
   part: PartType
-  message: MessageType
+  message: SessionMessageInfo
   hideDetails?: boolean
   defaultOpen?: boolean
   toolOpen?: boolean
@@ -722,7 +723,8 @@ export function renderable(part: PartType, showReasoningSummaries = true) {
 export { partDefaultOpen } from "./part-default-open"
 
 export function AssistantParts(props: {
-  messages: AssistantMessage[]
+  sessionID: string
+  messages: SessionMessageAssistant[]
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
@@ -735,19 +737,16 @@ export function AssistantParts(props: {
   const emptyParts: PartType[] = []
   const emptyTools: ToolPart[] = []
   const msgs = createMemo(() => index(props.messages))
+  const projected = createMemo(() => contentParts(props.sessionID, props.messages))
   const part = createMemo(
-    () =>
-      new Map(
-        props.messages.map((message) => [message.id, index(list(data.store.part?.[message.id], emptyParts))] as const),
-      ),
+    () => new Map(props.messages.map((message) => [message.id, index(projected()[message.id] ?? emptyParts)] as const)),
   )
 
   const grouped = createMemo(
     () =>
       groupParts(
         props.messages.flatMap((message) =>
-          list(data.store.part?.[message.id], emptyParts)
-            .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
+          (projected()[message.id] ?? emptyParts).filter((part) => renderable(part, props.showReasoningSummaries ?? true))
             .map((part) => ({
               messageID: message.id,
               part,
@@ -936,10 +935,11 @@ export function registerPartComponent(type: string, component: PartComponent) {
 export function Message(props: MessageProps) {
   return (
     <Switch>
-      <Match when={props.message.role === "user" && props.message}>
+      <Match when={props.message.type === "user" && props.message}>
         {(userMessage) => (
           <UserMessageDisplay
-            message={userMessage() as UserMessage}
+            sessionID={props.sessionID}
+            message={userMessage()}
             parts={props.parts}
             actions={props.actions}
             useV2Actions={props.useV2Actions}
@@ -947,10 +947,11 @@ export function Message(props: MessageProps) {
           />
         )}
       </Match>
-      <Match when={props.message.role === "assistant" && props.message}>
+      <Match when={props.message.type === "assistant" && props.message}>
         {(assistantMessage) => (
           <AssistantMessageDisplay
-            message={assistantMessage() as AssistantMessage}
+            sessionID={props.sessionID}
+            message={assistantMessage()}
             parts={props.parts}
             showAssistantCopyPartID={props.showAssistantCopyPartID}
             showReasoningSummaries={props.showReasoningSummaries}
@@ -963,7 +964,8 @@ export function Message(props: MessageProps) {
 }
 
 export function AssistantMessageDisplay(props: {
-  message: AssistantMessage
+  sessionID: string
+  message: SessionMessageAssistant
   parts: PartType[]
   showAssistantCopyPartID?: string | null
   showReasoningSummaries?: boolean
@@ -1179,7 +1181,8 @@ function UserMessageComments(props: { comments: UserMessageComment[]; bounded: b
 }
 
 export function UserMessageDisplay(props: {
-  message: UserMessage
+  sessionID: string
+  message: SessionMessageUser
   parts: PartType[]
   actions?: UserActions
   useV2Actions?: boolean
@@ -1211,13 +1214,6 @@ export function UserMessageDisplay(props: {
 
   const agents = createMemo(() => (props.parts?.filter((p) => p.type === "agent") as AgentPart[]) ?? [])
 
-  const model = createMemo(() => {
-    const providerID = props.message.model?.providerID
-    const modelID = props.message.model?.modelID
-    if (!providerID || !modelID) return ""
-    const match = data.store.provider?.all?.get(providerID)
-    return match?.models?.[modelID]?.name ?? modelID
-  })
   const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { timeStyle: "short" }))
 
   const stamp = createMemo(() => {
@@ -1226,11 +1222,9 @@ export function UserMessageDisplay(props: {
     return timefmt().format(created)
   })
 
-  const metaHead = createMemo(() => {
-    const agent = props.message.agent
-    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
-    return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
-  })
+  // V2 user records carry no agent/model attribution; the meta head renders
+  // the timestamp only.
+  const metaHead = createMemo(() => "")
 
   const metaTail = stamp
 
@@ -1254,7 +1248,7 @@ export function UserMessageDisplay(props: {
     void Promise.resolve()
       .then(() =>
         act({
-          sessionID: props.message.sessionID,
+          sessionID: props.sessionID,
           messageID: props.message.id,
         }),
       )
@@ -1658,19 +1652,21 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const part = () => props.part as TextPart
   const interrupted = createMemo(
     () =>
-      props.message.role === "assistant" && (props.message as AssistantMessage).error?.name === "MessageAbortedError",
+      props.message.type === "assistant" && props.message.finish === "aborted",
   )
 
   const model = createMemo(() => {
-    if (props.message.role !== "assistant") return ""
-    const message = props.message as AssistantMessage
-    const match = data.store.provider?.all?.get(message.providerID)
-    return match?.models?.[message.modelID]?.name ?? message.modelID
+    if (props.message.type !== "assistant") return ""
+    const providerID = props.message.model?.providerID
+    const modelID = props.message.model?.id
+    if (!providerID || !modelID) return ""
+    const match = data.store.provider?.all?.get(providerID)
+    return match?.models?.[modelID]?.name ?? modelID
   })
 
   const duration = createMemo(() => {
-    if (props.message.role !== "assistant") return ""
-    const message = props.message as AssistantMessage
+    if (props.message.type !== "assistant") return ""
+    const message = props.message
     const completed = message.time.completed
     const ms =
       typeof props.turnDurationMs === "number"
@@ -1690,8 +1686,8 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
 
   const meta = createMemo(() => {
-    if (props.message.role !== "assistant") return ""
-    const agent = (props.message as AssistantMessage).agent
+    if (props.message.type !== "assistant") return ""
+    const agent = props.message.agent
     const items = [
       agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
       model(),
@@ -1702,17 +1698,19 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
 
   const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
+    () => props.message.type === "assistant" && typeof props.message.time.completed !== "number",
   )
-  const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const text = () => (part().text ?? "").trim()
   const isLastTextPart = createMemo(() => {
-    const last = (data.store.part?.[props.message.id] ?? [])
+    const messageID = props.message.id
+    const siblings = contentParts(part().sessionID, [props.message])[messageID] ?? []
+    const last = siblings
       .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
       .at(-1)
     return last?.id === part().id
   })
   const showCopy = createMemo(() => {
-    if (props.message.role !== "assistant") return isLastTextPart()
+    if (props.message.type !== "assistant") return isLastTextPart()
     if (props.showAssistantCopyPartID === null) return false
     if (typeof props.showAssistantCopyPartID === "string") return props.showAssistantCopyPartID === part().id
     return isLastTextPart()
@@ -1760,9 +1758,9 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
   const part = () => props.part as ReasoningPart
   const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
+    () => props.message.type === "assistant" && typeof props.message.time.completed !== "number",
   )
-  const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const text = () => (part().text ?? "").trim()
 
   return (
     <Show when={text()}>

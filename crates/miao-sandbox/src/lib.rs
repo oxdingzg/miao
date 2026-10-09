@@ -7,13 +7,20 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+pub mod win;
+
 pub fn canonical(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Whether this platform has a sandbox backend.
 pub fn supported() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux"))
+    cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    ))
 }
 
 /// Build a seatbelt profile from scratch. Deny-by-default, then explicitly allow
@@ -329,7 +336,11 @@ mod tests {
     fn reports_platform_support() {
         assert_eq!(
             supported(),
-            cfg!(any(target_os = "macos", target_os = "linux"))
+            cfg!(any(
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "windows"
+            ))
         );
     }
 }

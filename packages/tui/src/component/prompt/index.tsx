@@ -162,6 +162,7 @@ export function Prompt(props: PromptProps) {
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
+  const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
@@ -455,7 +456,7 @@ export function Prompt(props: PromptProps) {
         name: "session.interrupt",
         category: "Session",
         hidden: true,
-        enabled: status().type !== "idle",
+        enabled: status().type !== "idle" || waitingPrompts().length > 0,
         run: () => {
           if (auto()?.visible) return
           if (!input.focused) return
@@ -466,6 +467,11 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
+          // Esc interrupts the running turn; queued prompts survive it and the
+          // queue advances on its own — Claude Code's user esc sends
+          // `{ subtype: "interrupt" }` without cancel_queued, and the
+          // interrupt response reports what is still_queued.
+          //
           // A rejected interrupt (server 500, runtime unreachable) must not
           // kill the TUI: Bun exits the process on an unhandled rejection.
           void sdk.api.sessions
@@ -1618,7 +1624,8 @@ export function Prompt(props: PromptProps) {
                   <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                 </Show>
                 <text fg={theme.text}>
-                  esc <span style={{ fg: theme.textMuted }}>interrupt</span>
+                  esc{" "}
+                  <span style={{ fg: theme.textMuted }}>interrupt</span>
                 </text>
               </box>
             </Match>

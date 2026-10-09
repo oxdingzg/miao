@@ -9,6 +9,7 @@ import { PermissionV2 } from "@miao/core/permission"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionEvent } from "@miao/core/session/event"
+import { SessionExecution } from "@miao/core/session/execution"
 import { MonitorTool } from "@miao/core/tool/monitor"
 import { ToolRegistry } from "@miao/core/tool/registry"
 import { location } from "./fixture/location"
@@ -57,10 +58,12 @@ const withMonitor = <A, E>(
           MonitorTool.node,
           BackgroundJob.node,
           EventV2.node,
+          SessionExecution.node,
         ]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
+          [SessionExecution.node, SessionExecution.noopLayer],
         ],
       ),
     ),
@@ -75,8 +78,8 @@ const call = (input: typeof MonitorTool.Input.Type, id = "call-monitor") => ({
 
 const FINAL = ["finished:", "timed out", "could not start"]
 
-const isSynthetic = (event: EventV2.Payload): event is EventV2.Payload<typeof SessionEvent.Synthetic> =>
-  event.type === SessionEvent.Synthetic.type
+const isSynthetic = (event: EventV2.Payload): event is EventV2.Payload<typeof SessionEvent.NotificationAdmitted> =>
+  event.type === SessionEvent.NotificationAdmitted.type
 
 /** Records notices for this Session until the monitor's terminal notice arrives. */
 const observe = (events: EventV2.Interface) =>

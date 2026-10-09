@@ -7,6 +7,7 @@ export type PendingPrompt = {
   state: "sending" | "admitted" | "failed"
   delivery: "steer" | "queue"
   error?: string
+  retries?: number
 }
 
 // Local display receipts are deliberately separate from projected history.
@@ -22,6 +23,10 @@ export function createPendingPrompts() {
     admit(id: string) {
       if (!data[id]) return
       setData(id, { state: "admitted", error: undefined })
+    },
+    retry(id: string, retries: number, error: string) {
+      if (data[id]?.state !== "sending") return
+      setData(id, { retries, error })
     },
     fail(id: string, error: string) {
       if (data[id]?.state !== "sending") return
@@ -56,6 +61,14 @@ export function createPendingPrompts() {
             })
         }),
       )
+    },
+    // Durably admitted prompts still waiting for promotion, oldest first.
+    // In-flight ("sending") receipts are excluded: the server may not have
+    // admitted them yet, so cancelling one is a race.
+    waiting(sessionID: string): PendingPrompt[] {
+      return Object.values(data)
+        .filter((prompt) => prompt.sessionID === sessionID && prompt.state === "admitted")
+        .toSorted((a, b) => a.info.time.created - b.info.time.created || a.info.id.localeCompare(b.info.id))
     },
     messages(sessionID: string, projected: ReadonlyArray<SessionMessage>): SessionMessage[] {
       const ids = new Set(projected.map((message) => message.id))

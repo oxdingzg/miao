@@ -6,6 +6,7 @@ import {
   Message,
   SystemPart,
   ToolFailure,
+  UnknownProviderReason,
   isContextOverflowFailure,
   type LLMRequest,
   type Model,
@@ -148,7 +149,7 @@ import { llmClient } from "../../effect/app-node-platform"
 
 /** Cap on how many times one identical (name, input) tool call may execute in a drain. */
 const MAX_IDENTICAL_TOOL_CALLS = 5
-type Promotion = SessionInput.Delivery | "notification"
+type Promotion = SessionInput.Delivery | "notification" | "notification-steer"
 
 /**
  * How many overflow compactions one drain may attempt before surfacing the
@@ -499,10 +500,11 @@ const layer = Layer.effect(
           promoted += Number(yield* SessionInput.promoteNextQueued(db, events, initialSession.id))
           promoted += yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
         }
-        if (promotion === "notification") {
+        if (promotion === "notification" || promotion === "notification-steer") {
           // A human steer wins even if it arrived after the drain was scheduled.
           promoted += yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
-          if (promoted === 0) yield* SessionDelegationStore.promoteNext(db, events, initialSession.id)
+          if (promoted === 0)
+            yield* SessionDelegationStore.promoteNext(db, events, initialSession.id, promotion === "notification")
         }
         if (promoted > 0) currentStep = 1
       }
@@ -797,6 +799,25 @@ const layer = Layer.effect(
                 overflowFailure = event
                 return
               }
+              // In-band provider errors otherwise settle as successful stream
+              // reads and bypass the bounded retry policy. Replay only before
+              // any durable assistant output or tool call has been published.
+              if (event.retryable && !publisher.hasAssistantStarted())
+                return yield* new LLMError({
+                  module: "SessionRunner",
+                  method: "stream",
+                  reason: new UnknownProviderReason({
+                    message: event.message,
+                    transient: true,
+                    providerMetadata: event.providerMetadata,
+                  }),
+                })
+              yield* Effect.logWarning("session.provider.error", {
+                sessionID: session.id,
+                model: `${model.provider}/${model.id}`,
+                message: event.message,
+                retryable: event.retryable ?? false,
+              })
             }
             // A replayed call id was already executed by its first copy; the
             // publisher drops the echo and it must not run a second time.
@@ -1698,10 +1719,10 @@ const layer = Layer.effect(
                   needsContinuation &&
                   !(yield* bounded("pending steers")(SessionInput.hasPending(db, input.sessionID, "steer"))) &&
                   (yield* bounded("promotable notifications")(
-                    SessionDelegationStore.hasPromotableNotifications(db, input.sessionID),
+                    SessionDelegationStore.hasPromotableNotifications(db, input.sessionID, false),
                   ))
                 )
-                  promotion = "notification"
+                  promotion = "notification-steer"
               if (!needsContinuation)
                 needsContinuation = yield* bounded("pending steers")(SessionInput.hasPending(db, input.sessionID, "steer"))
               // A model behind an OpenAI-compatible server can write its tool

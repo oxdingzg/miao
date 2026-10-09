@@ -13,14 +13,20 @@ import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 export type DeviceApi = Pick<
   ReturnType<typeof OpenCode.make>["server.runtime"],
   "get" | "invite" | "pending" | "approve" | "reject" | "devices" | "revoke"
->
+> &
+  Partial<
+    Pick<ReturnType<typeof OpenCode.make>["server.runtime"], "accountTrust" | "bindAccount" | "clearAccountTrust">
+  >
 
 type Confirmation =
   | { readonly type: "approve"; readonly candidate: RemoteAccess.Candidate }
   | { readonly type: "revoke"; readonly grant: RemoteAccess.Grant }
+  | { readonly type: "trust"; readonly grant: RemoteAccess.Grant; readonly policy: RemoteAccess.Policy }
+  | { readonly type: "clear-account" }
 
 /** Local owner approval stays in this component so opening a confirmation cannot cancel the invitation. */
 export function DialogDevices(props: {
+  readonly browserURL?: string
   readonly api: DeviceApi
   readonly sessionID?: string
   readonly projectID?: string
@@ -32,8 +38,10 @@ export function DialogDevices(props: {
   const { theme } = useTheme()
   const [status, setStatus] = createSignal<RemoteAccess.Status>()
   const [pending, setPending] = createSignal<readonly RemoteAccess.Candidate[]>([])
+  const [trust, setTrust] = createSignal<RemoteAccess.AccountTrustStatus | null>(null)
   const [devices, setDevices] = createSignal<readonly RemoteAccess.Grant[]>([])
   const [invitation, setInvitation] = createSignal<RemoteAccess.Invitation>()
+  const [browserMode, setBrowserMode] = createSignal(!!props.browserURL)
   const [confirmation, setConfirmation] = createSignal<Confirmation>()
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
@@ -49,7 +57,9 @@ export function DialogDevices(props: {
         const [candidates, grants] = value.enabled
           ? await Promise.all([props.api.pending(), props.api.devices()])
           : [[], []]
+        const account = (await props.api.accountTrust?.()) ?? null
         if (lifecycle.closed) return
+        if (JSON.stringify(trust()) !== JSON.stringify(account)) setTrust(account)
         if (JSON.stringify(status()) !== JSON.stringify(value)) setStatus(value)
         if (JSON.stringify(pending()) !== JSON.stringify(candidates)) setPending(candidates)
         if (JSON.stringify(devices()) !== JSON.stringify(grants)) setDevices(grants)
@@ -110,17 +120,36 @@ export function DialogDevices(props: {
   // The fragment contains the one-time secret. It is never sent in an HTTP URL or printed in a status message.
   const link = createMemo(() => {
     const issued = invitation()
-    return issued ? `miao://pair#${Buffer.from(JSON.stringify(issued)).toString("base64url")}` : undefined
+    if (!issued) return undefined
+    const encoded = Buffer.from(JSON.stringify(issued)).toString("base64url")
+    if (browserMode() && props.browserURL) {
+      const url = new URL(props.browserURL)
+      if (
+        url.origin === new URL(issued.hubURL).origin &&
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash
+      ) {
+        url.hash = "pair=" + encoded
+        return url.href
+      }
+    }
+    return `miao://pair#${encoded}`
   })
   const qr = createMemo(() => {
     const value = link()
     return value ? renderUnicodeCompact(value, { border: 1 }).split("\n") : []
   })
-  const fits = createMemo(
-    () =>
-      (qr()[0]?.length ?? 0) <= dimensions().width - 12 &&
-      qr().length + 15 <= dimensions().height - Math.floor(dimensions().height / 4),
-  )
+  // The dialog is a fixed 116-column box; compare against the box, not the raw
+  // terminal, so a wide terminal with a narrow dialog no longer hides the code.
+  const fits = createMemo(() => {
+    if (!invitation()) return false
+    const width = Math.min(dimensions().width, 120)
+    const height = Math.min(dimensions().height, 64)
+    return (qr()[0]?.length ?? 0) <= width - 4 && qr().length + 8 <= height - 4
+  })
 
   const options = createMemo((): DialogSelectOption<string>[] => {
     const confirm = confirmation()
@@ -129,7 +158,14 @@ export function DialogDevices(props: {
         { value: "cancel", title: "取消", onSelect: () => setConfirmation(undefined) },
         {
           value: "confirm",
-          title: confirm.type === "approve" ? "批准这个设备" : "撤销这个设备",
+          title:
+            confirm.type === "approve"
+              ? "批准这个设备"
+              : confirm.type === "trust"
+                ? "确认信任账号设备"
+                : confirm.type === "clear-account"
+                  ? "取消账号信任并撤销设备"
+                  : "撤销这个设备",
           onSelect: () =>
             perform(async () => {
               if (confirm.type === "approve") {
@@ -144,12 +180,36 @@ export function DialogDevices(props: {
                 await props.api.revoke({ grantID: confirm.grant.id, version: confirm.grant.version })
                 setNotice("设备已撤销；运行中的任务继续执行")
               }
+              if (confirm.type === "trust") {
+                await props.api.bindAccount!({
+                  grantID: confirm.grant.id,
+                  version: confirm.grant.version,
+                  policy: confirm.policy,
+                })
+                setNotice("已信任此账号的签名设备名单")
+              }
+              if (confirm.type === "clear-account") {
+                await props.api.clearAccountTrust!()
+                setNotice("已取消账号信任并撤销名单设备；本地任务继续运行")
+              }
               setConfirmation(undefined)
             }),
         },
       ]
     const current = status()
-    if (!current || !current.enabled) return [{ value: "refresh", title: "刷新状态", onSelect: () => perform(refresh) }]
+    if (!current || !current.enabled)
+      return [
+        ...(trust() && props.api.clearAccountTrust
+          ? [
+              {
+                value: "clear-account",
+                title: "取消账号信任并撤销名单设备",
+                onSelect: () => setConfirmation({ type: "clear-account" as const }),
+              },
+            ]
+          : []),
+        { value: "refresh", title: "刷新状态", onSelect: () => perform(refresh) },
+      ]
     const issued = invitation()
     const write: RemoteAccess.Permission[] = [
       "read",
@@ -174,6 +234,16 @@ export function DialogDevices(props: {
                         await clipboard.write!(link()!)
                         setNotice("配对链接已复制")
                       }),
+                  },
+                ]
+              : []),
+            ...(props.browserURL && new URL(props.browserURL).origin === new URL(issued.hubURL).origin
+              ? [
+                  {
+                    value: "pairing-format",
+                    title: browserMode() ? "使用 App 扫码" : "使用浏览器扫码",
+                    description: "切换扫码入口，授权范围不变",
+                    onSelect: () => setBrowserMode(!browserMode()),
                   },
                 ]
               : []),
@@ -253,20 +323,123 @@ export function DialogDevices(props: {
             onSelect: () => setConfirmation({ type: "revoke", grant }),
           }),
         ),
+      ...(trust() && props.api.clearAccountTrust
+        ? [
+            {
+              value: "clear-account",
+              title: "取消账号信任并撤销名单设备",
+              category: "账号信任",
+              description: "停止自动授权，本地任务继续运行",
+              onSelect: () => setConfirmation({ type: "clear-account" as const }),
+            },
+          ]
+        : []),
+      ...(!trust() && current.accountID && props.api.bindAccount
+        ? devices()
+            .filter(
+              (grant) =>
+                grant.revokedAt === null &&
+                grant.expiresAt > Date.now() &&
+                grant.permissions.some((permission) => permission !== "session.create"),
+            )
+            .map((grant) => ({
+              value: "trust-account:" + grant.id,
+              title: "以 " + label(grant.label) + " 为签名根信任账号",
+              category: "账号信任",
+              description: "90 天、当前项目/会话范围；不自动授权创建会话",
+              onSelect: () =>
+                setConfirmation({
+                  type: "trust" as const,
+                  grant,
+                  policy: {
+                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
+                    projectIDs: grant.projectIDs,
+                    sessionIDs: grant.sessionIDs,
+                    expiresAt: Date.now() + 90 * 86400000,
+                  },
+                }),
+            }))
+        : []),
+      ...(trust() &&
+      props.api.bindAccount &&
+      devices().some((grant) => grant.revokedAt === null && grant.expiresAt > Date.now())
+        ? [
+            {
+              value: "auto-admit",
+              title: "同账号自动接入：" + (trust()?.autoAdmit ? "已开启" : "已关闭"),
+              category: "账号信任",
+              description: trust()?.autoAdmit
+                ? "登录同一账号的设备自动可见，无需扫码；再次选择可关闭"
+                : "开启后登录同一账号的设备免扫码自动可见",
+              onSelect: () => {
+                const grant = devices().find(
+                  (candidate) => candidate.revokedAt === null && candidate.expiresAt > Date.now(),
+                )
+                if (!grant) return
+                const enabling = !trust()?.autoAdmit
+                perform(async () => {
+                  await props.api.bindAccount!({
+                    grantID: grant.id,
+                    version: grant.version,
+                    policy: {
+                      permissions: trust()!.permissions,
+                      projectIDs: grant.projectIDs,
+                      sessionIDs: grant.sessionIDs,
+                      expiresAt: trust()!.expiresAt,
+                      autoAdmit: !trust()?.autoAdmit,
+                    },
+                  })
+                  setNotice("同账号自动接入已" + (enabling ? "开启" : "关闭"))
+                })
+              },
+            },
+          ]
+        : []),
+      ...(!trust() && current.accountID && props.api.bindAccount
+        ? devices()
+            .filter(
+              (grant) =>
+                grant.revokedAt === null &&
+                grant.expiresAt > Date.now() &&
+                grant.permissions.some((permission) => permission !== "session.create"),
+            )
+            .map((grant) => ({
+              value: "auto-account:" + grant.id,
+              title: "开启同账号自动接入（以 " + label(grant.label) + " 为签名根）",
+              category: "账号信任",
+              description: "90 天、当前范围；登录同一账号的设备免扫码自动可见",
+              onSelect: () =>
+                setConfirmation({
+                  type: "trust" as const,
+                  grant,
+                  policy: {
+                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
+                    projectIDs: grant.projectIDs,
+                    sessionIDs: grant.sessionIDs,
+                    expiresAt: Date.now() + 90 * 86400000,
+                    autoAdmit: true,
+                  },
+                }),
+            }))
+        : []),
       { value: "refresh", title: "刷新状态", onSelect: () => perform(refresh) },
     ]
   })
 
   const details = createMemo(() => {
     const value = confirmation()
-    if (!value) return undefined
+    if (!value || value.type === "clear-account") return undefined
     return value.type === "approve"
       ? {
           label: value.candidate.candidate.label,
           publicKey: value.candidate.candidate.publicKey,
           policy: value.candidate.policy,
         }
-      : { label: value.grant.label, publicKey: value.grant.publicKey, policy: value.grant }
+      : {
+          label: value.grant.label,
+          publicKey: value.grant.publicKey,
+          policy: value.type === "trust" ? value.policy : value.grant,
+        }
   })
 
   return (
@@ -281,6 +454,19 @@ export function DialogDevices(props: {
                 ? "中继已连接"
                 : "中继连接中；暂时无法扫码接入"}
         </text>
+        <Show when={status()?.accountID}>
+          <text fg={theme.textMuted}>中继账号：{status()!.accountID}</text>
+        </Show>
+        <Show when={trust()}>
+          {(value) => (
+            <text fg={theme.textMuted}>
+              已信任账号 {value().accountID} · 名单序号 {value().acceptedSequence} · {value().deviceCount} 个设备
+            </text>
+          )}
+        </Show>
+        <Show when={confirmation()?.type === "clear-account"}>
+          <text fg={theme.warning}>取消信任会撤销当前名单内所有设备的授权，包括原始签名设备。</text>
+        </Show>
         <Show when={error()}>{(value) => <text fg={theme.error}>{value()}</text>}</Show>
         <Show when={notice()}>{(value) => <text fg={theme.success}>{value()}</text>}</Show>
         <Show when={details()}>
@@ -295,7 +481,9 @@ export function DialogDevices(props: {
               <text fg={theme.warning}>
                 {confirmation()?.type === "approve"
                   ? "名称由设备提供，请在设备上核对指纹后批准"
-                  : "撤销会断开设备连接；运行中的任务继续执行"}
+                  : confirmation()?.type === "trust"
+                    ? "此设备可签名允许账号内其他设备访问以上范围；仍只开放本机已开启的会话"
+                    : "撤销会断开设备连接；运行中的任务继续执行"}
               </text>
             </box>
           )}

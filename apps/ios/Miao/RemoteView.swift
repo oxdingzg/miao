@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import MiaoCore
 
 @MainActor
@@ -187,8 +188,23 @@ struct RemoteView: View {
         attached = target
         if let previous, previous != target { await model.clients[previous]?.removeScene(sceneID) }
         guard attachEpoch == generation else { return }
-        model.scene(sceneID, phase: phase)
-        if let target { await model.clients[target]?.scene(sceneID, phase: phase) }
+        // The environment phase inside a task is the value captured when the
+        // task started, which on a cold launch can still be `.inactive` at the
+        // moment the async work resumes. Registering that stale value leaves the
+        // host at "等待连接" until the next background/foreground cycle, so read
+        // the live application state instead.
+        let current = liveScenePhase
+        model.scene(sceneID, phase: current)
+        if let target { await model.clients[target]?.scene(sceneID, phase: current) }
+    }
+
+    private var liveScenePhase: ScenePhase {
+        switch UIApplication.shared.applicationState {
+        case .active: return .active
+        case .inactive: return .inactive
+        case .background: return .background
+        @unknown default: return .background
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 import { Binary } from "@miao/core/util/binary"
-import type { Message, Part, Session } from "@miao/schema/view-models"
+import type { Session } from "@miao/schema/view-models"
+import type { SessionMessageUser } from "@miao/session-ui/content"
 import { createMemo } from "solid-js"
 import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import type { createServerSdkContext } from "./server-sdk"
@@ -18,7 +19,6 @@ const sessionFields = new Set([
   "message",
   "session_message",
   "part",
-  "part_text_accum_delta",
 ])
 
 export const createDirSyncContext = (
@@ -83,33 +83,12 @@ export const createDirSyncContext = (
         if (session?.location.directory === directory) return session
       },
       optimistic: {
-        add(input: { directory?: string; sessionID: string; message: Message; parts: Part[] }) {
+        add(input: { directory?: string; sessionID: string; message: SessionMessageUser }) {
           serverSync.session.optimistic.add(input)
         },
         remove(input: { directory?: string; sessionID: string; messageID: string }) {
           serverSync.session.optimistic.remove(input)
         },
-      },
-      addOptimisticMessage(input: {
-        sessionID: string
-        messageID: string
-        parts: Part[]
-        agent: string
-        model: { providerID: string; modelID: string }
-        variant?: string
-      }) {
-        serverSync.session.optimistic.add({
-          sessionID: input.sessionID,
-          message: {
-            id: input.messageID,
-            sessionID: input.sessionID,
-            role: "user",
-            time: { created: Date.now() },
-            agent: input.agent,
-            model: { ...input.model, variant: input.variant },
-          },
-          parts: input.parts,
-        })
       },
       async sync(sessionID: string, options?: { force?: boolean }) {
         await serverSync.session.sync(sessionID, options)

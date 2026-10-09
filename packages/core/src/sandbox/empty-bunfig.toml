@@ -1,0 +1,2 @@
+# Intentionally empty: source sandbox helpers must not load project preloads.
+# A real .toml file avoids Bun's Windows reserved-device-path config panic.

@@ -6,6 +6,9 @@ import { ControlAgent } from "../src/agent"
 import { DeviceGrants } from "../src/grants"
 import { ControlHub } from "../src/hub"
 import { SecureChannel } from "../src/secure-channel"
+import { BrowserChannel } from "../src/browser-channel"
+import { RemoteRPC } from "../src/remote-rpc"
+import { DeviceRoster } from "../src/device-roster"
 import { ControlPairing } from "../src/pairing"
 
 const cleanup: Array<() => void | Promise<void>> = []
@@ -18,6 +21,7 @@ async function fixture(
   permissions: ReadonlyArray<DeviceGrants.Permission> = ["read", "prompt"],
   projectForSession: ControlAgent.Options["projectForSession"] = async (id) =>
     id === "session-one" ? "project-one" : "project-other",
+  sessionEnabled?: ControlAgent.Options["sessionEnabled"],
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "miao-agent-"))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
@@ -44,6 +48,8 @@ async function fixture(
     runtimeID,
     grants,
     methods,
+    accountID: "account_roster_fixture_001",
+    sessionEnabled,
     projectForSession,
     allowLoopbackHTTP: true,
     pairing,
@@ -113,6 +119,45 @@ function closed(ws: WebSocket) {
 }
 
 describe("outbound authorized encrypted Agent", () => {
+  test("local publication gates existing project grants and pending encrypted replies", async () => {
+    const visible = new Set<string>()
+    let release!: () => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let calls = 0
+    const f = await fixture(
+      {
+        "session.get": async () => {
+          calls++
+          entered()
+          await blocked
+          return { title: "must remain local" }
+        },
+      },
+      ["read"],
+      async () => "project-one",
+      (id) => visible.has(id),
+    )
+    const peer = await client(f)
+    await peer.send(peer.request())
+    expect(await peer.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    expect(calls).toBe(0)
+    visible.add("session-one")
+    await peer.send(peer.request())
+    await started
+    visible.delete("session-one")
+    release()
+    expect(await peer.receive()).toMatchObject({ type: "error", code: "forbidden" })
+    visible.add("session-one")
+    await peer.send(peer.request())
+    expect(await peer.receive()).toMatchObject({ type: "result", data: { title: "must remain local" } })
+    expect(calls).toBe(2)
+  })
   test("selection changes require their own capability, operation IDs and session scope", async () => {
     const calls: ControlAgent.Request[] = []
     const handler: ControlAgent.Handler = async (request) => {
@@ -398,4 +443,295 @@ test("business frames sent during pairing close the provisional channel without 
   expect((await disconnect).code).toBe(1008)
   expect(f.grants.active(device.publicKey)).toEqual([])
   expect(f.pairing.list()).toEqual([])
+})
+
+async function rosterClient(
+  f: Awaited<ReturnType<typeof fixture>>,
+  device: SecureChannel.Identity,
+  roster?: DeviceRoster.Signed,
+  change?: (hello: SecureChannel.ClientHello) => unknown,
+) {
+  const transport = await socket(f.base, f.grants.hostID)
+  const pending = await SecureChannel.startClient(device, { hostID: f.grants.hostID, runtimeID: f.runtimeID })
+  transport.ws.send(
+    Buffer.from(
+      JSON.stringify({
+        version: 1,
+        type: "rosterClaim",
+        accountID: "account_roster_fixture_001",
+        hello: change ? change(pending.hello) : pending.hello,
+        ...(roster ? { roster } : {}),
+      }),
+    ).toString("base64url"),
+  )
+  return { transport, pending }
+}
+
+test("roster admission verifies possession before mutation, admits signed members and keeps reconnect leases stable", async () => {
+  const f = await fixture({ "session.get": async () => ({ title: "Authorized" }) })
+  await f.grants.bindAccount({
+    hubURL: f.base,
+    accountID: "account_roster_fixture_001",
+    grantID: f.grant.id,
+    grantVersion: f.grant.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: Date.now() + 60000 },
+    allowLoopbackHTTP: true,
+  })
+  const member = await SecureChannel.createIdentity()
+  const attacker = await SecureChannel.createIdentity()
+  const signed = await DeviceRoster.sign(f.device, {
+    version: 1,
+    accountID: "account_roster_fixture_001",
+    sequence: 1,
+    issuedAt: 0,
+    devices: [
+      { publicKey: f.device.publicKey, label: "Root", signer: true, addedAt: 0 },
+      { publicKey: member.publicKey, label: "Member", signer: false, addedAt: 0 },
+    ].sort((a, b) => (a.publicKey < b.publicKey ? -1 : 1)),
+  })
+  const forged = await rosterClient(f, attacker, signed, (hello) => ({ ...hello, signingKey: member.publicKey }))
+  await closed(forged.transport.ws)
+  expect(f.grants.accountTrust()?.acceptedSequence).toBe(0)
+  expect(f.grants.list()).toHaveLength(1)
+  let version: number | undefined
+  for (let index = 0; index < 2; index++) {
+    const started = await rosterClient(f, member, signed)
+    const accepted = await started.pending.finish(
+      JSON.parse(Buffer.from(await started.transport.receive(), "base64url").toString()),
+      f.grants.identity.publicKey,
+    )
+    const envelope = JSON.parse(
+      new TextDecoder().decode(await accepted.channel.open(await started.transport.receive())),
+    )
+    expect(envelope).toMatchObject({
+      type: "roster",
+      status: "approved",
+      grant: { publicKey: member.publicKey, permissions: ["read"] },
+    })
+    if (version !== undefined) expect(envelope.grant.version).toBe(version)
+    version = envelope.grant.version
+    const request: ControlAgent.Request = {
+      version: 1,
+      requestID: crypto.randomUUID(),
+      hostID: f.grants.hostID,
+      runtimeID: f.runtimeID,
+      grantID: envelope.grant.id,
+      grantVersion: envelope.grant.version,
+      method: "session.get",
+      sessionID: "session-one",
+      payload: {},
+    }
+    started.transport.ws.send(await accepted.channel.seal(new TextEncoder().encode(JSON.stringify(request))))
+    expect(
+      JSON.parse(new TextDecoder().decode(await accepted.channel.open(await started.transport.receive()))),
+    ).toMatchObject({ type: "result", data: { title: "Authorized" } })
+    started.transport.ws.close()
+  }
+  expect(f.grants.list()).toHaveLength(2)
+  const outsider = await rosterClient(f, attacker)
+  await closed(outsider.transport.ws)
+  const fork = {
+    ...signed,
+    roster: { ...signed.roster, devices: signed.roster.devices.map((device) => ({ ...device, label: "fork" })) },
+  }
+  const rejected = await rosterClient(f, member, fork)
+  await closed(rejected.transport.ws)
+  expect(f.grants.list()).toHaveLength(2)
+})
+
+test("browser roster channel consumes encrypted approval and authenticates RPC with an independently pinned host key", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "miao-roster-browser-"))
+  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  const grants = await DeviceGrants.load(path.join(root, "devices.json"))
+  cleanup.push(() => grants.close())
+  const owner = await SecureChannel.createIdentity()
+  const member = await SecureChannel.createIdentity()
+  const accountID = "account_roster_fixture_001"
+  const original = await grants.approve({
+    publicKey: owner.publicKey,
+    label: "Root",
+    permissions: ["read"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  const runtimeID = crypto.randomUUID()
+  const ticket = "t".repeat(43)
+  const hub = ControlHub.listen({
+    port: 0,
+    access: {
+      fetch: async () => undefined,
+      host: async (_request, _hostID, requestedRuntime) =>
+        requestedRuntime === runtimeID ? { accountID, valid: () => true } : undefined,
+      client: async (request) =>
+        request.headers.get("sec-websocket-protocol")?.includes("miao.ticket." + ticket)
+          ? { accountID, runtimeID, protocol: "miao.control.v1", valid: () => true }
+          : undefined,
+    },
+  })
+  cleanup.push(() => hub.stop())
+  const hubURL = `http://127.0.0.1:${hub.port}`
+  await grants.bindAccount({
+    hubURL,
+    accountID,
+    grantID: original.id,
+    grantVersion: original.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: Date.now() + 60000 },
+    allowLoopbackHTTP: true,
+  })
+  const roster = await DeviceRoster.sign(owner, {
+    version: 1,
+    accountID,
+    sequence: 1,
+    issuedAt: 0,
+    devices: [
+      { publicKey: owner.publicKey, label: "Root", signer: true, addedAt: 0 },
+      { publicKey: member.publicKey, label: "Member", signer: false, addedAt: 0 },
+    ].sort((a, b) => (a.publicKey < b.publicKey ? -1 : 1)),
+  })
+  const agent = ControlAgent.connect({
+    hubURL,
+    accountID,
+    hostToken: "h".repeat(43),
+    runtimeID,
+    grants,
+    allowLoopbackHTTP: true,
+    projectForSession: async () => "project-one",
+    methods: { "session.get": async () => ({ title: "Authenticated browser" }) },
+  })
+  cleanup.push(() => agent.stop())
+  const deadline = Date.now() + 3000
+  while (!agent.connected() && Date.now() < deadline) await Bun.sleep(5)
+  expect(agent.connected()).toBe(true)
+  const target = { hostID: grants.hostID, runtimeID }
+  const connection = await BrowserChannel.connect({
+    hubURL,
+    target,
+    ticket,
+    identity: member,
+    trustedHostKey: grants.identity.publicKey,
+    allowLoopbackHTTP: true,
+    roster: { accountID, snapshot: roster },
+  })
+  expect(connection.grant?.publicKey).toBe(member.publicKey)
+  const rpc = RemoteRPC.make({
+    transport: connection,
+    target,
+    grant: connection.grant!,
+    identityPublicKey: member.publicKey,
+  })
+  try {
+    expect(await rpc.request("session.get", { sessionID: "session-one", payload: {} })).toEqual({
+      title: "Authenticated browser",
+    })
+  } finally {
+    rpc.close()
+  }
+})
+
+test("Hub-nominated account must match the rosterClaim account before admission", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-agent-nominee-"))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
+  const identity = await SecureChannel.createIdentity()
+  const hubURL = "http://127.0.0.1:1/"
+  const accountID = "account_roster_fixture_001"
+  const approved = await grants.approve({
+    publicKey: identity.publicKey,
+    label: "Root",
+    permissions: ["read"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 600000,
+  })
+  await grants.bindAccount({
+    hubURL,
+    accountID,
+    grantID: approved.id,
+    grantVersion: approved.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: approved.expiresAt },
+    allowLoopbackHTTP: true,
+  })
+  const roster = await DeviceRoster.sign(identity, {
+    version: 1,
+    accountID,
+    sequence: 1,
+    issuedAt: 0,
+    devices: [{ publicKey: identity.publicKey, label: "Root", signer: true, addedAt: 0 }],
+  })
+  await grants.acceptRoster(hubURL, roster)
+  const outsider = await SecureChannel.createIdentity()
+  await expect(grants.authorizeRosterDevice(hubURL, accountID, outsider.publicKey)).rejects.toThrow()
+  expect(grants.list().some((grant) => grant.publicKey === outsider.publicKey)).toBe(false)
+  expect(grants.accountTrust()).toMatchObject({ accountID, acceptedSequence: 1 })
+  grants.close()
+})
+
+test("owner opt-in auto-admits same-account devices without scanning", async () => {
+  const f = await fixture({ "session.get": async () => ({ title: "Authorized" }) })
+  const rootGrant = await f.grants.approve({
+    publicKey: f.grants.identity.publicKey,
+    label: "Host",
+    permissions: ["read", "prompt"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  await f.grants.bindAccount({
+    hubURL: f.base,
+    accountID: "account_roster_fixture_001",
+    grantID: rootGrant.id,
+    grantVersion: rootGrant.version,
+    policy: {
+      permissions: ["read"],
+      projectIDs: ["project-one"],
+      sessionIDs: [],
+      expiresAt: Date.now() + 60000,
+      autoAdmit: true,
+    },
+    allowLoopbackHTTP: true,
+  })
+  const newcomer = await SecureChannel.createIdentity()
+  const started = await rosterClient(f, newcomer)
+  const accepted = await started.pending.finish(
+    JSON.parse(Buffer.from(await started.transport.receive(), "base64url").toString()),
+    f.grants.identity.publicKey,
+  )
+  const envelope = JSON.parse(new TextDecoder().decode(await accepted.channel.open(await started.transport.receive())))
+  expect(envelope).toMatchObject({ version: 1, type: "roster", status: "approved" })
+  expect(envelope.grant.publicKey).toBe(newcomer.publicKey)
+  const trust = f.grants.accountTrust()
+  expect(trust?.acceptedSequence).toBe(1)
+  expect(trust?.devices.some((device) => device.publicKey === newcomer.publicKey && !device.signer)).toBe(true)
+  expect(
+    f.grants.authorizeRosterDevice(f.base, "account_roster_fixture_001", newcomer.publicKey),
+  ).resolves.toMatchObject({
+    publicKey: newcomer.publicKey,
+  })
+  started.transport.ws.close()
+})
+
+test("auto admission stays off without the owner toggle", async () => {
+  const f = await fixture({ "session.get": async () => ({ title: "Authorized" }) })
+  const rootGrant = await f.grants.approve({
+    publicKey: f.grants.identity.publicKey,
+    label: "Host",
+    permissions: ["read"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  await f.grants.bindAccount({
+    hubURL: f.base,
+    accountID: "account_roster_fixture_001",
+    grantID: rootGrant.id,
+    grantVersion: rootGrant.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: Date.now() + 60000 },
+    allowLoopbackHTTP: true,
+  })
+  const newcomer = await SecureChannel.createIdentity()
+  const started = await rosterClient(f, newcomer)
+  await closed(started.transport.ws)
+  expect(f.grants.list().filter((grant) => grant.publicKey === newcomer.publicKey)).toHaveLength(0)
+  expect(f.grants.accountTrust()?.devices.map((device) => device.publicKey)).toEqual([f.grants.identity.publicKey])
 })

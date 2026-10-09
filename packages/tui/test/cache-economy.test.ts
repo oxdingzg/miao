@@ -50,18 +50,26 @@ describe("cacheEconomy", () => {
     expect(under.saved).toBeCloseTo((1000 * 2.7) / 1_000_000, 12)
   })
 
-  test("sums across turns and skips models it cannot price", () => {
+  test("sums usage across turns and savings only over priced ones", () => {
     const economy = cacheEconomy(
       [turn({ read: 1000, write: 0 }), turn({ read: 500, write: 100 }, "retired"), turn({ read: 500, write: 0 })],
       [provider(PRICED)],
     )
-    expect(economy.read).toBe(1500)
-    expect(economy.write).toBe(0)
+    expect(economy.read).toBe(2000)
+    expect(economy.write).toBe(100)
     expect(economy.saved).toBeCloseTo((1500 * 2.7) / 1_000_000, 12)
+    expect(economy.unpriced).toBe(600)
   })
 
-  test("reports nothing when no provider matches", () => {
+  test("reports unknown savings when no provider matches", () => {
     const economy = cacheEconomy([turn({ read: 1000, write: 1000 })], [])
-    expect(economy).toEqual({ read: 0, write: 0, saved: 0 })
+    expect(economy).toEqual({ read: 1000, write: 1000, saved: 0, unpriced: 2000 })
+  })
+
+  test("treats an all-zero projected rate as no quote", () => {
+    const economy = cacheEconomy([turn({ read: 1000, write: 0 })], [provider({ input: 0, output: 0 })])
+    expect(economy.read).toBe(1000)
+    expect(economy.saved).toBe(0)
+    expect(economy.unpriced).toBe(1000)
   })
 })

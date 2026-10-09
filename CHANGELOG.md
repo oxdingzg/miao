@@ -4,11 +4,110 @@ All notable changes to **miao** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and miao adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Releases are tagged `vX.Y.Z`. GitHub release notes are generated from Conventional
-Commits by `script/changelog.ts`; run `bun script/changelog.ts --version X.Y.Z --write`
-to add a section here.
+Releases are tagged `vX.Y.Z`. This changelog summarizes Conventional Commits;
+run `bun script/changelog.ts --version X.Y.Z --write` to add a section here.
+Published release bodies use the curated English and Simplified Chinese pair
+at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required.
 
 ## [Unreleased]
+
+## [0.1.31] - 2026-10-09
+
+### Added
+- **core**: wire native git status behind MIAO_NATIVE (#492) (`46674f106`)
+
+### Fixed
+- **core**: detect a markdown-emphasis refrain as repetitive output (#495) (`8a0783549`)
+
+## [0.1.30] - 2026-10-09
+
+### Fixed
+- **llm**: enforce provider-safe object root for tool schemas (#491) (`2032b89bc`)
+
+## [0.1.29] - 2026-10-09
+
+### Added
+- **remote-control**: one-tap same-account device connection (#487) (`1e80a32c5`)
+- **remote-control**: add trusted browser account device enrollment (#482) (`a8b08bb6f`)
+
+### Fixed
+- **tui**: mark user messages with a prompt glyph and more spacing (#489) (`357d99543`)
+- **tui**: recover the transcript when the viewport strands off the window (#488) (`dfb8acf6e`)
+- **tui**: keep a mid-turn title from reverting in the session list (#485) (`3a5840dc1`)
+
+## [0.1.28] - 2026-10-09
+
+### Added
+- **miao**: record sampler stalls as gaps and report them in doctor (#478) (`eacf3994e`)
+- **remote-control**: add account-isolated signed roster transport (#480) (`5ea84adc1`)
+- **remote-control**: admit signed roster members with bounded grants (#476) (`3f6b34759`)
+- **remote-control**: add local account delegation consent and cancellation (#473) (`5417c8ac2`)
+- **remote-control**: persist authenticated Hub account identity (#471) (`a1d73ed22`)
+
+### Fixed
+- **tui**: keep reading history stable while the tail streams (#474) (`78172682d`)
+
+## [0.1.27] - 2026-10-09
+
+### Added
+- **remote-control**: resume browser pairing across social login (#464) (`4d2b80244`)
+- **miao**: add autonomous-continuation scheduling skill (#461) (`a2e200d70`)
+
+### Fixed
+- **tui**: show an em dash when no model price is known (#462) (`01864d89b`)
+- **remote-control**: select a private default Hub before desktop login (#457) (`85c4e46a4`)
+- **release**: publish the curated bilingual note pair (#455) (`a956d8732`)
+
+## [0.1.26] - 2026-10-08
+
+### Added
+- **sandbox**: add windows appcontainer backend (#435) (`4b416d09a`)
+
+### Fixed
+- **ci**: enforce scoped checks and preserve reproducible environments (#444) (`aa948d4f0`)
+- **core**: coalesce scheduled machine continuations (#450) (`0dfbd394b`)
+- **tui**: retry prompt transport failures with stable admission IDs (#448) (`1146febe9`)
+- **core**: admit monitor notices before waking idle sessions (#447) (`0c6f58749`)
+- **tui**: stabilize adaptive transcript viewport coverage (#445) (`fc76ca35d`)
+- **app**: finish the stage 3 record-native timeline cutover (#428) (`1e3fd96dd`)
+- **llm**: preserve nested response errors and retry transient streams (#440) (`e62131853`)
+- **tui**: support control home and end input navigation (#439) (`9b5959d74`)
+- **miao**: recognize standalone Windows upgrades (#437) (`2462ac553`)
+- **tui**: refresh the Todo panel on live todo.updated events (#429) (`20d240284`)
+
+## [0.1.25] - 2026-10-08
+
+### Added
+- **script**: add windows local install script (#432) (`74e6ffc09`)
+
+### Changed
+- **session-ui**: read the session records via the Data contract (#418) (`0f462d596`)
+- **session-ui**: host the V2 record content projection (#416) (`37e37f1da`)
+
+### Fixed
+- **tui**: esc always interrupts the running turn — queued prompts survive and advance (#431) (`eb54fd78e`)
+- **tui**: consume the mtty clipboard file once (#434) (`806e3576c`)
+- **app**: render the timeline from the V2 record contract (#427) (`707772e4b`)
+- **tui**: keep the transcript pinned to the tail while streaming (#424) (`ff9b8a150`)
+- **runtime**: every window starts and owns its Runtime (#421) (`36411618f`)
+- **app**: open the tab context menu from the keyboard (#417) (`57184b583`)
+
+## [0.1.24] - 2026-10-08
+
+### Added
+- **tui**: cancel newest waiting prompt on esc before interrupting (#407) (`51cda7165`)
+- **core**: warn on foreground open-ended wait commands (#406) (`d1ec4e5c1`)
+- **core**: add the background-waits built-in skill (#405) (`dd065a91a`)
+
+### Changed
+- **app**: read the context surfaces from V2 session records (#412) (`9afc6c4a8`)
+- **app**: read session records directly in stage-3 consumers (#408) (`3b6120293`)
+
+### Fixed
+- **tui**: render cancelled todos with a distinct glyph (#411) (`b6850de51`)
+- **tui**: derive tool part props from V2 structured state (#413) (`3c13f5289`)
+- **app**: settle pending tools as failed when a V2 step fails (#404) (`12d59bc4a`)
+- **app**: keep legacy part events in sync with the V2 session_message records (#401) (`694017725`)
 
 ## [0.1.23] - 2026-10-07
 

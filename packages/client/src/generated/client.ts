@@ -77,6 +77,8 @@ import type {
   SessionsDiffOutput,
   SessionsInputsInput,
   SessionsInputsOutput,
+  SessionsInputCancelInput,
+  SessionsInputCancelOutput,
   SessionsStatusInput,
   SessionsStatusOutput,
   SessionsChildrenInput,
@@ -220,6 +222,12 @@ import type {
   ServerRuntimeGetOutput,
   ServerRuntimeSetEnabledInput,
   ServerRuntimeSetEnabledOutput,
+  ServerRuntimeSetSessionEnabledInput,
+  ServerRuntimeSetSessionEnabledOutput,
+  ServerRuntimeAccountTrustOutput,
+  ServerRuntimeBindAccountInput,
+  ServerRuntimeBindAccountOutput,
+  ServerRuntimeClearAccountTrustOutput,
   ServerRuntimeConfigureInput,
   ServerRuntimeConfigureOutput,
   ServerRuntimeInviteInput,
@@ -871,6 +879,17 @@ export function make(options: ClientOptions) {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/inputs`,
             query: { limit: input["limit"], after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 410, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      inputCancel: (input: SessionsInputCancelInput, requestOptions?: RequestOptions) =>
+        request<SessionsInputCancelOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/input/${encodeURIComponent(input.messageID)}`,
             successStatus: 200,
             declaredStatuses: [404, 400, 410, 409, 401],
             empty: false,
@@ -1806,12 +1825,58 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      setSessionEnabled: (input: ServerRuntimeSetSessionEnabledInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeSetSessionEnabledOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/session/${encodeURIComponent(input.sessionID)}`,
+            body: { enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [503, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      accountTrust: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeAccountTrustOutput>(
+          {
+            method: "GET",
+            path: `/api/runtime/control/account/trust`,
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      bindAccount: (input: ServerRuntimeBindAccountInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeBindAccountOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/account/trust`,
+            body: { grantID: input["grantID"], version: input["version"], policy: input["policy"] },
+            successStatus: 200,
+            declaredStatuses: [503, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      clearAccountTrust: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeClearAccountTrustOutput>(
+          {
+            method: "DELETE",
+            path: `/api/runtime/control/account/trust`,
+            successStatus: 204,
+            declaredStatuses: [503, 401, 400],
+            empty: true,
+          },
+          requestOptions,
+        ),
       configure: (input: ServerRuntimeConfigureInput, requestOptions?: RequestOptions) =>
         request<ServerRuntimeConfigureOutput>(
           {
             method: "POST",
             path: `/api/runtime/control/configuration`,
-            body: { hubURL: input["hubURL"], hostToken: input["hostToken"] },
+            body: { accountID: input["accountID"], hubURL: input["hubURL"], hostToken: input["hostToken"] },
             successStatus: 200,
             declaredStatuses: [503, 400, 401],
             empty: false,
@@ -1828,6 +1893,7 @@ export function make(options: ClientOptions) {
               projectIDs: input["projectIDs"],
               sessionIDs: input["sessionIDs"],
               expiresAt: input["expiresAt"],
+              autoAdmit: input["autoAdmit"],
             },
             successStatus: 200,
             declaredStatuses: [503, 400, 401],

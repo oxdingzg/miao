@@ -44,6 +44,49 @@ export const RuntimeGroup = HttpApiGroup.make("server.runtime").add(
       summary: "Enable or disable Remote Control for this window",
     }),
   ),
+  HttpApiEndpoint.post("runtime.control.setSessionEnabled", "/api/runtime/control/session/:sessionID", {
+    params: { sessionID: Schema.String },
+    payload: Schema.Struct({ enabled: Schema.Boolean }),
+    success: RemoteAccess.Status,
+    error: [ServiceUnavailableError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.setSessionEnabled",
+      summary: "Publish or unpublish a local Session for authorized devices",
+      description:
+        "Requires local administrator credentials. Device grants cannot enable this operation. Sessions start unpublished in each Runtime.",
+    }),
+  ),
+  HttpApiEndpoint.get("runtime.control.accountTrust", "/api/runtime/control/account/trust", {
+    success: Schema.NullOr(RemoteAccess.AccountTrustStatus),
+    error: ServiceUnavailableError,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.accountTrust",
+      summary: "Read local account-device trust policy",
+    }),
+  ),
+  HttpApiEndpoint.post("runtime.control.bindAccount", "/api/runtime/control/account/trust", {
+    payload: Schema.Struct({ grantID: Schema.String, version: Schema.Int, policy: RemoteAccess.Policy }),
+    success: RemoteAccess.AccountTrustStatus,
+    error: [ServiceUnavailableError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.bindAccount",
+      summary: "Locally trust an approved device to sign account membership",
+      description:
+        "Local administrator only. Account identity is taken from authenticated Runtime configuration, never this request or a remote device claim.",
+    }),
+  ),
+  HttpApiEndpoint.delete("runtime.control.clearAccountTrust", "/api/runtime/control/account/trust", {
+    success: HttpApiSchema.NoContent,
+    error: ServiceUnavailableError,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.clearAccountTrust",
+      summary: "Cancel local account delegation and revoke member devices",
+    }),
+  ),
   HttpApiEndpoint.post("runtime.control.configure", "/api/runtime/control/configuration", {
     payload: RemoteAccess.Configuration,
     success: RemoteAccess.Status,

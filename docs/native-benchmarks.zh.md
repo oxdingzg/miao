@@ -16,10 +16,10 @@
 | apply_patch `deriveNewContents` exact（20k 行） | 1.67 ms         | 1.28 ms   | **1.3x**  | V2 工具，native 默认 |
 | apply_patch trim 匹配（20k 行）                 | 3.47 ms         | 1.76 ms   | **2.0x**  | V2 工具，native 默认 |
 | apply_patch unicode 归一化（20k 行）            | 13.06 ms        | 5.21 ms   | **2.5x**  | V2 工具，native 默认 |
-| git status 小仓（10 文件 / 2 变更）             | 12.3 ms         | 1.0 ms    | **11.9x** | 原型，未接入默认路径 |
-| git status 大仓（2200 文件 / 400 变更）         | 13.6 ms         | 5.8 ms    | **2.4x**  | 原型，未接入默认路径 |
+| git status 小仓（10 文件 / 2 变更）             | 12.3 ms         | 1.0 ms    | **11.9x** | V2 工具，native 默认 |
+| git status 大仓（2200 文件 / 400 变更）         | 13.6 ms         | 5.8 ms    | **2.4x**  | V2 工具，native 默认 |
 
-匹配和归一化等 CPU 密集操作的收益更明显；进程内 Git 原型减少了子进程启动开销。这些结果都不等于完整编程任务的端到端提速。
+匹配和归一化等 CPU 密集操作的收益更明显。git 的这两个数字只覆盖原型的 listing 一步；接入后的 `Git.status.entries` 还会逐条派生增删行数并在失败时回退到 git CLI，其端到端收益此处未重测（见接入风险）。这些结果都不等于完整编程任务的端到端提速。
 
 ## 原生工具与沙箱：适用范围
 
@@ -28,6 +28,6 @@ V2 是唯一的会话运行时，工具位于 `packages/core/src/tool`；V1 兼�
 - **edit／patch：** V2 工具经由 `packages/core/src/tool/edit-match.ts` 与 `packages/core/src/patch.ts`，在 addon 已加载（默认即加载）时调用原生 `matchEdit` 与 `deriveNewContentsV2`。`edit-fuzzy.ts` 与 `deriveTs` 是 TypeScript 参考实现，在缺少 addon 或设置了 `MIAO_NATIVE=0` 时启用。匹配与派生是纯计算：文件 IO、权限、条件写入与落盘都留在 Core。
 - **OS 沙箱：** V2 `bash` 工具可以把每条命令放进沙箱运行。macOS 用 seatbelt，Linux 用 Landlock，Windows 暂无后端。用 `sandbox.mode: "workspace-write"` 或 `MIAO_SANDBOX=1` 开启，`MIAO_SANDBOX_DENY_NETWORK=1` 禁止网络。默认关闭，需显式开启，且默认 fail-open —— `sandbox.on_unavailable` 默认 `"warn"`，缺少后端的主机会直接裸跑命令，除非设为 `"fail"`。
 - **native addon：** 默认启用。它为沙箱 runner、编辑匹配、补丁派生与其他原生辅助提供支持。`MIAO_NATIVE=0` 全部禁用，改由 TypeScript 实现接管。
-- **进程内 Git：** 已有 `gix` 实现和基准，尚未成为默认 Git 路径。
+- **进程内 Git：** addon 已加载时 `Git.status.entries` 走原生 `gitStatusAsync`（`gix`），返回每条路径的状态与增删行数；`MIAO_NATIVE=0` 或原生失败时回退到 `git status`/`git diff --numstat` 子进程路径。其余 git 操作仍走子进程。
 
 依赖沙箱前，请阅读 [使用指南](guide.zh.md#56-内核级沙箱需开启) 与 [接入风险](rust-integration-risks.zh.md)。Windows 内核沙箱尚未实现同等能力。

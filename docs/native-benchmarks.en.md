@@ -16,10 +16,10 @@ The baseline is this repository's TypeScript implementation before the native wo
 | apply_patch `deriveNewContents` exact (20k lines) | 1.67 ms             | 1.28 ms     | **1.3x**  | V2 tool, native default |
 | apply_patch trim match (20k lines)                | 3.47 ms             | 1.76 ms     | **2.0x**  | V2 tool, native default |
 | apply_patch unicode-normalize (20k lines)         | 13.06 ms            | 5.21 ms     | **2.5x**  | V2 tool, native default |
-| git status small repo (10 files / 2 changes)      | 12.3 ms             | 1.0 ms      | **11.9x** | Prototype; not default |
-| git status large repo (2200 files / 400 changes)  | 13.6 ms             | 5.8 ms      | **2.4x**  | Prototype; not default |
+| git status small repo (10 files / 2 changes)      | 12.3 ms             | 1.0 ms      | **11.9x** | V2 tool, native default |
+| git status large repo (2200 files / 400 changes)  | 13.6 ms             | 5.8 ms      | **2.4x**  | V2 tool, native default |
 
-CPU-heavy matching and normalization show the clearest gains. In-process Git avoids subprocess startup overhead in the prototype. Neither result establishes an end-to-end coding-task speedup.
+CPU-heavy matching and normalization show the clearest gains. The recorded git numbers cover the prototype's listing step only; the wired `Git.status.entries` path also derives per-entry line stats and falls back to the git CLI, so its end-to-end gain is not re-measured here (see the integration risks). Neither result establishes an end-to-end coding-task speedup.
 
 ## Native tools and sandbox: where they apply
 
@@ -28,6 +28,6 @@ V2 is the only session runtime. Its tools live in `packages/core/src/tool`; the 
 - **Edit / patch:** the V2 tools route through `packages/core/src/tool/edit-match.ts` and `packages/core/src/patch.ts`, which call the native `matchEdit` and `deriveNewContentsV2` primitives whenever the addon is loaded — by default. `edit-fuzzy.ts` and `deriveTs` are the TypeScript reference implementations, used when the addon is missing or `MIAO_NATIVE=0` is set. Matching and derivation are pure computation: file IO, permissions, conditional writes and settlement stay in Core.
 - **OS sandbox:** the V2 `bash` tool can run each command under the sandbox. macOS uses seatbelt and Linux Landlock; Windows has no backend. Enable it with `sandbox.mode: "workspace-write"` or `MIAO_SANDBOX=1`, and deny network with `MIAO_SANDBOX_DENY_NETWORK=1`. It is opt-in and off by default, and it fails open — `sandbox.on_unavailable` defaults to `"warn"`, so a host with no backend runs the command unsandboxed unless you set it to `"fail"`.
 - **Native addon:** on by default. It backs the sandbox runner, the edit matching, the patch derivation and other native helpers. `MIAO_NATIVE=0` disables all of it and the TypeScript implementations take over.
-- **In-process Git:** the `gix` implementation and benchmarks exist, but it is not the default Git path.
+- **In-process Git:** `Git.status.entries` uses the native `gitStatusAsync` primitive (`gix`) whenever the addon is loaded, returning each path with its status and line additions/deletions; `MIAO_NATIVE=0` or a native failure falls back to the `git status`/`git diff --numstat` subprocess path. The other Git operations still shell out.
 
 Read the [guide](guide.en.md#56-kernel-level-sandbox-opt-in) and [integration risks](rust-integration-risks.en.md) before relying on the sandbox. Windows kernel sandbox parity is not implemented.

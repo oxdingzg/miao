@@ -19,7 +19,7 @@ const branchDiffs = [
 
 test("keeps the review tree and terminal sized when both panels are open", async ({ page }) => {
   test.setTimeout(120_000)
-  const events: Array<{ directory: string; payload: Record<string, unknown> }> = []
+  const events: ReturnType<typeof statusEvent>[] = []
   const sessionStatus = { [sessionID]: { type: "idle" as "busy" | "idle" } }
   let detailVersion = 1
   let detailFailures = 1
@@ -288,8 +288,10 @@ function base64Encode(value: string) {
 
 function statusEvent(type: "busy" | "idle") {
   return {
-    directory,
-    payload: { type: "session.status", properties: { sessionID, status: { type } } },
+    id: `evt_review_status_${crypto.randomUUID()}`,
+    location: { directory },
+    type: "session.next.status" as const,
+    data: { sessionID, timestamp: Date.now(), status: { type } },
   }
 }
 

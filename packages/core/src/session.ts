@@ -178,6 +178,11 @@ export interface Interface {
     after?: number
     limit: number
   }) => Effect.Effect<{ inputs: ReadonlyArray<SessionInput.Admitted>; hasMore: boolean }, NotFoundError>
+  /** Remove one durably admitted input before promotion. False when it is unknown or already promoted. */
+  readonly cancelInput: (input: {
+    sessionID: SessionSchema.ID
+    messageID: SessionMessage.ID
+  }) => Effect.Effect<boolean, NotFoundError>
   /** Files changed since the Session's first snapshot, or within one user turn when `messageID` names it. */
   readonly diff: (
     sessionID: SessionSchema.ID,
@@ -662,6 +667,10 @@ const layer = Layer.effect(
             materializePrompt(blob, cache, entry.prompt).pipe(Effect.map((prompt) => ({ ...entry, prompt }))),
           ),
         }
+      }),
+      cancelInput: Effect.fn("V2Session.cancelInput")(function* (input) {
+        yield* result.get(input.sessionID)
+        return yield* SessionInput.cancel(db, events, { sessionID: input.sessionID, id: input.messageID })
       }),
       prompt: Effect.fn("V2Session.prompt")((input) =>
         Effect.uninterruptible(

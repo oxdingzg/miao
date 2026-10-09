@@ -205,6 +205,22 @@ export function TabNavItem(props: {
         disabled={editing() || props.dragging}
         aria-haspopup="menu"
         aria-expanded={menu.open}
+        onKeyDown={(event) => {
+          // macOS Chromium does not synthesize `contextmenu` from Shift+F10 or
+          // the menu key, so the keyboard path dispatches it at the tab.
+          if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
+            event.preventDefault()
+            const rect = event.currentTarget.getBoundingClientRect()
+            event.currentTarget.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2,
+              }),
+            )
+          }
+        }}
         data-slot="tab-link"
         data-titlebar-tab-link
         href={props.href}

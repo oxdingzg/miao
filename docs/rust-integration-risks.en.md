@@ -65,6 +65,7 @@ Current parity is mostly ASCII; the following produce **different results**, not
   repos those dominate.
 - Conclusion: `gitStatus` only replaces the listing step; **the end-to-end snapshot step gains little** unless add/write-tree are also implemented with gix (complex; gix's index write support is limited).
 - Measured (3300 files / 600 changes): listing 18.2 ms to native `gitStatus` 9.4 ms; `git add --all` 6.4 ms; `write-tree` 8.3 ms. The whole step goes ~32.9 ms to ~24.0 ms (~27%), with add/write-tree still ~44%.
+- Added (this integration): `Git.status.entries` now uses `gitStatusAsync` and reports untracked files plus per-entry additions/deletions; `add`/`write-tree` remain subprocesses, so the R7 conclusion is unchanged.
 
 ### R8. gix lifecycle and resources (Medium)
 - Every call runs `gix::open` (part of the 5.6 ms). Caching a `Repository` drags in mmap'd packs, fds,
@@ -122,8 +123,7 @@ Current parity is mostly ASCII; the following produce **different results**, not
    not hold — `packages/core/src/tool/edit-match.ts` and `packages/core/src/patch.ts` call the same
    `matchEdit` and `deriveNewContentsV2` primitives from the V2 tools, gated on `MIAO_NATIVE` (on by
    default). The V1 removal took the tools, not the primitives.
-3. **Defer git**: build the async/worker wrapper first (R3) and add a snapshot **full-path** benchmark
-   (including add/write-tree); only integrate when it covers the dominant cost.
+3. **git status is now wired (narrowly)**: the async wrapper (R3) is in place and `Git.status.entries` uses it, with untracked files and per-entry line stats; `add`/`write-tree` remain subprocesses, so the full snapshot gain is still limited (R7).
 4. **Sandbox as an optional capability**: now wired opt-in into the V2 `bash` tool (`MIAO_SANDBOX=1` or
    `sandbox.mode`) with a fallback; the Linux backend is in; default-on is still open. Do not rely on
    stderr parsing as the only escalation signal.
@@ -136,5 +136,6 @@ solved; **R3 synchronous blocking** already has async variants, and wiring must 
 remaining risks are **R4 string semantics**, **R5/R6 correctness** (panic/error types), and the
 sandbox's **R9 (platform inconsistency) / R10 (false denials, unreliable stderr escalation)** — which
 mean the sandbox can only be opt-in short term. The pure-function pieces (edit/apply_patch) are
-manageable and can go first; git and the sandbox carry higher engineering cost and their gains must be
-re-measured end to end.
+manageable and went first; the git status read path is now wired behind `MIAO_NATIVE` with a CLI
+fallback, while the sandbox carries higher engineering cost and its gains must be re-measured end to
+end.

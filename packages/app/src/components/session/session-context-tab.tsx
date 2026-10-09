@@ -20,7 +20,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextFromRecords } from "./session-context-metrics"
-import { contentParts } from "@/pages/session/timeline/content"
+import { contentParts } from "@miao/session-ui/content"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
@@ -113,7 +113,7 @@ export function SessionContextTab() {
     () => {
       const id = params.id
       if (!id) return emptyMessages
-      return sync().data.session_message[id] ?? []
+      return sync().data.message[id] ?? []
     },
     emptyMessages,
     { equals: same },
