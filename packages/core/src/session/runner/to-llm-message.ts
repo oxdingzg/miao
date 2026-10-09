@@ -20,6 +20,16 @@ import type { FileAttachment } from "../prompt"
 const acceptsImages = (input: readonly string[] | undefined) =>
   input === undefined || input.length === 0 || input.some((item) => item.startsWith("image"))
 
+/**
+ * DeepSeek's thinking mode requires the reasoning field on every assistant
+ * turn it is asked to continue. A step that emitted only a tool call — the
+ * model reasoned nothing, or the reasoning was not persisted — then omits
+ * `reasoning_content` and the provider rejects every later request with "The
+ * reasoning_content in the thinking mode must be passed back". Replay those
+ * turns with an explicit empty field, the same way the V1 transform did.
+ */
+const replaysEmptyReasoning = (model: Model) => /deepseek/i.test(model.id) || /deepseek/i.test(model.provider)
+
 const media = (file: FileAttachment, images: boolean, accepted: ReadonlySet<string> | undefined): ContentPart => {
   if (!images && file.mime.startsWith("image/"))
     return {
@@ -193,8 +203,18 @@ const assistant = (message: SessionMessage.Assistant, model: Model, images: bool
     )
     .map(Message.tool)
   if (meaningful.length === 0) return results
+  const replayEmptyReasoning =
+    replaysEmptyReasoning(model) && !meaningful.some((part) => part.type === "reasoning")
   return [
-    Message.make({ id: message.id, role: "assistant", content: meaningful, metadata: message.metadata }),
+    Message.make({
+      id: message.id,
+      role: "assistant",
+      content: meaningful,
+      metadata: message.metadata,
+      // Only the OpenAI-compatible protocols read `native.openaiCompatible`, so
+      // other routes ignore the field rather than seeing a bare reasoning part.
+      ...(replayEmptyReasoning ? { native: { openaiCompatible: { reasoning_content: "" } } } : {}),
+    }),
     ...results,
   ]
 }
