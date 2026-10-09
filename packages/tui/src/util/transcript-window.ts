@@ -139,6 +139,10 @@ export function createTranscriptWindow<T extends { id: string }>(
   const [holdEnd, setHoldEnd] = createSignal<number>()
   let lastScrollTop: number | undefined
   let idleFrames = 0
+  // Consecutive passes that measured the viewport entirely outside the mounted
+  // block. One mid-move pass can report mixed stale/fresh geometry; a genuine
+  // stranding persists, so the recovery jump waits for the second pass.
+  let strandedFrames = 0
   let coverageFloor = minWindow
   // The tallest timeline seen while the window is anchored. A streamed reflow
   // can collapse the measured height for a pass or two, which reads as
@@ -187,6 +191,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       coverageFloor = minWindow
       setAnchor(undefined)
       setHoldEnd(undefined)
+      strandedFrames = 0
       peakTimeline = undefined
     },
     reveal(id: string) {
@@ -212,6 +217,7 @@ export function createTranscriptWindow<T extends { id: string }>(
         setHoldEnd(undefined)
         lastScrollTop = metrics.scrollTop
         idleFrames = 0
+        strandedFrames = 0
         peakTimeline = undefined
         return
       }
@@ -250,9 +256,30 @@ export function createTranscriptWindow<T extends { id: string }>(
         }
         lastScrollTop = metrics.scrollTop
         idleFrames = 0
+        strandedFrames = 0
         return
       }
       const moving = lastScrollTop !== undefined && Math.abs(metrics.scrollTop - lastScrollTop) > 0.5
+      // A fast drag, a scrollbar jump, or a streamed reflow can leave the
+      // viewport entirely outside the mounted block. The stepped chase below
+      // advances a fraction of the window per pass, which reads as a blank
+      // transcript until the chase lands — cover the viewport in one move
+      // instead; normal stepping resumes on the next pass. A single pass can
+      // report stray geometry mid-move (stale scrollHeight against fresh
+      // spacers), so the jump only fires once the stranding measured twice.
+      const first = start() * estimate()
+      const last = first + content
+      const stranded =
+        content > 0 &&
+        (metrics.scrollTop + metrics.viewportHeight <= first - margin || metrics.scrollTop >= last + margin)
+      strandedFrames = stranded ? strandedFrames + 1 : 0
+      if (stranded && strandedFrames >= 2) {
+        setHoldEnd(undefined)
+        moveTo(Math.max(0, Math.min(total() - 1, Math.floor(metrics.scrollTop / Math.max(1, estimate())))))
+        lastScrollTop = metrics.scrollTop
+        idleFrames = 0
+        return
+      }
       idleFrames = moving ? 0 : idleFrames + 1
       if (idleFrames >= IDLE_FRAMES) setHoldEnd(undefined)
       if (anchor() === undefined) setAnchor(messages()[start()]?.id)
