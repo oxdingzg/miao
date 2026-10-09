@@ -23,7 +23,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | --- | --- | --- |
 | `subscribe` | `session_id`, `after` | `{accepted:true}` |
 | `unsubscribe` | `session_id` | `{accepted:true}` |
-| `admit` | `input`, `resume` | `Admission` |
+| `admit` | `input`, `resume`, `attachments?` | `Admission` |
 | `resume` | `session_id` | `{accepted:true}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |

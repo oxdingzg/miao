@@ -101,7 +101,7 @@ impl Store {
             let input=Input::parse(data["input"].clone()).map_err(|_|Error::Invalid("invalid wakeup input".into()))?;
             let prompt=Prompt{session_id:session.clone(),input_id:format!("wakeup/{id}"),prompt:input.prompt,delivery:input.delivery};
             let location=data["location"].as_str().ok_or_else(||Error::Invalid("timer Location missing".into()))?;
-            let admitted=admit_input(&tx,&prompt,Some(location))?;
+            let admitted=admit_input(&tx,&prompt,Some(location),&[])?;
             append(&tx,&session,"wakeup.resolved",json!({"timer_id":id,"state":"fired","input_id":admitted.input_id,"admitted_seq":admitted.admitted_seq}))?;tx.commit()?;Ok(Some(admitted))
         }).await
     }

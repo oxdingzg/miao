@@ -79,6 +79,20 @@ impl Provider for OpenAIChat {
     }
 }
 
+/// A user turn is a plain string when text-only, and a typed part array when it
+/// carries image attachments.
+fn user_content(text: &[String], images: &[Value]) -> Value {
+    if images.is_empty() {
+        return Value::String(text.join("\n"));
+    }
+    let mut parts = Vec::new();
+    if !text.is_empty() {
+        parts.push(json!({"type":"text","text":text.join("\n")}));
+    }
+    parts.extend(images.iter().cloned());
+    Value::Array(parts)
+}
+
 /// Preserve text/tool-result chronology, and reject opaque blocks rather than
 /// dropping them during a model/protocol switch. No implicit fallback here.
 fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
@@ -87,11 +101,17 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
     for message in history {
         let blocks = message.content.as_array().ok_or_else(invalid)?;
         let mut text = Vec::new();
+        let mut images = Vec::new();
         let mut calls = Vec::new();
         for block in blocks {
             match (message.role.as_str(), block["type"].as_str()) {
                 ("user" | "assistant", Some("text")) => {
                     text.push(block["text"].as_str().ok_or_else(invalid)?.to_owned())
+                }
+                ("user", Some("image")) => {
+                    let mime = block["mime"].as_str().ok_or_else(invalid)?;
+                    let data = block["data"].as_str().ok_or_else(invalid)?;
+                    images.push(json!({"type":"image_url","image_url":{"url":format!("data:{mime};base64,{data}")}}));
                 }
                 ("assistant", Some("tool_use")) => {
                     if !block["input"].is_object() {
@@ -100,9 +120,10 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
                     calls.push(json!({"id":block["id"].as_str().ok_or_else(invalid)?,"type":"function","function":{"name":block["name"].as_str().ok_or_else(invalid)?,"arguments":serde_json::to_string(&block["input"]).map_err(|_|invalid())?}}));
                 }
                 ("user", Some("tool_result")) => {
-                    if !text.is_empty() {
-                        output.push(json!({"role":"user","content":text.join("\n")}));
+                    if !text.is_empty() || !images.is_empty() {
+                        output.push(json!({"role":"user","content":user_content(&text,&images)}));
                         text.clear();
+                        images.clear();
                     }
                     let content = block["content"].as_str().ok_or_else(invalid)?;
                     let content = if block["is_error"] == true {
@@ -121,8 +142,8 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
                 message["tool_calls"] = Value::Array(calls);
             }
             output.push(message);
-        } else if !text.is_empty() {
-            output.push(json!({"role":"user","content":text.join("\n")}));
+        } else if !text.is_empty() || !images.is_empty() {
+            output.push(json!({"role":"user","content":user_content(&text,&images)}));
         }
     }
     Ok(output)

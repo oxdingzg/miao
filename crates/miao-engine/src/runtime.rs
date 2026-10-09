@@ -1,7 +1,7 @@
 use crate::{
     approval::{now_ms, Approval, Response},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Error, Input, ModelRequest},
+    protocol::{Admission, Attachment, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tools::{Prepared, ToolError, Tools},
@@ -193,6 +193,18 @@ impl Runtime {
     }
 
     pub async fn admit(&self, input: Input, resume: bool) -> Result<Admission, Error> {
+        self.admit_with(input, Vec::new(), resume).await
+    }
+
+    /// Admit a prompt with inline media attachments. The attachments are part of
+    /// the durable admission identity and are promoted into the user message at
+    /// the next safe boundary.
+    pub async fn admit_with(
+        &self,
+        input: Input,
+        attachments: Vec<Attachment>,
+        resume: bool,
+    ) -> Result<Admission, Error> {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
@@ -200,7 +212,11 @@ impl Runtime {
         let admission = self
             .inner
             .store
-            .admit_at(input, Some(self.inner.tools.location().to_owned()))
+            .admit_attachments_at(
+                input,
+                attachments,
+                Some(self.inner.tools.location().to_owned()),
+            )
             .await?;
         // An exact retry may repair a lost advisory wake for pending input,
         // but never restarts promoted/completed provider work.
