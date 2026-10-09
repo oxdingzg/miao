@@ -18,7 +18,7 @@ scope for this table and is tracked separately.
 | Permission and approval | validated | `src/permission.rs`, `src/approval.rs`; policy upper bound, first-answer-wins |
 | Process: foreground command, background job, shell, PTY | validated | `src/process.rs`, `src/jobs.rs`, `src/tools.rs`; macOS seatbelt / Linux Landlock, job slots; `bash -c` and an optional interactive-terminal-style pty with merged output (`tests/bash.rs`)
 | Delegation: subagents, resource limits | inventory | M1 gap |
-| LSP core (diagnostics/definition/references) | inventory | M1 gap |
+| LSP core (diagnostics/definition/references) | validated | `src/lsp.rs`, `--lsp-config`; lazy per-extension server, Content-Length JSON-RPC, bounded diagnostics and definition/references tools (`tests/lsp.rs`) |
 | Media (inline image attachments) | validated | `src/protocol.rs`, `src/store.rs`; base64 image parts on `admit`, promoted into the user message, encoded by the Anthropic/Chat/Responses/Gemini adapters (`tests/media.rs`) |
 | Context: session state, todo, goal | validated | `src/state.rs`, `src/tools.rs` |
 | State/tools: question, wakeup, cron | validated | `src/question.rs`, `src/wakeup.rs`, `src/cron.rs` |
@@ -39,7 +39,7 @@ scope for this table and is tracked separately.
   `engine` workflow (macOS, Linux and Windows).
 - **M1 gate**: 30–50 scenarios, a real small fix, a control lane that is not
   blocked by provider/tool/approval waits, and three-platform unit tests. The
-  remaining M1 gaps are LSP core and delegation.
+  remaining M1 gap is delegation.
 
 ## Measurement boundaries (M0)
 

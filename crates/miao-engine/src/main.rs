@@ -258,6 +258,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--provider",
             "--policy",
             "--mcp-config",
+            "--lsp-config",
             "--hooks-config",
             "--context-config",
             "--credential-db",
@@ -454,6 +455,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_mcp(Arc::new(registry));
+    }
+    if let Some(path) = options.get("--lsp-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("LSP host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("LSP config exceeds 64 KiB".into());
+        }
+        let configs = serde_json::from_slice::<Vec<miao_engine::lsp::Config>>(&bytes)
+            .map_err(|_| "invalid LSP host config")?;
+        let registry =
+            miao_engine::lsp::Registry::connect(configs, std::path::Path::new(tools.location()))
+                .await?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_lsp(Arc::new(registry));
     }
     let runtime = Runtime::with_policy(Store::open(db).await?, provider, tools, policy).await?;
     let result = serve(&runtime).await;
