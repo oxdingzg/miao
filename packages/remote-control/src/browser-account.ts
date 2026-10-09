@@ -27,9 +27,9 @@ export function make(options: { onInvalidated?: () => void } = {}) {
     options.onInvalidated?.()
   }
   window.addEventListener("storage", changed)
-  const request = async (path: string, body?: unknown, token?: string) => {
+  const request = async (path: string, body?: unknown, token?: string, method?: string) => {
     const response = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       credentials: "same-origin",
       redirect: "error",
       cache: "no-store",
@@ -196,6 +196,18 @@ export function make(options: { onInvalidated?: () => void } = {}) {
       const current = epoch
       const response = await request("/api/hub/hosts", undefined, await bearer())
       const value: unknown = await response.json()
+      if (current !== epoch) throw new Error("Account changed")
+      return value
+    },
+    roster: async (): Promise<unknown> => {
+      const current = epoch
+      const value: unknown = await (await request("/api/hub/roster", undefined, await bearer())).json()
+      if (current !== epoch) throw new Error("Account changed")
+      return value
+    },
+    putRoster: async (body: unknown): Promise<unknown> => {
+      const current = epoch
+      const value: unknown = await (await request("/api/hub/roster", body, await bearer(), "PUT")).json()
       if (current !== epoch) throw new Error("Account changed")
       return value
     },

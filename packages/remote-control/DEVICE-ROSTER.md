@@ -152,6 +152,23 @@ request, consumes it once and fences verification against cancellation or a
 newer request. Callers cancel it on account changes and persist the accepted
 roster authority and host pins together before connecting.
 
-This module defines and verifies the enrollment exchange. The browser transfer
-UI, durable enrollment storage and login-to-session discovery integration remain
-follow-up work; the protocol alone does not enable account-only admission.
+The browser's account device registration section uses this exchange. A signing
+browser is initialized only after independent computer pairing and explicit
+signer consent. The computer must also explicitly bind its account trust to that
+device. Existing self-signed authority can be restored using the same device key;
+an unrelated device cannot replace an existing account root.
+
+A new device generates a ten-minute request, transfers it directly to a trusted
+signing device and receives the signed approval plus the independently supplied
+signer public key. The approving browser verifies the request and local accepted
+authority, publishes the next signed roster, and returns recipient-bound host
+endorsements. The recipient verifies both signatures and saves roster authority
+and host pins in one account-and-device-bound local record. This explicit code
+exchange is independent of the Hub directory's asserted signer or host keys.
+
+On connection, enrolled browsers refresh the roster against previously accepted
+signers, compare independently pinned host keys, and send a roster claim. Only
+an encrypted Agent approval provides the device grant used for session RPC.
+The existing direct computer invitation flow is also available. Native mobile
+registration, production OAuth and physical-phone acceptance remain separate
+verification work.
