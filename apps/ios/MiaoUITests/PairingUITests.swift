@@ -71,15 +71,17 @@ final class PairingUITests: XCTestCase {
             if let enrollment = fixture.enrollment {
                 stage("pairing")
                 XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 30))
-                app.buttons["hubAccount"].tap()
-                // iOS 18 exposes the disclosure header as a button; iOS 26 only
-                // as an accessibility node. Take the first match that can
-                // actually be tapped after bringing the section into view.
-                let disclosureButton = app.buttons["同账号设备注册"].firstMatch
-                let disclosure =
-                    disclosureButton.waitForExistence(timeout: 5)
-                    ? disclosureButton
-                    : app.descendants(matching: .any)["同账号设备注册"].firstMatch
+                // Sign-in dismisses the account sheet on its own, so reopening it
+                // can race that dismissal; retry until the signed-in sheet shows
+                // the enrollment section. The section is a lazy Form row, so it
+                // also has to be scrolled into the tree before it exists, and iOS
+                // 18 and 26 expose the header as different element types, so
+                // address it by the identifier set in HubAccountView.
+                let disclosure = app.descendants(matching: .any)["enrollmentDisclosure"].firstMatch
+                for _ in 0..<10 where !disclosure.exists {
+                    if app.buttons["hubAccount"].isHittable { app.buttons["hubAccount"].tap() }
+                    scrollIntoView(app, disclosure, swipes: 3)
+                }
                 XCTAssertTrue(disclosure.waitForExistence(timeout: 15))
                 for _ in 0..<6 where !disclosure.isHittable { app.swipeUp() }
                 XCTAssertTrue(disclosure.isHittable)
