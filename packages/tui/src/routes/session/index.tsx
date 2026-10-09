@@ -1493,7 +1493,7 @@ function UserMessage(props: {
           border={["left"]}
           borderColor={color()}
           customBorderChars={SplitBorder.customBorderChars}
-          marginTop={props.index === 0 ? 0 : 1}
+          marginTop={props.index === 0 ? 0 : 2}
         >
           <box
             onMouseOver={() => {
@@ -1515,7 +1515,15 @@ function UserMessage(props: {
                 <Show
                   when={reminder()}
                   fallback={
-                    <Show when={sessionMessage()} fallback={<text fg={theme.text}>{text()}</text>}>
+                    <Show
+                      when={sessionMessage()}
+                      fallback={
+                        <text fg={theme.text}>
+                          <span style={{ fg: theme.textMuted }}>{"❯ "}</span>
+                          {text()}
+                        </text>
+                      }
+                    >
                       {(message) => (
                         <SessionMessageContent
                           sessionID={message().sessionID}
@@ -1535,6 +1543,7 @@ function UserMessage(props: {
             >
               {(value) => (
                 <text fg={theme.text}>
+                  <span style={{ fg: theme.textMuted }}>{"❯ "}</span>
                   {`/${value().name}${value().arguments ? ` ${value().arguments}` : ""}`}
                 </text>
               )}
