@@ -37,6 +37,7 @@ struct Inner {
     crons: Mutex<HashMap<String, Background>>,
     job_slots: Arc<Semaphore>,
     slots: Arc<Semaphore>,
+    started: Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
 }
@@ -125,6 +126,7 @@ impl Runtime {
                 crons: Mutex::new(HashMap::new()),
                 job_slots: Arc::new(Semaphore::new(2)),
                 slots: Arc::new(Semaphore::new(8)),
+                started: Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
             }),
@@ -388,6 +390,17 @@ async fn drain(
     }
     let run = uuid::Uuid::new_v4().to_string();
     inner.store.start_run(&session, &run).await?;
+    if inner.started.lock().await.insert(session.clone()) {
+        inner
+            .store
+            .record(
+                &session,
+                crate::events::Lifecycle::SessionStart.name(),
+                json!({"run_id":run}),
+            )
+            .await?;
+    }
+    record_promotions(&inner, &session, &run, &promoted).await?;
     let result = execute(&session, &run, &inner, cancel.clone()).await;
     let reason = if cancel.is_cancelled() {
         "interrupted"
@@ -397,7 +410,36 @@ async fn drain(
         "failed"
     };
     inner.store.finish_run(&session, &run, reason).await?;
+    let stop = if reason == "failed" {
+        crate::events::Lifecycle::StopFailure
+    } else {
+        crate::events::Lifecycle::Stop
+    };
+    inner
+        .store
+        .record(&session, stop.name(), json!({"run_id":run,"reason":reason}))
+        .await?;
     result
+}
+
+/// Emit one UserPromptSubmit per input promoted into visible history.
+async fn record_promotions(
+    inner: &Inner,
+    session: &str,
+    run: &str,
+    promoted: &[crate::protocol::Event],
+) -> Result<(), Error> {
+    for event in promoted {
+        inner
+            .store
+            .record(
+                session,
+                crate::events::Lifecycle::UserPromptSubmit.name(),
+                json!({"run_id":run,"input_id":event.data["input_id"]}),
+            )
+            .await?;
+    }
+    Ok(())
 }
 
 async fn execute(
@@ -430,7 +472,16 @@ async fn execute(
             return Ok(());
         }
         let system = bundle.system.clone();
+        let sources = bundle.sources.clone();
         let context_epoch = inner.store.select_context(session, bundle).await?;
+        inner
+            .store
+            .record(
+                session,
+                crate::events::Lifecycle::InstructionsLoaded.name(),
+                json!({"run_id":run,"sources":sources}),
+            )
+            .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
         let state_allowed = inner.policy.evaluate(
             "session_state",
@@ -528,6 +579,14 @@ async fn execute(
                 let name = block["name"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool name".into()))?;
+                inner
+                    .store
+                    .record(
+                        session,
+                        crate::events::Lifecycle::PreToolUse.name(),
+                        json!({"run_id":run,"call_id":id,"tool":name}),
+                    )
+                    .await?;
                 let prepared = inner.tools.prepare(name, block["input"].clone()).await;
                 let (output, is_error) = match prepared {
                     Err(error) => (json!({"error":error.to_string()}), true),
@@ -541,7 +600,8 @@ async fn execute(
                         if !allowed {
                             (json!({"error":"permission denied"}), true)
                         } else if let Some(blocked) =
-                            run_hooks(inner, session, crate::hooks::Event::ToolBefore, name).await?
+                            run_hooks(inner, session, crate::events::Lifecycle::PreToolUse, name)
+                                .await?
                         {
                             (json!({"error":blocked}), true)
                         } else {
@@ -669,7 +729,15 @@ async fn execute(
                     .store
                     .tool_result(session, run, id, output, is_error)
                     .await?;
-                run_hooks(inner, session, crate::hooks::Event::ToolAfter, name).await?;
+                inner
+                    .store
+                    .record(
+                        session,
+                        crate::events::Lifecycle::PostToolUse.name(),
+                        json!({"run_id":run,"call_id":id,"tool":name,"is_error":is_error}),
+                    )
+                    .await?;
+                run_hooks(inner, session, crate::events::Lifecycle::PostToolUse, name).await?;
                 let repeat = repeats.entry(signature).or_default();
                 *repeat += 1;
                 if *repeat >= 3 {
@@ -697,6 +765,7 @@ async fn execute(
             return Ok(());
         }
         if !promoted.is_empty() {
+            record_promotions(inner, session, run, &promoted).await?;
             allowance = 25;
             repeats.clear();
         }
@@ -988,7 +1057,7 @@ async fn ask_question(
 async fn run_hooks(
     inner: &Inner,
     session: &str,
-    phase: crate::hooks::Event,
+    phase: crate::events::Lifecycle,
     tool: &str,
 ) -> Result<Option<String>, Error> {
     let hooks = inner.tools.hooks();
@@ -996,10 +1065,7 @@ async fn run_hooks(
         return Ok(None);
     }
     let mut blocked = None;
-    for hook in hooks
-        .iter()
-        .filter(|hook| hook.event == phase && hook.matches(tool))
-    {
+    for hook in hooks.iter().filter(|hook| hook.matches(phase, tool)) {
         let started = std::time::Instant::now();
         let result = inner
             .tools
@@ -1033,8 +1099,8 @@ async fn run_hooks(
                 }),
             )
             .await?;
-        if phase == crate::hooks::Event::ToolBefore && outcome != "ok" && blocked.is_none() {
-            blocked = Some(format!("blocked by tool_before hook (outcome {outcome})"));
+        if phase == crate::events::Lifecycle::PreToolUse && outcome != "ok" && blocked.is_none() {
+            blocked = Some(format!("blocked by pre_tool_use hook (outcome {outcome})"));
         }
     }
     Ok(blocked)
@@ -1070,7 +1136,7 @@ async fn authorize(
     match decision {
         Decision::Allow => return Ok(true),
         Decision::Deny => {
-            inner.store.record(session,"permission.denied",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"policy_revision":inner.policy.revision()})).await?;
+            inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"policy","policy_revision":inner.policy.revision()})).await?;
             return Ok(false);
         }
         Decision::Ask => {}
@@ -1094,6 +1160,7 @@ async fn authorize(
         expires_at_ms: now_ms().saturating_add(inner.policy.timeout_ms()),
     };
     inner.store.request_approval(approval.clone()).await?;
+    inner.store.record(session,crate::events::Lifecycle::PermissionRequest.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
     let deadline =
         tokio::time::Instant::now() + std::time::Duration::from_millis(inner.policy.timeout_ms());
     loop {
@@ -1108,7 +1175,10 @@ async fn authorize(
         {
             "allow" => return Ok(true),
             "pending" => {}
-            _ => return Ok(false),
+            _ => {
+                inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"approval_denied"})).await?;
+                return Ok(false);
+            }
         }
         if tokio::time::Instant::now() >= deadline || now_ms() >= approval.expires_at_ms {
             let expired = inner
@@ -1124,7 +1194,10 @@ async fn authorize(
                 )
                 .await;
             match expired {
-                Ok(_) | Err(Error::ApprovalExpired | Error::ApprovalResolved) => return Ok(false),
+                Ok(_) | Err(Error::ApprovalExpired | Error::ApprovalResolved) => {
+                    inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"approval_expired"})).await?;
+                    return Ok(false);
+                }
                 Err(error) => return Err(error),
             }
         }

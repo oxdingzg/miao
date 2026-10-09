@@ -2,21 +2,8 @@ use crate::{process, tools::ToolError};
 use serde::Deserialize;
 use serde_json::json;
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
-pub enum Event {
-    ToolBefore,
-    ToolAfter,
-}
-
-impl Event {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::ToolBefore => "tool_before",
-            Self::ToolAfter => "tool_after",
-        }
-    }
-}
+/// Hooks are configured against the frozen lifecycle vocabulary.
+pub use crate::events::Lifecycle as Event;
 
 /// Host-configured lifecycle hooks. They run under the same workspace sandbox
 /// as run_command; hooks are a guard/observation surface, not an escape hatch.
@@ -35,8 +22,16 @@ fn timeout() -> u64 {
 }
 
 impl Hook {
-    pub(crate) fn matches(&self, name: &str) -> bool {
-        self.tool == "*" || self.tool == name
+    /// Tool events select by tool name; other lifecycle events only match `*`.
+    pub(crate) fn matches(&self, event: Event, subject: &str) -> bool {
+        if self.event != event {
+            return false;
+        }
+        if event.tool_scoped() {
+            self.tool == "*" || self.tool == subject
+        } else {
+            self.tool == "*"
+        }
     }
     pub(crate) fn input(&self) -> Result<process::Input, ToolError> {
         process::Input::parse(json!({

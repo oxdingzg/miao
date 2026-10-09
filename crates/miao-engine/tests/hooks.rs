@@ -139,8 +139,8 @@ async fn passing_before_hooks_allow_dispatch_and_are_durable() {
     let store = drive(
         dir.path(),
         vec![
-            hook(Event::ToolBefore, "run_command", 0),
-            hook(Event::ToolAfter, "run_command", 0),
+            hook(Event::PreToolUse, "run_command", 0),
+            hook(Event::PostToolUse, "run_command", 0),
         ],
     )
     .await;
@@ -153,33 +153,36 @@ async fn passing_before_hooks_allow_dispatch_and_are_durable() {
             .len(),
         3
     );
-    assert_eq!(outcomes(&store, "tool_before").await, vec!["ok"]);
-    assert_eq!(outcomes(&store, "tool_after").await, vec!["ok"]);
+    assert_eq!(outcomes(&store, "pre_tool_use").await, vec!["ok"]);
+    assert_eq!(outcomes(&store, "post_tool_use").await, vec!["ok"]);
     let transcript = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
-    assert!(!transcript.contains("blocked by tool_before hook"));
+    assert!(!transcript.contains("blocked by pre_tool_use hook"));
 }
 #[tokio::test]
 async fn failing_or_slow_before_hooks_block_dispatch_without_side_effects() {
     for (hooks, matching) in [
-        (vec![hook(Event::ToolBefore, "*", 3)], 2),
-        (vec![timeout_hook(Event::ToolBefore, "run_command")], 1),
+        (vec![hook(Event::PreToolUse, "*", 3)], 2),
+        (vec![timeout_hook(Event::PreToolUse, "run_command")], 1),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let store = drive(dir.path(), hooks).await;
         assert!(!dir.path().join("workspace").join("probe.txt").exists());
         let transcript = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
-        assert!(transcript.contains("blocked by tool_before hook"));
+        assert!(transcript.contains("blocked by pre_tool_use hook"));
         assert_eq!(
-            outcomes(&store, "tool_before").await,
+            outcomes(&store, "pre_tool_use").await,
             vec!["failed"; matching]
         );
-        assert_eq!(outcomes(&store, "tool_after").await, Vec::<String>::new());
+        assert_eq!(
+            outcomes(&store, "post_tool_use").await,
+            Vec::<String>::new()
+        );
     }
 }
 #[tokio::test]
 async fn after_hook_failures_are_observed_but_never_change_results() {
     let dir = tempfile::tempdir().unwrap();
-    let store = drive(dir.path(), vec![hook(Event::ToolAfter, "*", 1)]).await;
+    let store = drive(dir.path(), vec![hook(Event::PostToolUse, "*", 1)]).await;
     assert_eq!(
         dir.path()
             .join("workspace")
@@ -190,42 +193,42 @@ async fn after_hook_failures_are_observed_but_never_change_results() {
         3
     );
     assert_eq!(
-        outcomes(&store, "tool_after").await,
+        outcomes(&store, "post_tool_use").await,
         vec!["failed", "failed"]
     );
     let transcript = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
-    assert!(!transcript.contains("blocked by tool_before hook"));
+    assert!(!transcript.contains("blocked by pre_tool_use hook"));
 }
 #[test]
 fn hook_configuration_is_bounded_and_unambiguous() {
     for hooks in [
         vec![Hook {
-            event: Event::ToolBefore,
+            event: Event::PreToolUse,
             tool: String::new(),
             argv: vec!["true".into()],
             timeout_ms: 1000,
         }],
         vec![Hook {
-            event: Event::ToolBefore,
+            event: Event::PreToolUse,
             tool: "run command".into(),
             argv: vec!["true".into()],
             timeout_ms: 1000,
         }],
         vec![Hook {
-            event: Event::ToolBefore,
+            event: Event::PreToolUse,
             tool: "*".into(),
             argv: vec![],
             timeout_ms: 1000,
         }],
         vec![Hook {
-            event: Event::ToolBefore,
+            event: Event::PreToolUse,
             tool: "*".into(),
             argv: vec!["true".into()],
             timeout_ms: 0,
         }],
         vec![
-            hook(Event::ToolBefore, "*", 0),
-            hook(Event::ToolBefore, "*", 0),
+            hook(Event::PreToolUse, "*", 0),
+            hook(Event::PreToolUse, "*", 0),
         ],
     ] {
         assert!(matches!(
@@ -233,9 +236,9 @@ fn hook_configuration_is_bounded_and_unambiguous() {
             Err(ToolError::InvalidInput)
         ));
     }
-    assert!(hooks::validate(&[hook(Event::ToolBefore, "*", 0)]).is_ok());
+    assert!(hooks::validate(&[hook(Event::PreToolUse, "*", 0)]).is_ok());
     assert!(serde_json::from_str::<Hook>(
-        r#"{"event":"tool_before","tool":"*","argv":["true"],"timeout_ms":1000,"extra":1}"#
+        r#"{"event":"pre_tool_use","tool":"*","argv":["true"],"timeout_ms":1000,"extra":1}"#
     )
     .is_err());
 }

@@ -33,7 +33,9 @@ impl Store {
             if !pending.is_empty()||!last.is_some_and(|content|content.as_array().is_some_and(|parts|parts.iter().any(|p|p["type"]=="text"&&p["text"].as_str().is_some_and(|s|!s.is_empty())))){return Err(Error::Invalid("compaction cannot cut a tool continuation".into()));}
             let previous:Option<u64>=tx.query_row("SELECT through_seq FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1",[&session],|r|r.get(0)).optional()?;
             if previous.is_some_and(|previous|through<previous){return Err(Error::Invalid("checkpoint cannot move backwards".into()));}
+            append(&tx,&session,crate::events::Lifecycle::PreCompact.name(),json!({"compaction_id":id,"through_message_seq":through}))?;
             let event=append(&tx,&session,"history.compacted",json!({"compaction_id":id,"through_message_seq":through,"summary":summary}))?;
+            append(&tx,&session,crate::events::Lifecycle::PostCompact.name(),json!({"compaction_id":id,"through_message_seq":through}))?;
             tx.execute("INSERT INTO engine_compaction VALUES(?1,?2,?3,?4,?5)",params![id,session,through,summary,event.seq])?;tx.commit()?;
             Ok(json!({"compaction_id":id,"through_message_seq":through,"duplicate":false}))
         }).await

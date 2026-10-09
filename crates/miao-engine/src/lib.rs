@@ -3,6 +3,7 @@ pub mod context;
 pub mod credential;
 pub mod cron;
 pub mod doctor;
+pub mod events;
 pub mod export;
 mod file_mutation;
 pub mod gemini;
