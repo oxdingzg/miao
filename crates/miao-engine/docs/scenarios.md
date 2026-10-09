@@ -28,5 +28,7 @@ transactions (`apply_patch.rs`), sandboxed process execution, descendant reaping
 and pty allocation (`process.rs`, `guardian.rs`, `bash.rs`), approval binding and
 cancellation (`approval.rs`, `permission.rs`), provider fallback with a shared
 retry budget (`routing.rs`), opaque-reasoning preservation (`responses.rs`), and
-MCP cancellation (`mcp.rs`). The remaining M1 capabilities (LSP core, media,
-delegation) add their own scenarios as they land.
+MCP cancellation (`mcp.rs`). A headless end-to-end acceptance drives a small real
+fix (read -> apply_patch -> bash verification) through the durable run loop
+(`small_fix.rs`). The remaining M1 capabilities (LSP core, media, delegation) add
+their own scenarios as they land.
