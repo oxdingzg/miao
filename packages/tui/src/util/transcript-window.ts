@@ -140,6 +140,12 @@ export function createTranscriptWindow<T extends { id: string }>(
   let lastScrollTop: number | undefined
   let idleFrames = 0
   let coverageFloor = minWindow
+  // The tallest timeline seen while the window is anchored. A streamed reflow
+  // can collapse the measured height for a pass or two, which reads as
+  // "at bottom"; leaving anchored reading on such a frame snaps the window to
+  // the tail and yanks the reader. At-bottom readings below the high-water
+  // mark are measurement noise and keep anchored reading instead.
+  let peakTimeline: number | undefined
 
   const total = createMemo(() => messages().length)
   const maxStart = createMemo(() => Math.max(0, total() - windowSize()))
@@ -181,6 +187,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       coverageFloor = minWindow
       setAnchor(undefined)
       setHoldEnd(undefined)
+      peakTimeline = undefined
     },
     reveal(id: string) {
       const index = messages().findIndex((message) => message.id === id)
@@ -205,6 +212,7 @@ export function createTranscriptWindow<T extends { id: string }>(
         setHoldEnd(undefined)
         lastScrollTop = metrics.scrollTop
         idleFrames = 0
+        peakTimeline = undefined
         return
       }
       const leading = top()
@@ -212,6 +220,17 @@ export function createTranscriptWindow<T extends { id: string }>(
       const content = Math.max(0, metrics.mountedHeight)
       const mounted = Math.max(1, end() - start())
       const atBottom = metrics.scrollTop + metrics.viewportHeight >= leading + content + trailing - margin
+      const anchored = anchor() !== undefined || holdEnd() !== undefined
+      const timeline = leading + content + trailing
+      if (!anchored) peakTimeline = undefined
+      else if (peakTimeline === undefined || timeline > peakTimeline) peakTimeline = timeline
+      // Below the high-water mark the geometry is mid-reflow, so an at-bottom
+      // reading is noise: keep anchored reading instead of snapping to the tail.
+      const atHighWater = peakTimeline !== undefined && timeline >= peakTimeline - 0.5
+      if (atBottom && anchored && !atHighWater) {
+        lastScrollTop = metrics.scrollTop
+        return
+      }
       const average = content / mounted
       if (average > 0 && Math.abs(average - estimate()) > estimate() * 0.25)
         setEstimate(Math.max(1, Math.round(average)))

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { Renderable, type ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { For } from "solid-js"
+import { createSignal } from "solid-js"
 import { SessionScrollbox } from "../src/routes/session/scrollbox"
 import { createScrollAnchoring, createTranscriptWindow } from "../src/util/transcript-window"
 
@@ -241,6 +242,126 @@ test("a window move keeps the content under the viewport in place", async () => 
     for (let i = 0; i < 6; i++) await app.renderOnce()
     expect(relative2()).toBeGreaterThanOrEqual(before2 + 79)
     expect(relative2()).toBeLessThanOrEqual(before2 + 81)
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("reading earlier messages while the tail streams keeps the viewport put", async () => {
+  // Like the session route: a fully adaptive window whose spacer estimate is
+  // recalibrated from the mounted rows.
+  const [rows, setRows] = createSignal(
+    Array.from({ length: COUNT }, (_, index) => ({
+      id: `message-${index}`,
+      text: `message ${index}`,
+      // Tall tail, short history: scrolling up into the short region flips the
+      // estimate and shrinks the spacers under the reader.
+      height: index >= COUNT / 2 ? 8 : 4,
+    })),
+  )
+  let scroll!: ScrollBoxRenderable
+  let transcript!: ReturnType<typeof createTranscriptWindow<{ id: string; height: number; text: string }>>
+  const anchoring = createScrollAnchoring<Renderable>({
+    atBottom: () => Boolean(scroll && !scroll.isDestroyed && scroll.scrollTop >= scroll.scrollHeight - scroll.height - 1),
+  })
+  let followPass = 0
+  let lastMutation = -10
+  const app = await testRender(
+    () => {
+      transcript = createTranscriptWindow(rows)
+      return (
+        <box width={60} height={WORLD_HEIGHT} flexDirection="column">
+          <SessionScrollbox
+            ref={(value) => {
+              scroll = value
+              const pass = value.onLifecyclePass
+              value.onLifecyclePass = () => {
+                pass?.call(value)
+                const children = value.getChildren()
+                const spacer = children.findIndex((child) => child.id === "transcript-top-spacer")
+                const geometry = {
+                  rows: children,
+                  from: Math.max(1, spacer + 1),
+                  contentTop: value.content.y,
+                  scrollHeight: value.scrollHeight,
+                }
+                anchoring.apply(geometry, (delta) => value.scrollBy(delta))
+                followPass++
+                const before = { start: transcript.start(), top: transcript.top(), bottom: transcript.bottom() }
+                const captured = followPass - lastMutation >= 2 ? anchoring.capture(geometry) : undefined
+                transcript.follow({
+                  scrollTop: value.scrollTop,
+                  viewportHeight: value.height,
+                  mountedHeight: value.scrollHeight - transcript.top() - transcript.bottom(),
+                })
+                if (
+                  transcript.start() !== before.start ||
+                  transcript.top() !== before.top ||
+                  transcript.bottom() !== before.bottom
+                ) {
+                  lastMutation = followPass
+                  if (captured) anchoring.arm(captured)
+                }
+              }
+              value.ctx.registerLifecyclePass(value)
+            }}
+            alwaysShow={true}
+            thumbColor="#808080"
+            trackColor="#202020"
+            hiddenColor="#101010"
+            stickyScroll={true}
+            stickyStart="bottom"
+            width={60}
+            height={WORLD_HEIGHT}
+          >
+            <box height={LEADING} />
+            <box id="transcript-top-spacer" height={transcript.top()} flexShrink={0} />
+            <For each={transcript.messages()}>{(message) => <text height={message.height}>{message.text}</text>}</For>
+            <box height={transcript.bottom()} flexShrink={0} />
+          </SessionScrollbox>
+        </box>
+      )
+    },
+    { width: 60, height: WORLD_HEIGHT },
+  )
+
+  try {
+    await app.renderOnce()
+    for (let i = 0; i < 4; i++) await app.renderOnce()
+    expect(scroll.scrollHeight).toBeGreaterThan(0)
+
+    // The reader scrolls up a little from the live tail, into the last
+    // exchange: still in the lower part of the scroll range.
+    const reader = Math.floor(scroll.scrollHeight * 0.8)
+    scroll.scrollTo(reader)
+    for (let i = 0; i < 6; i++) await app.renderOnce()
+    expect(scroll.scrollTop).toBeGreaterThan(0)
+    expect(scroll.scrollTop).toBeLessThan(scroll.scrollHeight - scroll.height - 2)
+
+    // While they read, the model keeps streaming: new messages append and the
+    // mounted mix flips the spacer estimate, shrinking the scroll range.
+    for (let burst = 0; burst < 4; burst++) {
+      setRows((current) => [
+        ...current,
+        ...Array.from({ length: 4 }, (_, index) => ({
+          id: `streamed-${burst}-${index}`,
+          text: `streamed ${burst}-${index}`,
+          height: 8,
+        })),
+      ])
+      for (let i = 0; i < 6; i++) await app.renderOnce()
+    }
+
+    const atBottom = () => scroll.scrollTop >= scroll.scrollHeight - scroll.height - 1
+    expect(atBottom()).toBe(false)
+
+    // Scrolling back to the bottom re-engages following: the next streamed
+    // message keeps the viewport pinned to the tail.
+    scroll.scrollTo(scroll.scrollHeight)
+    for (let i = 0; i < 4; i++) await app.renderOnce()
+    setRows((current) => [...current, { id: "streamed-final", text: "streamed final", height: 8 }])
+    for (let i = 0; i < 6; i++) await app.renderOnce()
+    expect(atBottom()).toBe(true)
   } finally {
     app.renderer.destroy()
   }
