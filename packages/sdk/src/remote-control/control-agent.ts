@@ -148,6 +148,7 @@ export async function start(input: {
           deviceCount: saved.devices.length,
           permissions: saved.policy.permissions,
           expiresAt: saved.policy.expiresAt,
+          autoAdmit: saved.policy.autoAdmit,
         }
       : null
   }

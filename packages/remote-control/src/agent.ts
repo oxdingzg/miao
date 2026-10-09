@@ -53,7 +53,11 @@ const Request = Schema.Struct({
 export type Request = typeof Request.Type
 const decodeRequest = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Request)))
 const Envelope = Schema.Union([
-  Schema.Struct({ type: Schema.Literals(["connected", "disconnected"]), connectionID: Identifier, accountID: Schema.optional(DeviceRoster.AccountID) }),
+  Schema.Struct({
+    type: Schema.Literals(["connected", "disconnected"]),
+    connectionID: Identifier,
+    accountID: Schema.optional(DeviceRoster.AccountID),
+  }),
   Schema.Struct({ type: Schema.Literal("frame"), connectionID: Identifier, payload: Schema.String }),
 ])
 const decodeEnvelope = Schema.decodeUnknownOption(Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Envelope)))
@@ -202,7 +206,7 @@ export function connect(options: Options) {
       send(id, sealed)
     }
   }
-async function frame(id: string, peer: Peer, encoded: string) {
+  async function frame(id: string, peer: Peer, encoded: string) {
     if (peer.abort.signal.aborted) return
     if (!peer.channel) {
       const bytes = Buffer.from(encoded, "base64url")
@@ -248,6 +252,28 @@ async function frame(id: string, peer: Peer, encoded: string) {
             (await DeviceRoster.fingerprint(candidate.roster)) !== current.acceptedDigest
           )
             return closePeer(id)
+        }
+        // Owner opt-in: a device proving possession on the same Hub account can be
+        // signed into the roster locally, without a scan or out-of-band enrollment.
+        // Membership reads the post-accept roster state, not the pre-claim snapshot.
+        const current = options.grants.accountTrust()
+        if (
+          current &&
+          current.accountID === options.accountID &&
+          current.hubURL === new URL(options.hubURL).origin &&
+          current.policy.autoAdmit === true &&
+          !current.devices.some((device) => device.publicKey === key)
+        ) {
+          const claimed =
+            typeof claim.hello === "object" && claim.hello !== null && "label" in claim.hello
+              ? claim.hello.label
+              : undefined
+          await options.grants.autoAdmitRosterDevice(
+            options.hubURL,
+            options.accountID,
+            key,
+            typeof claimed === "string" ? claimed : "",
+          )
         }
         if (peer.abort.signal.aborted) return closePeer(id)
         const grant = await options.grants.authorizeRosterDevice(options.hubURL, options.accountID, key)

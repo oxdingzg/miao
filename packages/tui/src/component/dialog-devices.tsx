@@ -360,6 +360,68 @@ export function DialogDevices(props: {
                 }),
             }))
         : []),
+      ...(trust() &&
+      props.api.bindAccount &&
+      devices().some((grant) => grant.revokedAt === null && grant.expiresAt > Date.now())
+        ? [
+            {
+              value: "auto-admit",
+              title: "同账号自动接入：" + (trust()?.autoAdmit ? "已开启" : "已关闭"),
+              category: "账号信任",
+              description: trust()?.autoAdmit
+                ? "登录同一账号的设备自动可见，无需扫码；再次选择可关闭"
+                : "开启后登录同一账号的设备免扫码自动可见",
+              onSelect: () => {
+                const grant = devices().find(
+                  (candidate) => candidate.revokedAt === null && candidate.expiresAt > Date.now(),
+                )
+                if (!grant) return
+                const enabling = !trust()?.autoAdmit
+                perform(async () => {
+                  await props.api.bindAccount!({
+                    grantID: grant.id,
+                    version: grant.version,
+                    policy: {
+                      permissions: trust()!.permissions,
+                      projectIDs: grant.projectIDs,
+                      sessionIDs: grant.sessionIDs,
+                      expiresAt: trust()!.expiresAt,
+                      autoAdmit: !trust()?.autoAdmit,
+                    },
+                  })
+                  setNotice("同账号自动接入已" + (enabling ? "开启" : "关闭"))
+                })
+              },
+            },
+          ]
+        : []),
+      ...(!trust() && current.accountID && props.api.bindAccount
+        ? devices()
+            .filter(
+              (grant) =>
+                grant.revokedAt === null &&
+                grant.expiresAt > Date.now() &&
+                grant.permissions.some((permission) => permission !== "session.create"),
+            )
+            .map((grant) => ({
+              value: "auto-account:" + grant.id,
+              title: "开启同账号自动接入（以 " + label(grant.label) + " 为签名根）",
+              category: "账号信任",
+              description: "90 天、当前范围；登录同一账号的设备免扫码自动可见",
+              onSelect: () =>
+                setConfirmation({
+                  type: "trust" as const,
+                  grant,
+                  policy: {
+                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
+                    projectIDs: grant.projectIDs,
+                    sessionIDs: grant.sessionIDs,
+                    expiresAt: Date.now() + 90 * 86400000,
+                    autoAdmit: true,
+                  },
+                }),
+            }))
+        : []),
       { value: "refresh", title: "刷新状态", onSelect: () => perform(refresh) },
     ]
   })

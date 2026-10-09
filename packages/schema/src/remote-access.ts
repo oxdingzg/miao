@@ -23,6 +23,8 @@ export const Policy = Schema.Struct({
   projectIDs: Schema.Array(ScopeID).check(Schema.isMaxLength(128)),
   sessionIDs: Schema.Array(ScopeID).check(Schema.isMaxLength(256)),
   expiresAt: Schema.Int,
+  /** Owner opt-in: devices signed into the same Hub account are admitted without scanning. */
+  autoAdmit: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "RemoteAccess.Policy" })
 export interface Grant extends Schema.Schema.Type<typeof Grant> {}
 export const Grant = Schema.Struct({
@@ -59,6 +61,7 @@ export const AccountTrustStatus = Schema.Struct({
   deviceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(64)),
   permissions: Schema.Array(Permission),
   expiresAt: Schema.Int,
+  autoAdmit: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "RemoteAccess.AccountTrustStatus" })
 export type AccountTrustStatus = typeof AccountTrustStatus.Type
 
