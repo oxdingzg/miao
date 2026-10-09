@@ -131,3 +131,27 @@ not silently extend delegation beyond that deadline.
 consumes the encrypted approval, validates the returned grant for its own device
 identity and passes it to the RPC client. It still requires an independently
 trusted host public key. Hub directory metadata cannot supply that trust.
+
+## Device enrollment proof
+
+`DeviceEnrollment.request` creates a signed, account-and-Hub-bound request for
+one device public key and display label. The domain is
+`miao.control.enrollment.v1`. A fresh 32-byte challenge and ten-minute expiry
+bind the response; approving devices verify proof of possession before adding
+membership. Only an already accepted local signer may approve, using a roster
+whose sequence and canonical digest match durable local authority. A new member
+is not made a signer. Endorsed host keys must come from the approving device's
+independent pairing state.
+
+The approval contains both a signed next roster and a recipient/challenge-bound
+`HostEndorsement`. The recipient separately supplies the approving signer's key
+obtained out of band. A signer key nominated by the Hub is not sufficient. Both
+signatures, recipient membership and the host endorsement must validate before
+trust may be persisted. `DeviceEnrollment.make` manages one tab-local pending
+request, consumes it once and fences verification against cancellation or a
+newer request. Callers cancel it on account changes and persist the accepted
+roster authority and host pins together before connecting.
+
+This module defines and verifies the enrollment exchange. The browser transfer
+UI, durable enrollment storage and login-to-session discovery integration remain
+follow-up work; the protocol alone does not enable account-only admission.
