@@ -85,8 +85,8 @@ This separates two directions of trust: signed device rosters let a host admit
 a member; host endorsements let that member authenticate the real host. Neither
 account login nor an untrusted directory substitutes for either decision.
 The enrollment UI must consume its nonce once and persist the endorsed keys
-before calling `SecureChannel.startClient().finish`. Device-to-device transport
-and owner/claim integration are follow-up work, not enabled by these primitives.
+before calling `SecureChannel.startClient().finish`. Device-to-device transport and the enrollment UI remain follow-up work.
+Local owner controls and roster-claim admission are described below.
 
 ## Local owner controls
 
@@ -131,3 +131,38 @@ not silently extend delegation beyond that deadline.
 consumes the encrypted approval, validates the returned grant for its own device
 identity and passes it to the RPC client. It still requires an independently
 trusted host public key. Hub directory metadata cannot supply that trust.
+
+## Hub roster transport
+
+The Hub exposes authenticated-account metadata at these routes:
+
+- `GET /api/hub/roster` returns `{ roster: null }` or `{ roster: record }`.
+- `PUT /api/hub/roster` accepts `{ sequence, payload, signature, digest }`.
+  `payload` is the canonical roster object described above; `signature` is the
+  signed roster's P1363 base64url signature; `digest` is its domain-separated
+  canonical fingerprint from `DeviceRoster.fingerprint`. The record adds
+  `accountID` and `updatedAt`.
+- `GET /api/hub/roster/history` returns `{ history: [{ sequence, digest,
+updatedAt }] }`, newest first, limited to 16 revisions.
+- `GET /api/hub/roster/devices` returns `{ devices: [...] }`, or an empty list
+  when no roster has been submitted.
+
+Every route derives the account from live authentication. Updates require
+JSON, enforce a 64 KiB request limit, validate device-key shape and curve
+points, and compare the canonical digest. The payload account and sequence
+must match the authenticated account and outer sequence. Sequence updates and
+history insertion/pruning are one transaction; stale or equal sequences return
+`409`, including concurrent updates. Logout invalidates both reads and writes.
+History is bounded by count even when sequence numbers have gaps.
+
+The Hub does not decide which signing root is trusted. Stored signatures and
+membership metadata are untrusted until a local Agent or recipient checks
+its independent trust state. Uploading a roster does not itself admit a device
+or supply trusted host keys. Browser enrollment and login-to-session discovery
+still need to connect this transport to those checks.
+
+An explicit additive `HubRoster.migrate` creates the versioned metadata tables;
+service startup with migration enabled performs it alongside directory migration.
+Existing databases can continue serving other APIs without these tables, while
+roster endpoints return `503` until an administrator runs migration. Unknown
+roster schema versions fail startup rather than resetting metadata.
