@@ -51,13 +51,25 @@ pub fn profile(
     profile.push_str("  (subpath \"/private/var/tmp\")\n");
     profile.push_str("  (subpath \"/dev\")\n");
     for path in workdirs.iter().chain(allow_paths) {
-        profile.push_str(&format!("  (subpath \"{}\")\n", canonical(path).display()));
+        profile.push_str(&format!("  (subpath {})\n", quoted(&canonical(path))));
     }
     profile.push_str(")\n");
     if allow_network {
         profile.push_str("(allow network*)\n");
     }
     profile
+}
+
+// Paths are data, never fragments of the seatbelt policy language.
+fn quoted(path: &Path) -> String {
+    let text = path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+    format!("\"{text}\"")
 }
 
 /// Compatibility-first profile: allow everything, then deny writes to a small set
@@ -74,10 +86,7 @@ fn compat_profile(allow_network: bool) -> String {
             ".docker/config.json",
             ".config/gh",
         ] {
-            profile.push_str(&format!(
-                "  (subpath \"{}\")\n",
-                home.join(relative).display()
-            ));
+            profile.push_str(&format!("  (subpath {})\n", quoted(&home.join(relative))));
         }
     }
     profile.push_str(")\n");
@@ -149,6 +158,150 @@ pub fn apply_linux_restrictions(
     Ok(())
 }
 
+/// Strict engine entry point. Unlike the legacy best-effort backend, require
+/// Landlock ABI v3 (including refer/truncate), fully enforced filesystem rights,
+/// and an inherited socket-creation filter when networking is disabled.
+/// Must be called in a fresh single-threaded runner before executing its argv.
+#[cfg(target_os = "linux")]
+pub fn apply_linux_strict(workdirs: &[PathBuf], allow_network: bool) -> Result<(), String> {
+    use landlock::{
+        Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
+        RulesetStatus,
+    };
+    let version = unsafe {
+        libc::syscall(
+            libc::SYS_landlock_create_ruleset,
+            std::ptr::null::<libc::c_void>(),
+            0,
+            1,
+        )
+    };
+    if version < 3 {
+        return Err("strict sandbox requires Landlock ABI v3 or newer".into());
+    }
+    let all = AccessFs::from_all(landlock::ABI::V3);
+    let mut ruleset = Ruleset::default()
+        .handle_access(all)
+        .map_err(|e| e.to_string())?
+        .create()
+        .map_err(|e| e.to_string())?;
+    let root = PathFd::new("/").map_err(|e| e.to_string())?;
+    ruleset = ruleset
+        .add_rule(PathBeneath::new(
+            root,
+            AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir,
+        ))
+        .map_err(|e| e.to_string())?;
+    for dir in workdirs {
+        let fd = PathFd::new(std::fs::canonicalize(dir).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(fd, all))
+            .map_err(|e| e.to_string())?;
+    }
+    let null = PathFd::new("/dev/null").map_err(|e| e.to_string())?;
+    ruleset = ruleset
+        .add_rule(PathBeneath::new(
+            null,
+            AccessFs::ReadFile | AccessFs::WriteFile,
+        ))
+        .map_err(|e| e.to_string())?;
+    let status = ruleset.restrict_self().map_err(|e| e.to_string())?;
+    if status.ruleset != RulesetStatus::FullyEnforced {
+        return Err("filesystem sandbox was not fully enforced".into());
+    }
+    if !allow_network {
+        deny_sockets()?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn deny_sockets() -> Result<(), String> {
+    let arch = if cfg!(target_arch = "x86_64") {
+        0xc000003e
+    } else if cfg!(target_arch = "aarch64") {
+        0xc00000b7
+    } else {
+        return Err("strict network filter unsupported on this architecture".into());
+    };
+    let deny = 0x00050000 | libc::EPERM as u32;
+    let filter = [
+        libc::sock_filter {
+            code: 0x20,
+            jt: 0,
+            jf: 0,
+            k: 4,
+        },
+        libc::sock_filter {
+            code: 0x15,
+            jt: 1,
+            jf: 0,
+            k: arch,
+        },
+        libc::sock_filter {
+            code: 0x06,
+            jt: 0,
+            jf: 0,
+            k: deny,
+        },
+        libc::sock_filter {
+            code: 0x20,
+            jt: 0,
+            jf: 0,
+            k: 0,
+        },
+        libc::sock_filter {
+            code: 0x35,
+            jt: 0,
+            jf: 1,
+            k: 0x40000000,
+        },
+        libc::sock_filter {
+            code: 0x06,
+            jt: 0,
+            jf: 0,
+            k: deny,
+        },
+        libc::sock_filter {
+            code: 0x15,
+            jt: 0,
+            jf: 1,
+            k: libc::SYS_socket as u32,
+        },
+        libc::sock_filter {
+            code: 0x06,
+            jt: 0,
+            jf: 0,
+            k: deny,
+        },
+        libc::sock_filter {
+            code: 0x06,
+            jt: 0,
+            jf: 0,
+            k: 0x7fff0000,
+        },
+    ];
+    let program = libc::sock_fprog {
+        len: filter.len() as u16,
+        filter: filter.as_ptr() as *mut libc::sock_filter,
+    };
+    if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0
+        || unsafe { libc::prctl(libc::PR_SET_SECCOMP, 2, &program as *const libc::sock_fprog) } != 0
+    {
+        return Err(format!(
+            "network filter failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn apply_linux_strict(_workdirs: &[PathBuf], _allow_network: bool) -> Result<(), String> {
+    Err("strict Landlock backend requires Linux".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +341,23 @@ mod tests {
                 target_os = "linux",
                 target_os = "windows"
             ))
+        );
+    }
+}
+
+#[cfg(test)]
+mod escaping_tests {
+    #[test]
+    fn workspace_path_cannot_inject_seatbelt_forms() {
+        let path = std::path::PathBuf::from("/tmp/quote\") (allow default) ;\\newline\n");
+        let profile = super::profile(&[path], &[], false, false);
+        assert!(profile.contains("quote\\\") (allow default) ;\\\\newline\\n"));
+        assert_eq!(
+            profile
+                .lines()
+                .filter(|line| line.starts_with("  (subpath"))
+                .count(),
+            5
         );
     }
 }

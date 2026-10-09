@@ -1,0 +1,88 @@
+name: engine
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/miao-engine/**"
+      - "crates/miao-sandbox/**"
+      - "package.json"
+      - ".github/workflows/engine.yml"
+  pull_request:
+    paths:
+      - "crates/miao-engine/**"
+      - "crates/miao-sandbox/**"
+      - "package.json"
+      - ".github/workflows/engine.yml"
+  workflow_dispatch:
+
+concurrency:
+  # A pull request shares one group per number, so a new push cancels its older
+  # run. A push to main groups by commit SHA, so every merged commit gets its own
+  # run and keeps a complete status instead of being superseded and cancelled.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: engine (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14
+          - ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: crates/miao-engine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-engine
+
+      - name: Format
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+  engine-windows:
+    name: engine (windows, compile)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: crates/miao-engine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/miao-engine
+
+      - name: Check (compile all targets)
+        run: cargo check --all-targets
