@@ -112,3 +112,21 @@ test("Proof expires and an existing member is not duplicated or silently promote
   expect(second.roster.roster.devices).toHaveLength(2)
   expect(second.roster.roster.devices.find((device) => device.publicKey === recipient.publicKey)?.signer).toBe(false)
 })
+
+test("HTTP enrollment is restricted to explicit loopback development opt-in", async () => {
+  const { root, recipient, options } = await fixture()
+  const local = { ...binding, hubURL: "http://127.0.0.1:4600", allowLoopbackHTTP: true }
+  await expect(DeviceEnrollment.request(recipient, { ...local, allowLoopbackHTTP: false }, "Phone")).rejects.toThrow(
+    "Hub",
+  )
+  await expect(
+    DeviceEnrollment.request(recipient, { ...local, hubURL: "http://relay.example.invalid" }, "Phone"),
+  ).rejects.toThrow("Hub")
+  const pending = await DeviceEnrollment.request(recipient, local, "Phone")
+  const approved = await DeviceEnrollment.approve(root, pending, { ...options, ...local })
+  await expect(DeviceEnrollment.receive(approved, pending, root.publicKey)).rejects.toThrow("Hub")
+  const received = await DeviceEnrollment.receive(approved, pending, root.publicKey, Date.now(), {
+    allowLoopbackHTTP: true,
+  })
+  expect(received.hosts).toEqual(options.hosts)
+})

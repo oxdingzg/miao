@@ -8,9 +8,11 @@
     "src/browser-channel.ts",
     "src/browser-checkpoint.ts",
     "src/browser-account.ts",
+    "src/browser-enrollment.ts",
     "src/device-enrollment.ts",
     "script/check-browser.ts",
     "script/check-browser-account.ts",
+    "script/check-browser-enrollment.ts",
     "web/client.ts",
     "script/check-web.ts",
     "script/check-web-runtime.ts"

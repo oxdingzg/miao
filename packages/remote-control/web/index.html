@@ -36,6 +36,31 @@
               ><button type="submit">请求配对</button>
             </form>
           </details>
+          <details>
+            <summary>同账号设备注册</summary>
+            <p>首次使用：先在电脑配对本设备，并在电脑的设备管理中选择本设备作为账号签名设备。</p>
+            <label class="enrollment-consent"><input id="root-consent" type="checkbox" />允许本设备批准同账号的新设备</label>
+            <button id="enrollment-root" type="button">初始化签名设备</button>
+            <form id="enrollment-request-form">
+              <label>新设备名称<input id="enrollment-label" maxlength="128" value="手机浏览器" required /></label>
+              <button type="submit">生成十分钟注册码</button>
+            </form>
+            <label>发送给已信任设备<textarea id="enrollment-request" rows="3" readonly></textarea></label>
+            <form id="enrollment-approve-form">
+              <label>收到的新设备注册码<textarea id="enrollment-incoming" rows="3" required></textarea></label>
+              <button type="submit">确认并批准新设备</button>
+            </form>
+            <label>返回给新设备<textarea id="enrollment-response" rows="3" readonly></textarea></label>
+            <label>本设备签名公钥<input id="enrollment-signer" readonly /></label>
+            <form id="enrollment-receive-form">
+              <label>批准结果<textarea id="enrollment-approved" rows="3" required></textarea></label>
+              <label
+                >已信任设备提供的签名公钥<input id="enrollment-pin" minlength="87" maxlength="87" required
+              /></label>
+              <label class="enrollment-consent"><input id="enrollment-oob" type="checkbox" required />结果和公钥直接来自我的已信任设备</label>
+              <button type="submit">完成注册并查找会话</button>
+            </form>
+          </details>
           <h2>会话</h2>
           <div id="sessions"></div>
           <button id="logout" class="quiet">退出账号</button>

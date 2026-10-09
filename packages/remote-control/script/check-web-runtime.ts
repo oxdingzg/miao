@@ -19,6 +19,7 @@ const project = path.join(directory, "project")
 const sessionID = "ses_web_" + crypto.randomUUID().replaceAll("-", "")
 const projectScope = process.argv.includes("--project-scope")
 const liveMode = process.argv.includes("--live")
+const enrollmentMode = process.argv.includes("--account-enrollment")
 const fixture = { calls: 0, expectedCalls: 0, live: false, finish: () => {} }
 const settlement = new Promise<void>((resolve) => {
   fixture.finish = resolve
@@ -118,6 +119,7 @@ try {
     JSON.stringify({
       hubURL: origin,
       hostToken: registration.token,
+      accountID: registration.accountID,
       grantFile: "devices.json",
       allowLoopbackHTTP: true,
     }),
@@ -269,7 +271,7 @@ try {
   })()
   void approval.catch(() => browser?.close())
   browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
+  let page = await browser.newPage()
   page.on("console", (message) => {
     if (
       /^Remote action failed (forbidden|not_found|conflict|expired|outcome_unknown|invalid_request|unavailable|disconnected|timeout|busy|invalid_response)$/.test(
@@ -303,6 +305,65 @@ try {
     .fill("miao://pair#" + Buffer.from(JSON.stringify(invitation)).toString("base64url"))
   await page.getByRole("button", { name: "请求配对" }).click()
   await page.getByText("设备已授权。选择电脑继续。", { exact: true }).waitFor()
+  if (enrollmentMode) {
+    stage = "account-owner-consent"
+    const devices = await request("/api/runtime/control/device")
+    if (!Array.isArray(devices) || devices.length !== 1 || !object(devices[0])) throw new Error("Root grant missing")
+    const rootGrant = devices[0]
+    await request("/api/runtime/control/account/trust", {
+      grantID: rootGrant.id,
+      version: rootGrant.version,
+      policy: {
+        permissions: rootGrant.permissions,
+        projectIDs: rootGrant.projectIDs,
+        sessionIDs: rootGrant.sessionIDs,
+        expiresAt: rootGrant.expiresAt,
+      },
+    })
+    const rootPage = page
+    await rootPage.getByText("同账号设备注册", { exact: true }).click()
+    await rootPage.locator("#root-consent").check()
+    await rootPage.getByRole("button", { name: "初始化签名设备", exact: true }).click()
+    await rootPage.getByText("签名设备已初始化。请确认电脑已明确选择信任此设备。", { exact: true }).waitFor()
+    const pin = await rootPage.locator("#enrollment-signer").inputValue()
+    if (pin !== rootGrant.publicKey) throw new Error("Root pin did not match local owner selection")
+    const context = await browser.newContext()
+    page = await context.newPage()
+    await page.goto(origin)
+    await page.getByLabel("邮箱").fill("runtime@example.invalid")
+    await page.getByLabel("密码").fill("runtime-web-fixture-password-0001")
+    await page.getByRole("button", { name: "登录 →" }).click()
+    await page.getByRole("button", { name: "Runtime computer" }).click()
+    await page.getByText("请先使用电脑上的配对邀请，并在电脑确认授权。", { exact: true }).waitFor()
+    if ((await page.locator("#connection").textContent()) !== "未连接")
+      throw new Error("Account login alone admitted a new key")
+    stage = "account-enrollment"
+    await page.getByText("同账号设备注册", { exact: true }).click()
+    await page.locator("#enrollment-label").fill("Account phone")
+    await page.getByRole("button", { name: "生成十分钟注册码", exact: true }).click()
+    await page.waitForFunction(() => !!(document.getElementById("enrollment-request") as HTMLTextAreaElement).value)
+    const code = await page.locator("#enrollment-request").inputValue()
+    rootPage.on("dialog", (dialog) => void dialog.accept())
+    await rootPage.locator("#enrollment-incoming").fill(code)
+    await rootPage.getByRole("button", { name: "确认并批准新设备", exact: true }).click()
+    await rootPage.waitForFunction(
+      () => !!(document.getElementById("enrollment-response") as HTMLTextAreaElement).value,
+    )
+    const response = await rootPage.locator("#enrollment-response").inputValue()
+    await page.locator("#enrollment-approved").fill(response)
+    // A Hub/host-nominated key is not the independently supplied signer pin.
+    await page.locator("#enrollment-pin").fill(hostKey)
+    await page.locator("#enrollment-oob").check()
+    await page.getByRole("button", { name: "完成注册并查找会话", exact: true }).click()
+    await page.getByText("操作未能确认。请检查连接后重试；已发送的输入不会自动重发。", { exact: true }).waitFor()
+    const hasTrust = await page.evaluate(() =>
+      Object.keys(localStorage).some((key) => key.includes("miao.remote-control.enrollment")),
+    )
+    if (hasTrust) throw new Error("Wrong signer pin persisted trust")
+    await page.locator("#enrollment-pin").fill(pin)
+    await page.getByRole("button", { name: "完成注册并查找会话", exact: true }).click()
+    await page.getByText("设备注册完成。选择在线电脑查看已开启远程控制的会话。", { exact: true }).waitFor()
+  }
   stage = "session"
   await page.getByRole("button", { name: "Runtime computer" }).click()
   if (projectScope) {
@@ -447,6 +508,27 @@ try {
     await page.reload()
     await page.getByRole("button", { name: "Runtime computer" }).click()
     await openListed("Renamed Runtime workspace")
+  }
+  if (enrollmentMode) {
+    stage = "account-grant-reuse-and-owner-revocation"
+    const devices = await request("/api/runtime/control/device")
+    if (!Array.isArray(devices) || devices.length !== 2) throw new Error("Roster reconnect accumulated grants")
+    const response = await fetch(new URL("/api/runtime/control/account/trust", owner.url), {
+      method: "DELETE",
+      headers,
+      signal: AbortSignal.timeout(10000),
+    })
+    if (response.status !== 204) throw new Error("Owner trust cancellation failed")
+    await page.waitForFunction(() => document.getElementById("connection")?.textContent === "未连接")
+    await page.getByRole("button", { name: "Runtime computer" }).click()
+    await page.getByText("操作未能确认。请检查连接后重试；已发送的输入不会自动重发。", { exact: true }).waitFor()
+    if ((await page.locator("#connection").textContent()) !== "未连接")
+      throw new Error("Revoked account device reconnected")
+    if ((await request("/api/runtime/control/account/trust")) !== null)
+      throw new Error("Account delegation survived cancellation")
+    console.log(
+      "Web account enrollment: independent Root A approval, recipient proof and host pin, encrypted Runtime grant, reload/discovery, bounded reconnect and owner revocation passed",
+    )
   }
   console.log(
     "Web real Runtime: " +
