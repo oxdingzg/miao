@@ -24,9 +24,9 @@ are relative to `crates/miao-engine/tests/`.
 
 The M1 gate tracks 30–50 scenarios plus a real small fix. Existing coverage that
 counts toward it includes conditional writes (`mutations.rs`), V4A patch
-transactions (`apply_patch.rs`), sandboxed process execution and descendant reaping
-(`process.rs`, `guardian.rs`), approval binding and cancellation (`approval.rs`,
-`permission.rs`), provider fallback with a shared retry budget (`routing.rs`),
-opaque-reasoning preservation (`responses.rs`), and MCP cancellation
-(`mcp.rs`). The remaining M1 capabilities (PTY, LSP core, media, delegation) add
-their own scenarios as they land.
+transactions (`apply_patch.rs`), sandboxed process execution, descendant reaping
+and pty allocation (`process.rs`, `guardian.rs`, `bash.rs`), approval binding and
+cancellation (`approval.rs`, `permission.rs`), provider fallback with a shared
+retry budget (`routing.rs`), opaque-reasoning preservation (`responses.rs`), and
+MCP cancellation (`mcp.rs`). The remaining M1 capabilities (LSP core, media,
+delegation) add their own scenarios as they land.

@@ -16,8 +16,7 @@ scope for this table and is tracked separately.
 | Coding tools: read/list/glob/grep | validated | `src/tools.rs`, `src/search.rs`; bounded, no symlink escape |
 | Coding tools: write/edit/apply_patch | validated | `src/file_mutation.rs`, `src/patch.rs`; conditional SHA-256 writes, BOM/EOL preserved, V4A transaction |
 | Permission and approval | validated | `src/permission.rs`, `src/approval.rs`; policy upper bound, first-answer-wins |
-| Process: foreground command, background job | validated | `src/process.rs`, `src/jobs.rs`; macOS seatbelt / Linux Landlock, job slots |
-| Process: PTY terminal | inventory | M1 gap |
+| Process: foreground command, background job, shell, PTY | validated | `src/process.rs`, `src/jobs.rs`, `src/tools.rs`; macOS seatbelt / Linux Landlock, job slots; `bash -c` and an optional interactive-terminal-style pty with merged output (`tests/bash.rs`)
 | Delegation: subagents, resource limits | inventory | M1 gap |
 | LSP core (diagnostics/definition/references) | inventory | M1 gap |
 | Media (image/PDF/attachment) | inventory | M1 gap |

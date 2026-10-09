@@ -21,6 +21,11 @@ pub struct Input {
     pub cwd: String,
     #[serde(default = "timeout")]
     pub timeout_ms: u64,
+    /// Allocate a pseudo-terminal for the child's stdio. Programs that inspect
+    /// `isatty` then see a terminal; input is not interactive and stdout/stderr
+    /// are merged. Requires the same platform enforcement as the sandbox.
+    #[serde(default)]
+    pub pty: bool,
 }
 fn cwd() -> String {
     ".".into()
@@ -44,6 +49,38 @@ impl Input {
     }
 }
 
+/// A shell command line run through `bash -c`. Kept separate from [`Input`] so
+/// the tool schema stays a shell string rather than an argv array.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BashInput {
+    pub command: String,
+    #[serde(default = "cwd")]
+    pub cwd: String,
+    #[serde(default = "timeout")]
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub pty: bool,
+}
+impl BashInput {
+    pub fn parse(input: Value) -> Result<Self, ToolError> {
+        let input: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+        if input.command.is_empty()
+            || input.command.len() > 32768
+            || input.command.contains('\0')
+            || !(1..=120_000).contains(&input.timeout_ms)
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Ok(input)
+    }
+
+    /// Translate to the argv the sandboxed runner executes.
+    pub fn argv(&self) -> Vec<String> {
+        vec!["bash".into(), "-c".into(), self.command.clone()]
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Runner {
@@ -60,6 +97,79 @@ struct Runner {
 /// so the process tools stay disabled there instead of running unsandboxed.
 pub fn enforced() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))
+}
+
+/// Allocate a pseudo-terminal pair with a sane default window size. The master
+/// is read by the engine; the slave becomes the guarded child's stdio so that
+/// programs observing `isatty` see a terminal.
+#[cfg(unix)]
+fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
+    use std::os::fd::FromRawFd;
+    let mut master = 0;
+    let mut slave = 0;
+    let mut size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let opened = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::addr_of_mut!(size),
+        )
+    };
+    if opened != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe {
+        (
+            std::fs::File::from_raw_fd(master),
+            std::fs::File::from_raw_fd(slave),
+        )
+    })
+}
+#[cfg(not(unix))]
+fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "pty unsupported",
+    ))
+}
+
+/// Read the master side of a pty. Linux reports end-of-input from a pty master
+/// as `EIO` rather than a zero-length read; both are treated as end-of-stream.
+async fn read_pty(master: std::fs::File) -> Result<(bool, Vec<u8>), ToolError> {
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut master = master;
+        let mut bytes = Vec::new();
+        let mut buffer = [0u8; 8192];
+        loop {
+            match master.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    bytes.extend_from_slice(&buffer[..read]);
+                    if bytes.len() > 32768 {
+                        break;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    if error.raw_os_error() == Some(libc::EIO) {
+                        break;
+                    }
+                    return Err(ToolError::Io(error));
+                }
+            }
+        }
+        Ok((true, bytes))
+    })
+    .await
+    .map_err(|_| ToolError::Io(std::io::Error::other("pty reader failed")))?
 }
 
 /// The binary calls this before constructing Tokio: Linux confinement must be
@@ -262,6 +372,7 @@ pub(crate) async fn execute(
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
+    let pty = input.pty;
     let spec = Runner {
         workspace: workspace.into(),
         cwd: cwd.into(),
@@ -276,10 +387,18 @@ pub(crate) async fn execute(
         .arg(serde_json::to_string(&spec).map_err(|_| ToolError::InvalidInput)?)
         .env_clear()
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .current_dir(cwd);
+    let master = if pty {
+        let (master, slave) = open_pty()?;
+        command.stdout(Stdio::from(slave.try_clone()?));
+        command.stderr(Stdio::from(slave));
+        Some(master)
+    } else {
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        None
+    };
     for key in ["PATH", "HOME", "LANG", "LC_ALL", "TERM"] {
         if let Some(value) = std::env::var_os(key) {
             command.env(key, value);
@@ -295,6 +414,9 @@ pub(crate) async fn execute(
         command.as_std_mut().process_group(0);
     }
     let mut child = command.spawn()?;
+    // A `Stdio::from(File)` slave can outlive `spawn` inside the Command; drop
+    // it so the parent holds no pty slave, or the master would never reach EOF.
+    drop(command);
     let lifeline = child.stdin.take();
     let mut group = Group {
         pid: child
@@ -305,11 +427,15 @@ pub(crate) async fn execute(
         _lifeline: lifeline,
     };
     let mut readers = JoinSet::new();
-    if let Some(stdout) = group.child.stdout.take() {
-        readers.spawn(read_pipe(stdout, true));
-    }
-    if let Some(stderr) = group.child.stderr.take() {
-        readers.spawn(read_pipe(stderr, false));
+    if let Some(master) = master {
+        readers.spawn(read_pty(master));
+    } else {
+        if let Some(stdout) = group.child.stdout.take() {
+            readers.spawn(read_pipe(stdout, true));
+        }
+        if let Some(stderr) = group.child.stderr.take() {
+            readers.spawn(read_pipe(stderr, false));
+        }
     }
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
