@@ -137,8 +137,59 @@ export async function start(input: {
     if (unsubscribe) await input.run(unsubscribe)
     live.clear()
   }
+  const accountTrust = (): RemoteAccess.AccountTrustStatus | null => {
+    const saved = grants.accountTrust()
+    return saved
+      ? {
+          hubURL: saved.hubURL,
+          accountID: saved.accountID,
+          acceptedSequence: saved.acceptedSequence,
+          deviceCount: saved.devices.length,
+          permissions: saved.policy.permissions,
+          expiresAt: saved.policy.expiresAt,
+        }
+      : null
+  }
   const administration: RuntimeAdministration.Interface = {
     status,
+    accountTrust,
+    bindAccount: (grantID, version, policy) => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped || !state.active?.configuration.accountID)
+          throw new Error("Authenticated Hub account required")
+        const configuration = state.active.configuration
+        const projects = await client.projects.list()
+        if (policy.projectIDs.some((id) => !projects.data.some((project) => project.id === id)))
+          throw new Error("Unknown project scope")
+        if ((await Promise.all(policy.sessionIDs.map(owned))).some((valid) => !valid))
+          throw new Error("Session unavailable in this Runtime")
+        if (state.stopped) throw new Error("Remote Control stopped")
+        await grants.bindAccount({
+          hubURL: configuration.hubURL,
+          accountID: configuration.accountID!,
+          grantID,
+          grantVersion: version,
+          policy,
+          allowLoopbackHTTP,
+        })
+        return accountTrust()!
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
+    clearAccountTrust: () => {
+      const operation = state.tail.then(async () => {
+        if (state.stopped) throw new Error("Remote Control stopped")
+        const revoked = await grants.clearAccountTrust()
+        const active = state.active
+        for (const grant of revoked) {
+          await active?.agent.revoke(grant.id, grant.version)
+          await active?.notifications.revoke(grant)
+        }
+      })
+      state.tail = operation.catch(() => undefined)
+      return operation
+    },
     setSessionEnabled: (sessionID, enabled) => {
       const operation = state.tail.then(async () => {
         if (state.stopped) throw new Error("Remote Control stopped")

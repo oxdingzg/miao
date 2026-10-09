@@ -119,12 +119,18 @@ export async function load(filename: string) {
       grantID: string
       grantVersion: number
       policy: AccountTrust["policy"]
+      allowLoopbackHTTP?: boolean
     }) =>
       mutate((current) => {
         if (current.accountTrust) throw new Error("Account already bound; local reset required")
         const origin = new URL(input.hubURL)
         if (
-          origin.protocol !== "https:" ||
+          (origin.protocol !== "https:" &&
+            !(
+              input.allowLoopbackHTTP &&
+              origin.protocol === "http:" &&
+              ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)
+            )) ||
           origin.username ||
           origin.password ||
           origin.pathname !== "/" ||
@@ -159,6 +165,21 @@ export async function load(filename: string) {
           policy,
         })
         return { next: { ...current, accountTrust: trust }, result: structuredClone(trust) }
+      }),
+    /** Local cancellation removes delegation and revokes all member-key grants atomically. */
+    clearAccountTrust: () =>
+      mutate((current) => {
+        if (!current.accountTrust) return { next: current, result: [] as Grant[] }
+        const keys = new Set(current.accountTrust.devices.map((device) => device.publicKey))
+        const revoked: Grant[] = []
+        const grants = current.grants.map((grant) => {
+          if (grant.revokedAt !== null || !keys.has(grant.publicKey)) return grant
+          const updated = { ...grant, version: grant.version + 1, revokedAt: Date.now() }
+          revoked.push(updated)
+          return updated
+        })
+        const { accountTrust: _, ...rest } = current
+        return { next: { ...rest, grants }, result: structuredClone(revoked) }
       }),
     /** Advancing authority and revoking removed keys share one durable atomic write. */
     acceptRoster: (hubURL: string, input: unknown) =>

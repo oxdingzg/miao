@@ -1,8 +1,9 @@
 # Signed account device rosters
 
 The validation and durable authority core is implemented in `device-roster.ts`
-and `grants.ts`. Runtime owner controls, client enrollment, and a roster-claim
-handshake still need integration before this enables account-wide access.
+and `grants.ts`. Local Runtime owner controls can now bind and cancel delegation. Client
+enrollment and roster-claim admission still need integration before this enables
+account-wide access.
 
 ## Local authority
 
@@ -86,3 +87,22 @@ account login nor an untrusted directory substitutes for either decision.
 The enrollment UI must consume its nonce once and persist the endorsed keys
 before calling `SecureChannel.startClient().finish`. Device-to-device transport
 and owner/claim integration are follow-up work, not enabled by these primitives.
+
+## Local owner controls
+
+Authenticated local administrator endpoints provide:
+
+- `GET /api/runtime/control/account/trust`: authority summary or `null`.
+- `POST /api/runtime/control/account/trust`: live `grantID`, exact `version`, and
+  owner-selected `policy`. The account ID comes from current authenticated
+  Runtime configuration; request-supplied identities are never used.
+- `DELETE /api/runtime/control/account/trust`: atomically remove account
+  authority and revoke its member keys' grants, then disconnect live peers and
+  revoke their notification registrations.
+
+The desktop device dialog presents separate confirmations for trust and
+cancellation. Its default trust proposal retains the selected device's scopes
+and permissions, excludes Session creation, and expires after 90 days. The
+confirmation displays that scope and deadline. Cancellation is available even
+when relay transport is disabled and preserves local model work. Unrelated
+manually paired devices remain authorized.

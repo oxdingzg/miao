@@ -52,6 +52,16 @@ export const Candidate = Schema.Struct({
   policy: Policy,
   expiresAt: Schema.Int,
 }).annotate({ identifier: "RemoteAccess.Candidate" })
+export const AccountTrustStatus = Schema.Struct({
+  hubURL: Schema.String,
+  accountID: ID,
+  acceptedSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  deviceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(64)),
+  permissions: Schema.Array(Permission),
+  expiresAt: Schema.Int,
+}).annotate({ identifier: "RemoteAccess.AccountTrustStatus" })
+export type AccountTrustStatus = typeof AccountTrustStatus.Type
+
 export interface Status extends Schema.Schema.Type<typeof Status> {}
 export const Status = Schema.Struct({
   accountID: ID.pipe(optional),

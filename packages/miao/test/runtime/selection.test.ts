@@ -42,6 +42,7 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
     await Bun.write(
       configuration,
       JSON.stringify({
+        accountID: "account_owner_fixture_001",
         hubURL: `http://127.0.0.1:${hub.port}`,
         hostToken: token,
         grantFile: "devices.json",
@@ -217,6 +218,35 @@ test("selection RPCs persist agent/model choices and reconcile exact retries wit
     expect(
       history.data.filter((event: unknown) => object(event) && event.type === "session.next.model.switched"),
     ).toHaveLength(1)
+    const trustURL = new URL("/api/runtime/control/account/trust", record.url)
+    const policy = { permissions: ["read"], projectIDs: [], sessionIDs: [sessionID], expiresAt: Date.now() + 60000 }
+    const unauthorized = await fetch(trustURL, {
+      method: "POST",
+      headers: { authorization: "Bearer " + grant.id, "content-type": "application/json" },
+      body: JSON.stringify({ grantID: grant.id, version: grant.version, policy }),
+    })
+    expect(unauthorized.status).toBe(401)
+    expect(await local("/api/runtime/control/account/trust")).toBeNull()
+    const trusted = await local("/api/runtime/control/account/trust", {
+      grantID: grant.id,
+      version: grant.version,
+      policy,
+      accountID: "account_device_claim_001",
+    })
+    expect(trusted).toMatchObject({ accountID: "account_owner_fixture_001", acceptedSequence: 0, deviceCount: 1 })
+    expect(await local("/api/runtime/control/account/trust")).toMatchObject({ accountID: "account_owner_fixture_001" })
+    const cancelled = await fetch(trustURL, {
+      method: "DELETE",
+      headers: { authorization: `Basic ${Buffer.from(`miao:${record.credential}`).toString("base64")}` },
+    })
+    expect(cancelled.status).toBe(204)
+    expect(await local("/api/runtime/control/account/trust")).toBeNull()
+    const reopened = await DeviceGrants.load(path.join(directory, "devices.json"))
+    try {
+      expect(reopened.get(grant.id, device.publicKey)).toBeUndefined()
+    } finally {
+      await reopened.close()
+    }
   } finally {
     socket?.close()
     if (runtime) {

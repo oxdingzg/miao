@@ -690,3 +690,106 @@ test("pairing failures never display a secret carried by SDK error details", asy
     view.cleanup()
   }
 })
+
+test("account trust and cancellation require separate local confirmations and use authenticated status identity", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  control.state.status = { ...control.state.status, accountID: "account_owner_fixture_001" }
+  const grant: RemoteAccess.Grant = {
+    id: crypto.randomUUID(),
+    version: 1,
+    publicKey: control.publicKey,
+    label: "Phone",
+    permissions: ["read", "session.create"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60000,
+    revokedAt: null,
+  }
+  control.state.grants = [grant]
+  let trust: RemoteAccess.AccountTrustStatus | null = null
+  const calls: string[] = []
+  const api: DeviceApi = {
+    ...control.api,
+    accountTrust: async () => trust,
+    bindAccount: async (input) => {
+      calls.push("bind")
+      expect(input).not.toHaveProperty("accountID")
+      expect(input.policy.permissions).toEqual(["read"])
+      expect(input.policy.expiresAt).toBeGreaterThan(Date.now() + 89 * 86400000)
+      trust = {
+        accountID: "account_owner_fixture_001",
+        hubURL: "https://relay.example.invalid",
+        deviceCount: 1,
+        acceptedSequence: 0,
+        permissions: input.policy.permissions,
+        expiresAt: input.policy.expiresAt,
+      }
+      return trust
+    },
+    clearAccountTrust: async () => {
+      calls.push("clear")
+      trust = null
+      control.state.grants = []
+    },
+  }
+  const view = await mount(tmp.path, environment({ devices: api }))
+  try {
+    await openDevices(view)
+    await view.until((frame) => frame.includes("为签名根信任账号"))
+    await view.app.mockInput.typeText("签名根")
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("确认信任账号设备"))
+    expect(calls).toEqual([])
+    await view.select(1)
+    await view.until((frame) => frame.includes("已信任此账号") && !frame.includes("正在处理"))
+    await view.until((frame) => frame.includes("取消账号信任并撤销名单设备") && !frame.includes("正在处理"))
+    await Bun.sleep(30)
+    await view.app.mockInput.typeText("取消账号")
+    await view.app.renderOnce()
+    await Bun.sleep(50)
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("包括原始签名设备"))
+    expect(calls).toEqual(["bind"])
+    await view.select(1)
+    await view.until((frame) => frame.includes("已取消账号信任"))
+    expect(calls).toEqual(["bind", "clear"])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("account delegation can be cancelled while relay transport is disabled", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  let cleared = false
+  const trust: RemoteAccess.AccountTrustStatus = {
+    accountID: "account_owner_fixture_001",
+    hubURL: "https://relay.example.invalid",
+    acceptedSequence: 0,
+    deviceCount: 1,
+    permissions: ["read"],
+    expiresAt: Date.now() + 60000,
+  }
+  const api: DeviceApi = {
+    ...control.api,
+    accountTrust: async () => (cleared ? null : trust),
+    clearAccountTrust: async () => {
+      cleared = true
+    },
+  }
+  const view = await mount(tmp.path, environment({ devices: api }))
+  try {
+    await openDevices(view)
+    await view.until((frame) => frame.includes("取消账号信任并撤销名单设备"))
+    await view.select(0)
+    await view.until((frame) => frame.includes("包括原始签名设备"))
+    expect(cleared).toBe(false)
+    await view.select(1)
+    await view.until((frame) => frame.includes("已取消账号信任"))
+    expect(cleared).toBe(true)
+  } finally {
+    view.cleanup()
+  }
+})

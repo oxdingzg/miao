@@ -62,6 +62,38 @@ export const RuntimeHandler = HttpApiBuilder.group(Api, "server.runtime", (handl
           ),
         ),
       )
+      .handle("runtime.control.accountTrust", () =>
+        required().pipe(
+          Effect.flatMap((admin) =>
+            admin.accountTrust ? Effect.succeed(admin.accountTrust()) : Effect.fail(unavailable()),
+          ),
+        ),
+      )
+      .handle("runtime.control.bindAccount", (ctx) =>
+        required().pipe(
+          Effect.flatMap(
+            Effect.fn(function* (admin) {
+              const bind = admin.bindAccount
+              if (!bind) return yield* unavailable()
+              return yield* Effect.tryPromise({
+                try: () => bind(ctx.payload.grantID, ctx.payload.version, ctx.payload.policy),
+                catch: () => new InvalidRequestError({ message: "Account trust could not be confirmed" }),
+              })
+            }),
+          ),
+        ),
+      )
+      .handle("runtime.control.clearAccountTrust", () =>
+        required().pipe(
+          Effect.flatMap(
+            Effect.fn(function* (admin) {
+              const clear = admin.clearAccountTrust
+              if (!clear) return yield* unavailable()
+              return yield* Effect.tryPromise({ try: () => clear(), catch: () => unavailable() })
+            }),
+          ),
+        ),
+      )
       .handle("runtime.control.configure", (ctx) =>
         required().pipe(
           Effect.flatMap(

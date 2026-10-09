@@ -6,6 +6,13 @@ import type { RemoteAccess } from "@miao/schema/remote-access"
 export interface Interface {
   readonly setEnabled?: (enabled: boolean) => Promise<RemoteAccess.Status>
   readonly setSessionEnabled?: (sessionID: string, enabled: boolean) => Promise<RemoteAccess.Status>
+  readonly accountTrust?: () => RemoteAccess.AccountTrustStatus | null
+  readonly bindAccount?: (
+    grantID: string,
+    version: number,
+    policy: RemoteAccess.Policy,
+  ) => Promise<RemoteAccess.AccountTrustStatus>
+  readonly clearAccountTrust?: () => Promise<void>
   readonly status: () => RemoteAccess.Status
   readonly configure?: (configuration: RemoteAccess.Configuration) => Promise<RemoteAccess.Status>
   readonly invite: (policy: RemoteAccess.Policy) => Promise<RemoteAccess.Invitation>
