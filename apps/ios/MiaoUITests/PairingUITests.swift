@@ -64,8 +64,10 @@ final class PairingUITests: XCTestCase {
                 stage("pairing")
                 XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 30))
                 app.buttons["hubAccount"].tap()
-                XCTAssertTrue(app.buttons["同账号设备注册"].waitForExistence(timeout: 10))
-                app.buttons["同账号设备注册"].tap()
+                // iOS 18 and 26 expose the disclosure header as different element types.
+                let disclosure = app.descendants(matching: .any)["同账号设备注册"].firstMatch
+                XCTAssertTrue(disclosure.waitForExistence(timeout: 15))
+                disclosure.tap()
                 XCTAssertTrue(app.buttons["enrollmentBegin"].waitForExistence(timeout: 10))
                 app.buttons["enrollmentBegin"].tap()
                 let code = app.staticTexts["enrollmentRequest"]
