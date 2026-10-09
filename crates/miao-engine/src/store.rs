@@ -10,11 +10,12 @@ use fs2::FileExt;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Value};
 use std::{
-    fs::OpenOptions,
-    path::Path,
+    collections::HashSet,
+    fs::{File, OpenOptions},
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex, OnceLock,
     },
 };
 use tokio::sync::{mpsc, oneshot};
@@ -23,6 +24,27 @@ pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 pub(crate) const SCHEMA_VERSION: u32 = 9;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
+
+/// In-process guard on the set of locked store paths. The OS file lock provides
+/// the cross-process guarantee; this additionally rejects a second open in the
+/// same process on platforms whose file locks do not (for example Windows), and
+/// fails fast without touching the database.
+fn locked_paths() -> &'static Mutex<HashSet<PathBuf>> {
+    static LOCKED: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    LOCKED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+struct FileLease {
+    path: PathBuf,
+    _file: File,
+}
+impl Drop for FileLease {
+    fn drop(&mut self) {
+        if let Ok(mut locked) = locked_paths().lock() {
+            locked.remove(&self.path);
+        }
+    }
+}
 
 /// One dedicated SQLite worker owns both the connection and store lease. Async
 /// callers never block a Tokio worker on SQLite locks or filesystem operations.
@@ -75,19 +97,44 @@ impl Store {
                             .ok_or_else(|| Error::Invalid("store path".into()))?,
                     )
                 };
-                let lease = OpenOptions::new()
+                // In-process ownership is checked first: it is authoritative for
+                // same-process opens and does not depend on platform lock
+                // semantics. The OS lock then provides the cross-process lease.
+                if !locked_paths()
+                    .lock()
+                    .map_err(|_| Error::Busy)?
+                    .insert(canonical.clone())
+                {
+                    return Err(Error::Busy);
+                }
+                let file = match OpenOptions::new()
                     .create(true)
                     .truncate(false)
                     .read(true)
                     .write(true)
-                    .open(canonical.with_extension("engine-lock"))?;
-                lease.try_lock_exclusive().map_err(|e| {
-                    if e.kind() == std::io::ErrorKind::WouldBlock {
-                        Error::Busy
-                    } else {
-                        Error::Io(e)
+                    .open(canonical.with_extension("engine-lock"))
+                {
+                    Ok(file) => file,
+                    Err(error) => {
+                        if let Ok(mut locked) = locked_paths().lock() {
+                            locked.remove(&canonical);
+                        }
+                        return Err(Error::Io(error));
                     }
-                })?;
+                };
+                // Any failure here means another process holds the lease. Windows
+                // reports lock contention as a lock-violation error, not
+                // `WouldBlock`, so treat every failure as `Busy`.
+                if file.try_lock_exclusive().is_err() {
+                    if let Ok(mut locked) = locked_paths().lock() {
+                        locked.remove(&canonical);
+                    }
+                    return Err(Error::Busy);
+                }
+                let lease = FileLease {
+                    path: canonical.clone(),
+                    _file: file,
+                };
                 let conn = Connection::open(&canonical)?;
                 let app_id: u32 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
                 let engine:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='engine_session' AND type='table')",[],|r|r.get(0))?;

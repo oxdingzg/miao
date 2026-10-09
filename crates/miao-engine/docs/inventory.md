@@ -35,8 +35,8 @@ scope for this table and is tracked separately.
 ## Coverage gates
 
 - **M0b gate**: real streaming tool-use loop, ten deterministic/fault scenarios,
-  and a three-platform compile. The three-platform compile is enforced by the
-  `engine` workflow (macOS, Linux and Windows).
+  and a three-platform compile. The three-platform build and test is enforced by
+  the `engine` workflow (macOS, Linux and Windows).
 - **M1 gate**: 30–50 scenarios, a real small fix, a control lane that is not
   blocked by provider/tool/approval waits, and three-platform unit tests. The
   remaining M1 gap is delegation.

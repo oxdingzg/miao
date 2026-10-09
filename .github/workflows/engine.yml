@@ -66,7 +66,7 @@ jobs:
         run: cargo test
 
   engine-windows:
-    name: engine (windows, compile)
+    name: engine (windows)
     runs-on: windows-latest
     defaults:
       run:
@@ -84,5 +84,5 @@ jobs:
         with:
           workspaces: crates/miao-engine
 
-      - name: Check (compile all targets)
-        run: cargo check --all-targets
+      - name: Test
+        run: cargo test
