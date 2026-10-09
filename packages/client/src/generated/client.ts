@@ -1838,7 +1838,7 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/runtime/control/configuration`,
-            body: { hubURL: input["hubURL"], hostToken: input["hostToken"] },
+            body: { accountID: input["accountID"], hubURL: input["hubURL"], hostToken: input["hostToken"] },
             successStatus: 200,
             declaredStatuses: [503, 400, 401],
             empty: false,

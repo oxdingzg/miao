@@ -4537,6 +4537,7 @@ export type ServerRuntimeIdentityOutput = {
 export type ServerRuntimeStopOutput = void
 
 export type ServerRuntimeGetOutput = {
+  readonly accountID?: string
   readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean
@@ -4549,6 +4550,7 @@ export type ServerRuntimeGetOutput = {
 export type ServerRuntimeSetEnabledInput = { readonly enabled: { readonly enabled: boolean }["enabled"] }
 
 export type ServerRuntimeSetEnabledOutput = {
+  readonly accountID?: string
   readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean
@@ -4564,6 +4566,7 @@ export type ServerRuntimeSetSessionEnabledInput = {
 }
 
 export type ServerRuntimeSetSessionEnabledOutput = {
+  readonly accountID?: string
   readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean
@@ -4574,11 +4577,13 @@ export type ServerRuntimeSetSessionEnabledOutput = {
 }
 
 export type ServerRuntimeConfigureInput = {
-  readonly hubURL: { readonly hubURL: string; readonly hostToken: string }["hubURL"]
-  readonly hostToken: { readonly hubURL: string; readonly hostToken: string }["hostToken"]
+  readonly accountID?: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["accountID"]
+  readonly hubURL: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["hubURL"]
+  readonly hostToken: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["hostToken"]
 }
 
 export type ServerRuntimeConfigureOutput = {
+  readonly accountID?: string
   readonly sessionIDs?: ReadonlyArray<string>
   readonly enabled: boolean
   readonly connected: boolean

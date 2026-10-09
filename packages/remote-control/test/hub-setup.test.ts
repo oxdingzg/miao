@@ -222,3 +222,82 @@ test("provider discovery errors do not downgrade OAuth relays to password login"
     HubSetup.providers({ hubURL: "https://relay.example.invalid", fetch: async () => json({ unexpected: true }) }),
   ).rejects.toThrow("invalid login methods")
 })
+
+test("authenticated OAuth account identity survives registration and credential rotation", async () => {
+  const identity = await SecureChannel.createIdentity()
+  const accountID = "account_authenticated_001"
+  for (const rotate of [false, true]) {
+    let configured: { hubURL: string; hostToken: string; accountID?: string } | undefined
+    await HubSetup.connectWithOAuth({
+      hubURL: "https://relay.example.invalid",
+      provider: "github",
+      name: "Workstation",
+      callbackURL: "http://127.0.0.1:4599/",
+      open: async () => {},
+      waitForCode: async () => "one-time-fixture-code",
+      runtime: {
+        get: async () => ({
+          enabled: false,
+          connected: false,
+          hostID: "host_account_fixture_001",
+          hostPublicKey: identity.publicKey,
+        }),
+        configure: async (input) => {
+          configured = input
+          return { enabled: true, connected: false, accountID: input.accountID }
+        },
+      },
+      fetch: async (url, init) => {
+        const path = new URL(url).pathname
+        if (path === "/api/auth/sign-in/social") return json({ url: "https://identity.example.invalid/authorize" })
+        if (path === "/api/auth/exchange") return json({ token: "account-credential", user: { id: accountID } })
+        if (path === "/api/auth/sign-out") return json({ success: true })
+        if (path.endsWith("/rotate")) return json({ token: "h".repeat(43) })
+        if (path === "/api/hub/hosts" && init.method === "GET")
+          return json({
+            data: [{ hostID: "host_account_fixture_001", publicKey: identity.publicKey, revokedAt: null }],
+          })
+        if (path === "/api/hub/hosts" && rotate) return json({}, 409)
+        if (path === "/api/hub/hosts") return json({ token: "h".repeat(43), accountID })
+        throw new Error("Unexpected fixture request")
+      },
+    })
+    expect(configured).toEqual({ hubURL: "https://relay.example.invalid", hostToken: "h".repeat(43), accountID })
+    expect(JSON.stringify(configured)).not.toContain("account-credential")
+  }
+})
+
+test("registration cannot silently replace authenticated account identity", async () => {
+  const identity = await SecureChannel.createIdentity()
+  let configured = false
+  await expect(
+    HubSetup.connectWithOAuth({
+      hubURL: "https://relay.example.invalid",
+      provider: "google",
+      name: "Workstation",
+      callbackURL: "http://127.0.0.1:4599/",
+      open: async () => {},
+      waitForCode: async () => "one-time-fixture-code",
+      runtime: {
+        get: async () => ({
+          enabled: false,
+          connected: false,
+          hostID: "host_account_fixture_001",
+          hostPublicKey: identity.publicKey,
+        }),
+        configure: async () => {
+          configured = true
+          return { enabled: true, connected: false }
+        },
+      },
+      fetch: async (url) => {
+        if (url.endsWith("/social")) return json({ url: "https://identity.example.invalid/authorize" })
+        if (url.endsWith("/exchange"))
+          return json({ token: "account-credential", user: { id: "account_authenticated_001" } })
+        if (url.endsWith("/sign-out")) return json({ success: true })
+        return json({ token: "h".repeat(43), accountID: "account_substituted_0001" })
+      },
+    }),
+  ).rejects.toThrow("could not be confirmed")
+  expect(configured).toBe(false)
+})

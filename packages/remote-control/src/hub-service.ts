@@ -293,7 +293,7 @@ export async function listen(options: Options) {
             .register(authenticated.accountID, body.value, () => identity.active(authenticated))
             .catch(() => undefined)
           return registered
-            ? Response.json(registered, { ...noStore, status: 201 })
+            ? Response.json({ ...registered, accountID: authenticated.accountID }, { ...noStore, status: 201 })
             : error("registration_rejected", 409)
         }
         const host = /^\/api\/hub\/hosts\/([A-Za-z0-9_-]{16,128})\/(revoke|rotate)$/.exec(url.pathname)
@@ -308,7 +308,9 @@ export async function listen(options: Options) {
             identity.active(authenticated) ? directory.rotate(authenticated.accountID, host[1]!) : undefined,
           )
           .catch(() => undefined)
-        return token ? Response.json({ token }, noStore) : error("host_unavailable", 404)
+        return token
+          ? Response.json({ token, accountID: authenticated.accountID }, noStore)
+          : error("host_unavailable", 404)
       },
       host: async (request, hostID) => {
         const authorization = request.headers.get("authorization") ?? ""

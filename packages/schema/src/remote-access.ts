@@ -54,6 +54,7 @@ export const Candidate = Schema.Struct({
 }).annotate({ identifier: "RemoteAccess.Candidate" })
 export interface Status extends Schema.Schema.Type<typeof Status> {}
 export const Status = Schema.Struct({
+  accountID: ID.pipe(optional),
   sessionIDs: Schema.Array(ScopeID).pipe(optional),
   enabled: Schema.Boolean,
   connected: Schema.Boolean,
@@ -65,6 +66,7 @@ export const Status = Schema.Struct({
 
 export interface Configuration extends Schema.Schema.Type<typeof Configuration> {}
 export const Configuration = Schema.Struct({
+  accountID: ID.pipe(optional),
   hubURL: Schema.String.check(Schema.isLengthBetween(1, 2048)),
   hostToken: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{32,256}$/)).pipe(Schema.redact),
 }).annotate({ identifier: "RemoteAccess.Configuration" })

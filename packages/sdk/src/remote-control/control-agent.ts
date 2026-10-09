@@ -20,6 +20,7 @@ import { SessionOwnership } from "@miao/core/session/ownership"
 import { ServerAuth } from "@miao/server/auth"
 
 const Configuration = Schema.Struct({
+  accountID: RemoteAccess.Configuration.fields.accountID,
   hubURL: Schema.String,
   hostToken: Schema.String.check(Schema.isMinLength(32)),
   grantFile: Schema.String.check(Schema.isMinLength(1)),
@@ -116,6 +117,7 @@ export async function start(input: {
     state.active = { agent, pairing, configuration, notifications }
   }
   const status = (): RemoteAccess.Status => ({
+    accountID: state.active?.configuration.accountID,
     sessionIDs: [...published],
     enabled: !state.stopped && state.active !== undefined,
     connected: !state.stopped && (state.active?.agent.connected() ?? false),
@@ -179,6 +181,7 @@ export async function start(input: {
         )
           throw new Error("Invalid relay origin")
         const configuration = {
+          ...(decoded.accountID ? { accountID: decoded.accountID } : {}),
           hubURL: url.origin,
           hostToken: decoded.hostToken,
           grantFile,
