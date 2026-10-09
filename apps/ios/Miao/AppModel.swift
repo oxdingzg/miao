@@ -240,7 +240,8 @@ final class AppModel {
         }
     }
 
-    /// One tap connects every account-trusted computer; QR pairing stays as a separate entry.
+    /// One tap connects account computers: enrolled devices use accepted trust, and
+    /// fresh devices request the computer's same-account auto-admission (owner toggle).
     func connectAccountDevices() async {
         guard !accountBusy, !enrollmentBusy, accountSignedIn, let account, let registry else { return }
         accountBusy = true; accountError = nil
@@ -249,9 +250,9 @@ final class AppModel {
         do {
             let directory = try await account.hosts()
             guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
-            try await admitAccountHosts(directory, account: account, epoch: epoch)
+            try await admitAccountHosts(directory, account: account, epoch: epoch, allowAuto: true)
             guard epoch == accountEpoch, accountSignedIn else { return }
-            if accountError == nil { await refreshDirectory() }
+            await refreshDirectory()
         } catch { if epoch == accountEpoch { accountError = accountMessage(error) } }
     }
 
@@ -567,29 +568,40 @@ final class AppModel {
         } catch { if epoch == accountEpoch { enrollmentError = "注册未完成。请使用已信任设备直接提供的批准结果和签名公钥。" } }
     }
 
-    private func admitAccountHosts(_ directory: [HubDirectoryHost], account: HubAccount, epoch: Int) async throws {
-        guard let enrollmentStore, let registry else { return }
+    private func admitAccountHosts(_ directory: [HubDirectoryHost], account: HubAccount, epoch: Int, allowAuto: Bool = false) async throws {
+        guard let registry else { return }
         let id = try await account.authenticatedAccountID()
         let origin = (await account.origin).absoluteString
         guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
-        guard let saved = try await enrollmentStore.account(hubURL: origin, accountID: id) else { return }
-        guard let roster = try await account.roster() else { throw AccountRosterError.untrustedSigner }
-        let current = try await enrollmentStore.refresh(roster, hubURL: origin, accountID: id)
-        guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
         let key = try await identity.loadOrCreate()
-        guard current.roster.roster.devices.contains(where: { $0.publicKey == publicKey(key) }) else {
-            for record in hosts where record.host.hubURL.absoluteString == origin && saved.hosts.contains(where: { $0.hostID == record.host.target.hostID }) {
-                await clients[record.id]?.close()
+        let saved = try await enrollmentStore?.account(hubURL: origin, accountID: id)
+        var roster: AcceptedAccountEnrollment?
+        if let enrollmentStore, saved != nil {
+            guard let live = try await account.roster() else { throw AccountRosterError.untrustedSigner }
+            let current = try await enrollmentStore.refresh(live, hubURL: origin, accountID: id)
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            guard current.roster.roster.devices.contains(where: { $0.publicKey == publicKey(key) }) else {
+                for record in hosts where record.host.hubURL.absoluteString == origin && (saved?.hosts.contains(where: { $0.hostID == record.host.target.hostID }) ?? false) {
+                    await clients[record.id]?.close()
+                }
+                throw RemoteConnectionError.authorizationBlocked
             }
-            throw RemoteConnectionError.authorizationBlocked
+            roster = current
         }
-        for host in directory where host.online && host.revokedAt == nil && current.hosts.contains(where: { $0.hostID == host.hostID }) {
+        for host in directory where host.online && host.revokedAt == nil {
             guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
             let existing = hosts.first { $0.host.hubURL.absoluteString == origin && $0.host.target.hostID == host.hostID && $0.host.target.runtimeID == host.runtimeID }
-            let admitted = try await HubConnection.admit(account: account, enrollment: current, discovered: host, identity: key, existingID: existing?.id,
-                persist: { record, grant in try await registry.admitAccount(host: record, grant: grant, enrollment: current) },
-                reconcile: { _ in throw RemoteRPCError.disconnected })
-            await admitted.connection.close()
+            if let current = roster, current.hosts.contains(where: { $0.hostID == host.hostID }) {
+                let admitted = try await HubConnection.admit(account: account, enrollment: current, discovered: host, identity: key, existingID: existing?.id,
+                    persist: { record, grant in try await registry.admitAccount(host: record, grant: grant, enrollment: current) },
+                    reconcile: { _ in throw RemoteRPCError.disconnected })
+                await admitted.connection.close()
+            } else if allowAuto {
+                let admitted = try await HubConnection.autoAdmit(account: account, discovered: host, identity: key,
+                    persist: { record, grant in try await registry.admitAuto(host: record, grant: grant) },
+                    reconcile: { _ in throw RemoteRPCError.disconnected })
+                await admitted.connection.close()
+            }
             guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
         }
         try await reload()

@@ -203,13 +203,74 @@ extension HubConnection {
 
     /// No RPC reader starts until local owner approval is verified and the caller durably saves it.
     /// A lost approval is uncertain, never an excuse to assume a grant or repeat a business operation.
+    /// Owner opt-in: same-account devices claim admission with the directory key pinned
+    /// on first use; the computer signs the roster locally and returns an encrypted grant.
+    public static func autoAdmit(account: HubAccount, discovered: HubDirectoryHost, identity: P256.Signing.PrivateKey,
+                                 persist: @escaping @Sendable (ApprovedHost, DeviceGrant) async throws -> Void,
+                                 reconcile: @escaping Reconcile) async throws -> PairedConnection {
+        let context = try await account.enrollmentContext()
+        let origin = await account.origin
+        let deviceKey = identity.publicKey.x963Representation.base64URL
+        guard discovered.online, discovered.revokedAt == nil, !discovered.name.isEmpty,
+              let runtimeID = discovered.runtimeID else { throw RemoteConnectionError.authorizationBlocked }
+        try await account.requireGeneration(context.generation)
+        let target = RemoteTarget(hostID: discovered.hostID, runtimeID: runtimeID)
+        let socket = try await authorizedSocket(account: account, hubURL: origin, hostID: target.hostID, runtimeID: target.runtimeID)
+        socket.maximumMessageSize = 256 * 1024
+        socket.resume()
+        let deadline = Task {
+            do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            socket.cancel(with: .goingAway, reason: nil)
+        }
+        defer { deadline.cancel() }
+        do {
+            return try await withTaskCancellationHandler {
+                let handshake = try ClientHandshake(identity: identity, target: target)
+                let claim = RosterClaim(version: 1, type: "rosterClaim", accountID: context.accountID, hello: handshake.hello, roster: nil)
+                try await socket.send(.string(try JSONEncoder().encode(claim).base64URL))
+                let message = try await socket.receive()
+                guard case .string(let value) = message, value.utf8.count <= 8192 else { throw RemoteRPCError.malformed }
+                let reply = try JSONDecoder().decode(ServerHello.self, from: decodeBase64URL(value))
+                // First contact pins the directory key; later connections verify the stored pin.
+                let channel = try await handshake.finish(reply, trustedHostKey: discovered.publicKey)
+                var assembler = ResponseAssembler(allowedTypes: ["roster"])
+                while true {
+                    try Task.checkCancellation()
+                    let message = try await socket.receive()
+                    guard case .string(let packet) = message else { throw RemoteRPCError.malformed }
+                    guard let plaintext = try assembler.append(await channel.open(packet)) else { continue }
+                    let approval = try JSONDecoder().decode(RosterNotification.self, from: plaintext)
+                    guard approval.version == 1, approval.type == "roster", approval.status == "approved" else { throw RemoteRPCError.malformed }
+                    try approval.grant.validate(deviceKey: deviceKey)
+                    try await account.requireGeneration(context.generation)
+                    let host = ApprovedHost(label: discovered.name, hubURL: origin, target: target,
+                        publicKey: discovered.publicKey, grantID: approval.grant.id, grantVersion: approval.grant.version)
+                    try await persist(host, approval.grant)
+                    try Task.checkCancellation()
+                    try await account.requireGeneration(context.generation)
+                    let connected = HubConnection(host: host, socket: socket, channel: channel, reconcile: reconcile)
+                    await connected.startReader()
+                    return PairedConnection(host: host, grant: approval.grant, connection: connected)
+                }
+            } onCancel: { socket.cancel(with: .goingAway, reason: nil) }
+        } catch {
+            socket.cancel(with: .goingAway, reason: nil)
+            if Task.isCancelled { throw CancellationError() }
+            if error is ChannelError || socket.closeCode == .policyViolation
+                || [401, 403].contains((socket.response as? HTTPURLResponse)?.statusCode ?? 0) {
+                throw RemoteConnectionError.authorizationBlocked
+            }
+            throw error
+        }
+    }
+
     /// Admission uses independently endorsed pins and an accepted local roster, never directory keys as authority.
     public static func admit(account: HubAccount, enrollment: AcceptedAccountEnrollment,
                              discovered: HubDirectoryHost, identity: P256.Signing.PrivateKey, existingID: UUID? = nil,
                              persist: @escaping @Sendable (ApprovedHost, DeviceGrant) async throws -> Void,
                              reconcile: @escaping Reconcile) async throws -> PairedConnection {
         let context = try await account.enrollmentContext()
-        let origin = account.origin
+        let origin = await account.origin
         let deviceKey = identity.publicKey.x963Representation.base64URL
         guard enrollment.hubURL == origin.absoluteString, enrollment.authority.accountID == context.accountID,
               enrollment.roster.roster.accountID == context.accountID,
@@ -271,7 +332,7 @@ extension HubConnection {
         }
     }
     private struct RosterClaim: Encodable {
-        let version: Int; let type: String; let accountID: String; let hello: ClientHello; let roster: SignedAccountRoster
+        let version: Int; let type: String; let accountID: String; let hello: ClientHello; let roster: SignedAccountRoster?
     }
     private struct RosterNotification: Decodable {
         let version: Int; let type: String; let status: String; let grant: DeviceGrant

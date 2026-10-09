@@ -66,6 +66,17 @@ public actor HostRegistry {
         try persist(next)
     }
 
+    /// Installs an encrypted grant from the computer's same-account auto-admission.
+    public func admitAuto(host: ApprovedHost, grant: DeviceGrant) throws {
+        try grant.validate(deviceKey: deviceKey)
+        guard host.grantID == grant.id, host.grantVersion == grant.version,
+              !host.label.isEmpty, host.label.utf16.count <= 128 else { throw ClientStateError.scopeMismatch }
+        var next = try load()
+        next.hosts.removeAll { $0.host.hubURL == host.hubURL && $0.host.target.hostID == host.target.hostID && $0.grant.id == grant.id }
+        next.hosts.append(AuthorizedHost(host: host, grant: grant))
+        try persist(next)
+    }
+
     /// Computer names come from live directory metadata; a pairing URL only carries identifiers.
     public func rename(_ directory: [HubDirectoryHost], hubURL: URL) throws {
         var next = try load()
