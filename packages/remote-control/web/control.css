@@ -80,6 +80,10 @@ select {
 textarea {
   resize: vertical;
 }
+.enrollment-consent input[type="checkbox"] {
+  width: auto;
+  margin-right: 9px;
+}
 button {
   font: inherit;
   border: 0;

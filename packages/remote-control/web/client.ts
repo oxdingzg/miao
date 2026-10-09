@@ -2,6 +2,9 @@ import { PairingLink } from "../src/pairing-link"
 import { Schema } from "effect"
 import { RemoteAccess } from "@miao/schema/remote-access"
 import { BrowserAccount } from "../src/browser-account"
+import { BrowserEnrollment } from "../src/browser-enrollment"
+import { DeviceEnrollment } from "../src/device-enrollment"
+import { DeviceRoster } from "../src/device-roster"
 import { BrowserIdentity } from "../src/browser-identity"
 import { BrowserChannel } from "../src/browser-channel"
 import { BrowserCheckpoint } from "../src/browser-checkpoint"
@@ -55,8 +58,19 @@ let discovered: Host[] = []
 let cache: Awaited<ReturnType<typeof BrowserCheckpoint.open>>
 let identity: Awaited<ReturnType<typeof BrowserIdentity.load>>
 let grant: RemoteAccess.Grant | undefined
+let enrollmentEpoch = 0
+let enrollmentFlow: ReturnType<typeof DeviceEnrollment.make> | undefined
+let enrollmentAccount: string | undefined
 const account = BrowserAccount.make({
   onInvalidated: () => {
+    enrollmentEpoch++
+    enrollmentFlow?.cancel()
+    enrollmentFlow = undefined
+    enrollmentAccount = undefined
+    for (const id of ["enrollment-request", "enrollment-incoming", "enrollment-response", "enrollment-approved"])
+      get(id, HTMLTextAreaElement).value = ""
+    for (const id of ["enrollment-signer", "enrollment-pin"]) get(id, HTMLInputElement).value = ""
+    for (const id of ["root-consent", "enrollment-oob"]) get(id, HTMLInputElement).checked = false
     disconnect()
     login.hidden = false
     directory.hidden = true
@@ -170,12 +184,29 @@ async function connect(host: Host) {
   selected = host
   selectedSession = undefined
   const current = generation
-  const approved = trusted(host)
-  if (!approved) {
+  let approved = trusted(host)
+  const local = enrollmentStore()
+  let enrolled = await local.store.read()
+  let roster: DeviceRoster.Signed | undefined
+  let hostKey = host.publicKey
+  if (enrolled?.hosts.some((pin) => pin.hostID === host.hostID)) {
+    const snapshot = await BrowserEnrollment.snapshot(await account.roster(), local.accountID)
+    if (!snapshot) throw new Error("Account roster unavailable")
+    enrolled = await local.store.refresh(snapshot)
+    const pin = enrolled.hosts.find((pin) => pin.hostID === host.hostID)!
+    if (pin.publicKey !== host.publicKey) throw new Error("Host identity changed")
+    hostKey = pin.publicKey
+    roster = snapshot
+    approved = undefined
+  }
+  if (!approved && !roster) {
     report("请先使用电脑上的配对邀请，并在电脑确认授权。")
     return
   }
-  if (approved.publicKey !== identity.publicKey || approved.expiresAt <= Date.now() || approved.revokedAt !== null)
+  if (
+    approved &&
+    (approved.publicKey !== identity.publicKey || approved.expiresAt <= Date.now() || approved.revokedAt !== null)
+  )
     throw new Error("Grant expired")
   if (!host.runtimeID) throw new Error("Runtime offline")
   const target = { hostID: host.hostID, runtimeID: host.runtimeID }
@@ -183,13 +214,25 @@ async function connect(host: Host) {
     hubURL: location.origin,
     target,
     identity,
-    trustedHostKey: host.publicKey,
+    trustedHostKey: hostKey,
+    roster: roster ? { accountID: local.accountID, snapshot: roster } : undefined,
     ticket: await account.ticket(host.hostID, host.runtimeID),
     allowLoopbackHTTP: loopback(),
   })
   if (current !== generation) {
     transport.close()
     return
+  }
+  approved ??= transport.grant
+  if (!approved) {
+    transport.close()
+    throw new Error("Account grant missing")
+  }
+  try {
+    localStorage.setItem(stamp(host.hostID), JSON.stringify({ publicKey: hostKey, grant: approved }))
+  } catch {
+    transport.close()
+    throw new Error("Device grant could not be saved")
   }
   grant = approved
   rpc = RemoteRPC.make({ transport, target, grant: approved, identityPublicKey: identity.publicKey })
@@ -420,6 +463,165 @@ async function sessionGroup(
   sessions.append(group)
   await load(undefined, 0)
 }
+function enrollmentStore() {
+  const session = account.session()
+  if (!session) throw new Error("Account login required")
+  const current = enrollmentEpoch
+  return {
+    accountID: session.accountID,
+    store: BrowserEnrollment.open(
+      { hubURL: location.origin, accountID: session.accountID, deviceKey: identity.publicKey },
+      () => current === enrollmentEpoch && account.session()?.accountID === session.accountID,
+    ),
+  }
+}
+function enrollment() {
+  const session = account.session()
+  if (!session) throw new Error("Account login required")
+  if (!enrollmentFlow || enrollmentAccount !== session.accountID) {
+    enrollmentFlow?.cancel()
+    enrollmentFlow = DeviceEnrollment.make(identity, {
+      hubURL: location.origin,
+      accountID: session.accountID,
+      allowLoopbackHTTP: loopback(),
+    })
+    enrollmentAccount = session.accountID
+  }
+  return enrollmentFlow
+}
+get("enrollment-root", HTMLButtonElement).onclick = () =>
+  run(async () => {
+    if (!get("root-consent", HTMLInputElement).checked) throw new Error("Signer consent required")
+    const local = enrollmentStore()
+    if (await local.store.read()) {
+      get("enrollment-signer", HTMLInputElement).value = identity.publicKey
+      report("本设备已有账号名单信任。")
+      return
+    }
+    const existing = await BrowserEnrollment.snapshot(await account.roster(), local.accountID)
+    const pins = discovered
+      .flatMap((host) => {
+        const approved = trusted(host)
+        return approved &&
+          approved.publicKey === identity.publicKey &&
+          approved.expiresAt > Date.now() &&
+          approved.revokedAt === null
+          ? [{ hostID: host.hostID, publicKey: host.publicKey }]
+          : []
+      })
+      .sort((a, b) => (a.hostID < b.hostID ? -1 : a.hostID > b.hostID ? 1 : 0))
+    if (!pins.length) throw new Error("Independent pairing required")
+    const roster =
+      existing ??
+      (await DeviceRoster.sign(identity, {
+        version: 1,
+        accountID: local.accountID,
+        sequence: 1,
+        issuedAt: Date.now(),
+        devices: [{ publicKey: identity.publicKey, label: "账号签名设备", signer: true, addedAt: Date.now() }],
+      }))
+    const verified = await DeviceRoster.accept(roster, {
+      accountID: local.accountID,
+      acceptedSequence: 0,
+      signerKeys: [identity.publicKey],
+    })
+    if (!verified.roster.devices.some((device) => device.publicKey === identity.publicKey && device.signer))
+      throw new Error("This device is not a roster signer")
+    const published =
+      existing ??
+      (await BrowserEnrollment.snapshot(
+        await account.putRoster(await BrowserEnrollment.update(roster)),
+        local.accountID,
+      ))
+    if (
+      !published ||
+      (await DeviceRoster.fingerprint(published.roster)) !== (await DeviceRoster.fingerprint(roster.roster))
+    )
+      throw new Error("Roster publication not confirmed")
+    await local.store.put({
+      version: 1,
+      hubURL: location.origin,
+      accountID: local.accountID,
+      deviceKey: identity.publicKey,
+      roster,
+      digest: await DeviceRoster.fingerprint(roster.roster),
+      hosts: pins,
+    })
+    get("enrollment-signer", HTMLInputElement).value = identity.publicKey
+    report("签名设备已初始化。请确认电脑已明确选择信任此设备。")
+  })
+get("enrollment-request-form", HTMLFormElement).onsubmit = (event) => {
+  event.preventDefault()
+  run(async () => {
+    const request = await enrollment().begin(get("enrollment-label", HTMLInputElement).value)
+    get("enrollment-request", HTMLTextAreaElement).value = JSON.stringify(request)
+    report("把注册码直接发送给已信任的签名设备，十分钟内完成批准。")
+  })
+}
+get("enrollment-approve-form", HTMLFormElement).onsubmit = (event) => {
+  event.preventDefault()
+  run(async () => {
+    const raw = get("enrollment-incoming", HTMLTextAreaElement).value
+    get("enrollment-response", HTMLTextAreaElement).value = ""
+    if (raw.length > 131072) throw new Error("Enrollment input too large")
+    const request = Schema.decodeUnknownSync(DeviceEnrollment.Request, { onExcessProperty: "error" })(JSON.parse(raw))
+    if (
+      !confirm(
+        `批准设备「${request.payload.label}」？\n设备公钥：${request.payload.publicKey}\n新设备将使用电脑已确认的账号授权范围。`,
+      )
+    )
+      return
+    const local = enrollmentStore()
+    const snapshot = await BrowserEnrollment.snapshot(await account.roster(), local.accountID)
+    if (!snapshot) throw new Error("Accepted roster required")
+    const current = await local.store.refresh(snapshot)
+    const approved = await DeviceEnrollment.approve(identity, request, {
+      hubURL: location.origin,
+      allowLoopbackHTTP: loopback(),
+      accountID: local.accountID,
+      current: current.roster,
+      authority: BrowserEnrollment.authority(current),
+      hosts: current.hosts,
+    })
+    const published = await BrowserEnrollment.snapshot(
+      await account.putRoster(await BrowserEnrollment.update(approved.roster)),
+      local.accountID,
+    )
+    if (
+      !published ||
+      (await DeviceRoster.fingerprint(published.roster)) !== (await DeviceRoster.fingerprint(approved.roster.roster))
+    )
+      throw new Error("Roster publication not confirmed")
+    await local.store.refresh(published)
+    get("enrollment-response", HTMLTextAreaElement).value = JSON.stringify(approved)
+    get("enrollment-signer", HTMLInputElement).value = identity.publicKey
+    report("已批准。将结果及签名公钥直接返回新设备。")
+  })
+}
+get("enrollment-receive-form", HTMLFormElement).onsubmit = (event) => {
+  event.preventDefault()
+  run(async () => {
+    if (!get("enrollment-oob", HTMLInputElement).checked) throw new Error("Independent signer pin required")
+    const raw = get("enrollment-approved", HTMLTextAreaElement).value
+    if (raw.length > 131072) throw new Error("Enrollment input too large")
+    const local = enrollmentStore()
+    const accepted = await enrollment().receive(JSON.parse(raw), get("enrollment-pin", HTMLInputElement).value.trim())
+    await local.store.put({
+      version: 1,
+      hubURL: location.origin,
+      accountID: local.accountID,
+      deviceKey: identity.publicKey,
+      roster: { version: 1, roster: accepted.roster.roster, signature: accepted.roster.signature },
+      digest: accepted.roster.digest,
+      hosts: accepted.hosts,
+    })
+    get("enrollment-approved", HTMLTextAreaElement).value = ""
+    get("enrollment-request", HTMLTextAreaElement).value = ""
+    await refresh()
+    report("设备注册完成。选择在线电脑查看已开启远程控制的会话。")
+  })
+}
+
 async function pair() {
   const input = get("invitation", HTMLTextAreaElement)
   const raw = input.value.trim()
