@@ -20,11 +20,16 @@ const Signed = Schema.Struct({ payload: Payload, signature: encoded.check(Schema
 export type Signed = typeof Signed.Type
 export type Expected = Pick<Payload, "hubURL" | "accountID" | "deviceKey" | "challenge"> & {
   readonly trustedSignerKey: string
+  readonly allowLoopbackHTTP?: boolean
 }
 
 /** A signing device may endorse only host keys it independently paired with. */
-export async function sign(identity: SecureChannel.Identity, input: Payload): Promise<Signed> {
-  const payload = await validate(input)
+export async function sign(
+  identity: SecureChannel.Identity,
+  input: Payload,
+  options: { allowLoopbackHTTP?: boolean } = {},
+): Promise<Signed> {
+  const payload = await validate(input, options.allowLoopbackHTTP)
   const signature = await crypto.subtle.sign(
     { name: "ECDSA", hash: "SHA-256" },
     identity.keys.privateKey,
@@ -39,9 +44,9 @@ export async function sign(identity: SecureChannel.Identity, input: Payload): Pr
 /** trustedSignerKey is obtained out of band from the approving device, not the Hub. */
 export async function accept(input: unknown, expected: Expected): Promise<Payload> {
   const signed = Schema.decodeUnknownSync(Signed, { onExcessProperty: "error" })(input)
-  const payload = await validate(signed.payload)
+  const payload = await validate(signed.payload, expected.allowLoopbackHTTP)
   if (
-    payload.hubURL !== origin(expected.hubURL) ||
+    payload.hubURL !== origin(expected.hubURL, expected.allowLoopbackHTTP) ||
     payload.accountID !== expected.accountID ||
     payload.deviceKey !== expected.deviceKey ||
     payload.challenge !== expected.challenge
@@ -59,9 +64,10 @@ export async function accept(input: unknown, expected: Expected): Promise<Payloa
   return payload
 }
 
-async function validate(input: unknown): Promise<Payload> {
+async function validate(input: unknown, allowLoopbackHTTP = false): Promise<Payload> {
   const payload = structuredClone(Schema.decodeUnknownSync(Payload, { onExcessProperty: "error" })(input))
-  if (payload.hubURL !== origin(payload.hubURL)) throw new Error("Non-canonical host endorsement origin")
+  if (payload.hubURL !== origin(payload.hubURL, allowLoopbackHTTP))
+    throw new Error("Non-canonical host endorsement origin")
   decode(payload.challenge, 32)
   await importKey(payload.deviceKey)
   let previous = ""
@@ -72,9 +78,18 @@ async function validate(input: unknown): Promise<Payload> {
   }
   return payload
 }
-function origin(value: string): string {
+function origin(value: string, allowLoopbackHTTP = false): string {
   const url = new URL(value)
-  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash)
+  const loopback =
+    allowLoopbackHTTP && url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+  if (
+    (url.protocol !== "https:" && !loopback) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  )
     throw new Error("Invalid host endorsement Hub")
   return url.origin
 }

@@ -475,7 +475,11 @@ function enrollment() {
   if (!session) throw new Error("Account login required")
   if (!enrollmentFlow || enrollmentAccount !== session.accountID) {
     enrollmentFlow?.cancel()
-    enrollmentFlow = DeviceEnrollment.make(identity, { hubURL: location.origin, accountID: session.accountID })
+    enrollmentFlow = DeviceEnrollment.make(identity, {
+      hubURL: location.origin,
+      accountID: session.accountID,
+      allowLoopbackHTTP: loopback(),
+    })
     enrollmentAccount = session.accountID
   }
   return enrollmentFlow
@@ -566,6 +570,7 @@ get("enrollment-approve-form", HTMLFormElement).onsubmit = (event) => {
     const current = await local.store.refresh(snapshot)
     const approved = await DeviceEnrollment.approve(identity, request, {
       hubURL: location.origin,
+      allowLoopbackHTTP: loopback(),
       accountID: local.accountID,
       current: current.roster,
       authority: BrowserEnrollment.authority(current),

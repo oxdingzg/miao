@@ -207,3 +207,10 @@ service startup with migration enabled performs it alongside directory migration
 Existing databases can continue serving other APIs without these tables, while
 roster endpoints return `503` until an administrator runs migration. Unknown
 roster schema versions fail startup rather than resetting metadata.
+
+Development fixtures may explicitly opt into HTTP enrollment and endorsements
+on `localhost`, `127.0.0.1` or `::1`, matching the existing browser channel's
+loopback-only test mode. HTTPS remains the default; the opt-in never permits a
+non-loopback HTTP Hub. `check:web:enrollment` exercises two independent browser
+contexts against a real Runtime, including owner binding, wrong-pin rejection,
+encrypted member admission, reload, grant reuse and local owner revocation.

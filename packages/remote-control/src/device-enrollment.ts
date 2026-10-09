@@ -19,7 +19,7 @@ const Payload = Schema.Struct({
 })
 export const Request = Schema.Struct({ payload: Payload, signature: encoded.check(Schema.isLengthBetween(86, 86)) })
 export type Request = typeof Request.Type
-export type Binding = { hubURL: string; accountID: string }
+export type Binding = { hubURL: string; accountID: string; allowLoopbackHTTP?: boolean }
 export type Authority = DeviceRoster.Authority & { acceptedDigest: string }
 export type Approval = { version: 1; roster: DeviceRoster.Signed; endorsement: HostEndorsement.Signed }
 const Approval = Schema.Struct({
@@ -37,7 +37,7 @@ export async function request(
 ): Promise<Request> {
   const payload = Schema.decodeUnknownSync(Payload)({
     version: 1,
-    hubURL: origin(binding.hubURL),
+    hubURL: origin(binding.hubURL, binding.allowLoopbackHTTP),
     accountID: binding.accountID,
     publicKey: identity.publicKey,
     label,
@@ -94,21 +94,31 @@ export async function approve(
     issuedAt: trusted.now ?? Date.now(),
     devices,
   })
-  const endorsement = await HostEndorsement.sign(identity, {
-    version: 1,
-    hubURL: origin(trusted.hubURL),
-    accountID: trusted.accountID,
-    deviceKey: requested.payload.publicKey,
-    challenge: requested.payload.challenge,
-    hosts: trusted.hosts,
-  })
+  const endorsement = await HostEndorsement.sign(
+    identity,
+    {
+      version: 1,
+      hubURL: origin(trusted.hubURL, trusted.allowLoopbackHTTP),
+      accountID: trusted.accountID,
+      deviceKey: requested.payload.publicKey,
+      challenge: requested.payload.challenge,
+      hosts: trusted.hosts,
+    },
+    { allowLoopbackHTTP: trusted.allowLoopbackHTTP },
+  )
   return { version: 1, roster, endorsement }
 }
 
 /** The signer key is obtained directly from the approving device over an out-of-band channel. */
-export async function receive(input: unknown, pending: Request, trustedSignerKey: string, now = Date.now()) {
+export async function receive(
+  input: unknown,
+  pending: Request,
+  trustedSignerKey: string,
+  now = Date.now(),
+  options: { allowLoopbackHTTP?: boolean } = {},
+) {
   const approval = structuredClone(Schema.decodeUnknownSync(Approval, { onExcessProperty: "error" })(input))
-  const requested = await verify(pending, pending.payload, now)
+  const requested = await verify(pending, { ...pending.payload, allowLoopbackHTTP: options.allowLoopbackHTTP }, now)
   const accepted = await DeviceRoster.accept(approval.roster, {
     accountID: requested.payload.accountID,
     acceptedSequence: 0,
@@ -122,6 +132,7 @@ export async function receive(input: unknown, pending: Request, trustedSignerKey
     deviceKey: requested.payload.publicKey,
     challenge: requested.payload.challenge,
     trustedSignerKey,
+    allowLoopbackHTTP: options.allowLoopbackHTTP,
   })
   return {
     roster: accepted,
@@ -137,7 +148,7 @@ export async function receive(input: unknown, pending: Request, trustedSignerKey
 
 /** Tab-local nonce consumption and cancellation fence, including asynchronous signature verification. */
 export function make(identity: SecureChannel.Identity, binding: Binding) {
-  const expected = { ...binding, hubURL: origin(binding.hubURL) }
+  const expected = { ...binding, hubURL: origin(binding.hubURL, binding.allowLoopbackHTTP) }
   let epoch = 0
   let pending: Request | undefined
   let busy = false
@@ -160,7 +171,9 @@ export function make(identity: SecureChannel.Identity, binding: Binding) {
       const candidate = pending
       busy = true
       try {
-        const accepted = await receive(input, candidate, trustedSignerKey)
+        const accepted = await receive(input, candidate, trustedSignerKey, Date.now(), {
+          allowLoopbackHTTP: binding.allowLoopbackHTTP,
+        })
         if (epoch !== current || pending !== candidate || candidate.payload.expiresAt <= Date.now())
           throw new Error("Enrollment changed or expired")
         pending = undefined
@@ -177,7 +190,7 @@ async function verify(input: unknown, binding: Binding, now: number): Promise<Re
   const requested = structuredClone(Schema.decodeUnknownSync(Request, { onExcessProperty: "error" })(input))
   const payload = requested.payload
   if (
-    payload.hubURL !== origin(binding.hubURL) ||
+    payload.hubURL !== origin(binding.hubURL, binding.allowLoopbackHTTP) ||
     payload.accountID !== binding.accountID ||
     payload.expiresAt <= now ||
     payload.createdAt > now + 30000 ||
@@ -200,9 +213,18 @@ async function verify(input: unknown, binding: Binding, now: number): Promise<Re
 function bytes(payload: typeof Payload.Type) {
   return new TextEncoder().encode(SecureChannel.canonicalJSON(["miao.control.enrollment.v1", payload]))
 }
-function origin(value: string) {
+function origin(value: string, allowLoopbackHTTP = false) {
   const url = new URL(value)
-  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash)
+  const loopback =
+    allowLoopbackHTTP && url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+  if (
+    (url.protocol !== "https:" && !loopback) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  )
     throw new Error("Invalid enrollment Hub")
   return url.origin
 }
