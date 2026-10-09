@@ -11,6 +11,17 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-10-09
+
+### Added
+- **remote-control**: one-tap same-account device connection (#487) (`1e80a32c5`)
+- **remote-control**: add trusted browser account device enrollment (#482) (`a8b08bb6f`)
+
+### Fixed
+- **tui**: mark user messages with a prompt glyph and more spacing (#489) (`357d99543`)
+- **tui**: recover the transcript when the viewport strands off the window (#488) (`dfb8acf6e`)
+- **tui**: keep a mid-turn title from reverting in the session list (#485) (`3a5840dc1`)
+
 ## [0.1.28] - 2026-10-09
 
 ### Added
