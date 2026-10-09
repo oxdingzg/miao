@@ -106,6 +106,33 @@ public struct AcceptedAccountEnrollment: Codable, Sendable, Equatable {
     public let hosts: [EndorsedAccountHost]
 }
 
+extension AcceptedAccountEnrollment {
+    /// Explicitly selected live computer pairings supply the initial independent host pins.
+    public static func root(identity: P256.Signing.PrivateKey, hubURL: String, accountID: String,
+                            paired: [AuthorizedHost], existing: SignedAccountRoster? = nil,
+                            now: Date = Date(), allowLoopbackHTTP: Bool = false) throws -> AcceptedAccountEnrollment {
+        _ = try rosterOrigin(hubURL, allowLoopbackHTTP: allowLoopbackHTTP)
+        let key = identity.publicKey.x963Representation.base64URL
+        var pins: [String: String] = [:]
+        for record in paired where record.host.hubURL.absoluteString == hubURL && record.grant.publicKey == key && !record.expired {
+            try record.grant.validate(deviceKey: key, now: now)
+            guard record.host.grantID == record.grant.id, record.host.grantVersion == record.grant.version else { throw AccountRosterError.malformed }
+            _ = try rosterKey(record.host.publicKey)
+            if let previous = pins[record.host.target.hostID], previous != record.host.publicKey { throw AccountRosterError.malformed }
+            pins[record.host.target.hostID] = record.host.publicKey
+        }
+        guard !pins.isEmpty, pins.count <= 64 else { throw AccountRosterError.untrustedSigner }
+        let roster = try existing ?? SignedAccountRoster.sign(identity: identity,
+            roster: AccountRosterPayload(accountID: accountID, sequence: 1, issuedAt: enrollmentTimestamp(now),
+                devices: [AccountRosterDevice(publicKey: key, label: "账号签名设备", signer: true, addedAt: enrollmentTimestamp(now))]))
+        let authority = try roster.accept(accountID: accountID,
+            previous: AccountRosterAuthority(accountID: accountID, sequence: 0, digest: "", signerKeys: [key]))
+        guard roster.roster.devices.contains(where: { $0.publicKey == key && $0.signer }) else { throw AccountRosterError.untrustedSigner }
+        return AcceptedAccountEnrollment(hubURL: hubURL, roster: roster, authority: authority,
+            hosts: pins.keys.sorted().map { EndorsedAccountHost(hostID: $0, publicKey: pins[$0]!) })
+    }
+}
+
 public struct AccountEnrollmentApproval: Codable, Sendable, Equatable {
     public let version: Int
     public let roster: SignedAccountRoster

@@ -12,6 +12,7 @@ struct HubAccountView: View {
     /// what tells a sign-in *this* sheet performed apart from one that was in
     /// effect all along — only the former should close the sheet.
     @State private var wasSignedIn = false
+    @State private var confirmEnrollmentApproval = false
 
     var body: some View {
         NavigationStack {
@@ -37,11 +38,11 @@ struct HubAccountView: View {
                             Task { await model.signIn(origin: origin, email: email, password: secret) }
                         }.disabled(model.accountBusy || origin.isEmpty || email.isEmpty || password.isEmpty)
                             .accessibilityIdentifier("hubSignIn")
-                        Button("用 GitHub 登录") { Task { await model.signInWithOAuth(provider: "github") } }
+                        Button("用 GitHub 登录") { model.accountURL = origin; Task { await model.signInWithOAuth(provider: "github") } }
                             .disabled(model.accountBusy)
                             .accessibilityIdentifier("hubOAuthGithub")
                         if model.accountBusy { ProgressView("正在登录…") }
-                        Text("填写电脑配置的中继地址和账号。登录后仍需扫码，并在电脑上批准这台设备。")
+                        Text("填写电脑配置的中继地址和账号。登录后可扫码配对，或让已信任的签名设备批准本设备注册。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if model.revocationPending {
                             Button("重试退出登录") { Task { await model.signOut() } }.disabled(model.accountBusy)
@@ -50,6 +51,55 @@ struct HubAccountView: View {
                     if let error = model.accountError { Text(error).font(.footnote).foregroundStyle(.red) }
                 }
                 if model.accountSignedIn {
+                    Section {
+                        DisclosureGroup("同账号设备注册") {
+                            Text("首次使用请先扫码配对，并在电脑设备管理中明确选择本设备作为账号签名设备。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                            Toggle("允许本设备批准同账号的新设备", isOn: $model.enrollmentSignerConsent)
+                                .accessibilityIdentifier("enrollmentSignerConsent")
+                            Button("初始化签名设备") { Task { await model.initializeAccountSigner() } }
+                                .disabled(model.enrollmentBusy || !model.enrollmentSignerConsent)
+                                .accessibilityIdentifier("enrollmentRoot")
+                            Button("生成十分钟注册码") { Task { await model.createEnrollmentRequest() } }
+                                .disabled(model.enrollmentBusy).accessibilityIdentifier("enrollmentBegin")
+                            if !model.enrollmentRequest.isEmpty {
+                                Text(model.enrollmentRequest).font(.caption.monospaced()).textSelection(.enabled)
+                                    .accessibilityIdentifier("enrollmentRequest")
+                                ShareLink("发送给已信任设备", item: model.enrollmentRequest)
+                            }
+                            TextField("收到的新设备注册码", text: $model.enrollmentIncoming, axis: .vertical)
+                                .lineLimit(2...5).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .accessibilityIdentifier("enrollmentIncoming")
+                            Text(model.incomingEnrollmentSummary).font(.caption.monospaced()).textSelection(.enabled)
+                            Button("确认并批准新设备") { confirmEnrollmentApproval = true }
+                                .disabled(model.enrollmentBusy || model.enrollmentIncoming.isEmpty)
+                                .accessibilityIdentifier("enrollmentApprove")
+                            if !model.enrollmentResponse.isEmpty {
+                                Text(model.enrollmentResponse).font(.caption.monospaced()).textSelection(.enabled)
+                                    .accessibilityIdentifier("enrollmentResponse")
+                                ShareLink("返回批准结果", item: model.enrollmentResponse)
+                            }
+                            if !model.enrollmentSigner.isEmpty {
+                                Text("本设备签名公钥").font(.caption)
+                                Text(model.enrollmentSigner).font(.caption.monospaced()).textSelection(.enabled)
+                                    .accessibilityIdentifier("enrollmentSigner")
+                                ShareLink("发送签名公钥", item: model.enrollmentSigner)
+                            }
+                            TextField("已信任设备提供的批准结果", text: $model.enrollmentApproved, axis: .vertical)
+                                .lineLimit(2...5).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .accessibilityIdentifier("enrollmentApproved")
+                            TextField("已信任设备提供的签名公钥", text: $model.enrollmentPin)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .accessibilityIdentifier("enrollmentPin")
+                            Toggle("结果和公钥直接来自我的已信任设备", isOn: $model.enrollmentIndependentPin)
+                                .accessibilityIdentifier("enrollmentIndependentPin")
+                            Button("完成注册并查找会话") { Task { await model.receiveEnrollmentApproval() } }
+                                .disabled(model.enrollmentBusy || !model.enrollmentIndependentPin || model.enrollmentApproved.isEmpty || model.enrollmentPin.isEmpty)
+                                .accessibilityIdentifier("enrollmentReceive")
+                            if model.enrollmentBusy { ProgressView("正在验证设备授权…") }
+                            if let error = model.enrollmentError { Text(error).font(.footnote).foregroundStyle(.red) }
+                        }
+                    }
                     Section("会话通知") {
                         Label(model.notificationsRegistered ? "通知设备已连接" : "通知未连接", systemImage: "bell")
                         if model.notificationsRevocationPending {
@@ -90,7 +140,12 @@ struct HubAccountView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("中继账号")
+            .confirmationDialog("批准此新设备使用电脑已明确确认的账号授权范围？", isPresented: $confirmEnrollmentApproval, titleVisibility: .visible) {
+                Button("批准新设备") { Task { await model.approveEnrollmentRequest() } }
+                Button("取消", role: .cancel) {}
+            } message: { Text(model.incomingEnrollmentSummary) }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { password = ""; dismiss() } } }
             .onAppear {
                 wasSignedIn = model.accountSignedIn

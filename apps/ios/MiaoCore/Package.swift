@@ -11,6 +11,7 @@ let package = Package(
         .executableTarget(name: "InteropProbe", dependencies: ["MiaoCore"]),
         .executableTarget(name: "TransportProbe", dependencies: ["MiaoCore"]),
         .executableTarget(name: "PairingProbe", dependencies: ["MiaoCore"]),
-        .executableTarget(name: "HubAccountProbe", dependencies: ["MiaoCore"])
+        .executableTarget(name: "HubAccountProbe", dependencies: ["MiaoCore"]),
+        .executableTarget(name: "RosterAdmissionProbe", dependencies: ["MiaoCore"])
     ]
 )

@@ -20,6 +20,14 @@ final class PairingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["连接电脑"].firstMatch.exists)
         XCTAssertFalse(app.staticTexts["已配对"].exists)
     }
+    private final class ApprovalBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: String?
+        var value: String? {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
+    }
     private func stage(_ name: String) {
         print("NativeUIStage:\(name)")
         fflush(stdout)
@@ -29,12 +37,13 @@ final class PairingUITests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
         struct Account: Decodable { let origin: String; let email: String; let password: String }
-        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String }
+        struct Enrollment: Decodable { let approveURL: URL; let approvalToken: String; let rootKey: String }
+        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String; let enrollment: Enrollment? }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         stage("launch")
         let app = XCUIApplication()
         app.launchEnvironment["MIAO_UI_TEST_RUN"] = fixture.runID
-        app.launchEnvironment["MIAO_UI_TEST_INVITATION"] = fixture.invitation
+        if !fixture.invitation.isEmpty { app.launchEnvironment["MIAO_UI_TEST_INVITATION"] = fixture.invitation }
         if fixture.account != nil { app.launchEnvironment["MIAO_UI_TEST_HUB_ACCOUNT"] = "1" }
         app.launch()
         if let account = fixture.account {
@@ -47,6 +56,45 @@ final class PairingUITests: XCTestCase {
             // A successful sign-in closes the account sheet on its own, and the
             // invitation this run launched with pulls pairing up in its place —
             // nothing taps 关闭 to get out of the sign-in flow.
+            if let enrollment = fixture.enrollment {
+                stage("pairing")
+                XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 30))
+                app.buttons["hubAccount"].tap()
+                XCTAssertTrue(app.buttons["同账号设备注册"].waitForExistence(timeout: 10))
+                app.buttons["同账号设备注册"].tap()
+                XCTAssertTrue(app.buttons["enrollmentBegin"].waitForExistence(timeout: 10))
+                app.buttons["enrollmentBegin"].tap()
+                let code = app.staticTexts["enrollmentRequest"]
+                XCTAssertTrue(code.waitForExistence(timeout: 15))
+                var request = URLRequest(url: enrollment.approveURL)
+                request.httpMethod = "POST"; request.httpBody = Data(code.label.utf8)
+                request.setValue("Bearer " + enrollment.approvalToken, forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                let completed = expectation(description: "Independent signer approves native request")
+                let result = ApprovalBox()
+                URLSession.shared.dataTask(with: request) { data, response, error in
+                    if let data, (response as? HTTPURLResponse)?.statusCode == 200, error == nil {
+                        result.value = String(decoding: data, as: UTF8.self)
+                    }
+                    completed.fulfill()
+                }.resume()
+                waitForExpectations(timeout: 15)
+                let approved = try XCTUnwrap(result.value)
+                app.swipeUp()
+                let field = app.textFields["enrollmentApproved"].exists ? app.textFields["enrollmentApproved"] : app.textViews["enrollmentApproved"]
+                XCTAssertTrue(field.waitForExistence(timeout: 10))
+                field.tap(); field.typeText(approved)
+                app.swipeUp()
+                let pin = app.textFields["enrollmentPin"]
+                XCTAssertTrue(pin.waitForExistence(timeout: 10))
+                pin.tap(); pin.typeText(enrollment.rootKey)
+                let independent = app.switches["enrollmentIndependentPin"]
+                XCTAssertTrue(independent.waitForExistence(timeout: 10))
+                independent.tap()
+                app.buttons["enrollmentReceive"].tap()
+                // Runtime sessions prove the UI obtained an encrypted member grant rather than trusting a directory row.
+                app.buttons["关闭"].tap()
+            } else {
             XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 30))
             // That sheet is gone, so notification enrolment is reached by
             // reopening it rather than by lingering on the sign-in path.
@@ -66,11 +114,14 @@ final class PairingUITests: XCTestCase {
             link.tap(); link.typeText(fixture.invitation)
             XCTAssertTrue(link.value as? String == fixture.invitation, "The complete pairing link is entered")
 
+            }
         }
-        XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.buttons["开始配对"].isEnabled)
-        stage("pairing")
-        app.buttons["开始配对"].tap()
+        if fixture.enrollment == nil {
+            XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.buttons["开始配对"].isEnabled)
+            stage("pairing")
+            app.buttons["开始配对"].tap()
+        }
         XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons[fixture.title].waitForExistence(timeout: 10))
         app.buttons[fixture.title].tap()

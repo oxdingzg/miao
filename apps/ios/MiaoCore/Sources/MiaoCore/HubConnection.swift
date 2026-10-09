@@ -205,11 +205,11 @@ extension HubConnection {
     /// A lost approval is uncertain, never an excuse to assume a grant or repeat a business operation.
     /// Admission uses independently endorsed pins and an accepted local roster, never directory keys as authority.
     public static func admit(account: HubAccount, enrollment: AcceptedAccountEnrollment,
-                             discovered: HubDirectoryHost, identity: P256.Signing.PrivateKey,
+                             discovered: HubDirectoryHost, identity: P256.Signing.PrivateKey, existingID: UUID? = nil,
                              persist: @escaping @Sendable (ApprovedHost, DeviceGrant) async throws -> Void,
                              reconcile: @escaping Reconcile) async throws -> PairedConnection {
         let context = try await account.enrollmentContext()
-        let origin = await account.origin
+        let origin = account.origin
         let deviceKey = identity.publicKey.x963Representation.base64URL
         guard enrollment.hubURL == origin.absoluteString, enrollment.authority.accountID == context.accountID,
               enrollment.roster.roster.accountID == context.accountID,
@@ -251,7 +251,7 @@ extension HubConnection {
                     guard approval.version == 1, approval.type == "roster", approval.status == "approved" else { throw RemoteRPCError.malformed }
                     try approval.grant.validate(deviceKey: deviceKey)
                     try await account.requireGeneration(context.generation)
-                    let host = ApprovedHost(label: discovered.name, hubURL: origin, target: target,
+                    let host = ApprovedHost(id: existingID ?? UUID(), label: discovered.name, hubURL: origin, target: target,
                         publicKey: pin.publicKey, grantID: approval.grant.id, grantVersion: approval.grant.version)
                     try await persist(host, approval.grant)
                     try Task.checkCancellation()

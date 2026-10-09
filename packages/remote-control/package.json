@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "bun test",
+    "check:native:roster": "bun script/check-native-roster.ts",
     "check:browser:enrollment": "bun script/check-browser-enrollment.ts",
     "check:browser": "bun script/check-browser.ts && bun script/check-browser-account.ts",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.browser.json",

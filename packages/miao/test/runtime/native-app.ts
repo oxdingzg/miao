@@ -10,6 +10,9 @@ import { RuntimeRegistration } from "@miao/core/runtime/registration"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { ControlHub } from "@miao/remote-control/hub"
+import { SecureChannel } from "@miao/remote-control/secure-channel"
+import { DeviceRoster } from "@miao/remote-control/device-roster"
+import { DeviceEnrollment } from "@miao/remote-control/device-enrollment"
 import { DeviceGrants } from "@miao/remote-control/grants"
 
 export async function run() {
@@ -27,6 +30,10 @@ export async function run() {
     throw error
   })
   const { hub, token } = relay
+  const enrollmentMode = process.env.MIAO_UI_TEST_ENROLLMENT === "1"
+  const rootSigner = enrollmentMode ? await SecureChannel.createIdentity() : undefined
+  const approvalToken = crypto.randomUUID() + crypto.randomUUID()
+  let approveEnrollment: ((request: Request) => Promise<Response>) | undefined
   const configuration = path.join(directory, "control.json")
   const fixture = path.join(directory, "ui-fixture.json")
   const stream = { calls: 0, finish: () => {} }
@@ -37,6 +44,8 @@ export async function run() {
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
+      if (new URL(request.url).pathname === "/approve" && request.method === "POST")
+        return approveEnrollment ? approveEnrollment(request) : new Response(null, { status: 503 })
       if (new URL(request.url).pathname === "/finish" && request.method === "GET") {
         stream.finish()
         return new Response("done")
@@ -212,6 +221,7 @@ export async function run() {
         hostToken: token,
         grantFile: "devices.json",
         allowLoopbackHTTP: true,
+        accountID: relay.accountID,
       }),
     )
     await chmod(configuration, 0o600)
@@ -262,43 +272,127 @@ export async function run() {
     const session = Schema.decodeUnknownSync(Session)(await request(`/api/session/${sessionID}`)).data
     if (session.title !== title) throw new Error("Fixture session did not receive its title")
     await request("/api/runtime/control/enabled", { enabled: true })
-    const invitation = Schema.decodeUnknownSync(Invitation)(
-      await request("/api/runtime/control/invitation", {
+    if (enrollmentMode && rootSigner && relay.accountID) {
+      await request(`/api/runtime/control/session/${sessionID}`, { enabled: true })
+      const ownerGrants = await DeviceGrants.load(path.join(directory, "devices.json"))
+      const rootGrant = await ownerGrants.approve({
+        publicKey: rootSigner.publicKey,
+        label: "Independent signing device",
         permissions: ["read", "prompt", "session.rename", "session.selection"],
-        sessionIDs: [sessionID],
         projectIDs: [],
-        // Keep the approved grant valid throughout a slow UI run. The separate
-        // one-use pairing invitation still has its normal three-minute limit.
-        expiresAt: Date.now() + 15 * 60_000,
-      }),
-    )
-    await Bun.write(
-      fixture,
-      JSON.stringify({
-        runID,
-        title,
-        account: relay.account,
-        finishURL: `http://127.0.0.1:${provider.port}/finish`,
-        invitation: `miao://pair#${Buffer.from(JSON.stringify(invitation)).toString("base64url")}`,
-      }),
-    )
-    await chmod(fixture, 0o600)
-    approvalTask = (async () => {
-      while (!stopApproval) {
-        const candidates = Schema.decodeUnknownSync(Candidates)(await request("/api/runtime/control/pairing"))
-        const candidate = candidates.find((value) => value.pairingID === invitation.pairingID)
-        if (candidate) {
-          await request(`/api/runtime/control/pairing/${invitation.pairingID}/approve`, {
-            publicKey: candidate.candidate.publicKey,
-          })
-          return
-        }
-        await Bun.sleep(500)
+        sessionIDs: [sessionID],
+        expiresAt: Date.now() + 30 * 60_000,
+      })
+      await ownerGrants.close()
+      await request("/api/runtime/control/account/trust", {
+        grantID: rootGrant.id,
+        version: rootGrant.version,
+        policy: {
+          permissions: rootGrant.permissions,
+          projectIDs: rootGrant.projectIDs,
+          sessionIDs: rootGrant.sessionIDs,
+          expiresAt: rootGrant.expiresAt,
+        },
+      })
+      const signed = await DeviceRoster.sign(rootSigner, {
+        version: 1,
+        accountID: relay.accountID,
+        sequence: 1,
+        issuedAt: Date.now(),
+        devices: [
+          { publicKey: rootSigner.publicKey, label: "Independent signing device", signer: true, addedAt: Date.now() },
+        ],
+      })
+      approveEnrollment = async (incoming) => {
+        if (incoming.headers.get("authorization") !== `Bearer ${approvalToken}`)
+          return new Response(null, { status: 403 })
+        const body = await incoming.text()
+        if (body.length > 8192) return new Response(null, { status: 413 })
+        const approved = await DeviceEnrollment.approve(rootSigner, JSON.parse(body), {
+          hubURL: relay.account!.origin,
+          accountID: relay.accountID!,
+          current: signed,
+          authority: {
+            accountID: relay.accountID!,
+            acceptedSequence: 1,
+            acceptedDigest: await DeviceRoster.fingerprint(signed.roster),
+            signerKeys: [rootSigner.publicKey],
+          },
+          hosts: [{ hostID: ownerGrants.hostID, publicKey: ownerGrants.identity.publicKey }],
+          allowLoopbackHTTP: true,
+        })
+        const stored = await fetch(new URL("/api/hub/roster", relay.account!.origin), {
+          method: "PUT",
+          headers: {
+            origin: relay.account!.origin,
+            authorization: `Bearer ${relay.bearer!}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            sequence: approved.roster.roster.sequence,
+            payload: approved.roster.roster,
+            signature: approved.roster.signature,
+            digest: await DeviceRoster.fingerprint(approved.roster.roster),
+          }),
+        })
+        if (!stored.ok) return new Response(null, { status: stored.status })
+        return Response.json(approved)
       }
-    })().catch((error: unknown) => {
-      state.approvalError = error
-      state.ui?.kill()
-    })
+      await Bun.write(
+        fixture,
+        JSON.stringify({
+          runID,
+          title,
+          account: relay.account,
+          invitation: "",
+          finishURL: `http://127.0.0.1:${provider.port}/finish`,
+          enrollment: {
+            approveURL: `http://127.0.0.1:${provider.port}/approve`,
+            approvalToken,
+            rootKey: rootSigner.publicKey,
+          },
+        }),
+      )
+      await chmod(fixture, 0o600)
+    } else {
+      const invitation = Schema.decodeUnknownSync(Invitation)(
+        await request("/api/runtime/control/invitation", {
+          permissions: ["read", "prompt", "session.rename", "session.selection"],
+          sessionIDs: [sessionID],
+          projectIDs: [],
+          // Keep the approved grant valid throughout a slow UI run. The separate
+          // one-use pairing invitation still has its normal three-minute limit.
+          expiresAt: Date.now() + 15 * 60_000,
+        }),
+      )
+      await Bun.write(
+        fixture,
+        JSON.stringify({
+          runID,
+          title,
+          account: relay.account,
+          finishURL: `http://127.0.0.1:${provider.port}/finish`,
+          invitation: `miao://pair#${Buffer.from(JSON.stringify(invitation)).toString("base64url")}`,
+        }),
+      )
+      await chmod(fixture, 0o600)
+      approvalTask = (async () => {
+        while (!stopApproval) {
+          const candidates = Schema.decodeUnknownSync(Candidates)(await request("/api/runtime/control/pairing"))
+          const candidate = candidates.find((value) => value.pairingID === invitation.pairingID)
+          if (candidate) {
+            await request(`/api/runtime/control/pairing/${invitation.pairingID}/approve`, {
+              publicKey: candidate.candidate.publicKey,
+            })
+            return
+          }
+          await Bun.sleep(500)
+        }
+      })().catch((error: unknown) => {
+        state.approvalError = error
+        state.ui?.kill()
+      })
+    }
     // Only a public test-fixture path reaches xcodebuild arguments. Secrets remain in the protected file.
     const ui = Bun.spawn(
       [
@@ -493,12 +587,14 @@ export async function run() {
 }
 
 async function fixtureHub(grants: Awaited<ReturnType<typeof DeviceGrants.load>>) {
-  if (process.env.MIAO_UI_TEST_ACCOUNT !== "1") {
+  if (process.env.MIAO_UI_TEST_ACCOUNT !== "1" && process.env.MIAO_UI_TEST_ENROLLMENT !== "1") {
     const token = crypto.randomUUID() + crypto.randomUUID()
     return {
       hub: ControlHub.listen({ port: 0, hosts: new Map([[grants.hostID, token]]) }),
       token,
       account: undefined,
+      accountID: undefined,
+      bearer: undefined,
       closeDatabase: () => {},
     }
   }
@@ -542,10 +638,14 @@ async function fixtureHub(grants: Awaited<ReturnType<typeof DeviceGrants.load>>)
       signal: AbortSignal.timeout(15_000),
     })
     if (registered.status !== 201) throw new Error("Native account fixture registration failed")
-    const host = Schema.decodeUnknownSync(Schema.Struct({ token: Schema.String }))(await registered.json())
+    const host = Schema.decodeUnknownSync(Schema.Struct({ token: Schema.String, accountID: Schema.String }))(
+      await registered.json(),
+    )
     return {
       hub,
       token: host.token,
+      accountID: host.accountID,
+      bearer: bearer.token,
       account: { origin, email: owner.email, password: owner.password },
       closeDatabase: () => database.close(),
     }

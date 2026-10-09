@@ -139,6 +139,26 @@ final class AccountRosterTests: XCTestCase {
         catch { XCTAssertEqual(error as? AccountRosterError, .staleOrForked) }
     }
 
+    func testRootBootstrapRequiresIndependentLivePairingAndRestoresOnlyItsOwnSigner() throws {
+        let key = P256.Signing.PrivateKey(), hostKey = P256.Signing.PrivateKey()
+        let deviceKey = key.publicKey.x963Representation.base64URL
+        let grant = DeviceGrant(id: "grant_aaaaaaaaaaaaaaaaaaaaaaaa", version: 1, publicKey: deviceKey, label: "Phone",
+            permissions: [.read], projectIDs: [], sessionIDs: ["session-one"], createdAt: 0,
+            expiresAt: Int64(Date().timeIntervalSince1970 * 1000) + 60000, revokedAt: nil)
+        let host = ApprovedHost(label: "Computer", hubURL: URL(string: hubURL)!,
+            target: RemoteTarget(hostID: "host_aaaaaaaaaaaaaaaaaaaaaaaa", runtimeID: "runtime_aaaaaaaaaaaaaaaaaaaaaaaa"),
+            publicKey: hostKey.publicKey.x963Representation.base64URL, grantID: grant.id, grantVersion: grant.version)
+        XCTAssertThrowsError(try AcceptedAccountEnrollment.root(identity: key, hubURL: hubURL, accountID: accountID, paired: []))
+        let rooted = try AcceptedAccountEnrollment.root(identity: key, hubURL: hubURL, accountID: accountID, paired: [AuthorizedHost(host: host, grant: grant)])
+        XCTAssertEqual(rooted.authority.signerKeys, [deviceKey])
+        XCTAssertEqual(rooted.hosts.first?.publicKey, host.publicKey)
+        let restored = try AcceptedAccountEnrollment.root(identity: key, hubURL: hubURL, accountID: accountID,
+            paired: [AuthorizedHost(host: host, grant: grant)], existing: rooted.roster)
+        XCTAssertEqual(restored.authority, rooted.authority)
+        XCTAssertThrowsError(try AcceptedAccountEnrollment.root(identity: P256.Signing.PrivateKey(), hubURL: hubURL, accountID: accountID,
+            paired: [AuthorizedHost(host: host, grant: grant)], existing: rooted.roster))
+    }
+
     func testHTTPNeedsExplicitLoopbackOptIn() throws {
         let key = P256.Signing.PrivateKey()
         XCTAssertThrowsError(try AccountEnrollmentRequest.create(identity: key, hubURL: "http://127.0.0.1:4600", accountID: accountID, label: "Phone", now: now))
