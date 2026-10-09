@@ -108,6 +108,7 @@ pub struct Tools {
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
+    lsp: Option<Arc<crate::lsp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
     hooks: Arc<Vec<crate::hooks::Hook>>,
 }
@@ -139,6 +140,7 @@ impl Tools {
             runner: None,
             protected: vec![],
             mcp: None,
+            lsp: None,
             context_sources: Arc::new(vec![]),
             hooks: Arc::new(vec![]),
         })
@@ -194,11 +196,18 @@ impl Tools {
         self.mcp = Some(registry);
         self
     }
+    pub fn with_lsp(mut self, registry: Arc<crate::lsp::Registry>) -> Self {
+        self.lsp = Some(registry);
+        self
+    }
     pub(crate) fn has_mcp(&self) -> bool {
         self.mcp.is_some()
     }
     pub(crate) async fn shutdown_extensions(&self) {
         if let Some(registry) = &self.mcp {
+            registry.shutdown().await;
+        }
+        if let Some(registry) = &self.lsp {
             registry.shutdown().await;
         }
     }
@@ -310,6 +319,9 @@ impl Tools {
             "recall" => {
                 crate::recall::Query::parse(input.clone())?;
                 ".".into()
+            }
+            "lsp_diagnostics" | "lsp_definition" | "lsp_references" if self.lsp.is_some() => {
+                crate::lsp::Query::parse(name, input.clone())?.path
             }
             "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
@@ -544,6 +556,28 @@ impl Tools {
         if current.path != prepared.path || current.resource != prepared.resource {
             return Err(ToolError::ResourceChanged);
         }
+        if matches!(
+            prepared.name.as_str(),
+            "lsp_diagnostics" | "lsp_definition" | "lsp_references"
+        ) {
+            let registry = self.lsp.as_ref().ok_or(ToolError::Unsupported)?;
+            let query = crate::lsp::Query::parse(&prepared.name, prepared.input)?;
+            let _lease = read_lease;
+            return match prepared.name.as_str() {
+                "lsp_diagnostics" => registry.diagnostics(&prepared.path).await,
+                "lsp_definition" => {
+                    registry
+                        .definition(&prepared.path, query.line, query.character)
+                        .await
+                }
+                "lsp_references" => {
+                    registry
+                        .references(&prepared.path, query.line, query.character)
+                        .await
+                }
+                _ => Err(ToolError::Unsupported),
+            };
+        }
         if prepared.name == "glob" || prepared.name == "grep" {
             let directory = self.directory.clone();
             let workspace = self.root.clone();
@@ -576,6 +610,17 @@ impl Tools {
         self.execute(&prepared.name, prepared.input, cancel).await
     }
 
+    fn lsp_definitions(&self) -> Vec<ToolDefinition> {
+        if self.lsp.is_none() {
+            return Vec::new();
+        }
+        vec![
+            ToolDefinition{name:"lsp_diagnostics".into(),description:"Return language-server diagnostics for a workspace file. Read-only, bounded and time-limited.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false})},
+            ToolDefinition{name:"lsp_definition".into(),description:"Return the definition location(s) at a 0-based line/character in a workspace file. Read-only and time-limited.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer","minimum":0,"maximum":10000000},"character":{"type":"integer","minimum":0,"maximum":10000000}},"required":["path","line","character"],"additionalProperties":false})},
+            ToolDefinition{name:"lsp_references".into(),description:"Return reference locations for the symbol at a 0-based line/character, including the declaration. Read-only and time-limited.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer","minimum":0,"maximum":10000000},"character":{"type":"integer","minimum":0,"maximum":10000000}},"required":["path","line","character"],"additionalProperties":false})},
+        ]
+    }
+
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions=vec![ToolDefinition {
             name:"read_file".into(),
@@ -590,6 +635,7 @@ impl Tools {
             ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
             ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
         ]);
+        definitions.extend(self.lsp_definitions());
         definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Bounded scan pages may contain no matches; follow next_before_message_seq until exhausted.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":512},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"required":["query"],"additionalProperties":false})});
         definitions.extend([
             ToolDefinition{name:"session_state".into(),description:"Read this Session's durable todo list and goal with optimistic revisions, including after compaction/restart.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},

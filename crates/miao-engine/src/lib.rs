@@ -10,6 +10,7 @@ pub mod gemini;
 mod history;
 pub mod hooks;
 mod jobs;
+pub mod lsp;
 pub mod mcp;
 pub mod openai_chat;
 pub mod openai_responses;
