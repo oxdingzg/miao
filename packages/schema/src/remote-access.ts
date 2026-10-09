@@ -54,6 +54,7 @@ export const Candidate = Schema.Struct({
 }).annotate({ identifier: "RemoteAccess.Candidate" })
 export interface Status extends Schema.Schema.Type<typeof Status> {}
 export const Status = Schema.Struct({
+  sessionIDs: Schema.Array(ScopeID).pipe(optional),
   enabled: Schema.Boolean,
   connected: Schema.Boolean,
   hostID: ID.pipe(optional),

@@ -44,6 +44,19 @@ export const RuntimeGroup = HttpApiGroup.make("server.runtime").add(
       summary: "Enable or disable Remote Control for this window",
     }),
   ),
+  HttpApiEndpoint.post("runtime.control.setSessionEnabled", "/api/runtime/control/session/:sessionID", {
+    params: { sessionID: Schema.String },
+    payload: Schema.Struct({ enabled: Schema.Boolean }),
+    success: RemoteAccess.Status,
+    error: [ServiceUnavailableError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "v2.runtime.control.setSessionEnabled",
+      summary: "Publish or unpublish a local Session for authorized devices",
+      description:
+        "Requires local administrator credentials. Device grants cannot enable this operation. Sessions start unpublished in each Runtime.",
+    }),
+  ),
   HttpApiEndpoint.post("runtime.control.configure", "/api/runtime/control/configuration", {
     payload: RemoteAccess.Configuration,
     success: RemoteAccess.Status,

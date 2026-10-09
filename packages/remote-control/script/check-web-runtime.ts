@@ -227,12 +227,21 @@ try {
   if (!object(created) || !object(created.data) || typeof created.data.projectID !== "string")
     throw new Error("Fixture project missing")
   await request(`/api/session/${sessionID}/rename`, { title: "Live Runtime workspace" })
+  const initialStatus = await request("/api/runtime/control")
+  if (!object(initialStatus) || !Array.isArray(initialStatus.sessionIDs) || initialStatus.sessionIDs.length)
+    throw new Error("Sessions must start unpublished")
+  await request(`/api/runtime/control/session/${sessionID}`, { enabled: true })
   if (projectScope) {
-    for (let index = 0; index < 100; index++)
-      await request("/api/session", {
-        id: "ses_page_" + crypto.randomUUID().replaceAll("-", ""),
-        location: { directory: project },
-      })
+    // Even a project grant must not discover an unpublished sibling.
+    await request("/api/session", {
+      id: "ses_hidden_" + crypto.randomUUID().replaceAll("-", ""),
+      location: { directory: project },
+    })
+    for (let index = 0; index < 100; index++) {
+      const id = "ses_page_" + crypto.randomUUID().replaceAll("-", "")
+      await request("/api/session", { id, location: { directory: project } })
+      await request(`/api/runtime/control/session/${id}`, { enabled: true })
+    }
   }
   await request("/api/runtime/control/enabled", { enabled: true })
   const invitation = await request("/api/runtime/control/invitation", {
@@ -425,6 +434,19 @@ try {
     await completed.waitFor()
     if ((await completed.count()) !== 1 || (await page.locator('[data-live="true"]').count()) !== 0)
       throw new Error("Live text was duplicated or persisted as history")
+  }
+  if (!projectScope) {
+    stage = "session-publication"
+    await request(`/api/runtime/control/session/${sessionID}`, { enabled: false })
+    await page.reload()
+    await page.getByRole("button", { name: "Runtime computer" }).click()
+    await page.waitForFunction(() => document.getElementById("sessions")?.textContent?.includes("此页没有会话"))
+    if (await page.getByRole("button", { name: "Renamed Runtime workspace", exact: true }).count())
+      throw new Error("Unpublished session remained visible")
+    await request(`/api/runtime/control/session/${sessionID}`, { enabled: true })
+    await page.reload()
+    await page.getByRole("button", { name: "Runtime computer" }).click()
+    await openListed("Renamed Runtime workspace")
   }
   console.log(
     "Web real Runtime: " +

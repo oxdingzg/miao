@@ -366,6 +366,34 @@ test("relay setup offers the private default and custom Hub before desktop socia
   }
 })
 
+test("current-session publication sends the selected Session ID and both toggle states", async () => {
+  await using tmp = await tmpdir()
+  const calls: Array<{ sessionID: string; enabled: boolean }> = []
+  const view = await mount(
+    tmp.path,
+    environment({
+      devices: deviceControl(true).api,
+      setSessionEnabled: async (input) => {
+        calls.push(input)
+        return { enabled: true, connected: true, sessionIDs: input.enabled ? [input.sessionID] : [] }
+      },
+    }),
+  )
+  try {
+    await view.until((frame) => frame.includes("开启当前会话的远程控制"))
+    await view.select(0)
+    await view.until((frame) => frame.includes("关闭当前会话的远程控制"))
+    await view.select(1)
+    await view.until(() => calls.length === 2)
+    expect(calls).toEqual([
+      { sessionID: "ses_current", enabled: true },
+      { sessionID: "ses_current", enabled: false },
+    ])
+  } finally {
+    view.cleanup()
+  }
+})
+
 function deviceControl(enabled = true) {
   const publicKey = `B${"A".repeat(86)}`
   const issued: RemoteAccess.Invitation = {
