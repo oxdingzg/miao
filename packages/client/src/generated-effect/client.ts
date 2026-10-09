@@ -1258,6 +1258,7 @@ type Endpoint28_9Input = {
   readonly projectIDs: Endpoint28_9Request["payload"]["projectIDs"]
   readonly sessionIDs: Endpoint28_9Request["payload"]["sessionIDs"]
   readonly expiresAt: Endpoint28_9Request["payload"]["expiresAt"]
+  readonly autoAdmit?: Endpoint28_9Request["payload"]["autoAdmit"]
 }
 const Endpoint28_9 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_9Input) =>
   raw["runtime.control.invite"]({
@@ -1266,6 +1267,7 @@ const Endpoint28_9 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_9I
       projectIDs: input["projectIDs"],
       sessionIDs: input["sessionIDs"],
       expiresAt: input["expiresAt"],
+      autoAdmit: input["autoAdmit"],
     },
   }).pipe(Effect.mapError(mapClientError))
 

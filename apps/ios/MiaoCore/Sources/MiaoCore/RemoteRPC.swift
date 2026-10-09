@@ -38,7 +38,7 @@ public enum RemoteMethod: String, Codable, Sendable {
 
 public struct ApprovedHost: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
-    public let label: String
+    public var label: String
     public let hubURL: URL
     public let target: RemoteTarget
     public let publicKey: String

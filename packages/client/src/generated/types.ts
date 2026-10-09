@@ -4592,6 +4592,7 @@ export type ServerRuntimeAccountTrustOutput = {
     | "session.selection"
   >
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
 } | null
 
 export type ServerRuntimeBindAccountInput = {
@@ -4612,6 +4613,7 @@ export type ServerRuntimeBindAccountInput = {
       readonly projectIDs: ReadonlyArray<string>
       readonly sessionIDs: ReadonlyArray<string>
       readonly expiresAt: number
+      readonly autoAdmit?: boolean | undefined
     }
   }["grantID"]
   readonly version: {
@@ -4631,6 +4633,7 @@ export type ServerRuntimeBindAccountInput = {
       readonly projectIDs: ReadonlyArray<string>
       readonly sessionIDs: ReadonlyArray<string>
       readonly expiresAt: number
+      readonly autoAdmit?: boolean | undefined
     }
   }["version"]
   readonly policy: {
@@ -4650,6 +4653,7 @@ export type ServerRuntimeBindAccountInput = {
       readonly projectIDs: ReadonlyArray<string>
       readonly sessionIDs: ReadonlyArray<string>
       readonly expiresAt: number
+      readonly autoAdmit?: boolean | undefined
     }
   }["policy"]
 }
@@ -4670,6 +4674,7 @@ export type ServerRuntimeBindAccountOutput = {
     | "session.selection"
   >
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
 }
 
 export type ServerRuntimeClearAccountTrustOutput = void
@@ -4706,6 +4711,7 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["permissions"]
   readonly projectIDs: {
     readonly permissions: ReadonlyArray<
@@ -4721,6 +4727,7 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["projectIDs"]
   readonly sessionIDs: {
     readonly permissions: ReadonlyArray<
@@ -4736,6 +4743,7 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["sessionIDs"]
   readonly expiresAt: {
     readonly permissions: ReadonlyArray<
@@ -4751,7 +4759,24 @@ export type ServerRuntimeInviteInput = {
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }["expiresAt"]
+  readonly autoAdmit?: {
+    readonly permissions: ReadonlyArray<
+      | "read"
+      | "prompt"
+      | "permission.reply"
+      | "question.reply"
+      | "interrupt"
+      | "session.create"
+      | "session.rename"
+      | "session.selection"
+    >
+    readonly projectIDs: ReadonlyArray<string>
+    readonly sessionIDs: ReadonlyArray<string>
+    readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
+  }["autoAdmit"]
 }
 
 export type ServerRuntimeInviteOutput = {
@@ -4782,6 +4807,7 @@ export type ServerRuntimePendingOutput = ReadonlyArray<{
     readonly projectIDs: ReadonlyArray<string>
     readonly sessionIDs: ReadonlyArray<string>
     readonly expiresAt: number
+    readonly autoAdmit?: boolean | undefined
   }
   readonly expiresAt: number
 }>
@@ -4805,6 +4831,7 @@ export type ServerRuntimeApproveOutput = {
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
   readonly id: string
   readonly version: number
   readonly publicKey: string
@@ -4831,6 +4858,7 @@ export type ServerRuntimeDevicesOutput = ReadonlyArray<{
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
   readonly id: string
   readonly version: number
   readonly publicKey: string
@@ -4858,6 +4886,7 @@ export type ServerRuntimeRevokeOutput = {
   readonly projectIDs: ReadonlyArray<string>
   readonly sessionIDs: ReadonlyArray<string>
   readonly expiresAt: number
+  readonly autoAdmit?: boolean | undefined
   readonly id: string
   readonly version: number
   readonly publicKey: string

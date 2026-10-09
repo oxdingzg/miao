@@ -1893,6 +1893,7 @@ export function make(options: ClientOptions) {
               projectIDs: input["projectIDs"],
               sessionIDs: input["sessionIDs"],
               expiresAt: input["expiresAt"],
+              autoAdmit: input["autoAdmit"],
             },
             successStatus: 200,
             declaredStatuses: [503, 400, 401],

@@ -142,11 +142,14 @@ export function DialogDevices(props: {
     const value = link()
     return value ? renderUnicodeCompact(value, { border: 1 }).split("\n") : []
   })
-  const fits = createMemo(
-    () =>
-      (qr()[0]?.length ?? 0) <= dimensions().width - 12 &&
-      qr().length + 15 <= dimensions().height - Math.floor(dimensions().height / 4),
-  )
+  // The dialog is a fixed 116-column box; compare against the box, not the raw
+  // terminal, so a wide terminal with a narrow dialog no longer hides the code.
+  const fits = createMemo(() => {
+    if (!invitation()) return false
+    const width = Math.min(dimensions().width, 120)
+    const height = Math.min(dimensions().height, 64)
+    return (qr()[0]?.length ?? 0) <= width - 4 && qr().length + 8 <= height - 4
+  })
 
   const options = createMemo((): DialogSelectOption<string>[] => {
     const confirm = confirmation()
@@ -353,6 +356,68 @@ export function DialogDevices(props: {
                     projectIDs: grant.projectIDs,
                     sessionIDs: grant.sessionIDs,
                     expiresAt: Date.now() + 90 * 86400000,
+                  },
+                }),
+            }))
+        : []),
+      ...(trust() &&
+      props.api.bindAccount &&
+      devices().some((grant) => grant.revokedAt === null && grant.expiresAt > Date.now())
+        ? [
+            {
+              value: "auto-admit",
+              title: "同账号自动接入：" + (trust()?.autoAdmit ? "已开启" : "已关闭"),
+              category: "账号信任",
+              description: trust()?.autoAdmit
+                ? "登录同一账号的设备自动可见，无需扫码；再次选择可关闭"
+                : "开启后登录同一账号的设备免扫码自动可见",
+              onSelect: () => {
+                const grant = devices().find(
+                  (candidate) => candidate.revokedAt === null && candidate.expiresAt > Date.now(),
+                )
+                if (!grant) return
+                const enabling = !trust()?.autoAdmit
+                perform(async () => {
+                  await props.api.bindAccount!({
+                    grantID: grant.id,
+                    version: grant.version,
+                    policy: {
+                      permissions: trust()!.permissions,
+                      projectIDs: grant.projectIDs,
+                      sessionIDs: grant.sessionIDs,
+                      expiresAt: trust()!.expiresAt,
+                      autoAdmit: !trust()?.autoAdmit,
+                    },
+                  })
+                  setNotice("同账号自动接入已" + (enabling ? "开启" : "关闭"))
+                })
+              },
+            },
+          ]
+        : []),
+      ...(!trust() && current.accountID && props.api.bindAccount
+        ? devices()
+            .filter(
+              (grant) =>
+                grant.revokedAt === null &&
+                grant.expiresAt > Date.now() &&
+                grant.permissions.some((permission) => permission !== "session.create"),
+            )
+            .map((grant) => ({
+              value: "auto-account:" + grant.id,
+              title: "开启同账号自动接入（以 " + label(grant.label) + " 为签名根）",
+              category: "账号信任",
+              description: "90 天、当前范围；登录同一账号的设备免扫码自动可见",
+              onSelect: () =>
+                setConfirmation({
+                  type: "trust" as const,
+                  grant,
+                  policy: {
+                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
+                    projectIDs: grant.projectIDs,
+                    sessionIDs: grant.sessionIDs,
+                    expiresAt: Date.now() + 90 * 86400000,
+                    autoAdmit: true,
                   },
                 }),
             }))

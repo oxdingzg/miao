@@ -163,7 +163,8 @@ export function listen(options: Options) {
         if (peer.host.socket.data.authorization && !peer.host.socket.data.authorization.valid())
           return socket.close(1008, "Hub host authorization expired")
         peer.client.socket = socket
-        send(peer.host.socket, JSON.stringify({ type: "connected", connectionID: peer.client.connectionID }))
+        send(peer.host.socket, JSON.stringify({ type: "connected", connectionID: peer.client.connectionID,
+          ...(peer.authorization ? { accountID: peer.authorization.accountID } : {}) }))
       },
       message(socket, message) {
         const peer = socket.data

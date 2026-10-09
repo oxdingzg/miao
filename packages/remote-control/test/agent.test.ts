@@ -628,3 +628,110 @@ test("browser roster channel consumes encrypted approval and authenticates RPC w
     rpc.close()
   }
 })
+
+test("Hub-nominated account must match the rosterClaim account before admission", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "miao-agent-nominee-"))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
+  const identity = await SecureChannel.createIdentity()
+  const hubURL = "http://127.0.0.1:1/"
+  const accountID = "account_roster_fixture_001"
+  const approved = await grants.approve({
+    publicKey: identity.publicKey,
+    label: "Root",
+    permissions: ["read"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 600000,
+  })
+  await grants.bindAccount({
+    hubURL,
+    accountID,
+    grantID: approved.id,
+    grantVersion: approved.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: approved.expiresAt },
+    allowLoopbackHTTP: true,
+  })
+  const roster = await DeviceRoster.sign(identity, {
+    version: 1,
+    accountID,
+    sequence: 1,
+    issuedAt: 0,
+    devices: [{ publicKey: identity.publicKey, label: "Root", signer: true, addedAt: 0 }],
+  })
+  await grants.acceptRoster(hubURL, roster)
+  const outsider = await SecureChannel.createIdentity()
+  await expect(grants.authorizeRosterDevice(hubURL, accountID, outsider.publicKey)).rejects.toThrow()
+  expect(grants.list().some((grant) => grant.publicKey === outsider.publicKey)).toBe(false)
+  expect(grants.accountTrust()).toMatchObject({ accountID, acceptedSequence: 1 })
+  grants.close()
+})
+
+test("owner opt-in auto-admits same-account devices without scanning", async () => {
+  const f = await fixture({ "session.get": async () => ({ title: "Authorized" }) })
+  const rootGrant = await f.grants.approve({
+    publicKey: f.grants.identity.publicKey,
+    label: "Host",
+    permissions: ["read", "prompt"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  await f.grants.bindAccount({
+    hubURL: f.base,
+    accountID: "account_roster_fixture_001",
+    grantID: rootGrant.id,
+    grantVersion: rootGrant.version,
+    policy: {
+      permissions: ["read"],
+      projectIDs: ["project-one"],
+      sessionIDs: [],
+      expiresAt: Date.now() + 60000,
+      autoAdmit: true,
+    },
+    allowLoopbackHTTP: true,
+  })
+  const newcomer = await SecureChannel.createIdentity()
+  const started = await rosterClient(f, newcomer)
+  const accepted = await started.pending.finish(
+    JSON.parse(Buffer.from(await started.transport.receive(), "base64url").toString()),
+    f.grants.identity.publicKey,
+  )
+  const envelope = JSON.parse(new TextDecoder().decode(await accepted.channel.open(await started.transport.receive())))
+  expect(envelope).toMatchObject({ version: 1, type: "roster", status: "approved" })
+  expect(envelope.grant.publicKey).toBe(newcomer.publicKey)
+  const trust = f.grants.accountTrust()
+  expect(trust?.acceptedSequence).toBe(1)
+  expect(trust?.devices.some((device) => device.publicKey === newcomer.publicKey && !device.signer)).toBe(true)
+  expect(
+    f.grants.authorizeRosterDevice(f.base, "account_roster_fixture_001", newcomer.publicKey),
+  ).resolves.toMatchObject({
+    publicKey: newcomer.publicKey,
+  })
+  started.transport.ws.close()
+})
+
+test("auto admission stays off without the owner toggle", async () => {
+  const f = await fixture({ "session.get": async () => ({ title: "Authorized" }) })
+  const rootGrant = await f.grants.approve({
+    publicKey: f.grants.identity.publicKey,
+    label: "Host",
+    permissions: ["read"],
+    projectIDs: ["project-one"],
+    sessionIDs: [],
+    expiresAt: Date.now() + 60000,
+  })
+  await f.grants.bindAccount({
+    hubURL: f.base,
+    accountID: "account_roster_fixture_001",
+    grantID: rootGrant.id,
+    grantVersion: rootGrant.version,
+    policy: { permissions: ["read"], projectIDs: ["project-one"], sessionIDs: [], expiresAt: Date.now() + 60000 },
+    allowLoopbackHTTP: true,
+  })
+  const newcomer = await SecureChannel.createIdentity()
+  const started = await rosterClient(f, newcomer)
+  await closed(started.transport.ws)
+  expect(f.grants.list().filter((grant) => grant.publicKey === newcomer.publicKey)).toHaveLength(0)
+  expect(f.grants.accountTrust()?.devices.map((device) => device.publicKey)).toEqual([f.grants.identity.publicKey])
+})
