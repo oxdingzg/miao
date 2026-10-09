@@ -37,6 +37,7 @@ struct Inner {
     crons: Mutex<HashMap<String, Background>>,
     job_slots: Arc<Semaphore>,
     slots: Arc<Semaphore>,
+    subagent_slots: Arc<Semaphore>,
     started: Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
@@ -94,6 +95,7 @@ impl Runtime {
             .with_writes(policy.writes_enabled())
             .with_process(policy.process_enabled(), policy.process_network())
             .with_background(policy.background_enabled())
+            .with_delegation(policy.subagents_enabled())
             .protect_store(store.path());
         for path in provider.protected_resources() {
             let path = tokio::fs::canonicalize(path).await?;
@@ -126,6 +128,7 @@ impl Runtime {
                 crons: Mutex::new(HashMap::new()),
                 job_slots: Arc::new(Semaphore::new(2)),
                 slots: Arc::new(Semaphore::new(8)),
+                subagent_slots: Arc::new(Semaphore::new(crate::subagent::CONCURRENCY_LIMIT)),
                 started: Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
@@ -357,7 +360,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                 let cancel = inner.stop.child_token();
                 active = Some(cancel.clone());
                 let (session, inner) = (session.clone(), inner.clone());
-                tasks.spawn(async move { drain(session, inner, force, cancel).await });
+                tasks.spawn(boxed_drain(session, inner, force, cancel));
             }
         }
         tokio::select! {
@@ -396,6 +399,18 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
             },
         }
     }
+}
+
+/// Erase the drain future's type. Delegation lets a drain create another Session
+/// (`drain` -> `delegate` -> `wake_session` -> `coordinate` -> `drain`), which is
+/// a type cycle if `coordinate` names the opaque `drain` future directly.
+fn boxed_drain(
+    session: String,
+    inner: Arc<Inner>,
+    force: bool,
+    cancel: CancellationToken,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
+    Box::pin(drain(session, inner, force, cancel))
 }
 
 async fn drain(
@@ -714,6 +729,17 @@ async fn execute(
                                         Ok(query) => Ok(inner.store.recall(session, query).await?),
                                         Err(error) => Err(error),
                                     }
+                                }
+                                "task" => {
+                                    delegate(
+                                        inner,
+                                        session,
+                                        run,
+                                        id,
+                                        &prepared,
+                                        cancel.child_token(),
+                                    )
+                                    .await
                                 }
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
@@ -1154,6 +1180,174 @@ fn severity(decision: Decision) -> u8 {
     }
 }
 
+/// Delegate a task to a child Session: create the child with lineage, admit the
+/// prompt, run it concurrently, and return its final assistant message. Bounded
+/// by a lineage depth limit and a process-global concurrency permit; cancelling
+/// the parent cancels the child. The child inherits the workspace and policy.
+async fn delegate(
+    inner: &Arc<Inner>,
+    parent: &str,
+    run: &str,
+    call: &str,
+    prepared: &Prepared,
+    cancel: CancellationToken,
+) -> Result<Value, ToolError> {
+    let task = crate::subagent::Input::parse(prepared.input().clone())?;
+
+    let mut depth = 0u32;
+    let mut current = parent.to_owned();
+    while let Some(ancestor) = inner
+        .store
+        .lineage_parent(&current)
+        .await
+        .map_err(|_| ToolError::External("subagent lineage unavailable".into()))?
+    {
+        depth += 1;
+        if depth >= crate::subagent::DEPTH_LIMIT {
+            return Err(ToolError::External("subagent depth limit reached".into()));
+        }
+        current = ancestor;
+    }
+
+    let permit = tokio::select! {
+        _ = cancel.cancelled() => return Err(ToolError::Interrupted),
+        permit = inner.subagent_slots.clone().acquire_owned() => permit
+            .map_err(|_| ToolError::External("subagent scheduler unavailable".into()))?,
+    };
+
+    let child = task
+        .session_id
+        .clone()
+        .unwrap_or_else(|| format!("{parent}/sub-{}", uuid::Uuid::new_v4()));
+    inner
+        .store
+        .fork(parent, &child, Some(0))
+        .await
+        .map_err(|_| ToolError::External("subagent session could not be created".into()))?;
+    inner
+        .store
+        .record(
+            parent,
+            crate::events::Lifecycle::SubagentStart.name(),
+            json!({"run_id":run,"subagent_id":child,"call_id":call}),
+        )
+        .await
+        .map_err(|_| ToolError::External("subagent start could not be recorded".into()))?;
+
+    let admission = inner
+        .store
+        .admit_attachments_at(
+            Input {
+                session_id: child.clone(),
+                input_id: format!("{call}:subagent"),
+                prompt: task.prompt,
+                delivery: crate::protocol::Delivery::Steer,
+            },
+            Vec::new(),
+            Some(inner.tools.location().to_owned()),
+        )
+        .await
+        .map_err(|_| ToolError::External("subagent prompt could not be admitted".into()))?;
+    wake_session(inner, &child, true)
+        .await
+        .map_err(|_| ToolError::External("subagent could not be scheduled".into()))?;
+
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                let _ = cancel_session(inner, &child).await;
+                let _ = inner.store.record(parent, crate::events::Lifecycle::SubagentStop.name(), json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"interrupted"})).await;
+                return Err(ToolError::Interrupted);
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
+        }
+        let events = inner
+            .store
+            .events(&child, admission.admitted_seq, 500)
+            .await
+            .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
+        if events.iter().any(|event| event.kind == "run.finished") {
+            break;
+        }
+    }
+    drop(permit);
+
+    let history = inner
+        .store
+        .history(&child)
+        .await
+        .map_err(|_| ToolError::External("subagent history unavailable".into()))?;
+    let text = history
+        .last()
+        .and_then(|message| {
+            message.content.as_array().and_then(|parts| {
+                parts
+                    .iter()
+                    .find_map(|part| part["text"].as_str())
+                    .map(str::to_owned)
+            })
+        })
+        .unwrap_or_default();
+    inner
+        .store
+        .record(
+            parent,
+            crate::events::Lifecycle::SubagentStop.name(),
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed"}),
+        )
+        .await
+        .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;
+    Ok(json!({"session_id":child,"text":text}))
+}
+
+async fn wake_session(inner: &Arc<Inner>, session: &str, force: bool) -> Result<(), Error> {
+    let commands = {
+        let mut actors = inner.actors.lock().await;
+        if inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if let Some(actor) = actors.get(session) {
+            actor.commands.clone()
+        } else {
+            if actors.len() >= 64 {
+                return Err(Error::Invalid(
+                    "M0 runtime supports at most 64 attached Sessions".into(),
+                ));
+            }
+            let (commands, receive) = mpsc::channel(32);
+            let join = tokio::spawn(coordinate(session.to_owned(), inner.clone(), receive));
+            actors.insert(
+                session.to_owned(),
+                Actor {
+                    commands: commands.clone(),
+                    join,
+                },
+            );
+            commands
+        }
+    };
+    tokio::select! {
+        _ = inner.stop.cancelled() => Err(Error::Closed),
+        result = commands.send(Command::Wake(force)) => result.map_err(|_| Error::Closed),
+    }
+}
+
+async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error> {
+    let commands = {
+        let actors = inner.actors.lock().await;
+        actors.get(session).map(|actor| actor.commands.clone())
+    };
+    let Some(commands) = commands else {
+        return Ok(false);
+    };
+    let (reply, result) = oneshot::channel();
+    commands
+        .send(Command::Cancel(reply))
+        .await
+        .map_err(|_| Error::Closed)?;
+    result.await.map_err(|_| Error::Closed)
+}
+
 async fn authorize(
     inner: &Arc<Inner>,
     session: &str,
@@ -1169,6 +1363,7 @@ async fn authorize(
             crate::permission::Access::Write
                 | crate::permission::Access::Execute
                 | crate::permission::Access::Background
+                | crate::permission::Access::Delegate
         )
     {
         inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"plan_mode"})).await?;
