@@ -65,13 +65,48 @@ separate acceptance checks.
 
 ## Hub accounts
 
-Open **登录中继** and enter the computer's configured HTTPS Hub address and account. The account screen lists registered computers and their online status. Session access still requires scanning an invitation and approving this device on the computer; directory discovery cannot replace that approval or a pinned computer key. A pending invitation resumes after account login.
+Open **登录中继** and enter the computer's configured HTTPS Hub address and account. The account screen lists registered computers and their online status. Session access requires either an independently approved computer invitation or signed account device enrollment. Directory discovery cannot replace device approval or a pinned computer key. A pending invitation resumes after account login.
 
 The signed login is stored in the device-only Keychain; the password is cleared from the form when submitted or dismissed. WebSocket credentials remain short-lived and confined to the signed-in origin. Logging out closes transports and clears the displayed session view while host tasks continue. A failed remote revocation is shown explicitly with a retry action.
 
 After a computer restart, reconnect refreshes its Runtime instance after matching the previously approved host public key. Session replay starts in the new Runtime cache partition, while drafts migrate within the same device/grant/host/session scope. Uncertain operations retain their original IDs and are queried, never automatically resent.
 
 On an approved macOS host, `MIAO_UI_TEST_ACCOUNT=1 bun apps/ios/scripts/check-app.ts` runs the full native UI flow against the account-managed Hub: account entry, pairing, session operations, background draft recovery and account restoration after App restart. The default harness retains legacy private-relay coverage. Both use isolated identities and test-only loopback access.
+
+### Account device registration
+
+The account sheet contains a **同账号设备注册** section. A first signing device
+must already have an independently approved, unexpired computer pairing. The
+person explicitly enables signer consent in the App and selects that device as
+the account signing root in the computer's device management. Initializing a
+root cannot replace another account root nominated by the Hub; restoration
+requires a roster signed by the same locally held key.
+
+A new device generates a ten-minute registration request and shares it directly
+with an already trusted signing device. The approving device displays the new
+device label and public key, asks for confirmation, signs the next roster and
+recipient-bound computer endorsements, and publishes the roster. Return the
+approval and signer public key directly to the new device. The recipient must
+confirm the independent source and verify both signatures before saving trust.
+Signing permission is not silently granted to a new member.
+
+Accepted roster authority and computer pins are stored atomically in a protected,
+device/account/Hub-bound record. Refresh validates increasing sequences against
+previously accepted signers; same-sequence forks and rollback are rejected.
+Authenticated membership removal retains its sequence even after restart.
+Account changes cancel pending registrations and close stale connections.
+The App compares directory routing metadata with independently endorsed keys,
+then uses a signed roster claim. Only the computer's encrypted, current grant
+starts session RPC; scopes and the absolute expiry remain under local owner
+policy. Reconnecting does not extend that policy or duplicate managed grants.
+
+`MIAO_UI_TEST_ENROLLMENT=1 bun apps/ios/scripts/check-app.ts` exercises native
+registration and session access against an isolated real Runtime on an approved
+macOS build host. `check-native-roster.ts` separately verifies native HTTP,
+WebCrypto/CryptoKit registration proofs, encrypted Agent admission, grant reuse
+and logout with a remotely prebuilt `RosterAdmissionProbe` supplied through
+`MIAO_NATIVE_ROSTER_PROBE`. It never invokes a local compiler. These fixtures do
+not replace production OAuth, physical phone, camera or installation acceptance.
 
 ### Notification registration
 

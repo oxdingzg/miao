@@ -48,6 +48,10 @@ final class PairingUITests: XCTestCase {
         app.launch()
         if let account = fixture.account {
             stage("account")
+            if fixture.enrollment != nil {
+                XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 15))
+                app.buttons["hubAccount"].tap()
+            }
             XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
             app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)
@@ -84,14 +88,27 @@ final class PairingUITests: XCTestCase {
                 let field = app.textFields["enrollmentApproved"].exists ? app.textFields["enrollmentApproved"] : app.textViews["enrollmentApproved"]
                 XCTAssertTrue(field.waitForExistence(timeout: 10))
                 field.tap(); field.typeText(approved)
+                XCTAssertEqual(field.value as? String, approved, "The complete signed approval is entered")
                 app.swipeUp()
                 let pin = app.textFields["enrollmentPin"]
                 XCTAssertTrue(pin.waitForExistence(timeout: 10))
                 pin.tap(); pin.typeText(enrollment.rootKey)
+                XCTAssertEqual(pin.value as? String, enrollment.rootKey)
                 let independent = app.switches["enrollmentIndependentPin"]
                 XCTAssertTrue(independent.waitForExistence(timeout: 10))
-                independent.tap()
+                print("Native independent pin before=" + (independent.value as? String ?? "unknown"))
+                if (independent.value as? String) != "1" { independent.tap() }
+                expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: independent)
+                waitForExpectations(timeout: 5)
+                print("Native independent pin after=" + (independent.value as? String ?? "unknown"))
+                XCTAssertTrue(app.buttons["enrollmentReceive"].isEnabled)
                 app.buttons["enrollmentReceive"].tap()
+                let completedRegistration = app.staticTexts["enrollmentComplete"]
+                let failedRegistration = app.staticTexts["enrollmentError"]
+                expectation(for: NSPredicate { _, _ in completedRegistration.exists || failedRegistration.exists }, evaluatedWith: app)
+                waitForExpectations(timeout: 20)
+                if failedRegistration.exists { print("Native enrollment failure: " + failedRegistration.label) }
+                XCTAssertTrue(completedRegistration.exists, "Signed registration succeeds before leaving its sheet")
                 // Runtime sessions prove the UI obtained an encrypted member grant rather than trusting a directory row.
                 app.buttons["关闭"].tap()
             } else {
