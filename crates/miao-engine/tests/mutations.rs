@@ -132,6 +132,7 @@ async fn approve(runtime: &Runtime, binding: Approval) {
                 input_hash: binding.input_hash,
                 policy_revision: binding.policy_revision,
                 decision: Decision::Allow,
+                matcher: Some(binding.matcher),
             },
         )
         .await

@@ -81,8 +81,33 @@ impl Default for Config {
     }
 }
 
+/// Where a decision came from. `Rule` names a configured rule's patterns;
+/// `Default`, `Capability` and `Boundary` are built-in outcomes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchSource {
+    Rule,
+    Default,
+    Capability,
+    Boundary,
+}
+
+/// The matcher semantics behind a decision, carried on approval messages so a
+/// controller sees which rule or built-in produced the result rather than a
+/// bare allow/deny boolean.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleMatch {
+    pub tool: String,
+    pub path: String,
+    pub decision: Decision,
+    pub source: MatchSource,
+}
+
 #[derive(Clone)]
-struct Matcher {
+struct CompiledMatcher {
+    tool_pattern: String,
+    path_pattern: String,
     tool: GlobMatcher,
     path: GlobMatcher,
     decision: Decision,
@@ -92,7 +117,7 @@ struct Matcher {
 pub struct Policy {
     config: Config,
     revision: String,
-    matchers: Vec<Matcher>,
+    matchers: Vec<CompiledMatcher>,
 }
 impl Policy {
     pub fn new(config: Config) -> Result<Self, Error> {
@@ -123,7 +148,9 @@ impl Policy {
                     .build()
                     .map_err(|_| Error::Invalid("invalid path matcher".into()))?
                     .compile_matcher();
-                Ok(Matcher {
+                Ok(CompiledMatcher {
+                    tool_pattern: rule.tool.clone(),
+                    path_pattern: rule.path.clone(),
                     tool,
                     path,
                     decision: rule.decision,
@@ -172,6 +199,18 @@ impl Policy {
     /// The mode is an upper bound. Explicit deny dominates ask and allow;
     /// absent matching rules, reads allow and workspace writes ask.
     pub fn evaluate(&self, tool: &str, path: &str, access: Access) -> Decision {
+        self.assess(tool, path, access).0
+    }
+
+    /// Like [`Policy::evaluate`] but also returns the matcher that produced the
+    /// decision, so callers can carry it on approval messages.
+    pub fn assess(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
+        let bare = |decision| RuleMatch {
+            tool: tool.into(),
+            path: path.into(),
+            decision,
+            source: MatchSource::Default,
+        };
         if (access == Access::Cron && !self.cron_enabled())
             || (access == Access::Schedule && !self.wakeup_enabled())
             || (access == Access::Execute && !self.process_enabled())
@@ -179,10 +218,22 @@ impl Policy {
             || (access == Access::External && !self.mcp_enabled())
             || (access == Access::Write && self.config.mode == Mode::ReadOnly)
         {
-            return Decision::Deny;
+            return (
+                Decision::Deny,
+                RuleMatch {
+                    source: MatchSource::Capability,
+                    ..bare(Decision::Deny)
+                },
+            );
         }
         if path.starts_with('/') || path.split('/').any(|p| p == "..") {
-            return Decision::Deny;
+            return (
+                Decision::Deny,
+                RuleMatch {
+                    source: MatchSource::Boundary,
+                    ..bare(Decision::Deny)
+                },
+            );
         }
         let mut result = None;
         for matcher in &self.matchers {
@@ -190,19 +241,36 @@ impl Policy {
                 continue;
             }
             if matcher.decision == Decision::Deny {
-                return Decision::Deny;
+                return (
+                    Decision::Deny,
+                    RuleMatch {
+                        tool: matcher.tool_pattern.clone(),
+                        path: matcher.path_pattern.clone(),
+                        decision: Decision::Deny,
+                        source: MatchSource::Rule,
+                    },
+                );
             }
             if matcher.decision == Decision::Ask || result.is_none() {
-                result = Some(matcher.decision);
+                result = Some(RuleMatch {
+                    tool: matcher.tool_pattern.clone(),
+                    path: matcher.path_pattern.clone(),
+                    decision: matcher.decision,
+                    source: MatchSource::Rule,
+                });
             }
         }
-        result.unwrap_or(
-            if access == Access::Read || access == Access::SessionState {
-                Decision::Allow
-            } else {
-                Decision::Ask
-            },
-        )
+        match result {
+            Some(matched) => (matched.decision, matched),
+            None => {
+                let decision = if access == Access::Read || access == Access::SessionState {
+                    Decision::Allow
+                } else {
+                    Decision::Ask
+                };
+                (decision, bare(decision))
+            }
+        }
     }
 }
 

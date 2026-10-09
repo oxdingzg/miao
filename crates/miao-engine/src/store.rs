@@ -632,7 +632,7 @@ impl Store {
             let (binding,state,active)=row.ok_or(Error::ApprovalResolved)?;
             if state!="pending"||!active {return Err(Error::ApprovalResolved);}
             let approval:Approval=serde_json::from_str(&binding)?;
-            if response.input_hash!=approval.input_hash||response.policy_revision!=approval.policy_revision||response.decision==Decision::Ask {return Err(Error::ApprovalMismatch);}
+            if response.input_hash!=approval.input_hash||response.policy_revision!=approval.policy_revision||response.decision==Decision::Ask||response.matcher.as_ref().is_some_and(|matcher|matcher!=&approval.matcher) {return Err(Error::ApprovalMismatch);}
             let state=if approval.expires_at_ms<=now_ms(){"expired"}else if response.decision==Decision::Allow{"allow"}else{"deny"};
             tx.execute("UPDATE engine_approval SET state=?2 WHERE id=?1",params![response.request_id,state])?;
             let event=append(&tx,&session,"approval.resolved",json!({"request_id":response.request_id,"state":state}))?;

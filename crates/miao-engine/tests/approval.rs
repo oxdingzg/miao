@@ -98,6 +98,7 @@ fn response(approval: &Approval, decision: Decision) -> Response {
         input_hash: approval.input_hash.clone(),
         policy_revision: approval.policy_revision.clone(),
         decision,
+        matcher: None,
     }
 }
 
@@ -305,5 +306,46 @@ async fn location_conflict_is_atomic_and_same_store_cannot_host_two_runtimes() {
         Runtime::new(store.clone(), Arc::new(Reader), tools).await,
         Err(Error::Busy)
     ));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn approval_carries_matcher_semantics_and_scopes_the_resolution() {
+    use miao_engine::permission::MatchSource;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(60_000, Decision::Ask),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input(), true).await.unwrap();
+    let binding = approval(&store).await;
+    assert_eq!(binding.matcher.tool, "read_file");
+    assert_eq!(binding.matcher.path, "file");
+    assert_eq!(binding.matcher.decision, Decision::Ask);
+    assert_eq!(binding.matcher.source, MatchSource::Rule);
+    let mut wrong = response(&binding, Decision::Allow);
+    wrong.matcher = Some(miao_engine::permission::RuleMatch {
+        tool: "read_file".into(),
+        path: "other".into(),
+        decision: Decision::Ask,
+        source: MatchSource::Rule,
+    });
+    assert!(matches!(
+        runtime.approve(&runtime.controller(), "s", wrong).await,
+        Err(Error::ApprovalMismatch)
+    ));
+    let mut scoped = response(&binding, Decision::Allow);
+    scoped.matcher = Some(binding.matcher.clone());
+    runtime
+        .approve(&runtime.controller(), "s", scoped)
+        .await
+        .unwrap();
+    finished(&store).await;
     runtime.shutdown().await;
 }

@@ -1106,6 +1106,15 @@ async fn run_hooks(
     Ok(blocked)
 }
 
+/// More restrictive wins when folding a multi-file tool's per-target verdicts.
+fn severity(decision: Decision) -> u8 {
+    match decision {
+        Decision::Allow => 0,
+        Decision::Ask => 1,
+        Decision::Deny => 2,
+    }
+}
+
 async fn authorize(
     inner: &Arc<Inner>,
     session: &str,
@@ -1114,10 +1123,10 @@ async fn authorize(
     prepared: &Prepared,
     cancel: CancellationToken,
 ) -> Result<bool, Error> {
-    let decision = if prepared.targets().is_empty() {
+    let (decision, matcher) = if prepared.targets().is_empty() {
         inner
             .policy
-            .evaluate(prepared.name(), prepared.resource(), prepared.access())
+            .assess(prepared.name(), prepared.resource(), prepared.access())
     } else {
         prepared
             .targets()
@@ -1125,13 +1134,16 @@ async fn authorize(
             .map(|target| {
                 inner
                     .policy
-                    .evaluate(prepared.name(), target, prepared.access())
+                    .assess(prepared.name(), target, prepared.access())
             })
-            .fold(Decision::Allow, |acc, next| match (acc, next) {
-                (Decision::Deny, _) | (_, Decision::Deny) => Decision::Deny,
-                (Decision::Ask, _) | (_, Decision::Ask) => Decision::Ask,
-                _ => Decision::Allow,
+            .reduce(|acc, next| {
+                if severity(next.0) > severity(acc.0) {
+                    next
+                } else {
+                    acc
+                }
             })
+            .expect("a multi-target tool has at least one target")
     };
     match decision {
         Decision::Allow => return Ok(true),
@@ -1157,6 +1169,7 @@ async fn authorize(
             prepared.input(),
         )?,
         policy_revision: inner.policy.revision().into(),
+        matcher,
         expires_at_ms: now_ms().saturating_add(inner.policy.timeout_ms()),
     };
     inner.store.request_approval(approval.clone()).await?;
@@ -1190,6 +1203,7 @@ async fn authorize(
                         input_hash: approval.input_hash.clone(),
                         policy_revision: approval.policy_revision.clone(),
                         decision: Decision::Deny,
+                        matcher: None,
                     },
                 )
                 .await;

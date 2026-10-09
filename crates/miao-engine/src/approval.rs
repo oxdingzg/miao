@@ -1,4 +1,4 @@
-use crate::permission::Decision;
+use crate::permission::{Decision, RuleMatch};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -15,6 +15,9 @@ pub struct Approval {
     pub input: Value,
     pub input_hash: String,
     pub policy_revision: String,
+    /// The matcher semantics that produced this request, so the controller sees
+    /// which rule or built-in asked instead of an opaque ask.
+    pub matcher: RuleMatch,
     pub expires_at_ms: u64,
 }
 
@@ -25,6 +28,10 @@ pub struct Response {
     pub input_hash: String,
     pub policy_revision: String,
     pub decision: Decision,
+    /// Echoes the request's matcher. When present it must match exactly, so a
+    /// resolution is scoped to the semantics that were shown.
+    #[serde(default)]
+    pub matcher: Option<RuleMatch>,
 }
 
 /// Wall-clock deadlines survive restart. Runtime cancellation and its
