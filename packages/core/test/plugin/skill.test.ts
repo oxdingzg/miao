@@ -38,6 +38,12 @@ describe("SkillPlugin.Plugin", () => {
           content: expect.stringContaining("watch the run"),
         }),
       )
+      expect(yield* skill.list()).toContainEqual(
+        expect.objectContaining({
+          name: "autonomous-continuation",
+          content: expect.stringContaining("one heartbeat"),
+        }),
+      )
     }),
   )
 })
