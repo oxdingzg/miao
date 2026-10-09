@@ -550,10 +550,13 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
       baseUrl: next.url,
       headers: { authorization: `Basic ${Buffer.from(`miao:${next.credential}`).toString("base64")}` },
     })
-    // A new window explicitly adopts the Session before it can expose that history remotely.
+    // Ownership adoption does not restore publication after restarting the window.
     await nextClient.sessions.rename({ sessionID, title: "Phone session" })
     await nextClient["server.runtime"].setEnabled({ enabled: true })
     const restoredCall = await connectRemote(next, grant)
+    expect(await nextClient["server.runtime"].get()).toMatchObject({ sessionIDs: [] })
+    expect(await restoredCall("session.get", {})).toMatchObject({ type: "error", code: "forbidden" })
+    await nextClient["server.runtime"].setSessionEnabled({ sessionID, enabled: true })
     expect(await restoredCall("session.rename", { title: "Interrupted rename" }, unknownID)).toMatchObject({
       type: "result",
       data: { status: "outcome_unknown" },
