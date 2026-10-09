@@ -11,6 +11,17 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-10-09
+
+### Added
+- **remote-control**: resume browser pairing across social login (#464) (`4d2b80244`)
+- **miao**: add autonomous-continuation scheduling skill (#461) (`a2e200d70`)
+
+### Fixed
+- **tui**: show an em dash when no model price is known (#462) (`01864d89b`)
+- **remote-control**: select a private default Hub before desktop login (#457) (`85c4e46a4`)
+- **release**: publish the curated bilingual note pair (#455) (`a956d8732`)
+
 ## [0.1.26] - 2026-10-08
 
 ### Added

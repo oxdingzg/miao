@@ -1,0 +1,88 @@
+# Signed account device rosters
+
+The validation and durable authority core is implemented in `device-roster.ts`
+and `grants.ts`. Runtime owner controls, client enrollment, and a roster-claim
+handshake still need integration before this enables account-wide access.
+
+## Local authority
+
+Account login alone does not authorize a device to access Sessions. A local
+owner first approves a device through the existing invitation handshake, then
+explicitly binds its signing key to an account. The account ID comes from the
+host's authenticated Hub setup, not a device claim. The Hub origin is pinned
+locally alongside it. A Hub cannot bootstrap trust by delivering a self-signed
+roster.
+
+`DeviceGrants.bindAccount` requires the exact ID and version of a live approved
+grant. It records that key as the initial signer, accepted sequence zero, and
+an owner-selected permissions/scope/expiry policy. Existing files without
+account trust remain readable. Network updates cannot rebind that authority or
+change its policy.
+
+## Signed envelope
+
+```json
+{
+  "version": 1,
+  "roster": {
+    "version": 1,
+    "accountID": "account_identifier_0001",
+    "sequence": 1,
+    "issuedAt": 0,
+    "devices": [
+      {
+        "publicKey": "<base64url uncompressed P-256 point>",
+        "label": "Owner device",
+        "signer": true,
+        "addedAt": 0
+      }
+    ]
+  },
+  "signature": "<base64url 64-byte P1363 ECDSA signature>"
+}
+```
+
+Signing uses ECDSA P-256/SHA-256 over UTF-8 canonical JSON of
+`["miao.control.roster.v1", roster]`, with recursively sorted object keys.
+Signatures use IEEE P1363 `r || s`, not DER. Device keys must be valid canonical
+65-byte uncompressed P-256 points, unique and sorted by literal public-key
+string ordering. There are 1–64 devices. All timestamps and sequences are safe
+non-negative integers; sequence starts at one. Timestamps are display metadata
+and never decide whether a roster is authorized. Unknown fields are rejected.
+
+A host verifies a signature against signer keys from its **previously accepted**
+local state. An incoming table cannot nominate its own signer. Account IDs must
+match, and sequence must strictly advance. Equal-sequence forks and rollbacks
+are rejected, even when signed by an otherwise trusted key. Verification takes
+an immutable snapshot before asynchronous cryptographic work.
+
+## Durable update and revocation
+
+Account trust lives in the same owner-only, symlink-rejecting, size-limited
+`devices.json` as grants, under the existing OS-backed cross-process lock.
+Accepting a new roster and revoking grants for removed keys share one atomic,
+fsynced file replacement. This avoids a separate roster/grant transaction that
+could persist one half and expose revoked devices after a restart. Revocation
+advances each affected grant's version, so existing data-plane authorization
+checks reject it. Other keys and local policy remain unchanged.
+
+Membership updates do not issue grants. Enrollment must separately prove
+possession of the member's signing key and apply the local owner's policy.
+
+## New-device host trust
+
+A new device must not treat directory-provided host public keys as trusted.
+`HostEndorsement` lets a previously trusted device transfer the keys it learned
+from local pairing. It signs canonical JSON of
+`["miao.control.host-endorsement.v1", payload]`, using the same P1363 encoding.
+The payload includes the Hub origin, account, recipient device signing key,
+recipient's fresh enrollment challenge, and a sorted, unique list of host IDs
+and public keys. The recipient verifies against a signer key obtained out of
+band from the approving device, never a signer key nominated by the Hub.
+
+This separates two directions of trust: signed device rosters let a host admit
+a member; host endorsements let that member authenticate the real host. Neither
+account login nor an untrusted directory substitutes for either decision.
+The enrollment UI must consume its nonce once and persist the endorsed keys
+before calling `SecureChannel.startClient().finish`. Device-to-device transport
+and owner/claim integration are follow-up work, not enabled by these primitives.
