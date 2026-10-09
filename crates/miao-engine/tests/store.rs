@@ -114,3 +114,56 @@ async fn message_projection_and_event_have_one_committed_cursor() {
         "answer"
     );
 }
+
+/// A subscriber replays from a cursor to a captured high-watermark and then
+/// hands off to live events after it. The durable ledger is the single source
+/// both sides read, so the handoff has no gap and no duplicate: paging from the
+/// watermark resumes exactly at the next committed event, and re-reading the
+/// whole ledger reproduces the same ordered sequence.
+#[tokio::test]
+async fn replay_to_watermark_then_live_has_no_gap_or_duplicate() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    store
+        .message("s", "assistant", json!([{"type":"text","text":"a"}]))
+        .await
+        .unwrap();
+
+    let mut replayed = Vec::new();
+    let mut cursor = 0u64;
+    loop {
+        let page = store.events("s", cursor, 1).await.unwrap();
+        if page.is_empty() {
+            break;
+        }
+        replayed.extend(page.iter().map(|event| event.seq));
+        cursor = page.last().unwrap().seq;
+    }
+    let watermark = cursor;
+    assert_eq!(replayed, (1..=watermark).collect::<Vec<_>>());
+
+    store
+        .message("s", "assistant", json!([{"type":"text","text":"b"}]))
+        .await
+        .unwrap();
+    let live: Vec<u64> = store
+        .events("s", watermark, 100)
+        .await
+        .unwrap()
+        .iter()
+        .map(|event| event.seq)
+        .collect();
+    assert_eq!(live, vec![watermark + 1]);
+
+    let full: Vec<u64> = store
+        .events("s", 0, 100)
+        .await
+        .unwrap()
+        .iter()
+        .map(|event| event.seq)
+        .collect();
+    let mut combined = replayed;
+    combined.extend(live);
+    assert_eq!(combined, full);
+}
