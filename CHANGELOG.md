@@ -11,6 +11,14 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-10-09
+
+### Added
+- **core**: wire native git status behind MIAO_NATIVE (#492) (`46674f106`)
+
+### Fixed
+- **core**: detect a markdown-emphasis refrain as repetitive output (#495) (`8a0783549`)
+
 ## [0.1.30] - 2026-10-09
 
 ### Fixed
