@@ -323,6 +323,49 @@ test("relay setup uses browser login when the hub only offers a social provider"
   }
 })
 
+test("relay setup offers the private default and custom Hub before desktop social login", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  let selected = ""
+  const local: RemoteLocal = {
+    settings: async () => ({ defaultHubURL: "https://default.example.invalid" }),
+    providers: async (input) => {
+      selected = input.hubURL
+      return { providers: ["github"] }
+    },
+    setup: async () => {
+      throw new Error("unused password flow")
+    },
+    setupOAuth: async (input) => input.runtime.configure({ hubURL: input.hubURL, hostToken: "c".repeat(43) }),
+  }
+  const view = await mount(
+    tmp.path,
+    environment({
+      local,
+      devices: control.api,
+      configure: async () => {
+        control.state.status = { enabled: true, connected: true }
+        return control.state.status
+      },
+    }),
+  )
+  try {
+    await view.until((frame) => frame.includes("登录中继并接入"))
+    await view.select(0)
+    const frame = await view.until((frame) => frame.includes("选择 Hub"))
+    expect(frame).toContain("使用默认 Hub")
+    expect(frame).toContain("指定其他 Hub")
+    await view.select(0)
+    await view.until((frame) => frame.includes("这台电脑的名称"))
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("分享当前会话（只读）"))
+    expect(selected).toBe("https://default.example.invalid")
+    expect(control.state.status.enabled).toBe(true)
+  } finally {
+    view.cleanup()
+  }
+})
+
 function deviceControl(enabled = true) {
   const publicKey = `B${"A".repeat(86)}`
   const issued: RemoteAccess.Invitation = {
