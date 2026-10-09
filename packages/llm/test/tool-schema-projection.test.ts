@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { LLM } from "../src"
-import { OpenAIChat } from "../src/protocols"
+import { AnthropicMessages, OpenAIChat } from "../src/protocols"
 import { ToolSchemaProjection } from "../src/protocols/utils/tool-schema"
 import { Auth, LLMClient } from "../src/route"
 import { it } from "./lib/effect"
@@ -73,6 +73,74 @@ describe("tool schema projections", () => {
       additionalProperties: false,
     })
   })
+
+  test("model compatibility forces a provider-safe object root", () => {
+    expect(ToolSchemaProjection.modelCompatibility({ properties: {} }, undefined)).toEqual({
+      type: "object",
+      properties: {},
+    })
+    expect(
+      ToolSchemaProjection.modelCompatibility(
+        {
+          anyOf: [
+            { type: "object", properties: { a: { type: "string" } } },
+            { type: "object", properties: { b: { type: "number" } } },
+          ],
+        },
+        undefined,
+      ),
+    ).toEqual({
+      type: "object",
+      properties: { a: { type: "string" }, b: { type: "number" } },
+      additionalProperties: false,
+    })
+    expect(
+      ToolSchemaProjection.modelCompatibility({ oneOf: [{ type: "object", properties: { a: { type: "string" } } }] }, undefined),
+    ).toEqual({
+      type: "object",
+      properties: { a: { type: "string" } },
+      additionalProperties: false,
+    })
+  })
+
+  test("model compatibility leaves a valid object root untouched", () => {
+    const schema = {
+      type: "object",
+      properties: { a: { type: "string" } },
+      required: ["a"],
+      additionalProperties: false,
+    }
+    expect(ToolSchemaProjection.modelCompatibility(schema, undefined)).toBe(schema)
+  })
+
+  it.effect("normalizes a malformed tool schema before an Anthropic request", () =>
+    Effect.gen(function* () {
+      const model = AnthropicMessages.route.with({ auth: Auth.header("x-api-key", "test") }).model({
+        id: "claude-haiku-4-5",
+      })
+      const prepared = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(
+        LLM.request({
+          model,
+          prompt: "Use the tool.",
+          tools: [
+            { name: "typeless", description: "No root type.", inputSchema: {} },
+            {
+              name: "combinator",
+              description: "Top-level anyOf.",
+              inputSchema: { anyOf: [{ type: "object", properties: { a: { type: "string" } } }] },
+            },
+          ],
+        }),
+      )
+
+      expect(prepared.body.tools?.[0]?.input_schema).toEqual({ type: "object" })
+      expect(prepared.body.tools?.[1]?.input_schema).toEqual({
+        type: "object",
+        properties: { a: { type: "string" } },
+        additionalProperties: false,
+      })
+    }),
+  )
 
   it.effect("applies model compatibility before protocol projection", () =>
     Effect.gen(function* () {

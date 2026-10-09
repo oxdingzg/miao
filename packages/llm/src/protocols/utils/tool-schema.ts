@@ -45,21 +45,34 @@ const moonshot = (schema: JsonSchema): JsonSchema => {
   return isRecord(projected) ? projected : {}
 }
 
+const COMBINATORS = ["anyOf", "oneOf", "allOf"] as const
+
+// Anthropic and OpenAI reject any tool whose `input_schema` omits `type` or
+// carries a top-level `anyOf`/`oneOf`/`allOf`, failing the whole request with
+// `tools.N.custom.input_schema.type: Field required`. Tool schemas reach the
+// protocols from many producers (Effect Schema, Zod, MCP servers, plugins), so
+// every protocol normalizes at this boundary instead of trusting each producer.
+// A schema that is already an object root with no top-level combinator passes
+// through unchanged, so well-formed inputs stay byte-identical.
+const objectRoot = (schema: JsonSchema): JsonSchema => {
+  if (!isRecord(schema)) return { type: "object" }
+  const combinator = COMBINATORS.find((key) => Array.isArray(schema[key]))
+  if (combinator === undefined) return schema.type === "object" ? schema : { ...schema, type: "object" }
+  const variants = (schema[combinator] as ReadonlyArray<unknown>).filter(isRecord)
+  const properties = variants.reduce(
+    (properties, variant) => ({ ...(isRecord(variant.properties) ? variant.properties : {}), ...properties }),
+    isRecord(schema.properties) ? schema.properties : {},
+  )
+  return {
+    ...Object.fromEntries(Object.entries(schema).filter(([key]) => key !== combinator)),
+    type: "object",
+    properties,
+    additionalProperties: false,
+  }
+}
+
 const openAI = (schema: JsonSchema): JsonSchema => {
-  const variants = Array.isArray(schema.anyOf) ? schema.anyOf.filter(isRecord) : []
-  const flattened =
-    variants.length === 0
-      ? { ...schema, type: "object" }
-      : {
-          ...Object.fromEntries(Object.entries(schema).filter(([key]) => key !== "anyOf")),
-          type: "object",
-          properties: variants.reduce(
-            (properties, variant) => ({ ...(isRecord(variant.properties) ? variant.properties : {}), ...properties }),
-            {},
-          ),
-          additionalProperties: false,
-        }
-  const normalized = removeNullSchemas(flattened)
+  const normalized = removeNullSchemas(objectRoot(schema))
   return isRecord(normalized) ? normalized : { type: "object" }
 }
 
@@ -69,13 +82,12 @@ const modelCompatibility = (
   schema: JsonSchema,
   compatibility: ModelToolSchemaCompatibility | undefined,
 ): JsonSchema => {
-  if (compatibility === undefined) return schema
-  switch (compatibility) {
-    case "gemini":
-      return gemini(schema)
-    case "moonshot":
-      return moonshot(schema)
-  }
+  // Gemini's dialect accepts a root that is not an object, so its own converter
+  // stays the final word. Every other route ends on `objectRoot` so a bad tool
+  // schema cannot fail an entire Anthropic, Bedrock, or OpenAI request.
+  if (compatibility === "gemini") return gemini(schema)
+  if (compatibility === "moonshot") return objectRoot(moonshot(schema))
+  return objectRoot(schema)
 }
 
 export const ToolSchemaProjection = {
